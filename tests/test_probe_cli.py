@@ -119,6 +119,32 @@ class TestCliRun:
         assert (tmp_path / "probe-run" / "probe-report.md").exists()
 
 
+class TestCliIoErrors:
+    def test_unwritable_workdir_prints_clear_error_and_exits_2(self, tmp_path, capsys):
+        blocker = tmp_path / "blocker.txt"
+        blocker.write_text("a file, not a folder", encoding="utf-8")
+        adapters = all_pass_adapters(tmp_path, tmp_path / "OneDrive")
+
+        code = main(["--workdir", str(blocker / "run")], adapters=adapters)
+
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "workdir" in captured.err.lower()
+        assert str(blocker / "run") in captured.err
+
+    def test_unwritable_report_path_prints_clear_error_and_exits_2(self, tmp_path, capsys):
+        workdir = tmp_path / "run"
+        workdir.mkdir()
+        (workdir / "probe-report.md").mkdir()  # a directory occupies the report path
+        adapters = all_pass_adapters(tmp_path, tmp_path / "OneDrive")
+
+        code = main(["--workdir", str(workdir)], adapters=adapters)
+
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "probe-report.md" in captured.err
+
+
 class TestCliUsageAndSelfCheck:
     def test_unknown_flag_is_usage_error_exit_2(self):
         assert main(["--bogus-flag"]) == 2

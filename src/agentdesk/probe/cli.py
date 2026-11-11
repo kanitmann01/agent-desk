@@ -5,7 +5,10 @@ Usage (via tools/probe.cmd or `python -m agentdesk.probe`):
     python -m agentdesk.probe [--workdir DIR] [--self-check]
 
 Never elevates, never writes outside the workdir and the discovered OneDrive
-folder. Exit codes: 0 GO, 2 usage error, 3 RESHAPE, 4 NO-GO.
+folder. Exit codes: 0 GO, 3 RESHAPE, 4 NO-GO; 2 for usage errors (bad flag)
+and environment errors (workdir or report path cannot be written).
+With --self-check every gate runs against fakes: exit 0 when every case
+matches its expected classification, 1 on any mismatch.
 """
 
 import argparse
@@ -20,6 +23,7 @@ from agentdesk.probe import adapters as real
 from agentdesk.probe import gates
 from agentdesk.probe.adapters import Adapters, RunResult
 from agentdesk.probe.core import (
+    EXIT_USAGE,
     FAIL,
     GATE_EDR,
     GATE_EXEC,
@@ -53,7 +57,11 @@ def run_all_gates(workdir: Path, adapters: Adapters) -> list[GateResult]:
 
 
 def _run_probe(workdir: Path, adapters: Adapters) -> int:
-    workdir.mkdir(parents=True, exist_ok=True)
+    try:
+        workdir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"error: cannot create workdir {workdir}: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     results = run_all_gates(workdir, adapters)
     verdict = aggregate_verdict(results)
     context = {
@@ -64,7 +72,11 @@ def _run_probe(workdir: Path, adapters: Adapters) -> int:
         "workdir": str(workdir),
     }
     report_path = workdir / REPORT_NAME
-    report_path.write_text(render_report(results, verdict, context), encoding="utf-8")
+    try:
+        report_path.write_text(render_report(results, verdict, context), encoding="utf-8")
+    except OSError as exc:
+        print(f"error: cannot write report {report_path}: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     print(f"Report written to: {report_path}")
     print(render_summary(results, verdict))
     return verdict.exit_code
