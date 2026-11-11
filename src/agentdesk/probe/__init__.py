@@ -23,6 +23,7 @@ from agentdesk.probe.core import (
     VERDICT_RESHAPE,
 )
 from agentdesk.probe.gates import (
+    gate_edr_identity,
     gate_exec_user_space,
     gate_onedrive,
     gate_power_automate,

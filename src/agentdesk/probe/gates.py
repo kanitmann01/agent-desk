@@ -15,6 +15,7 @@ from agentdesk.probe.core import (
     FAIL,
     GATE_EXEC,
     GATE_FLOW,
+    GATE_EDR,
     GATE_ONEDRIVE,
     GATE_UV,
     PASS,
@@ -324,4 +325,66 @@ def gate_onedrive(discover, workdir: Path) -> GateResult:
             "sync confirmation is manual: check the probe file appears in OneDrive "
             "(File Explorer sync status or onedrive.live.com); the file is safe to delete"
         ),
+    )
+
+
+# Curated EDR/AV signatures: (product name, case-insensitive tokens matched
+# against tasklist image names and service names).
+EDR_SIGNATURES = (
+    ("CrowdStrike Falcon", ("csfalcon", "csagent")),
+    ("SentinelOne", ("sentinelagent", "sentinelone", "sentinelservicehost")),
+    ("Microsoft Defender", ("msmpeng", "mssense")),
+    ("Carbon Black", ("carbonblack", "cbdefense", "repmgr", "bdservicehost")),
+    ("Trellix", ("trellix", "mfeagf", "masvc", "mfeavs")),
+    ("McAfee", ("mcafee", "mcshield", "mfemms")),
+)
+
+
+def gate_edr_identity(list_processes) -> GateResult:
+    """Gate 5: which EDR product is running.
+
+    Scans tasklist process and service output (via the injectable lister)
+    against a curated signature list. Informational: PASS when at least one
+    product is identified, UNKNOWN when none is visible to a standard user
+    (kernel-level agents may still be present) or tasklist itself fails.
+    """
+    res = list_processes()
+    if res.returncode != 0:
+        detail = res.stderr or res.error or f"rc={res.returncode}"
+        return GateResult(
+            key=GATE_EDR,
+            number=5,
+            title="EDR / AV identity",
+            status=UNKNOWN,
+            evidence=(f"tasklist failed: {detail}",),
+            note="could not list processes; identify the EDR product manually",
+        )
+
+    lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    detected = []
+    evidence = ["detection method: tasklist /svc process and service scan against a curated signature list"]
+    for product, tokens in EDR_SIGNATURES:
+        matched = [line for line in lines if any(token in line.lower() for token in tokens)]
+        if matched:
+            detected.append(product)
+            evidence.append(f"{product}: " + " | ".join(matched[:3]))
+
+    if detected:
+        evidence.append(f"detected products: {', '.join(detected)}")
+        return GateResult(
+            key=GATE_EDR,
+            number=5,
+            title="EDR / AV identity",
+            status=PASS,
+            evidence=tuple(evidence),
+        )
+
+    evidence.append("none detected")
+    return GateResult(
+        key=GATE_EDR,
+        number=5,
+        title="EDR / AV identity",
+        status=UNKNOWN,
+        evidence=tuple(evidence),
+        note="no EDR or AV is visible to a standard user via tasklist; kernel-level agents may still be present",
     )

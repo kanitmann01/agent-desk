@@ -16,6 +16,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 from probe_fakes import (
     ExplodingRunner,
     FakeOneDriveDiscoverer,
+    FakeProcessLister,
     FakeReacher,
     FakeRunner,
     FakeUvFinder,
@@ -24,6 +25,7 @@ from probe_fakes import (
 
 from agentdesk.probe.core import FAIL, PASS, UNKNOWN, RunResult
 from agentdesk.probe.gates import (
+    gate_edr_identity,
     gate_exec_user_space,
     gate_onedrive,
     gate_power_automate,
@@ -260,3 +262,49 @@ class TestGateOneDriveSync:
         assert result.status == FAIL
         assert result.evidence  # error text captured
         assert result.note
+
+
+# ---------------------------------------------------------------------------
+# Gate 5: edr-identity
+# ---------------------------------------------------------------------------
+
+TASKLIST_WITH_EDR = (
+    '"CSFalconService.exe","4320","CSFalconService"                \n'
+    '"MsMpEng.exe","2210","MsMpEng"                                \n'
+    '"chrome.exe","512","N/A"                                      \n'
+    '"SentinelAgent.exe","8110","SentinelAgent"                    \n'
+)
+TASKLIST_CLEAN = '"chrome.exe","512","N/A"\n"notepad.exe","900","N/A"\n'
+
+
+class TestGateEdrIdentity:
+    def test_detects_and_reports_edr_products_with_evidence_lines(self):
+        lister = FakeProcessLister(stdout=TASKLIST_WITH_EDR)
+        result = gate_edr_identity(lister)
+
+        assert result.status == PASS
+        assert result.key == "edr-identity"
+        assert result.number == 5
+        joined = "\n".join(result.evidence)
+        assert "CrowdStrike Falcon" in joined
+        assert "Microsoft Defender" in joined
+        assert "SentinelOne" in joined
+        # Evidence carries the raw tasklist lines, not just product names.
+        assert any("CSFalconService.exe" in line for line in result.evidence)
+        # Unrelated processes are not reported as EDR.
+        assert "chrome.exe" not in joined
+
+    def test_none_detected_is_unknown_not_pass(self):
+        lister = FakeProcessLister(stdout=TASKLIST_CLEAN)
+        result = gate_edr_identity(lister)
+
+        assert result.status == UNKNOWN
+        assert any("none detected" in line for line in result.evidence)
+        assert "kernel" in result.note.lower()
+
+    def test_lister_failure_is_unknown_with_error_evidence(self):
+        lister = FakeProcessLister(returncode=1, stderr="Access denied")
+        result = gate_edr_identity(lister)
+
+        assert result.status == UNKNOWN
+        assert any("Access denied" in line for line in result.evidence)
