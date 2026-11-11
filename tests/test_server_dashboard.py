@@ -141,15 +141,18 @@ def test_page_is_offline_by_construction(page):
     assert "https://" not in page
 
 
-def test_strict_csp_without_inline_code(booted, page):
+def test_strict_csp_scripts_stay_self_and_pages_stay_inline_free(booted, page):
     headers = booted.exchange()
     _status, resp_headers, _body = booted.request("GET", "/", headers)
     csp = resp_headers["Content-Security-Policy"]
     assert "default-src 'none'" in csp
-    assert "style-src 'self'" in csp
+    # Scripts are code: 'self' only, no inline, no eval, anywhere.
     assert "script-src 'self'" in csp
-    assert "unsafe-inline" not in csp
     assert "unsafe-eval" not in csp
+    # Styles are decoration: the one measured relaxation, for the SPA's
+    # motion library writing style ATTRIBUTES (see app.py SECURITY_HEADERS).
+    assert "style-src 'self' 'unsafe-inline'" in csp
+    assert csp.count("unsafe-inline") == 1
     scan = _scan(page)
     assert scan.inline_styles == 0
     assert len(scan.scripts) == 1

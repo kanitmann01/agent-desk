@@ -99,12 +99,19 @@ from agentdesk.settings import SettingsStore, ensure_schema as ensure_settings_s
 
 LOG = logging.getLogger("agentdesk.server")
 
-# Strict CSP: everything self-hosted, nothing inline. This is a product
+# Strict CSP: everything self-hosted, no inline script. This is a product
 # commitment from the first commit, not decoration: plugins will never be
-# allowed to loosen it.
+# allowed to loosen it. One measured exception: style-src also allows
+# 'unsafe-inline' because the SPA's animation library (motion, the
+# framer-motion package) animates by writing style ATTRIBUTES on
+# elements, which 'unsafe-inline' in style-src governs. Style attributes
+# cannot execute code; scripts still can, so script-src stays 'self' and
+# no inline <script> block ships anywhere: the SPA loads only its own
+# hashed bundles from /static/spa/. The server-rendered pages are
+# unaffected (they never used inline styles either).
 SECURITY_HEADERS = (
     ("Content-Security-Policy",
-     "default-src 'none'; style-src 'self'; script-src 'self'; "
+     "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; "
      "img-src 'self' data:; connect-src 'self'"),
     ("X-Content-Type-Options", "nosniff"),
     ("Referrer-Policy", "no-referrer"),
@@ -112,6 +119,36 @@ SECURITY_HEADERS = (
 )
 
 MAX_BODY_BYTES = 1024 * 1024
+
+# The committed SPA build, emitted by frontend/ (npm run build) directly
+# into this folder and committed, so the double-click launcher serves it
+# with zero node involvement. When index.html is missing (a source
+# checkout without a build), "/" falls back to the server-rendered
+# dashboard; tests re-point this path to simulate either case.
+SPA_DIR = Path(__file__).resolve().parent / "static" / "spa"
+
+_SPA_MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
+def spa_index_path() -> Path:
+    """The SPA shell, read through the module global so tests can re-point it."""
+    return SPA_DIR / "index.html"
 
 
 def _greeting(now: datetime) -> str:
@@ -539,7 +576,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._gate():
             return
         if path == "/":
-            self._send_dashboard()
+            self._send_index_or_dashboard()
         elif path == "/health":
             self._send_health()
         elif path == "/widgets/sales-24h":
@@ -586,6 +623,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
         elif path == "/static/app.js":
             self._send_bytes(200, pages.APP_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+        elif path.startswith("/static/spa/"):
+            self._send_spa_asset(path[len("/static/spa/"):])
         else:
             self._send_error_page(404, "Nothing here", "No page lives at this address.")
 
@@ -892,6 +931,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._common_headers()
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def _send_index_or_dashboard(self) -> None:
+        """The SPA shell when the committed build exists; the
+        server-rendered dashboard otherwise (a source checkout without a
+        build). One address, whichever surface this checkout can serve.
+        """
+        index = spa_index_path()
+        if index.is_file():
+            self._send_bytes(200, index.read_bytes(), "text/html; charset=utf-8")
+        else:
+            self._send_dashboard()
+
+    def _send_spa_asset(self, relative: str) -> None:
+        """One file from the committed SPA build. Everything is resolved
+        against the build folder and refused outside it, however the path
+        was spelled; the no-store stance applies to hashed assets too.
+        """
+        from urllib.parse import unquote
+
+        root = SPA_DIR.resolve()
+        candidate = (root / unquote(relative)).resolve()
+        if candidate != root and not candidate.is_relative_to(root):
+            self._send_error_page(404, "Nothing here", "No page lives at this address.")
+            return
+        if not candidate.is_file():
+            self._send_error_page(404, "Nothing here", "No page lives at this address.")
+            return
+        mime = _SPA_MIME.get(candidate.suffix.lower(), "application/octet-stream")
+        self._send_bytes(200, candidate.read_bytes(), mime)
 
     def _send_dashboard(self) -> None:
         now = datetime.now()
