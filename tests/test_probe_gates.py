@@ -13,11 +13,19 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from probe_fakes import ExplodingRunner, FakeReacher, FakeRunner, FakeUvFinder, SequenceRunner
+from probe_fakes import (
+    ExplodingRunner,
+    FakeOneDriveDiscoverer,
+    FakeReacher,
+    FakeRunner,
+    FakeUvFinder,
+    SequenceRunner,
+)
 
 from agentdesk.probe.core import FAIL, PASS, UNKNOWN, RunResult
 from agentdesk.probe.gates import (
     gate_exec_user_space,
+    gate_onedrive,
     gate_power_automate,
     gate_uv_tls_bootstrap,
 )
@@ -207,3 +215,48 @@ class TestGatePowerAutomateFlows:
 
         assert result.status == FAIL
         assert any("no such interface" in line for line in result.evidence)
+
+
+# ---------------------------------------------------------------------------
+# Gate 4: onedrive-sync
+# ---------------------------------------------------------------------------
+
+
+class TestGateOneDriveSync:
+    def test_pass_when_folder_found_and_probe_file_copies(self, tmp_path):
+        onedrive_dir = tmp_path / "OneDrive - Contoso"
+        onedrive_dir.mkdir()
+        workdir = tmp_path / "work"
+        workdir.mkdir()
+        discover = FakeOneDriveDiscoverer(path=str(onedrive_dir), how="env OneDrive")
+
+        result = gate_onedrive(discover, workdir)
+
+        assert result.status == PASS
+        assert result.key == "onedrive-sync"
+        assert result.number == 4
+        assert any(str(onedrive_dir) in line for line in result.evidence)
+        assert any("env OneDrive" in line for line in result.evidence)
+        # A probe file was actually copied into the sync root, uniquely named.
+        copied = list(onedrive_dir.glob("agentdesk-probe-*.txt"))
+        assert len(copied) == 1
+        assert copied[0].read_text(encoding="utf-8").strip()
+        assert "manual" in result.note.lower()
+
+    def test_unknown_when_no_folder_found(self, tmp_path):
+        result = gate_onedrive(FakeOneDriveDiscoverer(path=None), tmp_path)
+
+        assert result.status == UNKNOWN
+        assert any("not found" in line for line in result.evidence)
+        assert result.note
+
+    def test_fail_when_sync_root_not_usable_for_copy(self, tmp_path):
+        # A stale sync root (env var points at a missing folder) simulates
+        # the failure mode without touching real permissions.
+        discover = FakeOneDriveDiscoverer(path=str(tmp_path / "missing-folder"), how="env OneDrive")
+
+        result = gate_onedrive(discover, tmp_path)
+
+        assert result.status == FAIL
+        assert result.evidence  # error text captured
+        assert result.note

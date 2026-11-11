@@ -6,17 +6,21 @@ pass fakes; the default adapters live in agentdesk.probe.adapters.
 """
 
 import os
+import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from agentdesk.probe.core import (
     FAIL,
     GATE_EXEC,
     GATE_FLOW,
+    GATE_ONEDRIVE,
     GATE_UV,
     PASS,
     UNKNOWN,
     GateResult,
+    OneDriveInfo,
     ReachResult,
     RunResult,
 )
@@ -258,4 +262,66 @@ def gate_power_automate(reach) -> GateResult:
         status=FAIL,
         evidence=(f"GET {POWER_AUTOMATE_URL} failed: {res.error}",),
         note="the Power Automate endpoint is unreachable at network level; ask IT to allow make.powerautomate.com",
+    )
+
+
+ONEDRIVE_PROBE_NAME = "onedrive-probe.txt"
+
+
+def gate_onedrive(discover, workdir: Path) -> GateResult:
+    """Gate 4: is the OneDrive client present and syncing to the local profile.
+
+    Looks for the sync root via the injectable discoverer, writes a probe
+    file into the workdir and copies it into the sync root. Upload is never
+    verified here (that needs the sync engine and time); the note says so.
+    PASS = folder found and writable; UNKNOWN = no folder found.
+    """
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    info = discover()
+    if info is None:
+        return GateResult(
+            key=GATE_ONEDRIVE,
+            number=4,
+            title="OneDrive sync root",
+            status=UNKNOWN,
+            evidence=("OneDrive sync root: not found (no OneDrive* environment variable, no OneDrive* folder under the user profile)",),
+            note="no OneDrive folder found; sign in to the OneDrive client manually, then re-run the probe",
+        )
+
+    assert isinstance(info, OneDriveInfo)
+    source = workdir / ONEDRIVE_PROBE_NAME
+    source.write_text("agentdesk probe sync test file; safe to delete\n", encoding="utf-8")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = Path(info.path) / f"agentdesk-probe-{stamp}.txt"
+    evidence = [
+        f"sync root: {info.path}",
+        f"detection method: {info.how}",
+        f"probe file: {source} -> {dest}",
+    ]
+
+    try:
+        shutil.copy(source, dest)
+    except OSError as exc:
+        evidence.append(f"error: {exc}")
+        return GateResult(
+            key=GATE_ONEDRIVE,
+            number=4,
+            title="OneDrive sync root",
+            status=FAIL,
+            evidence=tuple(evidence),
+            note="the OneDrive folder exists but is not writable; check the sync root and OneDrive sign-in",
+        )
+
+    evidence.append("copied into the sync root; upload not verified")
+    return GateResult(
+        key=GATE_ONEDRIVE,
+        number=4,
+        title="OneDrive sync root",
+        status=PASS,
+        evidence=tuple(evidence),
+        note=(
+            "sync confirmation is manual: check the probe file appears in OneDrive "
+            "(File Explorer sync status or onedrive.live.com); the file is safe to delete"
+        ),
     )
