@@ -67,6 +67,12 @@ from agentdesk.server.commitments import (
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
+from agentdesk.server.wizard_view import (
+    approval_summary,
+    preview_lines,
+    render_wizard_page,
+)
+from agentdesk.wizard.core import WizardCompiler, WizardError, WizardStore
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     ATTENTION,
@@ -293,6 +299,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         settings_store: SettingsStore | None = None,
         plugins: PluginRuntime | None = None,
         pick_calendar=None,
+        wizard_store: WizardStore | None = None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -309,6 +316,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.skills = skill_store
         self.settings = settings_store
         self.plugins = plugins
+        self.wizard_store = wizard_store
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
             if activity_log is not None and inbox_store is not None and skill_store is not None
@@ -420,6 +428,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- GET -------------------------------------------------------------
 
     def _route_get(self) -> None:
+        method = "GET"
         path, _, _query = self.path.partition("?")
         if path.startswith("/auth/"):
             # The one route a session does not exist for yet: guard runs,
@@ -467,6 +476,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_audit_tail()
         elif path == "/widgets/settings":
             self._send_settings_values()
+        elif path.startswith("/wizard"):
+            self._route_wizard(method, path)
+            return
         elif path == "/api/plugins":
             self._send_json(200, {"plugins": self.server_plugins_widget_records()})
         elif path.startswith("/api/plugins/"):
@@ -487,10 +499,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _route_post(self) -> None:
         if not self._gate():
             return
+        method = "POST"
+        path, _, _query = self.path.partition("?")
         # Drain the request body up front: an unread body on a keep-alive
         # connection would be parsed as the next request.
         self._raw_body = self._drain_body()
-        path, _, _query = self.path.partition("?")
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
         if path.startswith("/sources/excel-watch") and not self._source_allowed("excel_enabled"):
@@ -654,6 +667,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_save()
         elif path == "/settings/endpoint/test":
             self._endpoint_test()
+        elif path.startswith("/wizard"):
+            self._route_wizard(method, path)
+            return
         elif path.startswith("/api/plugins"):
             plugins = self.server.plugins  # type: ignore[attr-defined]
             if plugins is None:
@@ -1242,6 +1258,227 @@ class DashboardHandler(BaseHTTPRequestHandler):
             })
         return out
 
+    def _route_wizard(self, method: str, path: str) -> None:
+        """The wizard surface: describe, answer, build, preview, approve."""
+        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        if wizard is None:
+            self._send_json(503, {"error": "the wizard is not available"})
+            return
+        parts = [part for part in path.split("/") if part]  # ["wizard", ...]
+        if method == "POST" and path == "/wizard/start":
+            body = self._read_json_body() or {}
+            description = str(body.get("description", "")).strip()
+            if not description:
+                # The dashboard button lands here first: ask for the words
+                # before a session exists. No-JS: a plain form.
+                page = render_wizard_page(
+                    {"id": "new", "state": "describing", "description": "",
+                     "questions": [], "draft": {}, "ui_schema": None,
+                     "sample_rows": []},
+                    agentdesk.__version__,
+                )
+                self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+                return
+            session = wizard.create(description)
+            self._advance_describe(session, description)
+            self._send_json(201, wizard.get(session.id).to_json())
+            return
+        if len(parts) < 2:
+            self._send_error_page(404, "Nothing here", "No wizard page lives at this address.")
+            return
+        session_id = parts[1]
+        action = parts[2] if len(parts) > 2 else ""
+        if method == "GET" and action == "":
+            self._send_wizard_page(session_id)
+            return
+        if method == "POST" and action == "answer":
+            self._wizard_answer(session_id)
+            return
+        if method == "POST" and action == "approve":
+            self._wizard_approve(session_id)
+            return
+        if method == "POST" and action == "escalate":
+            self._wizard_escalate(session_id, reason="The wizard cannot build this safely.")
+            return
+        self._send_error_page(404, "Nothing here", "No wizard action lives at this address.")
+
+    def _advance_describe(self, session, description: str) -> None:
+        """Ask the compiler for the multiple-choice questions."""
+        compiler = self._wizard_compiler()
+        if compiler is None:
+            return
+        try:
+            session.questions = compiler.questions_for(description)
+        except Exception:  # noqa: BLE001 - the defaults are the floor
+            LOG.exception("wizard questions failed; using defaults")
+            session.questions = WizardCompiler(None).questions_for(description)
+        session.state = "questions"
+        self.server.wizard_store.save(session)  # type: ignore[attr-defined]
+
+    def _wizard_compiler(self):
+        server = self.server  # type: ignore[attr-defined]
+        if server.audit_conn is not None and server.llm is not None:
+            conn = server.audit_conn
+            endpoint, _key, model = env_config()
+            inner = server.llm
+
+            def audited_llm(prompt: str) -> str:
+                try:
+                    result = inner(prompt)
+                except Exception as exc:  # noqa: BLE001 - audit then re-raise
+                    audit_store.record(conn, "llm.wizard", target=endpoint,
+                                       status="error", model=model,
+                                       request_bytes=len(prompt.encode("utf-8")),
+                                       detail=str(exc)[:200])
+                    raise
+                audit_store.record(conn, "llm.wizard", target=endpoint,
+                                   status="ok", model=model,
+                                   request_bytes=len(prompt.encode("utf-8")))
+                return result
+
+            return WizardCompiler(audited_llm)
+        return WizardCompiler(None)
+
+    def _wizard_answer(self, session_id: str) -> None:
+        """Answers in, then build with capped self-repair. Redirects to the
+        page so a plain form works without JavaScript."""
+        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        if session_id == "new":
+            # The describe screen before any session exists: the words make
+            # the session.
+            description = str((self._read_json_body() or {}).get("description", "")).strip()
+            if not description:
+                self._send_redirect("/wizard/start")
+                return
+            session = wizard.create(description)
+            self._advance_describe(session, description)
+            self._send_redirect(f"/wizard/{session.id}")
+            return
+        session = wizard.get(session_id)
+        body = self._read_json_body() or {}
+        if "description" in body and body.get("description", "").strip():
+            description = str(body["description"]).strip()
+            session.description = description
+            self._advance_describe(session, description)
+            self._send_redirect(f"/wizard/{session_id}")
+            return
+        answers = body.get("answers") or {
+            q["id"]: q.get("default", "") for q in session.questions
+        }
+        session.answers = answers
+        compiler = self._wizard_compiler()
+        if compiler is None:
+            self._send_json(503, {"error": "the wizard is not available"})
+            return
+        try:
+            draft = compiler.build(session, answers)
+        except WizardError as exc:
+            self._escalate(session, exc)
+            self._send_redirect(f"/wizard/{session_id}")
+            return
+        session.draft = draft
+        session.state = "preview"
+        wizard.save(session)
+        self._send_redirect(f"/wizard/{session_id}")
+
+    def _wizard_approve(self, session_id: str) -> None:
+        """The one consolidated approval: zip the validated draft and hand
+        it to the plugin runtime, which validates again and installs in
+        pilot mode."""
+        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        session = wizard.get(session_id)
+        plugins = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            self._send_json(503, {"error": "plugins:unavailable",
+                                  "message": "no plugin runtime is configured"})
+            return
+        if session.state != "preview" or not session.draft:
+            self._send_json(409, {"error": "wizard:not-in-preview"})
+            return
+        import tempfile
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin_dir = Path(tmp) / session.draft["manifest"]["id"]
+            plugin_dir.mkdir()
+            (plugin_dir / "manifest.json").write_text(
+                json.dumps(session.draft["manifest"], indent=2), encoding="utf-8")
+            (plugin_dir / "widget.ui.json").write_text(
+                json.dumps(session.draft["ui_schema"], indent=2), encoding="utf-8")
+            zip_path = Path(tmp) / "wizard-plugin.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for file in plugin_dir.rglob("*"):
+                    zf.write(file, file.relative_to(plugin_dir).as_posix())
+            result = plugins.install(zip_path, source="wizard")
+        session.state = "approved"
+        session.draft = {**session.draft, "installed": result}
+        wizard.save(session)
+        summary = approval_summary(session.draft["manifest"])
+        self._send_json(200, {"status": "installed", "pilot": True,
+                              "summary": summary, "install": result})
+
+    def _wizard_escalate(self, session_id: str, reason: str) -> None:
+        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        session = wizard.get(session_id)
+        self._escalate(session, WizardError("wizard:escalated", reason, 422))
+        self._send_redirect(f"/wizard/{session_id}")
+
+    def _escalate(self, session, exc: WizardError) -> None:
+        """The honest dead-end: a feature-request card in the inbox, the
+        user's every word preserved on both card and session."""
+        session.state = "escalated"
+        session.feature_request = exc.feature_request or {
+            "description": session.description,
+            "answers": session.answers,
+            "reason": str(exc),
+            "kind": "feature_request",
+        }
+        self.server.wizard_store.save(session)  # type: ignore[attr-defined]
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is not None:
+            inbox.add(
+                kind="feature_request",
+                origin="The plugin wizard could not build this safely.",
+                title="Feature request exported to the owner queue",
+                body=(
+                    f"Your words, preserved: {session.description}\n"
+                    f"Reason: {session.feature_request.get('reason', '')}"
+                ),
+                meta={"wizardSession": session.id,
+                      "featureRequest": session.feature_request},
+            )
+
+    def _send_wizard_page(self, session_id: str) -> None:
+        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        try:
+            session = wizard.get(session_id)
+        except WizardError as exc:
+            self._send_error_page(404, "Nothing here", str(exc))
+            return
+        payload = session.to_json()
+        draft = session.draft or {}
+        # The view's draft is the manifest (its approval summary reads
+        # permissions); the ui schema and sample rows ride top-level.
+        payload["draft"] = draft.get("manifest", {}) if isinstance(draft, dict) else {}
+        payload["ui_schema"] = (draft.get("ui_schema")
+                                if isinstance(draft, dict) else None)
+        sample = [
+            {"Product line": "Atlas ERP", "Change": "+4.2%"},
+            {"Product line": "Care plans", "Change": "+1.6%"},
+            {"Product line": "Field services", "Change": "-2.8%"},
+        ]
+        payload["sample_rows"] = sample
+        payload["approval"] = approval_summary(payload["draft"]) if payload["draft"] else {}
+        page = render_wizard_page(payload, agentdesk.__version__)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _send_redirect(self, location: str) -> None:
+        self.send_response(303)
+        self.send_header("Location", location)
+        self._common_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _send_health(self) -> None:
         payload = health_payload(
             agentdesk.__version__,
@@ -1298,6 +1535,7 @@ def create_server(
     settings_store: SettingsStore | None = None,
     plugins: PluginRuntime | None = None,
     pick_calendar=None,
+    wizard_store: WizardStore | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -1335,12 +1573,16 @@ def create_server(
         pick_workbook = tk_pick_workbook
     if pick_calendar is None:
         pick_calendar = tk_pick_calendar
+    if settings_store is None:
+        settings_store = _default_settings_store()
+    if wizard_store is None:
+        wizard_store = _default_wizard_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
             (resolved, bind_port), sessions, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
-            activity_log, skill_store, settings_store, plugins, pick_calendar,
+            activity_log, skill_store, settings_store, plugins, pick_calendar, wizard_store,
         )
 
     if port is None:
@@ -1427,6 +1669,18 @@ def _default_inbox_store() -> InboxStore | None:
         return InboxStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("inbox unavailable")
+        return None
+
+
+def _default_wizard_store() -> WizardStore | None:
+    """Wizard sessions over the persistent store, or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "wizard.sqlite3", check_same_thread=False)
+        return WizardStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("wizard store unavailable")
         return None
 
 

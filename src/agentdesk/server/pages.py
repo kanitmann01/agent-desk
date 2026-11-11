@@ -83,6 +83,7 @@ svg{display:block;flex:none}
 .origin-why{color:var(--ink-2);font-size:13px;border-top:1px solid var(--hairline);padding-top:8px}
 .widget h3{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
 .cardrow{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
+.addplugin-form{display:inline-flex;margin:0}
 .w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12.5px;color:var(--ink-3)}
 .settings-skill{margin-bottom:12px}
@@ -574,7 +575,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     <h1>{html.escape(greeting)}</h1>
     <p class="sub"><span class="{dot_class}" aria-hidden="true"></span>{html.escape(date_line)} {html.escape(source_line)}</p>
   </div>
-  <button class="btn btn-primary" disabled title="The plugin wizard arrives in a later build.">Add plugin</button>
+  <form method="post" action="/wizard/start" class="addplugin-form"><button class="btn btn-primary" type="submit">Add plugin</button></form>
 </div>
 {strip}
 <section class="grid" aria-label="Dashboard">
