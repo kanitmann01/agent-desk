@@ -25,8 +25,7 @@ from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import assistant_reply, research
-from agentdesk.calendar.watcher import STATE_EMPTY, CalendarBridge, default_read_calendar
-from agentdesk.excel import store as excel_store
+from agentdesk.calendar.watcher import STATE_EMPTY, CalendarBridge
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import UnknownCard
