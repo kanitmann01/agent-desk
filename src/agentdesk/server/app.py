@@ -31,11 +31,15 @@ from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import UnknownCard
 from agentdesk.inbox.store import InboxStore
 from agentdesk.llm import env_chat, env_config
+from agentdesk.repetition.activity import ActivityLog
+from agentdesk.repetition.service import Consolidator
+from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.commitments import render_commitments_widget
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
+from agentdesk.server.settings_view import render_settings_page
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     PREFERRED_PORT,
@@ -128,6 +132,8 @@ class AgentDeskServer(ThreadingHTTPServer):
         llm_endpoint: str | None = None,
         llm_model: str | None = None,
         inbox_store: InboxStore | None = None,
+        activity_log: ActivityLog | None = None,
+        skill_store: SkillStore | None = None,
     ) -> None:
         self.sessions = sessions
         self.sources = sources if sources is not None else default_sources()
@@ -140,6 +146,13 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.llm_endpoint = llm_endpoint if llm_endpoint is not None else env_endpoint
         self.llm_model = llm_model if llm_model is not None else env_model
         self.inbox = inbox_store
+        self.activity_log = activity_log
+        self.skills = skill_store
+        self.consolidator = (
+            Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
+            if activity_log is not None and inbox_store is not None and skill_store is not None
+            else None
+        )
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -239,6 +252,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_inbox_page()
         elif path == "/widgets/inbox":
             self._send_inbox_count()
+        elif path == "/settings":
+            self._send_settings_page()
+        elif path.startswith("/skills/") and path.endswith("/skill.md"):
+            self._send_skill_markdown(int(path[len("/skills/"):-len("/skill.md")].strip("/")))
         elif path == "/audit/tail":
             self._send_audit_tail()
         elif path == "/audit/export.csv":
@@ -309,6 +326,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not isinstance(question, str) or not question.strip():
                 self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
                 return
+            self._log_activity("research", question.strip())
             self._send_json(200, self._run_llm_turn(
                 question.strip(), summary_mode=True).to_json())
         elif path == "/inbox/cards":
@@ -337,11 +355,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._inbox_decide(path[len("/inbox/cards/"):-len("/dismiss")], "dismiss")
         elif path.startswith("/inbox/dismissed/") and path.endswith("/restore"):
             self._inbox_restore(path[len("/inbox/dismissed/"):-len("/restore")])
+        elif path == "/inbox/consolidate":
+            if self.server.consolidator is None:  # type: ignore[attr-defined]
+                self._send_json(503, {"error": "the repetition detector is not available"})
+                return
+            self._send_json(200, self.server.consolidator.consolidate())  # type: ignore[attr-defined]
+        elif path.startswith("/skills/") and path.endswith("/run"):
+            self._skill_run(int(path[len("/skills/"):-len("/run")].strip("/")))
+        elif path.startswith("/skills/") and path.endswith("/undo"):
+            self._skill_undo(int(path[len("/skills/"):-len("/undo")].strip("/")))
         elif path == "/assistant/ask":
             question = self._ask_question_from_body()
             if not question:
                 self._send_json(400, {"error": "expected a question"})
                 return
+            self._log_activity("assistant", question)
             answer = self._run_llm_turn(question, summary_mode=False)
             if self.server.audit_conn is not None:  # type: ignore[attr-defined]
                 threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
@@ -451,12 +479,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         widgets.append(render_research_widget(last_answer, now))
         widgets.append(demo["region-mix"])
         inbox = self.server.inbox  # type: ignore[attr-defined]
+        skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
         page = pages.render_dashboard(
             widgets,
             agentdesk.__version__,
             _greeting(now),
             now.strftime("%A, %d %B, %H:%M. "),
             inbox_count=len(inbox.waiting()) if inbox is not None else 0,
+            skills=skills,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -496,6 +526,60 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_store.csv_bytes(self.server.audit_conn),  # type: ignore[attr-defined]
             "text/csv; charset=utf-8",
         )
+
+    def _log_activity(self, kind: str, text: str) -> None:
+        """App-mediated asks only: this is the repetition detector's diet."""
+        if self.server.activity_log is not None:  # type: ignore[attr-defined]
+            self.server.activity_log.record(kind, text)  # type: ignore[attr-defined]
+
+    def _send_settings_page(self) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        entries = server.activity_log.entries() if server.activity_log is not None else []
+        skills = server.skills.active() if server.skills is not None else []
+        histories = {s["id"]: server.skills.history(s["id"]) for s in skills}
+        page = render_settings_page(entries, skills, histories, agentdesk.__version__)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _skill_run(self, skill_id: int) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        if server.skills is None:
+            self._send_json(503, {"error": "skills are not available"})
+            return
+        skill = server.skills.get(skill_id)
+        if skill is None or not skill["active"]:
+            self._send_json(409, {"error": "that skill is not active"})
+            return
+        context = build_context(
+            server.excel.status() if server.excel is not None else None,
+            server.calendar.status() if server.calendar is not None else None,
+        )
+        answer = research(
+            skill["prompt"], context, llm=server.llm, audit_conn=server.audit_conn,
+            endpoint=server.llm_endpoint, model=server.llm_model,
+        )
+        self._send_json(200, answer.to_json())
+
+    def _skill_undo(self, skill_id: int) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        if server.skills is None:
+            self._send_json(503, {"error": "skills are not available"})
+            return
+        try:
+            self._send_json(200, server.skills.deactivate(skill_id))  # type: ignore[attr-defined]
+        except SkillError as exc:
+            self._send_json(404, {"error": str(exc)})
+
+    def _send_skill_markdown(self, skill_id: int) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        if server.skills is None:
+            self._send_json(503, {"error": "skills are not available"})
+            return
+        try:
+            markdown = server.skills.markdown(skill_id)  # type: ignore[attr-defined]
+        except SkillError as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._send_bytes(200, markdown.encode("utf-8"), "text/plain; charset=utf-8")
 
     def _send_touches_page(self) -> None:
         observed: set[str] = set()
@@ -537,7 +621,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except UnknownCard as exc:
             self._send_json(404, {"error": str(exc)})
             return
+        if card.kind == "skill_proposal":
+            self._on_skill_proposal_decided(card, decision)
         self._send_json(200, card.to_json(inbox.now_ts()))
+
+    def _on_skill_proposal_decided(self, card, decision: str) -> None:
+        """Accepting activates the skill; dismissing cools the pattern down."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.skills is None or server.consolidator is None:
+            return
+        if decision == "accept":
+            try:
+                server.skills.activate(
+                    name=card.meta.get("skillName", card.title),
+                    description=f"{card.title}: {card.origin}"[:1024],
+                    prompt=card.meta.get("prompt", card.title),
+                )
+            except SkillError as exc:
+                LOG.warning("skill activation failed: %s", exc)
+        else:
+            pattern = card.meta.get("patternHash")
+            if pattern:
+                server.consolidator.dismiss_cooldown(pattern)
 
     def _inbox_restore(self, card_id: str) -> None:
         inbox = self.server.inbox  # type: ignore[attr-defined]
@@ -602,12 +707,14 @@ def create_server(
     sources: list[SourceStatus] | None = None,
     excel: ExcelWatch | None = None,
     pick_workbook=None,
-    calendar: CalendarBridge | None = None,
+        calendar: CalendarBridge | None = None,
         llm=None,
         audit_conn=None,
         llm_endpoint: str | None = None,
         llm_model: str | None = None,
         inbox_store: InboxStore | None = None,
+        activity_log: ActivityLog | None = None,
+        skill_store: SkillStore | None = None,
     ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -631,6 +738,12 @@ def create_server(
         audit_conn = _default_audit_conn()
     if inbox_store is None:
         inbox_store = _default_inbox_store()
+    if activity_log is None or skill_store is None:
+        repetition = _default_repetition_stores()
+        if activity_log is None:
+            activity_log = repetition[0]
+        if skill_store is None:
+            skill_store = repetition[1]
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
 
@@ -638,6 +751,7 @@ def create_server(
         return AgentDeskServer(
             (resolved, bind_port), sessions, sources, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
+            activity_log, skill_store,
         )
 
     if port is None:
@@ -723,6 +837,18 @@ def _default_inbox_store() -> InboxStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("inbox unavailable")
         return None
+
+
+def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]:
+    """The activity log and skill store over one file, or Nones."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "repetition.sqlite3", check_same_thread=False)
+        return ActivityLog(conn, time.time), SkillStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("repetition stores unavailable")
+        return None, None
 
 
 def default_calendar_hint() -> Path:

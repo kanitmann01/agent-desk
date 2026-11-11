@@ -83,6 +83,11 @@ svg{display:block;flex:none}
 .origin-why{color:var(--ink-2);font-size:13px;border-top:1px solid var(--hairline);padding-top:8px}
 .widget h3{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
 .cardrow{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
+.settings-skill{margin-bottom:12px}
+.skill-name{font-size:14.5px}
+.skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.skills-strip .skill-btn{background:var(--surface);color:var(--ink-1);border-radius:var(--r-control);box-shadow:inset 0 0 0 1px var(--hairline),var(--shadow-card);padding:8px 14px;font-weight:700;font-size:13px;transition:background var(--dur) ease}
+.skills-strip .skill-btn:hover{background:var(--surface-2)}
 .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
 .rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
@@ -259,6 +264,33 @@ document.querySelectorAll('[data-restore]').forEach(function (btn) {
   });
 });
 
+// Skills: one click re-runs the saved ask; undo is on the settings page.
+document.querySelectorAll('[data-skill-run]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var answerBox = document.getElementById('research-answer');
+    var status = document.getElementById('research-status');
+    if (status) status.textContent = 'Running the saved ask';
+    post('/skills/' + btn.dataset.skillRun + '/run').then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (status) status.textContent = '';
+        if (!answerBox) return;
+        answerBox.hidden = false;
+        answerBox.innerHTML = '';
+        var head = document.createElement('div');
+        head.className = 'aq';
+        head.textContent = d.status === 'ok' ? 'Skill result' : 'Skill unavailable';
+        answerBox.appendChild(head);
+        answerBox.appendChild(document.createTextNode(
+          d.status === 'ok' ? (d.summary || d.reply || '') : (d.cause || '')));
+      });
+  });
+});
+document.querySelectorAll('[data-skill-undo]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/skills/' + btn.dataset.skillUndo + '/undo').then(function () { location.reload(); });
+  });
+});
+
 // Commitment subtasks: the click is the truth; the app persists it.
 document.querySelectorAll('[data-check]').forEach(function (el) {
   var flip = function () {
@@ -363,17 +395,24 @@ def _rail(inbox_count: int = 0) -> str:
         f'<a href="/" aria-current="page">{_ICON_DASHBOARD}Dashboard</a>'
         f'<a href="/inbox">{_ICON_INBOX}Inbox{badge}</a>'
         f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_PLUGINS}Plugins</span>'
-        f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_SETTINGS}Settings</span>'
+        f'<a href="/settings">{_ICON_SETTINGS}Settings</a>'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
     )
 
 
-def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0) -> str:
-    """The full dashboard document: rail, greeting, sample widgets, footer."""
+def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None) -> str:
+    """The full dashboard document: rail, greeting, skills, widgets, footer."""
     cards = "".join(_widget_html(w) for w in widgets)
     esc_version = html.escape(version)
+    strip = ""
+    if skills:
+        buttons = "".join(
+            f"<button class='skill-btn' data-skill-run='{s['id']}'>{html.escape(s['name'])}</button>"
+            for s in skills
+        )
+        strip = f"<div class='skills-strip' aria-label='Your skills'>{buttons}</div>"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -393,6 +432,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
   </div>
   <button class="btn btn-primary" disabled title="The plugin wizard arrives in a later build.">Add plugin</button>
 </div>
+{strip}
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
