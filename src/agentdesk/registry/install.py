@@ -1,0 +1,229 @@
+"""Pinned installation from the registry.
+
+The client resolves its lockfile pin against the index, checks out the
+pinned tag through ``git archive``, verifies the extracted tree digest
+against the pin, runs the shared validator, and only then installs into
+a versioned directory. Any refusal carries a named code, validator
+style.
+"""
+from __future__ import annotations
+
+import hashlib
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from .index import PluginEntry, Release, RegistryIndex, RegistryIndexError, load_index
+
+
+class RegistryError(Exception):
+    """A named install refusal: ``code`` is the stable vocabulary."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class Pin:
+    version: str
+    sha256: str | None = None
+
+
+def tree_digest(plugin_dir: Path) -> str:
+    """sha256 over sorted relpaths and file bytes: the release pin."""
+    digest = hashlib.sha256()
+    for path in sorted(Path(plugin_dir).rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(plugin_dir).as_posix()
+        digest.update(rel.encode("utf-8") + b"\n")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def resolve(index: RegistryIndex, plugin_id: str,
+            version: str, sha256: str | None = None) -> tuple[PluginEntry, Release]:
+    """Resolve a client pin against the index. Old pins keep resolving:
+    releases are append-only history, and a pinned sha256 resolves even
+    when the release is yanked, because the client already has it."""
+    _require_safe_name(plugin_id, "plugin id")
+    _require_safe_name(version, "version")
+    entry = index.plugin(plugin_id)
+    if entry is None:
+        raise RegistryError("install:unknown-plugin", f"no plugin {plugin_id}")
+    release = entry.release_for(version)
+    if release is None:
+        raise RegistryError("install:unknown-version",
+                            f"{plugin_id} has no release {version}")
+    if sha256 is not None and release.sha256 != sha256:
+        raise RegistryError("install:hash-mismatch",
+                            f"pin {sha256[:12]} does not match release "
+                            f"{release.sha256[:12]}")
+    if release.yanked and release.sha256 != sha256:
+        raise RegistryError("install:yanked",
+                            f"{plugin_id} {version} is yanked")
+    return entry, release
+
+
+def _require_safe_name(value: str, what: str) -> None:
+    """Defense in depth: the index validates names too, but nothing that
+    becomes a filesystem path may rely on the caller having validated it."""
+    if (not value or "/" in value or "\\" in value or value.startswith("-")
+            or ".." in value):
+        raise RegistryError("install:unsafe-name",
+                            f"{what} is not a safe name: {value[:40]!r}")
+
+
+def _archive_plugin(registry_root: Path, tag: str, plugin_prefix: str,
+                    destination: Path) -> None:
+    """Extract plugins/<id> at ``tag`` via git archive into destination."""
+    result = subprocess.run(
+        ["git", "-C", str(registry_root), "archive", tag, "--", plugin_prefix],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RegistryError("install:tag-missing",
+                            f"tag {tag} is not readable in the registry")
+    with tempfile.TemporaryDirectory() as tmp:
+        tar_path = Path(tmp) / "archive.tar"
+        tar_path.write_bytes(result.stdout)
+        with tarfile.open(tar_path) as archive:
+            _safe_extractall(archive, tmp)
+        source = Path(tmp) / plugin_prefix
+        if not source.is_dir():
+            raise RegistryError("install:tag-missing",
+                                f"tag {tag} has no {plugin_prefix}")
+        shutil.copytree(source, destination)
+
+
+def install_from_registry(registry_root: Path | str, plugin_id: str, *,
+                          version: str, sha256: str | None = None,
+                          destination: Path | str) -> dict:
+    """Install one pinned release. Returns the install record."""
+    _require_safe_name(plugin_id, "plugin id")
+    _require_safe_name(version, "version")
+    registry_root = Path(registry_root)
+    destination = Path(destination)
+    try:
+        index = load_index((registry_root / "index.json").read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RegistryError("install:index-unreadable", str(exc)) from exc
+    entry, release = resolve(index, plugin_id, version, sha256)
+
+    plugin_prefix = f"plugins/{plugin_id}"
+    installed = destination / f"{plugin_id}-{version}"
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        staged = Path(tmp) / "plugin"
+        _archive_plugin(registry_root, release.tag, plugin_prefix, staged)
+        actual = tree_digest(staged)
+        if actual != release.sha256:
+            raise RegistryError(
+                "install:hash-mismatch",
+                f"content sha256 {actual[:12]} does not match the pinned "
+                f"{release.sha256[:12]}")
+        from agentdesk.validator.core import validate_plugin
+        verdict = validate_plugin(staged)
+        if not verdict.ok:
+            first = verdict.failures[0]
+            raise RegistryError("install:validator-failed",
+                                f"{first.code}: {first.message}")
+        if installed.exists():
+            shutil.rmtree(installed)
+        shutil.copytree(staged, installed)
+    _write_lock(destination, plugin_id, version, release.sha256)
+    return {
+        "ok": True,
+        "plugin": plugin_id,
+        "version": version,
+        "sha256": release.sha256,
+        "path": str(installed),
+    }
+
+
+# -- the client lockfile: the pointer that rollback repoints -------------
+
+LOCK_NAME = "lock.json"
+
+
+def _write_lock(destination: Path, plugin_id: str, version: str, sha256: str) -> dict:
+    """Record the installed release in the client's lockfile.
+
+    The lock is the pointer: ``version`` is what the client uses, and the
+    ``history`` map is what rollback repoints to. Imports stay local so
+    the module loads without touching the filesystem at import time.
+    """
+    import json
+
+    lock_path = destination / LOCK_NAME
+    lock: dict = {}
+    if lock_path.is_file():
+        try:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            lock = {}
+    entry = lock.setdefault("plugins", {}).setdefault(plugin_id, {"history": {}})
+    entry["version"] = version
+    entry["sha256"] = sha256
+    entry["history"][version] = sha256
+    lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n",
+                         encoding="utf-8")
+    return entry
+
+
+def read_lock(destination: Path | str, plugin_id: str) -> dict | None:
+    """The lock entry for one plugin, or None when it is not installed."""
+    import json
+
+    lock_path = Path(destination) / LOCK_NAME
+    if not lock_path.is_file():
+        return None
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    return lock.get("plugins", {}).get(plugin_id)
+
+
+def rollback(destination: Path | str, plugin_id: str, *, to_version: str) -> dict:
+    """Repoint the lock at an already-installed older version.
+
+    Rollback is metadata: the versioned directory is already on disk, so
+    going back is one lock write, not a re-download.
+    """
+    _require_safe_name(plugin_id, "plugin id")
+    _require_safe_name(to_version, "version")
+    destination = Path(destination)
+    prior_dir = destination / f"{plugin_id}-{to_version}"
+    if not prior_dir.is_dir():
+        raise RegistryError("rollback:version-not-installed",
+                            f"{plugin_id} {to_version} is not installed here")
+    import json
+
+    lock_path = destination / LOCK_NAME
+    lock = json.loads(lock_path.read_text(encoding="utf-8")) if lock_path.is_file() else {}
+    entry = lock.get("plugins", {}).get(plugin_id)
+    if entry is None or to_version not in entry.get("history", {}):
+        raise RegistryError("rollback:unknown-pin",
+                            f"no lockfile pin for {plugin_id} {to_version}")
+    entry["version"] = to_version
+    entry["sha256"] = entry["history"][to_version]
+    lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n",
+                         encoding="utf-8")
+    return {"ok": True, "plugin": plugin_id, "version": to_version,
+            "sha256": entry["sha256"]}
+
+
+def _safe_extractall(archive: tarfile.TarFile, destination: str) -> None:
+    """Extract with the data filter where the runtime has one, and with an
+    explicit member check where it does not (older 3.10/3.11 patches)."""
+    if hasattr(tarfile, "data_filter"):
+        archive.extractall(destination, filter="data")
+        return
+    dest = Path(destination).resolve()
+    for member in archive.getmembers():
+        target = (dest / member.name).resolve()
+        if not str(target).startswith(str(dest)) or member.name.startswith("/") or ".." in member.name.split("/"):
+            raise RegistryError("install:unsafe-archive-member", member.name)
+    archive.extractall(destination)
