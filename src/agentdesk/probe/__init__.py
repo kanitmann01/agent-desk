@@ -9,8 +9,8 @@ from agentdesk.probe.core import (
     GATE_EDR,
     GATE_EXEC,
     GATE_FLOW,
-    GATE_ONEDRIVE,
     GATE_KEYS,
+    GATE_ONEDRIVE,
     GATE_UV,
     PASS,
     UNKNOWN,
@@ -21,6 +21,7 @@ from agentdesk.probe.core import (
     VERDICT_GO,
     VERDICT_NO_GO,
     VERDICT_RESHAPE,
+    Verdict,
 )
 from agentdesk.probe.gates import (
     gate_edr_identity,
@@ -29,6 +30,7 @@ from agentdesk.probe.gates import (
     gate_power_automate,
     gate_uv_tls_bootstrap,
 )
+from agentdesk.probe.verdict import aggregate_verdict, verdict_line
 
 __all__ = [
     "EXIT_GO",
@@ -44,14 +46,19 @@ __all__ = [
     "GATE_UV",
     "PASS",
     "UNKNOWN",
+    "VERDICT_GO",
+    "VERDICT_NO_GO",
+    "VERDICT_RESHAPE",
     "GateResult",
     "OneDriveInfo",
     "ReachResult",
     "RunResult",
-    "VERDICT_GO",
-    "VERDICT_NO_GO",
-    "VERDICT_RESHAPE",
+    "Verdict",
+    "aggregate_verdict",
+    "gate_edr_identity",
     "gate_exec_user_space",
+    "gate_onedrive",
     "gate_power_automate",
     "gate_uv_tls_bootstrap",
+    "verdict_line",
 ]
