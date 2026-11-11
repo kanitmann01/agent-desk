@@ -12,6 +12,8 @@ import json
 import logging
 import os
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -88,31 +90,55 @@ def default_data_dir() -> Path:
     return Path(Path.home(), ".agent-desk")
 
 
-def tk_pick_workbook() -> str | None:
-    """The native file dialog, one fresh Tk root per call.
+# The workbook dialog runs in a child interpreter, not in this process.
+# Tk must own the main thread on macOS, and the server's request threads
+# are workers; a fresh process sidesteps the threading rules on both
+# platforms. The child prints the chosen path, or an empty line when the
+# dialog is cancelled or Tk is unusable, so the parent only parses stdout.
+_PICKER_SNIPPET = """\
+import sys
 
-    Runs in the calling (worker) thread with its own root, which Windows
-    tolerates for a one-shot dialog. Any failure answers None: the UI
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)  # keep the dialog in front on Windows
+    chosen = filedialog.askopenfilename(
+        title="Choose the sales workbook",
+        filetypes=[
+            ("Excel workbooks", "*.xlsx *.xlsm *.xlsb"),
+            ("All files", "*.*"),
+        ],
+    )
+    root.destroy()
+except Exception:
+    chosen = ""
+print(chosen)
+"""
+
+
+def tk_pick_workbook() -> str | None:
+    """The native file dialog, one child process per call.
+
+    The child does the Tk work (it gets a fresh main thread to itself);
+    the parent reads its stdout and never imports Tk. Any failure,
+    including a cancelled dialog (empty output), answers None: the UI
     treats it as cancelled rather than breaking the flow.
     """
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            chosen = filedialog.askopenfilename(
-                title="Choose the sales workbook",
-                filetypes=[("Excel workbooks", "*.xlsx"), ("All files", "*.*")],
-            )
-        finally:
-            root.destroy()
-        return chosen or None
+        completed = subprocess.run(
+            [sys.executable, "-c", _PICKER_SNIPPET],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     except Exception:  # noqa: BLE001 - a broken dialog must not break the app
         LOG.exception("workbook picker failed")
         return None
+    chosen = (completed.stdout or "").strip()
+    return chosen or None
 
 
 class AgentDeskServer(ThreadingHTTPServer):
