@@ -1,5 +1,7 @@
 """Manifest schema rules: required keys, types, unknown keys, manifest file."""
 
+import copy
+
 from .test_validator_support import VALID_MANIFEST, write_plugin
 from agentdesk.validator import validate_plugin
 
@@ -10,6 +12,11 @@ def failures(verdict):
 
 def codes(verdict):
     return [f.code for f in verdict.failures]
+
+
+def manifest_copy():
+    """A deep copy of the valid manifest, safe to mutate in a test."""
+    return copy.deepcopy(VALID_MANIFEST)
 
 
 def test_missing_required_key_is_bad_schema(tmp_path):
@@ -144,7 +151,7 @@ def test_license_allowlist_accepts_all_five(tmp_path):
 
 
 def test_permissions_without_shell_key_is_bad_schema(tmp_path):
-    manifest = {**VALID_MANIFEST}
+    manifest = manifest_copy()
     del manifest["permissions"]["shell"]
 
     verdict = validate_plugin(write_plugin(tmp_path, manifest))
@@ -153,7 +160,7 @@ def test_permissions_without_shell_key_is_bad_schema(tmp_path):
 
 
 def test_unscoped_write_glob_is_unscoped_filesystem(tmp_path):
-    manifest = {**VALID_MANIFEST}
+    manifest = manifest_copy()
     manifest["permissions"]["filesystem"]["write"] = ["${home}/agent/out"]
 
     verdict = validate_plugin(write_plugin(tmp_path, manifest))
@@ -165,7 +172,7 @@ def test_unscoped_write_glob_is_unscoped_filesystem(tmp_path):
 
 
 def test_approved_filesystem_roots_pass(tmp_path):
-    manifest = {**VALID_MANIFEST}
+    manifest = manifest_copy()
     manifest["permissions"]["filesystem"] = {
         "read": ["${workspace}/reports/*.xlsx", "${workspace}/notes.txt"],
         "write": ["${pluginData}", "${pluginData}/cache/*.json"],
@@ -177,7 +184,7 @@ def test_approved_filesystem_roots_pass(tmp_path):
 
 
 def test_non_string_glob_entry_is_bad_schema(tmp_path):
-    manifest = {**VALID_MANIFEST}
+    manifest = manifest_copy()
     manifest["permissions"]["filesystem"]["read"] = [42]
 
     verdict = validate_plugin(write_plugin(tmp_path, manifest))
@@ -189,7 +196,7 @@ def test_non_string_glob_entry_is_bad_schema(tmp_path):
 
 
 def test_nonempty_network_allow_in_permissions_is_over_permission(tmp_path):
-    manifest = {**VALID_MANIFEST}
+    manifest = manifest_copy()
     manifest["permissions"]["network"]["allow"] = ["https://api.example.com/*"]
 
     verdict = validate_plugin(write_plugin(tmp_path, manifest))

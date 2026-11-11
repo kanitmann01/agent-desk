@@ -32,3 +32,12 @@ def test_unscoped_filesystem_fixture_fails_with_named_reason():
     assert verdict.failures[0].message == (
         "filesystem glob not rooted under ${workspace}/ or ${pluginData}: reports/*.xlsx"
     )
+
+
+def test_plugin_html_fixture_fails_with_named_reason():
+    verdict = validate_plugin(fixture("plugin-html"))
+
+    assert codes(verdict) == ["plugin-html"]
+    assert verdict.failures[0].message == (
+        "render must not contain plugin-supplied keys: template"
+    )

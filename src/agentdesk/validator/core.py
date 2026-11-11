@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .lint import validate_permission_lint
 from .model import Failure, Verdict
-from .reader import MANIFEST_NAME, ValidatorIOError
+from .reader import MANIFEST_NAME, DirectoryReader, ValidatorIOError
 from .schema import validate_schema
 
 _FAILURE_CODE_ORDER = (
@@ -60,6 +60,7 @@ def validate_plugin(path) -> Verdict:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return Verdict((Failure("bad-json", f"{MANIFEST_NAME} is not valid JSON: {exc}"),))
 
+    reader = DirectoryReader(root)
     failures = validate_schema(manifest)
-    failures.extend(validate_permission_lint(manifest))
+    failures.extend(validate_permission_lint(manifest, reader))
     return Verdict(_sorted_failures(failures))

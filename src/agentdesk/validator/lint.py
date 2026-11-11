@@ -4,6 +4,8 @@ Class D plugins get no shell, no unscoped filesystem globs, no network in
 base permissions, and no plugin-supplied HTML or script.
 """
 
+import json
+
 from .model import Failure
 
 
@@ -11,7 +13,7 @@ WORKSPACE_ROOT = "${workspace}/"
 PLUGIN_DATA_ROOT = "${pluginData}"
 
 
-def validate_permission_lint(manifest) -> list[Failure]:
+def validate_permission_lint(manifest, reader) -> list[Failure]:
     """Return every permission-lint failure for the manifest."""
     failures: list[Failure] = []
     if not isinstance(manifest, dict):
@@ -22,6 +24,8 @@ def validate_permission_lint(manifest) -> list[Failure]:
         failures.extend(_validate_shell(permissions))
         failures.extend(_validate_filesystem_scoping(permissions))
         failures.extend(_validate_network_allow(permissions))
+
+    failures.extend(_validate_render(manifest, reader))
 
     return failures
 
@@ -81,6 +85,81 @@ def _validate_network_allow(permissions) -> list[Failure]:
             )
         ]
     return []
+
+
+def _validate_render(manifest, reader) -> list[Failure]:
+    """Reject plugin-supplied HTML and check each widget's ui-schema file.
+
+    The schema only accepts "type": "ui-schema" pointing at a .json file
+    that parses as a JSON object with at least "type": "card".
+    """
+    failures: list[Failure] = []
+    contributes = manifest.get("contributes")
+    if not isinstance(contributes, dict):
+        return failures
+    widgets = contributes.get("widgets")
+    if not isinstance(widgets, list):
+        return failures
+
+    for widget in widgets:
+        if not isinstance(widget, dict):
+            failures.append(Failure("bad-schema", "each widget must be an object"))
+            continue
+        render = widget.get("render")
+        if not isinstance(render, dict):
+            failures.append(Failure("bad-schema", "widget render must be an object"))
+            continue
+        failures.extend(_validate_render_entry(render, reader))
+    return failures
+
+
+def _validate_render_entry(render, reader) -> list[Failure]:
+    failures: list[Failure] = []
+
+    for banned_key in ("template", "html"):
+        if banned_key in render:
+            failures.append(
+                Failure("plugin-html", f"render must not contain plugin-supplied keys: {banned_key}")
+            )
+
+    render_type = render.get("type")
+    if render_type != "ui-schema":
+        failures.append(
+            Failure("plugin-html", f'render.type must be "ui-schema", got "{render_type}"')
+        )
+        return failures
+
+    render_file = render.get("file")
+    if not isinstance(render_file, str):
+        failures.append(
+            Failure("plugin-html", "render.file must be a string ending with .json")
+        )
+        return failures
+    if not render_file.endswith(".json"):
+        failures.append(
+            Failure("plugin-html", f'render.file must end with .json, got "{render_file}"')
+        )
+        return failures
+
+    content = reader.read_bytes(render_file)
+    if content is None:
+        failures.append(Failure("missing-file", f"ui-schema file not found: {render_file}"))
+        return failures
+    try:
+        ui_schema = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        failures.append(
+            Failure("bad-json", f"ui-schema file {render_file} is not valid JSON: {exc}")
+        )
+        return failures
+    if not isinstance(ui_schema, dict) or ui_schema.get("type") != "card":
+        failures.append(
+            Failure(
+                "bad-json",
+                f'ui-schema file {render_file} must be a JSON object with "type": "card"',
+            )
+        )
+    return failures
 
 
 def _validate_shell(permissions) -> list[Failure]:

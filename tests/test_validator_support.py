@@ -5,6 +5,7 @@ can import ``agentdesk.validator`` without installing the package. It also
 provides helpers that run the validator CLI in a subprocess.
 """
 
+import copy
 import json
 import os
 import subprocess
@@ -36,7 +37,7 @@ def write_plugin(dest: Path, manifest=None, files: dict | None = None) -> Path:
     """
     dest.mkdir(parents=True, exist_ok=True)
     manifest_text = json.dumps(
-        VALID_MANIFEST if manifest is None else manifest, indent=2
+        copy.deepcopy(VALID_MANIFEST if manifest is None else manifest), indent=2
     )
     (dest / "manifest.json").write_text(manifest_text, encoding="utf-8")
     (dest / "widget.ui.json").write_text(
