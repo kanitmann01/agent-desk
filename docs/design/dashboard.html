@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Desk, design mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F6F4EF; --surface:#FFFFFF; --surface-2:#FBFAF7;
+    --ink-1:#1F2A27; --ink-2:#4C5A55; --ink-3:#77847E; --ink-4:#A9B1AC;
+    --hairline:#E5E1D6;
+    --shadow-card:0 0 0 1px rgba(31,42,39,.05),0 1px 2px -1px rgba(31,42,39,.06),0 2px 4px 0 rgba(31,42,39,.04);
+    --shadow-card-hover:0 0 0 1px rgba(31,42,39,.07),0 1px 2px -1px rgba(31,42,39,.08),0 2px 4px 0 rgba(31,42,39,.06);
+    --primary:#14594E; --primary-ink:#F6FBF9; --primary-soft:#E4EEE9;
+    --good:#14594E; --bad:#B3402A;
+    --attention-bg:#FBF3E2; --attention-ink:#8A5A14;
+    --r-card:12px; --r-control:8px; --r-inner:6px; --dur:160ms;
+    --font-ui:"Plus Jakarta Sans",-apple-system,"Segoe UI",sans-serif;
+    --font-mono:"IBM Plex Mono","Consolas",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+  svg{display:block;flex:none}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+
+  .app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+
+  /* ---------- rail ---------- */
+  .rail{border-right:1px solid var(--hairline);background:var(--surface-2);padding:20px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+  .brand .mark{width:28px;height:28px;border-radius:8px;background:var(--primary);display:grid;place-items:center;color:var(--primary-ink)}
+  .brand b{font-size:14px;font-weight:800;letter-spacing:-.01em}
+  .rail a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
+  .rail a:hover{background:#EFEDE5;color:var(--ink-1)}
+  .rail a[aria-current="page"]{background:var(--primary-soft);color:var(--primary)}
+  .rail .count{margin-left:auto;font-family:var(--font-mono);font-size:11px;font-weight:600;background:var(--primary);color:var(--primary-ink);border-radius:999px;padding:1px 7px}
+  .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
+  .rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
+  .rail .user small{display:block;color:var(--ink-3);font-weight:400}
+
+  /* ---------- main ---------- */
+  main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
+  .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+  .topbar h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+  .topbar .sub{color:var(--ink-2);margin-top:2px;display:flex;align-items:center;gap:8px}
+  .dot{width:7px;height:7px;border-radius:999px;background:var(--good);display:inline-block}
+  .dot.amber{background:var(--attention-ink)}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+  .btn-primary{background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card)}
+  .btn-primary:hover{background:#115046}
+  .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
+  .btn-secondary:hover{background:var(--surface-2)}
+  .btn-ghost{color:var(--ink-2);padding:8px 10px}
+  .btn-ghost:hover{background:#EFEDE5;color:var(--ink-1)}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
+  .icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
+
+  /* ---------- view switcher ---------- */
+  .views{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:4px;width:max-content;margin-bottom:24px}
+  .views button{padding:6px 14px;border-radius:var(--r-inner);font-weight:700;color:var(--ink-2);font-size:13px}
+  .views button[aria-selected="true"]{background:var(--surface);color:var(--ink-1);box-shadow:var(--shadow-card)}
+  .views .mini-count{font-family:var(--font-mono);font-size:11px;margin-left:6px;color:var(--ink-3)}
+
+  /* ---------- widgets ---------- */
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+  .widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
+  .widget:hover{box-shadow:var(--shadow-card-hover)}
+  .col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
+  .w-head{display:flex;align-items:center;gap:10px}
+  .w-head h2{font-size:16px;font-weight:800;letter-spacing:-.01em}
+  .stamp{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);font-weight:600}
+  .w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
+  .w-foot a{margin-left:auto;color:var(--primary);font-weight:700;text-decoration:none}
+  .w-foot a:hover{text-decoration:underline}
+
+  .kpi{display:flex;gap:24px;align-items:flex-start}
+  .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+  .kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px}
+  .kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
+  .spark{margin-left:auto;text-align:right}
+  .spark figcaption{font-size:11px;color:var(--ink-4);margin-top:4px}
+
+  table.rows{width:100%;border-collapse:collapse;font-size:13px}
+  table.rows th{text-align:left;font-size:11px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline)}
+  table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline)}
+  table.rows tr:last-child td{border-bottom:none}
+  table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .delta{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:12px;font-weight:600}
+  .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+
+  .event{display:flex;gap:12px;background:var(--surface-2);border-radius:var(--r-inner);padding:12px}
+  .event .when{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;padding-top:2px}
+  .event b{display:block}
+  .event small{color:var(--ink-3)}
+  .subhead{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+  .check{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13.5px}
+  .check .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-4);display:grid;place-items:center;color:transparent;transition:all var(--dur) ease;margin-top:1px}
+  .check[aria-checked="true"] .box{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+  .check[aria-checked="true"] span{text-decoration:line-through;color:var(--ink-3)}
+  .follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600}
+
+  .well{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
+  .well .q{flex:1;color:var(--ink-3)}
+  .answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px}
+  .answer .aq{font-weight:700;margin-bottom:6px}
+  .src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
+  .tag-sample{font-size:10px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.08em}
+
+  .widget.amber{background:linear-gradient(0deg,rgba(154,98,21,.03),rgba(154,98,21,.03)),var(--surface)}
+  .alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:13.5px}
+  .badge-pilot{font-size:11px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
+
+  /* ---------- inbox ---------- */
+  .inbox{display:flex;flex-direction:column;gap:16px;max-width:760px}
+  .card{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px;display:flex;flex-direction:column;gap:10px;transition:opacity 240ms ease,transform 240ms ease}
+  .card.fading{opacity:0;transform:translateY(4px)}
+  .origin{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.06em}
+  .card h3{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+  .card p{color:var(--ink-2);font-size:13.5px}
+  .card ul{margin:0;padding-left:18px;color:var(--ink-2);font-size:13.5px;display:flex;flex-direction:column;gap:4px}
+  .card .actions{display:flex;align-items:center;gap:10px;margin-top:4px}
+  .card .actions .why{margin-left:auto;font-size:12.5px;color:var(--primary);font-weight:700}
+  .card .actions .why:hover{text-decoration:underline}
+  .diff{background:var(--surface-2);border-radius:var(--r-inner);padding:10px 12px;font-family:var(--font-mono);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+  .diff .add{color:var(--good)} .diff .same{color:var(--ink-4)}
+  .inbox-foot{color:var(--ink-3);font-size:12.5px;display:flex;gap:14px;align-items:center}
+  .inbox-foot a{color:var(--primary);font-weight:700;text-decoration:none}
+  .inbox-foot a:hover{text-decoration:underline}
+
+  /* ---------- wizard ---------- */
+  .wizard{display:grid;grid-template-columns:minmax(320px,5fr)minmax(300px,4fr);gap:24px;align-items:start}
+  .steps{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+  .step{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--ink-4);padding:6px 12px;border-radius:999px;background:var(--surface-2)}
+  .step .n{width:18px;height:18px;border-radius:999px;border:1.5px solid currentColor;display:grid;place-items:center;font-size:11px;font-family:var(--font-mono)}
+  .step.done{color:var(--ink-2)} .step.done .n{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+  .step.now{color:var(--primary);background:var(--primary-soft)}
+  .step.now .n{border-color:var(--primary)}
+  .panel{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px;display:flex;flex-direction:column;gap:14px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--primary-soft);color:var(--primary);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700}
+  .radio{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:var(--r-control);border:1px solid var(--hairline);font-size:13.5px;font-weight:600;transition:all var(--dur) ease}
+  .radio:hover{background:var(--surface-2)}
+  .radio[aria-checked="true"]{border-color:var(--primary);background:var(--primary-soft)}
+  .radio .o{width:16px;height:16px;border-radius:999px;border:1.5px solid var(--ink-4);display:grid;place-items:center}
+  .radio[aria-checked="true"] .o{border-color:var(--primary)}
+  .radio[aria-checked="true"] .o::after{content:"";width:8px;height:8px;border-radius:999px;background:var(--primary)}
+  .preview{border:1px dashed var(--ink-4);border-radius:var(--r-card);padding:14px;background:var(--bg)}
+  .preview .cap{font-size:12px;color:var(--ink-3);margin-bottom:10px;display:flex;gap:8px;align-items:center}
+  .wizbar{grid-column:1/-1;display:flex;align-items:center;gap:14px;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:14px 18px;margin-top:4px}
+  .wizbar .terms{font-size:12.5px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .wizbar .terms svg{color:var(--primary)}
+  .wizbar .spacer{margin-left:auto}
+
+  footer.mock{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
+
+  @media (max-width:980px){
+    .app{grid-template-columns:1fr}
+    .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 14px;gap:8px}
+    .rail .brand{padding:0 12px 0 0}
+    .rail .user{display:none}
+    .grid{grid-template-columns:1fr}
+    .col-7,.col-5,.col-8,.col-4{grid-column:auto}
+    .wizard{grid-template-columns:1fr}
+    main{padding:20px 16px 40px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{transition-duration:0.01ms!important}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <nav class="rail" aria-label="Main">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 12h6M8 8v8M14 10h6M17 7v10"/></svg>
+      </span>
+      <b>Agent Desk</b>
+    </div>
+    <a href="#" aria-current="page"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>Dashboard</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 13.5 5 20h14l1.5-6.5M3.5 13.5h17M12 15v-4M8.5 11l3.5 3.5L15.5 11"/></svg>Inbox<span class="count">3</span></a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v10a2 2 0 0 1-2 2H8l-4 3V6z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></svg>Assistant</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>Plugins</a>
+    <a href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h9M17 17h3"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg>Settings</a>
+    <div class="user">
+      <span class="avatar" aria-hidden="true">PS</span>
+      <div><b style="font-size:13px">Priya S.</b><small>Sales lead</small></div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="topbar">
+      <div>
+        <h1>Good morning, Priya</h1>
+        <p class="sub"><span class="dot" aria-hidden="true"></span>Tuesday, 11 November, <span class="mono">09:12</span>. All sources fresh.</p>
+      </div>
+      <button class="btn btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add plugin
+      </button>
+    </div>
+
+    <div class="views" role="tablist" aria-label="Mockup views">
+      <button role="tab" aria-selected="true" data-view="dashboard">Dashboard</button>
+      <button role="tab" aria-selected="false" data-view="inbox">Inbox<span class="mini-count">3</span></button>
+      <button role="tab" aria-selected="false" data-view="wizard">Plugin wizard</button>
+    </div>
+
+    <!-- ================= DASHBOARD ================= -->
+    <section id="view-dashboard" class="grid" role="tabpanel" aria-label="Dashboard">
+
+      <article class="widget col-7">
+        <div class="w-head">
+          <h2>Sales, last 24 hours</h2>
+          <span class="stamp"><span class="dot" aria-hidden="true"></span>Updated 3 min ago</span>
+          <button class="icon-btn" aria-label="Widget options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+        </div>
+        <div class="kpi">
+          <div>
+            <div class="label">Net change</div>
+            <div class="value">+&hairsp;€14,320</div>
+            <div class="sub">+1.1% vs yesterday, €1.32M total</div>
+          </div>
+          <figure class="spark">
+            <svg width="180" height="52" viewBox="0 0 180 52" aria-label="14 day trend, rising">
+              <path d="M4 40 L17 36 L30 38 L43 30 L56 33 L69 27 L82 29 L95 22 L108 25 L121 19 L134 21 L147 14 L160 16 L173 9"
+                fill="none" stroke="#14594E" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="173" cy="9" r="3" fill="#14594E"/>
+            </svg>
+            <figcaption>14-day trend</figcaption>
+          </figure>
+        </div>
+        <table class="rows">
+          <thead><tr><th scope="col">Product line</th><th scope="col" style="text-align:right">24 h</th><th scope="col" style="text-align:right">Trend</th></tr></thead>
+          <tbody>
+            <tr><td>Atlas ERP modules</td><td class="num">+€6,410</td><td class="num"><span class="delta up"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>+4.2%</span></td></tr>
+            <tr><td>Field services</td><td class="num" style="color:var(--bad)">-€2,150</td><td class="num"><span class="delta down"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 9v8H9"/></svg>-2.8%</span></td></tr>
+            <tr><td>Care plans</td><td class="num">+€1,890</td><td class="num"><span class="delta up"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>+1.6%</span></td></tr>
+          </tbody>
+        </table>
+        <div class="w-foot">Watches Q4-sales.xlsx, hourly, read-only.<a href="#">Configure</a></div>
+      </article>
+
+      <article class="widget col-5">
+        <div class="w-head">
+          <h2>Today's key commitment</h2>
+          <span class="stamp"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M8 3v4M16 3v4M3.5 10.5h17"/></svg>Synced 09:02</span>
+          <button class="icon-btn" aria-label="Widget options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+        </div>
+        <div class="event">
+          <span class="when">14:00<br>15:00</span>
+          <div>
+            <b>Q4 pipeline review</b>
+            <small>6 attendees, room Beaufort</small>
+          </div>
+        </div>
+        <div>
+          <div class="subhead" style="margin-bottom:4px">Agent's breakdown</div>
+          <div class="check" role="checkbox" aria-checked="true" tabindex="0">
+            <span class="box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span>Replay Meridian's objections from Monday's thread</span>
+          </div>
+          <div class="check" role="checkbox" aria-checked="false" tabindex="0">
+            <span class="box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span>Pull the regional numbers Marco asked for</span>
+          </div>
+          <div class="check" role="checkbox" aria-checked="false" tabindex="0">
+            <span class="box" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span>Confirm the slide 12 spend figure with Finance</span>
+          </div>
+        </div>
+        <span class="follow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Send the updated deck to Marco by 13:00</span>
+        <div class="w-foot">From your calendar via OneDrive sync.<a href="#">How this works</a></div>
+      </article>
+
+      <article class="widget col-8">
+        <div class="w-head">
+          <h2>Research</h2>
+          <span class="stamp"><span class="dot" aria-hidden="true"></span>Ready</span>
+          <button class="icon-btn" aria-label="Widget options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+        </div>
+        <div class="well">
+          <p class="q">Ask anything, or paste what you did and ask what to look for.</p>
+          <button class="btn btn-secondary">Research</button>
+        </div>
+        <div class="answer">
+          <div class="aq">What changed in the EU channel since the pricing update? <span class="tag-sample">sample</span></div>
+          List prices took effect 4 November and five of nine EU partners have already reflected them in quotes. Two held to old prices on multi-year terms; Meridian is the only one that pushed back in writing.
+          <div>
+            <span class="src">eu-price-memo.pdf</span>
+            <span class="src">channel-weekly.xlsx, tab EU</span>
+          </div>
+        </div>
+        <div class="w-foot">Searches run through the company endpoint. Every query is logged.<a href="#">Set sources</a></div>
+      </article>
+
+      <article class="widget col-4 amber" id="amber-widget">
+        <div class="w-head">
+          <h2>Region mix</h2>
+          <span class="badge-pilot">Pilot</span>
+          <span class="stamp" id="amber-stamp" style="margin-left:auto"><span class="dot amber" aria-hidden="true"></span>Yesterday, 17:40</span>
+          <button class="icon-btn" aria-label="Widget options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+        </div>
+        <div class="alert" id="amber-body">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 21 19H3L12 4z"/><path d="M12 10v4M12 17h.01"/></svg>
+          <span>Can't refresh: Q4-sales.xlsx is open in Excel right now. Changes will appear once the file is free.</span>
+        </div>
+        <button class="btn btn-secondary" id="retest" style="align-self:flex-start">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 3v4h-4"/></svg>
+          Re-test now
+        </button>
+        <div class="w-foot">Watches Q4-sales.xlsx, on the hour.</div>
+      </article>
+    </section>
+
+    <!-- ================= INBOX ================= -->
+    <section id="view-inbox" class="inbox" role="tabpanel" aria-label="Inbox" hidden>
+
+      <article class="card">
+        <div class="origin"><span class="dot" aria-hidden="true"></span>Pattern noticed, 5th time</div>
+        <h3>Turn the channel report into one click?</h3>
+        <p>You've asked for this breakdown 5 times in two weeks. I can save it as a skill and it will appear as a button on your dashboard.</p>
+        <ul>
+          <li>Builds the same table from channel-weekly.xlsx</li>
+          <li>Runs when you click it. Nothing is sent anywhere.</li>
+        </ul>
+        <div class="actions">
+          <button class="btn btn-primary">Accept skill</button>
+          <button class="btn btn-secondary dismiss">Dismiss</button>
+          <button class="why">Show me what it would do first</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="origin"><span class="dot" aria-hidden="true"></span>Update needs your OK</div>
+        <h3>Sales widget asks to read one more sheet</h3>
+        <p>The plugin owner updated Sales delta to split results by region.</p>
+        <div class="diff">
+          <span class="add">+ read tab "regions" of Q4-sales.xlsx</span>
+          <span class="same">= everything else unchanged, read-only</span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary">Approve update</button>
+          <button class="btn btn-secondary dismiss">Keep current version</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="origin"><span class="dot" aria-hidden="true"></span>Before your 14:00</div>
+        <h3>Three open threads with Meridian</h3>
+        <ul>
+          <li>Pricing hold: their CFO asked for a cap on line item 2</li>
+          <li>Marco's regional numbers still owed since Monday</li>
+          <li>Contract renewal lands in 30 days</li>
+        </ul>
+        <div class="actions">
+          <button class="btn btn-primary">Open brief</button>
+          <button class="btn btn-ghost dismiss">Dismiss</button>
+        </div>
+      </article>
+
+      <p class="inbox-foot">
+        <a href="#" id="dismissed-link">View dismissed (2)</a>
+        <span>Kept for 30 days. Nothing here expires silently.</span>
+      </p>
+    </section>
+
+    <!-- ================= WIZARD ================= -->
+    <section id="view-wizard" role="tabpanel" aria-label="Plugin wizard" hidden>
+      <div class="steps" aria-label="Progress">
+        <span class="step done"><span class="n" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Describe</span>
+        <span class="step done"><span class="n" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Details</span>
+        <span class="step now"><span class="n" aria-hidden="true">3</span>Preview</span>
+        <span class="step"><span class="n" aria-hidden="true">4</span>Approve</span>
+      </div>
+
+      <div class="wizard">
+        <div class="panel">
+          <div>
+            <div class="subhead" style="margin-bottom:8px">What you told me</div>
+            <div class="chips">
+              <span class="chip">Watches Q4-sales.xlsx</span>
+              <span class="chip">Shows change vs yesterday</span>
+              <span class="chip">Refreshes hourly</span>
+              <span class="chip">Read-only</span>
+            </div>
+          </div>
+          <div>
+            <div class="subhead" style="margin-bottom:8px">One last question</div>
+            <p style="font-weight:700;margin-bottom:8px">Which change should I show first?</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="radio" role="radio" aria-checked="true" tabindex="0"><span class="o" aria-hidden="true"></span>Biggest risers</div>
+              <div class="radio" role="radio" aria-checked="false" tabindex="0"><span class="o" aria-hidden="true"></span>Biggest drops</div>
+              <div class="radio" role="radio" aria-checked="false" tabindex="0"><span class="o" aria-hidden="true"></span>Both, side by side</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview">
+          <div class="cap">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            Live preview, real file. This is what you'll see every morning.
+          </div>
+          <article class="widget" style="box-shadow:none;border:1px solid var(--hairline)">
+            <div class="w-head"><h2 style="font-size:14.5px">Sales, last 24 hours</h2><span class="stamp"><span class="dot"></span>Updated 3 min ago</span></div>
+            <div class="kpi">
+              <div>
+                <div class="label">Biggest riser</div>
+                <div class="value" style="font-size:22px">+€6,410</div>
+                <div class="sub">Atlas ERP modules, +4.2%</div>
+              </div>
+              <figure class="spark">
+                <svg width="150" height="44" viewBox="0 0 150 44" aria-hidden="true">
+                  <path d="M4 34 L16 31 L28 33 L40 26 L52 28 L64 23 L76 25 L88 19 L100 21 L112 16 L124 18 L146 8" fill="none" stroke="#14594E" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <figcaption>14-day trend</figcaption>
+              </figure>
+            </div>
+          </article>
+        </div>
+
+        <div class="wizbar">
+          <span class="terms">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6l7-3z"/></svg>
+            Reads 1 file, read-only. No internet, no email. Remove anytime.
+          </span>
+          <span class="spacer"></span>
+          <button class="btn btn-secondary">Back</button>
+          <button class="btn btn-primary">Approve and add widget</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="mock">
+      <span>Design mockup, v0.1 direction. All data shown is sample data.</span>
+      <span>Agent Desk</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+  // view switching
+  const tabs = document.querySelectorAll('.views [role="tab"]');
+  const views = { dashboard: document.getElementById('view-dashboard'),
+                  inbox: document.getElementById('view-inbox'),
+                  wizard: document.getElementById('view-wizard') };
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.setAttribute('aria-selected', x === t ? 'true' : 'false'));
+    for (const k in views) views[k].hidden = (k !== t.dataset.view);
+  }));
+
+  // checkboxes (commitments)
+  document.querySelectorAll('.check[role="checkbox"]').forEach(el => {
+    const flip = () => el.setAttribute('aria-checked', el.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+    el.addEventListener('click', flip);
+    el.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
+  });
+
+  // radios (wizard)
+  document.querySelectorAll('.radio[role="radio"]').forEach(el => {
+    const pick = () => document.querySelectorAll('.radio[role="radio"]').forEach(r => r.setAttribute('aria-checked', r === el ? 'true' : 'false'));
+    el.addEventListener('click', pick);
+    el.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pick(); } });
+  });
+
+  // dismiss inbox cards
+  let dismissed = 2;
+  document.querySelectorAll('.dismiss').forEach(btn => btn.addEventListener('click', () => {
+    const card = btn.closest('.card');
+    card.classList.add('fading');
+    setTimeout(() => {
+      card.remove();
+      dismissed++;
+      const link = document.getElementById('dismissed-link');
+      if (link) link.textContent = `View dismissed (${dismissed})`;
+      if (!document.querySelector('.inbox .card')) {
+        const empty = document.createElement('p');
+        empty.className = 'card';
+        empty.style.padding = '28px 18px';
+        empty.innerHTML = 'Nothing needs your attention. New suggestions will appear here.';
+        document.getElementById('view-inbox').insertBefore(empty, document.querySelector('.inbox-foot'));
+      }
+    }, 240);
+  }));
+
+  // amber widget re-test (demo behavior)
+  document.getElementById('retest').addEventListener('click', () => {
+    const w = document.getElementById('amber-widget');
+    w.classList.remove('amber');
+    document.getElementById('amber-stamp').innerHTML = '<span class="dot" aria-hidden="true"></span>Updated just now';
+    document.getElementById('amber-body').innerHTML =
+      '<span>File is free again. Refreshed: <b>2 regions changed</b> since yesterday, DACH up, Nordics flat.</span>';
+    document.getElementById('retest').remove();
+  });
+</script>
+</body>
+</html>
