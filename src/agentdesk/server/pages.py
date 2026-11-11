@@ -83,6 +83,8 @@ svg{display:block;flex:none}
 .origin-why{color:var(--ink-2);font-size:13px;border-top:1px solid var(--hairline);padding-top:8px}
 .widget h3{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
 .cardrow{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
+.w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
+.w-note{font-size:12.5px;color:var(--ink-3)}
 .settings-skill{margin-bottom:12px}
 .skill-name{font-size:14.5px}
 .skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}

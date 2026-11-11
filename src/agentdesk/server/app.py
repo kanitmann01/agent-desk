@@ -8,6 +8,7 @@ WebSocket upgrades of later tickets must call the same check_request and
 session validation before handshake.
 """
 
+import html
 import json
 import logging
 import os
@@ -32,6 +33,7 @@ from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import UnknownCard
 from agentdesk.inbox.store import InboxStore
 from agentdesk.llm import env_chat, env_config
+from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
@@ -43,11 +45,14 @@ from agentdesk.server.research import render_assistant_page, render_research_wid
 from agentdesk.server.settings_view import render_settings_page
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
+    ATTENTION,
+    FRESH,
     PREFERRED_PORT,
+    Freshness,
     SourceStatus,
     default_sources,
 )
-from agentdesk.server.demo import demo_widgets
+from agentdesk.server.demo import Widget, demo_widgets
 from agentdesk.server.guard import check_request
 from agentdesk.server.health import health_payload
 from agentdesk.server.sales import render_sales_disabled, render_sales_widget
@@ -137,6 +142,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         activity_log: ActivityLog | None = None,
         skill_store: SkillStore | None = None,
         settings_store: SettingsStore | None = None,
+        plugins: PluginRuntime | None = None,
     ) -> None:
         self.sessions = sessions
         self.sources = sources if sources is not None else default_sources()
@@ -152,6 +158,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.activity_log = activity_log
         self.skills = skill_store
         self.settings = settings_store
+        self.plugins = plugins
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
             if activity_log is not None and inbox_store is not None and skill_store is not None
@@ -264,6 +271,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_audit_tail()
         elif path == "/widgets/settings":
             self._send_settings_values()
+        elif path == "/api/plugins":
+            self._send_json(200, {"plugins": self.server_plugins_widget_records()})
+        elif path.startswith("/api/plugins/"):
+            self._send_json(200, self._plugin_record_or_404(path[len("/api/plugins/"):]))
         elif path == "/audit/export.csv":
             self._send_audit_csv()
         elif path == "/what-this-touches":
@@ -379,6 +390,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._skill_undo(int(path[len("/skills/"):-len("/undo")].strip("/")))
         elif path == "/settings/toggle":
             self._settings_toggle()
+        elif path.startswith("/api/plugins"):
+            plugins = self.server.plugins  # type: ignore[attr-defined]
+            if plugins is None:
+                self._send_json(503, {"error": "plugins:unavailable",
+                                      "message": "no plugin runtime is configured"})
+                return
+            try:
+                self._dispatch_plugin_post(plugins, path, self._read_json_body() or {})
+            except PluginError as exc:
+                self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
         elif path == "/assistant/ask":
             question = self._ask_question_from_body()
             if not question:
@@ -507,6 +528,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         last_answer = audit_store.last_ok_ts(audit_conn, "research") if audit_conn is not None else None
         widgets.append(render_research_widget(last_answer, now))
         widgets.append(demo["region-mix"])
+        plugins = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is not None:
+            widgets += [self._plugin_widget(card) for card in plugins.widget_cards()]
         inbox = self.server.inbox  # type: ignore[attr-defined]
         skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
         page = pages.render_dashboard(
@@ -769,6 +793,113 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, card.to_json(inbox.now_ts()))
 
+    def _dispatch_plugin_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
+        parts = [part for part in path.split("/") if part]
+        if path == "/api/plugins/install":
+            if not isinstance(body.get("zip_path"), str):
+                self._send_json(400, {"error": "bad-request",
+                                      "message": 'expected {"zip_path": "..."}'})
+                return
+            self._send_json(200, plugins.install(body["zip_path"], source=body.get("source", "zip")))
+            return
+        if len(parts) < 3:
+            self._send_json(404, {"error": "not-found", "message": path})
+            return
+        plugin_id = parts[2]
+        action = parts[3] if len(parts) > 3 else ""
+        actions = {
+            "update": lambda: plugins.update(plugin_id, body["zip_path"]),
+            "consent": lambda: plugins.consent(plugin_id),
+            "rollback": lambda: plugins.rollback(plugin_id),
+            "enable": lambda: plugins.enable(plugin_id),
+            "disable": lambda: plugins.disable(plugin_id),
+            "uninstall": lambda: plugins.uninstall(plugin_id),
+            "retest": lambda: plugins.retest(plugin_id),
+            "purge-data": lambda: plugins.purge_data(plugin_id, body.get("confirmation")),
+        }
+        if action not in actions:
+            self._send_json(404, {"error": "not-found", "message": path})
+            return
+        self._send_json(200, actions[action]())
+
+    def _plugin_widget(self, card: dict) -> Widget:
+        """One installed plugin's dashboard card: pilot badge, amber state.
+
+        The amber treatment matches the built-in widgets, and every
+        plugin-controlled string is escaped here: the shell renders widget
+        bodies as authored HTML, so this is the boundary."""
+        status = FRESH if card.get("freshness") == "fresh" else ATTENTION
+        plugin_id = html.escape(str(card["id"]))
+        cause = html.escape(str(card.get("cause") or "data source has not run"))
+        file_name = html.escape(str(card.get("file") or "the data source"))
+        version = html.escape(str(card["version"]))
+        if status == FRESH:
+            cause = f"reading {file_name}"
+            body = '<p class="w-big">' + version + '</p><p class="w-note">' + cause + "</p>"
+            extra = ""
+        else:
+            body = (
+                '<div class="alert" id="plugin-amber-' + plugin_id + '">'
+                "<p>" + cause + "</p>"
+                "<p>Re-test runs the plugin's data source again; the nightly "
+                "probe does the same for every plugin.</p></div>"
+            )
+            extra = "amber"
+        freshness = Freshness(
+            status=status,
+            stamp="Re-test available" if status == ATTENTION else "live",
+            updated_iso=str(card.get("checked_at", "")),
+        )
+        return Widget(
+            id="plugin-" + plugin_id,
+            title=html.escape(str(card["title"])),
+            col="col-4",
+            freshness=freshness,
+            body_html=body,
+            foot_html="plugin v" + version,
+            extra_classes=extra,
+            badge="PILOT" if card.get("pilot") else "",
+        )
+
+    def _plugin_record_or_404(self, plugin_id: str) -> dict:
+        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            return {"error": "plugins:unavailable"}
+        try:
+            record = plugins.record(plugin_id)
+        except PluginError as exc:
+            return {"error": exc.code, "message": str(exc)}
+        if record.get("pending_update"):
+            record["pending_diff"] = {
+                "version": record["pending_update"]["version"],
+                "added_scopes": record["pending_update"]["added_scopes"],
+            }
+        return record
+
+    def server_plugins_widget_records(self) -> list[dict]:
+        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            return []
+        out = []
+        for record in plugins.list_records():
+            record = dict(record)
+            if record.get("pending_update"):
+                record["pending_diff"] = {
+                    "version": record["pending_update"]["version"],
+                    "added_scopes": record["pending_update"]["added_scopes"],
+                }
+            out.append({
+                "id": record["id"],
+                "name": record.get("name", record["id"]),
+                "state": record["state"],
+                "active_version": record.get("active_version"),
+                "pilot": record.get("pilot_views_left", 0) > 0
+                and record.get("state") == "enabled",
+                "data_source": record.get("data_source"),
+                "pending_diff": record.get("pending_diff"),
+            })
+        return out
+
     def _send_health(self) -> None:
         payload = health_payload(
             agentdesk.__version__,
@@ -824,6 +955,7 @@ def create_server(
         activity_log: ActivityLog | None = None,
         skill_store: SkillStore | None = None,
         settings_store: SettingsStore | None = None,
+        plugins: PluginRuntime | None = None,
     ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -862,7 +994,7 @@ def create_server(
         return AgentDeskServer(
             (resolved, bind_port), sessions, sources, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
-            activity_log, skill_store, settings_store,
+            activity_log, skill_store, settings_store, plugins,
         )
 
     if port is None:
