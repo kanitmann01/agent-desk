@@ -1,6 +1,7 @@
 """Manifest schema rules: required keys, types, unknown keys, manifest file."""
 
 import copy
+import json
 
 from .test_validator_support import VALID_MANIFEST, write_plugin
 from agentdesk.validator import validate_plugin
@@ -67,6 +68,19 @@ def test_missing_manifest_file_is_missing_file(tmp_path):
     verdict = validate_plugin(dest)
 
     assert failures(verdict) == [("missing-file", "missing manifest.json")]
+
+
+def test_bom_prefixed_manifest_parses(tmp_path):
+    """Windows-authored manifests may carry a UTF-8 BOM; that must parse."""
+    dest = write_plugin(tmp_path)
+    bom = b"\xef\xbb\xbf"
+    (dest / "manifest.json").write_bytes(
+        bom + json.dumps(manifest_copy(), indent=2).encode("utf-8")
+    )
+
+    verdict = validate_plugin(dest)
+
+    assert verdict.ok, verdict.as_dict()
 
 
 def test_unparseable_manifest_is_bad_json(tmp_path):

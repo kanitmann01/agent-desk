@@ -62,7 +62,8 @@ def validate_plugin(path) -> Verdict:
     if manifest_bytes is None:
         return Verdict((Failure("missing-file", f"missing {MANIFEST_NAME}"),))
     try:
-        manifest = json.loads(manifest_bytes.decode("utf-8"))
+        # utf-8-sig strips a leading BOM so Windows-authored files parse.
+        manifest = json.loads(manifest_bytes.decode("utf-8-sig"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return Verdict((Failure("bad-json", f"{MANIFEST_NAME} is not valid JSON: {exc}"),))
 

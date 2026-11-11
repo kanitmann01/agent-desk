@@ -204,7 +204,8 @@ def _validate_render_entry(render, reader) -> list[Failure]:
         failures.append(Failure("missing-file", f"ui-schema file not found: {render_file}"))
         return failures
     try:
-        ui_schema = json.loads(content.decode("utf-8"))
+        # utf-8-sig strips a leading BOM so Windows-authored files parse.
+        ui_schema = json.loads(content.decode("utf-8-sig"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         failures.append(
             Failure("bad-json", f"ui-schema file {render_file} is not valid JSON: {exc}")

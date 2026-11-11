@@ -94,6 +94,16 @@ def test_ui_schema_file_non_object_is_bad_json(tmp_path):
     ]
 
 
+def test_bom_prefixed_ui_schema_file_parses(tmp_path):
+    """Windows-authored ui-schema files may carry a UTF-8 BOM."""
+    dest = write_plugin(tmp_path, manifest_copy())
+    (dest / "widget.ui.json").write_bytes(b'\xef\xbb\xbf{"type": "list"}')
+
+    verdict = validate_plugin(dest)
+
+    assert verdict.ok, verdict.as_dict()
+
+
 def test_unknown_data_source_type_is_unknown_datasource(tmp_path):
     manifest = manifest_copy()
     manifest["contributes"]["widgets"][0]["dataSource"] = {
