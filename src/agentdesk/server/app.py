@@ -58,6 +58,7 @@ from agentdesk.server.core import (
     Freshness,
     SourceStatus,
 )
+from agentdesk.server.demo import Widget
 from agentdesk.server.guard import check_request
 from agentdesk.server.health import health_payload
 from agentdesk.server.sales import (
