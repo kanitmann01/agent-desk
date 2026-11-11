@@ -41,3 +41,13 @@ def test_plugin_html_fixture_fails_with_named_reason():
     assert verdict.failures[0].message == (
         "render must not contain plugin-supplied keys: template"
     )
+
+
+def test_over_permission_fixture_fails_with_named_reason():
+    verdict = validate_plugin(fixture("over-permission"))
+
+    assert codes(verdict) == ["over-permission"]
+    assert verdict.failures[0].message == (
+        "filesystem read glob is not referenced by any data source: "
+        "${workspace}/data/*.csv"
+    )

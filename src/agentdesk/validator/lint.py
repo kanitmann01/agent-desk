@@ -33,9 +33,49 @@ def validate_permission_lint(manifest, reader) -> list[Failure]:
             if isinstance(widget, dict):
                 failures.extend(_validate_data_source_type(widget))
 
+    failures.extend(_validate_over_permission(manifest))
     failures.extend(_validate_render(manifest, reader))
 
     return failures
+
+
+def _validate_over_permission(manifest) -> list[Failure]:
+    """Every declared filesystem read glob must be used by a data source.
+
+    Each widget's dataSource "file" field names the glob that data source
+    needs; a read glob no data source references is an over-permission.
+    Write globs are exempt: they target the plugin's own data directory.
+    """
+    permissions = manifest.get("permissions")
+    if not isinstance(permissions, dict):
+        return []
+    filesystem = permissions.get("filesystem")
+    read_globs = filesystem.get("read") if isinstance(filesystem, dict) else None
+    if not isinstance(read_globs, list):
+        return []
+
+    referenced: set[str] = set()
+    contributes = manifest.get("contributes")
+    widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
+    if isinstance(widgets, list):
+        for widget in widgets:
+            if not isinstance(widget, dict):
+                continue
+            data_source = widget.get("dataSource")
+            if not isinstance(data_source, dict):
+                continue
+            file_glob = data_source.get("file")
+            if isinstance(file_glob, str):
+                referenced.add(file_glob)
+
+    return [
+        Failure(
+            "over-permission",
+            f"filesystem read glob is not referenced by any data source: {glob}",
+        )
+        for glob in read_globs
+        if isinstance(glob, str) and glob not in referenced
+    ]
 
 
 def _validate_data_source_type(widget) -> list[Failure]:

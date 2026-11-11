@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "id": "sales-delta-widget",
+  "name": "Sales 24h Delta",
+  "version": "1.2.0",
+  "publisher": "acme-tools",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=1.0.0 <2.0.0"
+  },
+  "license": "MIT",
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/reports/*.xlsx",
+        "${workspace}/data/*.csv"
+      ],
+      "write": [
+        "${pluginData}"
+      ]
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": true,
+      "maxTokensPerDay": 200000
+    },
+    "shell": "none"
+  },
+  "optionalPermissions": {
+    "network": {
+      "allow": [
+        "https://api.example.com/*"
+      ],
+      "userPrompt": "Fetch daily sales totals from the company API"
+    }
+  },
+  "activationEvents": [
+    "onWidget:sales-delta",
+    "onSchedule:0 * * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "sales-delta",
+        "size": "2x1",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/reports/*.xlsx",
+          "deltaWindow": "24h"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ],
+    "skills": [
+      "skills/sales-summary/SKILL.md"
+    ],
+    "preferences": [
+      {
+        "name": "thresholdPct",
+        "type": "number",
+        "default": 5
+      }
+    ]
+  }
+}

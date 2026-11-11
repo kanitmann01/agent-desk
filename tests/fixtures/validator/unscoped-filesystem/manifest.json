@@ -46,7 +46,7 @@
         "size": "2x1",
         "dataSource": {
           "type": "excel-watch",
-          "file": "${workspace}/reports/*.xlsx",
+          "file": "reports/*.xlsx",
           "deltaWindow": "24h"
         },
         "render": {

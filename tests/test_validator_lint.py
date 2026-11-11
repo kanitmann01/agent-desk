@@ -118,3 +118,37 @@ def test_all_v1_data_source_types_pass_the_type_check(tmp_path):
         verdict = validate_plugin(write_plugin(tmp_path, manifest))
 
         assert "unknown-datasource" not in codes(verdict), source_type
+
+
+def test_read_glob_unused_by_any_data_source_is_over_permission(tmp_path):
+    manifest = manifest_copy()
+    manifest["permissions"]["filesystem"]["read"] = [
+        "${workspace}/reports/*.xlsx",
+        "${workspace}/extra/*.txt",
+    ]
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "over-permission",
+        "filesystem read glob is not referenced by any data source: ${workspace}/extra/*.txt",
+    ) in failures(verdict)
+
+
+def test_no_read_globs_and_no_file_references_is_not_over_permission(tmp_path):
+    manifest = manifest_copy()
+    manifest["permissions"]["filesystem"]["read"] = []
+    manifest["contributes"]["widgets"][0]["dataSource"] = {"type": "http-get"}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert "over-permission" not in codes(verdict)
+
+
+def test_write_globs_do_not_need_data_source_references(tmp_path):
+    manifest = manifest_copy()
+    manifest["permissions"]["filesystem"]["write"] = ["${pluginData}", "${pluginData}/logs"]
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert "over-permission" not in codes(verdict)
