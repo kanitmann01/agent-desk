@@ -38,7 +38,17 @@ from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import UnknownCard
 from agentdesk.inbox.store import InboxStore
-from agentdesk.llm import env_chat, env_config
+from agentdesk.llm import (
+    DEFAULT_MODEL,
+    LlmUnavailable,
+    REQUEST_TIMEOUT_S,
+    chat,
+    chat_client,
+    effective_llm_config,
+    env_chat,
+    env_config,
+    settings_chat,
+)
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
@@ -51,7 +61,7 @@ from agentdesk.server.commitments import (
 )
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
-from agentdesk.server.settings_view import render_settings_page
+from agentdesk.server.settings_view import mask_llm_key, render_settings_page
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     ATTENTION,
@@ -296,7 +306,10 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     calendar = server.calendar
     calendar_state = calendar.status().get("state") if calendar is not None else None
     calendar_ok = calendar_state not in (None, STATE_EMPTY)
-    endpoint_ok = bool(server.llm_endpoint)
+    # An endpoint saved in the settings page counts the same as one from
+    # the environment: either is a real configuration.
+    settings_base = server.settings.get("llm_base") if server.settings is not None else ""
+    endpoint_ok = bool(settings_base) or bool(server.llm_endpoint)
     workbook = ""
     if excel_path:
         workbook = str(excel_path).replace("\\", "/").rsplit("/", 1)[-1]
@@ -543,6 +556,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._skill_undo(int(path[len("/skills/"):-len("/undo")].strip("/")))
         elif path == "/settings/toggle":
             self._settings_toggle()
+        elif path == "/settings/endpoint/save":
+            self._endpoint_save()
+        elif path == "/settings/endpoint/test":
+            self._endpoint_test()
         elif path.startswith("/api/plugins"):
             plugins = self.server.plugins  # type: ignore[attr-defined]
             if plugins is None:
@@ -608,15 +625,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.excel.status() if server.excel is not None else None,
             server.calendar.status() if server.calendar is not None else None,
         )
+        llm, endpoint, model = self._effective_llm()
         common = {
-            "llm": server.llm,
+            "llm": llm,
             "audit_conn": server.audit_conn,
-            "endpoint": server.llm_endpoint,
-            "model": server.llm_model,
+            "endpoint": endpoint,
+            "model": model,
         }
         if summary_mode:
             return research(question, context, **common)
         return assistant_reply(question, context, **common)
+
+    def _effective_llm(self) -> tuple:
+        """The client this request uses, resolved per call: saved settings
+        win over the startup-resolved endpoint, so an endpoint entered in
+        the settings page applies without a restart. With nothing saved
+        the startup client (env/config.env, or a test injection) is kept.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if settings is not None and settings.get("llm_base"):
+            base, key, model = effective_llm_config(settings)
+            return chat_client(base, key, model), base, model
+        return server.llm, server.llm_endpoint, server.llm_model
 
     def _drain_body(self) -> bytes:
         """Read and stash the request body; the route decides what it means."""
@@ -747,32 +778,89 @@ class DashboardHandler(BaseHTTPRequestHandler):
         entries = server.activity_log.entries() if server.activity_log is not None else []
         skills = server.skills.active() if server.skills is not None else []
         histories = {s["id"]: server.skills.history(s["id"]) for s in skills}
-        values = server.settings.all() if server.settings is not None else {}
         page = render_settings_page(
             entries, skills, histories, agentdesk.__version__,
-            settings_values=values, endpoint_status=self._endpoint_status(),
+            settings_values=self._settings_public_values(),
+            endpoint_status=self._endpoint_status(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
+    def _settings_public_values(self) -> dict:
+        """Settings as they may leave the server: the key row is replaced
+        by its masked state, here and in /widgets/settings alike."""
+        settings = self.server.settings  # type: ignore[attr-defined]
+        values = settings.all() if settings is not None else {}
+        values["llm_key"] = mask_llm_key(values.get("llm_key", ""))
+        return values
+
     def _endpoint_status(self) -> dict:
-        """The read-only indicator: configured or not, and the truth about
-        the last call. A down endpoint shows degraded, never a false green."""
+        """Configured or not, the form's current values, and the truth
+        about the last call. A down endpoint shows degraded, never a
+        false green; the key answers only in its masked state."""
         server = self.server  # type: ignore[attr-defined]
-        configured = bool(server.llm_endpoint)
+        settings = server.settings
+        saved_base = settings.get("llm_base") if settings is not None else ""
+        configured = bool(saved_base) or bool(server.llm_endpoint)
         last = "never"
         if server.audit_conn is not None:
             for entry in audit_store.entries(server.audit_conn, 20):
                 if entry["action"].startswith("llm."):
                     last = entry["status"]
                     break
-        return {"configured": configured, "last": last}
+        saved_model = settings.get("llm_model") if settings is not None else ""
+        key_state = mask_llm_key(settings.get("llm_key")) if settings is not None else ""
+        return {
+            "configured": configured,
+            "last": last,
+            "base": saved_base or server.llm_endpoint,
+            "model": saved_model or server.llm_model,
+            "keyState": key_state,
+        }
 
     def _send_settings_values(self) -> None:
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             self._send_json(503, {"error": "settings are not available"})
             return
-        self._send_json(200, settings.all())
+        self._send_json(200, self._settings_public_values())
+
+    def _endpoint_save(self) -> None:
+        """Save (or clear, with empty strings) the three endpoint rows."""
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        saved = {
+            "llm_base": str(body.get("base", "")).strip(),
+            "llm_key": str(body.get("key", "")).strip(),
+            "llm_model": str(body.get("model", "")).strip(),
+        }
+        for key, value in saved.items():
+            settings.set(key, value)
+        self._send_json(200, {
+            "ok": True,
+            "base": saved["llm_base"],
+            "model": saved["llm_model"],
+            "keyState": mask_llm_key(saved["llm_key"]),
+        })
+
+    def _endpoint_test(self) -> None:
+        """One minimal chat request against the SUBMITTED values, not the
+        saved ones, so the connection can be checked before saving."""
+        body = self._read_json_body() or {}
+        base = str(body.get("base", "")).strip()
+        if not base:
+            self._send_json(200, {"ok": False, "cause": "Type a base URL first: there is nothing to test."})
+            return
+        key = str(body.get("key", "")).strip()
+        model = str(body.get("model", "")).strip() or DEFAULT_MODEL
+        try:
+            chat(base, key, model, "ping", timeout=REQUEST_TIMEOUT_S, max_tokens=1)
+        except LlmUnavailable as exc:
+            self._send_json(200, {"ok": False, "cause": str(exc)})
+            return
+        self._send_json(200, {"ok": True})
 
     def _settings_toggle(self) -> None:
         server = self.server  # type: ignore[attr-defined]
@@ -833,9 +921,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.excel.status() if server.excel is not None else None,
             server.calendar.status() if server.calendar is not None else None,
         )
+        llm, endpoint, model = self._effective_llm()
         answer = research(
-            skill["prompt"], context, llm=server.llm, audit_conn=server.audit_conn,
-            endpoint=server.llm_endpoint, model=server.llm_model,
+            skill["prompt"], context, llm=llm, audit_conn=server.audit_conn,
+            endpoint=endpoint, model=model,
         )
         self._send_json(200, answer.to_json())
 
@@ -1131,8 +1220,12 @@ def create_server(
     sessions = SessionStore()
     if excel is None:
         excel = _default_excel_watch()
+    # Settings first: the default calendar bridge wires its breakdown
+    # client to them, so saved endpoints apply without a restart.
+    if settings_store is None:
+        settings_store = _default_settings_store()
     if calendar is None:
-        calendar = _default_calendar_bridge()
+        calendar = _default_calendar_bridge(settings_store)
     if audit_conn is None:
         audit_conn = _default_audit_conn()
     if inbox_store is None:
@@ -1145,8 +1238,6 @@ def create_server(
             skill_store = repetition[1]
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
-    if settings_store is None:
-        settings_store = _default_settings_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
@@ -1170,7 +1261,9 @@ def _wire_audit(server: AgentDeskServer) -> None:
     """Give the watches and the model wrapper the audit hook.
 
     Applied to injected watches too: whatever object serves the requests
-    at runtime reports into the one append-only store.
+    at runtime reports into the one append-only store. The breakdown
+    target is resolved per call with the same settings-over-env order
+    the inner client uses, so the audit row names what was really hit.
     """
     if server.audit_conn is None:
         return
@@ -1183,10 +1276,10 @@ def _wire_audit(server: AgentDeskServer) -> None:
         server.excel.audit_hook = hook
     if server.calendar is not None:
         server.calendar.audit_hook = hook
-        endpoint, _key, model = env_config()
         inner_llm = server.calendar.llm
 
         def audited_llm(prompt: str) -> str:
+            endpoint, _key, model = effective_llm_config(server.settings)
             try:
                 result = inner_llm(prompt)
             except Exception as exc:  # noqa: BLE001 - audit then re-raise
@@ -1280,13 +1373,21 @@ def default_calendar_hint() -> Path:
     return candidates[0]
 
 
-def _default_calendar_bridge() -> CalendarBridge | None:
-    """A real bridge over the persistent store, or None when it cannot open."""
+def _default_calendar_bridge(settings_store=None) -> CalendarBridge | None:
+    """A real bridge over the persistent store, or None when it cannot open.
+
+    The breakdown client resolves settings over env on every call, so an
+    endpoint saved in the app is used by new breakdowns without a restart;
+    with nothing configured it degrades to the generic breakdown.
+    """
     try:
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(data_dir / "calendar-bridge.sqlite3", check_same_thread=False)
-        return CalendarBridge(conn)
+        bridge = CalendarBridge(conn)
+        if settings_store is not None:
+            bridge.llm = settings_chat(settings_store)
+        return bridge
     except (OSError, sqlite3.Error):
         LOG.exception("calendar bridge unavailable")
         return None

@@ -1,9 +1,11 @@
-"""The settings page: toggles only, plus the parts that must be visible.
+"""The settings page: toggles, the endpoint form, the visible parts.
 
 Data sources, quiet hours and the notification budget are toggles or
-small choices; the endpoint status is a read-only indicator that tells
-the truth under failure. The activity log, skills, audit export and the
-what-this-touches statement are reachable from here.
+small choices; the endpoint section takes a base URL, an API key and a
+model, and tells the truth about the last call under failure. The key is
+secret: this module renders only its masked state, never the value. The
+activity log, skills, audit export and the what-this-touches statement
+are reachable from here.
 """
 
 import html
@@ -18,6 +20,57 @@ _LABELS = {
     "quiet_hours": "Quiet hours (18:00-08:00)",
     "daily_cap": "Notifications per day",
 }
+
+ENDPOINT_HINT = (
+    "<p>Works with any OpenAI-compatible endpoint: your company gateway, "
+    "OpenAI, OpenRouter, LiteLLM, or Anthropic's OpenAI-compatible URL "
+    "(https://api.anthropic.com/v1 with a Claude model name). A key and "
+    "a URL are the whole login; there is no separate sign-in step. Saved "
+    "settings win over environment variables and config.env.</p>"
+)
+
+
+def mask_llm_key(key: str) -> str:
+    """The page-facing form of a saved key: state only, never the value."""
+    key = (key or "").strip()
+    if not key:
+        return ""
+    return f"Set. Ends with {key[-4:]}." if len(key) > 4 else "Set."
+
+
+def _endpoint_form(status: dict) -> str:
+    """Three fields, three buttons, and the masked key state.
+
+    The key field is always empty when rendered: the masked line and the
+    placeholder are the only evidence a key is saved. Saving with the
+    field empty clears the key, so the page says so plainly.
+    """
+    esc_base = html.escape(status.get("base", ""))
+    esc_model = html.escape(status.get("model", ""))
+    key_state = status.get("keyState", "")
+    esc_hint = html.escape(key_state) if key_state else "Not set"
+    return (
+        ENDPOINT_HINT
+        + f"<p class='empty'>API key: {esc_hint}. "
+        "Saving with the key field empty clears the saved key.</p>"
+        + "<div class='settings-block'>"
+        "<label class='field'>Base URL"
+        f"<input id='llm-base' type='text' value='{esc_base}' "
+        "placeholder='https://llm.yourcompany.example/v1' autocomplete='off'></label>"
+        "<label class='field'>API key"
+        "<input id='llm-key' type='password' "
+        f"placeholder='{esc_hint}' autocomplete='new-password'></label>"
+        "<label class='field'>Model"
+        f"<input id='llm-model' type='text' value='{esc_model}' "
+        "placeholder='gpt-4o-mini' autocomplete='off'></label>"
+        "</div>"
+        + "<div class='cardrow'>"
+        "<button class='btn btn-primary' data-endpoint-save>Save</button>"
+        "<button class='btn btn-secondary' data-endpoint-test>Test connection</button>"
+        "<button class='btn btn-secondary' data-endpoint-clear>Clear</button>"
+        "</div>"
+        + "<div class='alert' id='endpoint-note' hidden></div>"
+    )
 
 
 def _toggle_button(key: str, value) -> str:
@@ -56,7 +109,7 @@ def render_settings_page(
         )
     else:
         indicator = "Not configured. Research and the assistant run at reduced capacity until it is set."
-    endpoint_html = f"<p>{indicator}</p>"
+    endpoint_html = f"<p>{indicator}</p>" + _endpoint_form(endpoint_status)
 
     if activity_entries:
         rows = "".join(
@@ -110,13 +163,17 @@ def render_settings_page(
 <body>
 <div class="doc">
 <h1>Settings</h1>
-<p>Toggles only. The defaults are the recommended ones; a setting you
-have never touched is the right setting.</p>
+<p>Toggles plus the endpoint form. The defaults are the recommended
+ones; a setting you have never touched is the right setting.</p>
 <div class='settings-block'>
 {toggles_html}
 </div>
-<h1 style="margin-top:24px">Company endpoint</h1>
+<h1 style="margin-top:24px">Endpoint</h1>
 {endpoint_html}
+<h1 style="margin-top:24px">Calendar source</h1>
+<p>Calendar reading follows the OneDrive sync file by default. To pick
+a different file, paste a path, upload the JSON by hand, or go back to
+automatic, open the <a href="/walkthrough/calendar">calendar source page</a>.</p>
 <h1 style="margin-top:24px">Review</h1>
 <p><a href="/audit/export.csv">Export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
 <h1 style="margin-top:24px">Activity log</h1>

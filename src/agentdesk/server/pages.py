@@ -91,6 +91,9 @@ svg{display:block;flex:none}
 .skills-strip .skill-btn{background:var(--surface);color:var(--ink-1);border-radius:var(--r-control);box-shadow:inset 0 0 0 1px var(--hairline),var(--shadow-card);padding:8px 14px;font-weight:700;font-size:13px;transition:background var(--dur) ease}
 .skills-strip .skill-btn:hover{background:var(--surface-2)}
 .settings-block{display:flex;flex-direction:column;gap:8px;max-width:460px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.field input{font:inherit;font-size:13.5px;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
+.field input:focus{outline:2px solid var(--primary);outline-offset:1px}
 .setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--surface);border-radius:var(--r-control);box-shadow:var(--shadow-card);padding:10px 14px;font-weight:600;font-size:13.5px}
 .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
 .rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
@@ -295,6 +298,47 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     post('/settings/toggle', {key: btn.dataset.setting}).then(function () { location.reload(); });
   });
 });
+
+// Endpoint form: Save and Clear reload (the masked key state re-renders),
+// Test answers inline using exactly what is typed, saved or not.
+(function () {
+  var save = document.querySelector('[data-endpoint-save]');
+  if (!save) return;
+  var note = document.getElementById('endpoint-note');
+  var show = function (text) {
+    if (note) { note.hidden = false; note.textContent = text; }
+  };
+  var typed = function () {
+    return {
+      base: (document.getElementById('llm-base') || {}).value || '',
+      key: (document.getElementById('llm-key') || {}).value || '',
+      model: (document.getElementById('llm-model') || {}).value || ''
+    };
+  };
+  save.addEventListener('click', function () {
+    post('/settings/endpoint/save', typed()).then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { show(d.error); return; }
+        location.reload();
+      })
+      .catch(function () { show('The dashboard could not reach its own server; nothing was saved.'); });
+  });
+  var test = document.querySelector('[data-endpoint-test]');
+  if (test) test.addEventListener('click', function () {
+    show('Testing the connection');
+    post('/settings/endpoint/test', typed()).then(function (r) { return r.json(); })
+      .then(function (d) {
+        show(d.ok ? 'The endpoint answered.' : 'The endpoint did not answer: ' + (d.cause || 'unknown cause'));
+      })
+      .catch(function () { show('The dashboard could not reach its own server; the test did not run.'); });
+  });
+  var clear = document.querySelector('[data-endpoint-clear]');
+  if (clear) clear.addEventListener('click', function () {
+    post('/settings/endpoint/save', {base: '', key: '', model: ''})
+      .then(function () { location.reload(); })
+      .catch(function () { show('The dashboard could not reach its own server; nothing was cleared.'); });
+  });
+})();
 
 // Skills: one click re-runs the saved ask; undo is on the settings page.
 document.querySelectorAll('[data-skill-run]').forEach(function (btn) {

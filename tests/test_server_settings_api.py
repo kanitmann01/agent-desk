@@ -16,6 +16,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
+from agentdesk.llm import LlmUnavailable
+from agentdesk.server import app as server_app
 from agentdesk.settings import SettingsStore
 
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
@@ -48,11 +50,199 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "endpoint_enabled": True,
         "quiet_hours": True,
         "daily_cap": 3,
+        "llm_base": "",
+        "llm_key": "",
+        "llm_model": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200
     assert json.loads(body) == {"key": "excel_enabled", "value": False}
     assert json.loads(env.request("GET", "/widgets/settings", auth)[2])["excel_enabled"] is False
+
+
+def test_endpoint_save_and_clear_round_trip_with_masking(env, auth):
+    status, _h, body = env.post_json("/settings/endpoint/save", {
+        "base": "https://llm.corp.example/v1",
+        "key": "super-secret-key-4321",
+        "model": "claude-sonnet-4-5",
+    }, auth)
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["ok"] is True
+    assert payload["base"] == "https://llm.corp.example/v1"
+    # The response carries the masked state, never the key.
+    assert "super-secret" not in json.dumps(payload)
+    assert "4321" in payload["keyState"]
+    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values["llm_base"] == "https://llm.corp.example/v1"
+    assert values["llm_model"] == "claude-sonnet-4-5"
+    assert values["llm_key"] == "Set. Ends with 4321."
+
+    # Empty strings clear each row; the store is empty again.
+    status, _h, _b = env.post_json("/settings/endpoint/save", {
+        "base": "", "key": "", "model": "",
+    }, auth)
+    assert status == 200
+    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values["llm_base"] == "" and values["llm_key"] == "" and values["llm_model"] == ""
+
+
+def test_saved_key_is_never_rendered_back(env, auth):
+    env.post_json("/settings/endpoint/save", {
+        "base": "https://llm.corp.example/v1",
+        "key": "sk-totally-hidden-value-99aa",
+        "model": "m",
+    }, auth)
+    settings_page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "sk-totally-hidden-value" not in settings_page
+    assert "99aa" in settings_page  # the masked tail is the only trace
+    assert "id='llm-key' type='password'" in settings_page
+    values_page = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values_page["llm_key"] == "Set. Ends with 99aa."
+
+
+def test_endpoint_section_has_save_test_clear_and_the_hint(env, auth):
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "data-endpoint-save" in page
+    assert "data-endpoint-test" in page
+    assert "data-endpoint-clear" in page
+    assert "Test connection" in page
+    # The hint names the compatible surfaces, including Anthropic's URL.
+    assert "OpenAI-compatible" in page
+    assert "https://api.anthropic.com/v1" in page
+    assert "OpenRouter" in page and "LiteLLM" in page
+    # Saving with an empty key field clears it: the page says so.
+    assert "clears the saved key" in page
+
+
+def test_endpoint_test_uses_submitted_values_against_a_real_stub(env, auth):
+    from test_server_research_api import StubEndpoint
+
+    stub = StubEndpoint("pong")
+    try:
+        # A save first, so the test request must NOT use the saved key.
+        env.post_json("/settings/endpoint/save", {
+            "base": "https://saved.example/v1", "key": "saved-key", "model": "saved-model",
+        }, auth)
+        status, _h, body = env.post_json("/settings/endpoint/test", {
+            "base": stub.base_url, "key": "typed-key", "model": "typed-model",
+        }, auth)
+        payload = json.loads(body)
+        assert status == 200
+        assert payload["ok"] is True
+        # The minimal probe really went to the submitted endpoint.
+        assert stub.requests[-1]["path"] == "/chat/completions"
+        assert stub.requests[-1]["auth"] == "Bearer typed-key"
+        assert stub.requests[-1]["body"]["messages"][0]["content"] == "ping"
+        assert stub.requests[-1]["body"]["max_tokens"] == 1
+
+        # A down endpoint answers ok=false with the honest cause.
+        status, _h, body = env.post_json("/settings/endpoint/test", {
+            "base": "http://127.0.0.1:9", "key": "k", "model": "m",
+        }, auth)
+        payload = json.loads(body)
+        assert status == 200
+        assert payload["ok"] is False
+        assert "endpoint" in payload["cause"]
+    finally:
+        stub.close()
+
+
+def test_endpoint_test_without_a_base_says_so(env, auth):
+    status, _h, body = env.post_json("/settings/endpoint/test", {"base": ""}, auth)
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["ok"] is False
+    assert "base URL" in payload["cause"]
+
+
+def test_research_uses_saved_settings_without_a_restart(env, auth, monkeypatch):
+    from test_server_research_api import StubEndpoint
+
+    content = json.dumps({"summary": "Saved endpoint answered.", "sources": ["settings"]})
+    stub = StubEndpoint(content)
+    try:
+        # The environment points at a dead port; the saved settings must
+        # win, on the very next request, with no restart.
+        monkeypatch.setenv("AGENTDESK_LLM_BASE", "http://127.0.0.1:9")
+        status, _h, body = env.post_json("/settings/endpoint/save", {
+            "base": stub.base_url, "key": "settings-key", "model": "settings-model",
+        }, auth)
+        assert status == 200
+        status, _h, body = env.post_json("/research", {"question": "q"}, auth)
+        payload = json.loads(body)
+        assert status == 200
+        assert payload["status"] == "ok"
+        assert "Saved endpoint answered." in payload["summary"]
+        assert stub.requests[-1]["auth"] == "Bearer settings-key"
+
+        # Clearing the rows hands control back to the environment, which
+        # is dead here, so research degrades again.
+        env.post_json("/settings/endpoint/save", {"base": "", "key": "", "model": ""}, auth)
+        payload = json.loads(env.post_json("/research", {"question": "q"}, auth)[2])
+        assert payload["status"] == "degraded"
+    finally:
+        stub.close()
+
+
+def test_health_reflects_saved_settings_and_their_clearing(env, auth):
+    def research_source():
+        payload = json.loads(env.request("GET", "/health", auth)[2])
+        return next(s for s in payload["sources"] if s["id"] == "research-endpoint")
+
+    assert research_source()["status"] == "not_connected"
+    env.post_json("/settings/endpoint/save", {
+        "base": "https://llm.corp.example/v1", "key": "k", "model": "m",
+    }, auth)
+    assert research_source()["status"] == "connected"
+    env.post_json("/settings/endpoint/save", {"base": "", "key": "", "model": ""}, auth)
+    assert research_source()["status"] == "not_connected"
+
+
+def test_health_reflects_the_environment_when_nothing_is_saved(monkeypatch):
+    monkeypatch.setenv("AGENTDESK_LLM_BASE", "https://llm.corp.example/v1")
+    # llm_endpoint=None: the server resolves the environment at startup,
+    # exactly the env/config.env-only setup this test is about.
+    booted = server_harness.Booted(llm_endpoint=None)
+    try:
+        headers = booted.exchange()
+        payload = json.loads(booted.request("GET", "/health", headers)[2])
+        source = next(s for s in payload["sources"] if s["id"] == "research-endpoint")
+        assert source["status"] == "connected"
+    finally:
+        booted.close()
+
+
+def test_default_calendar_bridge_uses_the_settings_aware_client(env, monkeypatch, tmp_path):
+    from test_server_research_api import StubEndpoint
+
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    store = env.server.settings
+    bridge = server_app._default_calendar_bridge(store)  # the real wiring
+    try:
+        # Nothing configured: the client raises, the breakdown falls back.
+        with pytest.raises(LlmUnavailable):
+            bridge.llm("prepare me")
+
+        stub = StubEndpoint("answer")
+        try:
+            store.set("llm_base", stub.base_url)
+            store.set("llm_key", "k")
+            assert bridge.llm("prepare me") == "answer"
+            assert stub.requests[-1]["auth"] == "Bearer k"
+        finally:
+            stub.close()
+    finally:
+        bridge.stop_polling()
+
+
+def test_widget_settings_values_never_carry_the_raw_key(env, auth):
+    env.post_json("/settings/endpoint/save", {
+        "base": "https://x.example/v1", "key": "raw-secret-key-abcd", "model": "",
+    }, auth)
+    raw = env.request("GET", "/widgets/settings", auth)[2].decode("utf-8")
+    assert "raw-secret-key" not in raw
+    assert "Set. Ends with abcd." in raw
 
 
 def test_unknown_setting_is_rejected(env, auth):
