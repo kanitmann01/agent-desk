@@ -109,7 +109,7 @@ def gate_exec_user_space(runner, workdir: Path, write_text) -> GateResult:
 
 
 def classify_install_failure(text: str) -> str:
-    """Map raw uv stderr/error text to a human failure mode."""
+    """Map raw uv output/error text to a human failure mode."""
     lowered = (text or "").lower()
     for hint in TLS_HINTS:
         if hint in lowered:
