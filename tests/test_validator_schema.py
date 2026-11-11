@@ -122,3 +122,22 @@ def test_engines_dashboard_host_missing_is_bad_schema(tmp_path):
         "bad-schema",
         "engines.dashboardHost must be a nonempty string",
     ) in failures(verdict)
+
+
+def test_license_outside_allowlist_is_bad_license(tmp_path):
+    manifest = {**VALID_MANIFEST, "license": "GPL-3.0"}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert ("bad-license", "license 'GPL-3.0' is not in the allowlist") in failures(
+        verdict
+    )
+
+
+def test_license_allowlist_accepts_all_five(tmp_path):
+    for license_id in ("MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"):
+        manifest = {**VALID_MANIFEST, "license": license_id}
+
+        verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+        assert "bad-license" not in codes(verdict), license_id

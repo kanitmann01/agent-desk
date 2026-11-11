@@ -6,6 +6,8 @@ from .model import Failure
 
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
+ALLOWED_LICENSES = ("MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC")
+
 REQUIRED_KEY_TYPES = {
     "schemaVersion": int,
     "id": str,
@@ -102,5 +104,11 @@ def _validate_values(manifest) -> list[Failure]:
             failures.append(
                 Failure("bad-schema", "engines.dashboardHost must be a nonempty string")
             )
+
+    license_id = manifest.get("license")
+    if isinstance(license_id, str) and license_id not in ALLOWED_LICENSES:
+        failures.append(
+            Failure("bad-license", f"license '{license_id}' is not in the allowlist")
+        )
 
     return failures
