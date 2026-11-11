@@ -69,6 +69,23 @@ def test_cli_usage_error_on_missing_path(tmp_path):
     assert result.stderr.strip()
 
 
+def test_cli_json_output_is_lf_only_bytes():
+    """--json must be byte-deterministic across CI runners: LF only."""
+    for name in ("valid-manifest", "hash-mismatch"):
+        result = subprocess.run(
+            [sys.executable, "-m", "agentdesk.validator", "--json", str(fixture(name))],
+            capture_output=True,
+            env=test_validator_support.cli_env(),
+            cwd=str(test_validator_support.REPO_ROOT),
+        )
+        out = result.stdout
+
+        assert b"\r" not in out, repr(out[-80:])
+        assert out.endswith(b"\n")
+        assert not out.endswith(b"\n\n")
+        json.loads(out.decode("utf-8"))
+
+
 def test_cli_json_is_deterministic_bytes():
     for name in ("valid-manifest", "hash-mismatch"):
         first = run_cli("--json", str(fixture(name)))

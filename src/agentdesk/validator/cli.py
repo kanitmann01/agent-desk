@@ -29,6 +29,22 @@ def _reconfigure_output_streams() -> None:
             pass
 
 
+def _write_json_bytes(payload: bytes) -> None:
+    """Write the --json payload as bytes ending in a single LF.
+
+    print() would let Windows translate every newline to CRLF, breaking
+    byte determinism across CI runners; raw writes carry exactly what is
+    given. Streams without a .buffer attribute get the text instead.
+    """
+    payload += b"\n"
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(payload.decode("utf-8"))
+        return
+    buffer.write(payload)
+    buffer.flush()
+
+
 def main(argv=None) -> int:
     _reconfigure_output_streams()
     parser = argparse.ArgumentParser(
@@ -51,7 +67,9 @@ def main(argv=None) -> int:
         return 2
 
     if args.as_json:
-        print(json.dumps(verdict.as_dict(), sort_keys=True, indent=2))
+        _write_json_bytes(
+            json.dumps(verdict.as_dict(), sort_keys=True, indent=2).encode("utf-8")
+        )
     else:
         for failure in verdict.failures:
             print(f"FAIL {failure.code}: {failure.message}")
