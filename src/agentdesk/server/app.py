@@ -81,6 +81,7 @@ from agentdesk.server.core import (
     SRC_CALENDAR,
     SRC_EXCEL,
     SRC_RESEARCH,
+    SOURCE_IDS,
     STATUS_CONNECTED,
     STATUS_NOT_CONNECTED,
     Freshness,
@@ -373,6 +374,98 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     ]
 
 
+def dashboard_payload(server: AgentDeskServer) -> dict:
+    """Everything the dashboard shows, as data: one JSON payload for the
+    SPA shell (and any later client). The same source-state branches the
+    server-rendered cards apply live here as modes, so there is exactly
+    one place where dashboard state is decided; the renderers and the SPA
+    both follow it. Plugin cards are data (the same widget_cards() call
+    the rendered dashboard makes, so a dashboard view still spends one
+    pilot view), never server HTML.
+    """
+    settings = server.settings
+
+    def allowed(key: str) -> bool:
+        return settings is None or bool(settings.get(key))
+
+    excel = server.excel
+    sales_status = excel.status() if excel is not None else None
+    if not allowed("excel_enabled"):
+        sales_mode = "disabled"
+    elif sales_status is not None and sales_status.get("configured"):
+        sales_mode = "live"
+    else:
+        sales_mode = "unconfigured"
+
+    calendar = server.calendar
+    if not allowed("calendar_enabled"):
+        commitments_mode, commitments_status = "disabled", None
+    elif calendar is None:
+        commitments_mode, commitments_status = "unavailable", None
+    else:
+        commitments_mode, commitments_status = "live", calendar.status()
+
+    # The writer records the action as "llm.research" (assistant/loop.py);
+    # querying anything else makes the stamp never show the last answer.
+    audit_conn = server.audit_conn
+    last_answer = (
+        audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
+    )
+
+    skills = server.skills.active() if server.skills is not None else []  # type: ignore[attr-defined]
+    plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
+    sources = live_sources(server)
+    inbox = server.inbox  # type: ignore[attr-defined]
+    return {
+        "version": agentdesk.__version__,
+        "flags": {
+            "excelEnabled": allowed("excel_enabled"),
+            "calendarEnabled": allowed("calendar_enabled"),
+            "endpointEnabled": allowed("endpoint_enabled"),
+        },
+        "sources": {
+            "connected": sum(1 for s in sources if s.status == STATUS_CONNECTED),
+            "total": len(SOURCE_IDS),
+            "items": [
+                {"id": s.id, "status": s.status, "detail": s.detail} for s in sources
+            ],
+        },
+        "sales": {
+            "enabled": allowed("excel_enabled"),
+            "mode": sales_mode,
+            "status": sales_status,
+        },
+        "commitments": {
+            "enabled": allowed("calendar_enabled"),
+            "mode": commitments_mode,
+            "status": commitments_status,
+        },
+        "research": {
+            "enabled": allowed("endpoint_enabled"),
+            "lastAnsweredTs": last_answer,
+        },
+        "inbox": {"waiting": len(inbox.waiting()) if inbox is not None else 0},
+        "skills": [
+            {"id": s["id"], "name": s["name"], "description": s["description"]}
+            for s in skills
+        ],
+        "plugins": {
+            "cards": [
+                {
+                    "id": c["id"],
+                    "title": c["title"],
+                    "version": c["version"],
+                    "pilot": c["pilot"],
+                    "state": c["state"],
+                    "freshness": c["freshness"],
+                    "cause": c["cause"],
+                }
+                for c in plugin_cards
+            ],
+        },
+    }
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     """GET for the shell, health and statics; POST for state changes."""
 
@@ -481,6 +574,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         elif path == "/api/plugins":
             self._send_json(200, {"plugins": self.server_plugins_widget_records()})
+        elif path == "/api/dashboard":
+            self._send_json(200, dashboard_payload(self.server))
         elif path.startswith("/api/plugins/"):
             self._send_json(200, self._plugin_record_or_404(path[len("/api/plugins/"):]))
         elif path == "/audit/export.csv":
