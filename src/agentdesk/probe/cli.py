@@ -90,7 +90,13 @@ def _current_user() -> str:
     except Exception:
         import os
 
-        return os.environ.get("USERNAME", "unknown")
+        # USERNAME is the Windows spelling; USER and LOGNAME are what POSIX
+        # shells and logins set. Any one of them beats reporting "unknown".
+        for var in ("USERNAME", "USER", "LOGNAME"):
+            value = os.environ.get(var)
+            if value:
+                return value
+        return "unknown"
 
 
 # ---------------------------------------------------------------------------

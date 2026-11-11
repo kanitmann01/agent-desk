@@ -10,3 +10,8 @@
 *.toml text eol=lf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+# Shell scripts must stay LF: sh and Terminal.app break on CRLF, and the
+# .command launchers are double-clicked on macOS where the exec bit (set in
+# git, since Windows checkouts cannot preserve it) needs clean bytes.
+*.command text eol=lf
+*.sh text eol=lf

@@ -25,7 +25,7 @@ from probe_fakes import (
 
 from agentdesk.probe import adapters as real
 from agentdesk.probe.adapters import Adapters
-from agentdesk.probe.cli import main
+from agentdesk.probe.cli import _current_user, main
 from agentdesk.probe.core import RunResult
 
 
@@ -174,3 +174,45 @@ class TestCliUsageAndSelfCheck:
         )
         assert proc.returncode == 0, proc.stderr
         assert "SELF-CHECK OK" in proc.stdout
+
+
+class TestCurrentUserFallback:
+    """The report's user field: getpass first, then every spelling of $USER."""
+
+    @staticmethod
+    def _break_getpass(monkeypatch):
+        def raise_no_login():
+            raise RuntimeError("no login name available")
+
+        monkeypatch.setattr("getpass.getuser", raise_no_login)
+
+    def test_username_is_the_first_fallback_spelling(self, monkeypatch):
+        self._break_getpass(monkeypatch)
+        for var in ("USER", "LOGNAME"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("USERNAME", "corpuser")
+
+        assert _current_user() == "corpuser"
+
+    def test_posix_user_var_is_tried_when_username_is_missing(self, monkeypatch):
+        self._break_getpass(monkeypatch)
+        monkeypatch.delenv("USERNAME", raising=False)
+        monkeypatch.delenv("LOGNAME", raising=False)
+        monkeypatch.setenv("USER", "macuser")
+
+        assert _current_user() == "macuser"
+
+    def test_logname_is_tried_last_before_unknown(self, monkeypatch):
+        self._break_getpass(monkeypatch)
+        for var in ("USERNAME", "USER"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("LOGNAME", "loginuser")
+
+        assert _current_user() == "loginuser"
+
+    def test_unknown_when_nothing_is_available(self, monkeypatch):
+        self._break_getpass(monkeypatch)
+        for var in ("USERNAME", "USER", "LOGNAME"):
+            monkeypatch.delenv(var, raising=False)
+
+        assert _current_user() == "unknown"

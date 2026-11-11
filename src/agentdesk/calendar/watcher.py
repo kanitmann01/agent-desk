@@ -50,21 +50,33 @@ class Adapters:
     clock: Callable[[], float]
 
 
-def default_read_calendar():
-    """Read the synced calendar file from the OneDrive folder.
+def default_calendar_candidates() -> "list[Path]":
+    """Every place the synced calendar file is looked for, in order.
 
-    Both the plain OneDrive folder and the 'OneDrive - Company' shape are
-    tried; the flow writes to agent-desk/calendar_sync.json under whichever
-    exists. AGENTDESK_CALENDAR_FILE overrides the whole path.
+    AGENTDESK_CALENDAR_FILE overrides the whole list. Otherwise the
+    Windows shapes come first (the plain OneDrive folder, then any
+    'OneDrive - Company' folder at the home root), then the macOS sync
+    roots, which mount as ~/Library/CloudStorage/OneDrive-<tenant>; the
+    glob means the exact tenant suffix never matters. The server's
+    walkthrough hint reuses this list so what it shows is what it reads.
     """
     env_path = os.environ.get("AGENTDESK_CALENDAR_FILE")
     if env_path:
-        candidates = [Path(env_path)]
-    else:
-        home = Path.home()
-        candidates = [home / "OneDrive" / "agent-desk" / "calendar_sync.json"]
-        candidates += sorted(home.glob("OneDrive*/agent-desk/calendar_sync.json"))
-    for candidate in candidates:
+        return [Path(env_path)]
+    home = Path.home()
+    candidates = [home / "OneDrive" / "agent-desk" / "calendar_sync.json"]
+    candidates += sorted(home.glob("OneDrive*/agent-desk/calendar_sync.json"))
+    candidates += sorted(home.glob("Library/CloudStorage/OneDrive*/agent-desk/calendar_sync.json"))
+    return candidates
+
+
+def default_read_calendar():
+    """Read the synced calendar file from the OneDrive folder.
+
+    Tries every candidate from default_calendar_candidates in order and
+    reads the first one that exists.
+    """
+    for candidate in default_calendar_candidates():
         try:
             if candidate.is_file():
                 return str(candidate), candidate.read_bytes()

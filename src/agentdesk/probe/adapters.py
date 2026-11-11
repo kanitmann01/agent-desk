@@ -80,17 +80,39 @@ def copy_file(source, dest) -> None:
 
 
 def list_processes() -> RunResult:
-    """List running processes and their services via tasklist (stdlib only)."""
-    return subprocess_runner(["tasklist", "/svc", "/fo", "csv", "/nh"], timeout=30)
+    """List running processes for the EDR gate (stdlib only).
+
+    Windows: tasklist with its service columns. Other platforms (macOS
+    and Linux): ps is the portable shape. The gates only consume stdout
+    as text, so either listing feeds them the same way.
+    """
+    import os
+
+    if os.name == "nt":
+        return subprocess_runner(["tasklist", "/svc", "/fo", "csv", "/nh"], timeout=30)
+    return subprocess_runner(["ps", "-axo", "pid,comm"], timeout=30)
 
 
 def discover_onedrive() -> OneDriveInfo | None:
     """Find the OneDrive sync root for the current user.
 
-    Checks the OneDrive environment variables first, then looks for a
-    OneDrive* folder under the user profile. Never writes anything.
+    Windows: the OneDrive environment variables first, then a OneDrive*
+    folder under the user profile. macOS: the sync root lives under
+    ~/Library/CloudStorage/OneDrive-<tenant>, so glob that shape. The
+    evidence string names what was actually checked. Never writes
+    anything.
     """
     import os
+
+    if os.name != "nt":
+        home = Path.home()
+        for entry in sorted(home.glob("Library/CloudStorage/OneDrive*")):
+            if entry.is_dir():
+                return OneDriveInfo(
+                    path=str(entry),
+                    how="folder found under ~/Library/CloudStorage matching OneDrive*",
+                )
+        return None
 
     for var in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
         value = os.environ.get(var)
