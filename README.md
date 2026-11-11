@@ -32,6 +32,10 @@ AGENTDESK_DATA=D:/agent-desk-data
 
 Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_KEY` and `AGENTDESK_LLM_MODEL` for research and the assistant, `AGENTDESK_CALENDAR_FILE` for the calendar sync file, `AGENTDESK_DATA` for the data folder. Precedence: settings saved in the app win over real environment variables, which win over the file, and a missing file is not an error: the app simply runs unconfigured, and the settings page says so.
 
+## The dashboard UI
+
+The dashboard is a React single-page app (source in `frontend/`, data from `GET /api/dashboard`); its build output is committed at `src/agentdesk/server/static/spa/`, so the double-click launcher serves it with no node involved. Rebuilding it needs node once: `npm ci`, then `npm run build` in `frontend/`, then commit the output. Every other page (inbox, assistant, settings, the calendar walkthrough, what-this-touches, the audit surfaces, the wizard) is server-rendered, and the dashboard itself falls back to that server rendering when the build output is not present in a checkout.
+
 ## Where things are
 
 - `docs/research.md`: the full architecture research (v2, post-audit hardened). Licenses, plugin architecture, enterprise Windows mechanics, landscape. The binding decisions are in its section A9.

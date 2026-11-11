@@ -1,0 +1,138 @@
+/* Agent Desk dashboard SPA styles.
+
+   The tokens and component classes are ported verbatim from the
+   server-rendered stylesheet (pages.STYLES, docs/design-language.md) so
+   the SPA and the fallback render the same design. Fonts resolve
+   locally: named faces when installed, OS fallbacks otherwise; nothing
+   is fetched from the network. */
+@import "tailwindcss";
+
+:root{
+  --bg:#F6F4EF; --surface:#FFFFFF; --surface-2:#FBFAF7;
+  --ink-1:#1F2A27; --ink-2:#4C5A55; --ink-3:#77847E; --ink-4:#A9B1AC;
+  --hairline:#E5E1D6;
+  --shadow-card:0 0 0 1px rgba(31,42,39,.05),0 1px 2px -1px rgba(31,42,39,.06),0 2px 4px 0 rgba(31,42,39,.04);
+  --shadow-card-hover:0 0 0 1px rgba(31,42,39,.07),0 1px 2px -1px rgba(31,42,39,.08),0 2px 4px 0 rgba(31,42,39,.06);
+  --primary:#14594E; --primary-ink:#F6FBF9; --primary-soft:#E4EEE9;
+  --good:#14594E; --bad:#B3402A;
+  --attention-bg:#FBF3E2; --attention-ink:#8A5A14;
+  --r-card:12px; --r-control:8px; --r-inner:6px; --dur:160ms;
+  --font-ui:"Plus Jakarta Sans",-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono","Consolas",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{min-height:100%}
+body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+button:disabled{opacity:.55;cursor:default}
+a{color:var(--primary)}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+svg{display:block;flex:none}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+.rail{border-right:1px solid var(--hairline);background:var(--surface-2);padding:20px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.brand .mark{width:28px;height:28px;border-radius:8px;background:var(--primary);display:grid;place-items:center;color:var(--primary-ink)}
+.brand b{font-size:14px;font-weight:800;letter-spacing:-.01em}
+.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
+.rail a:hover{background:#EFEDE5;color:var(--ink-1)}
+.rail a[aria-current="page"]{background:var(--primary-soft);color:var(--primary)}
+.rail .nav-off{opacity:.45}
+.rail .count{margin-left:auto;font-family:var(--font-mono);font-size:11px;font-weight:600;background:var(--primary);color:var(--primary-ink);border-radius:999px;padding:1px 7px}
+.widget h3{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+.addplugin-form{display:inline-flex;margin:0}
+.settings-skill{margin-bottom:12px}
+.skill-name{font-size:14.5px}
+.skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.skills-strip .skill-btn{background:var(--surface);color:var(--ink-1);border-radius:var(--r-control);box-shadow:inset 0 0 0 1px var(--hairline),var(--shadow-card);padding:8px 14px;font-weight:700;font-size:13px;transition:background var(--dur) ease}
+.skills-strip .skill-btn:hover{background:var(--surface-2)}
+.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
+.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
+.rail .user small{display:block;color:var(--ink-3);font-weight:400}
+.rail .user .user-name{font-size:13px}
+main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.topbar h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.topbar .sub{color:var(--ink-2);margin-top:2px;display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:999px;background:var(--good);display:inline-block}
+.dot.amber{background:var(--attention-ink)}
+.dot.sample{background:var(--ink-4)}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+.btn-primary{background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card)}
+.btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btn-secondary:hover:not(:disabled){background:var(--surface-2)}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
+.icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+/* In the SPA the glass surface component carries the card chrome
+   (radius, rim, sheen), so .widget is layout only; the server-rendered
+   fallback keeps its own opaque copy in pages.STYLES. GlassSurface's
+   inner wrapper adds 8px padding, so these values sum to the original
+   18px sides and top, 14px bottom. */
+.widget{border-radius:var(--r-card);padding:10px 10px 6px;display:flex;flex-direction:column;gap:12px;height:100%}
+.widget-shell{position:relative}
+.widget-shell.amber{border-radius:var(--r-card);box-shadow:0 0 0 1px rgba(138,90,20,.18),0 1px 2px -1px rgba(138,90,20,.10),0 2px 4px 0 rgba(138,90,20,.08)}
+.widget:hover{box-shadow:var(--shadow-card-hover)}
+.col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
+.w-head{display:flex;align-items:center;gap:10px}
+.w-head h2{font-size:16px;font-weight:800;letter-spacing:-.01em}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
+.kpi{display:flex;gap:24px;align-items:flex-start}
+.kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px;overflow-wrap:anywhere}
+.kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
+table.rows{width:100%;border-collapse:collapse;font-size:13px}
+table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline)}
+table.rows tr:last-child td{border-bottom:none}
+table.rows td.neg{color:var(--bad)}
+.delta{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:12px;font-weight:600}
+.delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+.event{display:flex;gap:12px;background:var(--surface-2);border-radius:var(--r-inner);padding:12px}
+.event .when{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;padding-top:2px}
+.event b{display:block}
+.event small{color:var(--ink-3)}
+.w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
+.w-note{font-size:12.5px;color:var(--ink-3)}
+.subhead{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.subhead-tight{margin-bottom:4px}
+.check{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13.5px;cursor:pointer}
+.check .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-4);display:grid;place-items:center;color:transparent;transition:all var(--dur) ease;margin-top:1px;flex:none}
+.check[aria-checked="true"] .box{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.check[aria-checked="true"] span:not(.box){text-decoration:line-through;color:var(--ink-3)}
+.follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600}
+.well{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
+.well .q{flex:1;color:var(--ink-3)}
+.well-input{flex:1;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
+.well-input:focus{outline:2px solid var(--primary);outline-offset:1px}
+.answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px}
+.answer .aq{font-weight:700;margin-bottom:6px}
+.src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
+.widget.amber{background:var(--surface);box-shadow:0 0 0 1px rgba(138,90,20,.18),0 1px 2px -1px rgba(138,90,20,.10),0 2px 4px 0 rgba(138,90,20,.08)}
+.alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:13.5px}
+.badge-pilot{font-size:11px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
+.btn-start{align-self:flex-start}
+.empty{color:var(--ink-3);font-size:13px}
+.error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
+.error-card h1{font-size:20px;font-weight:800}
+.error-card p{color:var(--ink-2);font-size:13.5px}
+.origin-line{font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.06em}
+.page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
+.page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
+.page-foot a:hover{text-decoration:underline}
+/* The primary button sits inside the vendored GlareHover wrapper; the
+   inner button inherits the .btn shape so hit area and label stay put. */
+.shiny-btn .btn{color:var(--primary-ink);position:relative;z-index:1}
+.shiny-btn .btn:hover{background:transparent}
+@media (max-width:980px){
+  .app{grid-template-columns:1fr}
+  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 14px;gap:8px}
+  .rail .brand{padding:0 12px 0 0}
+  .rail .user{display:none}
+  .grid{grid-template-columns:1fr}
+  .col-7,.col-5,.col-8,.col-4{grid-column:auto}
+  main{padding:20px 16px 40px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important}
+}

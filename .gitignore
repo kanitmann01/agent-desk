@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 dist/
 .pytest_cache/
+
+# frontend dev toolchain: the committed bundle in src/agentdesk/server/static/spa is the product
+frontend/node_modules/
