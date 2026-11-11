@@ -22,7 +22,11 @@ class CalendarUnreadable(Exception):
 
 @dataclass(frozen=True)
 class CalendarEvent:
-    """One calendar entry as the flow writes it."""
+    """One calendar entry as the flow writes it.
+
+    Attendees arrive as a count or, when the flow provides them, as
+    names; briefs use names when they exist and never invent them.
+    """
 
     id: str
     subject: str
@@ -30,6 +34,7 @@ class CalendarEvent:
     end: datetime
     location: str = ""
     attendees: int = 0
+    attendee_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,13 @@ def parse_calendar_document(raw: dict) -> CalendarDocument:
     events: list[CalendarEvent] = []
     for item in raw["events"]:
         try:
+            raw_attendees = item.get("attendees", 0)
+            if isinstance(raw_attendees, list):
+                names = tuple(str(n) for n in raw_attendees if str(n).strip())
+                count = len(names)
+            else:
+                names = ()
+                count = int(raw_attendees)
             events.append(
                 CalendarEvent(
                     id=str(item["id"]),
@@ -52,7 +64,8 @@ def parse_calendar_document(raw: dict) -> CalendarDocument:
                     start=_parse_dt(item["start"]),
                     end=_parse_dt(item.get("end", item["start"])),
                     location=str(item.get("location", "")),
-                    attendees=int(item.get("attendees", 0)),
+                    attendees=count,
+                    attendee_names=names,
                 )
             )
         except (KeyError, TypeError, ValueError) as exc:

@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from agentdesk.calendar import store
@@ -144,6 +144,17 @@ class CalendarBridge:
             return self.status()
         self._state, self._cause = STATE_HEALTHY, ""
         return self.status()
+
+    def upcoming(self, now: datetime, within_hours: float = 1.0) -> list:
+        """Events starting within the window, soonest first. None when no
+        document has been read yet."""
+        if self._document is None:
+            return []
+        horizon = now + timedelta(hours=within_hours)
+        return sorted(
+            (e for e in self._document.events if now <= e.start <= horizon),
+            key=lambda e: e.start,
+        )
 
     def status(self) -> dict:
         """The widget payload: state, key event, breakdown, freshness."""
