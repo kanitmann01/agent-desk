@@ -57,7 +57,8 @@ def breakdown_prompt(event) -> str:
 
 def parse_breakdown(text: str) -> dict:
     """Parse the model's JSON reply, tolerating code fences. Any surprise
-    becomes the fallback rather than an error."""
+    becomes the fallback rather than an error, and the fallback is marked
+    so nothing downstream mistakes advice for tracked commitments."""
     stripped = text.strip()
     if stripped.startswith("```"):
         stripped = stripped.strip("`")
@@ -66,7 +67,7 @@ def parse_breakdown(text: str) -> dict:
     try:
         parsed = json.loads(stripped)
     except ValueError:
-        return {"subtasks": list(FALLBACK_SUBTASKS), "followups": []}
+        return {"subtasks": list(FALLBACK_SUBTASKS), "followups": [], "fallback": True}
     subtasks = [str(s) for s in parsed.get("subtasks", []) if str(s).strip()][:3]
     followups = [
         {"text": str(f.get("text", "")), "deadline": str(f.get("deadline", ""))}
@@ -75,9 +76,10 @@ def parse_breakdown(text: str) -> dict:
     ][:2]
     if not subtasks:
         subtasks = list(FALLBACK_SUBTASKS)
-    return {"subtasks": subtasks, "followups": followups}
+        return {"subtasks": subtasks, "followups": followups, "fallback": True}
+    return {"subtasks": subtasks, "followups": followups, "fallback": False}
 
 
 def generic_breakdown() -> dict:
     """The no-model breakdown: still useful, never broken."""
-    return {"subtasks": list(FALLBACK_SUBTASKS), "followups": [dict(f) for f in FALLBACK_FOLLOWUPS]}
+    return {"subtasks": list(FALLBACK_SUBTASKS), "followups": [dict(f) for f in FALLBACK_FOLLOWUPS], "fallback": True}

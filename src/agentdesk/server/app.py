@@ -21,6 +21,7 @@ from pathlib import Path
 
 import agentdesk
 from agentdesk.assistant import audit as audit_store
+from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import assistant_reply, research
@@ -319,6 +320,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(503, {"error": "the calendar bridge is not available"})
                 return
             calendar.retest()
+            self._maybe_briefs()
             self._send_json(200, calendar.status())
         elif path == "/research":
             body = self._read_json_body()
@@ -588,11 +590,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         page = render_touches(observed, agentdesk.__version__, datetime.now())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
+    def _maybe_briefs(self) -> None:
+        """A calendar read may owe the inbox a brief or two."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.calendar is not None and server.inbox is not None and server.activity_log is not None:
+            try:
+                generate_briefs(server.calendar, server.inbox, server.activity_log, server.inbox.clock)
+            except Exception:  # noqa: BLE001 - briefs must never break the inbox
+                LOG.exception("brief generation failed")
+
     def _send_inbox_page(self) -> None:
         inbox = self.server.inbox  # type: ignore[attr-defined]
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
             return
+        self._maybe_briefs()
         inbox_service.evaluate(inbox, _local_now())
         now_ts = time.time()
         page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
@@ -603,6 +615,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
             return
+        self._maybe_briefs()
         inbox_service.evaluate(inbox, _local_now())
         waiting = inbox.waiting()
         self._send_json(200, {
