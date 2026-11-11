@@ -71,3 +71,54 @@ def test_unparseable_manifest_is_bad_json(tmp_path):
 
     assert codes(verdict) == ["bad-json"]
     assert verdict.failures[0].message.startswith("manifest.json is not valid JSON")
+
+
+def test_schema_version_must_be_one(tmp_path):
+    manifest = {**VALID_MANIFEST, "schemaVersion": 2}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert ("bad-schema", "schemaVersion must be 1, got 2") in failures(verdict)
+
+
+def test_class_must_be_declarative(tmp_path):
+    manifest = {**VALID_MANIFEST, "class": "imperative"}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert ('bad-schema', 'class must be "declarative", got "imperative"') in failures(
+        verdict
+    )
+
+
+def test_version_must_be_semver(tmp_path):
+    manifest = {**VALID_MANIFEST, "version": "1.2"}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "bad-schema",
+        "version must be a semver string like 1.2.0, got '1.2'",
+    ) in failures(verdict)
+
+
+def test_engines_dashboard_host_must_be_nonempty_string(tmp_path):
+    manifest = {**VALID_MANIFEST, "engines": {"dashboardHost": ""}}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "bad-schema",
+        "engines.dashboardHost must be a nonempty string",
+    ) in failures(verdict)
+
+
+def test_engines_dashboard_host_missing_is_bad_schema(tmp_path):
+    manifest = {**VALID_MANIFEST, "engines": {}}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "bad-schema",
+        "engines.dashboardHost must be a nonempty string",
+    ) in failures(verdict)
