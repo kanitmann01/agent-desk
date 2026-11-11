@@ -9,7 +9,7 @@ import json
 import sqlite3
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -31,14 +31,32 @@ from excel_fixtures import base_workbook
 
 NOW = datetime.now().astimezone()
 
+
+def _ahead_today():
+    """An event slot that is always in the future but starts today.
+
+    Pinned hours made this suite fail every day after the slot passed
+    (the bridge then correctly reports clear, not healthy). Late at
+    night the long slot would start tomorrow, so shrink it instead.
+    """
+    start = NOW + timedelta(minutes=30)
+    end = NOW + timedelta(minutes=90)
+    if start.date() != NOW.date():
+        start = NOW + timedelta(seconds=60)
+        end = NOW + timedelta(seconds=120)
+    return start, end
+
+
+_EVENT_START, _EVENT_END = _ahead_today()
+
 FIXTURE_DOC = {
     "generatedAt": NOW.isoformat(),
     "events": [
         {
             "id": "evt-1",
             "subject": "Q4 pipeline review",
-            "start": NOW.replace(hour=14).isoformat(),
-            "end": NOW.replace(hour=15).isoformat(),
+            "start": _EVENT_START.isoformat(),
+            "end": _EVENT_END.isoformat(),
             "location": "Room Beaufort",
             "attendees": 6,
         }
