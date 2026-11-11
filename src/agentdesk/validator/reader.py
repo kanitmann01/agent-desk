@@ -18,14 +18,29 @@ class DirectoryReader:
 
     def read_bytes(self, relpath: str):
         """Return the file's bytes, or None when it is absent or escapes root."""
-        path = self.root / Path(relpath)
-        if ".." in path.parts or not path.is_file():
+        path = self._contained_path(relpath)
+        if path is None or not path.is_file():
             return None
         return path.read_bytes()
 
     def exists(self, relpath: str) -> bool:
-        path = self.root / Path(relpath)
-        return ".." not in path.parts and path.is_file()
+        path = self._contained_path(relpath)
+        return path is not None and path.is_file()
+
+    def _contained_path(self, relpath: str):
+        """Join ``relpath`` under root, or None when it would escape root.
+
+        An absolute relpath replaces the root entirely on join, and a symlink
+        could still point outside, so containment is verified on the resolved
+        path as well.
+        """
+        rel = Path(relpath)
+        path = self.root / rel
+        if rel.is_absolute() or ".." in path.parts:
+            return None
+        if not path.resolve().is_relative_to(self.root.resolve()):
+            return None
+        return path
 
 
 class ZipReader:
