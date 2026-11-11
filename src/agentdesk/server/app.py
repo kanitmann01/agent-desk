@@ -27,10 +27,14 @@ from agentdesk.assistant.loop import assistant_reply, research
 from agentdesk.calendar.watcher import CalendarBridge, default_read_calendar
 from agentdesk.excel import store as excel_store
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
+from agentdesk.inbox import service as inbox_service
+from agentdesk.inbox.core import UnknownCard
+from agentdesk.inbox.store import InboxStore
 from agentdesk.llm import env_chat, env_config
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.commitments import render_commitments_widget
+from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
@@ -66,6 +70,10 @@ def _greeting(now: datetime) -> str:
     if now.hour < 18:
         return "Good afternoon"
     return "Good evening"
+
+
+def _local_now() -> datetime:
+    return datetime.now().astimezone()
 
 
 def default_data_dir() -> Path:
@@ -119,6 +127,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         audit_conn=None,
         llm_endpoint: str | None = None,
         llm_model: str | None = None,
+        inbox_store: InboxStore | None = None,
     ) -> None:
         self.sessions = sessions
         self.sources = sources if sources is not None else default_sources()
@@ -130,6 +139,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         env_endpoint, _key, env_model = env_config()
         self.llm_endpoint = llm_endpoint if llm_endpoint is not None else env_endpoint
         self.llm_model = llm_model if llm_model is not None else env_model
+        self.inbox = inbox_store
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -225,6 +235,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
         elif path == "/assistant":
             self._send_assistant_page()
+        elif path == "/inbox":
+            self._send_inbox_page()
+        elif path == "/widgets/inbox":
+            self._send_inbox_count()
         elif path == "/audit/tail":
             self._send_audit_tail()
         elif path == "/audit/export.csv":
@@ -297,6 +311,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, self._run_llm_turn(
                 question.strip(), summary_mode=True).to_json())
+        elif path == "/inbox/cards":
+            if self.server.inbox is None:  # type: ignore[attr-defined]
+                self._send_json(503, {"error": "the inbox is not available"})
+                return
+            body = self._read_json_body() or {}
+            try:
+                card = self.server.inbox.add(  # type: ignore[attr-defined]
+                    kind=str(body.get("kind", "suggestion")),
+                    origin=str(body.get("origin", "")),
+                    title=str(body.get("title", "")),
+                    body=str(body.get("body", "")),
+                    action_label=str(body.get("actionLabel", "")),
+                    window_hours=body.get("windowHours"),
+                    meta=body.get("meta") or {},
+                )
+            except (ValueError, TypeError) as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            inbox_service.evaluate(self.server.inbox, _local_now())  # type: ignore[attr-defined]
+            self._send_json(201, self.server.inbox.get(card.id).to_json(self.server.inbox.now_ts()))  # type: ignore[attr-defined]
+        elif path.startswith("/inbox/cards/") and path.endswith("/accept"):
+            self._inbox_decide(path[len("/inbox/cards/"):-len("/accept")], "accept")
+        elif path.startswith("/inbox/cards/") and path.endswith("/dismiss"):
+            self._inbox_decide(path[len("/inbox/cards/"):-len("/dismiss")], "dismiss")
+        elif path.startswith("/inbox/dismissed/") and path.endswith("/restore"):
+            self._inbox_restore(path[len("/inbox/dismissed/"):-len("/restore")])
         elif path == "/assistant/ask":
             question = self._ask_question_from_body()
             if not question:
@@ -410,11 +450,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         last_answer = audit_store.last_ok_ts(audit_conn, "research") if audit_conn is not None else None
         widgets.append(render_research_widget(last_answer, now))
         widgets.append(demo["region-mix"])
+        inbox = self.server.inbox  # type: ignore[attr-defined]
         page = pages.render_dashboard(
             widgets,
             agentdesk.__version__,
             _greeting(now),
             now.strftime("%A, %d %B, %H:%M. "),
+            inbox_count=len(inbox.waiting()) if inbox is not None else 0,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -461,6 +503,58 @@ class DashboardHandler(BaseHTTPRequestHandler):
             observed = audit_store.observed_actions(self.server.audit_conn)  # type: ignore[attr-defined]
         page = render_touches(observed, agentdesk.__version__, datetime.now())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _send_inbox_page(self) -> None:
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        inbox_service.evaluate(inbox, _local_now())
+        now_ts = time.time()
+        page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _send_inbox_count(self) -> None:
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        inbox_service.evaluate(inbox, _local_now())
+        waiting = inbox.waiting()
+        self._send_json(200, {
+            "waiting": len(waiting),
+            "notified": sum(1 for c in waiting if c.notified_ts is not None),
+            "dismissed": len(inbox.dismissed()),
+        })
+
+    def _inbox_decide(self, card_id: str, decision: str) -> None:
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        try:
+            card = inbox.accept(card_id) if decision == "accept" else inbox.dismiss(card_id)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._send_json(200, card.to_json(inbox.now_ts()))
+
+    def _inbox_restore(self, card_id: str) -> None:
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        try:
+            card = inbox.restore(card_id)
+        except UnknownCard as exc:
+            # Either there is no such card or its 30 days are over; the
+            # answer says which, and nothing is quietly dropped.
+            if "30-day" in str(exc):
+                self._send_json(410, {"error": str(exc)})
+            else:
+                self._send_json(404, {"error": str(exc)})
+            return
+        self._send_json(200, card.to_json(inbox.now_ts()))
 
     def _send_health(self) -> None:
         payload = health_payload(
@@ -509,11 +603,12 @@ def create_server(
     excel: ExcelWatch | None = None,
     pick_workbook=None,
     calendar: CalendarBridge | None = None,
-    llm=None,
-    audit_conn=None,
-    llm_endpoint: str | None = None,
-    llm_model: str | None = None,
-) -> AgentDeskServer:
+        llm=None,
+        audit_conn=None,
+        llm_endpoint: str | None = None,
+        llm_model: str | None = None,
+        inbox_store: InboxStore | None = None,
+    ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
     A non-loopback host is a hard error, not a warning: the skeleton must
@@ -534,13 +629,15 @@ def create_server(
         calendar = _default_calendar_bridge()
     if audit_conn is None:
         audit_conn = _default_audit_conn()
+    if inbox_store is None:
+        inbox_store = _default_inbox_store()
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
             (resolved, bind_port), sessions, sources, excel, pick_workbook,
-            calendar, llm, audit_conn, llm_endpoint, llm_model,
+            calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
         )
 
     if port is None:
@@ -613,6 +710,18 @@ def _default_excel_watch() -> ExcelWatch | None:
         return ExcelWatch(conn, default_adapters())
     except (OSError, sqlite3.Error):
         LOG.exception("excel watch unavailable")
+        return None
+
+
+def _default_inbox_store() -> InboxStore | None:
+    """The inbox over the persistent store, or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "inbox.sqlite3", check_same_thread=False)
+        return InboxStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("inbox unavailable")
         return None
 
 

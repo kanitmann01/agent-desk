@@ -78,6 +78,11 @@ svg{display:block;flex:none}
 .rail a:hover{background:#EFEDE5;color:var(--ink-1)}
 .rail a[aria-current="page"]{background:var(--primary-soft);color:var(--primary)}
 .rail .nav-off{opacity:.45}
+.rail .count{margin-left:auto;font-family:var(--font-mono);font-size:11px;font-weight:600;background:var(--primary);color:var(--primary-ink);border-radius:999px;padding:1px 7px}
+.origin-line{font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.06em}
+.origin-why{color:var(--ink-2);font-size:13px;border-top:1px solid var(--hairline);padding-top:8px}
+.widget h3{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+.cardrow{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
 .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
 .rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
@@ -237,6 +242,23 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   });
 });
 
+// Inbox decisions: dismiss is immediate and reversible, accept consumes.
+document.querySelectorAll('[data-accept]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/inbox/cards/' + btn.dataset.accept + '/accept').then(function () { location.reload(); });
+  });
+});
+document.querySelectorAll('[data-dismiss]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/inbox/cards/' + btn.dataset.dismiss + '/dismiss').then(function () { location.reload(); });
+  });
+});
+document.querySelectorAll('[data-restore]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/inbox/dismissed/' + btn.dataset.restore + '/restore').then(function () { location.reload(); });
+  });
+});
+
 // Commitment subtasks: the click is the truth; the app persists it.
 document.querySelectorAll('[data-check]').forEach(function (el) {
   var flip = function () {
@@ -330,8 +352,8 @@ def _widget_html(widget: Widget) -> str:
     )
 
 
-def _rail() -> str:
-    off = ' class="nav-off" aria-disabled="true" title="Arrives in a later build"'
+def _rail(inbox_count: int = 0) -> str:
+    badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
     return (
         '<nav class="rail" aria-label="Main">'
         '<div class="brand"><span class="mark" aria-hidden="true">'
@@ -339,16 +361,16 @@ def _rail() -> str:
         'stroke-width="2.4" stroke-linecap="round"><path d="M4 12h6M8 8v8M14 10h6M17 7v10"/></svg>'
         '</span><b>Agent Desk</b></div>'
         f'<a href="/" aria-current="page">{_ICON_DASHBOARD}Dashboard</a>'
-        f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_INBOX}Inbox</span>'
+        f'<a href="/inbox">{_ICON_INBOX}Inbox{badge}</a>'
         f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_PLUGINS}Plugins</span>'
         f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_SETTINGS}Settings</span>'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
-        "<div><b class=\"user-name\">Agent Desk</b><small>local only</small></div></div>"
+        '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
     )
 
 
-def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str) -> str:
+def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0) -> str:
     """The full dashboard document: rail, greeting, sample widgets, footer."""
     cards = "".join(_widget_html(w) for w in widgets)
     esc_version = html.escape(version)
@@ -362,7 +384,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 </head>
 <body>
 <div class="app">
-{_rail()}
+{_rail(inbox_count)}
 <main>
 <div class="topbar">
   <div>
