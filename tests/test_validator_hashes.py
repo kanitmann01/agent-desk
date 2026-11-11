@@ -32,3 +32,25 @@ def test_correct_multi_file_lock_passes(tmp_path):
     verdict = validate_plugin(write_plugin(tmp_path, files=files))
 
     assert "hash-mismatch" not in codes(verdict)
+
+
+def test_malformed_release_lock_line_fails_loudly(tmp_path):
+    lock = "keep widget.ui.json deadbeef\n"
+
+    verdict = validate_plugin(write_plugin(tmp_path, files={"release.lock": lock}))
+
+    assert failures(verdict) == [
+        ("hash-mismatch", "malformed release.lock line: keep widget.ui.json deadbeef")
+    ]
+
+
+def test_blank_lines_in_release_lock_are_not_malformed(tmp_path):
+    lock = "\nsha256 " + hashlib.sha256(b"{}").hexdigest() + " other/data.json\n\n"
+    files = {
+        "release.lock": lock,
+        "other/data.json": "{}",
+    }
+
+    verdict = validate_plugin(write_plugin(tmp_path, files=files))
+
+    assert codes(verdict) == []

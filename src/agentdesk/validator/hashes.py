@@ -19,8 +19,13 @@ def check_release_hashes(reader) -> list[Failure]:
 
     failures: list[Failure] = []
     for line in lock_bytes.decode("utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
         parts = line.split()
         if len(parts) != 3 or parts[0] != "sha256":
+            failures.append(
+                Failure("hash-mismatch", f"malformed release.lock line: {line}")
+            )
             continue
         expected_hash, filename = parts[1], parts[2]
         content = reader.read_bytes(filename)
