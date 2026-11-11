@@ -508,7 +508,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             widgets.append(demo["key-commitment"])
         audit_conn = self.server.audit_conn  # type: ignore[attr-defined]
-        last_answer = audit_store.last_ok_ts(audit_conn, "research") if audit_conn is not None else None
+        # The writer records the action as "llm.research" (assistant/loop.py);
+        # querying anything else makes the stamp never show the last answer.
+        last_answer = audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
         widgets.append(render_research_widget(last_answer, now))
         widgets.append(demo["region-mix"])
         inbox = self.server.inbox  # type: ignore[attr-defined]

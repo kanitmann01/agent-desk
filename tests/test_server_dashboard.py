@@ -5,6 +5,7 @@ read the rendered HTML the way a browser would: structure and attributes,
 through the real HTTP seam.
 """
 
+import json
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
@@ -168,3 +169,16 @@ def test_unknown_path_returns_404(booted):
     headers = booted.exchange()
     status, _h, _body = booted.request("GET", "/nope", headers)
     assert status == 404
+
+
+def test_research_stamp_shows_when_the_last_answer_happened(booted):
+    # The writer records the action as llm.research; the stamp must query
+    # exactly that name or it would never leave "Ready".
+    booted.server.llm = lambda prompt: json.dumps({"summary": "s", "sources": []})
+    headers = booted.exchange()
+    status, _h, _b = booted.post_json("/research", {"question": "q"}, headers)
+    assert status == 200
+    _status, _h, body = booted.request("GET", "/", headers)
+    page = body.decode("utf-8")
+    assert "Answered " in page
+    assert ">Ready<" not in page
