@@ -4,7 +4,7 @@ Pure string building, no I/O; the CLI writes the markdown to disk and
 prints the summary.
 """
 
-from agentdesk.probe.core import GATE_KEYS, GateResult, Verdict
+from agentdesk.probe.core import GateResult, Verdict
 from agentdesk.probe.verdict import verdict_line
 
 _REPORT_HEADER = """# Agent Desk environment probe report
@@ -37,7 +37,10 @@ def render_report(results, verdict: Verdict, context) -> str:
     parts.extend(["", "## Verdict", "", verdict.name])
     parts.extend(f"Note: {note}" for note in verdict.notes)
     parts.append("")
-    parts.extend(_gate_section(r) for r in ordered)
+    for index, result in enumerate(ordered):
+        if index:
+            parts.append("")
+        parts.append(_gate_section(result))
     parts.append(verdict_line(verdict))
     return "\n".join(parts) + "\n"
 

@@ -25,7 +25,6 @@ from agentdesk.probe.core import (
     GATE_EXEC,
     GATE_FLOW,
     GATE_ONEDRIVE,
-    GATE_KEYS,
     GATE_UV,
     PASS,
     UNKNOWN,

@@ -48,3 +48,9 @@ def test_probe_cmd_has_a_python_fallback():
     text = cmd_text()
     assert "py -3" in text
     assert "not found" in text
+
+
+def test_probe_cmd_gates_on_python_version_not_just_presence():
+    """The Microsoft Store python.exe stub must not hijack the run."""
+    text = cmd_text()
+    assert "version_info >= (3, 10)" in text
