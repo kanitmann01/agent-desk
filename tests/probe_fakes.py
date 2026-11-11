@@ -81,9 +81,9 @@ class FakeProcessLister:
         return self._result
 
 
-def gate(key, number, status, evidence=("fake evidence",), note=""):
-    """Build a GateResult quickly for aggregator/report tests."""
-    return GateResult(key=key, number=number, title=key, status=status, evidence=tuple(evidence), note=note)
+def gate(key, number, status, evidence=("fake evidence",), note="", title=None):
+    """Build a GateResult quickly for aggregator/report tests (title defaults to the key)."""
+    return GateResult(key=key, number=number, title=title or key, status=status, evidence=tuple(evidence), note=note)
 
 
 class SequenceRunner:

@@ -18,7 +18,7 @@ _REPORT_HEADER = """# Agent Desk environment probe report
 
 
 def _gate_heading(result: GateResult) -> str:
-    return f"## Gate {result.number}: {result.key}"
+    return f"## Gate {result.number}: {result.title} ({result.key})"
 
 
 def _gate_section(result: GateResult) -> str:
@@ -49,7 +49,7 @@ def render_summary(results, verdict: Verdict) -> str:
     """Short stdout summary; its final line is the verdict line."""
     ordered = sorted(results, key=lambda r: r.number)
     lines = ["Agent Desk environment probe"]
-    lines.extend(f"Gate {r.number} ({r.key}): {r.status}" for r in ordered)
+    lines.extend(f"Gate {r.number}: {r.title} ({r.key}): {r.status}" for r in ordered)
     lines.extend(f"Note: {note}" for note in verdict.notes)
     lines.append(verdict_line(verdict))
     return "\n".join(lines)

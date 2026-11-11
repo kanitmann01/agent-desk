@@ -40,6 +40,7 @@ def sample_results():
             1,
             PASS,
             evidence=("command: python -I probe_hello.py", "rc=0, stdout: PROBE_OK"),
+            title="User-space execution",
         ),
         gate(
             GATE_UV,
@@ -112,6 +113,13 @@ class TestReportRendering:
         assert "2026-01-01 12:00:00" in report
         assert "3.14.0" in report
 
+    def test_gate_headings_use_title_and_keep_the_machine_key(self):
+        report = render_report(sample_results(), aggregate_verdict(sample_results()), CONTEXT)
+
+        assert "## Gate 1: User-space execution (exec-user-space)" in report
+        # The summary section keeps bare keys so tools can parse it.
+        assert "- Gate 1 (exec-user-space): PASS" in report
+
 
 class TestStdoutSummary:
     def test_summary_lists_each_gate_and_ends_with_verdict(self):
@@ -124,7 +132,9 @@ class TestStdoutSummary:
         gate_lines = [line for line in lines if line.startswith("Gate ")]
         assert len(gate_lines) == 5
         assert any(
-            line.startswith("Gate 1 (") and "exec-user-space" in line and line.endswith(": PASS")
+            line.startswith("Gate 1: User-space execution")
+            and "(exec-user-space)" in line
+            and line.endswith(": PASS")
             for line in gate_lines
         )
 
