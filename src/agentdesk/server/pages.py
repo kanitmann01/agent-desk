@@ -105,7 +105,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
 .kpi{display:flex;gap:24px;align-items:flex-start}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px}
+.kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px;overflow-wrap:anywhere}
 .kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
 .spark{margin-left:auto;text-align:right}
 .spark figcaption{font-size:11px;color:var(--ink-4);margin-top:4px}
@@ -138,6 +138,7 @@ table.rows td.neg{color:var(--bad)}
 .alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:13.5px}
 .badge-pilot{font-size:11px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
 .btn-start{align-self:flex-start}
+.empty{color:var(--ink-3);font-size:13px}
 .page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
 .error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
 .error-card h1{font-size:20px;font-weight:800}
@@ -156,12 +157,19 @@ table.rows td.neg{color:var(--bad)}
 }
 """
 
-# The only script the skeleton ships: the amber widget's Re-test demo,
-# which walks the designed recovery path from the PRD (visible failure,
-# one visible way back). No network calls, no frameworks.
+# The scripts the shell ships: the amber widget's demo recovery, the
+# workbook picker flow, and the Re-test call for the live sales widget.
+# Same-origin only; no frameworks.
 APP_JS = """\
-// Demo recovery for the amber widget: Re-test walks the designed path
-// from blocked back to fresh, in place. Nothing is sent anywhere.
+// Same-origin POST helper: every call here stays on 127.0.0.1.
+function post(url, body) {
+  return fetch(url, {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : '{}'});
+}
+
+// Demo recovery for the amber sample widget: Re-test walks the designed
+// path from blocked back to fresh, in place. Nothing is sent anywhere.
 (function () {
   var btn = document.getElementById('retest');
   if (!btn) return;
@@ -178,6 +186,28 @@ APP_JS = """\
     btn.remove();
   });
 })();
+
+// Workbook picker: the app opens the native file dialog, the chosen path
+// registers the watch, and the dashboard reloads with real data.
+(function () {
+  var btn = document.querySelector('[data-pick]');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    post('/sources/excel-watch/pick').then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.path) return;
+        post('/sources/excel-watch', {path: d.path})
+          .then(function () { location.reload(); });
+      });
+  });
+})();
+
+// Live Re-test: one poll right now, then the fresh state renders.
+document.querySelectorAll('[data-retest]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/sources/excel-watch/retest').then(function () { location.reload(); });
+  });
+});
 """
 
 _DOT_CLASS = {FRESH: "dot", ATTENTION: "dot amber", SAMPLE: "dot sample"}
@@ -203,7 +233,7 @@ def _widget_html(widget: Widget) -> str:
         f'<div class="w-head"><h2>{html.escape(widget.title)}</h2>{badge}'
         f"{_stamp_html(widget)}{ICON_OPTIONS}</div>"
         f"{widget.body_html}"
-        f'<div class="w-foot">{html.escape(widget.foot_html)}</div></article>'
+        f'<div class="w-foot">{widget.foot_html}</div></article>'
     )
 
 
