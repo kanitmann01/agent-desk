@@ -1,0 +1,218 @@
+"""Permission lint: the safety rules applied to a schema-valid manifest shape.
+
+Class D plugins get no shell, no unscoped filesystem globs, no network in
+base permissions, and no plugin-supplied HTML or script.
+"""
+
+import json
+
+from .model import Failure
+
+
+WORKSPACE_ROOT = "${workspace}/"
+PLUGIN_DATA_ROOT = "${pluginData}"
+
+KNOWN_DATA_SOURCE_TYPES = ("excel-watch", "json-watch", "http-get", "calendar-read")
+
+
+def validate_permission_lint(manifest, reader) -> list[Failure]:
+    """Return every permission-lint failure for the manifest."""
+    failures: list[Failure] = []
+    if not isinstance(manifest, dict):
+        return failures
+    permissions = manifest.get("permissions")
+
+    if isinstance(permissions, dict):
+        failures.extend(_validate_shell(permissions))
+        failures.extend(_validate_filesystem_scoping(permissions))
+        failures.extend(_validate_network_allow(permissions))
+
+    contributes = manifest.get("contributes")
+    if isinstance(contributes, dict) and isinstance(contributes.get("widgets"), list):
+        for widget in contributes["widgets"]:
+            if isinstance(widget, dict):
+                failures.extend(_validate_data_source_type(widget))
+
+    failures.extend(_validate_over_permission(manifest))
+    failures.extend(_validate_render(manifest, reader))
+
+    return failures
+
+
+def _validate_over_permission(manifest) -> list[Failure]:
+    """Every declared filesystem read glob must be used by a data source.
+
+    Each widget's dataSource "file" field names the glob that data source
+    needs; a read glob no data source references is an over-permission.
+    Write globs are exempt: they target the plugin's own data directory.
+    """
+    permissions = manifest.get("permissions")
+    if not isinstance(permissions, dict):
+        return []
+    filesystem = permissions.get("filesystem")
+    read_globs = filesystem.get("read") if isinstance(filesystem, dict) else None
+    if not isinstance(read_globs, list):
+        return []
+
+    referenced: set[str] = set()
+    contributes = manifest.get("contributes")
+    widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
+    if isinstance(widgets, list):
+        for widget in widgets:
+            if not isinstance(widget, dict):
+                continue
+            data_source = widget.get("dataSource")
+            if not isinstance(data_source, dict):
+                continue
+            file_glob = data_source.get("file")
+            if isinstance(file_glob, str):
+                referenced.add(file_glob)
+
+    return [
+        Failure(
+            "over-permission",
+            f"filesystem read glob is not referenced by any data source: {glob}",
+        )
+        for glob in read_globs
+        if isinstance(glob, str) and glob not in referenced
+    ]
+
+
+def _validate_data_source_type(widget) -> list[Failure]:
+    data_source = widget.get("dataSource")
+    if not isinstance(data_source, dict):
+        return [Failure("bad-schema", "widget dataSource must be an object")]
+    source_type = data_source.get("type")
+    if source_type not in KNOWN_DATA_SOURCE_TYPES:
+        return [Failure("unknown-datasource", f"unknown dataSource.type: {source_type}")]
+    return []
+
+
+def _validate_shell(permissions) -> list[Failure]:
+    if "shell" not in permissions:
+        return [Failure("bad-schema", "permissions must declare shell")]
+    shell = permissions["shell"]
+    if shell != "none":
+        return [Failure("shell-permission", f'permissions.shell must be "none", got "{shell}"')]
+    return []
+
+
+def _validate_filesystem_scoping(permissions) -> list[Failure]:
+    filesystem = permissions.get("filesystem")
+    if not isinstance(filesystem, dict):
+        return []
+    failures: list[Failure] = []
+    for kind in ("read", "write"):
+        globs = filesystem.get(kind)
+        if not isinstance(globs, list):
+            continue
+        for glob in globs:
+            if not isinstance(glob, str):
+                failures.append(
+                    Failure("bad-schema", "permissions.filesystem globs must be strings")
+                )
+            elif not _is_scoped(glob):
+                failures.append(
+                    Failure(
+                        "unscoped-filesystem",
+                        f"filesystem glob not rooted under {WORKSPACE_ROOT} or {PLUGIN_DATA_ROOT}: {glob}",
+                    )
+                )
+    return failures
+
+
+def _is_scoped(glob: str) -> bool:
+    return (
+        glob.startswith(WORKSPACE_ROOT)
+        or glob == PLUGIN_DATA_ROOT
+        or glob.startswith(PLUGIN_DATA_ROOT + "/")
+    )
+
+
+def _validate_network_allow(permissions) -> list[Failure]:
+    network = permissions.get("network")
+    if not isinstance(network, dict):
+        return []
+    allow = network.get("allow")
+    if isinstance(allow, list) and allow:
+        return [
+            Failure(
+                "over-permission",
+                "permissions.network.allow must be empty; "
+                "network access belongs in optionalPermissions",
+            )
+        ]
+    return []
+
+
+def _validate_render(manifest, reader) -> list[Failure]:
+    """Reject plugin-supplied HTML and check each widget's ui-schema file.
+
+    The schema only accepts "type": "ui-schema" pointing at a .json file
+    that parses as a JSON object.
+    """
+    failures: list[Failure] = []
+    contributes = manifest.get("contributes")
+    if not isinstance(contributes, dict):
+        return failures
+    widgets = contributes.get("widgets")
+    if not isinstance(widgets, list):
+        return failures
+
+    for widget in widgets:
+        if not isinstance(widget, dict):
+            failures.append(Failure("bad-schema", "each widget must be an object"))
+            continue
+        render = widget.get("render")
+        if not isinstance(render, dict):
+            failures.append(Failure("bad-schema", "widget render must be an object"))
+            continue
+        failures.extend(_validate_render_entry(render, reader))
+    return failures
+
+
+def _validate_render_entry(render, reader) -> list[Failure]:
+    failures: list[Failure] = []
+
+    for banned_key in ("template", "html"):
+        if banned_key in render:
+            failures.append(
+                Failure("plugin-html", f"render must not contain plugin-supplied keys: {banned_key}")
+            )
+
+    render_type = render.get("type")
+    if render_type != "ui-schema":
+        failures.append(
+            Failure("plugin-html", f'render.type must be "ui-schema", got "{render_type}"')
+        )
+        return failures
+
+    render_file = render.get("file")
+    if not isinstance(render_file, str):
+        failures.append(
+            Failure("plugin-html", "render.file must be a string ending with .json")
+        )
+        return failures
+    if not render_file.endswith(".json"):
+        failures.append(
+            Failure("plugin-html", f'render.file must end with .json, got "{render_file}"')
+        )
+        return failures
+
+    content = reader.read_bytes(render_file)
+    if content is None:
+        failures.append(Failure("missing-file", f"ui-schema file not found: {render_file}"))
+        return failures
+    try:
+        # utf-8-sig strips a leading BOM so Windows-authored files parse.
+        ui_schema = json.loads(content.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        failures.append(
+            Failure("bad-json", f"ui-schema file {render_file} is not valid JSON: {exc}")
+        )
+        return failures
+    if not isinstance(ui_schema, dict):
+        failures.append(
+            Failure("bad-json", f"ui-schema file {render_file} must be a JSON object")
+        )
+    return failures
