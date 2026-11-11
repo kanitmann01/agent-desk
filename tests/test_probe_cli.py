@@ -23,6 +23,7 @@ from probe_fakes import (
     SequenceRunner,
 )
 
+from agentdesk.probe import adapters as real
 from agentdesk.probe.adapters import Adapters
 from agentdesk.probe.cli import main
 from agentdesk.probe.core import RunResult
@@ -40,6 +41,8 @@ def all_pass_adapters(workdir: Path, onedrive_dir: Path) -> Adapters:
         reach=FakeReacher(status=200),
         list_processes=FakeProcessLister(stdout='"notepad.exe","900","N/A"\n'),
         discover_onedrive=FakeOneDriveDiscoverer(path=str(onedrive_dir), how="fake discovery"),
+        write_text=real.write_text,
+        copy_file=real.copy_file,
     )
 
 
@@ -68,6 +71,8 @@ class TestCliRun:
             reach=adapters.reach,
             list_processes=adapters.list_processes,
             discover_onedrive=adapters.discover_onedrive,
+            write_text=adapters.write_text,
+            copy_file=adapters.copy_file,
         )
         code = main(["--workdir", str(tmp_path / "run")], adapters=blocked)
 
@@ -88,6 +93,8 @@ class TestCliRun:
             reach=adapters.reach,
             list_processes=adapters.list_processes,
             discover_onedrive=adapters.discover_onedrive,
+            write_text=adapters.write_text,
+            copy_file=adapters.copy_file,
         )
         code = main(["--workdir", str(tmp_path / "run")], adapters=tls_fail)
 

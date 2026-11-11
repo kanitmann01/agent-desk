@@ -20,6 +20,8 @@ from probe_fakes import (
     FakeReacher,
     FakeRunner,
     FakeUvFinder,
+    RecordingCopier,
+    RecordingWriter,
     SequenceRunner,
 )
 
@@ -41,7 +43,8 @@ from agentdesk.probe.gates import (
 class TestGateExecUserSpace:
     def test_pass_when_hello_world_runs(self, tmp_path):
         runner = FakeRunner(returncode=0, stdout="PROBE_OK\n")
-        result = gate_exec_user_space(runner, tmp_path)
+        writer = RecordingWriter()
+        result = gate_exec_user_space(runner, tmp_path, writer)
 
         assert result.status == PASS
         assert result.key == "exec-user-space"
@@ -52,18 +55,23 @@ class TestGateExecUserSpace:
 
     def test_pass_actually_executes_written_script_with_current_python(self, tmp_path):
         runner = FakeRunner(returncode=0, stdout="PROBE_OK\n")
-        gate_exec_user_space(runner, tmp_path)
+        writer = RecordingWriter()
+        gate_exec_user_space(runner, tmp_path, writer)
 
+        # The script is written through the injected write_text callable.
+        assert len(writer.calls) == 1
+        script_path, script_text, _encoding = writer.calls[0]
+        assert script_path.parent == tmp_path
+        assert "PROBE_OK" in script_text
+        # The executed command points at exactly the written script.
         assert len(runner.commands) == 1
         cmd = runner.commands[0]
         assert cmd[0] == sys.executable
-        script = Path(cmd[2])
-        assert script.parent == tmp_path
-        assert "PROBE_OK" in script.read_text(encoding="utf-8")
+        assert Path(cmd[2]) == script_path
 
     def test_fail_on_nonzero_exit(self, tmp_path):
         runner = FakeRunner(returncode=1, stderr="program blocked by policy")
-        result = gate_exec_user_space(runner, tmp_path)
+        result = gate_exec_user_space(runner, tmp_path, RecordingWriter())
 
         assert result.status == FAIL
         assert any("program blocked by policy" in line for line in result.evidence)
@@ -71,23 +79,23 @@ class TestGateExecUserSpace:
 
     def test_fail_on_wrong_output(self, tmp_path):
         runner = FakeRunner(returncode=0, stdout="SOMETHING_ELSE")
-        result = gate_exec_user_space(runner, tmp_path)
+        result = gate_exec_user_space(runner, tmp_path, RecordingWriter())
 
         assert result.status == FAIL
 
     def test_fail_when_start_is_blocked(self, tmp_path):
         runner = ExplodingRunner("Access is denied.")
-        result = gate_exec_user_space(runner, tmp_path)
+        result = gate_exec_user_space(runner, tmp_path, RecordingWriter())
 
         assert result.status == FAIL
         assert any("Access is denied." in line for line in result.evidence)
 
     def test_real_subprocess_hello_world(self, tmp_path):
-        # Integration: the real adapter must execute a user-space script and
-        # classify it PASS on any machine where Python itself may run.
-        from agentdesk.probe.adapters import subprocess_runner
+        # Integration: the real adapter bundle must write a user-space script
+        # and execute it, classifying PASS on any machine where Python runs.
+        from agentdesk.probe.adapters import subprocess_runner, write_text
 
-        result = gate_exec_user_space(subprocess_runner, tmp_path)
+        result = gate_exec_user_space(subprocess_runner, tmp_path, write_text)
         assert result.status == PASS
         assert any("PROBE_OK" in line for line in result.evidence)
 
@@ -290,14 +298,22 @@ class TestGateOneDriveSync:
         workdir = tmp_path / "work"
         workdir.mkdir()
         discover = FakeOneDriveDiscoverer(path=str(onedrive_dir), how="env OneDrive")
+        writer = RecordingWriter()
+        copier = RecordingCopier()
 
-        result = gate_onedrive(discover, workdir)
+        result = gate_onedrive(discover, workdir, writer, copier)
 
         assert result.status == PASS
         assert result.key == "onedrive-sync"
         assert result.number == 4
         assert any(str(onedrive_dir) in line for line in result.evidence)
         assert any("env OneDrive" in line for line in result.evidence)
+        # Probe file written and copied through the injected callables.
+        assert len(writer.calls) == 1
+        assert len(copier.calls) == 1
+        source, dest = copier.calls[0]
+        assert source.parent == workdir
+        assert dest.parent == onedrive_dir
         # A probe file was actually copied into the sync root, uniquely named.
         copied = list(onedrive_dir.glob("agentdesk-probe-*.txt"))
         assert len(copied) == 1
@@ -305,7 +321,7 @@ class TestGateOneDriveSync:
         assert "manual" in result.note.lower()
 
     def test_unknown_when_no_folder_found(self, tmp_path):
-        result = gate_onedrive(FakeOneDriveDiscoverer(path=None), tmp_path)
+        result = gate_onedrive(FakeOneDriveDiscoverer(path=None), tmp_path, RecordingWriter(), RecordingCopier())
 
         assert result.status == UNKNOWN
         assert any("not found" in line for line in result.evidence)
@@ -316,7 +332,7 @@ class TestGateOneDriveSync:
         # the failure mode without touching real permissions.
         discover = FakeOneDriveDiscoverer(path=str(tmp_path / "missing-folder"), how="env OneDrive")
 
-        result = gate_onedrive(discover, tmp_path)
+        result = gate_onedrive(discover, tmp_path, RecordingWriter(), RecordingCopier())
 
         assert result.status == FAIL
         assert result.evidence  # error text captured

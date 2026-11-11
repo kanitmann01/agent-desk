@@ -3,6 +3,9 @@
 These are thin wrappers over subprocess, urllib, shutil and the filesystem.
 Gate logic never imports this module; only the CLI (and the one real
 subprocess test) wires them in, which keeps every gate testable with fakes.
+Even the gates' file writes and copies flow through the write_text and
+copy_file callables bundled in Adapters, so gates.py does no direct disk
+I/O beyond (re)creating the caller-supplied workdir.
 """
 
 import shutil
@@ -66,6 +69,16 @@ def find_uv() -> str | None:
     return shutil.which("uv")
 
 
+def write_text(path, text: str, encoding: str = "utf-8") -> None:
+    """Write text to a file (gate 1's hello-world, gate 4's probe file)."""
+    Path(path).write_text(text, encoding=encoding)
+
+
+def copy_file(source, dest) -> None:
+    """Copy a file (gate 4's probe-file copy into the sync root)."""
+    shutil.copy(source, dest)
+
+
 def list_processes() -> RunResult:
     """List running processes and their services via tasklist (stdlib only)."""
     return subprocess_runner(["tasklist", "/svc", "/fo", "csv", "/nh"], timeout=30)
@@ -104,6 +117,8 @@ class Adapters:
     reach: Callable  # str -> ReachResult
     list_processes: Callable  # () -> RunResult
     discover_onedrive: Callable  # () -> OneDriveInfo | None
+    write_text: Callable  # (path, text, encoding="utf-8") -> None
+    copy_file: Callable  # (source, dest) -> None
 
 
 def real_adapters() -> Adapters:
@@ -114,4 +129,6 @@ def real_adapters() -> Adapters:
         reach=reach_url,
         list_processes=list_processes,
         discover_onedrive=discover_onedrive,
+        write_text=write_text,
+        copy_file=copy_file,
     )

@@ -44,10 +44,10 @@ REPORT_NAME = "probe-report.md"
 def run_all_gates(workdir: Path, adapters: Adapters) -> list[GateResult]:
     """Run the five gates in order with the given adapter bundle."""
     return [
-        gates.gate_exec_user_space(adapters.runner, workdir),
+        gates.gate_exec_user_space(adapters.runner, workdir, adapters.write_text),
         gates.gate_uv_tls_bootstrap(adapters.runner, workdir, adapters.find_uv),
         gates.gate_power_automate(adapters.reach),
-        gates.gate_onedrive(adapters.discover_onedrive, workdir),
+        gates.gate_onedrive(adapters.discover_onedrive, workdir, adapters.write_text, adapters.copy_file),
         gates.gate_edr_identity(adapters.list_processes),
     ]
 
@@ -120,12 +120,12 @@ def _self_check() -> int:
         cases = [
             (
                 "gate 1 exec-user-space (hello-world runs)",
-                gates.gate_exec_user_space(_fake_runner(0, "PROBE_OK\n"), tmp),
+                gates.gate_exec_user_space(_fake_runner(0, "PROBE_OK\n"), tmp, real.write_text),
                 PASS,
             ),
             (
                 "gate 1 exec-user-space (execution blocked)",
-                gates.gate_exec_user_space(_fake_runner(1, stderr="blocked"), tmp),
+                gates.gate_exec_user_space(_fake_runner(1, stderr="blocked"), tmp, real.write_text),
                 FAIL,
             ),
             (
@@ -172,7 +172,7 @@ def _self_check() -> int:
             ),
             (
                 "gate 4 onedrive-sync (no folder)",
-                gates.gate_onedrive(lambda: None, tmp),
+                gates.gate_onedrive(lambda: None, tmp, real.write_text, real.copy_file),
                 UNKNOWN,
             ),
             (
@@ -180,6 +180,8 @@ def _self_check() -> int:
                 gates.gate_onedrive(
                     lambda: OneDriveInfo(path=str(onedrive_dir), how="fake discovery"),
                     tmp,
+                    real.write_text,
+                    real.copy_file,
                 ),
                 PASS,
             ),

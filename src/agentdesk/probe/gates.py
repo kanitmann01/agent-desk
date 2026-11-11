@@ -1,12 +1,12 @@
 """Gate implementations for the environment probe.
 
 Every gate takes its side effects (command execution, URL reachability,
-process listing, OneDrive discovery) as injectable callables so tests can
-pass fakes; the default adapters live in agentdesk.probe.adapters.
+process listing, OneDrive discovery, file writes and file copies) as
+injectable callables so tests can pass fakes; the default adapters live
+in agentdesk.probe.adapters, which stays the only side-effectful module.
 """
 
 import os
-import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -58,17 +58,18 @@ def _runner_result(res: RunResult) -> str:
     return ", ".join(parts)
 
 
-def gate_exec_user_space(runner, workdir: Path) -> GateResult:
+def gate_exec_user_space(runner, workdir: Path, write_text) -> GateResult:
     """Gate 1: can unsigned user-space code execute at all.
 
-    Writes a trivial runtime hello-world into the workdir and actually
-    executes it with the current Python via the injectable runner. A real
-    subprocess producing the expected marker is the only PASS condition.
+    Writes a trivial runtime hello-world into the workdir via the injected
+    write_text callable and actually executes it with the current Python via
+    the injectable runner. A real subprocess producing the expected marker
+    is the only PASS condition.
     """
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     script = workdir / HELLO_SCRIPT_NAME
-    script.write_text(f'print("{HELLO_MARKER}")\n', encoding="utf-8")
+    write_text(script, f'print("{HELLO_MARKER}")\n', encoding="utf-8")
     cmd = [sys.executable, "-I", str(script)]
     command_line = " ".join(cmd)
     evidence = [f"command: {command_line}"]
@@ -271,11 +272,12 @@ def gate_power_automate(reach) -> GateResult:
 ONEDRIVE_PROBE_NAME = "onedrive-probe.txt"
 
 
-def gate_onedrive(discover, workdir: Path) -> GateResult:
+def gate_onedrive(discover, workdir: Path, write_text, copy_file) -> GateResult:
     """Gate 4: is the OneDrive client present and syncing to the local profile.
 
     Looks for the sync root via the injectable discoverer, writes a probe
-    file into the workdir and copies it into the sync root. Upload is never
+    file into the workdir via the injected write_text callable and copies it
+    into the sync root via the injected copy_file callable. Upload is never
     verified here (that needs the sync engine and time); the note says so.
     PASS = folder found and writable; UNKNOWN = no folder found.
     """
@@ -293,7 +295,7 @@ def gate_onedrive(discover, workdir: Path) -> GateResult:
         )
 
     source = workdir / ONEDRIVE_PROBE_NAME
-    source.write_text("agentdesk probe sync test file; safe to delete\n", encoding="utf-8")
+    write_text(source, "agentdesk probe sync test file; safe to delete\n", encoding="utf-8")
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     dest = Path(info.path) / f"agentdesk-probe-{stamp}.txt"
     evidence = [
@@ -303,7 +305,7 @@ def gate_onedrive(discover, workdir: Path) -> GateResult:
     ]
 
     try:
-        shutil.copy(source, dest)
+        copy_file(source, dest)
     except OSError as exc:
         evidence.append(f"error: {exc}")
         return GateResult(

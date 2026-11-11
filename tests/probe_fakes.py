@@ -5,6 +5,9 @@ individual test files can import canned runner/reacher results without
 duplicating them. No fake here touches the network, OneDrive or EDR.
 """
 
+import shutil
+from pathlib import Path
+
 from agentdesk.probe.core import GateResult, RunResult
 
 
@@ -98,3 +101,30 @@ class SequenceRunner:
         self.commands.append(list(cmd))
         index = min(len(self.commands) - 1, len(self.results) - 1)
         return self.results[index]
+
+
+class RecordingWriter:
+    """The injectable write_text adapter: records calls, then performs them.
+
+    Recording proves the gate wrote through the injected callable; the
+    delegation keeps tests that read the written file working (tmp-path
+    scoped, so nothing outside the test's own directory is touched).
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, path, text, encoding="utf-8"):
+        self.calls.append((Path(path), text, encoding))
+        Path(path).write_text(text, encoding=encoding)
+
+
+class RecordingCopier:
+    """The injectable copy_file adapter: records calls, then performs them."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, source, dest):
+        self.calls.append((Path(source), Path(dest)))
+        shutil.copy(source, dest)
