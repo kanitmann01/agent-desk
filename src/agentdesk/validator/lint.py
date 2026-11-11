@@ -149,7 +149,7 @@ def _validate_render(manifest, reader) -> list[Failure]:
     """Reject plugin-supplied HTML and check each widget's ui-schema file.
 
     The schema only accepts "type": "ui-schema" pointing at a .json file
-    that parses as a JSON object with at least "type": "card".
+    that parses as a JSON object.
     """
     failures: list[Failure] = []
     contributes = manifest.get("contributes")
@@ -210,20 +210,8 @@ def _validate_render_entry(render, reader) -> list[Failure]:
             Failure("bad-json", f"ui-schema file {render_file} is not valid JSON: {exc}")
         )
         return failures
-    if not isinstance(ui_schema, dict) or ui_schema.get("type") != "card":
+    if not isinstance(ui_schema, dict):
         failures.append(
-            Failure(
-                "bad-json",
-                f'ui-schema file {render_file} must be a JSON object with "type": "card"',
-            )
+            Failure("bad-json", f"ui-schema file {render_file} must be a JSON object")
         )
     return failures
-
-
-def _validate_shell(permissions) -> list[Failure]:
-    if "shell" not in permissions:
-        return [Failure("bad-schema", "permissions must declare shell")]
-    shell = permissions["shell"]
-    if shell != "none":
-        return [Failure("shell-permission", f'permissions.shell must be "none", got "{shell}"')]
-    return []

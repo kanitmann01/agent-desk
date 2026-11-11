@@ -205,3 +205,13 @@ def test_nonempty_network_allow_in_permissions_is_over_permission(tmp_path):
         "over-permission",
         "permissions.network.allow must be empty; network access belongs in optionalPermissions",
     ) in failures(verdict)
+
+
+def test_schema_version_true_is_rejected_not_treated_as_1(tmp_path):
+    """bool is an int subclass: True must not validate as schemaVersion 1."""
+    from .test_validator_support import write_plugin
+
+    manifest = dict(VALID_MANIFEST, schemaVersion=True)
+    verdict = validate_plugin(write_plugin(tmp_path / "p", manifest))
+    assert not verdict.ok
+    assert "bad-schema" in [f.code for f in verdict.failures]

@@ -71,11 +71,12 @@ def _validate_values(manifest) -> list[Failure]:
     if manifest.get("schemaVersion") is not None and isinstance(
         manifest["schemaVersion"], int
     ):
-        if manifest["schemaVersion"] != 1:
+        version = manifest["schemaVersion"]
+        if isinstance(version, bool) or version != 1:
             failures.append(
                 Failure(
                     "bad-schema",
-                    f"schemaVersion must be 1, got {manifest['schemaVersion']}",
+                    f"schemaVersion must be 1, got {version}",
                 )
             )
 

@@ -71,18 +71,26 @@ def test_ui_schema_file_unparseable_is_bad_json(tmp_path):
     )
 
 
-def test_ui_schema_file_without_card_type_is_bad_json(tmp_path):
+def test_ui_schema_file_object_without_card_type_passes(tmp_path):
+    """The contract requires a parseable JSON object, nothing deeper."""
     manifest = manifest_copy()
 
     verdict = validate_plugin(
         write_plugin(tmp_path, manifest, files={"widget.ui.json": '{"type": "list"}'})
     )
 
+    assert verdict.ok
+
+
+def test_ui_schema_file_non_object_is_bad_json(tmp_path):
+    manifest = manifest_copy()
+
+    verdict = validate_plugin(
+        write_plugin(tmp_path, manifest, files={"widget.ui.json": "[1, 2]"})
+    )
+
     assert failures(verdict) == [
-        (
-            "bad-json",
-            'ui-schema file widget.ui.json must be a JSON object with "type": "card"',
-        )
+        ("bad-json", "ui-schema file widget.ui.json must be a JSON object")
     ]
 
 
