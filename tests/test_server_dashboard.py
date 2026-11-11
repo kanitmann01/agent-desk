@@ -159,6 +159,23 @@ def test_strict_csp_scripts_stay_self_and_pages_stay_inline_free(booted, page):
     assert scan.scripts[0].get("src") == "/static/app.js"
 
 
+def test_strict_csp_lets_bundled_fonts_load_from_self_only(booted):
+    headers = booted.exchange()
+    _status, resp_headers, _body = booted.request("GET", "/", headers)
+    csp = resp_headers["Content-Security-Policy"]
+    directives = {
+        part.split()[0]: part.split()[1:]
+        for part in (piece.strip() for piece in csp.split(";"))
+        if part
+    }
+    # The SPA's typefaces ship inside the bundle. Without font-src they
+    # fall back to default-src 'none' and are blocked, so the directive
+    # is there, and it names the app's own origin and nothing else: no
+    # font host, no data: URLs, no wildcard.
+    assert directives["font-src"] == ["'self'"]
+    assert directives["default-src"] == ["'none'"]
+
+
 def test_security_headers_on_every_answer(booted):
     headers = booted.exchange()
     _status, resp_headers, _body = booted.request("GET", "/", headers)
