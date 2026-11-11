@@ -40,7 +40,8 @@ def render_sales_disabled(now: datetime) -> Widget:
 
 def render_sales_unconfigured(now: datetime) -> Widget:
     """The honest not-connected state: no numbers exist yet, so none are
-    shown; the one real action is the workbook picker."""
+    shown; the real actions are the workbook picker and, hidden until the
+    dialog fails, the manual path fallback beneath it."""
     return Widget(
         id="sales-24h",
         title="Sales, last 24 hours",
@@ -51,6 +52,13 @@ def render_sales_unconfigured(now: datetime) -> Widget:
             "there is nothing to show here. Once one is connected, this card "
             "reports what changed in the file over the last 24 hours.</p></div>"
             '<button class="btn btn-primary btn-start" data-pick>Connect a workbook</button>'
+            '<div class="alert" id="pick-note" hidden></div>'
+            '<div class="well" id="manual-connect" hidden>'
+            '<input id="workbook-path" class="well-input" type="text" '
+            'placeholder="Full path to the .xlsx or .xlsm workbook" '
+            'aria-label="Workbook path">'
+            '<button class="btn btn-primary" data-manual-connect>Connect</button>'
+            "</div>"
         ),
         foot_html="Read-only: the file is copied before parsing, never opened in place.",
     )

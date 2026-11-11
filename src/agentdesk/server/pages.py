@@ -203,18 +203,58 @@ function post(url, body) {
     body: body ? JSON.stringify(body) : '{}'});
 }
 
-// Workbook picker: the app opens the native file dialog, the chosen path
-// registers the watch, and the dashboard reloads with real data.
+// Workbook connect: the app opens the native file dialog, the chosen
+// path registers the watch, and the dashboard reloads with real data.
+// A cancelled or invisible dialog is never silent: the amber note and
+// the manual path input appear on the card, and every failed call is
+// reported in the same place instead of reloading nothing.
 (function () {
   var btn = document.querySelector('[data-pick]');
-  if (!btn) return;
-  btn.addEventListener('click', function () {
+  var manual = document.querySelector('[data-manual-connect]');
+  if (!btn && !manual) return;
+  var note = document.getElementById('pick-note');
+  var input = document.getElementById('workbook-path');
+  var show = function (text) {
+    if (note) { note.hidden = false; note.textContent = text; }
+  };
+  var connect = function (path) {
+    fetch('/sources/excel-watch', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: path})})
+      .then(function (r) {
+        return r.json().then(function (d) { return {ok: r.ok, data: d}; });
+      })
+      .then(function (res) {
+        if (!res.ok || res.data.error) {
+          show(res.data.error || 'The workbook was not connected; nothing changed.');
+          return;
+        }
+        location.reload();
+      })
+      .catch(function () {
+        show('The dashboard could not reach its own server; nothing was connected.');
+      });
+  };
+  if (btn) btn.addEventListener('click', function () {
     post('/sources/excel-watch/pick').then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.path) return;
-        post('/sources/excel-watch', {path: d.path})
-          .then(function () { location.reload(); });
+        if (!d.path) {
+          show('The file dialog did not open. Type the workbook path below and press Connect.');
+          return;
+        }
+        connect(d.path);
+      })
+      .catch(function () {
+        show('The dashboard could not reach its own server; the file dialog was not opened.');
       });
+  });
+  if (manual) manual.addEventListener('click', function () {
+    var path = input ? input.value.trim() : '';
+    if (!path) { show('Type the full path to the workbook first.'); return; }
+    connect(path);
+  });
+  if (input) input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); if (manual) manual.click(); }
   });
 })();
 

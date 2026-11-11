@@ -117,6 +117,54 @@ def test_registration_rejects_a_blank_path(env, auth):
     assert status == 400
 
 
+def test_registration_rejects_a_missing_path(env, auth):
+    ghost = env.workbook.parent / "not-there.xlsx"
+    status, _h, body = env.post_json("/sources/excel-watch", {"path": str(ghost)}, auth)
+    payload = json.loads(body)
+    assert status == 400
+    assert "does not exist" in payload["error"]
+    assert str(ghost) in payload["error"]
+
+
+def test_registration_rejects_a_directory(env, auth):
+    status, _h, body = env.post_json(
+        "/sources/excel-watch", {"path": str(env.workbook.parent)}, auth
+    )
+    payload = json.loads(body)
+    assert status == 400
+    assert "folder" in payload["error"]
+
+
+def test_registration_rejects_an_unsupported_extension(env, auth):
+    csv = env.workbook.parent / "Q4-sales.csv"
+    csv.write_text("Product line,Units\nAtlas,41\n", encoding="utf-8")
+    status, _h, body = env.post_json("/sources/excel-watch", {"path": str(csv)}, auth)
+    payload = json.loads(body)
+    assert status == 400
+    # The cause names what the reader can actually open.
+    assert ".xlsx" in payload["error"] and ".xlsm" in payload["error"]
+    assert ".xls" in payload["error"] and ".csv" in payload["error"]
+
+
+def test_registration_rejects_an_unreadable_file(env, auth, monkeypatch):
+    monkeypatch.setattr(server_app, "probe_readable", lambda candidate: False)
+    status, _h, body = env.post_json("/sources/excel-watch", {"path": str(env.workbook)}, auth)
+    payload = json.loads(body)
+    assert status == 400
+    assert "locked" in payload["error"]
+    # Nothing was registered: the watch stays unconfigured.
+    assert json.loads(env.request("GET", "/widgets/sales-24h", auth)[2])["configured"] is False
+
+
+def test_registration_error_is_json_so_the_card_can_show_it(env, auth):
+    status, headers, body = env.post_json(
+        "/sources/excel-watch", {"path": "D:/ghost/Q4.xlsx"}, auth
+    )
+    assert status == 400
+    assert headers["Content-Type"].startswith("application/json")
+    assert "error" in json.loads(body)
+
+
 def test_known_delta_after_24h_on_the_changed_fixture(env, auth):
     env.post_json("/sources/excel-watch", {"path": str(env.workbook)}, auth)
     env.workbook.write_bytes(make_xlsx(CHANGED_ROWS))
@@ -278,3 +326,46 @@ class TestTkPickerParentParsing:
         monkeypatch.setattr(server_app.subprocess, "run", fake_run)
 
         assert server_app.tk_pick_workbook() is None
+
+
+class TestPickerDialogVisibility:
+    """The dialog must be findable: parented, lifted, focused, topmost.
+
+    A parentless dialog on Windows can open behind the browser, which
+    reads to the manager as a button that does nothing.
+    """
+
+    def test_workbook_snippet_parents_and_raises_the_dialog(self):
+        snippet = server_app.WORKBOOK_PICK_SNIPPET
+        assert "parent=root" in snippet
+        assert "root.lift()" in snippet
+        assert "root.focus_force()" in snippet
+        assert "-topmost" in snippet
+
+    def test_snippet_survives_a_broken_tk(self):
+        # The child answers an empty line, never a traceback.
+        assert "except Exception:" in server_app.WORKBOOK_PICK_SNIPPET
+        assert 'print(chosen)' in server_app.WORKBOOK_PICK_SNIPPET
+
+
+def test_pick_failure_is_never_silent_in_the_page_script():
+    from agentdesk.server import pages
+
+    script = pages.APP_JS
+    # A null path reveals the manual fallback with the amber note.
+    assert "The file dialog did not open. Type the workbook path below and press Connect." in script
+    # Fetch and HTTP failures surface inline instead of disappearing.
+    assert script.count(".catch(") >= 3
+    assert "res.data.error" in script
+    assert "data-manual-connect" in script
+
+
+def test_unconfigured_card_carries_the_manual_fallback(env, auth):
+    page = env.request("GET", "/", auth)[2].decode("utf-8")
+    assert 'id="pick-note" hidden' in page
+    assert 'id="manual-connect" hidden' in page
+    assert 'data-manual-connect' in page
+    assert 'id="workbook-path"' in page
+    # The fallback is the same endpoint the picker uses, so validation
+    # and success rendering are identical either way.
+    assert ".xlsx or .xlsm" in page

@@ -114,12 +114,15 @@ def default_data_dir() -> Path:
     return Path(Path.home(), ".agent-desk")
 
 
-# The workbook dialog runs in a child interpreter, not in this process.
+# The file dialogs run in a child interpreter, not in this process.
 # Tk must own the main thread on macOS, and the server's request threads
 # are workers; a fresh process sidesteps the threading rules on both
 # platforms. The child prints the chosen path, or an empty line when the
 # dialog is cancelled or Tk is unusable, so the parent only parses stdout.
-_PICKER_SNIPPET = """\
+# The dialog is parented to the hidden root and the root is lifted and
+# focused first: on Windows a parentless dialog can open invisibly
+# behind the browser, which reads to the user as "the button is broken".
+_PICKER_SNIPPET_TEMPLATE = """\
 import sys
 
 try:
@@ -129,12 +132,12 @@ try:
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)  # keep the dialog in front on Windows
+    root.lift()                        # out from behind the browser window
+    root.focus_force()
     chosen = filedialog.askopenfilename(
-        title="Choose the sales workbook",
-        filetypes=[
-            ("Excel workbooks", "*.xlsx *.xlsm *.xlsb"),
-            ("All files", "*.*"),
-        ],
+        parent=root,
+        title={title!r},
+        filetypes={filetypes!r},
     )
     root.destroy()
 except Exception:
@@ -142,27 +145,88 @@ except Exception:
 print(chosen)
 """
 
+WORKBOOK_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
+    title="Choose the sales workbook",
+    filetypes=[
+        ("Excel workbooks", "*.xlsx *.xlsm *.xlsb"),
+        ("All files", "*.*"),
+    ],
+)
 
-def tk_pick_workbook() -> str | None:
-    """The native file dialog, one child process per call.
+CALENDAR_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
+    title="Choose the calendar file",
+    filetypes=[
+        ("Calendar JSON", "*.json"),
+        ("All files", "*.*"),
+    ],
+)
 
-    The child does the Tk work (it gets a fresh main thread to itself);
-    the parent reads its stdout and never imports Tk. Any failure,
-    including a cancelled dialog (empty output), answers None: the UI
-    treats it as cancelled rather than breaking the flow.
+
+def _tk_pick_file(snippet: str) -> str | None:
+    """One child process per dialog call; the parent never imports Tk.
+
+    Any failure, including a cancelled dialog (empty output), answers
+    None: the UI treats it as cancelled rather than breaking the flow.
     """
     try:
         completed = subprocess.run(
-            [sys.executable, "-c", _PICKER_SNIPPET],
+            [sys.executable, "-c", snippet],
             capture_output=True,
             text=True,
             check=False,
         )
     except Exception:  # noqa: BLE001 - a broken dialog must not break the app
-        LOG.exception("workbook picker failed")
+        LOG.exception("file picker failed")
         return None
     chosen = (completed.stdout or "").strip()
     return chosen or None
+
+
+def tk_pick_workbook() -> str | None:
+    """The native workbook dialog, one child process per call."""
+    return _tk_pick_file(WORKBOOK_PICK_SNIPPET)
+
+
+def tk_pick_calendar() -> str | None:
+    """The native calendar-file dialog, same mechanism as the workbook."""
+    return _tk_pick_file(CALENDAR_PICK_SNIPPET)
+
+
+# The stdlib xlsx reader opens zip-based workbooks only. .xls, .xlsb and
+# .csv look like workbooks to a manager but cannot be read; naming the
+# supported types up front beats an amber card after registration.
+WORKBOOK_SUFFIXES = (".xlsx", ".xlsm")
+
+
+def probe_readable(candidate: Path) -> bool:
+    """One open of the file: the honest check that it can be read here
+    (a workbook held open by another program fails this on Windows)."""
+    try:
+        with candidate.open("rb"):
+            pass
+    except OSError:
+        return False
+    return True
+
+
+def workbook_path_problem(path_text: str) -> str:
+    """'' when the path is watchable; otherwise the human cause."""
+    candidate = Path(path_text)
+    if not candidate.exists():
+        return f"That path does not exist: {path_text}"
+    if not candidate.is_file():
+        return f"That path is a folder, not a workbook: {path_text}"
+    if candidate.suffix.lower() not in WORKBOOK_SUFFIXES:
+        return (
+            "Only .xlsx and .xlsm workbooks can be read here; the reader "
+            f"cannot open .xls, .xlsb or .csv files: {path_text}"
+        )
+    if not probe_readable(candidate):
+        return (
+            "The workbook could not be opened (it may be locked by another "
+            f"program): {path_text}"
+        )
+    return ""
 
 
 class AgentDeskServer(ThreadingHTTPServer):
@@ -398,6 +462,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = self._read_json_body()
             if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
                 self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
+                return
+            # Reject nonsense before registering: the manual-path fallback
+            # lives on the card, so this error text is the feedback loop.
+            problem = workbook_path_problem(body["path"].strip())
+            if problem:
+                self._send_json(400, {"error": problem})
                 return
             excel.register(body["path"].strip())
             excel.start_polling()
