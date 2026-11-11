@@ -5,8 +5,11 @@ base permissions, and no plugin-supplied HTML or script.
 """
 
 import json
+import re
 
 from .model import Failure
+
+_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 WORKSPACE_ROOT = "${workspace}/"
@@ -20,6 +23,12 @@ def validate_permission_lint(manifest, reader) -> list[Failure]:
     failures: list[Failure] = []
     if not isinstance(manifest, dict):
         return failures
+    plugin_id = str(manifest.get("id", ""))
+    if not _SAFE_ID.match(plugin_id) or ".." in plugin_id:
+        failures.append(Failure(
+            "unsafe-id",
+            "the manifest id must be a safe name (letters, digits, dots, "
+            "dashes, underscores; no separators or dot-segments)"))
     permissions = manifest.get("permissions")
 
     if isinstance(permissions, dict):

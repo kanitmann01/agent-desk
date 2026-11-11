@@ -17,6 +17,7 @@ FAILURE_CODES = (
     "unknown-key",
     "bad-schema",
     "bad-license",
+    "unsafe-id",
     "shell-permission",
     "unscoped-filesystem",
     "plugin-html",

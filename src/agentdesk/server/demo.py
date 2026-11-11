@@ -16,7 +16,12 @@ _GREEN = "#14594E"
 
 @dataclass(frozen=True)
 class Widget:
-    """One dashboard card: identity, size, freshness contract, content."""
+    """One dashboard card: identity, size, freshness contract, content.
+
+    body_html and foot_html are authored HTML built by this package and
+    sales.py, which escape every dynamic value themselves; the shell
+    renders them as-is. Titles and badges are escaped by the shell.
+    """
 
     id: str
     title: str
@@ -92,7 +97,11 @@ def demo_widgets() -> list[Widget]:
                 '<div class="sub">+1.1% vs yesterday, &euro;1.32M total</div></div>'
                 f"{_SPARK}</div>{_rows()}"
             ),
-            foot_html="Demo widget. The sales workbook connects in a later build.",
+            foot_html=(
+                "<span>See what changed overnight, without opening the file.</span>"
+                '<button class="btn btn-secondary btn-start" data-pick>Connect a workbook</button>'
+                "<span>Sample data until then.</span>"
+            ),
         ),
         Widget(
             id="key-commitment",
@@ -106,7 +115,10 @@ def demo_widgets() -> list[Widget]:
                 f"{_checks()}</div>"
                 '<span class="follow">Send the updated deck to Marco by 13:00</span>'
             ),
-            foot_html="Demo widget. The calendar bridge connects in a later build.",
+            foot_html=(
+                '<a class="btn btn-secondary btn-start" href="/walkthrough/calendar">Connect your calendar</a>'
+                "<span>Sample data until then.</span>"
+            ),
         ),
         Widget(
             id="research",

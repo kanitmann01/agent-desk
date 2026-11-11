@@ -17,6 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import server_harness
 from agentdesk.plugins.runtime import PluginRuntime
 from agentdesk.server import app as server_app
 from plugins_fixtures import shell_zip, valid_zip, widened_zip  # noqa: E402
@@ -95,12 +96,13 @@ def running(tmp_path):
         workspace_dir=tmp_path / "workspace",
         now="2026-11-11T16:00:00",
     )
-    server = server_app.create_server(port=0, plugins=runtime)
-    running = Running(server, runtime)
+    booted = server_harness.Booted(plugins=runtime)
+    running = Running(booted.server, runtime)
     try:
         yield running
     finally:
-        running.close()
+        booted.close()
+        running.thread.join(timeout=5)
 
 
 def test_install_makes_widget_with_pilot_badge_and_lockfile(running, tmp_path):
@@ -244,8 +246,8 @@ def test_plugin_endpoints_require_a_session(tmp_path):
     runtime = PluginRuntime(plugins_dir=tmp_path / "plugins",
                             data_dir=tmp_path / "data",
                             workspace_dir=tmp_path / "workspace")
-    server = server_app.create_server(port=0, plugins=runtime)
-    running = Running(server, runtime)
+    booted = server_harness.Booted(plugins=runtime)
+    running = Running(booted.server, runtime)
     try:
         zip_path = valid_zip(tmp_path / "plugin.zip")
         status, _headers, _body = running.request(

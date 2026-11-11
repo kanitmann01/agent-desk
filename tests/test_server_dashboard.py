@@ -98,16 +98,23 @@ def test_every_widget_carries_the_freshness_contract(page):
         assert widget["status"] in {"fresh", "attention", "sample"}, widget["id"]
         assert widget["stamp"] is not None, widget["id"]
         assert "data-freshness" in widget["stamp"], widget["id"]
-        assert widget["stamp"].get("data-updated-iso"), widget["id"]
         assert widget["dot"] is not None, widget["id"]
+        # A card either shows when it last updated, or is an attention
+        # state that says why it has nothing to show. Never a quiet card.
+        if not widget["stamp"].get("data-updated-iso"):
+            assert widget["status"] == "attention", widget["id"]
 
 
 def test_sample_widgets_are_labeled_as_sample(page):
     scan = _scan(page)
     statuses = sorted(w["status"] for w in scan.widgets)
-    assert statuses == ["attention", "sample", "sample", "sample"]
-    assert "tag-sample" in page
-    assert "All data shown is sample data." in page
+    # Sales is sample until connected; commitments is live-but-empty;
+    # research is an action surface (Ready); region-mix shows the designed
+    # amber failure state.
+    assert statuses == ["attention", "attention", "fresh", "sample"]
+    assert "See what changed overnight, without opening the file." in page
+    assert "Sample data until then." in page
+    assert "Cards without a connected source show sample data." in page
 
 
 def test_amber_widget_shows_the_designed_failure_state(page):

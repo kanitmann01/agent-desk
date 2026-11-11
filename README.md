@@ -20,7 +20,21 @@ From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to ski
 - `src/agentdesk/probe/`: the P0 environment probe (issue #2), run via `tools/probe.cmd`.
 - `src/agentdesk/validator/`: the plugin validator CLI (issue #8), byte-identical to registry CI.
 - `src/agentdesk/server/`: the hardened localhost web app (issue #3): token bootstrap, Origin/Host guard, dashboard shell, health.
+- `src/agentdesk/excel/`: the excel-watch (issue #4): shadow copy before parse, stdlib xlsx reader, SQLite row-hash snapshots, 24-hour delta, amber locked-file state.
+- `src/agentdesk/calendar/`: the calendar bridge (issue #5): reads the OneDrive-synced calendar JSON, picks today's key commitment, breakdowns over the corporate endpoint with a generic fallback, checks and breakdown cache in SQLite, the in-app walkthrough.
+- `src/agentdesk/assistant/`: research and the assistant (issue #6): one thin loop over the corporate endpoint, widget context attached so she never re-explains, and the audit store recording every outbound call.
+- `src/agentdesk/inbox/`: the inbox and interruption budget (issue #12): suggestion cards with origin lines, quiet hours 18:00-08:00, a cap of three notifications a day, digest batching, and 30-day dismiss recovery.
+- `src/agentdesk/repetition/`: the repetition detector and skills (issue #13): app-mediated activity log, deterministic clustering, one proposal per pattern at the fifth similar ask, dismiss cooldowns, and versioned SKILL.md skills with honest undo.
+- `src/agentdesk/briefs.py`: pre-meeting briefs (issue #14): calendar-only, assembled from commitments and research history about the attendees, only when there is something to say, always inside the interruption budget.
+- `src/agentdesk/settings.py`: settings (issue #15): toggles only, defaults that need no documentation; the values the page shows are the values the inbox and the sources enforce.
+- `src/agentdesk/llm.py`: the shared OpenAI-compatible endpoint adapter (env-configured, one attempt, no telemetry).
 - `tools/agent-desk.cmd`: the double-click launcher.
+- `tools/license_manifest.py`: the license gate (issue #7): fails on any dependency outside MIT/Apache-2.0/BSD/ISC; writes `THIRD-PARTY-LICENSES.md`.
+
+## For IT review
+
+- `/what-this-touches` in the running app: the one-page statement, generated from the audit event vocabulary.
+- `/audit/export.csv`: the append-only audit log as CSV (actor, action, target, timestamp).
 
 ## Ground rules for anything built here
 

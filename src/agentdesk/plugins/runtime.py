@@ -11,17 +11,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from glob import glob
 from pathlib import Path
 
 from agentdesk.validator.core import validate_plugin
 
 PILOT_VIEWS = 3
+
+# Plugin ids and versions become filesystem fragments (install dirs,
+# data dirs, rmtree targets), so they are names, not free text.
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _require_safe_name(value: str, what: str) -> None:
+    if (not value or "/" in value or "\\" in value or value.startswith("-")
+            or ".." in value or not _SAFE_NAME.match(value)):
+        raise PluginError("plugin:unsafe-name",
+                          f"{what} is not a safe name: {value[:40]!r}", 400)
 
 
 class PluginError(Exception):
@@ -38,13 +50,6 @@ class ExtractedPlugin:
     dir: Path
     manifest: dict
     sha256: str
-
-
-def _shift_years(day: date, years: int) -> date:
-    try:
-        return day.replace(year=day.year + years)
-    except ValueError:  # Feb 29
-        return date(day.year + years, day.month, 28)
 
 
 def _tree_digest(plugin_dir: Path) -> str:
@@ -132,11 +137,27 @@ class PluginRuntime:
             raise PluginError("plugin:unknown", f"no installed plugin {plugin_id}", 404)
         return entry
 
+    @staticmethod
+    def _active_version_dir(entry: dict) -> Path:
+        """The directory of the version the user is actually on: after a
+        rollback that is not the newest entry, and re-consent as well as
+        rendering must compare against what the user sees."""
+        active = entry.get("active_version")
+        for version in entry["versions"]:
+            if version["version"] == active:
+                return Path(version["dir"])
+        return Path(entry["versions"][-1]["dir"])
+
     # ---- lifecycle ----
 
     def install(self, zip_path: Path, source: str = "zip") -> dict:
         zip_path = Path(zip_path)
-        verdict = validate_plugin(zip_path)
+        try:
+            verdict = validate_plugin(zip_path)
+        except PluginError:
+            raise
+        except Exception as exc:  # unreadable file: a bad request
+            raise PluginError("install:unreadable", str(exc), 400)
         if not verdict.ok:
             first = verdict.failures[0]
             raise PluginError("install:validator-failed",
@@ -150,6 +171,8 @@ class PluginRuntime:
             manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
             plugin_id = str(manifest["id"])
             version = str(manifest["version"])
+            _require_safe_name(plugin_id, "plugin id")
+            _require_safe_name(version, "version")
             digest = _tree_digest(staged)
             version_dir = self.plugins_dir / plugin_id / version
             version_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -192,15 +215,19 @@ class PluginRuntime:
             raise PluginError("update:already-pending",
                               f"{plugin_id} already holds a re-consent", 409)
 
-        verdict = validate_plugin(Path(zip_path))
+        try:
+            verdict = validate_plugin(Path(zip_path))
+        except PluginError:
+            raise
+        except Exception as exc:
+            raise PluginError("update:unreadable", str(exc), 400)
         if not verdict.ok:
             first = verdict.failures[0]
             raise PluginError("update:validator-failed",
                               f"{first.code}: {first.message}", 400)
 
         current_manifest = json.loads(
-            (Path(entry["versions"][-1]["dir"]) / "manifest.json")
-            .read_text(encoding="utf-8"))
+            (self._active_version_dir(entry) / "manifest.json").read_text(encoding="utf-8"))
         self._staging.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=self._staging) as tmp:
             staged = Path(tmp) / "plugin"
@@ -394,7 +421,7 @@ class PluginRuntime:
             if entry["state"] != "enabled" or not entry["versions"]:
                 continue
             manifest = {}
-            manifest_path = Path(entry["versions"][-1]["dir"]) / "manifest.json"
+            manifest_path = self._active_version_dir(entry) / "manifest.json"
             if manifest_path.exists():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             data = entry.get("data_source") or {}

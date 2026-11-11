@@ -1,0 +1,160 @@
+"""Registry hardening tests: names are names, not paths.
+
+Ids, versions and tags become filesystem fragments and git pathspecs, so
+traversal shapes are refused at every door: index load, resolve, install,
+and rollback. The client lockfile is the pointer that rollback repoints.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+for _p in (str(ROOT / "src"), str(ROOT / "tests")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from agentdesk.registry.index import RegistryIndexError, load_index
+from agentdesk.registry.install import (
+    RegistryError,
+    install_from_registry,
+    read_lock,
+    rollback,
+)
+from .registry_fixtures import make_registry
+
+
+def test_index_refuses_traversal_in_id_version_and_tag(tmp_path):
+    document = {
+        "schemaVersion": 1,
+        "plugins": [{
+            "id": "../escaped", "publisher": "p", "latest": "1.0.0",
+            "risk": "low", "class": "declarative",
+            "releases": [{"version": "1.0.0", "sha256": "0" * 64, "tag": "v1"}],
+        }],
+    }
+    with pytest.raises(RegistryIndexError) as excinfo:
+        load_index(json.dumps(document))
+    assert "unsafe-id" in str(excinfo.value)
+
+    document["plugins"][0]["id"] = "ok-id"
+    document["plugins"][0]["releases"][0]["version"] = "1.0.0/../../x"
+    with pytest.raises(RegistryIndexError) as excinfo:
+        load_index(json.dumps(document))
+    assert "unsafe-version" in str(excinfo.value)
+
+    document["plugins"][0]["releases"][0]["version"] = "1.0.0"
+    document["plugins"][0]["releases"][0]["tag"] = "- dash-start"
+    with pytest.raises(RegistryIndexError) as excinfo:
+        load_index(json.dumps(document))
+    assert "unsafe-tag" in str(excinfo.value)
+
+
+def test_install_refuses_unsafe_names_even_before_the_index(tmp_path):
+    repo = make_registry(tmp_path)
+    with pytest.raises(RegistryError) as excinfo:
+        install_from_registry(repo, "../escaped", version="1.2.0",
+                              destination=tmp_path / "plugins")
+    assert excinfo.value.code == "install:unsafe-name"
+    # Nothing was written: the destination was never even created.
+    assert not (tmp_path / "plugins").exists()
+    assert not (tmp_path / "escaped").exists()
+
+
+def test_traversal_version_via_the_index_is_refused_at_install(tmp_path):
+    """The reproduced exploit: a valid-looking index whose version is a
+    path must not escape the destination."""
+    repo = make_registry(tmp_path)
+    index_path = repo / "index.json"
+    document = json.loads(index_path.read_text(encoding="utf-8"))
+    document["plugins"][0]["releases"][0]["version"] = "1.2.0/../../escaped"
+    index_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(RegistryError) as excinfo:
+        install_from_registry(repo, "sales-delta-widget", version="1.2.0/../../escaped",
+                              destination=tmp_path / "plugins")
+    assert excinfo.value.code == "install:unsafe-name"
+    assert not (tmp_path / "escaped").exists()
+
+
+def test_install_writes_the_client_lockfile(tmp_path):
+    repo = make_registry(tmp_path)
+    install_from_registry(repo, "sales-delta-widget", version="1.2.0",
+                          destination=tmp_path / "plugins")
+    lock = read_lock(tmp_path / "plugins", "sales-delta-widget")
+    assert lock is not None
+    assert lock["version"] == "1.2.0"
+    assert len(lock["sha256"]) == 64
+    assert lock["history"]["1.2.0"] == lock["sha256"]
+
+
+def test_rollback_repoints_the_lock_to_an_installed_version(tmp_path):
+    repo = make_registry(tmp_path)
+    destination = tmp_path / "plugins"
+    install_from_registry(repo, "sales-delta-widget", version="1.2.0",
+                          destination=destination)
+    # An older version directory already on disk, as a previous install
+    # would have left it.
+    older = destination / "sales-delta-widget-1.1.0"
+    older.mkdir()
+    (older / "manifest.json").write_text("{}", encoding="utf-8")
+    lock_path = destination / "lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    entry = lock["plugins"]["sales-delta-widget"]
+    entry["history"]["1.1.0"] = entry["history"]["1.2.0"]  # same tree, older pin
+    lock_path.write_text(json.dumps(lock, indent=2), encoding="utf-8")
+
+    result = rollback(destination, "sales-delta-widget", to_version="1.1.0")
+    assert result["ok"] is True
+    lock = read_lock(destination, "sales-delta-widget")
+    assert lock["version"] == "1.1.0"
+    # The versioned directory is untouched: rollback is a repoint, not a
+    # re-download.
+    assert older.is_dir()
+
+
+def test_rollback_refuses_missing_versions_and_pins(tmp_path):
+    repo = make_registry(tmp_path)
+    destination = tmp_path / "plugins"
+    install_from_registry(repo, "sales-delta-widget", version="1.2.0",
+                          destination=destination)
+    with pytest.raises(RegistryError) as excinfo:
+        rollback(destination, "sales-delta-widget", to_version="0.9.0")
+    assert excinfo.value.code == "rollback:version-not-installed"
+
+    destination2 = tmp_path / "elsewhere"
+    destination2.mkdir()
+    (destination2 / "sales-delta-widget-1.0.0").mkdir()
+    with pytest.raises(RegistryError) as excinfo:
+        rollback(destination2, "sales-delta-widget", to_version="1.0.0")
+    assert excinfo.value.code == "rollback:unknown-pin"
+
+
+def test_workflow_never_interpolates_the_base_ref_into_shell():
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "registry.yml").read_text(encoding="utf-8")
+    assert "BASE_REF: ${{ github.base_ref }}" in workflow
+    assert "xargs -r" in workflow
+    for line in workflow.splitlines():
+        if line.strip().startswith("run:") or "git show" in line or "git diff" in line:
+            assert "${{ github.base_ref }}" not in line
+
+
+def test_registry_root_document_is_seeded():
+    repo = Path(__file__).resolve().parents[1]
+    index = json.loads((repo / "registry" / "index.json").read_text(encoding="utf-8"))
+    assert index == {"plugins": [], "schemaVersion": 1}
+    assert load_index((repo / "registry" / "index.json").read_text(encoding="utf-8")) is not None
+
+
+def test_empty_base_index_means_nothing_published_yet(tmp_path):
+    """The workflow writes {} when the base branch has no index: that is
+    the clean first-publish case, not a broken base."""
+    from agentdesk.registry.ci import review_registry_changes
+
+    registry_root = tmp_path / "registry"
+    registry_root.mkdir()
+    (registry_root / "index.json").write_text(
+        json.dumps({"plugins": [], "schemaVersion": 1}), encoding="utf-8")
+    result = review_registry_changes(registry_root, [], base_index_text="{}")
+    assert result == {"ok": True, "reasons": []}

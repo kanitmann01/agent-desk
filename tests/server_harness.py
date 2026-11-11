@@ -7,6 +7,7 @@ booted fixture) so no listener outlives a test.
 """
 
 import http.client
+import json
 import sys
 import threading
 from pathlib import Path
@@ -16,14 +17,77 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import sqlite3
+import time
+
+from agentdesk.assistant import audit as audit_store
+from agentdesk.calendar.watcher import Adapters as CalendarAdapters
+from agentdesk.calendar.watcher import CalendarBridge
+from agentdesk.excel.watcher import Adapters as ExcelAdapters
+from agentdesk.excel.watcher import ExcelWatch
+from agentdesk.inbox.store import InboxStore
+from agentdesk.repetition.activity import ActivityLog
+from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
+from agentdesk.settings import SettingsStore
+
+
+def _inert_audit():
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    audit_store.ensure_schema(conn)
+    return conn
+
+
+def _inert_activity():
+    return ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_skills():
+    return SkillStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_settings():
+    return SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_inbox():
+    return InboxStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_excel() -> ExcelWatch:
+    """A watch that never polls: tests inject their own when they care."""
+    adapters = ExcelAdapters(
+        copy_shadow=lambda p: Path(p),
+        parse_workbook=lambda p: [],
+        clock=time.time,
+    )
+    return ExcelWatch(sqlite3.connect(":memory:", check_same_thread=False), adapters)
+
+
+def _inert_calendar() -> CalendarBridge:
+    """A bridge that finds no file: the designed empty state."""
+    adapters = CalendarAdapters(read_calendar=lambda: None, clock=time.time)
+    return CalendarBridge(sqlite3.connect(":memory:", check_same_thread=False), adapters)
 
 
 class Booted:
-    """A running AgentDeskServer plus small helpers for raw requests."""
+    """A running AgentDeskServer plus small helpers for raw requests.
 
-    def __init__(self) -> None:
-        self.server = server_app.create_server(port=0)
+    Keyword arguments pass straight through to create_server, so tests can
+    inject their own excel watch, calendar bridge and picker adapter.
+    Without them the server gets inert in-memory watches, so tests never
+    touch the real user data directory.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        kwargs.setdefault("excel", _inert_excel())
+        kwargs.setdefault("calendar", _inert_calendar())
+        kwargs.setdefault("audit_conn", _inert_audit())
+        kwargs.setdefault("activity_log", _inert_activity())
+        kwargs.setdefault("skill_store", _inert_skills())
+        kwargs.setdefault("settings_store", _inert_settings())
+        kwargs.setdefault("inbox_store", _inert_inbox())
+        self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -34,15 +98,22 @@ class Booted:
     def host_header(self) -> dict[str, str]:
         return {"Host": f"127.0.0.1:{self.port}"}
 
-    def request(self, method: str, path: str, headers: dict[str, str] | None = None):
+    def request(self, method: str, path: str, headers: dict[str, str] | None = None, body: bytes | None = None):
         """One real HTTP request; returns (status, headers, body)."""
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         try:
-            conn.request(method, path, headers=headers or {})
+            conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
             return response.status, dict(response.getheaders()), response.read()
         finally:
             conn.close()
+
+    def post_json(self, path: str, payload: dict | None = None, headers: dict[str, str] | None = None):
+        """One real authenticated-shape POST with a JSON body."""
+        data = json.dumps(payload or {}).encode("utf-8")
+        merged = {"Content-Type": "application/json", "Content-Length": str(len(data))}
+        merged.update(headers or {})
+        return self.request("POST", path, headers=merged, body=data)
 
     def exchange(self) -> dict[str, str]:
         """Walk the bootstrap exchange; returns headers for authed requests."""
