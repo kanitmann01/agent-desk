@@ -2,7 +2,9 @@
 
 The workbook carries no timestamps, so the store is the clock: the delta
 always compares against the newest snapshot taken at or before T-24h. The
-schema is deliberately boring: one table, bulk inserts, two queries.
+schema is deliberately boring: snapshots plus a tiny meta table (the
+registered workbook path, so a restart resumes the same watch), bulk
+inserts, three queries.
 """
 
 import json
@@ -20,7 +22,14 @@ CREATE TABLE IF NOT EXISTS snapshots (
   row_values TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS snapshots_source_ts ON snapshots(source, poll_ts);
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 """
+
+# The registered workbook path, keyed here so the watch survives restarts.
+WORKBOOK_PATH_KEY = "workbook_path"
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -71,3 +80,17 @@ def snapshot_count(conn: sqlite3.Connection, source: str) -> int:
         "SELECT COUNT(DISTINCT poll_ts) FROM snapshots WHERE source = ?", (source,)
     ).fetchone()
     return int(row[0]) if row else 0
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None

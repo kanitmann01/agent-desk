@@ -5,6 +5,7 @@ The single real-subprocess test at the bottom only needs a working Python,
 which any machine running pytest has.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -383,3 +384,59 @@ class TestGateEdrIdentity:
 
         assert result.status == UNKNOWN
         assert any("Access denied" in line for line in result.evidence)
+
+
+# ---------------------------------------------------------------------------
+# Gate 5, macOS: same gate over ps-shaped listing text
+# ---------------------------------------------------------------------------
+
+PS_WITH_EDR = (
+    "  432 /Library/CSFalconSensor/falcond\n"
+    "  811 /Library/SentinelOne/sentinel-agent-811\n"
+    "  220 /Library/Microsoft/wdavdaemon\n"
+    "  512 /usr/sbin/cupsd\n"
+)
+
+
+class TestGateEdrIdentityMacos:
+    """The gate names the listing it actually ran and matches mac daemon names."""
+
+    def test_detects_mac_sensors_and_names_ps_as_the_method(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "posix")
+        lister = FakeProcessLister(stdout=PS_WITH_EDR)
+        result = gate_edr_identity(lister)
+
+        assert result.status == PASS
+        joined = "\n".join(result.evidence)
+        # The evidence names ps, not tasklist: it must match what ran.
+        assert "ps -axo pid,comm" in joined
+        assert "tasklist" not in joined
+        assert "CrowdStrike Falcon" in joined
+        assert "SentinelOne" in joined
+        assert "Microsoft Defender" in joined
+        assert any("falcond" in line for line in result.evidence)
+        # Unrelated processes are not reported as EDR.
+        assert "cupsd" not in joined
+
+    def test_windows_evidence_names_tasklist(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
+        result = gate_edr_identity(FakeProcessLister(stdout=TASKLIST_WITH_EDR))
+
+        assert result.status == PASS
+        assert any("tasklist /svc" in line for line in result.evidence)
+
+    def test_none_detected_note_names_the_actual_command(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "posix")
+        result = gate_edr_identity(FakeProcessLister(stdout="  512 /usr/sbin/cupsd\n"))
+
+        assert result.status == UNKNOWN
+        assert "ps -axo pid,comm" in result.note
+        assert "kernel" in result.note.lower()
+
+    def test_lister_failure_evidence_names_the_actual_command(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "posix")
+        result = gate_edr_identity(FakeProcessLister(returncode=1, stderr="permission denied"))
+
+        assert result.status == UNKNOWN
+        assert any("ps -axo pid,comm" in line for line in result.evidence)
+        assert any("permission denied" in line for line in result.evidence)

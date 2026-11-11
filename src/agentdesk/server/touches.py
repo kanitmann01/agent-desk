@@ -7,19 +7,21 @@ same file as the code that would change them.
 """
 
 import html
-import os
 from datetime import datetime
-from pathlib import Path
 
 from agentdesk.assistant import audit as audit_store
 
 
 def data_dir_statement() -> str:
-    """Where app data lives, in the same terms the uninstall story uses."""
-    override = os.environ.get("AGENTDESK_DATA")
-    if override:
-        return str(Path(override))
-    return str(Path.home() / ".agent-desk")
+    """Where app data lives, in the same terms the uninstall story uses.
+
+    Delegates to the app's own resolution so the statement and the real
+    folder can never drift apart (imported here, not at module level:
+    app.py imports this module).
+    """
+    from agentdesk.server.app import default_data_dir
+
+    return str(default_data_dir())
 
 
 def render_touches(observed: set[str], version: str, now: datetime) -> str:

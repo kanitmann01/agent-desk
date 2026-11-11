@@ -22,6 +22,7 @@ import server_harness
 from agentdesk.excel.core import WorkbookLocked
 from agentdesk.excel.watcher import Adapters, ExcelWatch
 from agentdesk.excel.xlsx import parse_workbook_bytes
+from agentdesk.server import app as server_app
 from excel_fixtures import BASE_ROWS, base_workbook, make_xlsx
 
 CHANGED_ROWS = [
@@ -190,13 +191,13 @@ def test_stale_data_is_labeled_on_the_widget_endpoint(env, auth):
 def test_dashboard_renders_the_live_widget_once_registered(env, auth):
     page_status, _h, page_body = env.request("GET", "/", auth)
     assert 'data-widget-id="sales-24h"' in page_body.decode("utf-8")
-    assert b"Sample data until then." in page_body
+    assert "No workbook is connected yet" in page_body.decode("utf-8")
 
     env.post_json("/sources/excel-watch", {"path": str(env.workbook)}, auth)
     _status, _h, page_body = env.request("GET", "/", auth)
     page = page_body.decode("utf-8")
     assert "First snapshot taken" in page  # honest: deltas start next poll
-    assert "Sample data until a workbook is connected." not in page
+    assert "No workbook is connected yet" not in page
 
     env.clock.advance(24 * 3600)
     env.workbook.write_bytes(make_xlsx(CHANGED_ROWS))
@@ -222,7 +223,7 @@ def test_zero_row_one_row_and_huge_values_render(env, auth):
     _status, _h, page_body = env.request("GET", "/", auth)
     page = page_body.decode("utf-8")
     assert "12,345,678,901,234" in page  # huge values formatted, not broken
-    assert page.count('<article class="widget') == 4
+    assert page.count('<article class="widget') == 3
 
     # An unchanged re-poll is the designed zero state, not an empty card.
     env.clock.advance(24 * 3600)
@@ -230,3 +231,50 @@ def test_zero_row_one_row_and_huge_values_render(env, auth):
     env.post_json("/sources/excel-watch/retest", {}, auth)
     _status, _h, page_body = env.request("GET", "/", auth)
     assert "No changes in the last 24 hours." in page_body.decode("utf-8")
+
+
+class FakePickerProcess:
+    """What subprocess.run returns for a picker child: stdout only matters."""
+
+    def __init__(self, stdout):
+        self.stdout = stdout
+
+
+class TestTkPickerParentParsing:
+    """The picker child does the Tk work; the parent only parses stdout.
+
+    The real child (a fresh interpreter running Tk on its own main thread)
+    is never spawned here: subprocess.run is faked, so these tests hold on
+    any OS and never open a dialog.
+    """
+
+    def test_returns_the_path_the_child_printed(self, monkeypatch):
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            seen["kwargs"] = kwargs
+            return FakePickerProcess(stdout="D:/books/Q4-sales.xlsx\n")
+
+        monkeypatch.setattr(server_app.subprocess, "run", fake_run)
+
+        assert server_app.tk_pick_workbook() == "D:/books/Q4-sales.xlsx"
+        # The child is a fresh interpreter running the snippet, not this server.
+        assert seen["cmd"][0] == sys.executable
+        assert "-c" in seen["cmd"]
+
+    def test_empty_output_is_a_cancelled_dialog(self, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            return FakePickerProcess(stdout="\n")
+
+        monkeypatch.setattr(server_app.subprocess, "run", fake_run)
+
+        assert server_app.tk_pick_workbook() is None
+
+    def test_a_child_that_cannot_start_is_not_an_error(self, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            raise OSError("child could not start")
+
+        monkeypatch.setattr(server_app.subprocess, "run", fake_run)
+
+        assert server_app.tk_pick_workbook() is None

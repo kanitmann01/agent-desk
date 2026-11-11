@@ -87,6 +87,10 @@ class Booted:
         kwargs.setdefault("skill_store", _inert_skills())
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
+        # Same spirit as the inert watches: unless a test says otherwise,
+        # no endpoint is configured, so tests never depend on this
+        # machine's real AGENTDESK_LLM_BASE.
+        kwargs.setdefault("llm_endpoint", "")
         self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

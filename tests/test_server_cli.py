@@ -67,3 +67,27 @@ def test_main_defaults_to_opening_the_browser(monkeypatch):
     monkeypatch.setattr(cli.app, "serve", fake_serve)
     assert cli.main([]) == 0
     assert calls["open_browser"] is True
+
+
+def test_main_loads_the_config_file_before_building_the_server(monkeypatch):
+    order = []
+
+    def fake_load():
+        order.append("config")
+
+    def fake_create_server(*args, **kwargs):
+        order.append("server")
+
+        class FakeServer:
+            pass
+
+        return FakeServer()
+
+    def fake_serve(server, open_browser):
+        pass
+
+    monkeypatch.setattr(cli, "load_env_file", fake_load)
+    monkeypatch.setattr(cli.app, "create_server", fake_create_server)
+    monkeypatch.setattr(cli.app, "serve", fake_serve)
+    assert cli.main(["--no-browser"]) == 0
+    assert order == ["config", "server"]  # the bridge and the llm see the file

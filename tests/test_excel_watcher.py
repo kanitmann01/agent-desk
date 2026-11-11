@@ -8,6 +8,7 @@ and faking it would fake the thing under test.
 
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -138,3 +139,56 @@ def test_polling_timer_can_start_and_stop(tmp_path):
     watch.start_polling()  # restartable
     watch.stop_polling()
     assert watch._timer is None
+
+
+def test_meta_roundtrips_in_the_store(tmp_path):
+    watch, _clock = make_watch(tmp_path, [])
+    assert store.get_meta(watch.conn, "nothing") is None
+    store.set_meta(watch.conn, "key", "one")
+    store.set_meta(watch.conn, "key", "two")  # overwrite, not duplicate
+    assert store.get_meta(watch.conn, "key") == "two"
+
+
+def test_registration_persists_the_path_in_the_store(tmp_path):
+    watch, _clock = make_watch(tmp_path, [BASE])
+    watch.register("Q4-sales.xlsx")
+    assert store.get_meta(watch.conn, store.WORKBOOK_PATH_KEY) == "Q4-sales.xlsx"
+
+
+def test_resume_after_restart_restores_the_registered_path(tmp_path):
+    clock = FakeClock()
+    db_path = tmp_path / "excel-watch.sqlite3"
+
+    def adapters(polls):
+        iterator = iter(polls)
+        return Adapters(
+            copy_shadow=lambda p: Path(p),
+            parse_workbook=lambda p: next(iterator),
+            clock=clock,
+        )
+
+    first = ExcelWatch(sqlite3.connect(db_path, check_same_thread=False), adapters([BASE]))
+    first.register("Q4-sales.xlsx")
+    first.stop_polling()
+
+    # A restart: a brand new watch over the same store, nothing in memory.
+    second = ExcelWatch(sqlite3.connect(db_path, check_same_thread=False), adapters([CHANGED]))
+    assert second.registered_path is None
+    assert second.resume() is True
+    try:
+        assert second.registered_path == "Q4-sales.xlsx"
+        # The immediate poll runs on a daemon thread; wait for it to land.
+        for _ in range(100):
+            if second.status()["configured"]:
+                break
+            time.sleep(0.01)
+        assert second.status()["configured"] is True
+        assert second.status()["state"] == "first"
+    finally:
+        second.stop_polling()
+
+
+def test_resume_without_a_registration_is_a_no_op(tmp_path):
+    watch, _clock = make_watch(tmp_path, [])
+    assert watch.resume() is False
+    assert watch._timer is None  # nothing started, nothing to stop

@@ -13,6 +13,8 @@ import json
 import logging
 import os
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -26,8 +28,12 @@ from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import assistant_reply, research
-from agentdesk.calendar.watcher import CalendarBridge, default_read_calendar
-from agentdesk.excel import store as excel_store
+from agentdesk.calendar.watcher import (
+    STATE_EMPTY,
+    CalendarBridge,
+    default_calendar_candidates,
+    default_read_calendar,
+)
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import UnknownCard
@@ -39,7 +45,10 @@ from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
-from agentdesk.server.commitments import render_commitments_widget
+from agentdesk.server.commitments import (
+    render_commitments_unavailable,
+    render_commitments_widget,
+)
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import render_settings_page
@@ -54,14 +63,22 @@ from agentdesk.server.core import (
     ATTENTION,
     FRESH,
     PREFERRED_PORT,
+    SRC_CALENDAR,
+    SRC_EXCEL,
+    SRC_RESEARCH,
+    STATUS_CONNECTED,
+    STATUS_NOT_CONNECTED,
     Freshness,
     SourceStatus,
-    default_sources,
 )
-from agentdesk.server.demo import Widget, demo_widgets
+from agentdesk.server.demo import Widget
 from agentdesk.server.guard import check_request
 from agentdesk.server.health import health_payload
-from agentdesk.server.sales import render_sales_disabled, render_sales_widget
+from agentdesk.server.sales import (
+    render_sales_disabled,
+    render_sales_unconfigured,
+    render_sales_widget,
+)
 from agentdesk.settings import SettingsStore, ensure_schema as ensure_settings_schema
 
 LOG = logging.getLogger("agentdesk.server")
@@ -95,35 +112,63 @@ def _local_now() -> datetime:
 
 def default_data_dir() -> Path:
     """Where the watch keeps its snapshots. Provisional for v1: a folder
-    in the user profile, gone with delete-folder uninstall."""
+    in the user profile, gone with delete-folder uninstall. AGENTDESK_DATA
+    moves it, and the what-this-touches page states the same place."""
+    override = os.environ.get("AGENTDESK_DATA")
+    if override:
+        return Path(override)
     return Path(Path.home(), ".agent-desk")
 
 
-def tk_pick_workbook() -> str | None:
-    """The native file dialog, one fresh Tk root per call.
+# The workbook dialog runs in a child interpreter, not in this process.
+# Tk must own the main thread on macOS, and the server's request threads
+# are workers; a fresh process sidesteps the threading rules on both
+# platforms. The child prints the chosen path, or an empty line when the
+# dialog is cancelled or Tk is unusable, so the parent only parses stdout.
+_PICKER_SNIPPET = """\
+import sys
 
-    Runs in the calling (worker) thread with its own root, which Windows
-    tolerates for a one-shot dialog. Any failure answers None: the UI
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)  # keep the dialog in front on Windows
+    chosen = filedialog.askopenfilename(
+        title="Choose the sales workbook",
+        filetypes=[
+            ("Excel workbooks", "*.xlsx *.xlsm *.xlsb"),
+            ("All files", "*.*"),
+        ],
+    )
+    root.destroy()
+except Exception:
+    chosen = ""
+print(chosen)
+"""
+
+
+def tk_pick_workbook() -> str | None:
+    """The native file dialog, one child process per call.
+
+    The child does the Tk work (it gets a fresh main thread to itself);
+    the parent reads its stdout and never imports Tk. Any failure,
+    including a cancelled dialog (empty output), answers None: the UI
     treats it as cancelled rather than breaking the flow.
     """
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            chosen = filedialog.askopenfilename(
-                title="Choose the sales workbook",
-                filetypes=[("Excel workbooks", "*.xlsx"), ("All files", "*.*")],
-            )
-        finally:
-            root.destroy()
-        return chosen or None
+        completed = subprocess.run(
+            [sys.executable, "-c", _PICKER_SNIPPET],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     except Exception:  # noqa: BLE001 - a broken dialog must not break the app
         LOG.exception("workbook picker failed")
         return None
+    chosen = (completed.stdout or "").strip()
+    return chosen or None
 
 
 class AgentDeskServer(ThreadingHTTPServer):
@@ -136,7 +181,6 @@ class AgentDeskServer(ThreadingHTTPServer):
         self,
         address: tuple[str, int],
         sessions: SessionStore,
-        sources: list[SourceStatus] | None = None,
         excel: ExcelWatch | None = None,
         pick_workbook=None,
         calendar: CalendarBridge | None = None,
@@ -152,7 +196,6 @@ class AgentDeskServer(ThreadingHTTPServer):
         wizard_store: WizardStore | None = None,
     ) -> None:
         self.sessions = sessions
-        self.sources = sources if sources is not None else default_sources()
         self.excel = excel
         self.pick_workbook = pick_workbook
         self.calendar = calendar
@@ -178,6 +221,46 @@ class AgentDeskServer(ThreadingHTTPServer):
     @property
     def port(self) -> int:
         return self.server_address[1]
+
+
+def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
+    """The source table computed at request time, from the real watches.
+
+    Health must not repeat what a constructor once guessed: excel is
+    connected when a workbook is registered, calendar when the bridge has
+    produced a non-empty state, endpoint when the corporate base URL is
+    set. Both /health and the dashboard's source line read this table.
+    """
+
+    def state(connected: bool) -> str:
+        return STATUS_CONNECTED if connected else STATUS_NOT_CONNECTED
+
+    excel = server.excel
+    excel_path = excel.registered_path if excel is not None else None
+    calendar = server.calendar
+    calendar_state = calendar.status().get("state") if calendar is not None else None
+    calendar_ok = calendar_state not in (None, STATE_EMPTY)
+    endpoint_ok = bool(server.llm_endpoint)
+    workbook = ""
+    if excel_path:
+        workbook = str(excel_path).replace("\\", "/").rsplit("/", 1)[-1]
+    return [
+        SourceStatus(
+            SRC_EXCEL,
+            state(excel_path is not None),
+            f"Watches {workbook}." if excel_path else "No workbook connected yet.",
+        ),
+        SourceStatus(
+            SRC_CALENDAR,
+            state(calendar_ok),
+            "Reading the OneDrive calendar sync." if calendar_ok else "No calendar data yet.",
+        ),
+        SourceStatus(
+            SRC_RESEARCH,
+            state(endpoint_ok),
+            "Company endpoint configured." if endpoint_ok else "No company endpoint configured.",
+        ),
+    ]
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -522,7 +605,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_dashboard(self) -> None:
         now = datetime.now()
-        demo = {w.id: w for w in demo_widgets()}
         widgets: list = []
         excel = self.server.excel  # type: ignore[attr-defined]
         sales_status = excel.status() if excel is not None else None
@@ -531,19 +613,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif sales_status is not None and sales_status.get("configured"):
             widgets.append(render_sales_widget(sales_status))
         else:
-            widgets.append(demo["sales-24h"])
+            widgets.append(render_sales_unconfigured(now))
         calendar = self.server.calendar  # type: ignore[attr-defined]
         if not self._source_allowed("calendar_enabled"):
             widgets.append(render_commitments_widget({"state": "disabled"}, now))
         elif calendar is not None:
             commitments = render_commitments_widget(calendar.status(), now)
-            widgets.append(commitments if commitments is not None else demo["key-commitment"])
+            widgets.append(
+                commitments if commitments is not None else render_commitments_unavailable(now)
+            )
         else:
-            widgets.append(demo["key-commitment"])
+            widgets.append(render_commitments_unavailable(now))
         audit_conn = self.server.audit_conn  # type: ignore[attr-defined]
-        last_answer = audit_store.last_ok_ts(audit_conn, "research") if audit_conn is not None else None
+        # The writer records the action as "llm.research" (assistant/loop.py);
+        # querying anything else makes the stamp never show the last answer.
+        last_answer = audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
         widgets.append(render_research_widget(last_answer, now))
-        widgets.append(demo["region-mix"])
+        connected = sum(1 for s in live_sources(self.server) if s.status == STATUS_CONNECTED)
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is not None:
             widgets += [self._plugin_widget(card) for card in plugins.widget_cards()]
@@ -556,6 +642,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             now.strftime("%A, %d %B, %H:%M. "),
             inbox_count=len(inbox.waiting()) if inbox is not None else 0,
             skills=skills,
+            connected_sources=connected,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -648,18 +735,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"key": key, "value": value})
 
     def _apply_source_toggles(self, key: str, value) -> None:
-        """Toggling a source off stops its ingestion immediately; on
-        restarts it. Polling sleeps in the watcher, this is the switch."""
+        """Toggling a source off stops its ingestion immediately; on it
+        resumes watching with one poll right now, like at startup."""
         server = self.server  # type: ignore[attr-defined]
         if key == "excel_enabled" and server.excel is not None:
             if value:
-                if server.excel.registered_path:
-                    server.excel.start_polling()
+                server.excel.resume()
             else:
                 server.excel.stop_polling()
         if key == "calendar_enabled" and server.calendar is not None:
             if value:
                 server.calendar.start_polling()
+                threading.Thread(
+                    target=_poll_calendar_once, args=(server.calendar,), daemon=True
+                ).start()
             else:
                 server.calendar.stop_polling()
 
@@ -1140,7 +1229,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send_health(self) -> None:
         payload = health_payload(
             agentdesk.__version__,
-            self.server.sources,  # type: ignore[attr-defined]
+            live_sources(self.server),  # type: ignore[attr-defined]
             self.server.started_monotonic,  # type: ignore[attr-defined]
         )
         self._send_bytes(
@@ -1180,7 +1269,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def create_server(
     host: str = "127.0.0.1",
     port: int | None = None,
-    sources: list[SourceStatus] | None = None,
     excel: ExcelWatch | None = None,
     pick_workbook=None,
         calendar: CalendarBridge | None = None,
@@ -1232,7 +1320,7 @@ def create_server(
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
-            (resolved, bind_port), sessions, sources, excel, pick_workbook,
+            (resolved, bind_port), sessions, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
             activity_log, skill_store, settings_store, plugins, wizard_store,
         )
@@ -1360,11 +1448,18 @@ def _default_settings_store() -> SettingsStore | None:
 
 
 def default_calendar_hint() -> Path:
-    """The calendar path the walkthrough shows as 'the app watches this'."""
-    env_path = os.environ.get("AGENTDESK_CALENDAR_FILE")
-    if env_path:
-        return Path(env_path)
-    return Path(Path.home(), "OneDrive", "agent-desk", "calendar_sync.json")
+    """The calendar path the walkthrough shows as 'the app watches this'.
+
+    The reader accepts several shapes (plain OneDrive, the 'OneDrive -
+    Company' glob, macOS CloudStorage); the hint shows the first one that
+    exists on this machine, falling back to the first default, so it never
+    names a path the reader would ignore.
+    """
+    candidates = default_calendar_candidates()
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
 
 
 def _default_calendar_bridge() -> CalendarBridge | None:
@@ -1390,9 +1485,10 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
 
     url = auth_url(server)
     if sys.stdout is not None:  # pythonw runs without a console stream
-        print(f"Agent Desk is running: {url}")
-    if server.calendar is not None:
-        server.calendar.start_polling()  # passive file watch, keeps itself fresh
+        # flush: launchers redirect this to a log file, where a buffered
+        # print would hide the one-time start link until the process ends
+        print(f"Agent Desk is running: {url}", flush=True)
+    start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
     try:
@@ -1401,3 +1497,33 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
         pass
     finally:
         server.server_close()
+
+
+def start_background_polls(server: AgentDeskServer) -> None:
+    """Both watches poll once, right now, on daemon threads.
+
+    The recurring loops keep their own schedules (calendar every half
+    hour, excel hourly); this only removes the empty first half hour on
+    the commitments card and brings the registered workbook back after a
+    restart. A source turned off in settings is not touched at all.
+    """
+
+    def allowed(key: str) -> bool:
+        settings = server.settings
+        return settings is None or bool(settings.get(key))
+
+    excel = server.excel
+    if excel is not None and allowed("excel_enabled"):
+        excel.resume()
+    calendar = server.calendar
+    if calendar is not None and allowed("calendar_enabled"):
+        calendar.start_polling()  # passive file watch, keeps itself fresh
+        threading.Thread(target=_poll_calendar_once, args=(calendar,), daemon=True).start()
+
+
+def _poll_calendar_once(bridge) -> None:
+    """One immediate read so the first page load already knows the day."""
+    try:
+        bridge.poll()
+    except Exception:  # noqa: BLE001 - startup must not crash on a poll
+        LOG.exception("calendar startup poll failed")

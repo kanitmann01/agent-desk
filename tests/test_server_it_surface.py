@@ -148,3 +148,16 @@ def test_license_and_notice_ship_in_the_install_folder():
 def test_audit_csv_requires_a_session(env):
     status, _h, _b = env.request("GET", "/audit/export.csv", env.host_header())
     assert status == 401
+
+
+def test_data_dir_statement_matches_the_real_resolution(monkeypatch, tmp_path):
+    from agentdesk.server import touches
+    from agentdesk.server.app import default_data_dir
+
+    monkeypatch.delenv("AGENTDESK_DATA", raising=False)
+    assert touches.data_dir_statement() == str(Path.home() / ".agent-desk")
+    assert default_data_dir() == Path.home() / ".agent-desk"
+
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path / "data"))
+    assert touches.data_dir_statement() == str(tmp_path / "data")
+    assert default_data_dir() == Path(tmp_path / "data")

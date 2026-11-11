@@ -10,6 +10,7 @@ cannot be talked out of it. Exit codes: 0 clean shutdown, 2 usage errors.
 
 import argparse
 
+from agentdesk.config import load_env_file
 from agentdesk.server import app
 
 
@@ -36,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # Before anything builds the bridge or the endpoint adapter, so both
+    # see the config file's values; real environment variables still win.
+    load_env_file()
     server = app.create_server(port=args.port)
     app.serve(server, open_browser=not args.no_browser)
     return 0

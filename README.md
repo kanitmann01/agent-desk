@@ -2,13 +2,30 @@
 
 A no-code personal agent for a locked-down corporate Windows laptop. One double-click opens a local web dashboard: what changed in the sales file overnight, today's key commitment broken into subtasks, a research panel, and plugins described in plain English that the agent builds, previews, and installs after one consolidated approval. No admin rights, no terminal, no data leaving the machine except derived abstractions sent to the corporate LLM endpoint.
 
-Status: the walking skeleton is built (#2 probe, #8 validator CLI, #3 dashboard shell). The widget, registry and wizard tickets are next. The canonical spec lives in this repo's issue tracker (issue #1, labeled `ready-for-agent`).
+Status: the dashboard, the excel and calendar widgets, research and the assistant, the inbox, the repetition detector, briefs, settings, the plugin runtime and the internal registry are built (#2 to #7, #12 to #15, plus #9 and #10); the English-to-plugin wizard is in flight (#11). The canonical spec lives in this repo's issue tracker (issue #1, labeled `ready-for-agent`).
 
 ## Start it
 
 Double-click `tools/agent-desk.cmd`. It finds Python (falling back through `py`, then `uv` with the Windows trust store), starts the dashboard windowless, and opens your browser at a one-time start link that becomes your session cookie. No admin rights, no terminal. The server binds 127.0.0.1 only.
 
+On macOS, run `chmod +x tools/*.command` once, then double-click `tools/agent-desk.command`. The server starts detached, so the Terminal window can close, and its output lands in `~/.agent-desk/agent-desk.log`. The calendar file lives under `~/Library/CloudStorage/OneDrive*/agent-desk/calendar_sync.json`; the walkthrough page shows the exact path your machine uses.
+
 From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to skip the browser open).
+
+## Configure it
+
+The app runs with zero configuration. To set the corporate endpoint (research and the assistant) or the calendar path without touching OS environment variables, create a text file at `%USERPROFILE%\.agent-desk\config.env` (`~/.agent-desk/config.env`):
+
+```
+# Agent Desk settings, KEY=VALUE lines, # comments
+AGENTDESK_LLM_BASE=https://llm.yourcompany.example/v1
+AGENTDESK_LLM_KEY=your-key
+AGENTDESK_LLM_MODEL=gpt-4o-mini
+AGENTDESK_CALENDAR_FILE=C:/Users/you/OneDrive/agent-desk/calendar_sync.json
+AGENTDESK_DATA=D:/agent-desk-data
+```
+
+Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_KEY` and `AGENTDESK_LLM_MODEL` for research and the assistant, `AGENTDESK_CALENDAR_FILE` for the calendar sync file, `AGENTDESK_DATA` for the data folder. Real environment variables always win over the file, and a missing file is not an error: the app simply runs unconfigured, and the settings page says so.
 
 ## Where things are
 

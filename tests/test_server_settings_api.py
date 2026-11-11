@@ -133,12 +133,14 @@ def test_quiet_hours_and_cap_set_here_are_what_the_inbox_enforces(env, auth):
     assert card2["notified"] is False  # cap zero: inbox only
 
 
-def test_first_run_renders_demo_widgets_with_zero_permission_prompts(env, auth):
+def test_first_run_shows_real_connect_actions_with_zero_permission_prompts(env, auth):
     page = env.request("GET", "/", auth)[2].decode("utf-8")
-    assert page.count('data-widget-id=') == 4
-    assert "Sample data until then." in page
+    assert page.count('data-widget-id=') == 3
+    assert "Connect a workbook" in page
+    assert "Connect your calendar" in page
     # No permission ask exists anywhere on the first screen.
     for banned in ("Allow access", "grant permission", "permission prompt"):
         assert banned.lower() not in page.lower()
-    # The one ask that exists states its benefit before asking.
-    assert page.find("See what changed overnight") < page.find("Connect a workbook")
+    # And nothing is fabricated on the empty first screen.
+    assert "Sample data" not in page
+    assert "14,320" not in page
