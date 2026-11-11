@@ -17,17 +17,44 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import sqlite3
+import time
+
+from agentdesk.calendar.watcher import Adapters as CalendarAdapters
+from agentdesk.calendar.watcher import CalendarBridge
+from agentdesk.excel.watcher import Adapters as ExcelAdapters
+from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.server import app as server_app
+
+
+def _inert_excel() -> ExcelWatch:
+    """A watch that never polls: tests inject their own when they care."""
+    adapters = ExcelAdapters(
+        copy_shadow=lambda p: Path(p),
+        parse_workbook=lambda p: [],
+        clock=time.time,
+    )
+    return ExcelWatch(sqlite3.connect(":memory:", check_same_thread=False), adapters)
+
+
+def _inert_calendar() -> CalendarBridge:
+    """A bridge that finds no file: the designed empty state."""
+    adapters = CalendarAdapters(read_calendar=lambda: None, clock=time.time)
+    return CalendarBridge(sqlite3.connect(":memory:", check_same_thread=False), adapters)
 
 
 class Booted:
     """A running AgentDeskServer plus small helpers for raw requests.
 
     Keyword arguments pass straight through to create_server, so tests can
-    inject their own excel watch and picker adapter.
+    inject their own excel watch, calendar bridge and picker adapter.
+    Without them the server gets inert in-memory watches, so tests never
+    touch the real user data directory.
     """
 
     def __init__(self, **kwargs) -> None:
+        kwargs.setdefault("excel", _inert_excel())
+        kwargs.setdefault("calendar", _inert_calendar())
         self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
