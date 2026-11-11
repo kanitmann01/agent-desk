@@ -38,8 +38,9 @@ Then commit the new contents of `src/agentdesk/server/static/spa/`.
     plain timers and on motion.
 - `src/components/`: the shells built on those parts. `Backdrop` is
   mounted outside `React.StrictMode` on purpose (the reason is in the
-  file); `WidgetCard` is the bento cell with its plain, star and tilt
-  shells; `CommandBar` is the research bar.
+  file); `WidgetCard` is the bento cell with its plain and tilt
+  shells and its composed empty states; `CommandBar` is the research
+  bar.
 - Fonts: Inter Variable and Space Grotesk Variable from
   `@fontsource-variable` (SIL OFL 1.1), imported at the top of
   `index.css`. Vite copies their `.woff2` files into the bundle; the
@@ -61,12 +62,9 @@ Then commit the new contents of `src/agentdesk/server/static/spa/`.
   reasoning).
 - Every resource URL is self-hosted, fonts included; the app works
   offline by construction.
-- The CSP has no `font-src` directive today, so in production the
-  bundled fonts are blocked (font loads fall back to `default-src
-  'none'`) and the system stacks in `index.css` render instead. The dev
-  server sends no CSP, so the fonts do show there. Adding
-  `font-src 'self'` to SECURITY_HEADERS is the one-line change that
-  lets them load; that is the owner's decision, not the build's.
+- The CSP serves the bundled fonts from `self` (`font-src 'self'` in
+  SECURITY_HEADERS): same-origin only, like scripts and styles. No font
+  host, no `data:` URLs.
 - Motion is honest: every animated component honors
   `prefers-reduced-motion`, and the card entrances, the tilt, the typing
   answer and the command bar sweep all render their final state at once

@@ -7,6 +7,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { hhmmFromTs } from '../fmt';
 import WidgetCard, { type CardSpan } from '../components/WidgetCard';
+import EmptyState, { ICON_SEARCH } from '../components/EmptyState';
 import LatticeLoader from '../vendor/reactbits/LatticeLoader';
 import TextType from '../vendor/reactbits/TextType';
 
@@ -30,14 +31,6 @@ interface ResearchCardProps {
   busy: boolean;
 }
 
-const ICON_IDLE = (
-  <svg className="idle-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="11" cy="11" r="6.5" />
-    <path d="m16 16 4.5 4.5" />
-  </svg>
-);
-
 export default function ResearchCard({
   span, lastAnsweredTs, answer, answerSeq, statusText, busy,
 }: ResearchCardProps) {
@@ -50,6 +43,7 @@ export default function ResearchCard({
     <WidgetCard
       title="Research"
       span={span}
+      sparse={!answer}
       stamp={stamp}
       foot="Searches run through the company endpoint. Every call is logged: what was asked, never file contents."
     >
@@ -99,10 +93,9 @@ export default function ResearchCard({
         <p className="research-status" role="status">{statusText}</p>
       ) : null}
       {!answer && !statusText ? (
-        <p className="research-idle">
-          {ICON_IDLE}
-          <span>No answer yet. Ask from the bar above and the sourced summary lands here.</span>
-        </p>
+        <EmptyState icon={ICON_SEARCH}>
+          No answer yet. Ask from the bar above and the sourced summary lands here.
+        </EmptyState>
       ) : null}
     </WidgetCard>
   );

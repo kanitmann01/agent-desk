@@ -10,6 +10,7 @@ import { commitmentsStamp, hhmmFromIso } from '../fmt';
 import type { CommitmentsStatus, KeyEvent } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import GlareButton from '../components/GlareButton';
+import EmptyState, { ICON_CALENDAR } from '../components/EmptyState';
 
 const WALKTHROUGH_PATH = '/walkthrough/calendar';
 
@@ -123,15 +124,19 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       <WidgetCard
         title="Today's key commitment"
         span="span-5"
+        footLines={2}
         shell="tilt"
+        sparse
         stamp={{ fresh: false, text: 'Paused' }}
         foot="No ingestion while off."
       >
-        <div className="well"><p className="q">
+        <EmptyState
+          icon={ICON_CALENDAR}
+          action={<GlareButton tone="primary" href="/settings">Turn it back on</GlareButton>}
+        >
           Calendar reading is turned off in settings. Your day is not being
           read right now.
-        </p></div>
-        <GlareButton tone="primary" href="/settings" className="btn-start">Turn it back on</GlareButton>
+        </EmptyState>
       </WidgetCard>
     );
   }
@@ -141,15 +146,17 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       <WidgetCard
         title="Today's key commitment"
         span="span-5"
+        footLines={2}
         shell="tilt"
+        sparse
         stamp={{ fresh: false, text: 'Unavailable' }}
         foot="Nothing is being read while the bridge is unavailable."
       >
-        <div className="well"><p className="q">
+        <EmptyState icon={ICON_CALENDAR}>
           The calendar bridge is not running on this machine, so today's
           commitments cannot be read. Restarting Agent Desk usually brings it
           back.
-        </p></div>
+        </EmptyState>
       </WidgetCard>
     );
   }
@@ -166,6 +173,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       <WidgetCard
         title="Today's key commitment"
         span="span-5"
+        footLines={2}
         shell="tilt"
         stamp={stamp}
         foot={`From your calendar via the OneDrive sync. Nothing leaves the machine but the meeting's name.${first ? ` Connected ${first}.` : ''}`}
@@ -200,14 +208,16 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       <WidgetCard
         title="Today's key commitment"
         span="span-5"
+        footLines={2}
         shell="tilt"
+        sparse
         stamp={stamp}
         foot="From your calendar via the OneDrive sync."
       >
-        <div className="well"><p className="q">
+        <EmptyState icon={ICON_CALENDAR}>
           Your calendar is clear for the rest of today. Nothing needs
           preparing.
-        </p></div>
+        </EmptyState>
       </WidgetCard>
     );
   }
@@ -217,17 +227,21 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       <WidgetCard
         title="Today's key commitment"
         span="span-5"
+        footLines={2}
         shell="tilt"
+        sparse
         stamp={stamp}
         foot="Setup happens in your browser. No terminal, no admin."
       >
-        <div className="well"><p className="q">
+        <EmptyState
+          icon={ICON_CALENDAR}
+          action={<GlareButton tone="primary" href={WALKTHROUGH_PATH}>Connect your calendar</GlareButton>}
+        >
           No calendar data yet. Agent Desk watches
           <code> agent-desk/calendar_sync.json </code>
           in your OneDrive. A 3-step browser walkthrough creates the flow
           that writes it.
-        </p></div>
-        <GlareButton tone="primary" href={WALKTHROUGH_PATH} className="btn-start">Connect your calendar</GlareButton>
+        </EmptyState>
       </WidgetCard>
     );
   }
@@ -237,7 +251,9 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       <WidgetCard
         title="Today's key commitment"
         span="span-5"
+        footLines={2}
         shell="tilt"
+        sparse
         stamp={stamp}
         amber
         foot="Stale data is labeled, never shown as current."
@@ -255,7 +271,9 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
     <WidgetCard
       title="Today's key commitment"
       span="span-5"
+      footLines={2}
       shell="tilt"
+      sparse
       stamp={stamp}
       amber
       foot="The file is there but not readable as calendar data."

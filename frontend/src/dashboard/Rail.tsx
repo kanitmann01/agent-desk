@@ -1,7 +1,7 @@
-// The rail: brand, the four entries, the inbox count badge and the user
-// line, matching the server-rendered rail entry for entry. Plugins stays
-// switched off until a plugins page exists; every other entry is a real
-// server page. Drawn as a floating glass column; the app name carries
+// The rail: brand, the entries, the inbox count badge and the user
+// line. Dashboard, Inbox, Assistant and Settings are real server pages
+// (GET /inbox, /assistant, /settings); Plugins stays switched off until
+// a plugins page exists. Drawn as a floating glass column; the app name carries
 // the cyan to violet gradient through the vendored GradientText.
 import GradientText from '../vendor/reactbits/GradientText';
 
@@ -23,6 +23,14 @@ const ICON_INBOX = (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3.5 13.5 5 20h14l1.5-6.5M3.5 13.5h17M12 15v-4" />
+  </svg>
+);
+
+const ICON_ASSISTANT = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-6.5L8 20.5v-4H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z" />
+    <path d="M8.5 10h7M8.5 13h4" />
   </svg>
 );
 
@@ -57,14 +65,15 @@ export default function Rail({ inboxWaiting }: RailProps) {
         </span>
         <GradientText
           className="brand-name"
-          colors={['#22D3EE', '#8B5CF6', '#22D3EE']}
-          animationSpeed={7}
+          colors={['#7DD3FC', '#A5B4FC', '#7DD3FC']}
+          animationSpeed={12}
         >
           Agent Desk
         </GradientText>
       </div>
       <a href="/" aria-current="page">{ICON_DASHBOARD}Dashboard</a>
       <a href="/inbox">{ICON_INBOX}Inbox{badge}</a>
+      <a href="/assistant">{ICON_ASSISTANT}Assistant</a>
       <span className="nav-off" aria-disabled="true" title="Arrives in a later build">
         {ICON_PLUGINS}Plugins
       </span>

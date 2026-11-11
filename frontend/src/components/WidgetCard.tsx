@@ -4,18 +4,18 @@
 // cards: title, optional pilot badge, freshness stamp, overflow dots,
 // body, foot.
 //
-// Three shells share that content:
+// Two shells share that content, and they are drawn to look alike at
+// rest (same rim, same radius, same shadow, same padding):
 //   plain: a steel rim around the glass.
-//   star:  the vendored StarBorder runs a light around the rim (the
-//          hero sales card).
 //   tilt:  the vendored TiltedCard tilts the whole card toward the
 //          pointer (the commitment card).
+// A sparse card (an empty or single-message state) centers its body
+// between the header and the foot instead of leaving a void under it.
 // Cells rise in on a spring, staggered by the grid; under
 // prefers-reduced-motion they render in place.
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion, type Variants } from 'motion/react';
 import GlassSurface from '../vendor/reactbits/GlassSurface';
-import StarBorder from '../vendor/reactbits/StarBorder';
 import TiltedCard from '../vendor/reactbits/TiltedCard';
 import Stamp, { type StampProps } from './Stamp';
 
@@ -44,10 +44,11 @@ export const CELL_VARIANTS_STILL: Variants = {
   show: { opacity: 1, y: 0, scale: 1 },
 };
 
-// Everything around the measured content of a tilt card: the widget's
-// own padding (14 top, 10 bottom) and gap (12), the glass padding (8 on
-// each side) and the 1.5px rim on each side.
-const TILT_CHROME = 14 + 10 + 12 + 16 + 3;
+// Everything around the three measured blocks of a tilt card (header,
+// body, foot). Keep in step with .widget in index.css: its padding (16
+// top, 12 bottom), the two 14px gaps between the blocks, the glass
+// padding (8 on each side) and the 1.5px rim on each side.
+const TILT_CHROME = 16 + 12 + 14 + 14 + 16 + 3;
 
 export type CardSpan = 'span-4' | 'span-5' | 'span-7' | 'span-8' | 'span-12';
 
@@ -57,32 +58,40 @@ interface WidgetCardProps {
   stamp: StampProps;
   badge?: string;
   amber?: boolean;
-  shell?: 'plain' | 'star' | 'tilt';
+  shell?: 'plain' | 'tilt';
+  // An empty or single-message state: the body is centered vertically.
+  sparse?: boolean;
+  // Cards that share a row reserve the same number of foot lines, so
+  // their foot dividers line up even when one footnote wraps.
+  footLines?: 1 | 2;
   foot: ReactNode;
   children: ReactNode;
 }
 
-export default function WidgetCard({ title, span, stamp, badge, amber, shell = 'plain', foot, children }: WidgetCardProps) {
+export default function WidgetCard({
+  title, span, stamp, badge, amber, shell = 'plain', sparse = false, footLines = 1, foot, children,
+}: WidgetCardProps) {
   const reduce = useReducedMotion();
-  const mainRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const footRef = useRef<HTMLDivElement>(null);
   const [tiltHeight, setTiltHeight] = useState(0);
   const tilt = shell === 'tilt';
 
   // The vendored TiltedCard positions its face absolutely, so content
   // cannot size it. The cell reserves the content's natural height
-  // instead (measured from the two blocks that never stretch), and the
-  // tilt fills the cell.
+  // instead (measured from the three blocks that never stretch), and
+  // the tilt fills the cell.
   useLayoutEffect(() => {
     if (!tilt) return undefined;
-    const main = mainRef.current;
-    const footer = footRef.current;
-    if (!main || !footer) return undefined;
-    const measure = () => setTiltHeight(main.offsetHeight + footer.offsetHeight + TILT_CHROME);
+    const blocks = [headRef.current, bodyRef.current, footRef.current];
+    if (blocks.some((block) => block === null)) return undefined;
+    const measure = () => setTiltHeight(
+      blocks.reduce((sum, block) => sum + (block as HTMLDivElement).offsetHeight, TILT_CHROME),
+    );
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(main);
-    observer.observe(footer);
+    blocks.forEach((block) => observer.observe(block as HTMLDivElement));
     return () => observer.disconnect();
   }, [tilt]);
 
@@ -100,93 +109,54 @@ export default function WidgetCard({ title, span, stamp, badge, amber, shell = '
         height="100%"
       >
         <article className="widget">
-          <div className="w-main" ref={mainRef}>
-            <div className="w-head">
-              <h2>{title}</h2>
-              {badge ? <span className="badge-pilot">{badge}</span> : null}
-              <Stamp {...stamp} />
-              {ICON_OPTIONS}
-            </div>
-            {children}
+          <div className="w-head" ref={headRef}>
+            <h2>{title}</h2>
+            {badge ? <span className="badge-pilot">{badge}</span> : null}
+            <Stamp {...stamp} />
+            {ICON_OPTIONS}
           </div>
-          <div className="w-foot" ref={footRef}>{foot}</div>
+          <div className={sparse ? 'w-body sparse' : 'w-body'}>
+            <div className="w-body-inner" ref={bodyRef}>{children}</div>
+          </div>
+          <div className={footLines === 2 ? 'w-foot two-line' : 'w-foot'} ref={footRef}>{foot}</div>
         </article>
       </GlassSurface>
     </div>
   );
 
-  let body;
-  if (shell === 'star') {
-    body = (
-      <div className={`card star${amber ? ' amber' : ''}`}>
-        <StarBorder
-          as="div"
-          color={amber ? '#F59E0B' : '#22C55E'}
-          trailColor={amber ? '#FCD34D' : '#22D3EE'}
-          radius={24}
-          thickness={1.5}
-          duration={7}
-          trailLength={0.4}
-          stars={2}
-          glow={0.8}
-          hover="brighten"
-          clickPulse={false}
-          backgroundColor="transparent"
-          textColor="inherit"
-          borderColor={amber ? 'rgba(245,158,11,.5)' : 'rgba(71,85,105,.8)'}
-          style={{
-            display: 'flex',
-            flex: 1,
-            minWidth: 0,
-            padding: '1.5px',
-            gap: 0,
-            alignItems: 'stretch',
-            justifyContent: 'flex-start',
-            fontWeight: 'inherit',
-            lineHeight: 'inherit',
-          }}
-        >
-          {glass}
-        </StarBorder>
-      </div>
-    );
-  } else if (tilt) {
-    body = (
-      <TiltedCard
-        containerWidth="100%"
-        containerHeight="100%"
-        imageWidth="100%"
-        imageHeight="100%"
-        radius={24}
-        rotateAmplitude={reduce ? 0 : 6}
-        scaleOnHover={reduce ? 1 : 1.012}
-        glare={reduce ? 0 : 0.38}
-        glareColor="#7DD3FC"
-        shadow={0.5}
-        parallax={0}
-        showTooltip={false}
-        flipOnClick={false}
-        intro={false}
-        gyroscope={false}
-        className="tilt-fill"
-        style={{ position: 'absolute', inset: 0 }}
-      >
-        <div className="tilt-content">
-          <div className={`card${amber ? ' amber' : ''}`}>{glass}</div>
-        </div>
-      </TiltedCard>
-    );
-  } else {
-    body = <div className={`card${amber ? ' amber' : ''}`}>{glass}</div>;
-  }
+  const card = <div className={`card${amber ? ' amber' : ''}`}>{glass}</div>;
 
   return (
     <motion.div
-      className={`cell ${span}`}
+      className={tilt ? `cell tilt-cell ${span}` : `cell ${span}`}
       variants={reduce ? CELL_VARIANTS_STILL : CELL_VARIANTS}
       style={tilt && tiltHeight ? { minHeight: tiltHeight } : undefined}
     >
-      {body}
+      {tilt ? (
+        <TiltedCard
+          containerWidth="100%"
+          containerHeight="100%"
+          imageWidth="100%"
+          imageHeight="100%"
+          radius={24}
+          rotateAmplitude={reduce ? 0 : 6}
+          scaleOnHover={reduce ? 1 : 1.012}
+          glare={reduce ? 0 : 0.28}
+          glareColor="#7DD3FC"
+          // The cell carries the same resting shadow as a plain card, so
+          // the tilt adds none of its own.
+          shadow={0}
+          parallax={0}
+          showTooltip={false}
+          flipOnClick={false}
+          intro={false}
+          gyroscope={false}
+          className="tilt-fill"
+          style={{ position: 'absolute', inset: 0 }}
+        >
+          <div className="tilt-content">{card}</div>
+        </TiltedCard>
+      ) : card}
     </motion.div>
   );
 }

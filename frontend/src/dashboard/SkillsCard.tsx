@@ -2,14 +2,36 @@
 // row runs its skill with one click (or Enter on the focused list);
 // the result lands in the research answer area, as on the
 // server-rendered page. Rows spring in through the vendored
-// AnimatedList. While a skill runs, further clicks are ignored, the
-// same guard the old strip's disabled buttons gave.
+// AnimatedList, drawn with this card's own row template so truncation
+// and spacing match the rest of the dashboard. While a skill runs,
+// further clicks are ignored, the same guard the old strip's disabled
+// buttons gave.
 import { motion, useReducedMotion } from 'motion/react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { DashboardData } from '../types';
 import { CELL_VARIANTS, CELL_VARIANTS_STILL } from '../components/WidgetCard';
 import AnimatedList, { type AnimatedListItem } from '../vendor/reactbits/AnimatedList';
 import GlassSurface from '../vendor/reactbits/GlassSurface';
+
+const ICON_RUN = (
+  <svg className="skill-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 6.5 14.5 12 9 17.5" />
+  </svg>
+);
+
+function SkillRow(item: AnimatedListItem): ReactNode {
+  const entry = item !== null && typeof item === 'object' ? item : { title: item };
+  return (
+    <>
+      <span className="skill-text">
+        <span className="skill-name">{entry.title}</span>
+        {entry.description ? <span className="skill-desc">{entry.description}</span> : null}
+      </span>
+      {ICON_RUN}
+    </>
+  );
+}
 
 interface SkillsCardProps {
   skills: DashboardData['skills'];
@@ -24,7 +46,7 @@ const LIST_TINT = {
   '--al-tile-highlight': 'rgba(255,255,255,.07)',
   '--al-tile-shadow': 'none',
   '--al-ink': '#F8FAFC',
-  '--al-muted': '#94A3B8',
+  '--al-muted': '#B0BACD',
   '--al-thumb': 'rgba(148,163,184,.3)',
 } as CSSProperties;
 
@@ -53,24 +75,28 @@ export default function SkillsCard({ skills, busy, onRun }: SkillsCardProps) {
                 <h2>Your skills</h2>
                 <span className="stamp">{skills.length} saved</span>
               </div>
-              <AnimatedList
-                className="skills-list"
-                items={items}
-                onItemSelect={(_item, index) => {
-                  if (!busy) onRun(skills[index].id);
-                }}
-                frame={false}
-                theme="dark"
-                accentColor="#22C55E"
-                radius={12}
-                gap={6}
-                width="100%"
-                maxHeight={228}
-                fadeSize={28}
-                displayScrollbar={false}
-                style={LIST_TINT}
-              />
-              <div className="w-foot">One click runs the saved ask; the result lands in Research.</div>
+              <div className="w-body">
+                <AnimatedList
+                  className="skills-list"
+                  itemClassName="skill-item"
+                  items={items}
+                  renderItem={SkillRow}
+                  onItemSelect={(_item, index) => {
+                    if (!busy) onRun(skills[index].id);
+                  }}
+                  frame={false}
+                  theme="dark"
+                  accentColor="#22C55E"
+                  radius={12}
+                  gap={8}
+                  width="100%"
+                  maxHeight={264}
+                  fadeSize={20}
+                  displayScrollbar={false}
+                  style={LIST_TINT}
+                />
+              </div>
+              <div className="w-foot">Click one to run it; the result lands in Research.</div>
             </section>
           </GlassSurface>
         </div>

@@ -3,8 +3,8 @@
 // manual path fallback), first snapshot, healthy delta,
 // stale/locked/unreadable amber with Re-test. Copy and flows follow
 // pages.py and sales.py exactly; every action refetches /api/dashboard
-// instead of reloading the page. The star shell runs a light around the
-// rim: green when live, amber when the source needs attention.
+// instead of reloading the page. Empty and single-message states are
+// composed as one centered row (icon, message, action).
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import {
@@ -13,6 +13,7 @@ import {
 import type { DeltaPayload, SalesStatus } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import GlareButton from '../components/GlareButton';
+import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import ClickSpark from '../vendor/reactbits/ClickSpark';
 import CountUp from '../vendor/reactbits/CountUp';
 
@@ -132,15 +133,18 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
       <WidgetCard
         title="Sales, last 24 hours"
         span="span-7"
-        shell="star"
+        footLines={2}
+        sparse
         stamp={{ fresh: false, text: 'Paused' }}
         foot="No ingestion while off. Your snapshots stay on this machine."
       >
-        <div className="well"><p className="q">
+        <EmptyState
+          icon={ICON_SHEET}
+          action={<GlareButton tone="primary" href="/settings">Turn it back on</GlareButton>}
+        >
           Sales watching is turned off in settings. Nothing is being read from
           the workbook right now.
-        </p></div>
-        <GlareButton tone="primary" href="/settings" className="btn-start">Turn it back on</GlareButton>
+        </EmptyState>
       </WidgetCard>
     );
   }
@@ -150,20 +154,25 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
       <WidgetCard
         title="Sales, last 24 hours"
         span="span-7"
-        shell="star"
+        footLines={2}
+        sparse
         stamp={{ fresh: false, text: 'Not connected' }}
         foot="Read-only: the file is copied before parsing, never opened in place."
       >
-        <div className="well"><p className="q">
+        <EmptyState
+          icon={ICON_SHEET}
+          action={(
+            <ClickSpark sparkColor={['#22C55E', '#22D3EE']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
+              <GlareButton tone="primary" onClick={pick} disabled={busy}>
+                Connect a workbook
+              </GlareButton>
+            </ClickSpark>
+          )}
+        >
           No workbook is connected yet, so there is nothing to show here. Once
           one is connected, this card reports what changed in the file over the
           last 24 hours.
-        </p></div>
-        <ClickSpark sparkColor={['#22C55E', '#22D3EE']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
-          <GlareButton tone="primary" onClick={pick} disabled={busy} className="btn-start">
-            Connect a workbook
-          </GlareButton>
-        </ClickSpark>
+        </EmptyState>
         {note ? <div className="alert" role="status">{note}</div> : null}
         {manualOpen && (
           <div className="well">
@@ -215,10 +224,10 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
     );
   } else if (status.state === 'first') {
     body = (
-      <div className="well"><p className="q">
+      <EmptyState icon={ICON_SHEET}>
         First snapshot taken. The 24-hour view starts with the next poll;
         nothing is invented in the meantime.
-      </p></div>
+      </EmptyState>
     );
   } else if (status.state === 'stale') {
     body = (
@@ -243,7 +252,8 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
     <WidgetCard
       title="Sales, last 24 hours"
       span="span-7"
-      shell="star"
+      footLines={2}
+      sparse={status.state !== 'healthy'}
       stamp={stamp}
       amber={amber}
       foot={`Watches ${fileNameOf(status.path)}, hourly, read-only. The file is copied before parsing, never opened in place.`}

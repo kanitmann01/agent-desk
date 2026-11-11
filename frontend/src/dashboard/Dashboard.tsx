@@ -150,23 +150,23 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
                 sequential
                 speed={70}
                 maxIterations={12}
-                scrambleColor="#22D3EE"
+                scrambleColor="#8FD8F2"
               />
               {greetTail ? ' ' : null}
               {greetTail ? (
-                <GradientText colors={['#22D3EE', '#8B5CF6']} animationSpeed={6} glow={0.5}>
+                <GradientText colors={['#8FD8F2', '#B3AEF5']} animationSpeed={14}>
                   {greetTail}
                 </GradientText>
               ) : null}
             </h1>
             <div className="hero-meta">
-              <ShinyText color="#94A3B8" shineColor="#F8FAFC" speed={4} delay={2.5}>
+              <ShinyText color="#B6C0D2" shineColor="#F8FAFC" speed={4} delay={2.5}>
                 {dateLine}
               </ShinyText>
               <span className="hero-live">
                 <span className={connected > 0 ? 'dot' : 'dot sample'} aria-hidden="true" />
                 <ShinyText
-                  color={connected > 0 ? '#CBD5E1' : '#94A3B8'}
+                  color={connected > 0 ? '#D5DDE9' : '#B6C0D2'}
                   shineColor="#F8FAFC"
                   speed={4}
                   delay={3.5}
