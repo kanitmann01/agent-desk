@@ -614,18 +614,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"key": key, "value": value})
 
     def _apply_source_toggles(self, key: str, value) -> None:
-        """Toggling a source off stops its ingestion immediately; on
-        restarts it. Polling sleeps in the watcher, this is the switch."""
+        """Toggling a source off stops its ingestion immediately; on it
+        resumes watching with one poll right now, like at startup."""
         server = self.server  # type: ignore[attr-defined]
         if key == "excel_enabled" and server.excel is not None:
             if value:
-                if server.excel.registered_path:
-                    server.excel.start_polling()
+                server.excel.resume()
             else:
                 server.excel.stop_polling()
         if key == "calendar_enabled" and server.calendar is not None:
             if value:
                 server.calendar.start_polling()
+                threading.Thread(
+                    target=_poll_calendar_once, args=(server.calendar,), daemon=True
+                ).start()
             else:
                 server.calendar.stop_polling()
 
@@ -1013,8 +1015,7 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     url = auth_url(server)
     if sys.stdout is not None:  # pythonw runs without a console stream
         print(f"Agent Desk is running: {url}")
-    if server.calendar is not None:
-        server.calendar.start_polling()  # passive file watch, keeps itself fresh
+    start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
     try:
@@ -1023,3 +1024,33 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
         pass
     finally:
         server.server_close()
+
+
+def start_background_polls(server: AgentDeskServer) -> None:
+    """Both watches poll once, right now, on daemon threads.
+
+    The recurring loops keep their own schedules (calendar every half
+    hour, excel hourly); this only removes the empty first half hour on
+    the commitments card and brings the registered workbook back after a
+    restart. A source turned off in settings is not touched at all.
+    """
+
+    def allowed(key: str) -> bool:
+        settings = server.settings
+        return settings is None or bool(settings.get(key))
+
+    excel = server.excel
+    if excel is not None and allowed("excel_enabled"):
+        excel.resume()
+    calendar = server.calendar
+    if calendar is not None and allowed("calendar_enabled"):
+        calendar.start_polling()  # passive file watch, keeps itself fresh
+        threading.Thread(target=_poll_calendar_once, args=(calendar,), daemon=True).start()
+
+
+def _poll_calendar_once(bridge) -> None:
+    """One immediate read so the first page load already knows the day."""
+    try:
+        bridge.poll()
+    except Exception:  # noqa: BLE001 - startup must not crash on a poll
+        LOG.exception("calendar startup poll failed")

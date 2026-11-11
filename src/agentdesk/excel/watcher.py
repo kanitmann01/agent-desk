@@ -81,6 +81,9 @@ class ExcelWatch:
     def register(self, path: str) -> PollResult:
         """Point the watch at a workbook (the file picker's outcome)."""
         self._path = path
+        # Persisted before the poll so a restart resumes this workbook
+        # even when the first poll finds the file locked or unreadable.
+        store.set_meta(self.conn, store.WORKBOOK_PATH_KEY, path)
         self._audit("excel.register", "ok")
         return self.poll()
 
@@ -170,6 +173,22 @@ class ExcelWatch:
             "last_ok_ts": self._last_ok_ts,
         }
 
+    def resume(self) -> bool:
+        """Watch the registered workbook again after a process restart.
+
+        The path comes back from the store, one poll runs on a daemon
+        thread so the first dashboard load shows the real state (startup
+        itself never blocks on the read), and the interval loop continues
+        as after a normal registration. False when nothing is registered.
+        """
+        if self._path is None:
+            self._path = store.get_meta(self.conn, store.WORKBOOK_PATH_KEY)
+        if self._path is None:
+            return False
+        self.start_polling()
+        threading.Thread(target=self._poll_quietly, daemon=True).start()
+        return True
+
     def start_polling(self) -> None:
         """Poll every interval on a daemon timer until stop_polling()."""
         self.stop_polling()
@@ -178,13 +197,17 @@ class ExcelWatch:
         self._timer.daemon = True
         self._timer.start()
 
-    def _poll_loop(self) -> None:
-        if self._stop.is_set():
-            return
+    def _poll_quietly(self) -> None:
+        """One poll that swallows failures: background threads must not crash."""
         try:
             self.poll()
         except Exception:  # noqa: BLE001 - the loop must survive any poll
             LOG.exception("excel poll failed")
+
+    def _poll_loop(self) -> None:
+        if self._stop.is_set():
+            return
+        self._poll_quietly()
         if not self._stop.is_set():
             self._timer = threading.Timer(self.interval_s, self._poll_loop)
             self._timer.daemon = True
