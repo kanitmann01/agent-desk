@@ -91,6 +91,11 @@ class TestReportRendering:
         final_line = [line for line in report.splitlines() if line.strip()][-1]
         assert final_line == verdict_line(verdict) == "VERDICT: GO"
 
+    def test_blank_line_precedes_the_final_verdict_line(self):
+        report = render_report(sample_results(), aggregate_verdict(sample_results()), CONTEXT)
+
+        assert report.endswith("\n\nVERDICT: GO\n")
+
     def test_reshape_report_final_line_names_failed_gates(self):
         results = sample_results()
         results[1] = gate(GATE_UV, 2, FAIL, evidence=("install failed",))

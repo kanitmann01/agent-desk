@@ -41,6 +41,7 @@ def render_report(results, verdict: Verdict, context) -> str:
         if index:
             parts.append("")
         parts.append(_gate_section(result))
+    parts.append("")
     parts.append(verdict_line(verdict))
     return "\n".join(parts) + "\n"
 
