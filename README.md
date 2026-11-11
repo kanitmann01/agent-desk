@@ -20,6 +20,7 @@ From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to ski
 - `src/agentdesk/probe/`: the P0 environment probe (issue #2), run via `tools/probe.cmd`.
 - `src/agentdesk/validator/`: the plugin validator CLI (issue #8), byte-identical to registry CI.
 - `src/agentdesk/server/`: the hardened localhost web app (issue #3): token bootstrap, Origin/Host guard, dashboard shell, health.
+- `src/agentdesk/excel/`: the excel-watch (issue #4): shadow copy before parse, stdlib xlsx reader, SQLite row-hash snapshots, 24-hour delta, amber locked-file state.
 - `tools/agent-desk.cmd`: the double-click launcher.
 
 ## Ground rules for anything built here

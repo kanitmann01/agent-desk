@@ -7,6 +7,7 @@ booted fixture) so no listener outlives a test.
 """
 
 import http.client
+import json
 import sys
 import threading
 from pathlib import Path
@@ -20,10 +21,14 @@ from agentdesk.server import app as server_app
 
 
 class Booted:
-    """A running AgentDeskServer plus small helpers for raw requests."""
+    """A running AgentDeskServer plus small helpers for raw requests.
 
-    def __init__(self) -> None:
-        self.server = server_app.create_server(port=0)
+    Keyword arguments pass straight through to create_server, so tests can
+    inject their own excel watch and picker adapter.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -34,15 +39,22 @@ class Booted:
     def host_header(self) -> dict[str, str]:
         return {"Host": f"127.0.0.1:{self.port}"}
 
-    def request(self, method: str, path: str, headers: dict[str, str] | None = None):
+    def request(self, method: str, path: str, headers: dict[str, str] | None = None, body: bytes | None = None):
         """One real HTTP request; returns (status, headers, body)."""
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         try:
-            conn.request(method, path, headers=headers or {})
+            conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
             return response.status, dict(response.getheaders()), response.read()
         finally:
             conn.close()
+
+    def post_json(self, path: str, payload: dict | None = None, headers: dict[str, str] | None = None):
+        """One real authenticated-shape POST with a JSON body."""
+        data = json.dumps(payload or {}).encode("utf-8")
+        merged = {"Content-Type": "application/json", "Content-Length": str(len(data))}
+        merged.update(headers or {})
+        return self.request("POST", path, headers=merged, body=data)
 
     def exchange(self) -> dict[str, str]:
         """Walk the bootstrap exchange; returns headers for authed requests."""
