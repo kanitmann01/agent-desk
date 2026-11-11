@@ -156,6 +156,11 @@ table.rows td.neg{color:var(--bad)}
 .doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .doc a.btn{text-decoration:none}
 .page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
+.page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
+.page-foot a:hover{text-decoration:underline}
+.touches td{vertical-align:top;font-size:13px}
+.touch-badge{display:inline-flex;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700}
+.touch-badge.on{background:var(--primary-soft);color:var(--primary);border-color:transparent}
 .error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
 .error-card h1{font-size:20px;font-weight:800}
 .error-card p{color:var(--ink-2);font-size:13.5px}
@@ -369,7 +374,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards without a connected source show sample data.</span></footer>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards without a connected source show sample data.</span><a href="/what-this-touches">What this app touches</a></footer>
 </main>
 </div>
 <script src="/static/app.js"></script>

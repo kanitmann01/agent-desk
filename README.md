@@ -25,6 +25,12 @@ From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to ski
 - `src/agentdesk/assistant/`: research and the assistant (issue #6): one thin loop over the corporate endpoint, widget context attached so she never re-explains, and the audit store recording every outbound call.
 - `src/agentdesk/llm.py`: the shared OpenAI-compatible endpoint adapter (env-configured, one attempt, no telemetry).
 - `tools/agent-desk.cmd`: the double-click launcher.
+- `tools/license_manifest.py`: the license gate (issue #7): fails on any dependency outside MIT/Apache-2.0/BSD/ISC; writes `THIRD-PARTY-LICENSES.md`.
+
+## For IT review
+
+- `/what-this-touches` in the running app: the one-page statement, generated from the audit event vocabulary.
+- `/audit/export.csv`: the append-only audit log as CSV (actor, action, target, timestamp).
 
 ## Ground rules for anything built here
 

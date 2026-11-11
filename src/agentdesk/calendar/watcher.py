@@ -90,11 +90,13 @@ class CalendarBridge:
         adapters: Adapters | None = None,
         llm: Callable[[str], str] | None = None,
         stale_s: float = DEFAULT_STALE_S,
+        audit_hook: Callable[[str, str, str], None] | None = None,
     ) -> None:
         self.conn = conn
         self.adapters = adapters if adapters is not None else default_adapters()
         self.llm = llm if llm is not None else env_llm_adapter()
         self.stale_s = stale_s
+        self.audit_hook = audit_hook
         self._source_path: str | None = None
         self._last_read_ts: float | None = None
         self._state = STATE_EMPTY
@@ -122,8 +124,10 @@ class CalendarBridge:
         except (CalendarUnreadable, ValueError) as exc:
             self._state = STATE_UNREADABLE
             self._cause = f"Can't read the calendar file: {exc}"
+            self._audit("calendar.poll", "error")
             return self.status()
         self._document = document
+        self._audit("calendar.ingest", "ok")
         if now - document.generated_at.timestamp() > self.stale_s:
             self._state = STATE_STALE
             self._cause = (
@@ -190,6 +194,16 @@ class CalendarBridge:
     def toggle_check(self, event_id: str, idx: int, checked: bool) -> None:
         """The checkbox API: persists across refreshes and restarts."""
         store.set_check(self.conn, event_id, idx, checked)
+
+    def _audit(self, action: str, status: str) -> None:
+        """Record a brokered touch when the audit hook is wired."""
+        if self.audit_hook is None or self._source_path is None:
+            return
+        name = str(self._source_path).replace("\\", "/").rsplit("/", 1)[-1]
+        try:
+            self.audit_hook(action, name, status)
+        except Exception:  # noqa: BLE001 - auditing must never break the bridge
+            LOG.exception("audit hook failed")
 
     def retest(self) -> dict:
         return self.poll()
