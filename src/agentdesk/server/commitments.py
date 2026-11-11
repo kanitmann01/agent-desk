@@ -80,6 +80,19 @@ def render_commitments_widget(status: dict, now: datetime) -> Widget | None:
     )
     fresh = freshness_for(state, generated, now)
 
+    if state == "disabled":
+        return Widget(
+            id="key-commitment",
+            title="Today's key commitment",
+            col="col-5",
+            freshness=Freshness(ATTENTION, "Paused", ""),
+            body_html=(
+                '<div class="well"><p class="q">Calendar reading is turned off in '
+                "settings. Your day is not being read right now.</p></div>"
+                '<a class="btn btn-primary btn-start" href="/settings">Turn it back on</a>'
+            ),
+            foot_html="No ingestion while off.",
+        )
     if state == STATE_HEALTHY:
         body = _healthy_body(status)
         foot = "From your calendar via the OneDrive sync. Nothing leaves the machine but the meeting's name."

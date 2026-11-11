@@ -190,7 +190,7 @@ def test_stale_data_is_labeled_on_the_widget_endpoint(env, auth):
 def test_dashboard_renders_the_live_widget_once_registered(env, auth):
     page_status, _h, page_body = env.request("GET", "/", auth)
     assert 'data-widget-id="sales-24h"' in page_body.decode("utf-8")
-    assert b"Sample data until a workbook is connected." in page_body
+    assert b"Sample data until then." in page_body
 
     env.post_json("/sources/excel-watch", {"path": str(env.workbook)}, auth)
     _status, _h, page_body = env.request("GET", "/", auth)

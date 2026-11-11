@@ -50,7 +50,8 @@ from agentdesk.server.core import (
 from agentdesk.server.demo import demo_widgets
 from agentdesk.server.guard import check_request
 from agentdesk.server.health import health_payload
-from agentdesk.server.sales import render_sales_widget
+from agentdesk.server.sales import render_sales_disabled, render_sales_widget
+from agentdesk.settings import SettingsStore, ensure_schema as ensure_settings_schema
 
 LOG = logging.getLogger("agentdesk.server")
 
@@ -135,6 +136,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         inbox_store: InboxStore | None = None,
         activity_log: ActivityLog | None = None,
         skill_store: SkillStore | None = None,
+        settings_store: SettingsStore | None = None,
     ) -> None:
         self.sessions = sessions
         self.sources = sources if sources is not None else default_sources()
@@ -149,6 +151,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.inbox = inbox_store
         self.activity_log = activity_log
         self.skills = skill_store
+        self.settings = settings_store
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
             if activity_log is not None and inbox_store is not None and skill_store is not None
@@ -259,6 +262,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_skill_markdown(int(path[len("/skills/"):-len("/skill.md")].strip("/")))
         elif path == "/audit/tail":
             self._send_audit_tail()
+        elif path == "/widgets/settings":
+            self._send_settings_values()
         elif path == "/audit/export.csv":
             self._send_audit_csv()
         elif path == "/what-this-touches":
@@ -281,6 +286,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path, _, _query = self.path.partition("?")
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
+        if path.startswith("/sources/excel-watch") and not self._source_allowed("excel_enabled"):
+            self._send_json(409, {"error": "Sales watching is off in settings.", "reconnect": "/settings"})
+            return
+        if path.startswith("/sources/calendar-bridge") and not self._source_allowed("calendar_enabled"):
+            self._send_json(409, {"error": "Calendar reading is off in settings.", "reconnect": "/settings"})
+            return
         if path == "/sources/excel-watch/pick":
             if excel is None:
                 self._send_json(503, {"error": "the excel watch is not available"})
@@ -349,7 +360,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (ValueError, TypeError) as exc:
                 self._send_json(400, {"error": str(exc)})
                 return
-            inbox_service.evaluate(self.server.inbox, _local_now())  # type: ignore[attr-defined]
+            inbox_service.evaluate(self.server.inbox, _local_now(), **self._budget_values())  # type: ignore[attr-defined]
             self._send_json(201, self.server.inbox.get(card.id).to_json(self.server.inbox.now_ts()))  # type: ignore[attr-defined]
         elif path.startswith("/inbox/cards/") and path.endswith("/accept"):
             self._inbox_decide(path[len("/inbox/cards/"):-len("/accept")], "accept")
@@ -366,6 +377,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._skill_run(int(path[len("/skills/"):-len("/run")].strip("/")))
         elif path.startswith("/skills/") and path.endswith("/undo"):
             self._skill_undo(int(path[len("/skills/"):-len("/undo")].strip("/")))
+        elif path == "/settings/toggle":
+            self._settings_toggle()
         elif path == "/assistant/ask":
             question = self._ask_question_from_body()
             if not question:
@@ -407,6 +420,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _run_llm_turn(self, question: str, *, summary_mode: bool):
         server = self.server  # type: ignore[attr-defined]
+        if not self._source_allowed("endpoint_enabled"):
+            from agentdesk.assistant.loop import Answer, STATUS_DEGRADED
+
+            return Answer(
+                status=STATUS_DEGRADED,
+                cause=(
+                    "Company endpoint calls are turned off in settings, so "
+                    "this surface is paused. Everything else keeps working."
+                ),
+            )
         context = build_context(
             server.excel.status() if server.excel is not None else None,
             server.calendar.status() if server.calendar is not None else None,
@@ -466,12 +489,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         widgets: list = []
         excel = self.server.excel  # type: ignore[attr-defined]
         sales_status = excel.status() if excel is not None else None
-        if sales_status is not None and sales_status.get("configured"):
+        if not self._source_allowed("excel_enabled"):
+            widgets.append(render_sales_disabled(now))
+        elif sales_status is not None and sales_status.get("configured"):
             widgets.append(render_sales_widget(sales_status))
         else:
             widgets.append(demo["sales-24h"])
         calendar = self.server.calendar  # type: ignore[attr-defined]
-        if calendar is not None:
+        if not self._source_allowed("calendar_enabled"):
+            widgets.append(render_commitments_widget({"state": "disabled"}, now))
+        elif calendar is not None:
             commitments = render_commitments_widget(calendar.status(), now)
             widgets.append(commitments if commitments is not None else demo["key-commitment"])
         else:
@@ -539,13 +566,81 @@ class DashboardHandler(BaseHTTPRequestHandler):
         entries = server.activity_log.entries() if server.activity_log is not None else []
         skills = server.skills.active() if server.skills is not None else []
         histories = {s["id"]: server.skills.history(s["id"]) for s in skills}
-        page = render_settings_page(entries, skills, histories, agentdesk.__version__)
+        values = server.settings.all() if server.settings is not None else {}
+        page = render_settings_page(
+            entries, skills, histories, agentdesk.__version__,
+            settings_values=values, endpoint_status=self._endpoint_status(),
+        )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _endpoint_status(self) -> dict:
+        """The read-only indicator: configured or not, and the truth about
+        the last call. A down endpoint shows degraded, never a false green."""
+        server = self.server  # type: ignore[attr-defined]
+        configured = bool(server.llm_endpoint)
+        last = "never"
+        if server.audit_conn is not None:
+            for entry in audit_store.entries(server.audit_conn, 20):
+                if entry["action"].startswith("llm."):
+                    last = entry["status"]
+                    break
+        return {"configured": configured, "last": last}
+
+    def _send_settings_values(self) -> None:
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        self._send_json(200, settings.all())
+
+    def _settings_toggle(self) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        if server.settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        key = body.get("key")
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap"):
+            self._send_json(400, {"error": "unknown setting"})
+            return
+        value = server.settings.toggle(key)
+        self._apply_source_toggles(key, value)
+        self._send_json(200, {"key": key, "value": value})
+
+    def _apply_source_toggles(self, key: str, value) -> None:
+        """Toggling a source off stops its ingestion immediately; on
+        restarts it. Polling sleeps in the watcher, this is the switch."""
+        server = self.server  # type: ignore[attr-defined]
+        if key == "excel_enabled" and server.excel is not None:
+            if value:
+                if server.excel.registered_path:
+                    server.excel.start_polling()
+            else:
+                server.excel.stop_polling()
+        if key == "calendar_enabled" and server.calendar is not None:
+            if value:
+                server.calendar.start_polling()
+            else:
+                server.calendar.stop_polling()
+
+    def _source_allowed(self, key: str) -> bool:
+        settings = self.server.settings  # type: ignore[attr-defined]
+        return settings is None or bool(settings.get(key))
+
+    def _budget_values(self) -> dict:
+        """What the settings page shows is what the inbox enforces."""
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            return {}
+        return {"quiet_hours": settings.get("quiet_hours"), "cap": settings.get("daily_cap")}
 
     def _skill_run(self, skill_id: int) -> None:
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
             self._send_json(503, {"error": "skills are not available"})
+            return
+        if not self._source_allowed("endpoint_enabled"):
+            self._send_json(200, {"status": "degraded", "cause": "Company endpoint calls are turned off in settings."})
             return
         skill = server.skills.get(skill_id)
         if skill is None or not skill["active"]:
@@ -605,7 +700,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
-        inbox_service.evaluate(inbox, _local_now())
+        inbox_service.evaluate(inbox, _local_now(), **self._budget_values())
         now_ts = time.time()
         page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
@@ -616,7 +711,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
-        inbox_service.evaluate(inbox, _local_now())
+        inbox_service.evaluate(inbox, _local_now(), **self._budget_values())
         waiting = inbox.waiting()
         self._send_json(200, {
             "waiting": len(waiting),
@@ -728,6 +823,7 @@ def create_server(
         inbox_store: InboxStore | None = None,
         activity_log: ActivityLog | None = None,
         skill_store: SkillStore | None = None,
+        settings_store: SettingsStore | None = None,
     ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -759,12 +855,14 @@ def create_server(
             skill_store = repetition[1]
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
+    if settings_store is None:
+        settings_store = _default_settings_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
             (resolved, bind_port), sessions, sources, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
-            activity_log, skill_store,
+            activity_log, skill_store, settings_store,
         )
 
     if port is None:
@@ -862,6 +960,19 @@ def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]
     except (OSError, sqlite3.Error):
         LOG.exception("repetition stores unavailable")
         return None, None
+
+
+def _default_settings_store() -> SettingsStore | None:
+    """Settings over the persistent store, or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "settings.sqlite3", check_same_thread=False)
+        ensure_settings_schema(conn)
+        return SettingsStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("settings unavailable")
+        return None
 
 
 def default_calendar_hint() -> Path:

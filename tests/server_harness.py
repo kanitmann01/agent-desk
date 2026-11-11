@@ -28,6 +28,7 @@ from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
+from agentdesk.settings import SettingsStore
 
 
 def _inert_audit():
@@ -42,6 +43,10 @@ def _inert_activity():
 
 def _inert_skills():
     return SkillStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_settings():
+    return SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
 def _inert_excel() -> ExcelWatch:
@@ -75,6 +80,7 @@ class Booted:
         kwargs.setdefault("audit_conn", _inert_audit())
         kwargs.setdefault("activity_log", _inert_activity())
         kwargs.setdefault("skill_store", _inert_skills())
+        kwargs.setdefault("settings_store", _inert_settings())
         self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
