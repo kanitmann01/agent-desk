@@ -12,6 +12,8 @@ On macOS, run `chmod +x tools/*.command` once, then double-click `tools/agent-de
 
 From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to skip the browser open).
 
+`tools/start.cmd` and `tools/start.command` start everything: double-click for the dashboard, or run with the `dev` argument from a terminal to bring up the development stack (the Python API plus the live-reloading UI server, node needed for dev only).
+
 ## Configure it
 
 The app runs with zero configuration, and the two things you may ever need to set now have in-app surfaces:
