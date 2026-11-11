@@ -23,6 +23,7 @@ from agentdesk.probe.core import (
     VERDICT_RESHAPE,
     Verdict,
 )
+from agentdesk.probe.cli import main
 from agentdesk.probe.gates import (
     gate_edr_identity,
     gate_exec_user_space,
@@ -60,5 +61,6 @@ __all__ = [
     "gate_onedrive",
     "gate_power_automate",
     "gate_uv_tls_bootstrap",
+    "main",
     "verdict_line",
 ]

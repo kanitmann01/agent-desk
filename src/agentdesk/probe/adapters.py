@@ -8,7 +8,9 @@ subprocess test) wires them in, which keeps every gate testable with fakes.
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from agentdesk.probe.core import OneDriveInfo, ReachResult, RunResult
 
@@ -88,3 +90,28 @@ def discover_onedrive() -> OneDriveInfo | None:
             if entry.is_dir():
                 return OneDriveInfo(path=str(entry), how=f"folder found under %USERPROFILE% matching OneDrive*")
     return None
+
+
+@dataclass(frozen=True)
+class Adapters:
+    """The injectable side-effect bundle the CLI passes to every gate.
+
+    Tests swap this for fakes; the CLI builds the real one.
+    """
+
+    runner: Callable  # list[str] -> RunResult
+    find_uv: Callable  # () -> str | None
+    reach: Callable  # str -> ReachResult
+    list_processes: Callable  # () -> RunResult
+    discover_onedrive: Callable  # () -> OneDriveInfo | None
+
+
+def real_adapters() -> Adapters:
+    """The production bundle: subprocess, shutil, urllib and the filesystem."""
+    return Adapters(
+        runner=subprocess_runner,
+        find_uv=find_uv,
+        reach=reach_url,
+        list_processes=list_processes,
+        discover_onedrive=discover_onedrive,
+    )
