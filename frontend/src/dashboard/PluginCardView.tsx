@@ -13,7 +13,7 @@ export default function PluginCardView({ card }: PluginCardViewProps) {
   return (
     <WidgetCard
       title={card.title}
-      col="col-4"
+      span="span-4"
       badge={card.pilot ? 'PILOT' : undefined}
       stamp={fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' }}
       amber={!fresh}

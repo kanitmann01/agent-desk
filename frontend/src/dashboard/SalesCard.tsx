@@ -1,8 +1,10 @@
-// The sales card, every state the server-rendered one has: disabled,
-// unconfigured (picker flow with the manual path fallback), first
-// snapshot, healthy delta, stale/locked/unreadable amber with Re-test.
-// Copy and flows follow pages.py and sales.py exactly; every action
-// refetches /api/dashboard instead of reloading the page.
+// The sales card, the hero of the bento grid, with every state the
+// server-rendered one has: disabled, unconfigured (picker flow with the
+// manual path fallback), first snapshot, healthy delta,
+// stale/locked/unreadable amber with Re-test. Copy and flows follow
+// pages.py and sales.py exactly; every action refetches /api/dashboard
+// instead of reloading the page. The star shell runs a light around the
+// rim: green when live, amber when the source needs attention.
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import {
@@ -10,7 +12,7 @@ import {
 } from '../fmt';
 import type { DeltaPayload, SalesStatus } from '../types';
 import WidgetCard from '../components/WidgetCard';
-import ShinyButton from '../components/ShinyButton';
+import GlareButton from '../components/GlareButton';
 import ClickSpark from '../vendor/reactbits/ClickSpark';
 import CountUp from '../vendor/reactbits/CountUp';
 
@@ -129,7 +131,8 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
     return (
       <WidgetCard
         title="Sales, last 24 hours"
-        col="col-7"
+        span="span-7"
+        shell="star"
         stamp={{ fresh: false, text: 'Paused' }}
         foot="No ingestion while off. Your snapshots stay on this machine."
       >
@@ -137,7 +140,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
           Sales watching is turned off in settings. Nothing is being read from
           the workbook right now.
         </p></div>
-        <a className="btn btn-primary btn-start" href="/settings">Turn it back on</a>
+        <GlareButton tone="primary" href="/settings" className="btn-start">Turn it back on</GlareButton>
       </WidgetCard>
     );
   }
@@ -146,7 +149,8 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
     return (
       <WidgetCard
         title="Sales, last 24 hours"
-        col="col-7"
+        span="span-7"
+        shell="star"
         stamp={{ fresh: false, text: 'Not connected' }}
         foot="Read-only: the file is copied before parsing, never opened in place."
       >
@@ -155,8 +159,10 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
           one is connected, this card reports what changed in the file over the
           last 24 hours.
         </p></div>
-        <ClickSpark sparkColor="#14594E" sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
-          <ShinyButton onClick={pick} disabled={busy} className="btn-start">Connect a workbook</ShinyButton>
+        <ClickSpark sparkColor={['#22C55E', '#22D3EE']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
+          <GlareButton tone="primary" onClick={pick} disabled={busy} className="btn-start">
+            Connect a workbook
+          </GlareButton>
         </ClickSpark>
         {note ? <div className="alert" role="status">{note}</div> : null}
         {manualOpen && (
@@ -181,23 +187,29 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
 
   const stamp = salesStamp(status.state, status.last_ok_ts);
   const amber = status.state === 'stale' || status.state === 'locked' || status.state === 'unreadable';
-  const changed = (status.delta?.added?.length ?? 0) + (status.delta?.removed?.length ?? 0);
+  const added = status.delta?.added?.length ?? 0;
+  const removed = status.delta?.removed?.length ?? 0;
+  const changed = added + removed;
 
   let body;
   if (status.state === 'healthy') {
     body = (
-      <>
+      <div className="sales-hero">
         <div className="kpi">
-          <div>
-            <div className="label">Rows changed, 24 h</div>
-            <div className="value">
-              <CountUp to={changed} duration={0.9} separator="," />
-            </div>
-            <div className="sub">Row-hash diff against the snapshot from 24 hours ago</div>
+          <div className="label">Rows changed, 24 h</div>
+          <div className="value">
+            <CountUp to={changed} duration={1.4} separator="," easing="expo" />
+          </div>
+          <div className="sub">Row-hash diff against the snapshot from 24 hours ago</div>
+          <div className="kpi-split">
+            <span className="kpi-chip up">+{added} added</span>
+            <span className="kpi-chip down">-{removed} removed</span>
           </div>
         </div>
-        {status.delta ? <DeltaRows delta={status.delta} /> : null}
-      </>
+        <div className="sales-delta">
+          {status.delta ? <DeltaRows delta={status.delta} /> : null}
+        </div>
+      </div>
     );
   } else if (status.state === 'first') {
     body = (
@@ -213,18 +225,14 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
           This data is old, so it is shown as stale rather than current.
           Re-test to refresh it now.
         </span></div>
-        <button className="btn btn-secondary btn-start" type="button" onClick={retest} disabled={busy}>
-          Re-test now
-        </button>
+        <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
       </>
     );
   } else {
     body = (
       <>
         <div className="alert" role="status"><span>{status.cause}</span></div>
-        <button className="btn btn-secondary btn-start" type="button" onClick={retest} disabled={busy}>
-          Re-test now
-        </button>
+        <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
       </>
     );
   }
@@ -232,7 +240,8 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
   return (
     <WidgetCard
       title="Sales, last 24 hours"
-      col="col-7"
+      span="span-7"
+      shell="star"
       stamp={stamp}
       amber={amber}
       foot={`Watches ${fileNameOf(status.path)}, hourly, read-only. The file is copied before parsing, never opened in place.`}

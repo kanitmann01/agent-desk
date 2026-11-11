@@ -1,12 +1,15 @@
 // The commitments card: healthy (key event, persisted subtask checks,
 // followup chips), clear, empty (walkthrough link), stale and unreadable
 // amber with Re-test, plus the disabled and unavailable branches. Copy
-// and flows follow pages.py and commitments.py exactly.
+// and flows follow pages.py and commitments.py exactly. The tilt shell
+// leans the whole card toward the pointer; under prefers-reduced-motion
+// it stays flat.
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import { commitmentsStamp, hhmmFromIso } from '../fmt';
 import type { CommitmentsStatus, KeyEvent } from '../types';
 import WidgetCard from '../components/WidgetCard';
+import GlareButton from '../components/GlareButton';
 
 const WALKTHROUGH_PATH = '/walkthrough/calendar';
 
@@ -72,7 +75,10 @@ function CheckLine(props: { eventId: string; idx: number; text: string; checked:
 export default function CommitmentsCard({ commitments, onRefetch, onExpired }: CommitmentsCardProps) {
   const status = commitments.status;
   // Checks live in the payload; the click flips locally and persists
-  // through the API, like the server-rendered card does.
+  // through the API, like the server-rendered card does. The local
+  // flips are keyed by event and index and win over the payload, so the
+  // box answers the click at once and stays right after the refetch.
+  const [flips, setFlips] = useState<Record<string, boolean>>({});
   const [pendingNote, setPendingNote] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -94,16 +100,30 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   function toggleCheck(eventId: string, idx: number, next: boolean) {
     // The click is the truth; the app persists it. No await: the flip is
     // instant, exactly like the server-rendered card.
+    const key = `${eventId}:${idx}`;
+    setFlips((prev) => ({ ...prev, [key]: next }));
     void postJson('/widgets/commitments/check', { eventId, idx, checked: next })
-      .then((res) => { if (res.status === 401) onExpired(); })
-      .catch(() => setPendingNote('The dashboard could not reach its own server; the check was not saved.'));
+      .then((res) => {
+        if (res.status === 401) { onExpired(); return undefined; }
+        return onRefetch();
+      })
+      .catch(() => {
+        // Nothing was saved, so the box goes back to what the server holds.
+        setFlips((prev) => {
+          const rest = { ...prev };
+          delete rest[key];
+          return rest;
+        });
+        setPendingNote('The dashboard could not reach its own server; the check was not saved.');
+      });
   }
 
   if (commitments.mode === 'disabled') {
     return (
       <WidgetCard
         title="Today's key commitment"
-        col="col-5"
+        span="span-5"
+        shell="tilt"
         stamp={{ fresh: false, text: 'Paused' }}
         foot="No ingestion while off."
       >
@@ -111,7 +131,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
           Calendar reading is turned off in settings. Your day is not being
           read right now.
         </p></div>
-        <a className="btn btn-primary btn-start" href="/settings">Turn it back on</a>
+        <GlareButton tone="primary" href="/settings" className="btn-start">Turn it back on</GlareButton>
       </WidgetCard>
     );
   }
@@ -120,7 +140,8 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
     return (
       <WidgetCard
         title="Today's key commitment"
-        col="col-5"
+        span="span-5"
+        shell="tilt"
         stamp={{ fresh: false, text: 'Unavailable' }}
         foot="Nothing is being read while the bridge is unavailable."
       >
@@ -139,10 +160,13 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   if (status.state === 'healthy' && status.keyEvent) {
     const breakdown = status.breakdown ?? { subtasks: [], followups: [] };
     const checks = status.checks ?? {};
+    const eventId = status.keyEvent.id;
+    const isChecked = (idx: number) => flips[`${eventId}:${idx}`] ?? Boolean(checks[String(idx)]);
     return (
       <WidgetCard
         title="Today's key commitment"
-        col="col-5"
+        span="span-5"
+        shell="tilt"
         stamp={stamp}
         foot={`From your calendar via the OneDrive sync. Nothing leaves the machine but the meeting's name.${first ? ` Connected ${first}.` : ''}`}
       >
@@ -151,12 +175,12 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
           <div className="subhead subhead-tight">Agent's breakdown</div>
           {(breakdown.subtasks ?? []).map((text, idx) => (
             <CheckLine
-              key={`${status.keyEvent!.id}-${idx}`}
-              eventId={status.keyEvent!.id}
+              key={`${eventId}-${idx}`}
+              eventId={eventId}
               idx={idx}
               text={text}
-              checked={Boolean(checks[String(idx)])}
-              onToggle={() => toggleCheck(status.keyEvent!.id, idx, !checks[String(idx)])}
+              checked={isChecked(idx)}
+              onToggle={() => toggleCheck(eventId, idx, !isChecked(idx))}
             />
           ))}
         </div>
@@ -175,7 +199,8 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
     return (
       <WidgetCard
         title="Today's key commitment"
-        col="col-5"
+        span="span-5"
+        shell="tilt"
         stamp={stamp}
         foot="From your calendar via the OneDrive sync."
       >
@@ -191,7 +216,8 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
     return (
       <WidgetCard
         title="Today's key commitment"
-        col="col-5"
+        span="span-5"
+        shell="tilt"
         stamp={stamp}
         foot="Setup happens in your browser. No terminal, no admin."
       >
@@ -201,7 +227,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
           in your OneDrive. A 3-step browser walkthrough creates the flow
           that writes it.
         </p></div>
-        <a className="btn btn-primary btn-start" href={WALKTHROUGH_PATH}>Connect your calendar</a>
+        <GlareButton tone="primary" href={WALKTHROUGH_PATH} className="btn-start">Connect your calendar</GlareButton>
       </WidgetCard>
     );
   }
@@ -210,16 +236,15 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
     return (
       <WidgetCard
         title="Today's key commitment"
-        col="col-5"
+        span="span-5"
+        shell="tilt"
         stamp={stamp}
         amber
         foot="Stale data is labeled, never shown as current."
       >
         <div className="alert" role="status"><span>{status.cause}</span></div>
-        <button className="btn btn-secondary btn-start" type="button" onClick={retest} disabled={busy}>
-          Re-test now
-        </button>
-        <a className="btn btn-secondary btn-start" href={WALKTHROUGH_PATH}>Open the walkthrough</a>
+        <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
+        <GlareButton className="btn-start" href={WALKTHROUGH_PATH}>Open the walkthrough</GlareButton>
         {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
       </WidgetCard>
     );
@@ -229,15 +254,14 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   return (
     <WidgetCard
       title="Today's key commitment"
-      col="col-5"
+      span="span-5"
+      shell="tilt"
       stamp={stamp}
       amber
       foot="The file is there but not readable as calendar data."
     >
       <div className="alert" role="status"><span>{status.cause}</span></div>
-      <button className="btn btn-secondary btn-start" type="button" onClick={retest} disabled={busy}>
-        Re-test now
-      </button>
+      <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
       {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
     </WidgetCard>
   );
