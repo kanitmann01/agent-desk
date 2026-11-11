@@ -13,7 +13,7 @@ from .model import Failure, Verdict
 from .reader import MANIFEST_NAME, DirectoryReader, ValidatorIOError, ZipReader
 from .schema import validate_schema
 
-_FAILURE_CODE_ORDER = (
+FAILURE_CODES = (
     "unknown-key",
     "bad-schema",
     "bad-license",
@@ -26,16 +26,17 @@ _FAILURE_CODE_ORDER = (
     "bad-json",
     "hash-mismatch",
 )
+"""Every failure code the validator can emit, in verdict sort order."""
 
 
 def _sorted_failures(failures) -> tuple[Failure, ...]:
     """Deterministic order: stable code order first, then message."""
-    code_rank = {code: rank for rank, code in enumerate(_FAILURE_CODE_ORDER)}
+    code_rank = {code: rank for rank, code in enumerate(FAILURE_CODES)}
     return tuple(
         sorted(
             failures,
             key=lambda failure: (
-                code_rank.get(failure.code, len(_FAILURE_CODE_ORDER)),
+                code_rank.get(failure.code, len(FAILURE_CODES)),
                 failure.message,
             ),
         )
