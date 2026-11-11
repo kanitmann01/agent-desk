@@ -2,10 +2,11 @@
 
 The config file is the only non-env way to configure the app, so its
 contract is pinned here line by line: comments, quotes, whitespace,
-prefix filtering and the env-wins precedence.
+prefix filtering and the env-wins precedence. The loader is pointed at
+plain dicts, never os.environ, so nothing here can leak a variable into
+the rest of the suite.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -69,22 +70,22 @@ def test_lines_without_equals_are_ignored():
     }
 
 
-def test_load_applies_prefixed_keys_to_the_environment(monkeypatch, tmp_path):
-    monkeypatch.delenv("AGENTDESK_LLM_BASE", raising=False)
+def test_load_applies_prefixed_keys_to_the_given_environment(tmp_path):
+    # A plain dict, never os.environ: the loader writes its mapping
+    # directly, and a leaked key would flip later tests' expectations.
     file = tmp_path / "config.env"
     file.write_text("AGENTDESK_LLM_BASE=https://llm.corp\n", encoding="utf-8")
-    applied = load_env_file(file)
+    environ: dict[str, str] = {}
+    applied = load_env_file(file, environ=environ)
     assert applied == {"AGENTDESK_LLM_BASE": "https://llm.corp"}
-    assert os.environ["AGENTDESK_LLM_BASE"] == "https://llm.corp"
+    assert environ["AGENTDESK_LLM_BASE"] == "https://llm.corp"
 
 
 def test_load_missing_file_is_not_an_error(tmp_path):
     assert load_env_file(tmp_path / "absent.env") == {}
 
 
-def test_load_existing_environment_wins(monkeypatch, tmp_path):
-    monkeypatch.setenv("AGENTDESK_LLM_BASE", "https://from-env.example")
-    monkeypatch.setenv("AGENTDESK_LLM_KEY", "env-key")
+def test_load_existing_environment_wins(tmp_path):
     file = tmp_path / "config.env"
     file.write_text(
         "AGENTDESK_LLM_BASE=https://from-file.example\n"
@@ -92,16 +93,20 @@ def test_load_existing_environment_wins(monkeypatch, tmp_path):
         "AGENTDESK_LLM_MODEL=file-model\n",
         encoding="utf-8",
     )
-    applied = load_env_file(file)
+    environ = {
+        "AGENTDESK_LLM_BASE": "https://from-env.example",
+        "AGENTDESK_LLM_KEY": "env-key",
+    }
+    applied = load_env_file(file, environ=environ)
     assert applied == {"AGENTDESK_LLM_MODEL": "file-model"}
-    assert os.environ["AGENTDESK_LLM_BASE"] == "https://from-env.example"
-    assert os.environ["AGENTDESK_LLM_KEY"] == "env-key"
-    assert os.environ["AGENTDESK_LLM_MODEL"] == "file-model"
+    assert environ["AGENTDESK_LLM_BASE"] == "https://from-env.example"
+    assert environ["AGENTDESK_LLM_KEY"] == "env-key"
+    assert environ["AGENTDESK_LLM_MODEL"] == "file-model"
 
 
-def test_load_reports_nothing_when_every_key_already_set(monkeypatch, tmp_path):
-    monkeypatch.setenv("AGENTDESK_DATA", "already-set")
+def test_load_reports_nothing_when_every_key_already_set(tmp_path):
     file = tmp_path / "config.env"
     file.write_text("AGENTDESK_DATA=from-file\n", encoding="utf-8")
-    assert load_env_file(file) == {}
-    assert os.environ["AGENTDESK_DATA"] == "already-set"
+    environ = {"AGENTDESK_DATA": "already-set"}
+    assert load_env_file(file, environ=environ) == {}
+    assert environ["AGENTDESK_DATA"] == "already-set"
