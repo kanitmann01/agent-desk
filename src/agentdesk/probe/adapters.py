@@ -26,6 +26,7 @@ def subprocess_runner(cmd: list[str], timeout: int = DEFAULT_TIMEOUT_S) -> RunRe
             cmd,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout,
             check=False,
         )
