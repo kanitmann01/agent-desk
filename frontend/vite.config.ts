@@ -21,6 +21,10 @@ export default defineConfig({
   base: '/static/spa/',
   plugins: [react(), tailwindcss()],
   server: {
+    // 5173 is commonly taken (vite then drifts to another port and every
+    // printed hint lies). Pin an uncommon port and fail loudly instead.
+    port: 5199,
+    strictPort: true,
     proxy: Object.fromEntries(
       backendPaths.map((path) => [path, { target: BACKEND, changeOrigin: false }]),
     ),

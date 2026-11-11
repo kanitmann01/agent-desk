@@ -39,9 +39,9 @@ if [ "$1" = "dev" ]; then
   echo "API running on port 8765. Log: $LOG"
   echo "Stop it later with: kill \$(cat $PID)"
   # UI dev server in the foreground: Ctrl+C returns here.
-  echo "Open the UI at http://localhost:5173/static/spa/"
+  echo "Open the UI at http://localhost:5199/static/spa/"
   echo "If it says a session is required: open the start link above with"
-  echo "127.0.0.1:8765 replaced by localhost:5173."
+  echo "127.0.0.1:8765 replaced by localhost:5199."
   echo "Starting the UI dev server..."
   npm --prefix "$DIR/../frontend" run dev
   kill "$(cat "$PID")" 2>/dev/null

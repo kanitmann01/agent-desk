@@ -64,8 +64,8 @@ def test_start_cmd_dev_names_the_real_dev_url():
     # vite serves under its base path, and the API link needs the host
     # swapped so the session cookie lands on the dev origin.
     text = cmd_text()
-    assert "http://localhost:5173/static/spa/" in text
-    assert "127.0.0.1:8765 replaced by localhost:5173" in text
+    assert "http://localhost:5199/static/spa/" in text
+    assert "127.0.0.1:8765 replaced by localhost:5199" in text
 
 
 def test_start_cmd_checks_npm_and_frontend_before_dev():
