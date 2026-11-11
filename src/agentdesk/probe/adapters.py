@@ -12,11 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from agentdesk.probe.core import OneDriveInfo, ReachResult, RunResult
+from agentdesk.probe.core import POWER_AUTOMATE_URL, OneDriveInfo, ReachResult, RunResult
 
 DEFAULT_TIMEOUT_S = 120
 REACH_TIMEOUT_S = 10
-POWER_AUTOMATE_URL = "https://make.powerautomate.com"
 
 
 def subprocess_runner(cmd: list[str], timeout: int = DEFAULT_TIMEOUT_S) -> RunResult:

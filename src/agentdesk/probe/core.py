@@ -22,6 +22,10 @@ GATE_EDR = "edr-identity"
 
 GATE_KEYS = (GATE_EXEC, GATE_UV, GATE_FLOW, GATE_ONEDRIVE, GATE_EDR)
 
+# The Power Automate endpoint gate 3 checks (single definition, imported by
+# the adapters and gates modules).
+POWER_AUTOMATE_URL = "https://make.powerautomate.com"
+
 # Verdicts
 VERDICT_GO = "GO"
 VERDICT_RESHAPE = "RESHAPE"

@@ -5,7 +5,6 @@ No side effects, no I/O; fully testable with hand-built GateResults.
 
 from agentdesk.probe.core import (
     FAIL,
-    GATE_EDR,
     GATE_EXEC,
     GATE_FLOW,
     GATE_KEYS,
@@ -15,7 +14,6 @@ from agentdesk.probe.core import (
     VERDICT_GO,
     VERDICT_NO_GO,
     VERDICT_RESHAPE,
-    GateResult,
     Verdict,
 )
 

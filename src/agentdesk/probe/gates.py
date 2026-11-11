@@ -19,6 +19,7 @@ from agentdesk.probe.core import (
     GATE_ONEDRIVE,
     GATE_UV,
     PASS,
+    POWER_AUTOMATE_URL,
     UNKNOWN,
     GateResult,
     OneDriveInfo,
@@ -213,8 +214,6 @@ def gate_uv_tls_bootstrap(runner, workdir: Path, find_uv) -> GateResult:
         note=f"uv package install failed: {classification}",
     )
 
-
-POWER_AUTOMATE_URL = "https://make.powerautomate.com"
 
 MANUAL_FLOW_STEPS = (
     "manual check required: open https://make.powerautomate.com in a browser, "
