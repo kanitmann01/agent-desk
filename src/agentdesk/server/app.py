@@ -84,7 +84,11 @@ def _local_now() -> datetime:
 
 def default_data_dir() -> Path:
     """Where the watch keeps its snapshots. Provisional for v1: a folder
-    in the user profile, gone with delete-folder uninstall."""
+    in the user profile, gone with delete-folder uninstall. AGENTDESK_DATA
+    moves it, and the what-this-touches page states the same place."""
+    override = os.environ.get("AGENTDESK_DATA")
+    if override:
+        return Path(override)
     return Path(Path.home(), ".agent-desk")
 
 

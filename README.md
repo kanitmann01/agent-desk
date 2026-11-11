@@ -10,6 +10,21 @@ Double-click `tools/agent-desk.cmd`. It finds Python (falling back through `py`,
 
 From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to skip the browser open).
 
+## Configure it
+
+The app runs with zero configuration. To set the corporate endpoint (research and the assistant) or the calendar path without touching OS environment variables, create a text file at `%USERPROFILE%\.agent-desk\config.env` (`~/.agent-desk/config.env`):
+
+```
+# Agent Desk settings, KEY=VALUE lines, # comments
+AGENTDESK_LLM_BASE=https://llm.yourcompany.example/v1
+AGENTDESK_LLM_KEY=your-key
+AGENTDESK_LLM_MODEL=gpt-4o-mini
+AGENTDESK_CALENDAR_FILE=C:/Users/you/OneDrive/agent-desk/calendar_sync.json
+AGENTDESK_DATA=D:/agent-desk-data
+```
+
+Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_KEY` and `AGENTDESK_LLM_MODEL` for research and the assistant, `AGENTDESK_CALENDAR_FILE` for the calendar sync file, `AGENTDESK_DATA` for the data folder. Real environment variables always win over the file, and a missing file is not an error: the app simply runs unconfigured, and the settings page says so.
+
 ## Where things are
 
 - `docs/research.md`: the full architecture research (v2, post-audit hardened). Licenses, plugin architecture, enterprise Windows mechanics, landscape. The binding decisions are in its section A9.
