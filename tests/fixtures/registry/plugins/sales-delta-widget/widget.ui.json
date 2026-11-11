@@ -1,0 +1,8 @@
+{
+  "type": "card",
+  "title": "Sales delta (24h)",
+  "elements": [
+    { "type": "text", "text": "Change over the last 24 hours" },
+    { "type": "metric", "binding": "delta24h" }
+  ]
+}
