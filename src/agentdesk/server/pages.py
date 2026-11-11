@@ -1,0 +1,280 @@
+"""Server-rendered pages for the dashboard shell.
+
+The host renders every pixel; plugins later ship declarative UI schemas,
+never HTML (research A9.2 rule 7). Pages are offline by construction: no
+font CDN, no script tags from anywhere but /static, no inline styles or
+inline scripts, so the strict Content-Security-Policy holds without
+unsafe-inline exceptions.
+"""
+
+import html
+from typing import Iterable
+
+from agentdesk.server.core import ATTENTION, FRESH, SAMPLE
+from agentdesk.server.demo import Widget
+
+ICON_OPTIONS = (
+    '<button class="icon-btn" aria-label="Widget options">'
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" '
+    'aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/>'
+    '<circle cx="19" cy="12" r="1.7"/></svg></button>'
+)
+
+_ICON_DASHBOARD = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
+    '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" '
+    'height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/>'
+    '<rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>'
+)
+_ICON_INBOX = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true"><path d="M3.5 13.5 5 20h14l1.5-6.5M3.5 13.5h17M12 15v-4"/>'
+    "</svg>"
+)
+_ICON_PLUGINS = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
+    '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>'
+)
+_ICON_SETTINGS = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
+    '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h9M17 17h3"/><circle cx="15" cy="7" r="2"/>'
+    '<circle cx="9" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg>'
+)
+
+# The design language tokens, verbatim from docs/design-language.md. Font
+# families resolve locally: the named faces when installed, otherwise the
+# OS fallbacks. Nothing is fetched from the network.
+STYLES = """
+:root{
+  --bg:#F6F4EF; --surface:#FFFFFF; --surface-2:#FBFAF7;
+  --ink-1:#1F2A27; --ink-2:#4C5A55; --ink-3:#77847E; --ink-4:#A9B1AC;
+  --hairline:#E5E1D6;
+  --shadow-card:0 0 0 1px rgba(31,42,39,.05),0 1px 2px -1px rgba(31,42,39,.06),0 2px 4px 0 rgba(31,42,39,.04);
+  --shadow-card-hover:0 0 0 1px rgba(31,42,39,.07),0 1px 2px -1px rgba(31,42,39,.08),0 2px 4px 0 rgba(31,42,39,.06);
+  --primary:#14594E; --primary-ink:#F6FBF9; --primary-soft:#E4EEE9;
+  --good:#14594E; --bad:#B3402A;
+  --attention-bg:#FBF3E2; --attention-ink:#8A5A14;
+  --r-card:12px; --r-control:8px; --r-inner:6px; --dur:160ms;
+  --font-ui:"Plus Jakarta Sans",-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono","Consolas",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+button:disabled{opacity:.55;cursor:default}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+svg{display:block;flex:none}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+.rail{border-right:1px solid var(--hairline);background:var(--surface-2);padding:20px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.brand .mark{width:28px;height:28px;border-radius:8px;background:var(--primary);display:grid;place-items:center;color:var(--primary-ink)}
+.brand b{font-size:14px;font-weight:800;letter-spacing:-.01em}
+.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
+.rail a:hover{background:#EFEDE5;color:var(--ink-1)}
+.rail a[aria-current="page"]{background:var(--primary-soft);color:var(--primary)}
+.rail .nav-off{opacity:.45}
+.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
+.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
+.rail .user small{display:block;color:var(--ink-3);font-weight:400}
+.rail .user .user-name{font-size:13px}
+main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.topbar h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.topbar .sub{color:var(--ink-2);margin-top:2px;display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:999px;background:var(--good);display:inline-block}
+.dot.amber{background:var(--attention-ink)}
+.dot.sample{background:var(--ink-4)}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+.btn-primary{background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card)}
+.btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btn-secondary:hover:not(:disabled){background:var(--surface-2)}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
+.icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
+.widget:hover{box-shadow:var(--shadow-card-hover)}
+.col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
+.w-head{display:flex;align-items:center;gap:10px}
+.w-head h2{font-size:16px;font-weight:800;letter-spacing:-.01em}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
+.kpi{display:flex;gap:24px;align-items:flex-start}
+.kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px}
+.kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
+.spark{margin-left:auto;text-align:right}
+.spark figcaption{font-size:11px;color:var(--ink-4);margin-top:4px}
+table.rows{width:100%;border-collapse:collapse;font-size:13px}
+table.rows th{text-align:left;font-size:11px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline)}
+table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline)}
+table.rows tr:last-child td{border-bottom:none}
+table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+table.rows td.neg{color:var(--bad)}
+.delta{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:12px;font-weight:600}
+.delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+.event{display:flex;gap:12px;background:var(--surface-2);border-radius:var(--r-inner);padding:12px}
+.event .when{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;padding-top:2px}
+.event b{display:block}
+.event small{color:var(--ink-3)}
+.subhead{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.subhead-tight{margin-bottom:4px}
+.check{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13.5px}
+.check .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-4);display:grid;place-items:center;color:transparent;transition:all var(--dur) ease;margin-top:1px}
+.check[aria-checked="true"] .box{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.check[aria-checked="true"] span:not(.box){text-decoration:line-through;color:var(--ink-3)}
+.follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600}
+.well{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
+.well .q{flex:1;color:var(--ink-3)}
+.answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px}
+.answer .aq{font-weight:700;margin-bottom:6px}
+.src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
+.tag-sample{font-size:10px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.08em}
+.widget.amber{background:var(--surface);box-shadow:0 0 0 1px rgba(138,90,20,.18),0 1px 2px -1px rgba(138,90,20,.10),0 2px 4px 0 rgba(138,90,20,.08)}
+.alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:13.5px}
+.badge-pilot{font-size:11px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
+.btn-start{align-self:flex-start}
+.page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
+.error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
+.error-card h1{font-size:20px;font-weight:800}
+.error-card p{color:var(--ink-2);font-size:13.5px}
+@media (max-width:980px){
+  .app{grid-template-columns:1fr}
+  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 14px;gap:8px}
+  .rail .brand{padding:0 12px 0 0}
+  .rail .user{display:none}
+  .grid{grid-template-columns:1fr}
+  .col-7,.col-5,.col-8,.col-4{grid-column:auto}
+  main{padding:20px 16px 40px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0.01ms!important}
+}
+"""
+
+# The only script the skeleton ships: the amber widget's Re-test demo,
+# which walks the designed recovery path from the PRD (visible failure,
+# one visible way back). No network calls, no frameworks.
+APP_JS = """\
+// Demo recovery for the amber widget: Re-test walks the designed path
+// from blocked back to fresh, in place. Nothing is sent anywhere.
+(function () {
+  var btn = document.getElementById('retest');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var w = document.getElementById('widget-region-mix');
+    var stamp = w.querySelector('.stamp');
+    var body = document.getElementById('amber-body');
+    w.classList.remove('amber');
+    stamp.setAttribute('data-status', 'fresh');
+    stamp.setAttribute('data-updated-iso', new Date().toISOString());
+    stamp.innerHTML = '<span class="dot" aria-hidden="true"></span>Recovered just now';
+    body.innerHTML = '<span>File is free again. Refreshed: <b>2 regions changed</b> '
+      + 'since yesterday, DACH up, Nordics flat.</span>';
+    btn.remove();
+  });
+})();
+"""
+
+_DOT_CLASS = {FRESH: "dot", ATTENTION: "dot amber", SAMPLE: "dot sample"}
+
+
+def _stamp_html(widget: Widget) -> str:
+    """The freshness contract, rendered and exposed as data attributes."""
+    f = widget.freshness
+    dot = _DOT_CLASS[f.status]
+    return (
+        f'<span class="stamp" data-freshness data-status="{f.status}" '
+        f'data-updated-iso="{html.escape(f.updated_iso)}">'
+        f'<span class="{dot}" aria-hidden="true"></span>{html.escape(f.stamp)}</span>'
+    )
+
+
+def _widget_html(widget: Widget) -> str:
+    badge = f'<span class="badge-pilot">{html.escape(widget.badge)}</span>' if widget.badge else ""
+    extra = f" {widget.extra_classes}" if widget.extra_classes else ""
+    return (
+        f'<article class="widget {widget.col}{extra}" id="widget-{html.escape(widget.id)}" '
+        f'data-widget-id="{html.escape(widget.id)}" data-freshness-status="{widget.freshness.status}">'
+        f'<div class="w-head"><h2>{html.escape(widget.title)}</h2>{badge}'
+        f"{_stamp_html(widget)}{ICON_OPTIONS}</div>"
+        f"{widget.body_html}"
+        f'<div class="w-foot">{html.escape(widget.foot_html)}</div></article>'
+    )
+
+
+def _rail() -> str:
+    off = ' class="nav-off" aria-disabled="true" title="Arrives in a later build"'
+    return (
+        '<nav class="rail" aria-label="Main">'
+        '<div class="brand"><span class="mark" aria-hidden="true">'
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="2.4" stroke-linecap="round"><path d="M4 12h6M8 8v8M14 10h6M17 7v10"/></svg>'
+        '</span><b>Agent Desk</b></div>'
+        f'<a href="/" aria-current="page">{_ICON_DASHBOARD}Dashboard</a>'
+        f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_INBOX}Inbox</span>'
+        f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_PLUGINS}Plugins</span>'
+        f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_SETTINGS}Settings</span>'
+        '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
+        "<div><b class=\"user-name\">Agent Desk</b><small>local only</small></div></div>"
+        "</nav>"
+    )
+
+
+def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str) -> str:
+    """The full dashboard document: rail, greeting, sample widgets, footer."""
+    cards = "".join(_widget_html(w) for w in widgets)
+    esc_version = html.escape(version)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Desk</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">
+{_rail()}
+<main>
+<div class="topbar">
+  <div>
+    <h1>{html.escape(greeting)}</h1>
+    <p class="sub"><span class="dot sample" aria-hidden="true"></span>{html.escape(date_line)} Sample data. Sources connect in later builds.</p>
+  </div>
+  <button class="btn btn-primary" disabled title="The plugin wizard arrives in a later build.">Add plugin</button>
+</div>
+<section class="grid" aria-label="Dashboard">
+{cards}
+</section>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>, walking skeleton.</span><span>All data shown is sample data.</span></footer>
+</main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
+"""
+
+
+def render_error_page(title: str, message: str) -> str:
+    """The minimal same-language page for 401/403/404 answers."""
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}, Agent Desk</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="error-card">
+<h1>{html.escape(title)}</h1>
+<p>{html.escape(message)}</p>
+</div>
+</body>
+</html>
+"""
