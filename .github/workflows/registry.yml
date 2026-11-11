@@ -19,12 +19,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Resolve the base index for the append-only check
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git show origin/${{ github.base_ref }}:registry/index.json > /tmp/base-index.json \
-            || echo '{}' > /tmp/base-index.json
+          git show "origin/$BASE_REF:registry/index.json" > /tmp/base-index.json             || echo '{}' > /tmp/base-index.json
       - name: Review changed plugins (shared validator, dependency scan, hash consistency, history)
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- registry/plugins/ \
-            | xargs -n1 dirname | sort -u | paste -sd, -)
-          python tools/registry_ci.py --registry registry \
-            --plugins "$CHANGED" --base-index /tmp/base-index.json
+          CHANGED=$(git diff --name-only "origin/$BASE_REF...HEAD" -- registry/plugins/             | xargs -r -n1 dirname | sort -u | paste -sd, -)
+          python tools/registry_ci.py --registry registry             --plugins "$CHANGED" --base-index /tmp/base-index.json

@@ -109,8 +109,6 @@ def test_tool_blocks_on_truncated_history(tmp_path):
     assert r.returncode == 1
     assert any(line.startswith("FAIL registry-ci:history-truncated")
                for line in r.stdout.splitlines())
-    assert any(line.startswith("FAIL registry-ci:history-truncated")
-               for line in r.stdout.splitlines())
 
 
 def test_tool_passes_with_no_changes(tmp_path):

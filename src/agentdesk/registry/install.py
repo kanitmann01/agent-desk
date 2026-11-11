@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .index import PluginEntry, RegistryIndex, RegistryIndexError, load_index
+from .index import PluginEntry, Release, RegistryIndex, RegistryIndexError, load_index
 
 
 class RegistryError(Exception):
@@ -46,10 +46,12 @@ def tree_digest(plugin_dir: Path) -> str:
 
 
 def resolve(index: RegistryIndex, plugin_id: str,
-            version: str, sha256: str | None = None) -> tuple[PluginEntry, object]:
+            version: str, sha256: str | None = None) -> tuple[PluginEntry, Release]:
     """Resolve a client pin against the index. Old pins keep resolving:
     releases are append-only history, and a pinned sha256 resolves even
     when the release is yanked, because the client already has it."""
+    _require_safe_name(plugin_id, "plugin id")
+    _require_safe_name(version, "version")
     entry = index.plugin(plugin_id)
     if entry is None:
         raise RegistryError("install:unknown-plugin", f"no plugin {plugin_id}")
@@ -67,6 +69,15 @@ def resolve(index: RegistryIndex, plugin_id: str,
     return entry, release
 
 
+def _require_safe_name(value: str, what: str) -> None:
+    """Defense in depth: the index validates names too, but nothing that
+    becomes a filesystem path may rely on the caller having validated it."""
+    if (not value or "/" in value or "\\" in value or value.startswith("-")
+            or ".." in value):
+        raise RegistryError("install:unsafe-name",
+                            f"{what} is not a safe name: {value[:40]!r}")
+
+
 def _archive_plugin(registry_root: Path, tag: str, plugin_prefix: str,
                     destination: Path) -> None:
     """Extract plugins/<id> at ``tag`` via git archive into destination."""
@@ -81,7 +92,7 @@ def _archive_plugin(registry_root: Path, tag: str, plugin_prefix: str,
         tar_path = Path(tmp) / "archive.tar"
         tar_path.write_bytes(result.stdout)
         with tarfile.open(tar_path) as archive:
-            archive.extractall(tmp, filter="data")
+            _safe_extractall(archive, tmp)
         source = Path(tmp) / plugin_prefix
         if not source.is_dir():
             raise RegistryError("install:tag-missing",
@@ -93,6 +104,8 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
                           version: str, sha256: str | None = None,
                           destination: Path | str) -> dict:
     """Install one pinned release. Returns the install record."""
+    _require_safe_name(plugin_id, "plugin id")
+    _require_safe_name(version, "version")
     registry_root = Path(registry_root)
     destination = Path(destination)
     try:
@@ -122,6 +135,7 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
         if installed.exists():
             shutil.rmtree(installed)
         shutil.copytree(staged, installed)
+    _write_lock(destination, plugin_id, version, release.sha256)
     return {
         "ok": True,
         "plugin": plugin_id,
@@ -129,3 +143,87 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
         "sha256": release.sha256,
         "path": str(installed),
     }
+
+
+# -- the client lockfile: the pointer that rollback repoints -------------
+
+LOCK_NAME = "lock.json"
+
+
+def _write_lock(destination: Path, plugin_id: str, version: str, sha256: str) -> dict:
+    """Record the installed release in the client's lockfile.
+
+    The lock is the pointer: ``version`` is what the client uses, and the
+    ``history`` map is what rollback repoints to. Imports stay local so
+    the module loads without touching the filesystem at import time.
+    """
+    import json
+
+    lock_path = destination / LOCK_NAME
+    lock: dict = {}
+    if lock_path.is_file():
+        try:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            lock = {}
+    entry = lock.setdefault("plugins", {}).setdefault(plugin_id, {"history": {}})
+    entry["version"] = version
+    entry["sha256"] = sha256
+    entry["history"][version] = sha256
+    lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n",
+                         encoding="utf-8")
+    return entry
+
+
+def read_lock(destination: Path | str, plugin_id: str) -> dict | None:
+    """The lock entry for one plugin, or None when it is not installed."""
+    import json
+
+    lock_path = Path(destination) / LOCK_NAME
+    if not lock_path.is_file():
+        return None
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    return lock.get("plugins", {}).get(plugin_id)
+
+
+def rollback(destination: Path | str, plugin_id: str, *, to_version: str) -> dict:
+    """Repoint the lock at an already-installed older version.
+
+    Rollback is metadata: the versioned directory is already on disk, so
+    going back is one lock write, not a re-download.
+    """
+    _require_safe_name(plugin_id, "plugin id")
+    _require_safe_name(to_version, "version")
+    destination = Path(destination)
+    prior_dir = destination / f"{plugin_id}-{to_version}"
+    if not prior_dir.is_dir():
+        raise RegistryError("rollback:version-not-installed",
+                            f"{plugin_id} {to_version} is not installed here")
+    import json
+
+    lock_path = destination / LOCK_NAME
+    lock = json.loads(lock_path.read_text(encoding="utf-8")) if lock_path.is_file() else {}
+    entry = lock.get("plugins", {}).get(plugin_id)
+    if entry is None or to_version not in entry.get("history", {}):
+        raise RegistryError("rollback:unknown-pin",
+                            f"no lockfile pin for {plugin_id} {to_version}")
+    entry["version"] = to_version
+    entry["sha256"] = entry["history"][to_version]
+    lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n",
+                         encoding="utf-8")
+    return {"ok": True, "plugin": plugin_id, "version": to_version,
+            "sha256": entry["sha256"]}
+
+
+def _safe_extractall(archive: tarfile.TarFile, destination: str) -> None:
+    """Extract with the data filter where the runtime has one, and with an
+    explicit member check where it does not (older 3.10/3.11 patches)."""
+    if hasattr(tarfile, "data_filter"):
+        archive.extractall(destination, filter="data")
+        return
+    dest = Path(destination).resolve()
+    for member in archive.getmembers():
+        target = (dest / member.name).resolve()
+        if not str(target).startswith(str(dest)) or member.name.startswith("/") or ".." in member.name.split("/"):
+            raise RegistryError("install:unsafe-archive-member", member.name)
+    archive.extractall(destination)

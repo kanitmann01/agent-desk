@@ -7,11 +7,24 @@ trace, because this file is what CI and every client consume.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 
 
 class RegistryIndexError(Exception):
     """A named reason the index cannot be trusted."""
+
+
+# Ids, versions and tags become path fragments (install directories, git
+# pathspecs), so they are names, not free text: no separators, no leading
+# dashes, no dot-segments, ever.
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _safe_name(value: str, what: str) -> str:
+    if not _SAFE_NAME.match(value) or ".." in value:
+        raise RegistryIndexError(f"index:unsafe-{what}:{value[:40]}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -81,15 +94,15 @@ def load_index(raw: str | bytes) -> RegistryIndex:
             for key in ("version", "sha256", "tag"):
                 _require(key in release, f"index:release-{key}-missing")
             releases.append(Release(
-                version=str(release["version"]),
+                version=_safe_name(str(release["version"]), "version"),
                 sha256=str(release["sha256"]),
-                tag=str(release["tag"]),
+                tag=_safe_name(str(release["tag"]), "tag"),
                 yanked=bool(release.get("yanked", False)),
             ))
         plugins.append(PluginEntry(
-            id=str(entry["id"]),
+            id=_safe_name(str(entry["id"]), "id"),
             publisher=str(entry["publisher"]),
-            latest=str(entry["latest"]),
+            latest=_safe_name(str(entry["latest"]), "version"),
             risk=str(entry["risk"]),
             class_=str(entry["class"]),
             releases=tuple(releases),
