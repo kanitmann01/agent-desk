@@ -130,6 +130,15 @@ table.rows td.neg{color:var(--bad)}
 .follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600}
 .well{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
 .well .q{flex:1;color:var(--ink-3)}
+.well-input{flex:1;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
+.well-input:focus{outline:2px solid var(--primary);outline-offset:1px}
+.grow{flex:1}
+.thread{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.thread .ask{background:var(--surface-2);border-radius:var(--r-inner);padding:12px 14px}
+.thread .ask .who{font-size:11px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.thread .reply p{margin:4px 0 0}
+.thread .who{font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.06em}
+.thread p{color:var(--ink-1);font-size:13.5px}
 .answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px}
 .answer .aq{font-weight:700;margin-bottom:6px}
 .src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
@@ -239,6 +248,54 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
   });
 });
+
+// Research: the label stays put while the status line tells you exactly
+// what is happening; answers arrive with their sources as chips.
+(function () {
+  var btn = document.getElementById('research-ask');
+  var input = document.getElementById('research-question');
+  var answerBox = document.getElementById('research-answer');
+  var status = document.getElementById('research-status');
+  if (!btn || !input) return;
+  btn.addEventListener('click', function () {
+    var question = input.value.trim();
+    if (!question) { input.focus(); return; }
+    btn.disabled = true;
+    status.textContent = status.dataset.busyText;
+    post('/research', {question: question}).then(function (r) { return r.json(); })
+      .then(function (d) {
+        btn.disabled = false;
+        if (d.status === 'degraded') {
+          answerBox.hidden = true;
+          status.textContent = d.cause;
+          return;
+        }
+        status.textContent = '';
+        answerBox.hidden = false;
+        answerBox.innerHTML = '';
+        var head = document.createElement('div');
+        head.className = 'aq';
+        head.textContent = question;
+        answerBox.appendChild(head);
+        answerBox.appendChild(document.createTextNode(d.summary));
+        var chips = document.createElement('div');
+        (d.sources || []).forEach(function (name) {
+          var chip = document.createElement('span');
+          chip.className = 'src';
+          chip.textContent = name;
+          chips.appendChild(chip);
+        });
+        answerBox.appendChild(chips);
+      })
+      .catch(function () {
+        btn.disabled = false;
+        status.textContent = 'The dashboard could not reach its own server; nothing was sent.';
+      });
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); btn.click(); }
+  });
+})();
 """
 
 _DOT_CLASS = {FRESH: "dot", ATTENTION: "dot amber", SAMPLE: "dot sample"}

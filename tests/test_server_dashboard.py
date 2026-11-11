@@ -108,10 +108,11 @@ def test_every_widget_carries_the_freshness_contract(page):
 def test_sample_widgets_are_labeled_as_sample(page):
     scan = _scan(page)
     statuses = sorted(w["status"] for w in scan.widgets)
-    # Sales and research are sample; commitments is live-but-empty and the
-    # amber region-mix shows the designed failure state.
-    assert statuses == ["attention", "attention", "sample", "sample"]
-    assert "tag-sample" in page
+    # Sales is sample until connected; commitments is live-but-empty;
+    # research is an action surface (Ready); region-mix shows the designed
+    # amber failure state.
+    assert statuses == ["attention", "attention", "fresh", "sample"]
+    assert "Sample data until a workbook is connected." in page
     assert "Cards without a connected source show sample data." in page
 
 

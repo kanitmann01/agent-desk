@@ -1,24 +1,19 @@
 """Agent breakdowns for the key commitment, over the corporate endpoint.
 
 The widget's breakdown comes from the OpenAI-compatible endpoint the
-company already provides; the adapter here is the only outbound call the
-calendar bridge makes. Every failure mode (no endpoint configured,
-network error, malformed reply) degrades to a generic breakdown, because
-a widget that helps less is better than a widget that breaks. Breakdowns
-are cached per event so a poll never re-asks the model for a meeting it
-already prepared.
+company already provides, through the shared LLM adapter. Every failure
+mode (no endpoint configured, network error, malformed reply) degrades
+to a generic breakdown, because a widget that helps less is better than
+a widget that breaks. Breakdowns are cached per event so a poll never
+re-asks the model for a meeting it already prepared.
 """
 
 import json
 import logging
-import os
-import urllib.error
-import urllib.request
-from collections.abc import Callable
+
+from agentdesk.llm import LlmUnavailable, env_config, chat
 
 LOG = logging.getLogger("agentdesk.calendar")
-
-REQUEST_TIMEOUT_S = 10
 
 FALLBACK_SUBTASKS = [
     "Review the agenda so you walk in knowing the point",
@@ -28,46 +23,21 @@ FALLBACK_SUBTASKS = [
 FALLBACK_FOLLOWUPS: list[dict] = []
 
 
-class LlmUnavailable(Exception):
-    """No endpoint is configured; the widget uses the generic breakdown."""
-
-
 def env_llm_adapter(
     base_url: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
-) -> Callable[[str], str]:
-    """An OpenAI-compatible chat adapter from the environment, or a stub
-    that raises LlmUnavailable when nothing is configured. Tests inject
-    their own callable instead."""
-    base_url = base_url or os.environ.get("AGENTDESK_LLM_BASE", "")
-    api_key = api_key or os.environ.get("AGENTDESK_LLM_KEY", "")
-    model = model or os.environ.get("AGENTDESK_LLM_MODEL", "gpt-4o-mini")
-    if not base_url:
-        def unavailable(_prompt: str) -> str:
-            raise LlmUnavailable("no corporate endpoint configured")
-
-        return unavailable
+):
+    """A prompt-to-text adapter from the environment (or the given
+    config), raising LlmUnavailable when nothing is configured. Tests
+    inject their own callable instead."""
+    cfg_base, cfg_key, cfg_model = env_config()
+    base_url = base_url or cfg_base
+    api_key = api_key or cfg_key
+    model = model or cfg_model
 
     def complete(prompt: str) -> str:
-        request = urllib.request.Request(
-            base_url.rstrip("/") + "/chat/completions",
-            data=json.dumps(
-                {
-                    "model": model,
-                    "temperature": 0,
-                    "messages": [{"role": "user", "content": prompt}],
-                }
-            ).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        return body["choices"][0]["message"]["content"]
+        return chat(base_url, api_key, model, prompt)
 
     return complete
 
