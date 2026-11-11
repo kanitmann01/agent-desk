@@ -81,3 +81,20 @@ class FakeProcessLister:
 def gate(key, number, status, evidence=("fake evidence",), note=""):
     """Build a GateResult quickly for aggregator/report tests."""
     return GateResult(key=key, number=number, title=key, status=status, evidence=tuple(evidence), note=note)
+
+
+class SequenceRunner:
+    """Returns canned RunResults one per command, in order.
+
+    Models multi-step flows (uv venv succeeds, then the install fails).
+    Reuses the last result if more commands arrive than results given.
+    """
+
+    def __init__(self, *results):
+        self.results = list(results)
+        self.commands = []
+
+    def __call__(self, cmd):
+        self.commands.append(list(cmd))
+        index = min(len(self.commands) - 1, len(self.results) - 1)
+        return self.results[index]
