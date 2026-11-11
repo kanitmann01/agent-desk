@@ -53,7 +53,7 @@ def validate_plugin(path) -> Verdict:
         raise ValidatorIOError(f"path does not exist: {root.name}")
     if root.is_dir():
         reader = DirectoryReader(root)
-    elif root.is_file() and root.suffix == ".zip":
+    elif root.is_file() and root.suffix.lower() == ".zip":
         reader = ZipReader(root)
     else:
         raise ValidatorIOError(f"path is neither a plugin directory nor a zip: {root.name}")

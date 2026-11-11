@@ -110,6 +110,15 @@ def test_cli_accepts_zip_input(tmp_path):
     assert "FAIL hash-mismatch:" in bad.stdout
 
 
+def test_cli_accepts_uppercase_zip_suffix(tmp_path):
+    ok_zip = zip_fixture(tmp_path / "valid.ZIP", fixture("valid-manifest"))
+
+    result = run_cli(str(ok_zip))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip().endswith("PASS")
+
+
 def test_cli_json_matches_library_verdict(tmp_path):
     from agentdesk.validator import validate_plugin
 
