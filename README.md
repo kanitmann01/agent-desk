@@ -14,7 +14,12 @@ From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to ski
 
 ## Configure it
 
-The app runs with zero configuration. To set the corporate endpoint (research and the assistant) or the calendar path without touching OS environment variables, create a text file at `%USERPROFILE%\.agent-desk\config.env` (`~/.agent-desk/config.env`):
+The app runs with zero configuration, and the two things you may ever need to set now have in-app surfaces:
+
+- **LLM endpoint** (research and the assistant): Settings, then Endpoint. Works with any OpenAI-compatible endpoint: a company gateway, OpenAI, OpenRouter, LiteLLM, or Anthropic's OpenAI-compatible URL (`https://api.anthropic.com/v1` with a Claude model name). Save, Test connection, and Clear are right there; the API key is stored locally and never shown again, only its masked state. Saved settings apply without a restart.
+- **Calendar file**: the calendar walkthrough page (`/walkthrough/calendar`, linked from Settings) shows the path the app watches and offers Pick file, Paste path, Upload the JSON by hand, and Reset to automatic discovery. The explicit choice wins over automatic discovery and survives restarts.
+
+Text configuration still works: create a file at `%USERPROFILE%\.agent-desk\config.env` (`~/.agent-desk/config.env`):
 
 ```
 # Agent Desk settings, KEY=VALUE lines, # comments
@@ -25,7 +30,7 @@ AGENTDESK_CALENDAR_FILE=C:/Users/you/OneDrive/agent-desk/calendar_sync.json
 AGENTDESK_DATA=D:/agent-desk-data
 ```
 
-Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_KEY` and `AGENTDESK_LLM_MODEL` for research and the assistant, `AGENTDESK_CALENDAR_FILE` for the calendar sync file, `AGENTDESK_DATA` for the data folder. Real environment variables always win over the file, and a missing file is not an error: the app simply runs unconfigured, and the settings page says so.
+Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_KEY` and `AGENTDESK_LLM_MODEL` for research and the assistant, `AGENTDESK_CALENDAR_FILE` for the calendar sync file, `AGENTDESK_DATA` for the data folder. Precedence: settings saved in the app win over real environment variables, which win over the file, and a missing file is not an error: the app simply runs unconfigured, and the settings page says so.
 
 ## Where things are
 
@@ -43,7 +48,7 @@ Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_
 - `src/agentdesk/inbox/`: the inbox and interruption budget (issue #12): suggestion cards with origin lines, quiet hours 18:00-08:00, a cap of three notifications a day, digest batching, and 30-day dismiss recovery.
 - `src/agentdesk/repetition/`: the repetition detector and skills (issue #13): app-mediated activity log, deterministic clustering, one proposal per pattern at the fifth similar ask, dismiss cooldowns, and versioned SKILL.md skills with honest undo.
 - `src/agentdesk/briefs.py`: pre-meeting briefs (issue #14): calendar-only, assembled from commitments and research history about the attendees, only when there is something to say, always inside the interruption budget.
-- `src/agentdesk/settings.py`: settings (issue #15): toggles only, defaults that need no documentation; the values the page shows are the values the inbox and the sources enforce.
+- `src/agentdesk/settings.py`: settings (issue #15): toggles plus the typed endpoint rows, defaults that need no documentation; the values the page shows are the values the inbox and the sources enforce.
 - `src/agentdesk/llm.py`: the shared OpenAI-compatible endpoint adapter (env-configured, one attempt, no telemetry).
 - `tools/agent-desk.cmd`: the double-click launcher.
 - `tools/license_manifest.py`: the license gate (issue #7): fails on any dependency outside MIT/Apache-2.0/BSD/ISC; writes `THIRD-PARTY-LICENSES.md`.
