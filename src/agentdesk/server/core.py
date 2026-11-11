@@ -26,8 +26,9 @@ SRC_CALENDAR = "calendar-bridge"
 SRC_RESEARCH = "research-endpoint"
 SOURCE_IDS = (SRC_EXCEL, SRC_CALENDAR, SRC_RESEARCH)
 
-# Health statuses. v1 vocabulary starts with exactly one state per source:
-# nothing is connected in the skeleton, and health says so honestly.
+# Health statuses, computed live at request time (see app.live_sources):
+# a source is connected when its real watch says so, never by default.
+STATUS_CONNECTED = "connected"
 STATUS_NOT_CONNECTED = "not_connected"
 
 # Widget freshness states (the contract the shell renders on every card).
@@ -63,12 +64,3 @@ class Freshness:
     def __post_init__(self) -> None:
         if self.status not in FRESHNESS_STATUSES:
             raise ValueError(f"unknown freshness status: {self.status!r}")
-
-
-def default_sources() -> list[SourceStatus]:
-    """The skeleton's honest source table: known, named, not connected."""
-    return [
-        SourceStatus(SRC_EXCEL, STATUS_NOT_CONNECTED, "Connect the sales workbook in a later build."),
-        SourceStatus(SRC_CALENDAR, STATUS_NOT_CONNECTED, "Set up the OneDrive bridge in a later build."),
-        SourceStatus(SRC_RESEARCH, STATUS_NOT_CONNECTED, "Point at the company endpoint in a later build."),
-    ]

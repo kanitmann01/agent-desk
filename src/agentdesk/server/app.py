@@ -25,7 +25,7 @@ from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import assistant_reply, research
-from agentdesk.calendar.watcher import CalendarBridge, default_read_calendar
+from agentdesk.calendar.watcher import STATE_EMPTY, CalendarBridge, default_read_calendar
 from agentdesk.excel import store as excel_store
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
@@ -44,8 +44,12 @@ from agentdesk.server.settings_view import render_settings_page
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     PREFERRED_PORT,
+    SRC_CALENDAR,
+    SRC_EXCEL,
+    SRC_RESEARCH,
+    STATUS_CONNECTED,
+    STATUS_NOT_CONNECTED,
     SourceStatus,
-    default_sources,
 )
 from agentdesk.server.demo import demo_widgets
 from agentdesk.server.guard import check_request
@@ -129,7 +133,6 @@ class AgentDeskServer(ThreadingHTTPServer):
         self,
         address: tuple[str, int],
         sessions: SessionStore,
-        sources: list[SourceStatus] | None = None,
         excel: ExcelWatch | None = None,
         pick_workbook=None,
         calendar: CalendarBridge | None = None,
@@ -143,7 +146,6 @@ class AgentDeskServer(ThreadingHTTPServer):
         settings_store: SettingsStore | None = None,
     ) -> None:
         self.sessions = sessions
-        self.sources = sources if sources is not None else default_sources()
         self.excel = excel
         self.pick_workbook = pick_workbook
         self.calendar = calendar
@@ -167,6 +169,46 @@ class AgentDeskServer(ThreadingHTTPServer):
     @property
     def port(self) -> int:
         return self.server_address[1]
+
+
+def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
+    """The source table computed at request time, from the real watches.
+
+    Health must not repeat what a constructor once guessed: excel is
+    connected when a workbook is registered, calendar when the bridge has
+    produced a non-empty state, endpoint when the corporate base URL is
+    set. Both /health and the dashboard's source line read this table.
+    """
+
+    def state(connected: bool) -> str:
+        return STATUS_CONNECTED if connected else STATUS_NOT_CONNECTED
+
+    excel = server.excel
+    excel_path = excel.registered_path if excel is not None else None
+    calendar = server.calendar
+    calendar_state = calendar.status().get("state") if calendar is not None else None
+    calendar_ok = calendar_state not in (None, STATE_EMPTY)
+    endpoint_ok = bool(server.llm_endpoint)
+    workbook = ""
+    if excel_path:
+        workbook = str(excel_path).replace("\\", "/").rsplit("/", 1)[-1]
+    return [
+        SourceStatus(
+            SRC_EXCEL,
+            state(excel_path is not None),
+            f"Watches {workbook}." if excel_path else "No workbook connected yet.",
+        ),
+        SourceStatus(
+            SRC_CALENDAR,
+            state(calendar_ok),
+            "Reading the OneDrive calendar sync." if calendar_ok else "No calendar data yet.",
+        ),
+        SourceStatus(
+            SRC_RESEARCH,
+            state(endpoint_ok),
+            "Company endpoint configured." if endpoint_ok else "No company endpoint configured.",
+        ),
+    ]
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -780,7 +822,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send_health(self) -> None:
         payload = health_payload(
             agentdesk.__version__,
-            self.server.sources,  # type: ignore[attr-defined]
+            live_sources(self.server),  # type: ignore[attr-defined]
             self.server.started_monotonic,  # type: ignore[attr-defined]
         )
         self._send_bytes(
@@ -820,19 +862,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def create_server(
     host: str = "127.0.0.1",
     port: int | None = None,
-    sources: list[SourceStatus] | None = None,
     excel: ExcelWatch | None = None,
     pick_workbook=None,
-        calendar: CalendarBridge | None = None,
-        llm=None,
-        audit_conn=None,
-        llm_endpoint: str | None = None,
-        llm_model: str | None = None,
-        inbox_store: InboxStore | None = None,
-        activity_log: ActivityLog | None = None,
-        skill_store: SkillStore | None = None,
-        settings_store: SettingsStore | None = None,
-    ) -> AgentDeskServer:
+    calendar: CalendarBridge | None = None,
+    llm=None,
+    audit_conn=None,
+    llm_endpoint: str | None = None,
+    llm_model: str | None = None,
+    inbox_store: InboxStore | None = None,
+    activity_log: ActivityLog | None = None,
+    skill_store: SkillStore | None = None,
+    settings_store: SettingsStore | None = None,
+) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
     A non-loopback host is a hard error, not a warning: the skeleton must
@@ -868,7 +909,7 @@ def create_server(
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
-            (resolved, bind_port), sessions, sources, excel, pick_workbook,
+            (resolved, bind_port), sessions, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
             activity_log, skill_store, settings_store,
         )

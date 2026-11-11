@@ -1,9 +1,10 @@
 """The health endpoint's payload.
 
-Health reports what the app is and what each data source's wiring state is,
-honestly: in the skeleton every source is named and not connected. Later
-tickets flip statuses here as real integrations land, and the dashboard's
-source line reads the same table.
+Health reports what the app is and what each data source's wiring state
+is, honestly: the source table is computed live by the caller
+(app.live_sources) at request time, so what /health says is what the
+watches actually report, and the dashboard's source line reads the same
+table.
 """
 
 import time
