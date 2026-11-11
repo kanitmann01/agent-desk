@@ -22,7 +22,7 @@ from agentdesk.probe.core import (
     VERDICT_NO_GO,
     VERDICT_RESHAPE,
 )
-from agentdesk.probe.gates import gate_exec_user_space, gate_uv_tls_bootstrap
+from agentdesk.probe.gates import gate_exec_user_space, gate_power_automate, gate_uv_tls_bootstrap
 
 __all__ = [
     "EXIT_GO",
@@ -46,5 +46,6 @@ __all__ = [
     "VERDICT_NO_GO",
     "VERDICT_RESHAPE",
     "gate_exec_user_space",
+    "gate_power_automate",
     "gate_uv_tls_bootstrap",
 ]

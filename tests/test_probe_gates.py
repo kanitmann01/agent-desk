@@ -13,10 +13,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from probe_fakes import ExplodingRunner, FakeRunner, FakeUvFinder, SequenceRunner
+from probe_fakes import ExplodingRunner, FakeReacher, FakeRunner, FakeUvFinder, SequenceRunner
 
 from agentdesk.probe.core import FAIL, PASS, UNKNOWN, RunResult
-from agentdesk.probe.gates import gate_exec_user_space, gate_uv_tls_bootstrap
+from agentdesk.probe.gates import (
+    gate_exec_user_space,
+    gate_power_automate,
+    gate_uv_tls_bootstrap,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -159,3 +163,47 @@ class TestGateUvTlsBootstrap:
         assert result.status == FAIL
         assert any("something unexpected happened" in line for line in result.evidence)
         assert "unclassified" in result.note
+
+
+# ---------------------------------------------------------------------------
+# Gate 3: power-automate-flows
+# ---------------------------------------------------------------------------
+
+
+class TestGatePowerAutomateFlows:
+    def test_reachable_endpoint_is_unknown_with_manual_steps(self):
+        reach = FakeReacher(status=200)
+        result = gate_power_automate(reach)
+
+        assert result.status == UNKNOWN
+        assert result.key == "power-automate-flows"
+        assert result.number == 3
+        assert any("make.powerautomate.com" in line for line in reach.urls)
+        assert any("HTTP 200" in line for line in result.evidence)
+        assert "manual" in result.note.lower()
+
+    def test_proxy_denial_status_still_counts_as_reachable(self):
+        # Any HTTP status (even 403 from a proxy) proves network reachability;
+        # only a browser session can decide license and connector policy.
+        reach = FakeReacher(status=403)
+        result = gate_power_automate(reach)
+
+        assert result.status == UNKNOWN
+        assert any("HTTP 403" in line for line in result.evidence)
+
+    def test_unreachable_endpoint_fails_with_error_evidence(self):
+        reach = FakeReacher(error="connection refused by proxy")
+        result = gate_power_automate(reach)
+
+        assert result.status == FAIL
+        assert any("connection refused by proxy" in line for line in result.evidence)
+        assert result.note  # remediation hint present
+
+    def test_reacher_exception_is_a_network_level_failure(self):
+        def exploding_reach(url):
+            raise OSError("no such interface")
+
+        result = gate_power_automate(exploding_reach)
+
+        assert result.status == FAIL
+        assert any("no such interface" in line for line in result.evidence)

@@ -9,7 +9,17 @@ import os
 import sys
 from pathlib import Path
 
-from agentdesk.probe.core import FAIL, GATE_EXEC, GATE_UV, PASS, UNKNOWN, GateResult, RunResult
+from agentdesk.probe.core import (
+    FAIL,
+    GATE_EXEC,
+    GATE_FLOW,
+    GATE_UV,
+    PASS,
+    UNKNOWN,
+    GateResult,
+    ReachResult,
+    RunResult,
+)
 
 HELLO_SCRIPT_NAME = "probe_hello.py"
 HELLO_MARKER = "PROBE_OK"
@@ -196,4 +206,56 @@ def gate_uv_tls_bootstrap(runner, workdir: Path, find_uv) -> GateResult:
         status=FAIL,
         evidence=tuple(evidence),
         note=f"uv package install failed: {classification}",
+    )
+
+
+POWER_AUTOMATE_URL = "https://make.powerautomate.com"
+
+MANUAL_FLOW_STEPS = (
+    "manual check required: open https://make.powerautomate.com in a browser, "
+    "sign in with the corporate account, choose Create > Instant cloud flow, "
+    "and confirm a personal (non-solution) flow with an Office 365 Outlook "
+    "connector can be saved"
+)
+
+
+def gate_power_automate(reach) -> GateResult:
+    """Gate 3: can the user create a personal Power Automate cloud flow.
+
+    Creating a flow needs an interactive browser session, so this gate can
+    never fully pass from the laptop. The probe checks network reachability
+    of make.powerautomate.com with the injectable reacher and reports the
+    manual steps. Reachable (any HTTP status) -> UNKNOWN with instructions.
+    Connection-level unreachable -> FAIL, evidence toward RESHAPE.
+    """
+    try:
+        res = reach(POWER_AUTOMATE_URL)
+    except OSError as exc:
+        return GateResult(
+            key=GATE_FLOW,
+            number=3,
+            title="Power Automate personal cloud flows",
+            status=FAIL,
+            evidence=(f"GET {POWER_AUTOMATE_URL} failed before any response: {exc}",),
+            note="the Power Automate endpoint is unreachable at network level; ask IT to allow make.powerautomate.com",
+        )
+
+    assert isinstance(res, ReachResult)
+    if res.status is not None:
+        return GateResult(
+            key=GATE_FLOW,
+            number=3,
+            title="Power Automate personal cloud flows",
+            status=UNKNOWN,
+            evidence=(f"GET {POWER_AUTOMATE_URL} -> HTTP {res.status} (endpoint reachable)",),
+            note=MANUAL_FLOW_STEPS,
+        )
+
+    return GateResult(
+        key=GATE_FLOW,
+        number=3,
+        title="Power Automate personal cloud flows",
+        status=FAIL,
+        evidence=(f"GET {POWER_AUTOMATE_URL} failed: {res.error}",),
+        note="the Power Automate endpoint is unreachable at network level; ask IT to allow make.powerautomate.com",
     )
