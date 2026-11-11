@@ -174,10 +174,12 @@ def gate_uv_tls_bootstrap(runner, workdir: Path, find_uv) -> GateResult:
             note="uv venv creation failed; uv may not be usable under application control",
         )
 
+    evidence.append(_runner_result(venv_res))
+
     is_windows = os.name == "nt"
     python_exe = venv_dir / ("Scripts" if is_windows else "bin") / ("python.exe" if is_windows else "python")
     install_cmd = [uv, "pip", "install", "--python", str(python_exe), INSTALL_PACKAGE]
-    evidence = [f"command: {' '.join(install_cmd)}"]
+    evidence.append(f"command: {' '.join(install_cmd)}")
 
     try:
         install_res = runner(install_cmd)
@@ -202,7 +204,11 @@ def gate_uv_tls_bootstrap(runner, workdir: Path, find_uv) -> GateResult:
             evidence=tuple(evidence),
         )
 
-    classification = classify_install_failure(install_res.stderr or install_res.error)
+    # uv sometimes prints the failure reason on stdout instead of stderr,
+    # so classify over everything the command produced.
+    classification = classify_install_failure(
+        "\n".join(part for part in (install_res.stderr, install_res.stdout, install_res.error) if part)
+    )
     evidence.append(_runner_result(install_res))
     evidence.append(f"failure mode: {classification}")
     return GateResult(

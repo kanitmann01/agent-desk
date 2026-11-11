@@ -106,6 +106,20 @@ CONN_FAILURE_STDERR = (
 )
 
 
+class VenvOkThenExplode:
+    """Succeeds the uv venv step, then cannot start the install step."""
+
+    def __init__(self, message="Access is denied."):
+        self.message = message
+        self.commands = []
+
+    def __call__(self, cmd):
+        self.commands.append(list(cmd))
+        if "venv" in cmd:
+            return RunResult(returncode=0)
+        raise OSError(self.message)
+
+
 class TestGateUvTlsBootstrap:
     def test_unknown_when_uv_is_absent(self, tmp_path):
         runner = FakeRunner()
@@ -140,6 +154,51 @@ class TestGateUvTlsBootstrap:
         assert result.status == FAIL
         assert any("venv creation refused" in line for line in result.evidence)
         assert "venv" in result.note.lower()
+
+    def test_fail_when_venv_creation_cannot_start(self, tmp_path):
+        runner = ExplodingRunner("Access is denied.")
+        result = gate_uv_tls_bootstrap(runner, tmp_path, find_uv=FakeUvFinder("uv"))
+
+        assert result.status == FAIL
+        assert any("Access is denied." in line for line in result.evidence)
+        assert "start" in result.note.lower()
+        assert "block" in result.note.lower()
+
+    def test_fail_when_install_cannot_start(self, tmp_path):
+        runner = VenvOkThenExplode("Access is denied.")
+        result = gate_uv_tls_bootstrap(runner, tmp_path, find_uv=FakeUvFinder("uv"))
+
+        assert result.status == FAIL
+        assert any("Access is denied." in line for line in result.evidence)
+        assert "start" in result.note.lower()
+        assert "block" in result.note.lower()
+
+    def test_pass_keeps_evidence_for_both_venv_and_install(self, tmp_path):
+        runner = SequenceRunner(
+            RunResult(returncode=0, stdout="Created virtual environment"),  # venv
+            RunResult(returncode=0, stdout="Installed 1 package: six"),  # install
+        )
+        result = gate_uv_tls_bootstrap(runner, tmp_path, find_uv=FakeUvFinder("uv"))
+
+        assert result.status == PASS
+        joined = "\n".join(result.evidence)
+        # Both commands survive in the final evidence, with their outcomes.
+        assert joined.count("command:") == 2
+        assert "venv" in joined
+        assert "pip" in joined and "six" in joined
+        assert "Created virtual environment" in joined
+        assert "Installed 1 package: six" in joined
+
+    def test_fail_classification_reads_stdout_too(self, tmp_path):
+        # uv sometimes prints the failure reason on stdout, not stderr.
+        runner = SequenceRunner(
+            RunResult(returncode=0),
+            RunResult(returncode=1, stdout="certificate verify failed: self-signed certificate"),
+        )
+        result = gate_uv_tls_bootstrap(runner, tmp_path, find_uv=FakeUvFinder("uv"))
+
+        assert result.status == FAIL
+        assert "TLS inspection or proxy" in result.note
 
     def test_fail_certificates_are_reported_as_tls_inspection(self, tmp_path):
         runner = SequenceRunner(
