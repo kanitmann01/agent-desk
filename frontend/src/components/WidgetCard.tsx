@@ -118,7 +118,7 @@ export default function WidgetCard({ title, span, stamp, badge, amber, shell = '
   let body;
   if (shell === 'star') {
     body = (
-      <div className="card star">
+      <div className={`card star${amber ? ' amber' : ''}`}>
         <StarBorder
           as="div"
           color={amber ? '#F59E0B' : '#22C55E'}

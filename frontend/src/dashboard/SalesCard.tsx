@@ -201,10 +201,12 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
             <CountUp to={changed} duration={1.4} separator="," easing="expo" />
           </div>
           <div className="sub">Row-hash diff against the snapshot from 24 hours ago</div>
-          <div className="kpi-split">
-            <span className="kpi-chip up">+{added} added</span>
-            <span className="kpi-chip down">-{removed} removed</span>
-          </div>
+          {changed > 0 ? (
+            <div className="kpi-split">
+              <span className="kpi-chip up">+{added} added</span>
+              <span className="kpi-chip down">-{removed} removed</span>
+            </div>
+          ) : null}
         </div>
         <div className="sales-delta">
           {status.delta ? <DeltaRows delta={status.delta} /> : null}

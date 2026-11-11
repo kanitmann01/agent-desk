@@ -9,7 +9,13 @@
 
    Fonts are self-hosted through @fontsource (Space Grotesk Variable for
    display, Inter Variable for body) and emitted into the bundle: nothing
-   is fetched from another origin. Every component that animates honors
+   is fetched from another origin. Note for whoever reads the console in
+   production: the server's strict CSP has no font-src directive, so
+   font loads fall back to default-src 'none' and the bundled fonts are
+   blocked; the stacks below then render with Segoe UI and hold up fine.
+   Adding font-src 'self' to SECURITY_HEADERS in server/app.py is the
+   one-line change that lets these bundled fonts load, should the owner
+   choose to; until then the blocked-font warnings are expected. Every component that animates honors
    prefers-reduced-motion, and the reduced-motion block at the bottom
    freezes the CSS-driven spectacle too. */
 @import "tailwindcss";
@@ -103,7 +109,7 @@ svg{display:block;flex:none}
   background:linear-gradient(135deg,var(--cyan),var(--violet) 62%,var(--accent));
   box-shadow:0 0 0 1px rgba(148,163,184,.28),0 6px 18px -6px rgba(34,211,238,.55);
 }
-.brand .brand-name{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em}
+.brand .brand-name{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
 .rail a,.rail .nav-off{
   display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--r-control);
   color:var(--ink-2);font-weight:600;font-size:13.5px;
@@ -132,7 +138,7 @@ svg{display:block;flex:none}
 .dot{width:7px;height:7px;border-radius:var(--r-pill);background:var(--accent);display:inline-block;flex:none;box-shadow:0 0 8px rgba(34,197,94,.8)}
 .dot.sample{background:var(--ink-3);box-shadow:none}
 
-main{padding:38px 40px 64px;max-width:1280px;width:100%;margin:0 auto}
+main{padding:38px 40px 64px;max-width:1280px;width:100%;min-width:0;margin:0 auto}
 
 /* The hero band: greeting, date line, and the live source line. */
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:24px}
@@ -382,9 +388,10 @@ table.rows td.neg{color:var(--bad)}
   .span-8{grid-column:span 12}
 }
 @media (max-width:980px){
-  .app{grid-template-columns:1fr}
+  .app{grid-template-columns:minmax(0,1fr)}
   .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;margin:12px 12px 0;padding:10px 12px;gap:6px}
-  .rail .brand{padding:0 12px 0 0}
+  .rail .brand{padding:0 12px 0 0;flex:none}
+  .rail a,.rail .nav-off{flex:none}
   .rail .user{display:none}
   .bento{grid-template-columns:1fr}
   .span-4,.span-5,.span-7,.span-8,.span-12{grid-column:auto}
@@ -393,6 +400,14 @@ table.rows td.neg{color:var(--bad)}
   .hero-actions{align-items:flex-start;padding-bottom:0}
   .cmd-hint{display:none}
   .sales-hero{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  /* The bar stacks: the question on top, the submit across the bottom. */
+  .cmd-inner{flex-wrap:wrap;align-items:center;padding:14px}
+  .cmd-icon{padding-bottom:0}
+  .cmd-field{flex:1 1 calc(100% - 40px)}
+  .cmd-magnet{flex:1 1 100%}
+  .cmd-magnet .cmd-send{width:100%;justify-content:center}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}
