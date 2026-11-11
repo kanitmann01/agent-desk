@@ -1,0 +1,30 @@
+name: registry-ci
+
+on:
+  pull_request:
+    paths:
+      - "registry/**"
+      - "tools/registry_ci.py"
+      - "src/agentdesk/validator/**"
+      - ".github/workflows/registry.yml"
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve the base index for the append-only check
+        run: |
+          git show origin/${{ github.base_ref }}:registry/index.json > /tmp/base-index.json \
+            || echo '{}' > /tmp/base-index.json
+      - name: Review changed plugins (shared validator, dependency scan, hash consistency, history)
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- registry/plugins/ \
+            | xargs -n1 dirname | sort -u | paste -sd, -)
+          python tools/registry_ci.py --registry registry \
+            --plugins "$CHANGED" --base-index /tmp/base-index.json
