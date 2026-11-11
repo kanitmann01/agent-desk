@@ -51,3 +51,16 @@ def test_over_permission_fixture_fails_with_named_reason():
         "filesystem read glob is not referenced by any data source: "
         "${workspace}/data/*.csv"
     )
+
+
+def test_hash_mismatch_fixture_fails_with_named_reason():
+    verdict = validate_plugin(fixture("hash-mismatch"))
+
+    assert codes(verdict) == ["hash-mismatch"]
+    assert verdict.failures[0].message == "sha256 mismatch for widget.ui.json"
+
+
+def test_release_lock_with_correct_hash_passes():
+    verdict = validate_plugin(fixture("valid-with-lock"))
+
+    assert verdict.ok, verdict.as_dict()

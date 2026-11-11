@@ -7,6 +7,7 @@ install path, and registry CI all run this same code.
 import json
 from pathlib import Path
 
+from .hashes import check_release_hashes
 from .lint import validate_permission_lint
 from .model import Failure, Verdict
 from .reader import MANIFEST_NAME, DirectoryReader, ValidatorIOError
@@ -63,4 +64,5 @@ def validate_plugin(path) -> Verdict:
     reader = DirectoryReader(root)
     failures = validate_schema(manifest)
     failures.extend(validate_permission_lint(manifest, reader))
+    failures.extend(check_release_hashes(reader))
     return Verdict(_sorted_failures(failures))
