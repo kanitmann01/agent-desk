@@ -68,10 +68,8 @@ def _validate_values(manifest) -> list[Failure]:
     """Value rules that only apply when the key holds its expected type."""
     failures: list[Failure] = []
 
-    if manifest.get("schemaVersion") is not None and isinstance(
-        manifest["schemaVersion"], int
-    ):
-        version = manifest["schemaVersion"]
+    version = manifest.get("schemaVersion")
+    if isinstance(version, int):
         if isinstance(version, bool) or version != 1:
             failures.append(
                 Failure(
