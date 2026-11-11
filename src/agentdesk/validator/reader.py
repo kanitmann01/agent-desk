@@ -59,6 +59,8 @@ class ZipReader:
             return self._zip.read(Path(relpath).as_posix())
         except KeyError:
             return None
+        except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+            raise ValidatorIOError(f"cannot read zip entry: {exc}") from exc
 
     def exists(self, relpath: str) -> bool:
         return self.read_bytes(relpath) is not None
