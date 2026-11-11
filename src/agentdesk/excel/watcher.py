@@ -67,6 +67,7 @@ class ExcelWatch:
         self._path: str | None = None
         self._last_result: PollResult | None = None
         self._last_ok_ts: float | None = None
+        self._last_rows: list = []
         self._stop = threading.Event()
         self._timer: threading.Timer | None = None
         store.ensure_schema(conn)
@@ -113,6 +114,7 @@ class ExcelWatch:
                 )
             store.save_snapshot(self.conn, self._source, ts, rows, row_hash)
             self._last_ok_ts = ts
+            self._last_rows = rows
         self._last_result = result
         return result
 
@@ -148,6 +150,7 @@ class ExcelWatch:
             "cause": result.cause,
             "delta": result.delta.to_json() if result.delta is not None else None,
             "rowsSeen": result.rows_seen,
+            "examples": [list(r[:4]) for r in self._last_rows[:3]],
             "last_ok_ts": self._last_ok_ts,
         }
 

@@ -20,12 +20,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import agentdesk
+from agentdesk.assistant import audit as audit_store
+from agentdesk.assistant import threadlog
+from agentdesk.assistant.context import build_context
+from agentdesk.assistant.loop import assistant_reply, research
 from agentdesk.calendar.watcher import CalendarBridge, default_read_calendar
 from agentdesk.excel import store as excel_store
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
+from agentdesk.llm import env_chat, env_config
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.commitments import render_commitments_widget
+from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.core import (
     PREFERRED_PORT,
     SourceStatus,
@@ -108,12 +114,21 @@ class AgentDeskServer(ThreadingHTTPServer):
         excel: ExcelWatch | None = None,
         pick_workbook=None,
         calendar: CalendarBridge | None = None,
+        llm=None,
+        audit_conn=None,
+        llm_endpoint: str | None = None,
+        llm_model: str | None = None,
     ) -> None:
         self.sessions = sessions
         self.sources = sources if sources is not None else default_sources()
         self.excel = excel
         self.pick_workbook = pick_workbook
         self.calendar = calendar
+        self.llm = llm if llm is not None else env_chat()
+        self.audit_conn = audit_conn
+        env_endpoint, _key, env_model = env_config()
+        self.llm_endpoint = llm_endpoint if llm_endpoint is not None else env_endpoint
+        self.llm_model = llm_model if llm_model is not None else env_model
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -207,6 +222,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 pages.render_walkthrough(str(default_calendar_hint())).encode("utf-8"),
                 "text/html; charset=utf-8",
             )
+        elif path == "/assistant":
+            self._send_assistant_page()
+        elif path == "/audit/tail":
+            self._send_audit_tail()
         elif path == "/static/app.css":
             self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
         elif path == "/static/app.js":
@@ -262,8 +281,67 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             calendar.retest()
             self._send_json(200, calendar.status())
+        elif path == "/research":
+            body = self._read_json_body()
+            question = (body or {}).get("question")
+            if not isinstance(question, str) or not question.strip():
+                self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
+                return
+            self._send_json(200, self._run_llm_turn(
+                question.strip(), summary_mode=True).to_json())
+        elif path == "/assistant/ask":
+            question = self._ask_question_from_body()
+            if not question:
+                self._send_json(400, {"error": "expected a question"})
+                return
+            answer = self._run_llm_turn(question, summary_mode=False)
+            if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+                threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
+                text = answer.reply if answer.status == "ok" else f"[degraded] {answer.cause}"
+                threadlog.append(self.server.audit_conn, "assistant", text)  # type: ignore[attr-defined]
+            if self._is_form_submit():
+                self.send_response(303)
+                self.send_header("Location", "/assistant")
+                self._common_headers()
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                self._send_json(200, answer.to_json())
         else:
             self._send_error_page(404, "Nothing here", "No action lives at this address.")
+
+    def _is_form_submit(self) -> bool:
+        return "application/x-www-form-urlencoded" in (self.headers.get("Content-Type") or "")
+
+    def _ask_question_from_body(self) -> str | None:
+        if self._is_form_submit():
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            if length <= 0 or length > MAX_BODY_BYTES:
+                return None
+            from urllib.parse import parse_qs
+
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+            values = fields.get("question", [])
+            return values[0].strip() if values and values[0].strip() else None
+        body = self._read_json_body()
+        question = (body or {}).get("question")
+        return question.strip() if isinstance(question, str) and question.strip() else None
+
+    def _run_llm_turn(self, question: str, *, summary_mode: bool):
+        server = self.server  # type: ignore[attr-defined]
+        context = build_context(
+            server.excel.status() if server.excel is not None else None,
+            server.calendar.status() if server.calendar is not None else None,
+        )
+        common = {
+            "llm": server.llm,
+            "audit_conn": server.audit_conn,
+            "endpoint": server.llm_endpoint,
+            "model": server.llm_model,
+        }
+        if summary_mode:
+            return research(question, context, **common)
+        return assistant_reply(question, context, **common)
 
     def _read_json_body(self) -> dict | None:
         try:
@@ -313,7 +391,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             widgets.append(commitments if commitments is not None else demo["key-commitment"])
         else:
             widgets.append(demo["key-commitment"])
-        widgets.append(demo["research"])
+        audit_conn = self.server.audit_conn  # type: ignore[attr-defined]
+        last_answer = audit_store.last_ok_ts(audit_conn, "research") if audit_conn is not None else None
+        widgets.append(render_research_widget(last_answer, now))
         widgets.append(demo["region-mix"])
         page = pages.render_dashboard(
             widgets,
@@ -336,6 +416,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         self._send_json(200, calendar.status())
+
+    def _send_assistant_page(self) -> None:
+        turns = []
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            turns = threadlog.turns(self.server.audit_conn)  # type: ignore[attr-defined]
+        page = render_assistant_page(turns, agentdesk.__version__)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _send_audit_tail(self) -> None:
+        if self.server.audit_conn is None:  # type: ignore[attr-defined]
+            self._send_json(503, {"error": "the audit store is not available"})
+            return
+        self._send_json(200, {"entries": audit_store.entries(self.server.audit_conn)})  # type: ignore[attr-defined]
 
     def _send_health(self) -> None:
         payload = health_payload(
@@ -384,6 +477,10 @@ def create_server(
     excel: ExcelWatch | None = None,
     pick_workbook=None,
     calendar: CalendarBridge | None = None,
+    llm=None,
+    audit_conn=None,
+    llm_endpoint: str | None = None,
+    llm_model: str | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -391,8 +488,9 @@ def create_server(
     be incapable of listening on 0.0.0.0 even by misconfiguration. When no
     port is given, the preferred port is tried once and an ephemeral port
     is the fallback, so the auth URL always names the port that actually
-    opened. The excel watch and the calendar bridge default to real ones
-    over the user data directory; tests pass their own.
+    opened. The excel watch, the calendar bridge and the audit store
+    default to real ones over the user data directory; tests pass their
+    own.
     """
     resolved = "127.0.0.1" if host == "localhost" else host
     if resolved != "127.0.0.1":
@@ -402,14 +500,29 @@ def create_server(
         excel = _default_excel_watch()
     if calendar is None:
         calendar = _default_calendar_bridge()
+    if audit_conn is None:
+        audit_conn = _default_audit_conn()
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
     if port is None:
         try:
-            return AgentDeskServer((resolved, PREFERRED_PORT), sessions, sources, excel, pick_workbook, calendar)
+            return AgentDeskServer((resolved, PREFERRED_PORT), sessions, sources, excel, pick_workbook, calendar, llm, audit_conn, llm_endpoint, llm_model)
         except OSError:
-            return AgentDeskServer((resolved, 0), sessions, sources, excel, pick_workbook, calendar)
-    return AgentDeskServer((resolved, port), sessions, sources, excel, pick_workbook, calendar)
+            return AgentDeskServer((resolved, 0), sessions, sources, excel, pick_workbook, calendar, llm, audit_conn, llm_endpoint, llm_model)
+    return AgentDeskServer((resolved, port), sessions, sources, excel, pick_workbook, calendar, llm, audit_conn, llm_endpoint, llm_model)
+
+
+def _default_audit_conn():
+    """The local audit store, or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "audit.sqlite3", check_same_thread=False)
+        audit_store.ensure_schema(conn)
+        return conn
+    except (OSError, sqlite3.Error):
+        LOG.exception("audit store unavailable")
+        return None
 
 
 def _default_excel_watch() -> ExcelWatch | None:

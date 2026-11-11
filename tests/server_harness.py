@@ -20,11 +20,18 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import sqlite3
 import time
 
+from agentdesk.assistant import audit as audit_store
 from agentdesk.calendar.watcher import Adapters as CalendarAdapters
 from agentdesk.calendar.watcher import CalendarBridge
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.server import app as server_app
+
+
+def _inert_audit():
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    audit_store.ensure_schema(conn)
+    return conn
 
 
 def _inert_excel() -> ExcelWatch:
@@ -55,6 +62,7 @@ class Booted:
     def __init__(self, **kwargs) -> None:
         kwargs.setdefault("excel", _inert_excel())
         kwargs.setdefault("calendar", _inert_calendar())
+        kwargs.setdefault("audit_conn", _inert_audit())
         self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
