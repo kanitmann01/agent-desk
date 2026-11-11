@@ -22,8 +22,6 @@ from agentdesk.probe.core import (
     POWER_AUTOMATE_URL,
     UNKNOWN,
     GateResult,
-    OneDriveInfo,
-    ReachResult,
     RunResult,
 )
 
@@ -250,7 +248,6 @@ def gate_power_automate(reach) -> GateResult:
             note="the Power Automate endpoint is unreachable at network level; ask IT to allow make.powerautomate.com",
         )
 
-    assert isinstance(res, ReachResult)
     if res.status is not None:
         return GateResult(
             key=GATE_FLOW,
@@ -295,7 +292,6 @@ def gate_onedrive(discover, workdir: Path) -> GateResult:
             note="no OneDrive folder found; sign in to the OneDrive client manually, then re-run the probe",
         )
 
-    assert isinstance(info, OneDriveInfo)
     source = workdir / ONEDRIVE_PROBE_NAME
     source.write_text("agentdesk probe sync test file; safe to delete\n", encoding="utf-8")
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
