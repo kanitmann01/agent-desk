@@ -139,6 +139,13 @@ table.rows td.neg{color:var(--bad)}
 .badge-pilot{font-size:11px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
+.doc{max-width:720px;margin:32px auto;padding:0 16px}
+.doc h1{font-size:20px;font-weight:800;margin-bottom:6px}
+.doc p{color:var(--ink-2);font-size:13.5px;margin:8px 0}
+.doc ol{margin:12px 0;padding-left:20px;color:var(--ink-2);font-size:13.5px;display:flex;flex-direction:column;gap:8px}
+.doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
+.doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.doc a.btn{text-decoration:none}
 .page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
 .error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
 .error-card h1{font-size:20px;font-weight:800}
@@ -206,6 +213,30 @@ function post(url, body) {
 document.querySelectorAll('[data-retest]').forEach(function (btn) {
   btn.addEventListener('click', function () {
     post('/sources/excel-watch/retest').then(function () { location.reload(); });
+  });
+});
+
+// Calendar Re-test: re-read the OneDrive file right now.
+document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/sources/calendar-bridge/retest').then(function () { location.reload(); });
+  });
+});
+
+// Commitment subtasks: the click is the truth; the app persists it.
+document.querySelectorAll('[data-check]').forEach(function (el) {
+  var flip = function () {
+    var on = el.getAttribute('aria-checked') === 'true';
+    el.setAttribute('aria-checked', on ? 'false' : 'true');
+    post('/widgets/commitments/check', {
+      eventId: el.dataset.event,
+      idx: Number(el.dataset.idx),
+      checked: !on
+    });
+  };
+  el.addEventListener('click', flip);
+  el.addEventListener('keydown', function (e) {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
   });
 });
 """
@@ -281,7 +312,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>, walking skeleton.</span><span>All data shown is sample data.</span></footer>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards without a connected source show sample data.</span></footer>
 </main>
 </div>
 <script src="/static/app.js"></script>
@@ -305,6 +336,65 @@ def render_error_page(title: str, message: str) -> str:
 <h1>{html.escape(title)}</h1>
 <p>{html.escape(message)}</p>
 </div>
+</body>
+</html>
+"""
+
+
+def render_walkthrough(watch_hint: str) -> str:
+    """The calendar connection walkthrough: three browser steps, no terminal.
+
+    The user creates the Power Automate flow themselves in their browser;
+    this page says exactly what to click, what the app expects to find,
+    and where it watches. The Check-now button re-reads the folder, so
+    the moment the flow has run once, the dashboard confirms it.
+    """
+    hint = html.escape(watch_hint)
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect your calendar, Agent Desk</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="doc">
+<h1>Connect your calendar</h1>
+<p>Agent Desk reads one file that a small Power Automate flow keeps fresh
+in your OneDrive. You create that flow once, in your browser: no admin,
+no terminal, nothing installed.</p>
+<ol>
+<li>Open <b>make.powerautomate.com</b> in your browser and sign in with
+your work account. Choose <b>Create</b>, then <b>Scheduled cloud flow</b>,
+and let it run <b>every 30 minutes</b>.</li>
+<li>Add the action <b>Get calendar view of events (V3)</b>. Point it at
+your calendar, with today as the start date.</li>
+<li>Add the action <b>Create file</b> (OneDrive for Business). Set the
+folder path to <b>/agent-desk</b> (create it), the file name to
+<b>calendar_sync.json</b>, and File Content to the calendar events value
+from the previous step. Save the flow.</li>
+</ol>
+<p>Once the flow has run, the app finds the file here:</p>
+<pre>""" + hint + """</pre>
+<p>The file looks like this (the flow builds it; this is only the shape):</p>
+<pre>{
+  "generatedAt": "2026-11-11T08:00:00",
+  "events": [
+    {"id": "evt-1", "subject": "Q4 pipeline review",
+     "start": "2026-11-11T14:00:00", "end": "2026-11-11T15:00:00",
+     "location": "Room Beaufort", "attendees": 6}
+  ]
+}</pre>
+<div class="cardrow">
+<button class="btn btn-primary" data-calendar-retest>Check for calendar data now</button>
+<a class="btn btn-secondary" href="/">Back to the dashboard</a>
+</div>
+<p style="margin-top:14px">If your tenant blocks personal flows, ask the
+technical owner: the same file can be produced any way IT prefers. The
+app only ever reads it.</p>
+</div>
+<script src="/static/app.js"></script>
 </body>
 </html>
 """

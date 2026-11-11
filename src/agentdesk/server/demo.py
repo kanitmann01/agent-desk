@@ -114,7 +114,10 @@ def demo_widgets() -> list[Widget]:
                 f"{_checks()}</div>"
                 '<span class="follow">Send the updated deck to Marco by 13:00</span>'
             ),
-            foot_html="Demo widget. The calendar bridge connects in a later build.",
+            foot_html=(
+                '<a class="btn btn-secondary btn-start" href="/walkthrough/calendar">Connect your calendar</a>'
+                "<span>Sample data until then.</span>"
+            ),
         ),
         Widget(
             id="research",

@@ -10,6 +10,7 @@ session validation before handshake.
 
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -19,10 +20,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import agentdesk
+from agentdesk.calendar.watcher import CalendarBridge, default_read_calendar
 from agentdesk.excel import store as excel_store
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
+from agentdesk.server.commitments import render_commitments_widget
 from agentdesk.server.core import (
     PREFERRED_PORT,
     SourceStatus,
@@ -104,11 +107,13 @@ class AgentDeskServer(ThreadingHTTPServer):
         sources: list[SourceStatus] | None = None,
         excel: ExcelWatch | None = None,
         pick_workbook=None,
+        calendar: CalendarBridge | None = None,
     ) -> None:
         self.sessions = sessions
         self.sources = sources if sources is not None else default_sources()
         self.excel = excel
         self.pick_workbook = pick_workbook
+        self.calendar = calendar
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -194,6 +199,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_health()
         elif path == "/widgets/sales-24h":
             self._send_sales_status()
+        elif path == "/widgets/commitments":
+            self._send_commitments_status()
+        elif path == "/walkthrough/calendar":
+            self._send_bytes(
+                200,
+                pages.render_walkthrough(str(default_calendar_hint())).encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
         elif path == "/static/app.css":
             self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
         elif path == "/static/app.js":
@@ -208,12 +221,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         path, _, _query = self.path.partition("?")
         excel = self.server.excel  # type: ignore[attr-defined]
-        if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
-            return
+        calendar = self.server.calendar  # type: ignore[attr-defined]
         if path == "/sources/excel-watch/pick":
+            if excel is None:
+                self._send_json(503, {"error": "the excel watch is not available"})
+                return
             self._send_json(200, {"path": self.server.pick_workbook()})  # type: ignore[attr-defined]
         elif path == "/sources/excel-watch":
+            if excel is None:
+                self._send_json(503, {"error": "the excel watch is not available"})
+                return
             body = self._read_json_body()
             if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
                 self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
@@ -222,8 +239,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
             excel.start_polling()
             self._send_json(200, excel.status())
         elif path == "/sources/excel-watch/retest":
+            if excel is None:
+                self._send_json(503, {"error": "the excel watch is not available"})
+                return
             excel.retest()
             self._send_json(200, excel.status())
+        elif path == "/widgets/commitments/check":
+            if calendar is None:
+                self._send_json(503, {"error": "the calendar bridge is not available"})
+                return
+            body = self._read_json_body()
+            if body is None or not isinstance(body.get("eventId"), str):
+                self._send_json(400, {"error": "expected {\"eventId\": \"...\", \"idx\": n, \"checked\": bool}"})
+                return
+            calendar.toggle_check(
+                body["eventId"], int(body.get("idx", 0)), bool(body.get("checked"))
+            )
+            self._send_json(200, {"ok": True})
+        elif path == "/sources/calendar-bridge/retest":
+            if calendar is None:
+                self._send_json(503, {"error": "the calendar bridge is not available"})
+                return
+            calendar.retest()
+            self._send_json(200, calendar.status())
         else:
             self._send_error_page(404, "Nothing here", "No action lives at this address.")
 
@@ -261,13 +299,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_dashboard(self) -> None:
         now = datetime.now()
-        widgets = [w for w in demo_widgets() if w.id != "sales-24h"]
+        demo = {w.id: w for w in demo_widgets()}
+        widgets: list = []
         excel = self.server.excel  # type: ignore[attr-defined]
-        status = excel.status() if excel is not None else None
-        if status is not None and status.get("configured"):
-            widgets.insert(0, render_sales_widget(status))
+        sales_status = excel.status() if excel is not None else None
+        if sales_status is not None and sales_status.get("configured"):
+            widgets.append(render_sales_widget(sales_status))
         else:
-            widgets.insert(0, next(w for w in demo_widgets() if w.id == "sales-24h"))
+            widgets.append(demo["sales-24h"])
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is not None:
+            commitments = render_commitments_widget(calendar.status(), now)
+            widgets.append(commitments if commitments is not None else demo["key-commitment"])
+        else:
+            widgets.append(demo["key-commitment"])
+        widgets.append(demo["research"])
+        widgets.append(demo["region-mix"])
         page = pages.render_dashboard(
             widgets,
             agentdesk.__version__,
@@ -282,6 +329,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the excel watch is not available"})
             return
         self._send_json(200, excel.status())
+
+    def _send_commitments_status(self) -> None:
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        self._send_json(200, calendar.status())
 
     def _send_health(self) -> None:
         payload = health_payload(
@@ -329,6 +383,7 @@ def create_server(
     sources: list[SourceStatus] | None = None,
     excel: ExcelWatch | None = None,
     pick_workbook=None,
+    calendar: CalendarBridge | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -336,8 +391,8 @@ def create_server(
     be incapable of listening on 0.0.0.0 even by misconfiguration. When no
     port is given, the preferred port is tried once and an ephemeral port
     is the fallback, so the auth URL always names the port that actually
-    opened. The excel watch defaults to a real one over the user data
-    directory; tests pass their own.
+    opened. The excel watch and the calendar bridge default to real ones
+    over the user data directory; tests pass their own.
     """
     resolved = "127.0.0.1" if host == "localhost" else host
     if resolved != "127.0.0.1":
@@ -345,14 +400,16 @@ def create_server(
     sessions = SessionStore()
     if excel is None:
         excel = _default_excel_watch()
+    if calendar is None:
+        calendar = _default_calendar_bridge()
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
     if port is None:
         try:
-            return AgentDeskServer((resolved, PREFERRED_PORT), sessions, sources, excel, pick_workbook)
+            return AgentDeskServer((resolved, PREFERRED_PORT), sessions, sources, excel, pick_workbook, calendar)
         except OSError:
-            return AgentDeskServer((resolved, 0), sessions, sources, excel, pick_workbook)
-    return AgentDeskServer((resolved, port), sessions, sources, excel, pick_workbook)
+            return AgentDeskServer((resolved, 0), sessions, sources, excel, pick_workbook, calendar)
+    return AgentDeskServer((resolved, port), sessions, sources, excel, pick_workbook, calendar)
 
 
 def _default_excel_watch() -> ExcelWatch | None:
@@ -364,6 +421,26 @@ def _default_excel_watch() -> ExcelWatch | None:
         return ExcelWatch(conn, default_adapters())
     except (OSError, sqlite3.Error):
         LOG.exception("excel watch unavailable")
+        return None
+
+
+def default_calendar_hint() -> Path:
+    """The calendar path the walkthrough shows as 'the app watches this'."""
+    env_path = os.environ.get("AGENTDESK_CALENDAR_FILE")
+    if env_path:
+        return Path(env_path)
+    return Path(Path.home(), "OneDrive", "agent-desk", "calendar_sync.json")
+
+
+def _default_calendar_bridge() -> CalendarBridge | None:
+    """A real bridge over the persistent store, or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "calendar-bridge.sqlite3", check_same_thread=False)
+        return CalendarBridge(conn)
+    except (OSError, sqlite3.Error):
+        LOG.exception("calendar bridge unavailable")
         return None
 
 
@@ -379,6 +456,8 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     url = auth_url(server)
     if sys.stdout is not None:  # pythonw runs without a console stream
         print(f"Agent Desk is running: {url}")
+    if server.calendar is not None:
+        server.calendar.start_polling()  # passive file watch, keeps itself fresh
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
     try:
