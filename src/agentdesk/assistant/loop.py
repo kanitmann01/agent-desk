@@ -101,12 +101,14 @@ def _ask(prompt: str, *, kind: str, llm, audit_conn, endpoint: str, model: str, 
         text = llm(prompt)
     except Exception as exc:  # noqa: BLE001 - degrade at the surface
         if audit_conn is not None:
-            audit.record(audit_conn, kind, endpoint, model, "error", request_bytes,
+            audit.record(audit_conn, f"llm.{kind}", target=endpoint, status="error",
+                         model=model, request_bytes=request_bytes,
                          detail=str(exc)[:200], clock=now)
         LOG.debug("%s degraded: %s", kind, exc)
         return Answer(status=STATUS_DEGRADED, cause=DEGRADED_CAUSE)
     if audit_conn is not None:
-        audit.record(audit_conn, kind, endpoint, model, "ok", request_bytes, clock=now)
+        audit.record(audit_conn, f"llm.{kind}", target=endpoint, status="ok",
+                     model=model, request_bytes=request_bytes, clock=now)
     if summary_mode:
         parsed = _parse_summary(text)
         return Answer(status=STATUS_OK, summary=parsed["summary"], sources=parsed["sources"])

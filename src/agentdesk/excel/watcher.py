@@ -58,6 +58,7 @@ class ExcelWatch:
         adapters: Adapters | None = None,
         interval_s: float = DEFAULT_INTERVAL_S,
         source: str = "excel-watch",
+        audit_hook: Callable[[str, str, str], None] | None = None,
     ) -> None:
         self.conn = conn
         self.adapters = adapters if adapters is not None else default_adapters()
@@ -68,6 +69,7 @@ class ExcelWatch:
         self._last_result: PollResult | None = None
         self._last_ok_ts: float | None = None
         self._last_rows: list = []
+        self.audit_hook = audit_hook
         self._stop = threading.Event()
         self._timer: threading.Timer | None = None
         store.ensure_schema(conn)
@@ -79,6 +81,7 @@ class ExcelWatch:
     def register(self, path: str) -> PollResult:
         """Point the watch at a workbook (the file picker's outcome)."""
         self._path = path
+        self._audit("excel.register", "ok")
         return self.poll()
 
     def poll(self) -> PollResult:
@@ -97,11 +100,13 @@ class ExcelWatch:
                     "Changes will appear once the file is free."
                 ),
             )
+            self._audit("excel.poll", "blocked")
         except WorkbookUnreadable as exc:
             result = PollResult(
                 STATE_UNREADABLE,
                 cause=f"Can't read the workbook: {exc}. Check it is a valid .xlsx.",
             )
+            self._audit("excel.poll", "error")
         else:
             reference = store.load_reference(self.conn, self._source, ts)
             if reference is None:
@@ -115,8 +120,19 @@ class ExcelWatch:
             store.save_snapshot(self.conn, self._source, ts, rows, row_hash)
             self._last_ok_ts = ts
             self._last_rows = rows
+            self._audit("excel.poll", "ok")
         self._last_result = result
         return result
+
+    def _audit(self, action: str, status: str) -> None:
+        """Record a brokered touch when the audit hook is wired."""
+        if self.audit_hook is None or self._path is None:
+            return
+        name = str(self._path).replace("\\", "/").rsplit("/", 1)[-1]
+        try:
+            self.audit_hook(action, name, status)
+        except Exception:  # noqa: BLE001 - auditing must never break the watch
+            LOG.exception("audit hook failed")
 
     def retest(self) -> PollResult:
         """The amber widget's button: one poll, right now."""

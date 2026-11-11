@@ -194,10 +194,10 @@ def test_every_outbound_call_is_audited_without_file_contents(env, auth, stub):
     status, _h, body = env.request("GET", "/audit/tail", auth)
     entries = json.loads(body)["entries"]
     assert status == 200
-    kinds = [e["kind"] for e in entries]
-    assert "research" in kinds and "assistant" in kinds
+    actions = [e["action"] for e in entries]
+    assert "llm.research" in actions and "llm.assistant" in actions
     for entry in entries:
-        assert entry["endpoint"] == stub.base_url
+        assert entry["target"] == stub.base_url
         assert entry["ts"] > 0
         # The audit row describes the call; it never carries the prompt.
         assert "EU channel" not in json.dumps(entry)
@@ -211,4 +211,4 @@ def test_failed_calls_are_audited_as_errors(env, auth):
     env.post_json("/research", {"question": "q"}, auth)
     entries = json.loads(env.request("GET", "/audit/tail", auth)[2])["entries"]
     assert entries[0]["status"] == "error"
-    assert entries[0]["kind"] == "research"
+    assert entries[0]["action"] == "llm.research"

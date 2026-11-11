@@ -32,6 +32,7 @@ from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.commitments import render_commitments_widget
 from agentdesk.server.research import render_assistant_page, render_research_widget
+from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     PREFERRED_PORT,
     SourceStatus,
@@ -226,6 +227,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_assistant_page()
         elif path == "/audit/tail":
             self._send_audit_tail()
+        elif path == "/audit/export.csv":
+            self._send_audit_csv()
+        elif path == "/what-this-touches":
+            self._send_touches_page()
         elif path == "/static/app.css":
             self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
         elif path == "/static/app.js":
@@ -238,6 +243,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _route_post(self) -> None:
         if not self._gate():
             return
+        # Drain the request body up front: an unread body on a keep-alive
+        # connection would be parsed as the next request.
+        self._raw_body = self._drain_body()
         path, _, _query = self.path.partition("?")
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
@@ -314,13 +322,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return "application/x-www-form-urlencoded" in (self.headers.get("Content-Type") or "")
 
     def _ask_question_from_body(self) -> str | None:
+        raw = getattr(self, "_raw_body", b"")
+        if not raw:
+            return None
         if self._is_form_submit():
-            length = int(self.headers.get("Content-Length", "0") or 0)
-            if length <= 0 or length > MAX_BODY_BYTES:
-                return None
             from urllib.parse import parse_qs
 
-            fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+            fields = parse_qs(raw.decode("utf-8"))
             values = fields.get("question", [])
             return values[0].strip() if values and values[0].strip() else None
         body = self._read_json_body()
@@ -343,15 +351,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return research(question, context, **common)
         return assistant_reply(question, context, **common)
 
-    def _read_json_body(self) -> dict | None:
+    def _drain_body(self) -> bytes:
+        """Read and stash the request body; the route decides what it means."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
-            return None
+            return b""
         if length <= 0 or length > MAX_BODY_BYTES:
+            return b""
+        return self.rfile.read(length)
+
+    def _read_json_body(self) -> dict | None:
+        raw = getattr(self, "_raw_body", b"")
+        if not raw:
             return None
         try:
-            parsed = json.loads(self.rfile.read(length).decode("utf-8"))
+            parsed = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             return None
         return parsed if isinstance(parsed, dict) else None
@@ -430,6 +445,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, {"entries": audit_store.entries(self.server.audit_conn)})  # type: ignore[attr-defined]
 
+    def _send_audit_csv(self) -> None:
+        if self.server.audit_conn is None:  # type: ignore[attr-defined]
+            self._send_json(503, {"error": "the audit store is not available"})
+            return
+        self._send_bytes(
+            200,
+            audit_store.csv_bytes(self.server.audit_conn),  # type: ignore[attr-defined]
+            "text/csv; charset=utf-8",
+        )
+
+    def _send_touches_page(self) -> None:
+        observed: set[str] = set()
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            observed = audit_store.observed_actions(self.server.audit_conn)  # type: ignore[attr-defined]
+        page = render_touches(observed, agentdesk.__version__, datetime.now())
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
     def _send_health(self) -> None:
         payload = health_payload(
             agentdesk.__version__,
@@ -504,12 +536,59 @@ def create_server(
         audit_conn = _default_audit_conn()
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
+
+    def construct(bind_port: int) -> AgentDeskServer:
+        return AgentDeskServer(
+            (resolved, bind_port), sessions, sources, excel, pick_workbook,
+            calendar, llm, audit_conn, llm_endpoint, llm_model,
+        )
+
     if port is None:
         try:
-            return AgentDeskServer((resolved, PREFERRED_PORT), sessions, sources, excel, pick_workbook, calendar, llm, audit_conn, llm_endpoint, llm_model)
+            server = construct(PREFERRED_PORT)
         except OSError:
-            return AgentDeskServer((resolved, 0), sessions, sources, excel, pick_workbook, calendar, llm, audit_conn, llm_endpoint, llm_model)
-    return AgentDeskServer((resolved, port), sessions, sources, excel, pick_workbook, calendar, llm, audit_conn, llm_endpoint, llm_model)
+            server = construct(0)
+    else:
+        server = construct(port)
+    _wire_audit(server)
+    return server
+
+
+def _wire_audit(server: AgentDeskServer) -> None:
+    """Give the watches and the model wrapper the audit hook.
+
+    Applied to injected watches too: whatever object serves the requests
+    at runtime reports into the one append-only store.
+    """
+    if server.audit_conn is None:
+        return
+    conn = server.audit_conn
+
+    def hook(action: str, target: str, status: str = "ok") -> None:
+        audit_store.record(conn, action, target=target, status=status)
+
+    if server.excel is not None:
+        server.excel.audit_hook = hook
+    if server.calendar is not None:
+        server.calendar.audit_hook = hook
+        endpoint, _key, model = env_config()
+        inner_llm = server.calendar.llm
+
+        def audited_llm(prompt: str) -> str:
+            try:
+                result = inner_llm(prompt)
+            except Exception as exc:  # noqa: BLE001 - audit then re-raise
+                audit_store.record(conn, "llm.breakdown", target=endpoint,
+                                   status="error", model=model,
+                                   request_bytes=len(prompt.encode("utf-8")),
+                                   detail=str(exc)[:200])
+                raise
+            audit_store.record(conn, "llm.breakdown", target=endpoint,
+                               status="ok", model=model,
+                               request_bytes=len(prompt.encode("utf-8")))
+            return result
+
+        server.calendar.llm = audited_llm
 
 
 def _default_audit_conn():
