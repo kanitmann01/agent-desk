@@ -12,6 +12,8 @@ from .model import Failure
 WORKSPACE_ROOT = "${workspace}/"
 PLUGIN_DATA_ROOT = "${pluginData}"
 
+KNOWN_DATA_SOURCE_TYPES = ("excel-watch", "json-watch", "http-get", "calendar-read")
+
 
 def validate_permission_lint(manifest, reader) -> list[Failure]:
     """Return every permission-lint failure for the manifest."""
@@ -25,9 +27,25 @@ def validate_permission_lint(manifest, reader) -> list[Failure]:
         failures.extend(_validate_filesystem_scoping(permissions))
         failures.extend(_validate_network_allow(permissions))
 
+    contributes = manifest.get("contributes")
+    if isinstance(contributes, dict) and isinstance(contributes.get("widgets"), list):
+        for widget in contributes["widgets"]:
+            if isinstance(widget, dict):
+                failures.extend(_validate_data_source_type(widget))
+
     failures.extend(_validate_render(manifest, reader))
 
     return failures
+
+
+def _validate_data_source_type(widget) -> list[Failure]:
+    data_source = widget.get("dataSource")
+    if not isinstance(data_source, dict):
+        return [Failure("bad-schema", "widget dataSource must be an object")]
+    source_type = data_source.get("type")
+    if source_type not in KNOWN_DATA_SOURCE_TYPES:
+        return [Failure("unknown-datasource", f"unknown dataSource.type: {source_type}")]
+    return []
 
 
 def _validate_shell(permissions) -> list[Failure]:

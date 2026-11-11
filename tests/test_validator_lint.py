@@ -84,3 +84,37 @@ def test_ui_schema_file_without_card_type_is_bad_json(tmp_path):
             'ui-schema file widget.ui.json must be a JSON object with "type": "card"',
         )
     ]
+
+
+def test_unknown_data_source_type_is_unknown_datasource(tmp_path):
+    manifest = manifest_copy()
+    manifest["contributes"]["widgets"][0]["dataSource"] = {
+        "type": "rss-poll",
+        "file": "${workspace}/reports/*.xlsx",
+    }
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert ("unknown-datasource", "unknown dataSource.type: rss-poll") in failures(
+        verdict
+    )
+
+
+def test_all_v1_data_source_types_pass_the_type_check(tmp_path):
+    known_files = {
+        "excel-watch": "${workspace}/reports/*.xlsx",
+        "json-watch": "${workspace}/data/feed.json",
+    }
+    for source_type in ("excel-watch", "json-watch", "http-get", "calendar-read"):
+        manifest = manifest_copy()
+        data_source = {"type": source_type}
+        if source_type in known_files:
+            data_source["file"] = known_files[source_type]
+            manifest["permissions"]["filesystem"]["read"] = [known_files[source_type]]
+        else:
+            manifest["permissions"]["filesystem"]["read"] = []
+        manifest["contributes"]["widgets"][0]["dataSource"] = data_source
+
+        verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+        assert "unknown-datasource" not in codes(verdict), source_type
