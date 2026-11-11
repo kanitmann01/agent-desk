@@ -26,7 +26,22 @@ export default defineConfig({
     port: 5199,
     strictPort: true,
     proxy: Object.fromEntries(
-      backendPaths.map((path) => [path, { target: BACKEND, changeOrigin: false }]),
+      backendPaths.map((path) => [
+        path,
+        {
+          target: BACKEND,
+          // The server's Origin/Host guard is right to block a foreign
+          // origin, so the proxy speaks to it exactly as a production
+          // browser would: backend Host, matching Origin and Referer.
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (req) => {
+              req.setHeader('origin', BACKEND);
+              req.setHeader('referer', BACKEND + '/');
+            });
+          },
+        },
+      ]),
     ),
   },
   build: {
