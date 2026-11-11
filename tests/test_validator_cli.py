@@ -2,9 +2,43 @@
 and the identity property (CLI verdict equals library verdict)."""
 
 import json
+import subprocess
+import sys
 import zipfile
 
-from .test_validator_support import fixture, run_cli, write_plugin
+from . import test_validator_support
+from .test_validator_support import VALID_MANIFEST, fixture, run_cli, write_plugin
+
+
+def run_cli_decoded(*args: str) -> subprocess.CompletedProcess:
+    """run_cli variant that decodes child output as UTF-8 (what main() emits)."""
+    return subprocess.run(
+        [sys.executable, "-m", "agentdesk.validator", *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=test_validator_support.cli_env(),
+        cwd=str(test_validator_support.REPO_ROOT),
+    )
+
+
+def run_cli_legacy_stdio(*args: str) -> subprocess.CompletedProcess:
+    """Run the CLI without the UTF-8 env overrides this dev box sets.
+
+    The child then uses its platform pipe encoding (cp1252 on Western
+    Windows), which is the deployment scenario the finding describes.
+    """
+    env = test_validator_support.cli_env()
+    for var in ("PYTHONUTF8", "PYTHONIOENCODING"):
+        env.pop(var, None)
+    return subprocess.run(
+        [sys.executable, "-m", "agentdesk.validator", *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        cwd=str(test_validator_support.REPO_ROOT),
+    )
 
 
 def zip_fixture(dest, source_dir):
@@ -83,3 +117,46 @@ def test_cli_no_arguments_is_usage_error():
     result = run_cli()
     assert result.returncode == 2
     assert result.stderr.strip()
+
+
+def test_cli_cjk_unknown_key_reports_fail_not_traceback(tmp_path):
+    """A cp1252 pipe must still print the verdict when a message carries CJK.
+
+    Failure messages embed manifest strings; an unencodable stdout used to
+    raise UnicodeEncodeError in the CLI child, leaving empty output.
+    """
+    manifest = {**VALID_MANIFEST, "遥测": True}
+
+    result = run_cli_legacy_stdio(str(write_plugin(tmp_path / "plugin", manifest)))
+
+    assert result.returncode == 1
+    assert "FAIL unknown-key:" in result.stdout
+    assert "FAILED (1)" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def test_main_reconfigures_output_streams_to_utf8(tmp_path, monkeypatch):
+    """main() must not lose the verdict to a non-UTF-8 stdout codec.
+
+    In-process variant that stays deterministic on every platform: hand
+    main() cp1252 TextIOWrappers and require UTF-8 bytes out.
+    """
+    import io
+
+    from agentdesk.validator import cli
+
+    out_buf, err_buf = io.BytesIO(), io.BytesIO()
+    out = io.TextIOWrapper(out_buf, encoding="cp1252")
+    err = io.TextIOWrapper(err_buf, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+
+    manifest = {**VALID_MANIFEST, "遥测": True}
+    exit_code = cli.main([str(write_plugin(tmp_path / "plugin", manifest))])
+
+    out.flush()
+    err.flush()
+    assert exit_code == 1
+    assert b"FAIL unknown-key:" in out_buf.getvalue()
+    assert b"FAILED (1)" in out_buf.getvalue()
+    assert err_buf.getvalue() == b""
