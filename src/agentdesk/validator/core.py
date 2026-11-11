@@ -7,8 +7,37 @@ install path, and registry CI all run this same code.
 import json
 from pathlib import Path
 
-from .model import Verdict
+from .model import Failure, Verdict
 from .reader import MANIFEST_NAME, ValidatorIOError
+from .schema import validate_schema
+
+_FAILURE_CODE_ORDER = (
+    "unknown-key",
+    "bad-schema",
+    "bad-license",
+    "shell-permission",
+    "unscoped-filesystem",
+    "plugin-html",
+    "over-permission",
+    "unknown-datasource",
+    "missing-file",
+    "bad-json",
+    "hash-mismatch",
+)
+
+
+def _sorted_failures(failures) -> tuple[Failure, ...]:
+    """Deterministic order: stable code order first, then message."""
+    code_rank = {code: rank for rank, code in enumerate(_FAILURE_CODE_ORDER)}
+    return tuple(
+        sorted(
+            failures,
+            key=lambda failure: (
+                code_rank.get(failure.code, len(_FAILURE_CODE_ORDER)),
+                failure.message,
+            ),
+        )
+    )
 
 
 def validate_plugin(path) -> Verdict:
@@ -22,10 +51,12 @@ def validate_plugin(path) -> Verdict:
     if not root.is_dir():
         raise ValidatorIOError(f"path is neither a plugin directory nor a zip: {root.name}")
 
-    manifest_bytes = (root / MANIFEST_NAME).read_bytes()
+    manifest_path = root / MANIFEST_NAME
+    if not manifest_path.is_file():
+        return Verdict((Failure("missing-file", f"missing {MANIFEST_NAME}"),))
     try:
-        json.loads(manifest_bytes.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return Verdict()
+        manifest = json.loads(manifest_path.read_bytes().decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return Verdict((Failure("bad-json", f"{MANIFEST_NAME} is not valid JSON: {exc}"),))
 
-    return Verdict()
+    return Verdict(_sorted_failures(validate_schema(manifest)))
