@@ -37,7 +37,10 @@ from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
-from agentdesk.server.commitments import render_commitments_widget
+from agentdesk.server.commitments import (
+    render_commitments_unavailable,
+    render_commitments_widget,
+)
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import render_settings_page
@@ -51,10 +54,13 @@ from agentdesk.server.core import (
     STATUS_NOT_CONNECTED,
     SourceStatus,
 )
-from agentdesk.server.demo import demo_widgets
 from agentdesk.server.guard import check_request
 from agentdesk.server.health import health_payload
-from agentdesk.server.sales import render_sales_disabled, render_sales_widget
+from agentdesk.server.sales import (
+    render_sales_disabled,
+    render_sales_unconfigured,
+    render_sales_widget,
+)
 from agentdesk.settings import SettingsStore, ensure_schema as ensure_settings_schema
 
 LOG = logging.getLogger("agentdesk.server")
@@ -531,7 +537,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_dashboard(self) -> None:
         now = datetime.now()
-        demo = {w.id: w for w in demo_widgets()}
         widgets: list = []
         excel = self.server.excel  # type: ignore[attr-defined]
         sales_status = excel.status() if excel is not None else None
@@ -540,21 +545,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif sales_status is not None and sales_status.get("configured"):
             widgets.append(render_sales_widget(sales_status))
         else:
-            widgets.append(demo["sales-24h"])
+            widgets.append(render_sales_unconfigured(now))
         calendar = self.server.calendar  # type: ignore[attr-defined]
         if not self._source_allowed("calendar_enabled"):
             widgets.append(render_commitments_widget({"state": "disabled"}, now))
         elif calendar is not None:
             commitments = render_commitments_widget(calendar.status(), now)
-            widgets.append(commitments if commitments is not None else demo["key-commitment"])
+            widgets.append(
+                commitments if commitments is not None else render_commitments_unavailable(now)
+            )
         else:
-            widgets.append(demo["key-commitment"])
+            widgets.append(render_commitments_unavailable(now))
         audit_conn = self.server.audit_conn  # type: ignore[attr-defined]
         # The writer records the action as "llm.research" (assistant/loop.py);
         # querying anything else makes the stamp never show the last answer.
         last_answer = audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
         widgets.append(render_research_widget(last_answer, now))
-        widgets.append(demo["region-mix"])
+        connected = sum(1 for s in live_sources(self.server) if s.status == STATUS_CONNECTED)
         inbox = self.server.inbox  # type: ignore[attr-defined]
         skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
         page = pages.render_dashboard(
@@ -564,6 +571,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             now.strftime("%A, %d %B, %H:%M. "),
             inbox_count=len(inbox.waiting()) if inbox is not None else 0,
             skills=skills,
+            connected_sources=connected,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 

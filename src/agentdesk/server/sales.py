@@ -38,6 +38,24 @@ def render_sales_disabled(now: datetime) -> Widget:
     )
 
 
+def render_sales_unconfigured(now: datetime) -> Widget:
+    """The honest not-connected state: no numbers exist yet, so none are
+    shown; the one real action is the workbook picker."""
+    return Widget(
+        id="sales-24h",
+        title="Sales, last 24 hours",
+        col="col-7",
+        freshness=Freshness(ATTENTION, "Not connected", now.strftime("%Y-%m-%dT%H:%M:%S")),
+        body_html=(
+            '<div class="well"><p class="q">No workbook is connected yet, so '
+            "there is nothing to show here. Once one is connected, this card "
+            "reports what changed in the file over the last 24 hours.</p></div>"
+            '<button class="btn btn-primary btn-start" data-pick>Connect a workbook</button>'
+        ),
+        foot_html="Read-only: the file is copied before parsing, never opened in place.",
+    )
+
+
 def _fmt(value) -> str:
     """Cell value to display text: whole numbers grouped, text as is."""
     if isinstance(value, float) and value.is_integer():

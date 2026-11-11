@@ -190,13 +190,13 @@ def test_stale_data_is_labeled_on_the_widget_endpoint(env, auth):
 def test_dashboard_renders_the_live_widget_once_registered(env, auth):
     page_status, _h, page_body = env.request("GET", "/", auth)
     assert 'data-widget-id="sales-24h"' in page_body.decode("utf-8")
-    assert b"Sample data until then." in page_body
+    assert "No workbook is connected yet" in page_body.decode("utf-8")
 
     env.post_json("/sources/excel-watch", {"path": str(env.workbook)}, auth)
     _status, _h, page_body = env.request("GET", "/", auth)
     page = page_body.decode("utf-8")
     assert "First snapshot taken" in page  # honest: deltas start next poll
-    assert "Sample data until a workbook is connected." not in page
+    assert "No workbook is connected yet" not in page
 
     env.clock.advance(24 * 3600)
     env.workbook.write_bytes(make_xlsx(CHANGED_ROWS))
@@ -222,7 +222,7 @@ def test_zero_row_one_row_and_huge_values_render(env, auth):
     _status, _h, page_body = env.request("GET", "/", auth)
     page = page_body.decode("utf-8")
     assert "12,345,678,901,234" in page  # huge values formatted, not broken
-    assert page.count('<article class="widget') == 4
+    assert page.count('<article class="widget') == 3
 
     # An unchanged re-poll is the designed zero state, not an empty card.
     env.clock.advance(24 * 3600)

@@ -10,7 +10,7 @@ unsafe-inline exceptions.
 import html
 from typing import Iterable
 
-from agentdesk.server.core import ATTENTION, FRESH, SAMPLE
+from agentdesk.server.core import ATTENTION, FRESH, SAMPLE, SOURCE_IDS
 from agentdesk.server.demo import Widget
 
 ICON_OPTIONS = (
@@ -190,9 +190,9 @@ table.rows td.neg{color:var(--bad)}
 }
 """
 
-# The scripts the shell ships: the amber widget's demo recovery, the
-# workbook picker flow, and the Re-test call for the live sales widget.
-# Same-origin only; no frameworks.
+# The scripts the shell ships: the workbook picker flow, the Re-test
+# calls for the live widgets, and the card actions. Same-origin only;
+# no frameworks.
 APP_JS = """\
 // Same-origin POST helper: every call here stays on 127.0.0.1.
 function post(url, body) {
@@ -200,25 +200,6 @@ function post(url, body) {
     headers: {'Content-Type': 'application/json'},
     body: body ? JSON.stringify(body) : '{}'});
 }
-
-// Demo recovery for the amber sample widget: Re-test walks the designed
-// path from blocked back to fresh, in place. Nothing is sent anywhere.
-(function () {
-  var btn = document.getElementById('retest');
-  if (!btn) return;
-  btn.addEventListener('click', function () {
-    var w = document.getElementById('widget-region-mix');
-    var stamp = w.querySelector('.stamp');
-    var body = document.getElementById('amber-body');
-    w.classList.remove('amber');
-    stamp.setAttribute('data-status', 'fresh');
-    stamp.setAttribute('data-updated-iso', new Date().toISOString());
-    stamp.innerHTML = '<span class="dot" aria-hidden="true"></span>Recovered just now';
-    body.innerHTML = '<span>File is free again. Refreshed: <b>2 regions changed</b> '
-      + 'since yesterday, DACH up, Nordics flat.</span>';
-    btn.remove();
-  });
-})();
 
 // Workbook picker: the app opens the native file dialog, the chosen path
 // registers the watch, and the dashboard reloads with real data.
@@ -411,8 +392,14 @@ def _rail(inbox_count: int = 0) -> str:
     )
 
 
-def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None) -> str:
-    """The full dashboard document: rail, greeting, skills, widgets, footer."""
+def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0) -> str:
+    """The full dashboard document: rail, greeting, skills, widgets, footer.
+
+    The one source line is only ever the truth: nothing connected gets a
+    gentle pointer to each card's connect step, anything connected gets a
+    live count. No card carries invented values, so there is no sample
+    state to confess in a banner.
+    """
     cards = "".join(_widget_html(w) for w in widgets)
     esc_version = html.escape(version)
     strip = ""
@@ -422,6 +409,10 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
             for s in skills
         )
         strip = f"<div class='skills-strip' aria-label='Your skills'>{buttons}</div>"
+    if connected_sources > 0:
+        dot_class, source_line = "dot", f"Live: {connected_sources} of {len(SOURCE_IDS)} sources connected."
+    else:
+        dot_class, source_line = "dot sample", "Not connected yet: each card below has its own one-step connect."
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -437,7 +428,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <div class="topbar">
   <div>
     <h1>{html.escape(greeting)}</h1>
-    <p class="sub"><span class="dot sample" aria-hidden="true"></span>{html.escape(date_line)} Sample data. Sources connect in later builds.</p>
+    <p class="sub"><span class="{dot_class}" aria-hidden="true"></span>{html.escape(date_line)} {html.escape(source_line)}</p>
   </div>
   <button class="btn btn-primary" disabled title="The plugin wizard arrives in a later build.">Add plugin</button>
 </div>
@@ -445,7 +436,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards without a connected source show sample data.</span><a href="/what-this-touches">What this app touches</a></footer>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
 </main>
 </div>
 <script src="/static/app.js"></script>

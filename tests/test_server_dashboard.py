@@ -1,8 +1,9 @@
-"""Dashboard shell tests: freshness contract, sample labeling, offline CSP.
+"""Dashboard shell tests: freshness contract, honest states, offline CSP.
 
 The shell is where every later ticket lands, so the contract tests here
 read the rendered HTML the way a browser would: structure and attributes,
-through the real HTTP seam.
+through the real HTTP seam. No card ever fabricates a value: an
+unconfigured source shows what to do about it, nothing else.
 """
 
 import json
@@ -84,19 +85,19 @@ def _scan(page: str) -> WidgetScan:
     return scan
 
 
-def test_dashboard_serves_four_widgets_in_varying_sizes(page):
+def test_dashboard_serves_three_widgets_in_varying_sizes(page):
     scan = _scan(page)
-    assert len(scan.widgets) == 4
+    assert len(scan.widgets) == 3
     cols = {
         next(c for c in w["classes"] if c.startswith("col-")) for w in scan.widgets
     }
-    assert cols == {"col-7", "col-5", "col-8", "col-4"}
+    assert cols == {"col-7", "col-5", "col-8"}
 
 
 def test_every_widget_carries_the_freshness_contract(page):
     scan = _scan(page)
     for widget in scan.widgets:
-        assert widget["status"] in {"fresh", "attention", "sample"}, widget["id"]
+        assert widget["status"] in {"fresh", "attention"}, widget["id"]
         assert widget["stamp"] is not None, widget["id"]
         assert "data-freshness" in widget["stamp"], widget["id"]
         assert widget["dot"] is not None, widget["id"]
@@ -106,23 +107,32 @@ def test_every_widget_carries_the_freshness_contract(page):
             assert widget["status"] == "attention", widget["id"]
 
 
-def test_sample_widgets_are_labeled_as_sample(page):
+def test_first_run_shows_honest_states_and_no_fabricated_values(page):
     scan = _scan(page)
     statuses = sorted(w["status"] for w in scan.widgets)
-    # Sales is sample until connected; commitments is live-but-empty;
-    # research is an action surface (Ready); region-mix shows the designed
-    # amber failure state.
-    assert statuses == ["attention", "attention", "fresh", "sample"]
-    assert "See what changed overnight, without opening the file." in page
-    assert "Sample data until then." in page
-    assert "Cards without a connected source show sample data." in page
+    # Sales not connected and commitments empty are attention states;
+    # research is an action surface (Ready). Nothing is sample anymore.
+    assert statuses == ["attention", "attention", "fresh"]
+    for banned in (
+        "14,320",                # the old invented KPI
+        "Q4 pipeline review",    # the old invented meeting
+        "Sample data",           # the old sample labeling
+        "tag-sample",
+    ):
+        assert banned not in page, banned
 
 
-def test_amber_widget_shows_the_designed_failure_state(page):
+def test_region_mix_is_gone_from_the_page_and_its_script(booted):
+    headers = booted.exchange()
+    _status, _h, body = booted.request("GET", "/", headers)
+    page = body.decode("utf-8")
     scan = _scan(page)
-    amber = next(w for w in scan.widgets if w["id"] == "region-mix")
-    assert amber["status"] == "attention"
-    assert 'id="retest"' in page
+    assert all(w["id"] != "region-mix" for w in scan.widgets)
+    assert 'id="retest"' not in page
+    # The fake recovery script (invented "2 regions changed") went with it.
+    _status, _h, js = booted.request("GET", "/static/app.js", headers)
+    assert b"Recovered just now" not in js
+    assert b"widget-region-mix" not in js
 
 
 def test_page_is_offline_by_construction(page):
@@ -182,3 +192,42 @@ def test_research_stamp_shows_when_the_last_answer_happened(booted):
     page = body.decode("utf-8")
     assert "Answered " in page
     assert ">Ready<" not in page
+
+
+def test_banner_names_the_connect_steps_when_nothing_is_connected(page):
+    assert "Not connected yet: each card below has its own one-step connect." in page
+    assert "Sample data. Sources connect in later builds." not in page
+    assert "Cards without a connected source show sample data." not in page
+
+
+def test_banner_counts_connected_sources_when_one_exists(booted):
+    booted.server.llm_endpoint = "https://llm.corp.example"  # configured only
+    headers = booted.exchange()
+    _status, _h, body = booted.request("GET", "/", headers)
+    page = body.decode("utf-8")
+    assert "Live: 1 of 3 sources connected." in page
+    assert "Not connected yet:" not in page
+
+
+def test_sales_card_carries_the_real_connect_action(page):
+    # The picker flow works from the card: the button posts pick, then
+    # register, then reloads (asserted in test_server_excel_api.py).
+    assert "Connect a workbook" in page
+    assert "No workbook is connected yet" in page
+
+
+def test_missing_bridge_shows_an_honest_unavailable_card():
+    booted = server_harness.Booted()
+    try:
+        # create_server treats a None bridge as "build the real one"; the
+        # UI path under test is the attribute being None after a failed
+        # store open, so null it here exactly as the app would see it.
+        booted.server.calendar = None
+        headers = booted.exchange()
+        _status, _h, body = booted.request("GET", "/", headers)
+        page = body.decode("utf-8")
+        assert 'data-widget-id="key-commitment"' in page
+        assert "calendar bridge is not running" in page
+        assert "Q4 pipeline review" not in page  # no invented meeting
+    finally:
+        booted.close()

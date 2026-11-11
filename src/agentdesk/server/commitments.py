@@ -71,6 +71,23 @@ def _healthy_body(status: dict) -> str:
     return "".join(parts)
 
 
+def render_commitments_unavailable(now: datetime) -> Widget:
+    """The bridge itself is not running (its store could not open): the
+    plain truth, with no invented meeting in the meantime."""
+    return Widget(
+        id="key-commitment",
+        title="Today's key commitment",
+        col="col-5",
+        freshness=Freshness(ATTENTION, "Unavailable", now.strftime("%Y-%m-%dT%H:%M:%S")),
+        body_html=(
+            '<div class="well"><p class="q">The calendar bridge is not running '
+            "on this machine, so today's commitments cannot be read. Restarting "
+            "Agent Desk usually brings it back.</p></div>"
+        ),
+        foot_html="Nothing is being read while the bridge is unavailable.",
+    )
+
+
 def render_commitments_widget(status: dict, now: datetime) -> Widget | None:
     """The connected commitments widget in whichever state the bridge is in."""
     state = status["state"]
