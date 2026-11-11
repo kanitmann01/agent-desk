@@ -150,3 +150,51 @@ def test_permissions_without_shell_key_is_bad_schema(tmp_path):
     verdict = validate_plugin(write_plugin(tmp_path, manifest))
 
     assert ("bad-schema", "permissions must declare shell") in failures(verdict)
+
+
+def test_unscoped_write_glob_is_unscoped_filesystem(tmp_path):
+    manifest = {**VALID_MANIFEST}
+    manifest["permissions"]["filesystem"]["write"] = ["${home}/agent/out"]
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "unscoped-filesystem",
+        "filesystem glob not rooted under ${workspace}/ or ${pluginData}: ${home}/agent/out",
+    ) in failures(verdict)
+
+
+def test_approved_filesystem_roots_pass(tmp_path):
+    manifest = {**VALID_MANIFEST}
+    manifest["permissions"]["filesystem"] = {
+        "read": ["${workspace}/reports/*.xlsx", "${workspace}/notes.txt"],
+        "write": ["${pluginData}", "${pluginData}/cache/*.json"],
+    }
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert "unscoped-filesystem" not in codes(verdict)
+
+
+def test_non_string_glob_entry_is_bad_schema(tmp_path):
+    manifest = {**VALID_MANIFEST}
+    manifest["permissions"]["filesystem"]["read"] = [42]
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "bad-schema",
+        "permissions.filesystem globs must be strings",
+    ) in failures(verdict)
+
+
+def test_nonempty_network_allow_in_permissions_is_over_permission(tmp_path):
+    manifest = {**VALID_MANIFEST}
+    manifest["permissions"]["network"]["allow"] = ["https://api.example.com/*"]
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert (
+        "over-permission",
+        "permissions.network.allow must be empty; network access belongs in optionalPermissions",
+    ) in failures(verdict)

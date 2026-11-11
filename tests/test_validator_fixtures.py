@@ -23,3 +23,12 @@ def test_shell_permission_fixture_fails_with_named_reason():
 
     assert codes(verdict) == ["shell-permission"]
     assert verdict.failures[0].message == 'permissions.shell must be "none", got "cmd"'
+
+
+def test_unscoped_filesystem_fixture_fails_with_named_reason():
+    verdict = validate_plugin(fixture("unscoped-filesystem"))
+
+    assert codes(verdict) == ["unscoped-filesystem"]
+    assert verdict.failures[0].message == (
+        "filesystem glob not rooted under ${workspace}/ or ${pluginData}: reports/*.xlsx"
+    )
