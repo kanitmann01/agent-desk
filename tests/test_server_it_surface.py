@@ -133,7 +133,13 @@ def test_license_manifest_gate():
 
 def test_manifest_file_exists_and_states_the_allowlist():
     manifest = (Path(__file__).resolve().parents[1] / "THIRD-PARTY-LICENSES.md").read_text(encoding="utf-8")
-    assert "no third-party components" in manifest
+    # The claim is split where the truth is: the Python runtime carries
+    # nothing third-party, the SPA bundle carries a documented set.
+    assert "Python runtime has no third-party" in manifest
+    assert "dashboard SPA bundle does ship third-party work" in manifest
+    assert "no third-party components" not in manifest
+    for shipped in ("react 19", "motion 12", "@fontsource-variable/inter", "OFL-1.1"):
+        assert shipped in manifest, shipped
     assert "MIT" in manifest and "Apache-2.0" in manifest
 
 
