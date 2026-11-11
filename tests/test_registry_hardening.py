@@ -145,3 +145,16 @@ def test_registry_root_document_is_seeded():
     index = json.loads((repo / "registry" / "index.json").read_text(encoding="utf-8"))
     assert index == {"plugins": [], "schemaVersion": 1}
     assert load_index((repo / "registry" / "index.json").read_text(encoding="utf-8")) is not None
+
+
+def test_empty_base_index_means_nothing_published_yet(tmp_path):
+    """The workflow writes {} when the base branch has no index: that is
+    the clean first-publish case, not a broken base."""
+    from agentdesk.registry.ci import review_registry_changes
+
+    registry_root = tmp_path / "registry"
+    registry_root.mkdir()
+    (registry_root / "index.json").write_text(
+        json.dumps({"plugins": [], "schemaVersion": 1}), encoding="utf-8")
+    result = review_registry_changes(registry_root, [], base_index_text="{}")
+    assert result == {"ok": True, "reasons": []}

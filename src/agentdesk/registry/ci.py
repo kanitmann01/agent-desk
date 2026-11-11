@@ -51,8 +51,11 @@ def _hash_reasons(index, plugin_dir: Path, plugin_id: str) -> list[str]:
 def _history_reasons(new_index, base_index_text: str | None) -> list[str]:
     if base_index_text is None:
         return []
+    stripped = (base_index_text or "").strip()
+    if stripped in ("", "{}"):  # nothing published on the base yet
+        return []
     try:
-        base = load_index(base_index_text)
+        base = load_index(stripped)
     except Exception as exc:  # a malformed base still gets a named reason
         return [f"registry-ci:base-index-unreadable:{exc}"]
     reasons = []
