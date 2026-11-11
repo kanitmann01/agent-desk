@@ -10,7 +10,7 @@ from pathlib import Path
 from .hashes import check_release_hashes
 from .lint import validate_permission_lint
 from .model import Failure, Verdict
-from .reader import MANIFEST_NAME, DirectoryReader, ValidatorIOError
+from .reader import MANIFEST_NAME, DirectoryReader, ValidatorIOError, ZipReader
 from .schema import validate_schema
 
 _FAILURE_CODE_ORDER = (
@@ -50,18 +50,21 @@ def validate_plugin(path) -> Verdict:
     root = Path(path)
     if not root.exists():
         raise ValidatorIOError(f"path does not exist: {root.name}")
-    if not root.is_dir():
+    if root.is_dir():
+        reader = DirectoryReader(root)
+    elif root.is_file() and root.suffix == ".zip":
+        reader = ZipReader(root)
+    else:
         raise ValidatorIOError(f"path is neither a plugin directory nor a zip: {root.name}")
 
-    manifest_path = root / MANIFEST_NAME
-    if not manifest_path.is_file():
+    manifest_bytes = reader.read_bytes(MANIFEST_NAME)
+    if manifest_bytes is None:
         return Verdict((Failure("missing-file", f"missing {MANIFEST_NAME}"),))
     try:
-        manifest = json.loads(manifest_path.read_bytes().decode("utf-8"))
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return Verdict((Failure("bad-json", f"{MANIFEST_NAME} is not valid JSON: {exc}"),))
 
-    reader = DirectoryReader(root)
     failures = validate_schema(manifest)
     failures.extend(validate_permission_lint(manifest, reader))
     failures.extend(check_release_hashes(reader))
