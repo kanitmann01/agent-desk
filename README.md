@@ -24,6 +24,7 @@ From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to ski
 - `src/agentdesk/calendar/`: the calendar bridge (issue #5): reads the OneDrive-synced calendar JSON, picks today's key commitment, breakdowns over the corporate endpoint with a generic fallback, checks and breakdown cache in SQLite, the in-app walkthrough.
 - `src/agentdesk/assistant/`: research and the assistant (issue #6): one thin loop over the corporate endpoint, widget context attached so she never re-explains, and the audit store recording every outbound call.
 - `src/agentdesk/inbox/`: the inbox and interruption budget (issue #12): suggestion cards with origin lines, quiet hours 18:00-08:00, a cap of three notifications a day, digest batching, and 30-day dismiss recovery.
+- `src/agentdesk/repetition/`: the repetition detector and skills (issue #13): app-mediated activity log, deterministic clustering, one proposal per pattern at the fifth similar ask, dismiss cooldowns, and versioned SKILL.md skills with honest undo.
 - `src/agentdesk/llm.py`: the shared OpenAI-compatible endpoint adapter (env-configured, one attempt, no telemetry).
 - `tools/agent-desk.cmd`: the double-click launcher.
 - `tools/license_manifest.py`: the license gate (issue #7): fails on any dependency outside MIT/Apache-2.0/BSD/ISC; writes `THIRD-PARTY-LICENSES.md`.
