@@ -21,6 +21,23 @@ from agentdesk.server.demo import Widget
 MAX_EXAMPLE_ROWS = 8
 
 
+def render_sales_disabled(now: datetime) -> Widget:
+    """The designed paused state: no ingestion, an honest stamp, and the
+    reconnect path one click away."""
+    return Widget(
+        id="sales-24h",
+        title="Sales, last 24 hours",
+        col="col-7",
+        freshness=Freshness(ATTENTION, "Paused", now.strftime("%Y-%m-%dT%H:%M:%S")),
+        body_html=(
+            '<div class="well"><p class="q">Sales watching is turned off in '
+            "settings. Nothing is being read from the workbook right now.</p></div>"
+            '<a class="btn btn-primary btn-start" href="/settings">Turn it back on</a>'
+        ),
+        foot_html="No ingestion while off. Your snapshots stay on this machine.",
+    )
+
+
 def _fmt(value) -> str:
     """Cell value to display text: whole numbers grouped, text as is."""
     if isinstance(value, float) and value.is_integer():

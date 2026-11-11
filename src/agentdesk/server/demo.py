@@ -98,8 +98,9 @@ def demo_widgets() -> list[Widget]:
                 f"{_SPARK}</div>{_rows()}"
             ),
             foot_html=(
+                "<span>See what changed overnight, without opening the file.</span>"
                 '<button class="btn btn-secondary btn-start" data-pick>Connect a workbook</button>'
-                "<span>Sample data until a workbook is connected.</span>"
+                "<span>Sample data until then.</span>"
             ),
         ),
         Widget(

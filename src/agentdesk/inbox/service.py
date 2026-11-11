@@ -13,12 +13,16 @@ from agentdesk.inbox.budget import decide_budget
 from agentdesk.inbox.store import InboxStore
 
 
-def evaluate(store: InboxStore, now: datetime) -> dict:
-    """Spend the budget on waiting cards, digest-first. Returns the tally."""
+def evaluate(store: InboxStore, now: datetime, quiet_hours: bool = True, cap: int = 3) -> dict:
+    """Spend the budget on waiting cards, digest-first. Returns the tally.
+
+    Quiet hours and the cap arrive from settings so the page and the
+    enforcement can never disagree.
+    """
     unnotified = [c for c in store.waiting() if c.notified_ts is None]
     if not unnotified:
         return {"notified": 0, "queued": 0, "digest": False}
-    if decide_budget(now, store.notified_today(now)) != "notify":
+    if decide_budget(now, store.notified_today(now), quiet_hours, cap) != "notify":
         return {"notified": 0, "queued": len(unnotified), "digest": False}
     if len(unnotified) == 1:
         store.mark_notified(unnotified[0].id)

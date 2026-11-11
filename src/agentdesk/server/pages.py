@@ -88,6 +88,8 @@ svg{display:block;flex:none}
 .skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
 .skills-strip .skill-btn{background:var(--surface);color:var(--ink-1);border-radius:var(--r-control);box-shadow:inset 0 0 0 1px var(--hairline),var(--shadow-card);padding:8px 14px;font-weight:700;font-size:13px;transition:background var(--dur) ease}
 .skills-strip .skill-btn:hover{background:var(--surface-2)}
+.settings-block{display:flex;flex-direction:column;gap:8px;max-width:460px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--surface);border-radius:var(--r-control);box-shadow:var(--shadow-card);padding:10px 14px;font-weight:600;font-size:13.5px}
 .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
 .rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
@@ -261,6 +263,13 @@ document.querySelectorAll('[data-dismiss]').forEach(function (btn) {
 document.querySelectorAll('[data-restore]').forEach(function (btn) {
   btn.addEventListener('click', function () {
     post('/inbox/dismissed/' + btn.dataset.restore + '/restore').then(function () { location.reload(); });
+  });
+});
+
+// Settings: one click flips a toggle or cycles a choice; nothing to type.
+document.querySelectorAll('[data-setting]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    post('/settings/toggle', {key: btn.dataset.setting}).then(function () { location.reload(); });
   });
 });
 

@@ -112,7 +112,8 @@ def test_sample_widgets_are_labeled_as_sample(page):
     # research is an action surface (Ready); region-mix shows the designed
     # amber failure state.
     assert statuses == ["attention", "attention", "fresh", "sample"]
-    assert "Sample data until a workbook is connected." in page
+    assert "See what changed overnight, without opening the file." in page
+    assert "Sample data until then." in page
     assert "Cards without a connected source show sample data." in page
 
 

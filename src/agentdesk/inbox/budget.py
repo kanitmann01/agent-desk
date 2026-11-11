@@ -15,11 +15,15 @@ QUIET_END = 8     # 08:00 local
 DAILY_CAP = 3
 
 
-def decide_budget(now: datetime, notified_today: int) -> str:
-    """'notify' or 'queue' for a card becoming eligible at `now`."""
-    if QUIET_START <= now.hour or now.hour < QUIET_END:
+def decide_budget(now: datetime, notified_today: int, quiet_hours: bool = True, cap: int = DAILY_CAP) -> str:
+    """'notify' or 'queue' for a card becoming eligible at `now`.
+
+    Quiet hours and the cap come from settings, so what the page shows is
+    what the inbox enforces; the defaults are the spec's defaults.
+    """
+    if quiet_hours and (QUIET_START <= now.hour or now.hour < QUIET_END):
         return "queue"
-    if notified_today >= DAILY_CAP:
+    if notified_today >= cap:
         return "queue"
     return "notify"
 
