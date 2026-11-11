@@ -7,6 +7,7 @@ install path, and registry CI all run this same code.
 import json
 from pathlib import Path
 
+from .lint import validate_permission_lint
 from .model import Failure, Verdict
 from .reader import MANIFEST_NAME, ValidatorIOError
 from .schema import validate_schema
@@ -59,4 +60,6 @@ def validate_plugin(path) -> Verdict:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return Verdict((Failure("bad-json", f"{MANIFEST_NAME} is not valid JSON: {exc}"),))
 
-    return Verdict(_sorted_failures(validate_schema(manifest)))
+    failures = validate_schema(manifest)
+    failures.extend(validate_permission_lint(manifest))
+    return Verdict(_sorted_failures(failures))

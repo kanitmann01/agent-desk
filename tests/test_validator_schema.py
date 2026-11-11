@@ -141,3 +141,12 @@ def test_license_allowlist_accepts_all_five(tmp_path):
         verdict = validate_plugin(write_plugin(tmp_path, manifest))
 
         assert "bad-license" not in codes(verdict), license_id
+
+
+def test_permissions_without_shell_key_is_bad_schema(tmp_path):
+    manifest = {**VALID_MANIFEST}
+    del manifest["permissions"]["shell"]
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert ("bad-schema", "permissions must declare shell") in failures(verdict)
