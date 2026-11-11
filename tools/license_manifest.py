@@ -85,7 +85,9 @@ need node, npm, or any of these packages at runtime.
 | tailwindcss 4.3.5, @tailwindcss/vite 4.3.5 | styling (dev build) | MIT |
 | motion 12.43.0 | animation (the framer-motion package) | MIT |
 | clsx 2.1.1 | class name helper | MIT |
-| react-bits (vendored components in `frontend/src/vendor/reactbits/`) | SpotlightCard, GlassSurface, GlareHover, CountUp, ClickSpark | MIT + Commons Clause |
+| @fontsource-variable/inter 5.3.0 | Inter Variable, the body typeface (font files ship in the bundle) | OFL-1.1 |
+| @fontsource-variable/space-grotesk 5.3.0 | Space Grotesk Variable, the display typeface (font files ship in the bundle) | OFL-1.1 |
+| react-bits (vendored components in `frontend/src/vendor/reactbits/`) | Aurora, StarBorder, TiltedCard, Magnet, GradientText, ShinyText, DecryptedText, AnimatedList, LatticeLoader, StatusMark, GlassSurface, GlareHover, CountUp, ClickSpark, SpotlightCard | MIT + Commons Clause |
 
 License notes:
 
@@ -99,9 +101,27 @@ License notes:
   Clause: free for personal and commercial use; the restriction is on
   selling the library itself. Agent Desk is an internal tool, not sold,
   so the restriction does not apply. The vendored component files carry
-  provenance headers pointing at the upstream repository.
-- Only the built bundle ships to users. No package is distributed: the
-  built JavaScript is Agent Desk's own artifact.
+  provenance headers pointing at the upstream repository. The vendored
+  set adds no npm dependency beyond motion: AnimatedList is vendored
+  without its demo rows and the two icon packages they import, and
+  TextType and SplitText are in-repo equivalents because the upstream
+  ones animate through GSAP, whose license is not on the allowlist.
+- Inter and Space Grotesk come from the @fontsource-variable packages
+  under the SIL Open Font License 1.1 (OFL-1.1). Unlike the rest of this
+  table, the fonts themselves ship: the build copies their .woff2 files
+  into the bundle, so the app never fetches a font from another origin.
+  The OFL allows bundling and redistribution with software and asks
+  that the copyright notice and license travel with the fonts: both
+  license texts are committed in `frontend/public/licenses/` and the
+  build emits them next to the fonts, in
+  `src/agentdesk/server/static/spa/licenses/`. OFL-1.1 is a font
+  license and is not on the allowlist above, which gates the Python
+  dependencies declared in pyproject; the fonts are listed here so the
+  record is complete.
+- Only the built bundle ships to users. No npm package is distributed
+  as such: the built JavaScript is Agent Desk's own artifact, and the
+  two font families above are the only third-party files copied into
+  the bundle unchanged.
 """
 
 
