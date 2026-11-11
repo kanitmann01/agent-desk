@@ -78,3 +78,21 @@ def set_flag(conn: sqlite3.Connection, key: str, value: str) -> None:
 def get_flag(conn: sqlite3.Connection, key: str) -> str | None:
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row[0] if row else None
+
+
+# The explicitly chosen calendar file, keyed here like the excel watch
+# keys its registered workbook: the choice survives restarts.
+CALENDAR_PATH_KEY = "calendar_path"
+
+
+def set_calendar_path(conn: sqlite3.Connection, path: str) -> None:
+    set_flag(conn, CALENDAR_PATH_KEY, path)
+
+
+def get_calendar_path(conn: sqlite3.Connection) -> str | None:
+    return get_flag(conn, CALENDAR_PATH_KEY)
+
+
+def clear_calendar_path(conn: sqlite3.Connection) -> None:
+    with conn:
+        conn.execute("DELETE FROM meta WHERE key = ?", (CALENDAR_PATH_KEY,))

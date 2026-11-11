@@ -85,6 +85,17 @@ def default_read_calendar():
     return None
 
 
+def read_explicit_calendar(path_text: str):
+    """Read one named file, or None when it is absent or unreadable."""
+    path = Path(path_text)
+    try:
+        if path.is_file():
+            return str(path), path.read_bytes()
+    except OSError:  # mid-sync read: treat as not found this poll
+        return None
+    return None
+
+
 def default_adapters() -> Adapters:
     return Adapters(read_calendar=default_read_calendar, clock=time.time)
 
@@ -122,7 +133,7 @@ class CalendarBridge:
         now = self.adapters.clock()
         found = None
         try:
-            found = self.adapters.read_calendar()
+            found = self._read_calendar()
         except OSError:
             found = None
         if found is None:
@@ -156,6 +167,21 @@ class CalendarBridge:
             return self.status()
         self._state, self._cause = STATE_HEALTHY, ""
         return self.status()
+
+    def explicit_path(self) -> str | None:
+        """The file the user chose in the app, when one is stored."""
+        return store.get_calendar_path(self.conn)
+
+    def _read_calendar(self):
+        """The read the poll uses, in precedence order: the explicitly
+        chosen file first (exclusive while set, like the env override),
+        then the adapter's discovery (env override, then candidates)."""
+        explicit = self.explicit_path()
+        if explicit:
+            found = read_explicit_calendar(explicit)
+            if found is not None:
+                return found
+        return self.adapters.read_calendar()
 
     def upcoming(self, now: datetime, within_hours: float = 1.0) -> list:
         """Events starting within the window, soonest first. None when no

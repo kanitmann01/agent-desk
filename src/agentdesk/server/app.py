@@ -28,6 +28,11 @@ from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import assistant_reply, research
+from agentdesk.calendar import store as calendar_store
+from agentdesk.calendar.core import (
+    CalendarUnreadable,
+    parse_calendar_document,
+)
 from agentdesk.calendar.watcher import (
     STATE_EMPTY,
     CalendarBridge,
@@ -239,6 +244,32 @@ def workbook_path_problem(path_text: str) -> str:
     return ""
 
 
+def calendar_document_problem(data: bytes) -> str:
+    """'' when the bytes parse as a calendar document; otherwise the cause."""
+    try:
+        parse_calendar_document(json.loads(data))
+    except (CalendarUnreadable, ValueError) as exc:
+        return f"That file is not a calendar document: {exc}"
+    return ""
+
+
+def calendar_path_problem(path_text: str) -> str:
+    """'' when the path names a readable calendar file; else the cause.
+
+    Checked before the choice is stored: an explicit path that cannot be
+    read today would only move the failure to every later poll."""
+    candidate = Path(path_text)
+    if not candidate.exists():
+        return f"That path does not exist: {path_text}"
+    if not candidate.is_file():
+        return f"That path is a folder, not a file: {path_text}"
+    try:
+        data = candidate.read_bytes()
+    except OSError:
+        return f"The file could not be read (it may be locked by another program): {path_text}"
+    return calendar_document_problem(data)
+
+
 class AgentDeskServer(ThreadingHTTPServer):
     """The app server: sessions, source table, and the excel watch."""
 
@@ -261,10 +292,12 @@ class AgentDeskServer(ThreadingHTTPServer):
         skill_store: SkillStore | None = None,
         settings_store: SettingsStore | None = None,
         plugins: PluginRuntime | None = None,
+        pick_calendar=None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
         self.pick_workbook = pick_workbook
+        self.pick_calendar = pick_calendar
         self.calendar = calendar
         self.llm = llm if llm is not None else env_chat()
         self.audit_conn = audit_conn
@@ -412,9 +445,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/widgets/commitments":
             self._send_commitments_status()
         elif path == "/walkthrough/calendar":
+            calendar = self.server.calendar  # type: ignore[attr-defined]
+            explicit = calendar.explicit_path() if calendar is not None else None
+            hint = default_calendar_hint(explicit)
             self._send_bytes(
                 200,
-                pages.render_walkthrough(str(default_calendar_hint())).encode("utf-8"),
+                pages.render_walkthrough(str(hint), explicit_path=explicit or "").encode("utf-8"),
                 "text/html; charset=utf-8",
             )
         elif path == "/assistant":
@@ -507,6 +543,64 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if calendar is None:
                 self._send_json(503, {"error": "the calendar bridge is not available"})
                 return
+            calendar.retest()
+            self._maybe_briefs()
+            self._send_json(200, calendar.status())
+        elif path == "/sources/calendar-bridge/pick":
+            if calendar is None:
+                self._send_json(503, {"error": "the calendar bridge is not available"})
+                return
+            self._send_json(200, {"path": self.server.pick_calendar()})  # type: ignore[attr-defined]
+        elif path == "/sources/calendar-bridge/path":
+            if calendar is None:
+                self._send_json(503, {"error": "the calendar bridge is not available"})
+                return
+            body = self._read_json_body()
+            if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
+                self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
+                return
+            chosen = body["path"].strip()
+            problem = calendar_path_problem(chosen)
+            if problem:
+                self._send_json(400, {"error": problem})
+                return
+            # Stored before the poll so the choice survives restarts; the
+            # poll right now is the card's feedback that it took effect.
+            calendar_store.set_calendar_path(calendar.conn, chosen)
+            calendar.retest()
+            self._maybe_briefs()
+            self._send_json(200, calendar.status())
+        elif path == "/sources/calendar-bridge/upload":
+            if calendar is None:
+                self._send_json(503, {"error": "the calendar bridge is not available"})
+                return
+            raw = getattr(self, "_raw_body", b"")
+            try:
+                declared = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                declared = 0
+            if declared > MAX_BODY_BYTES:
+                self._send_json(400, {"error": "The calendar file is larger than 1 MB. Trim the export, or point at the file by path instead."})
+                return
+            if not raw.strip():
+                self._send_json(400, {"error": "Send the calendar JSON as the request body."})
+                return
+            problem = calendar_document_problem(raw)
+            if problem:
+                self._send_json(400, {"error": problem})
+                return
+            target = default_data_dir() / "calendar_sync.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+            calendar_store.set_calendar_path(calendar.conn, str(target))
+            calendar.retest()
+            self._maybe_briefs()
+            self._send_json(200, calendar.status())
+        elif path == "/sources/calendar-bridge/reset":
+            if calendar is None:
+                self._send_json(503, {"error": "the calendar bridge is not available"})
+                return
+            calendar_store.clear_calendar_path(calendar.conn)
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())
@@ -1203,6 +1297,7 @@ def create_server(
     skill_store: SkillStore | None = None,
     settings_store: SettingsStore | None = None,
     plugins: PluginRuntime | None = None,
+    pick_calendar=None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -1238,12 +1333,14 @@ def create_server(
             skill_store = repetition[1]
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
+    if pick_calendar is None:
+        pick_calendar = tk_pick_calendar
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
             (resolved, bind_port), sessions, excel, pick_workbook,
             calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
-            activity_log, skill_store, settings_store, plugins,
+            activity_log, skill_store, settings_store, plugins, pick_calendar,
         )
 
     if port is None:
@@ -1358,14 +1455,17 @@ def _default_settings_store() -> SettingsStore | None:
         return None
 
 
-def default_calendar_hint() -> Path:
+def default_calendar_hint(explicit: str | None = None) -> Path:
     """The calendar path the walkthrough shows as 'the app watches this'.
 
-    The reader accepts several shapes (plain OneDrive, the 'OneDrive -
-    Company' glob, macOS CloudStorage); the hint shows the first one that
-    exists on this machine, falling back to the first default, so it never
-    names a path the reader would ignore.
+    An explicitly chosen path is shown as is: that is the file the reader
+    uses. Otherwise the reader accepts several shapes (plain OneDrive, the
+    'OneDrive - Company' glob, macOS CloudStorage); the hint shows the
+    first one that exists on this machine, falling back to the first
+    default, so it never names a path the reader would ignore.
     """
+    if explicit:
+        return Path(explicit)
     candidates = default_calendar_candidates()
     for candidate in candidates:
         if candidate.is_file():

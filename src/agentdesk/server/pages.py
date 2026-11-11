@@ -275,6 +275,64 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   });
 });
 
+// Calendar source: pick a file, paste a path, upload the JSON by hand,
+// or go back to automatic discovery. Nothing fails silently: the note
+// on the page carries every refusal from the server.
+(function () {
+  var note = document.getElementById('calendar-note');
+  if (!note) return;
+  var show = function (text) { note.hidden = false; note.textContent = text; };
+  var couldNotReach = 'The dashboard could not reach its own server; nothing changed.';
+  var apply = function (url, body) {
+    post(url, body).then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { show(d.error); return; }
+        location.reload();
+      })
+      .catch(function () { show(couldNotReach); });
+  };
+  var pick = document.querySelector('[data-calendar-pick]');
+  if (pick) pick.addEventListener('click', function () {
+    post('/sources/calendar-bridge/pick').then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.path) { show('The file dialog did not open. Paste the path below instead.'); return; }
+        apply('/sources/calendar-bridge/path', {path: d.path});
+      })
+      .catch(function () { show(couldNotReach); });
+  });
+  var usePath = document.querySelector('[data-calendar-path]');
+  if (usePath) usePath.addEventListener('click', function () {
+    var input = document.getElementById('calendar-path');
+    var path = input ? input.value.trim() : '';
+    if (!path) { show('Paste the full path to the calendar file first.'); return; }
+    apply('/sources/calendar-bridge/path', {path: path});
+  });
+  var upload = document.querySelector('[data-calendar-upload]');
+  if (upload) upload.addEventListener('click', function () {
+    var input = document.getElementById('calendar-file');
+    var file = input && input.files && input.files[0];
+    if (!file) { show('Choose the calendar JSON file first.'); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      fetch('/sources/calendar-bridge/upload', {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: reader.result})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.error) { show(d.error); return; }
+          location.reload();
+        })
+        .catch(function () { show('The dashboard could not reach its own server; nothing was uploaded.'); });
+    };
+    reader.onerror = function () { show('The browser could not read that file.'); };
+    reader.readAsText(file);
+  });
+  var reset = document.querySelector('[data-calendar-reset]');
+  if (reset) reset.addEventListener('click', function () {
+    apply('/sources/calendar-bridge/reset');
+  });
+})();
+
 // Inbox decisions: dismiss is immediate and reversible, accept consumes.
 document.querySelectorAll('[data-accept]').forEach(function (btn) {
   btn.addEventListener('click', function () {
@@ -551,15 +609,32 @@ def render_error_page(title: str, message: str) -> str:
 """
 
 
-def render_walkthrough(watch_hint: str) -> str:
+def render_walkthrough(watch_hint: str, explicit_path: str = "") -> str:
     """The calendar connection walkthrough: three browser steps, no terminal.
 
     The user creates the Power Automate flow themselves in their browser;
     this page says exactly what to click, what the app expects to find,
-    and where it watches. The Check-now button re-reads the folder, so
-    the moment the flow has run once, the dashboard confirms it.
+    and where it watches. The source section below the steps is for the
+    days automatic discovery is not enough: pick a file, paste a path,
+    upload the JSON by hand, or go back to automatic. The Check-now
+    button re-reads, so the moment data arrives, the dashboard confirms.
     """
     hint = html.escape(watch_hint)
+    if explicit_path:
+        watch_line = (
+            "<p>You chose a specific file, so automatic discovery is set "
+            "aside and the app reads exactly:</p>"
+        )
+        reset_html = (
+            '<button class="btn btn-secondary" data-calendar-reset>'
+            "Back to automatic discovery</button>"
+        )
+    else:
+        watch_line = "<p>Once the flow has run, the app finds the file here:</p>"
+        reset_html = (
+            '<button class="btn btn-secondary" data-calendar-reset>'
+            "Reset to automatic discovery</button>"
+        )
     return """<!doctype html>
 <html lang="en">
 <head>
@@ -585,7 +660,7 @@ folder path to <b>/agent-desk</b> (create it), the file name to
 <b>calendar_sync.json</b>, and File Content to the calendar events value
 from the previous step. Save the flow.</li>
 </ol>
-<p>Once the flow has run, the app finds the file here:</p>
+""" + watch_line + """
 <pre>""" + hint + """</pre>
 <p>The file looks like this (the flow builds it; this is only the shape):</p>
 <pre>{
@@ -596,6 +671,26 @@ from the previous step. Save the flow.</li>
      "location": "Room Beaufort", "attendees": 6}
   ]
 }</pre>
+<h2>Use a different calendar file</h2>
+<p>If your data lands somewhere else, choose the file here: pick it with
+the file dialog, paste its full path, or upload the JSON by hand. Your
+choice wins over automatic discovery, survives restarts, and the card
+refreshes immediately. Reset returns to automatic.</p>
+<div class="cardrow">
+<button class="btn btn-secondary" data-calendar-pick>Pick a file</button>
+""" + reset_html + """
+</div>
+<div class="well">
+<input id="calendar-path" class="well-input" type="text"
+placeholder="Full path to the calendar JSON file" aria-label="Calendar file path">
+<button class="btn btn-secondary" data-calendar-path>Use this path</button>
+</div>
+<div class="well">
+<input id="calendar-file" type="file" accept=".json,application/json"
+aria-label="Calendar JSON file to upload">
+<button class="btn btn-secondary" data-calendar-upload>Upload this file</button>
+</div>
+<div class="alert" id="calendar-note" hidden></div>
 <div class="cardrow">
 <button class="btn btn-primary" data-calendar-retest>Check for calendar data now</button>
 <a class="btn btn-secondary" href="/">Back to the dashboard</a>

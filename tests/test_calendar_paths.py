@@ -16,7 +16,17 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.calendar.watcher import default_calendar_candidates, default_read_calendar
+from agentdesk.calendar.store import (
+    clear_calendar_path,
+    get_calendar_path,
+    set_calendar_path,
+)
+from agentdesk.calendar.watcher import (
+    Adapters,
+    CalendarBridge,
+    default_calendar_candidates,
+    default_read_calendar,
+)
 from agentdesk.server.app import default_calendar_hint
 
 
@@ -116,3 +126,70 @@ class TestHint:
         monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", str(override))
 
         assert default_calendar_hint() == override
+
+
+class TestExplicitPathPrecedence:
+    """The stored explicit choice outranks env, which outranks candidates.
+
+    The bridge polls through the same precedence, so what the source
+    page shows is what every poll reads.
+    """
+
+    def make_bridge(self, tmp_path):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        adapters = Adapters(read_calendar=default_read_calendar, clock=lambda: 1_700_000_000.0)
+        return CalendarBridge(conn, adapters, llm=lambda p: "")
+
+    def test_explicit_beats_env_beats_candidates(self, monkeypatch, tmp_path):
+        home = fake_home(monkeypatch, tmp_path)
+        candidates_file = plant(home, "OneDrive")
+        env_file = tmp_path / "env" / "calendar_sync.json"
+        env_file.parent.mkdir()
+        env_file.write_bytes(b"{}")
+        explicit_file = tmp_path / "chosen" / "my-calendar.json"
+        explicit_file.parent.mkdir()
+        explicit_file.write_bytes(b"{}")
+        monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", str(env_file))
+
+        bridge = self.make_bridge(tmp_path)
+        assert bridge.poll()["path"] == str(env_file)  # env wins over candidates
+
+        set_calendar_path(bridge.conn, str(explicit_file))
+        assert bridge.poll()["path"] == str(explicit_file)  # explicit wins over env
+
+        clear_calendar_path(bridge.conn)
+        assert bridge.poll()["path"] == str(env_file)
+
+    def test_explicit_set_but_missing_falls_through_to_env(self, monkeypatch, tmp_path):
+        home = fake_home(monkeypatch, tmp_path)
+        env_file = tmp_path / "env" / "calendar_sync.json"
+        env_file.parent.mkdir()
+        env_file.write_bytes(b"{}")
+        monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", str(env_file))
+
+        bridge = self.make_bridge(tmp_path)
+        set_calendar_path(bridge.conn, str(tmp_path / "gone.json"))
+        assert bridge.poll()["path"] == str(env_file)
+
+    def test_store_round_trip_and_clear(self, monkeypatch, tmp_path):
+        home = fake_home(monkeypatch, tmp_path)
+        bridge = self.make_bridge(tmp_path)
+        assert get_calendar_path(bridge.conn) is None
+
+        set_calendar_path(bridge.conn, str(tmp_path / "a.json"))
+        assert get_calendar_path(bridge.conn) == str(tmp_path / "a.json")
+
+        set_calendar_path(bridge.conn, str(tmp_path / "b.json"))
+        assert get_calendar_path(bridge.conn) == str(tmp_path / "b.json")
+
+        clear_calendar_path(bridge.conn)
+        assert get_calendar_path(bridge.conn) is None
+
+    def test_hint_names_the_explicit_path_when_set(self, monkeypatch, tmp_path):
+        home = fake_home(monkeypatch, tmp_path)
+        plant(home, "OneDrive")  # a real default exists, but is outranked
+        explicit = tmp_path / "chosen" / "my-calendar.json"
+
+        assert default_calendar_hint(str(explicit)) == explicit
