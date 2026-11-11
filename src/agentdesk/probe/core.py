@@ -45,7 +45,7 @@ class RunResult:
     returncode: int
     stdout: str = ""
     stderr: str = ""
-    error: str = ""  # set when the command could not even start
+    error: str = ""  # set when the command could not start, or it timed out
 
 
 @dataclass(frozen=True)
