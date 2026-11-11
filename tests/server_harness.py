@@ -25,6 +25,7 @@ from agentdesk.calendar.watcher import Adapters as CalendarAdapters
 from agentdesk.calendar.watcher import CalendarBridge
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
+from agentdesk.inbox.store import InboxStore
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
@@ -47,6 +48,10 @@ def _inert_skills():
 
 def _inert_settings():
     return SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_inbox():
+    return InboxStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
 def _inert_excel() -> ExcelWatch:
@@ -81,6 +86,7 @@ class Booted:
         kwargs.setdefault("activity_log", _inert_activity())
         kwargs.setdefault("skill_store", _inert_skills())
         kwargs.setdefault("settings_store", _inert_settings())
+        kwargs.setdefault("inbox_store", _inert_inbox())
         self.server = server_app.create_server(port=0, **kwargs)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

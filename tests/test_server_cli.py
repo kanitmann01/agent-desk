@@ -1,7 +1,8 @@
 """CLI wiring tests: argument parsing and the serve call, without blocking.
 
 `main` is thin on purpose; these tests pin its contract (defaults, the
---no-browser path) by watching the serve call instead of serving.
+--no-browser path) by watching create_server and serve instead of
+building real stores.
 """
 
 import sys
@@ -30,23 +31,39 @@ def test_port_and_no_browser_flags_parse():
 def test_main_builds_a_loopback_server_and_honors_no_browser(monkeypatch):
     calls = {}
 
+    def fake_create_server(*args, **kwargs):
+        calls["host"] = kwargs.get("host", args[0] if args else None)
+        calls["port"] = kwargs.get("port")
+
+        class FakeServer:
+            pass
+
+        return FakeServer()
+
     def fake_serve(server, open_browser):
-        calls["host"] = server.server_address[0]
         calls["open_browser"] = open_browser
 
+    monkeypatch.setattr(cli.app, "create_server", fake_create_server)
     monkeypatch.setattr(cli.app, "serve", fake_serve)
     assert cli.main(["--no-browser"]) == 0
-    assert calls["host"] == "127.0.0.1"
+    assert calls["host"] in ("127.0.0.1", None)
+    assert calls["port"] is None
     assert calls["open_browser"] is False
 
 
 def test_main_defaults_to_opening_the_browser(monkeypatch):
     calls = {}
 
+    def fake_create_server(*args, **kwargs):
+        class FakeServer:
+            pass
+
+        return FakeServer()
+
     def fake_serve(server, open_browser):
         calls["open_browser"] = open_browser
-        server.server_close()
 
+    monkeypatch.setattr(cli.app, "create_server", fake_create_server)
     monkeypatch.setattr(cli.app, "serve", fake_serve)
     assert cli.main([]) == 0
     assert calls["open_browser"] is True
