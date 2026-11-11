@@ -8,6 +8,8 @@ Status: the walking skeleton is built (#2 probe, #8 validator CLI, #3 dashboard 
 
 Double-click `tools/agent-desk.cmd`. It finds Python (falling back through `py`, then `uv` with the Windows trust store), starts the dashboard windowless, and opens your browser at a one-time start link that becomes your session cookie. No admin rights, no terminal. The server binds 127.0.0.1 only.
 
+On macOS, run `chmod +x tools/*.command` once, then double-click `tools/agent-desk.command`. The server starts detached, so the Terminal window can close, and its output lands in `~/.agent-desk/agent-desk.log`. The calendar file lives under `~/Library/CloudStorage/OneDrive*/agent-desk/calendar_sync.json`; the walkthrough page shows the exact path your machine uses.
+
 From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to skip the browser open).
 
 ## Where things are
