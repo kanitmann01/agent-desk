@@ -25,7 +25,7 @@ from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import assistant_reply, research
-from agentdesk.calendar.watcher import CalendarBridge, default_read_calendar
+from agentdesk.calendar.watcher import CalendarBridge, default_calendar_candidates, default_read_calendar
 from agentdesk.excel import store as excel_store
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
@@ -976,11 +976,18 @@ def _default_settings_store() -> SettingsStore | None:
 
 
 def default_calendar_hint() -> Path:
-    """The calendar path the walkthrough shows as 'the app watches this'."""
-    env_path = os.environ.get("AGENTDESK_CALENDAR_FILE")
-    if env_path:
-        return Path(env_path)
-    return Path(Path.home(), "OneDrive", "agent-desk", "calendar_sync.json")
+    """The calendar path the walkthrough shows as 'the app watches this'.
+
+    The reader accepts several shapes (plain OneDrive, the 'OneDrive -
+    Company' glob, macOS CloudStorage); the hint shows the first one that
+    exists on this machine, falling back to the first default, so it never
+    names a path the reader would ignore.
+    """
+    candidates = default_calendar_candidates()
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
 
 
 def _default_calendar_bridge() -> CalendarBridge | None:
