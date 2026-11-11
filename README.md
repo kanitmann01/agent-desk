@@ -2,7 +2,7 @@
 
 A no-code personal agent for a locked-down corporate Windows laptop. One double-click opens a local web dashboard: what changed in the sales file overnight, today's key commitment broken into subtasks, a research panel, and plugins described in plain English that the agent builds, previews, and installs after one consolidated approval. No admin rights, no terminal, no data leaving the machine except derived abstractions sent to the corporate LLM endpoint.
 
-Status: the walking skeleton is built (#2 probe, #8 validator CLI, #3 dashboard shell). The widget, registry and wizard tickets are next. The canonical spec lives in this repo's issue tracker (issue #1, labeled `ready-for-agent`).
+Status: the dashboard, the excel and calendar widgets, research and the assistant, the inbox, the repetition detector, briefs, settings, the plugin runtime and the internal registry are built (#2 to #7, #12 to #15, plus #9 and #10); the English-to-plugin wizard is in flight (#11). The canonical spec lives in this repo's issue tracker (issue #1, labeled `ready-for-agent`).
 
 ## Start it
 
