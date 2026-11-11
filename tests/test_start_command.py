@@ -70,6 +70,12 @@ def test_start_command_stops_the_api_when_the_ui_stops():
     assert 'kill "$(cat "$pid")"' in text
 
 
+def test_start_command_dev_names_the_real_dev_url():
+    text = cmd_text()
+    assert "http://localhost:5173/static/spa/" in text
+    assert "127.0.0.1:8765 replaced by localhost:5173" in text
+
+
 def test_start_command_gates_on_python_version():
     assert "version_info >= (3, 10)" in cmd_text()
 

@@ -51,7 +51,9 @@ goto :end
 :ui
 echo The API window prints the one-time start link (port 8765).
 start "Agent Desk UI (dev)" cmd /k npm --prefix "%~dp0..\frontend" run dev
-echo The UI window prints its own address (vite default: http://localhost:5173).
+echo Open the UI at http://localhost:5173/static/spa/
+echo If it says a session is required: open the API window's start link
+echo with 127.0.0.1:8765 replaced by localhost:5173.
 echo Close both windows to stop everything.
 
 :end

@@ -60,6 +60,14 @@ def test_start_cmd_has_the_same_interpreter_fallbacks():
     assert "uv run --no-project python" in text
 
 
+def test_start_cmd_dev_names_the_real_dev_url():
+    # vite serves under its base path, and the API link needs the host
+    # swapped so the session cookie lands on the dev origin.
+    text = cmd_text()
+    assert "http://localhost:5173/static/spa/" in text
+    assert "127.0.0.1:8765 replaced by localhost:5173" in text
+
+
 def test_start_cmd_checks_npm_and_frontend_before_dev():
     # Honest dead-ends instead of a window that opens and dies.
     text = cmd_text()
