@@ -36,7 +36,11 @@ export default function WidgetCard({ title, col, stamp, badge, amber, foot, chil
           backgroundOpacity={0.8}
           refraction={false}
           renderer="svg"
-          className="w-full h-full"
+          // The component defaults its width/height PROPS to 200x80 px
+          // written as inline styles; explicit 100% strings make the glass
+          // fill the grid column instead.
+          width="100%"
+          height="100%"
         >
           <article className="widget" style={{ width: '100%' }}>
             <div className="w-head">
