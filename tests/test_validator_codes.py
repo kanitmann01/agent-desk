@@ -7,7 +7,7 @@ from . import test_validator_support  # noqa: F401  (puts src/ on sys.path)
 import agentdesk.validator
 from agentdesk.validator.core import FAILURE_CODES
 
-EMITTING_MODULES = ("schema", "lint", "hashes")
+EMITTING_MODULES = ("core", "schema", "lint", "hashes")
 
 
 def failure_code_literals(module_name: str) -> set[str]:
