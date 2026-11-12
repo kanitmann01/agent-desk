@@ -43,10 +43,11 @@ License notes:
   in the npm registry metadata for each version pinned in
   `frontend/package.json`.
 - The dark-glass theme's vendored react-bits components (MIT plus
-  Commons Clause) and the motion, Tailwind CSS and clsx packages left
-  with that theme: the warm-paper system (docs/design-language.md) is
-  drawn entirely in the repo's own stylesheet and components. Nothing
-  in the bundle carries a Commons Clause obligation anymore.
+  Commons Clause) and its animation, styling and class-helper packages
+  left with that theme: the warm-paper system
+  (docs/design-language.md) is drawn entirely in the repo's own
+  stylesheet and components. Nothing in the bundle carries a Commons
+  Clause obligation anymore.
 - The two font families come from their @fontsource packages under
   the SIL Open Font License 1.1 (OFL-1.1). Unlike the rest of this
   table, the fonts themselves ship: the build copies their .woff2 files
