@@ -21,6 +21,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import agentdesk
 from agentdesk.assistant import audit as audit_store
@@ -126,6 +127,26 @@ SECURITY_HEADERS = (
 )
 
 MAX_BODY_BYTES = 1024 * 1024
+
+# A body over MAX_BODY_BYTES is refused but still drained, so a keep-alive
+# connection survives the refusal; this is the hard bound on that draining.
+# Beyond it the server answers and closes instead of reading unboundedly:
+# keeping a localhost connection is never worth reading gigabytes.
+MAX_DRAIN_BYTES = 8 * MAX_BODY_BYTES
+
+
+def body_drain_plan(length: int) -> str:
+    """What to do with a request body of this declared length: 'skip'
+    (nothing declared), 'stash' it for the route, 'discard' it (over the
+    stash limit but within the hard cap), or 'close' (beyond the cap;
+    the answer goes out with Connection: close)."""
+    if length <= 0:
+        return "skip"
+    if length <= MAX_BODY_BYTES:
+        return "stash"
+    if length <= MAX_DRAIN_BYTES:
+        return "discard"
+    return "close"
 
 # The committed SPA build, emitted by frontend/ (npm run build) directly
 # into this folder and committed, so the double-click launcher serves it
@@ -319,6 +340,18 @@ def calendar_path_problem(path_text: str) -> str:
     except OSError:
         return f"The file could not be read (it may be locked by another program): {path_text}"
     return calendar_document_problem(data)
+
+
+def form_body_fields(raw: bytes) -> dict | None:
+    """Form-urlencoded bytes as the dict the JSON handlers read: each
+    field mapped to its first value. The fallback for bodies that declare
+    the form content type (the no-JS screens), never a speculative parse
+    of anything else."""
+    try:
+        fields = parse_qs(raw.decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
+    return {name: values[0] for name, values in fields.items() if values}
 
 
 class AgentDeskServer(ThreadingHTTPServer):
@@ -532,6 +565,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 (http.server contract)
         self._responded = False
+        self._close_with_response = False
         try:
             self._route_post()
         except Exception:  # noqa: BLE001
@@ -545,22 +579,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- the gate every request passes ----------------------------------
 
     def _gate(self) -> bool:
-        """Origin/Host guard, then session auth. Sends the answer itself."""
+        """Origin/Host guard, then session auth. Sends the answer itself.
+
+        Both refusals end the connection: the gate runs before the body
+        is drained, and an unread body on a kept-alive connection is
+        exactly what the drain exists to prevent."""
         verdict = check_request(
             self.headers.get("Host"),
             self.headers.get("Origin"),
             self.server.port,  # type: ignore[attr-defined]
         )
         if not verdict.allowed:
-            self._send_error_page(403, "Blocked", "This request did not come from the dashboard's own address.")
+            self._refuse_and_close(403, "Blocked", "This request did not come from the dashboard's own address.")
             return False
         if not self._authenticated():
-            self._send_error_page(
+            self._refuse_and_close(
                 401, "Session required",
                 "Open Agent Desk from its shortcut to get a fresh link.",
             )
             return False
         return True
+
+    def _refuse_and_close(self, status: int, title: str, message: str) -> None:
+        """Answer a refusal with Connection: close. The body is read up
+        to the stash limit first, because closing over an unread buffer
+        sends RST on Windows and can eat the very response being sent; a
+        larger body is not worth reading for a request that already
+        failed the gate."""
+        length = self._declared_length()
+        if 0 < length <= MAX_BODY_BYTES:
+            self.rfile.read(length)
+        self._close_with_response = True
+        self.close_connection = True
+        self._send_error_page(status, title, message)
 
     # -- GET -------------------------------------------------------------
 
@@ -729,10 +780,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(503, {"error": "the calendar bridge is not available"})
                 return
             raw = getattr(self, "_raw_body", b"")
-            try:
-                declared = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                declared = 0
+            declared = getattr(self, "_content_length", 0)
             if declared > MAX_BODY_BYTES:
                 self._send_json(400, {"error": "The calendar file is larger than 1 MB. Trim the export, or point at the file by path instead."})
                 return
@@ -759,14 +807,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._maybe_briefs()
             self._send_json(200, calendar.status())
         elif path == "/research":
-            body = self._read_json_body()
-            question = (body or {}).get("question")
-            if not isinstance(question, str) or not question.strip():
+            question = self._ask_question_from_body()
+            if not question:
                 self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
                 return
-            self._log_activity("research", question.strip())
+            self._log_activity("research", question)
             self._send_json(200, self._run_llm_turn(
-                question.strip(), summary_mode=True).to_json())
+                question, summary_mode=True).to_json())
         elif path == "/inbox/cards":
             if self.server.inbox is None:  # type: ignore[attr-defined]
                 self._send_json(503, {"error": "the inbox is not available"})
@@ -847,18 +894,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return "application/x-www-form-urlencoded" in (self.headers.get("Content-Type") or "")
 
     def _ask_question_from_body(self) -> str | None:
-        raw = getattr(self, "_raw_body", b"")
-        if not raw:
-            return None
-        if self._is_form_submit():
-            from urllib.parse import parse_qs
-
-            fields = parse_qs(raw.decode("utf-8"))
-            values = fields.get("question", [])
-            return values[0].strip() if values and values[0].strip() else None
         body = self._read_json_body()
         question = (body or {}).get("question")
         return question.strip() if isinstance(question, str) and question.strip() else None
+
+    def _answers_from_form(self, body: dict, questions: list,
+                           earlier: dict | None = None) -> dict | None:
+        """A form post's fields as an answers dict, or None when the body
+        is not one question form's shape. Each form carries the question's
+        index in a hidden field and the chosen option in the answer field;
+        earlier answers win over defaults, this form's choice wins over
+        both, so answering the forms one at a time keeps every choice."""
+        choice = body.get("answer")
+        if not isinstance(choice, str) or not choice.strip():
+            return None
+        index_text = str(body.get("question", ""))
+        if not index_text.isascii() or not index_text.isdigit():
+            return None
+        index = int(index_text)
+        if index >= len(questions):
+            return None
+        answers = {q["id"]: q.get("default", "") for q in questions}
+        answers.update(earlier or {})
+        answers[questions[index]["id"]] = choice.strip()
+        return answers
 
     def _run_llm_turn(self, question: str, *, summary_mode: bool):
         server = self.server  # type: ignore[attr-defined]
@@ -900,20 +959,44 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return chat_client(base, key, model), base, model
         return server.llm, server.llm_endpoint, server.llm_model
 
-    def _drain_body(self) -> bytes:
-        """Read and stash the request body; the route decides what it means."""
+    def _declared_length(self) -> int:
+        """The Content-Length header as an int, 0 when absent or malformed.
+        The one place the header is parsed; everything else reads this."""
         try:
-            length = int(self.headers.get("Content-Length", "0"))
+            return int(self.headers.get("Content-Length", "0"))
         except ValueError:
+            return 0
+
+    def _drain_body(self) -> bytes:
+        """Read and stash the request body; the route decides what it means.
+
+        An over-limit body is still read and discarded (up to the hard
+        cap in body_drain_plan) so a keep-alive connection survives the
+        refusal; beyond the cap the connection is closed with the answer
+        instead of draining, because no connection is worth reading
+        unboundedly many bytes for."""
+        length = self._declared_length()
+        if length <= 0:
             return b""
-        if length <= 0 or length > MAX_BODY_BYTES:
+        # Stashed beside the body so routes read the parsed value rather
+        # than re-parsing the header.
+        self._content_length = length
+        plan = body_drain_plan(length)
+        if plan == "close":
+            self._close_with_response = True
+            self.close_connection = True
             return b""
-        return self.rfile.read(length)
+        if plan == "discard":
+            self.rfile.read(length)
+            return b""
+        return self.rfile.read(length)  # stash
 
     def _read_json_body(self) -> dict | None:
         raw = getattr(self, "_raw_body", b"")
         if not raw:
             return None
+        if self._is_form_submit():
+            return form_body_fields(raw)
         try:
             parsed = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -1532,9 +1615,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._advance_describe(session, description)
             self._send_redirect(f"/wizard/{session_id}")
             return
-        answers = body.get("answers") or {
-            q["id"]: q.get("default", "") for q in session.questions
-        }
+        answers = body.get("answers")
+        if answers is None and self._is_form_submit():
+            answers = self._answers_from_form(body, session.questions,
+                                              session.answers)
+        if not answers:
+            answers = {
+                q["id"]: q.get("default", "") for q in session.questions
+            }
         session.answers = answers
         compiler = self._wizard_compiler()
         if compiler is None:
@@ -1687,6 +1775,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _common_headers(self) -> None:
         for name, value in SECURITY_HEADERS:
             self.send_header(name, value)
+        if getattr(self, "_close_with_response", False):
+            # The request leaves the connection unusable (its body was
+            # beyond the drain cap, or refused before the drain): the
+            # answer names the close (send_header also flips
+            # close_connection).
+            self.send_header("Connection", "close")
 
 
 def create_server(
@@ -1743,16 +1837,29 @@ def create_server(
         pick_workbook = tk_pick_workbook
     if pick_calendar is None:
         pick_calendar = tk_pick_calendar
-    if settings_store is None:
-        settings_store = _default_settings_store()
+    if plugins is None:
+        plugins = _default_plugins()
     if wizard_store is None:
         wizard_store = _default_wizard_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
-            (resolved, bind_port), sessions, excel, pick_workbook,
-            calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
-            activity_log, skill_store, settings_store, plugins, pick_calendar, wizard_store,
+            (resolved, bind_port),
+            sessions=sessions,
+            excel=excel,
+            pick_workbook=pick_workbook,
+            calendar=calendar,
+            llm=llm,
+            audit_conn=audit_conn,
+            llm_endpoint=llm_endpoint,
+            llm_model=llm_model,
+            inbox_store=inbox_store,
+            activity_log=activity_log,
+            skill_store=skill_store,
+            settings_store=settings_store,
+            plugins=plugins,
+            pick_calendar=pick_calendar,
+            wizard_store=wizard_store,
         )
 
     if port is None:
@@ -1851,6 +1958,24 @@ def _default_wizard_store() -> WizardStore | None:
         return WizardStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("wizard store unavailable")
+        return None
+
+
+def _default_plugins() -> PluginRuntime | None:
+    """The plugin runtime over the user data directory, or None when it
+    cannot open. Installed plugins, their data and the ${workspace} root
+    each get their own folder under the same data dir the stores use, so
+    the delete-folder uninstall story stays true."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return PluginRuntime(
+            plugins_dir=data_dir / "plugins",
+            data_dir=data_dir / "plugin-data",
+            workspace_dir=data_dir / "workspace",
+        )
+    except OSError:
+        LOG.exception("plugin runtime unavailable")
         return None
 
 

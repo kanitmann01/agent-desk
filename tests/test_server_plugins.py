@@ -257,3 +257,28 @@ def test_plugin_endpoints_require_a_session(tmp_path):
         assert status == 401
     finally:
         running.close()
+
+
+def test_create_server_builds_a_default_runtime_under_the_data_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    server = server_app.create_server(port=0)
+    try:
+        assert server.plugins is not None
+        assert server.plugins.plugins_dir == tmp_path / "plugins"
+    finally:
+        server.server_close()
+
+
+def test_plugin_api_answers_without_an_injected_runtime(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    booted = server_harness.Booted(plugins=None)
+    try:
+        headers = booted.exchange()
+        status, _h, body = booted.request(
+            "POST", "/api/plugins/install", headers,
+            json.dumps({"zip_path": str(tmp_path / "nope.zip")}).encode("utf-8"))
+        assert status == 400  # a real refusal, not the 503 of no runtime
+        assert json.loads(body)["error"] == "install:unreadable"
+        assert booted.server.plugins.plugins_dir == tmp_path / "plugins"
+    finally:
+        booted.close()

@@ -9,6 +9,7 @@ booted fixture) so no listener outlives a test.
 import http.client
 import json
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from agentdesk.calendar.watcher import CalendarBridge
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
+from agentdesk.plugins.runtime import PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
@@ -70,6 +72,19 @@ def _inert_calendar() -> CalendarBridge:
     return CalendarBridge(sqlite3.connect(":memory:", check_same_thread=False), adapters)
 
 
+def _inert_plugins(root: Path) -> PluginRuntime:
+    """A runtime rooted in the boot's own temp folder: create_server now
+    builds a real one under the user data directory when none is given,
+    so the default here keeps the suite off the real disk. Tests that
+    care inject their own."""
+    return PluginRuntime(
+        plugins_dir=root / "plugins",
+        data_dir=root / "plugin-data",
+        workspace_dir=root / "workspace",
+        now="2026-11-11T16:00:00",
+    )
+
+
 class Booted:
     """A running AgentDeskServer plus small helpers for raw requests.
 
@@ -87,6 +102,14 @@ class Booted:
         kwargs.setdefault("skill_store", _inert_skills())
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
+        # The inert plugin runtime lives in a temp folder owned by this
+        # boot and removed in close(), mirroring the in-memory stores.
+        # Built only when no runtime was given, so injected ones spare
+        # the temp dir entirely.
+        if "plugins" not in kwargs:
+            self._plugins_root = tempfile.TemporaryDirectory(
+                prefix="agentdesk-plugins-")
+            kwargs["plugins"] = _inert_plugins(Path(self._plugins_root.name))
         # Same spirit as the inert watches: unless a test says otherwise,
         # no endpoint is configured, so tests never depend on this
         # machine's real AGENTDESK_LLM_BASE.
@@ -133,3 +156,6 @@ class Booted:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=5)
+        root = getattr(self, "_plugins_root", None)
+        if root is not None:
+            root.cleanup()
