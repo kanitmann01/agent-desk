@@ -109,6 +109,33 @@ describe('the sales card', () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/retest'))).toBe(true);
     expect(onRefetch).toHaveBeenCalled();
   });
+
+  it('says so when the re-test cannot reach the server', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('network down');
+      }),
+    );
+    const onRefetch = vi.fn(NOOP_REFETCH);
+    const user = userEvent.setup();
+    render(
+      <SalesCard
+        sales={{
+          enabled: true,
+          mode: 'live',
+          status: { ...HEALTHY_SALES, state: 'stale', cause: 'The last hourly read failed.' },
+        }}
+        onRefetch={onRefetch}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Re-test now' }));
+    expect(
+      await screen.findByText('The dashboard could not reach its own server; the re-test did not run.'),
+    ).toBeInTheDocument();
+    expect(onRefetch).not.toHaveBeenCalled();
+  });
 });
 
 describe('the commitments card', () => {

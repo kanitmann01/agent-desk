@@ -119,7 +119,10 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
 
   async function retest() {
     const res = await guard(() => postJson('/sources/excel-watch/retest'));
-    if (res === null) return;
+    if (res === null) {
+      show('The dashboard could not reach its own server; the re-test did not run.');
+      return;
+    }
     if (res.status === 401) { onExpired(); return; }
     await onRefetch();
   }
@@ -231,6 +234,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
           Re-test to refresh it now.
         </span></div>
         <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
+        {note ? <div className="alert" role="status">{note}</div> : null}
       </>
     );
   } else {
@@ -238,6 +242,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
       <>
         <div className="alert" role="status"><span>{status.cause}</span></div>
         <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
+        {note ? <div className="alert" role="status">{note}</div> : null}
       </>
     );
   }
