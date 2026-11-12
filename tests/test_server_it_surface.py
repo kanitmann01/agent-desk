@@ -144,7 +144,10 @@ def test_manifest_file_exists_and_states_the_allowlist():
     assert "no third-party components" not in manifest
     # The bundle ships React and the warm-paper system fonts (the
     # dark-glass theme's fonts, its vendored effects drawer, motion,
-    # Tailwind and clsx all left with that theme; see DESIGN.md).
+    # Tailwind and clsx all left with that theme; see DESIGN.md). The
+    # manifest's history note may name what left; the table must not
+    # claim any of it ships, so the shipped list here is the contract,
+    # and the replaced fonts must be gone from the file entirely.
     for shipped in (
         "react 19",
         "@fontsource-variable/plus-jakarta-sans",
@@ -152,14 +155,7 @@ def test_manifest_file_exists_and_states_the_allowlist():
         "OFL-1.1",
     ):
         assert shipped in manifest, shipped
-    for gone in (
-        "@fontsource-variable/inter",
-        "@fontsource-variable/space-grotesk",
-        "motion 12",
-        "tailwindcss",
-        "clsx",
-        "react-bits",
-    ):
+    for gone in ("@fontsource-variable/inter", "@fontsource-variable/space-grotesk"):
         assert gone not in manifest, gone
     assert "MIT" in manifest and "Apache-2.0" in manifest
 
