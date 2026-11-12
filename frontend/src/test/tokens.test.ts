@@ -363,6 +363,20 @@ describe('the committed bundle honors the contract', () => {
       'data:font',
     );
   });
+
+  // The bundle is the product: a source fix that never reaches the
+  // committed build ships nothing. One rhythm value and the shipped
+  // behavior marks, so staleness fails here instead of silently.
+  it('carries the shipped shell rhythm, not a stale build', () => {
+    expect(decl(bundleCss, '.hero', 'margin-bottom')).toBe('24px');
+    expect(decl(bundleCss, '.w-foot', 'padding-top')).toBe('12px');
+  });
+
+  it('carries the overflow menu and the nowrap helper the cards ship', () => {
+    expect(bundleCss).toContain('.w-menu{');
+    expect(bundleCss).toContain('.w-menuitem{');
+    expect(bundleCss).toContain('.nowrap{white-space:nowrap}');
+  });
 });
 
 describe('the toolchain matches the system', () => {
