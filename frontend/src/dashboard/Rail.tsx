@@ -1,10 +1,8 @@
 // The rail: brand, the entries, the inbox count badge and the user
 // line. Dashboard, Inbox, Assistant and Settings are real server pages
 // (GET /inbox, /assistant, /settings); Plugins stays switched off until
-// a plugins page exists. Drawn as a floating glass column; the app name carries
-// the cyan to violet gradient through the vendored GradientText.
-import GradientText from '../vendor/reactbits/GradientText';
-
+// a plugins page exists. Drawn as the system's full-height Input Well
+// column; the brand is plain text in the ink.
 interface RailProps {
   inboxWaiting: number;
 }
@@ -63,13 +61,7 @@ export default function Rail({ inboxWaiting }: RailProps) {
             <path d="M4 12h6M8 8v8M14 10h6M17 7v10" />
           </svg>
         </span>
-        <GradientText
-          className="brand-name"
-          colors={['#1F2A27', '#4C5A55', '#1F2A27']}
-          animationSpeed={12}
-        >
-          Agent Desk
-        </GradientText>
+        <span className="brand-name">Agent Desk</span>
       </div>
       <a href="/" aria-current="page">{ICON_DASHBOARD}Dashboard</a>
       <a href="/inbox">{ICON_INBOX}Inbox{badge}</a>

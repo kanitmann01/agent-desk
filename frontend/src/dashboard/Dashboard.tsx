@@ -1,8 +1,8 @@
 // The dashboard composition, driven entirely by the /api/dashboard
-// payload: the rail, the hero band (greeting, date line, the one honest
-// source line), the research command bar, and the bento grid (sales
-// hero, commitment, research answer, skills, plugin cards), then the
-// footer. The aurora backdrop is mounted once at the root. The greeting and date line are computed
+// payload: the rail, the hero band (the one display greeting, the date
+// line, the one honest source line), the research command bar, and the
+// bento grid (sales hero, commitment, research answer, skills, plugin
+// cards), then the footer. The greeting and date line are computed
 // client-side; the source line is only ever the truth, as on the
 // server-rendered page.
 import { useState } from 'react';
@@ -18,9 +18,6 @@ import PluginCardView from './PluginCardView';
 import SkillsCard from './SkillsCard';
 import CommandBar from '../components/CommandBar';
 import GlareButton from '../components/GlareButton';
-import DecryptedText from '../vendor/reactbits/DecryptedText';
-import GradientText from '../vendor/reactbits/GradientText';
-import ShinyText from '../vendor/reactbits/ShinyText';
 
 interface DashboardProps {
   data: DashboardData;
@@ -65,10 +62,6 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const sourceLine = connected > 0
     ? `Live: ${connected} of ${data.sources.total} sources connected.`
     : 'Not connected yet: each card below has its own one-step connect.';
-  // "Good" decrypts in, the part of the day carries the gradient.
-  const cut = greeting.indexOf(' ');
-  const greetHead = cut > 0 ? greeting.slice(0, cut) : greeting;
-  const greetTail = cut > 0 ? greeting.slice(cut + 1) : '';
 
   function showAnswer(next: ResearchAnswer | null) {
     setAnswer(next);
@@ -139,41 +132,12 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
           transition={{ type: 'spring', stiffness: 140, damping: 20 }}
         >
           <div>
-            <p className="hero-eyebrow">
-              <span className="rule" aria-hidden="true" />
-              Your desk, on this machine
-            </p>
-            <h1 className="hero-title" aria-label={greeting}>
-              <DecryptedText
-                text={greetHead}
-                animateOn="view"
-                sequential
-                speed={70}
-                maxIterations={12}
-                scrambleColor="#4C5A55"
-              />
-              {greetTail ? ' ' : null}
-              {greetTail ? (
-                <GradientText colors={['#1F2A27', '#4C5A55']} animationSpeed={14}>
-                  {greetTail}
-                </GradientText>
-              ) : null}
-            </h1>
+            <h1 className="hero-title">{greeting}</h1>
             <div className="hero-meta">
-              <ShinyText color="#4C5A55" shineColor="#1F2A27" speed={4} delay={2.5}>
-                {dateLine}
-              </ShinyText>
+              <span>{dateLine}</span>
               <span className="hero-live">
                 <span className={connected > 0 ? 'dot' : 'dot sample'} aria-hidden="true" />
-                <ShinyText
-                  color={connected > 0 ? '#1F2A27' : '#4C5A55'}
-                  shineColor="#1F2A27"
-                  speed={4}
-                  delay={3.5}
-                  disabled={connected === 0}
-                >
-                  {sourceLine}
-                </ShinyText>
+                {sourceLine}
               </span>
             </div>
           </div>
