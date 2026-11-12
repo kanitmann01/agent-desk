@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
 
 // The build lands straight into the served static folder and is committed:
 // the Python launcher serves it with zero node involvement. base matches
@@ -19,7 +18,7 @@ const backendPaths = [
 
 export default defineConfig({
   base: '/static/spa/',
-  plugins: [react(), tailwindcss()],
+  plugins: [react()],
   server: {
     // 5173 is commonly taken (vite then drifts to another port and every
     // printed hint lies). Pin an uncommon port and fail loudly instead.
