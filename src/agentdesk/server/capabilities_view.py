@@ -177,8 +177,9 @@ def _source_cards(
     calendar_status: dict | None,
 ) -> str:
     """The workbook and calendar cards from the same live table health
-    reads. (The research endpoint is the endpoint card above; there is
-    no mail bridge in this chassis.)"""
+    reads. (The research endpoint is the endpoint card above; the mail
+    card is separate, because its off state is a settings fact, not a
+    connection fact.)"""
     rows = {s.id: s for s in sources}
     excel_row = rows[SRC_EXCEL]
     calendar_row = rows[SRC_CALENDAR]
@@ -195,6 +196,24 @@ def _source_cards(
     )
 
 
+def _mail_card(mail: dict) -> str:
+    """The mail source card. The word comes straight from the caller:
+    off (the settings toggle), unconfigured (no folder chosen),
+    watching, or error, and the word can never contradict the toggle
+    because the caller read both from the same place."""
+    word = mail.get("word", "")
+    cause = str(mail.get("cause", ""))
+    detail = str(mail.get("detail", ""))
+    cause_line = f" <span class='empty'>{html.escape(cause)}</span>" if word == "error" and cause else ""
+    return (
+        "<article class='widget' id='card-mail'>"
+        f"<div class='w-head'><h2>Mail folder</h2>"
+        f"<span class='stamp'>{html.escape(word)}</span></div>"
+        f"<p>{html.escape(detail)}{cause_line}</p>"
+        "</article>"
+    )
+
+
 def render_capabilities_page(
     cached: dict[str, CachedGate | None],
     sources: list[SourceStatus],
@@ -203,11 +222,14 @@ def render_capabilities_page(
     endpoint: dict,
     version: str,
     now_ts: float,
+    mail: dict | None = None,
 ) -> str:
     """The full capabilities document: gate cards from the cache, the
-    endpoint card and source cards from the live table. Rendering probes
-    nothing; the re-test forms are the only probing path."""
+    endpoint card and source cards from the live table, and the mail
+    card when the mail toggle exists. Rendering probes nothing; the
+    re-test forms are the only probing path."""
     esc_version = html.escape(version)
+    mail_html = _mail_card(mail) if mail is not None else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -227,6 +249,7 @@ command-line probe stays available for IT.</p>
 {_gate_cards(cached, now_ts)}
 {_endpoint_card(sources, endpoint)}
 {_source_cards(sources, excel_status, calendar_status)}
+{mail_html}
 <p class="empty" style="margin-top:18px"><a href="/settings">Back to settings</a> <span class="empty">or</span> <a href="/">the dashboard</a> <span class="mono">{esc_version}</span></p>
 </div>
 <script src="/static/app.js"></script>

@@ -15,3 +15,6 @@
 # git, since Windows checkouts cannot preserve it) needs clean bytes.
 *.command text eol=lf
 *.sh text eol=lf
+# The .eml mail fixtures are synthetic headers, read by the stdlib
+# parser (line-ending agnostic); pinned so every checkout sees bytes.
+*.eml text eol=lf

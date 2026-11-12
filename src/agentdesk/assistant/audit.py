@@ -45,6 +45,12 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("llm.research", "endpoint", "Research questions are sent to the company LLM endpoint, as derived text only."),
     ("llm.assistant", "endpoint", "Assistant questions are sent to the company LLM endpoint, with widget context attached."),
     ("llm.breakdown", "endpoint", "Meeting breakdowns are sent to the company LLM endpoint, meeting name only."),
+    # The mail vocabulary (ticket #44), off by default in settings. The
+    # mail path is metadata-only by construction: bodies are discarded
+    # at parse time and no LLM call exists anywhere in it.
+    ("mail.poll", "file", "The mail folder you chose is listed and the .eml headers are read, read-only. Message bodies are discarded at parse time and never stored. Off by default."),
+    ("mail.draft", "decision", "A reply draft card was created from the message's headers (recipients, subject). The draft text is what you typed, never message content."),
+    ("mail.sent", "file", "Accepting a reply draft wrote a threaded .eml file into the local outbox folder. Nothing is transmitted by this app; sending the reply is yours to do in your own mail client."),
     # The approvals vocabulary (ticket #41): every decision on an inbox
     # card, and every plugin lifecycle mutation.
     ("inbox.approved", "decision", "You accepted a card in the inbox; the acceptance is recorded against that card."),

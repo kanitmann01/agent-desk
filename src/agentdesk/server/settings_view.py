@@ -19,6 +19,7 @@ _LABELS = {
     "endpoint_enabled": "Company endpoint calls",
     "quiet_hours": "Quiet hours (18:00-08:00)",
     "daily_cap": "Notifications per day",
+    "mail_enabled": "Mail digest (headers only)",
 }
 
 ENDPOINT_HINT = (
@@ -93,6 +94,7 @@ def render_settings_page(
     version: str,
     settings_values: dict | None = None,
     endpoint_status: dict | None = None,
+    mail_folder: str = "",
 ) -> str:
     esc_version = html.escape(version)
     settings_values = settings_values or {}
@@ -174,8 +176,22 @@ ones; a setting you have never touched is the right setting.</p>
 <p>Calendar reading follows the OneDrive sync file by default. To pick
 a different file, paste a path, upload the JSON by hand, or go back to
 automatic, open the <a href="/walkthrough/calendar">calendar source page</a>.</p>
+<h1 style="margin-top:24px">Mail source</h1>
+<p>Mail digest is <b>off by default</b>. When the toggle above is on,
+the app polls one folder of .eml files and reads only their headers
+(From, To, Cc, Subject, Date, Message-ID, In-Reply-To); bodies are
+discarded at parse time and nothing is sent to any model. Reply drafts
+you accept are written as files to the local outbox folder for you to
+send yourself. The folder is read from this setting first, then the
+AGENTDESK_MAIL_FOLDER environment variable.</p>
+<form method="post" action="/settings/mail/folder" class="cardform">
+<label class="empty" for="mail-folder">Mail folder</label>
+<input id="mail-folder" type="text" name="folder" value="{html.escape(mail_folder, quote=True)}" placeholder="C:/Users/you/mail-exports" autocomplete="off">
+<button class="btn btn-secondary" type="submit">Save folder</button>
+</form>
+<p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
 <h1 style="margin-top:24px">Review</h1>
-<p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
+<p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/mail">review the mail digest</a> (headers only, off by default), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
 <h1 style="margin-top:24px">Activity log</h1>
 <p>Only what flows through the app: the asks you type into research and
 the assistant. No keystrokes, no screen, and this list is yours.</p>

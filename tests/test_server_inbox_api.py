@@ -143,6 +143,13 @@ def test_cards_list_accept_dismiss_and_dismissal_is_immediate(env, auth):
     assert payload["status"] == "dismissed"
     assert json.loads(env.request("GET", "/widgets/inbox", auth)[2])["waiting"] == 0
 
+    # Decide-once (the #44 mail guard, now for every kind): a decided
+    # card answers 409 instead of re-deciding, and restore is the way back.
+    status, _h, body = env.post_json(f"/inbox/cards/{card['id']}/accept", {}, auth)
+    assert status == 409
+    assert json.loads(body)["card"]["status"] == "dismissed"
+    status, _h, _b = env.post_json(f"/inbox/dismissed/{card['id']}/restore", {}, auth)
+    assert status == 200
     status, _h, body = env.post_json(f"/inbox/cards/{card['id']}/accept", {}, auth)
     assert status == 200
     assert json.loads(body)["status"] == "accepted"

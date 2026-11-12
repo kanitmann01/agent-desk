@@ -14,7 +14,17 @@ KIND_SKILL_PROPOSAL = "skill_proposal"
 KIND_UPDATE_CONSENT = "update_consent"
 KIND_BRIEF = "brief"
 KIND_FEATURE_REQUEST = "feature_request"
-CARD_KINDS = (KIND_SUGGESTION, KIND_SKILL_PROPOSAL, KIND_UPDATE_CONSENT, KIND_BRIEF, KIND_FEATURE_REQUEST)
+KIND_MAIL_DIGEST = "mail_digest"      # threads active in the last 24 hours, headers only
+KIND_MAIL_FOLLOW_UP = "mail_follow_up"  # a thread with no action from the user past the threshold
+CARD_KINDS = (
+    KIND_SUGGESTION,
+    KIND_SKILL_PROPOSAL,
+    KIND_UPDATE_CONSENT,
+    KIND_BRIEF,
+    KIND_FEATURE_REQUEST,
+    KIND_MAIL_DIGEST,
+    KIND_MAIL_FOLLOW_UP,
+)
 
 STATUS_WAITING = "waiting"
 STATUS_ACCEPTED = "accepted"

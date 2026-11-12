@@ -66,6 +66,7 @@ happened on this machine. Generated {html.escape(generated)}, version
 <li><b>Processes started:</b> none. The app never launches another program.</li>
 <li><b>Persistence:</b> none. No Run key, no scheduled task, no service. The app runs only while you keep it open.</li>
 <li><b>Network:</b> only the company LLM endpoint, only derived text, every call logged in the audit you can export as CSV.</li>
+<li><b>Mail:</b> off by default. When enabled, the app reads only the headers of the .eml files in a folder you choose (From, To, Cc, Subject, Date, Message-ID, In-Reply-To); message bodies are discarded at parse time and never reach any model, any store or any page, and accepted reply drafts are written as files to the local outbox folder for you to send yourself.</li>
 <li><b>Data location:</b> <span class="mono">{html.escape(data_dir_statement())}</span>. The watched workbook is copied to the temp folder before parsing and never modified.</li>
 <li><b>Uninstall:</b> delete the folder. Nothing is left behind, nothing to unregister.</li>
 <li><b>License:</b> MIT. The Python runtime has no third-party dependencies; the dashboard bundle ships a documented, licensed set (see <span class="mono">THIRD-PARTY-LICENSES.md</span>).</li>

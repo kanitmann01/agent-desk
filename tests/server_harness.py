@@ -29,6 +29,7 @@ from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
+from agentdesk.mail.store import MailStore
 from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginRuntime
 from agentdesk.probe.core import UNKNOWN, GateResult
@@ -62,6 +63,10 @@ def _inert_inbox():
 
 def _inert_memory():
     return MemoryStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_mail_store():
+    return MailStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
 def _inert_capabilities_cache():
@@ -137,6 +142,18 @@ class Booted:
         # probe the real environment, even by accident.
         kwargs.setdefault("capabilities_cache", _inert_capabilities_cache())
         kwargs.setdefault("gate_runners", _inert_gate_runners())
+        # The mail handled-thread store joins the inert in-memory
+        # defaults. The mail watcher itself is never booted here: the
+        # toggle defaults to off and create_server constructs a watcher
+        # only when it is on, so no boot in the suite polls a folder.
+        # Outbox writes (only from tests that accept a reply draft
+        # explicitly) land in a tmp folder owned by this boot.
+        kwargs.setdefault("mail_store", _inert_mail_store())
+        if "outbox_dir" not in kwargs:
+            self._outbox_root = tempfile.TemporaryDirectory(prefix="agentdesk-outbox-")
+            outbox = Path(self._outbox_root.name) / "outbox"
+            outbox.mkdir(parents=True, exist_ok=True)
+            kwargs["outbox_dir"] = outbox
         # The consent allows are in-memory and process-lifetime by design;
         # a fresh store per boot is the inert default.
         kwargs.setdefault("consents", ConsentStore())
@@ -197,3 +214,6 @@ class Booted:
         root = getattr(self, "_plugins_root", None)
         if root is not None:
             root.cleanup()
+        outbox_root = getattr(self, "_outbox_root", None)
+        if outbox_root is not None:
+            outbox_root.cleanup()

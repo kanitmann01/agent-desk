@@ -22,7 +22,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 import agentdesk
 from agentdesk.assistant import audit as audit_store
@@ -45,9 +45,22 @@ from agentdesk.capabilities import GATES, CapabilitiesCache, GateRunners, defaul
 from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
-from agentdesk.inbox.core import KIND_UPDATE_CONSENT, UnknownCard
+from agentdesk.inbox.core import (
+    KIND_MAIL_FOLLOW_UP,
+    KIND_UPDATE_CONSENT,
+    STATUS_WAITING,
+    UnknownCard,
+)
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
+from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
+from agentdesk.mail.store import MailStore
+from agentdesk.mail.watcher import (
+    STATE_ERROR,
+    STATE_UNCONFIGURED,
+    STATE_WATCHING,
+    MailWatch,
+)
 from agentdesk.llm import (
     DEFAULT_MODEL,
     LlmUnavailable,
@@ -75,6 +88,7 @@ from agentdesk.server.commitments import (
     render_commitments_widget,
 )
 from agentdesk.server.inbox_view import render_inbox_page
+from agentdesk.server.mail_view import render_mail_page
 from agentdesk.server.memory_view import render_memory_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
@@ -451,6 +465,9 @@ class AgentDeskServer(ThreadingHTTPServer):
         memory_store: MemoryStore | None = None,
         capabilities_cache: CapabilitiesCache | None = None,
         gate_runners: GateRunners | None = None,
+        mail: MailWatch | None = None,
+        mail_store: MailStore | None = None,
+        outbox_dir=None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -477,6 +494,12 @@ class AgentDeskServer(ThreadingHTTPServer):
         # Process-lifetime consent allows: (plugin, scope) pairs accepted
         # "for this plugin". A fresh set unless injected; restart forgets.
         self.consents = consents if consents is not None else ConsentStore()
+        # The mail watcher exists only when mail is enabled (the toggle
+        # defaults to off, so a default boot has no watcher at all); the
+        # handled-thread store and the outbox folder exist regardless.
+        self.mail = mail
+        self.mail_store = mail_store
+        self.outbox_dir = Path(outbox_dir) if outbox_dir is not None else _default_outbox_dir()
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
             if activity_log is not None and inbox_store is not None and skill_store is not None
@@ -740,6 +763,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/mail":
+            self._send_mail_page()
         elif path == "/capabilities":
             self._send_capabilities_page()
         elif path == "/widgets/inbox":
@@ -960,6 +985,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_save()
         elif path == "/settings/endpoint/test":
             self._endpoint_test()
+        elif path == "/settings/mail/folder":
+            self._mail_folder_save()
+        elif path == "/mail/retest":
+            self._mail_retest()
+        elif path.startswith("/mail/") and path.endswith("/draft"):
+            if not self._source_allowed("mail_enabled"):
+                self._send_json(409, {"error": "Mail digest is off in settings.", "reconnect": "/settings"})
+                return
+            self._mail_draft(unquote(path[len("/mail/"):-len("/draft")]))
         elif path.startswith("/wizard"):
             self._route_wizard(method, path)
             return
@@ -1260,6 +1294,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             entries, skills, histories, agentdesk.__version__,
             settings_values=self._settings_public_values(),
             endpoint_status=self._endpoint_status(),
+            mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1347,7 +1382,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap"):
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -1356,7 +1391,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _apply_source_toggles(self, key: str, value) -> None:
         """Toggling a source off stops its ingestion immediately; on it
-        resumes watching with one poll right now, like at startup."""
+        resumes watching with one poll right now, like at startup. Mail
+        is stricter: off at boot means no watcher exists, so toggling on
+        constructs the default one first (and wires its audit hook)."""
         server = self.server  # type: ignore[attr-defined]
         if key == "excel_enabled" and server.excel is not None:
             if value:
@@ -1371,6 +1408,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ).start()
             else:
                 server.calendar.stop_polling()
+        if key == "mail_enabled":
+            if value and server.mail is None:
+                if server.inbox is not None and server.mail_store is not None:
+                    settings = server.settings
+                    if settings is not None:
+                        server.mail = _default_mail_watch(
+                            settings, server.inbox, server.mail_store)
+                        _wire_mail_audit(server)
+            if server.mail is not None:
+                if value:
+                    server.mail.start_polling()
+                    threading.Thread(
+                        target=_poll_mail_once, args=(server.mail,), daemon=True
+                    ).start()
+                else:
+                    server.mail.stop_polling()
 
     def _source_allowed(self, key: str) -> bool:
         settings = self.server.settings  # type: ignore[attr-defined]
@@ -1478,6 +1531,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         try:
+            current = inbox.get(card_id)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        # Decide-once: only a waiting card can be decided. A second
+        # accept used to be a harmless second stamp; mail made it
+        # user-visible (a duplicate .eml in the outbox), so every kind
+        # is guarded now. A replayed JSON decision answers 409 with the
+        # card's current state; a replayed form post redirects back to
+        # the inbox, which is what a double-click means.
+        if current.status != STATUS_WAITING:
+            if self._is_form_submit():
+                self._send_redirect("/inbox")
+                return
+            self._send_json(409, {
+                "error": "that card was already decided",
+                "card": current.to_json(inbox.now_ts()),
+            })
+            return
+        # The mail draft's effect lands before the acceptance is
+        # recorded: if the outbox write fails, the card stays waiting
+        # and the user can retry, rather than an accepted card having
+        # written nothing.
+        if decision == "accept" and isinstance(current.meta.get("mailDraft"), dict):
+            if not self._write_mail_reply(current):
+                return
+        try:
             card = inbox.accept(card_id) if decision == "accept" else inbox.dismiss(card_id)
         except UnknownCard as exc:
             self._send_json(404, {"error": str(exc)})
@@ -1486,6 +1566,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._on_skill_proposal_decided(card, decision)
         if card.kind == KIND_UPDATE_CONSENT:
             self._on_update_consent_decided(card, decision, body)
+        if card.kind == KIND_MAIL_FOLLOW_UP:
+            self._on_mail_follow_up_decided(card)
         if decision == "accept":
             self._on_fact_carried(card)
         self._audit(
@@ -1692,8 +1774,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_status(),
             agentdesk.__version__,
             now_ts=cache.clock(),
+            mail=self._mail_capabilities(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _mail_capabilities(self) -> dict | None:
+        """The mail card's data: off, unconfigured, watching or error,
+        read from the toggle and the watch in one place. None when the
+        toggle does not exist (no settings store), so the card only
+        appears when there is something honest to say."""
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if settings is None:
+            return None
+        if not self._source_allowed("mail_enabled"):
+            return {
+                "word": "off",
+                "detail": "Mail digest is off in settings. Nothing is read.",
+                "cause": "",
+            }
+        mail = server.mail
+        if mail is None:
+            return {
+                "word": "unconfigured",
+                "detail": "The mail watcher is not available on this machine.",
+                "cause": "",
+            }
+        status = mail.status()
+        state = status.get("state", "")
+        folder = status.get("folder")
+        cause = str(status.get("cause", ""))
+        # The words are the watcher's own exported states, never
+        # re-spelled literals (the capabilities page's house rule).
+        if state == STATE_ERROR:
+            return {"word": "error", "detail": cause or "The folder could not be read.", "cause": cause}
+        if state == STATE_UNCONFIGURED or not folder:
+            return {"word": "unconfigured", "detail": "No mail folder chosen yet.", "cause": ""}
+        return {
+            "word": "watching",
+            "detail": f"Watches {folder}. Headers only; bodies are never read.",
+            "cause": "",
+        }
 
     def _capabilities_retest(self, gate_key: str) -> None:
         """The one probing path: run exactly one gate with the server's
@@ -1726,6 +1847,150 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         fact = memory.add(text.strip(), source=f"inbox card {card.id}")
         self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+
+    # -- mail: the page, the watcher controls, the reply drafts -----------
+
+    def _send_mail_page(self) -> None:
+        """The mail page. Off (or unconstructed) is an honest state with
+        an enable pointer, never a blank screen."""
+        server = self.server  # type: ignore[attr-defined]
+        mail = server.mail
+        off_reason = ""
+        if not self._source_allowed("mail_enabled"):
+            off_reason = ("Mail digest is off. It stays off until you turn it on "
+                          "in settings; nothing has been read.")
+        elif mail is None:
+            off_reason = ("The mail watcher is not available on this machine "
+                          "(its store could not open).")
+        view = mail.view() if (mail is not None and not off_reason) else None
+        page = render_mail_page(agentdesk.__version__, view, off_reason=off_reason)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _mail_retest(self) -> None:
+        """One poll right now: read the folder, file the deltas, evaluate."""
+        server = self.server  # type: ignore[attr-defined]
+        mail = server.mail
+        if mail is None or not self._source_allowed("mail_enabled"):
+            self._send_json(409, {"error": "Mail digest is off in settings.",
+                                  "reconnect": "/settings"})
+            return
+        status = mail.retest()
+        if server.inbox is not None:
+            self._evaluate_inbox(server.inbox)
+        if self._is_form_submit():
+            self._send_redirect("/mail")
+            return
+        self._send_json(200, status)
+
+    def _mail_draft(self, message_id: str) -> None:
+        """The reply draft flow's opening move: a card from the message's
+        headers (recipients, subject) wrapping the text the user typed.
+        No message content goes into the card: the draft body is the
+        user's own words, by construction and by rule."""
+        server = self.server  # type: ignore[attr-defined]
+        mail = server.mail
+        if mail is None:
+            self._send_json(503, {"error": "the mail watcher is not available"})
+            return
+        if server.inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("body")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json(400, {"error": 'expected {"body": "..."}: the reply text you want to send'})
+            return
+        message = next((m for m in mail.view()["messages"] if m.id == message_id), None)
+        if message is None:
+            self._send_json(404, {"error": f"no message {message_id} in the mail folder"})
+            return
+        try:
+            recipients = reply_recipients(message, self_address=mail.self_address)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        subject = reply_subject(message.thread or message.subject)
+        card = server.inbox.add(
+            kind="suggestion",
+            origin=("Your reply draft for this thread. Accepting writes the "
+                    ".eml to the local outbox folder; sending it stays yours."),
+            title=f"Reply draft: {subject}",
+            body=f"To: {recipients}",
+            action_label="Write to outbox",
+            draft=text.strip(),
+            meta={"mailDraft": {
+                "messageId": message.id,
+                "to": recipients,
+                "subject": subject,
+                "thread": message.thread,
+            }},
+        )
+        self._audit("mail.draft", target=message.id, detail=f"To: {recipients}")
+        self._evaluate_inbox(server.inbox)
+        if self._is_form_submit():
+            self._send_redirect("/mail")
+            return
+        self._send_json(201, card.to_json(server.inbox.now_ts()))
+
+    def _write_mail_reply(self, card) -> bool:
+        """Acceptance's effect, done first: write the threaded .eml into
+        the outbox. False means the write failed and the response is
+        already sent; the card stays waiting for a retry. A line break
+        in the reply metadata (possible through the generic cards
+        route, which stores meta as given) is the write_reply header
+        injection guard speaking: refused with a 400, nothing written,
+        the card untouched."""
+        draft_info = card.meta.get("mailDraft")
+        try:
+            path = write_reply(
+                self.server.outbox_dir,  # type: ignore[attr-defined]
+                original_id=str(draft_info.get("messageId", "")),
+                to=str(draft_info.get("to", "")),
+                subject=str(draft_info.get("subject", "")),
+                body=card.draft,
+            )
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return False
+        except OSError as exc:
+            LOG.exception("outbox write failed")
+            self._send_json(500, {"error": f"the reply file could not be written: {exc}"})
+            return False
+        # The audit row names the file, never the reply text.
+        self._audit("mail.sent", target=path.name, detail=str(path))
+        return True
+
+    def _on_mail_follow_up_decided(self, card) -> None:
+        """Either decision on a follow-up card ends the nagging: the
+        thread is marked handled and no later poll re-mints its card."""
+        server = self.server  # type: ignore[attr-defined]
+        mail_store = server.mail_store
+        if mail_store is None:
+            return
+        thread = card.meta.get("thread")
+        if isinstance(thread, str) and thread:
+            mail_store.mark_handled(thread)
+
+    def _mail_folder_save(self) -> None:
+        """The settings page's mail folder field. An empty value clears
+        the choice; the watcher re-reads the folder right away."""
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        folder = body.get("folder")
+        if not isinstance(folder, str):
+            self._send_json(400, {"error": 'expected {"folder": "..."}'})
+            return
+        settings.set("mail_folder", folder.strip())
+        if server.mail is not None and folder.strip():
+            server.mail.retest()
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
 
     def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
         """Accepting applies the held update; the "for this plugin"
@@ -2254,6 +2519,9 @@ def create_server(
     memory_store: MemoryStore | None = None,
     capabilities_cache: CapabilitiesCache | None = None,
     gate_runners: GateRunners | None = None,
+    mail: MailWatch | None = None,
+    mail_store: MailStore | None = None,
+    outbox_dir=None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -2263,7 +2531,8 @@ def create_server(
     is the fallback, so the auth URL always names the port that actually
     opened. The excel watch, the calendar bridge and the audit store
     default to real ones over the user data directory; tests pass their
-    own.
+    own. The mail watcher is constructed only when the (default-off)
+    toggle is on: off means the watcher does not exist.
     """
     resolved = "127.0.0.1" if host == "localhost" else host
     if resolved != "127.0.0.1":
@@ -2301,6 +2570,11 @@ def create_server(
         capabilities_cache = _default_capabilities_cache()
     if gate_runners is None:
         gate_runners = _default_gate_runners()
+    if mail_store is None:
+        mail_store = _default_mail_store()
+    if mail is None and inbox_store is not None and mail_store is not None \
+            and bool(settings_store.get("mail_enabled")):
+        mail = _default_mail_watch(settings_store, inbox_store, mail_store)
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
@@ -2324,6 +2598,9 @@ def create_server(
             memory_store=memory_store,
             capabilities_cache=capabilities_cache,
             gate_runners=gate_runners,
+            mail=mail,
+            mail_store=mail_store,
+            outbox_dir=outbox_dir,
         )
 
     if port is None:
@@ -2354,6 +2631,8 @@ def _wire_audit(server: AgentDeskServer) -> None:
 
     if server.excel is not None:
         server.excel.audit_hook = hook
+    if server.mail is not None:
+        server.mail.audit_hook = hook
     if server.calendar is not None:
         server.calendar.audit_hook = hook
         inner_llm = server.calendar.llm
@@ -2374,6 +2653,17 @@ def _wire_audit(server: AgentDeskServer) -> None:
             return result
 
         server.calendar.llm = audited_llm
+
+
+def _wire_mail_audit(server: AgentDeskServer) -> None:
+    """The mail watcher's audit hook, for watches constructed after boot
+    (the mail toggle turning on mid-session). Read-only polls say so;
+    there is nothing here that could log message content."""
+    if server.audit_conn is None or server.mail is None:
+        return
+    conn = server.audit_conn
+    server.mail.audit_hook = lambda action, target, status="ok": audit_store.record(
+        conn, action, target=target, status=status)
 
 
 def _default_audit_conn():
@@ -2435,6 +2725,39 @@ def _default_memory_store() -> MemoryStore | None:
         return MemoryStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("memory store unavailable")
+        return None
+
+
+def _default_outbox_dir() -> Path:
+    """Where accepted reply drafts land as .eml files: a folder beside
+    the other data, AGENTDESK_DATA moves it like everything else."""
+    return default_data_dir() / "outbox"
+
+
+def _default_mail_store() -> MailStore | None:
+    """Handled-thread markers over the persistent store, or None when it
+    cannot open. Messages are never stored: the folder is the source."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "mail.sqlite3", check_same_thread=False)
+        return MailStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("mail store unavailable")
+        return None
+
+
+def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
+    """The real mail watcher: settings decide the folder on every poll,
+    so a folder saved in the app applies without a restart."""
+    try:
+        return MailWatch(
+            inbox=inbox_store,
+            store=mail_store,
+            folder_provider=lambda: settings_store.get("mail_folder"),
+        )
+    except (OSError, sqlite3.Error):
+        LOG.exception("mail watcher unavailable")
         return None
 
 
@@ -2587,6 +2910,18 @@ def start_background_polls(server: AgentDeskServer) -> None:
     if calendar is not None and allowed("calendar_enabled"):
         calendar.start_polling()  # passive file watch, keeps itself fresh
         threading.Thread(target=_poll_calendar_once, args=(calendar,), daemon=True).start()
+    mail = server.mail
+    if mail is not None and allowed("mail_enabled"):
+        mail.start_polling()
+        threading.Thread(target=_poll_mail_once, args=(mail,), daemon=True).start()
+
+
+def _poll_mail_once(watch: MailWatch) -> None:
+    """One immediate read so the first inbox look already sees the digest."""
+    try:
+        watch.poll()
+    except Exception:  # noqa: BLE001 - startup must not crash on a poll
+        LOG.exception("mail startup poll failed")
 
 
 def _poll_calendar_once(bridge) -> None:

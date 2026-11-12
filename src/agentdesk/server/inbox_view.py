@@ -18,6 +18,8 @@ _KIND_LABEL = {
     "update_consent": "Update needs your OK",
     "brief": "Before your meeting",
     "feature_request": "Feature request",
+    "mail_digest": "Mail digest",
+    "mail_follow_up": "Needs a reply",
 }
 
 
