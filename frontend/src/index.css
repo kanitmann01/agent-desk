@@ -180,7 +180,7 @@ main{padding:38px 40px 88px;max-width:1280px;width:100%;min-width:0;margin:0 aut
 .cmd-field::placeholder{color:var(--ink-3);font-weight:400}
 .cmd-hint{align-self:center;color:var(--ink-3);font-size:12px;white-space:nowrap;padding:0 2px}
 .cmd-hint kbd{
-  font-family:var(--font-mono);font-size:10.5px;color:var(--ink-2);
+  font-family:var(--font-mono);font-size:10.5px;color:#D7DEEB;
   background:var(--surface-lift);border-radius:6px;padding:2px 6px;
   box-shadow:inset 0 0 0 1px var(--border-soft);
 }
@@ -220,9 +220,9 @@ main{padding:38px 40px 88px;max-width:1280px;width:100%;min-width:0;margin:0 aut
   -webkit-backdrop-filter:blur(22px);
 }
 /* The vendored glass paints its own diagonal sheen from the top left;
-   at full strength it reads as a streak through the card, so it is
-   kept only as a whisper. The rim stays for the glassy feel. */
-.card-body > div > span:first-of-type{opacity:.07}
+   even as a whisper reviewers read it as a rendering bug, so the
+   diagonal is off entirely. The rim stays for the glassy feel. */
+.card-body > div > span:first-of-type{opacity:0}
 /* Amber glass: an amber wash over the same mostly solid fill. */
 .card.amber .card-body{background:linear-gradient(180deg,rgba(245,158,11,.16),rgba(245,158,11,0) 46%),rgba(14,18,35,.84)}
 /* In the SPA the glass surface component carries the card chrome, so
