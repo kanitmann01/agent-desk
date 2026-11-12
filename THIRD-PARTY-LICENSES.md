@@ -7,8 +7,9 @@ permissive license reviewed separately from bundled components.
 
 The **dashboard SPA bundle does ship third-party work**: React,
 motion and the vendored react-bits components compiled into its
-JavaScript, and the Inter and Space Grotesk font files. Every item
-is listed with its license in the Dashboard SPA section below.
+JavaScript, and the Plus Jakarta Sans and IBM Plex Mono font files.
+Every item is listed with its license in the Dashboard SPA section
+below.
 
 The allowlist for any future Python dependency is MIT, Apache-2.0,
 BSD-2-Clause, BSD-3-Clause, and ISC; anything outside it fails
@@ -30,8 +31,8 @@ and which only run at development time.
 | react-dom 19.3.1 | DOM renderer | MIT | yes, compiled into the JavaScript |
 | motion 12.43.0 | animation (the framer-motion package) | MIT | yes, compiled into the JavaScript |
 | react-bits (vendored components in `frontend/src/vendor/reactbits/`) | Aurora, TiltedCard, Magnet, GradientText, ShinyText, DecryptedText, AnimatedList, LatticeLoader, StatusMark, GlassSurface, GlareHover, CountUp, ClickSpark, SpotlightCard | MIT + Commons Clause | yes, the ones the app imports, compiled into the JavaScript |
-| @fontsource-variable/inter 5.3.0 | Inter Variable, the body typeface | OFL-1.1 | yes, the .woff2 files unchanged |
-| @fontsource-variable/space-grotesk 5.3.0 | Space Grotesk Variable, the display typeface | OFL-1.1 | yes, the .woff2 files unchanged |
+| @fontsource-variable/plus-jakarta-sans | Plus Jakarta Sans Variable, the display and UI typeface | OFL-1.1 | yes, the .woff2 files unchanged |
+| @fontsource/ibm-plex-mono | IBM Plex Mono, the numeric typeface | OFL-1.1 | yes, the .woff2 files unchanged |
 | tailwindcss 4.3.5, @tailwindcss/vite 4.3.5 | styling | MIT | only the CSS it generates |
 | clsx 2.1.1 | class name helper | MIT | no, declared but not imported |
 | vite 7.3.8 | build tool | MIT | no, development only |
@@ -55,8 +56,8 @@ License notes:
   without its demo rows and the two icon packages they import, and
   TextType and SplitText are in-repo equivalents because the upstream
   ones animate through GSAP, whose license is not on the allowlist.
-- Inter and Space Grotesk come from the @fontsource-variable packages
-  under the SIL Open Font License 1.1 (OFL-1.1). Unlike the rest of this
+- The two font families come from their @fontsource packages under
+  the SIL Open Font License 1.1 (OFL-1.1). Unlike the rest of this
   table, the fonts themselves ship: the build copies their .woff2 files
   into the bundle, so the app never fetches a font from another origin.
   The OFL allows bundling and redistribution with software and asks
@@ -72,4 +73,6 @@ License notes:
   the vendored react-bits components are compiled into the bundle's
   JavaScript, and the two font families above are copied into it
   unchanged.
+- Test tooling (vitest, jsdom, @testing-library/*, @types/*) runs
+  only in the frontend working tree; none of it enters the bundle.
 
