@@ -63,7 +63,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # The memory vocabulary (ticket #42): the one non-page creation path.
     # The row names the fact's source, never the fact's text.
     ("memory.fact", "decision", "An accepted inbox card carried a fact, and it was saved to the memory store. The row names where the fact came from, never the fact itself."),
-    ("plugin.install", "plugin", "A plugin zip you chose is validated and installed under the app's own data folder, in pilot mode."),
+    ("plugin.install", "plugin", "A plugin zip you chose, or a registry release you picked, is validated and installed under the app's own data folder, in pilot mode."),
     ("plugin.update", "plugin", "A plugin update is validated; identical or narrower permissions apply, wider ones hold for your OK."),
     ("plugin.consent", "plugin", "A held plugin update is applied after you approved its added permissions."),
     ("plugin.enable", "plugin", "An installed plugin is turned back on; its widget returns to the dashboard."),
@@ -72,6 +72,9 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("plugin.rollback", "plugin", "A plugin is switched back to its previous version; both versions stay recorded."),
     ("plugin.retest", "plugin", "A plugin's declared data source is checked again, right now, to refresh its card."),
     ("plugin.purge-data", "plugin", "A plugin's kept data folder is deleted, only after the separate named confirmation."),
+    # The registry bridge: reads stay local, no network anywhere in it.
+    ("registry.read", "file", "The plugins page reads the local registry checkout's index.json, read-only, to list what can be installed."),
+    ("settings.registry", "decision", "The registry checkout folder was saved or cleared in settings; the choice itself is the record."),
 ]
 
 ACTOR = "agent-desk"

@@ -38,6 +38,7 @@ TEXT_KEYS = {
     "llm_key": "",   # API key; secret, rendered only in masked form
     "llm_model": "",  # empty means the adapter's default model
     "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
+    "registry_path": "",  # the local registry checkout the plugins page browses; empty means auto
 }
 DEFAULTS = {**TOGGLES, "daily_cap": 3, **TEXT_KEYS}
 

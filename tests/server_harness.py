@@ -175,6 +175,11 @@ class Booted:
             self._plugins_root = tempfile.TemporaryDirectory(
                 prefix="agentdesk-plugins-")
             kwargs["plugins"] = _inert_plugins(Path(self._plugins_root.name))
+        # The registry browsing joins the inert defaults: an empty root
+        # is the honest unavailable state, so no boot in the suite reads
+        # or installs from a real registry checkout by accident. Tests
+        # that care inject their own fixture root.
+        kwargs.setdefault("registry_root", "")
         # Same spirit as the inert watches: unless a test says otherwise,
         # no endpoint is configured, so tests never depend on this
         # machine's real AGENTDESK_LLM_BASE.

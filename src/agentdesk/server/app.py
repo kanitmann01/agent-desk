@@ -16,13 +16,14 @@ import re
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, quote, unquote
 
 import agentdesk
 from agentdesk.assistant import audit as audit_store
@@ -76,6 +77,9 @@ from agentdesk.memory.core import UnknownFact
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
+from agentdesk.registry import source as registry_source
+from agentdesk.registry.index import RegistryIndexError
+from agentdesk.registry.install import RegistryError
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
@@ -90,6 +94,7 @@ from agentdesk.server.commitments import (
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
 from agentdesk.server.memory_view import render_memory_page
+from agentdesk.server.plugins_view import render_plugins_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
 from agentdesk.server.wizard_view import (
@@ -468,6 +473,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         mail: MailWatch | None = None,
         mail_store: MailStore | None = None,
         outbox_dir=None,
+        registry_root=None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -498,6 +504,12 @@ class AgentDeskServer(ThreadingHTTPServer):
         # defaults to off, so a default boot has no watcher at all); the
         # handled-thread store and the outbox folder exist regardless.
         self.mail = mail
+        # The registry checkout the plugins page browses. None resolves
+        # per request (settings > environment > this app's own checkout);
+        # an empty string forces the honest unavailable state, which is
+        # what the hermetic test boots pass so no suite read or install
+        # ever reaches a real checkout by accident.
+        self.registry_root = registry_root
         self.mail_store = mail_store
         self.outbox_dir = Path(outbox_dir) if outbox_dir is not None else _default_outbox_dir()
         self.consolidator = (
@@ -769,6 +781,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_mail_page()
         elif path == "/capabilities":
             self._send_capabilities_page()
+        elif path == "/plugins":
+            _, _sep, query = self.path.partition("?")
+            notice = parse_qs(query).get("notice", [""])[0] if query else ""
+            self._send_plugins_page(notice=notice)
         elif path == "/widgets/inbox":
             self._send_inbox_count()
         elif path == "/settings":
@@ -784,6 +800,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         elif path == "/api/plugins":
             self._send_json(200, {"plugins": self.server_plugins_widget_records()})
+        elif path == "/api/registry":
+            self._send_json(200, self._registry_listing_for_request())
         elif path == "/api/dashboard":
             self._send_json(200, dashboard_payload(self.server))
         elif path.startswith("/api/plugins/"):
@@ -991,6 +1009,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_test()
         elif path == "/settings/mail/folder":
             self._mail_folder_save()
+        elif path == "/settings/registry/path":
+            self._registry_path_save()
+        elif path == "/api/registry/install":
+            self._registry_install()
+        elif path == "/plugins/registry-install":
+            self._registry_install()
+        elif path.startswith("/plugins/") and path.count("/") == 3:
+            self._plugins_page_action(path)
         elif path == "/mail/retest":
             self._mail_retest()
         elif path.startswith("/mail/") and path.endswith("/draft"):
@@ -1299,8 +1325,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             settings_values=self._settings_public_values(),
             endpoint_status=self._endpoint_status(),
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
+            registry_status=self._registry_status_for_settings(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _registry_status_for_settings(self) -> dict:
+        """The listing shape plus the saved path, for the settings form."""
+        listing = dict(self._registry_listing_for_request())
+        settings = self.server.settings  # type: ignore[attr-defined]
+        listing["saved_path"] = (settings.get(registry_source.SETTINGS_KEY)
+                                 if settings is not None else "") or ""
+        return listing
 
     def _settings_public_values(self) -> dict:
         """Settings as they may leave the server: the key row is replaced
@@ -2256,6 +2291,154 @@ class DashboardHandler(BaseHTTPRequestHandler):
             })
         return out
 
+    # -- the plugins page and its registry bridge --------------------------
+
+    def _registry_root_for_request(self) -> tuple[object, str]:
+        """(root, origin): which registry checkout this request browses.
+
+        An injected root wins (a Path pins it, an empty string forces
+        the unavailable state); otherwise settings, then the
+        environment, then this app's own checkout, in that order.
+        """
+        override = getattr(self.server, "registry_root", None)  # type: ignore[attr-defined]
+        if isinstance(override, str) and not override.strip():
+            return None, "none"
+        if override:
+            return Path(override), "pinned"
+        return registry_source.resolve_registry_root(self.server.settings)  # type: ignore[attr-defined]
+
+    def _registry_listing_for_request(self) -> dict:
+        root, origin = self._registry_root_for_request()
+        listing = registry_source.registry_listing(root)
+        listing["origin"] = origin
+        if listing.get("ok"):
+            self._audit("registry.read", target="registry",
+                        detail=f"{len(listing.get('plugins', []))} plugins from {origin}")
+        return listing
+
+    def _send_plugins_page(self, notice: str = "") -> None:
+        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
+        records = plugins.list_records() if plugins is not None else []
+        listing = self._registry_listing_for_request()
+        page = render_plugins_page(
+            records, listing, str(listing.get("origin", "none")),
+            agentdesk.__version__, notice=notice)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _plugins_page_action(self, path: str) -> None:
+        """One lifecycle action posted from the plugins page's own forms.
+
+        The same runtime methods the JSON API drives, answered with a
+        redirect back to the page; a refusal rides back as the notice
+        line instead of a raw error page, because the form came from a
+        human clicking a button.
+        """
+        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            self._send_error_page(503, "Plugins unavailable",
+                                  "No plugin runtime is configured.")
+            return
+        parts = [part for part in path.split("/") if part]
+        plugin_id, action = unquote(parts[1]), parts[2]
+        body = self._read_json_body() or {}
+        actions = {
+            "enable": lambda: plugins.enable(plugin_id),
+            "disable": lambda: plugins.disable(plugin_id),
+            "rollback": lambda: plugins.rollback(plugin_id),
+            "uninstall": lambda: plugins.uninstall(plugin_id),
+            "retest": lambda: plugins.retest(plugin_id),
+            "consent": lambda: plugins.consent(plugin_id),
+            "purge-data": lambda: plugins.purge_data(
+                plugin_id, body.get("confirmation")),
+        }
+        if action not in actions:
+            self._send_error_page(404, "Nothing here",
+                                  "No action lives at this address.")
+            return
+        try:
+            actions[action]()
+        except PluginError as exc:
+            self._send_redirect(f"/plugins?notice={quote(str(exc))}")
+            return
+        self._audit(f"plugin.{action}", target=plugin_id,
+                    detail=f"page action {action}")
+        self._send_redirect("/plugins")
+
+    def _registry_install(self) -> None:
+        """Install one pinned release from the registry checkout.
+
+        The registry machinery owns verification (pin resolution, tag
+        extraction, tree digest, the shared validator); the runtime owns
+        the versioned install, pilot badge and consent flow. Forms get a
+        redirect with the outcome as the notice line; JSON callers get
+        the record.
+        """
+        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            self._registry_install_refused("plugins:unavailable",
+                                           "no plugin runtime is configured")
+            return
+        body = self._read_json_body() or {}
+        plugin_id = str(body.get("id", "")).strip()
+        version = str(body.get("version", "")).strip() or None
+        if not plugin_id:
+            self._registry_install_refused("bad-request",
+                                           'expected {"id": "...", "version": "..."}',
+                                           status=400)
+            return
+        root, _origin = self._registry_root_for_request()
+        if root is None:
+            self._registry_install_refused(
+                "registry:not-configured",
+                "No plugin registry is configured. Set one in Settings.")
+            return
+        try:
+            with tempfile.TemporaryDirectory(prefix="agentdesk-registry-") as tmp:
+                staged = registry_source.stage_registry_install(
+                    root, plugin_id, version=version,
+                    sha256=body.get("sha256"), staging_dir=Path(tmp))
+                result = plugins.install(staged["dir"], source="registry")
+        except (RegistryError, RegistryIndexError) as exc:
+            self._registry_install_refused(
+                getattr(exc, "code", "install:refused"), str(exc))
+            return
+        except PluginError as exc:
+            self._registry_install_refused(exc.code, str(exc), exc.status)
+            return
+        self._audit("plugin.install", target=plugin_id,
+                    detail=f"registry v{result.get('version', '')} pinned install")
+        if self._is_form_submit():
+            self._send_redirect(f"/plugins?notice={quote(
+                'Installed ' + plugin_id + ' v' + str(result.get('version', '')) + '.')}")
+            return
+        self._send_json(200, result)
+
+    def _registry_install_refused(self, code: str, message: str,
+                                  status: int = 409) -> None:
+        if self._is_form_submit():
+            self._send_redirect(f"/plugins?notice={quote(message)}")
+            return
+        self._send_json(status, {"error": code, "message": message})
+
+    def _registry_path_save(self) -> None:
+        """Save or clear the registry checkout path (the settings form)."""
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        chosen = str(body.get("path", "")).strip()
+        if chosen and not (Path(chosen) / "index.json").is_file():
+            self._send_redirect(
+                "/plugins?notice=" + quote(
+                    "That folder has no registry index (index.json). "
+                    "Nothing was saved."))
+            return
+        settings.set(registry_source.SETTINGS_KEY, chosen)
+        self._audit("settings.registry", target="registry_path",
+                    detail="cleared" if not chosen else "updated")
+        self._send_redirect("/plugins")
+
     def _route_wizard(self, method: str, path: str) -> None:
         """The wizard surface: describe, answer, build, preview, approve."""
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
@@ -2552,6 +2735,7 @@ def create_server(
     mail: MailWatch | None = None,
     mail_store: MailStore | None = None,
     outbox_dir=None,
+    registry_root=None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -2631,6 +2815,7 @@ def create_server(
             mail=mail,
             mail_store=mail_store,
             outbox_dir=outbox_dir,
+            registry_root=registry_root,
         )
 
     if port is None:

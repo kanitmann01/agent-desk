@@ -171,10 +171,17 @@ class PluginRuntime:
 
     # ---- lifecycle ----
 
-    def install(self, zip_path: Path, source: str = "zip") -> dict:
-        zip_path = Path(zip_path)
+    def install(self, plugin_path: Path, source: str = "zip") -> dict:
+        """Install a plugin from a zip or an already-verified directory.
+
+        Directory sources are the registry path: the registry machinery
+        resolves the pin, verifies the tree digest and runs the shared
+        validator before staging; everything after validation is the
+        same for both shapes.
+        """
+        plugin_path = Path(plugin_path)
         try:
-            verdict = validate_plugin(zip_path)
+            verdict = validate_plugin(plugin_path)
         except PluginError:
             raise
         except Exception as exc:  # unreadable file: a bad request
@@ -188,7 +195,10 @@ class PluginRuntime:
         self._staging.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=self._staging) as tmp:
             staged = Path(tmp) / "plugin"
-            _extract_zip(zip_path, staged)
+            if plugin_path.is_dir():
+                shutil.copytree(plugin_path, staged)
+            else:
+                _extract_zip(plugin_path, staged)
             manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
             plugin_id = str(manifest["id"])
             version = str(manifest["version"])

@@ -563,7 +563,7 @@ def _rail(inbox_count: int = 0) -> str:
         f'<a href="/memory">{_ICON_MEMORY}Memory</a>'
         f'<a href="/mail">{_ICON_MAIL}Mail</a>'
         f'<a href="/capabilities">{_ICON_CAPABILITIES}Capabilities</a>'
-        f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_PLUGINS}Plugins</span>'
+        f'<a href="/plugins">{_ICON_PLUGINS}Plugins</a>'
         f'<a href="/settings">{_ICON_SETTINGS}Settings</a>'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'

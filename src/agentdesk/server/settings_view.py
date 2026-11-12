@@ -31,6 +31,41 @@ ENDPOINT_HINT = (
 )
 
 
+def _registry_section(status: dict | None) -> str:
+    """The registry path form plus the honest state of the resolution.
+
+    ``status`` is the /api/registry listing shape: ok says which root
+    answered and where it came from; a refusal says why, amber.
+    """
+    status = status or {"ok": False, "origin": "none"}
+    origin_note = {
+        "setting": "from this setting",
+        "environment": "from the environment variable",
+        "checkout": "from this app's own checkout",
+        "pinned": "set for this run",
+        "none": "not configured",
+    }.get(str(status.get("origin", "none")), "")
+    saved = html.escape(str(status.get("saved_path", "") or ""), quote=True)
+    if status.get("ok"):
+        state = (
+            f"<p>Reading <b class='mono'>{html.escape(str(status.get('path', '')))}</b> "
+            f"<span class='empty'>({origin_note})</span>.</p>")
+    else:
+        message = html.escape(str(status.get("message", "")))
+        state = f"<div class='alert'><p>{message}</p></div>"
+    return (
+        state
+        + "<form method='post' action='/settings/registry/path' class='cardform'>"
+        "<label class='empty' for='registry-path'>Registry checkout folder</label>"
+        f"<input id='registry-path' type='text' name='path' value='{saved}' "
+        "placeholder='D:/registry-checkout/registry' autocomplete='off'>"
+        "<button class='btn btn-secondary' type='submit'>Save path</button>"
+        "</form>"
+        "<p class='empty'>Saving with the field empty goes back to automatic. "
+        "A folder without an index.json is refused; nothing is saved then. "
+        "<a href='/plugins'>Open the plugins page</a>.</p>")
+
+
 def mask_llm_key(key: str) -> str:
     """The page-facing form of a saved key: state only, never the value."""
     key = (key or "").strip()
@@ -95,11 +130,11 @@ def render_settings_page(
     settings_values: dict | None = None,
     endpoint_status: dict | None = None,
     mail_folder: str = "",
+    registry_status: dict | None = None,
 ) -> str:
     esc_version = html.escape(version)
     settings_values = settings_values or {}
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
-
     toggles_html = "".join(
         _toggle_button(key, settings_values[key]) for key in _LABELS
     )
@@ -190,6 +225,13 @@ AGENTDESK_MAIL_FOLDER environment variable.</p>
 <button class="btn btn-secondary" type="submit">Save folder</button>
 </form>
 <p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
+<h1 style="margin-top:24px">Plugin registry</h1>
+<p>The plugin registry is a local git checkout of the internal registry
+repository. Installs are pinned by content hash and verified with the
+same validator the registry's CI runs before anything executes. The
+path is read from this setting first, then the AGENTDESK_REGISTRY
+environment variable, then the app's own checkout.</p>
+{_registry_section(registry_status)}
 <h1 style="margin-top:24px">Review</h1>
 <p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/mail">review the mail digest</a> (headers only, off by default), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
 <h1 style="margin-top:24px">Activity log</h1>

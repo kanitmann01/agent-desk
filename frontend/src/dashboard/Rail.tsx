@@ -1,9 +1,9 @@
 // The rail: brand, the entries, the inbox count badge and the user
 // line. Dashboard, Inbox, Assistant and Settings are real server pages
 // (GET /inbox, /assistant, /settings); so are the four consolidation
-// pages (GET /activity, /memory, /mail, /capabilities). Plugins stays
-// switched off until a plugins page exists. Drawn as the system's
-// full-height Input Well column; the brand is plain text in the ink.
+// pages (GET /activity, /memory, /mail, /capabilities) and the plugins
+// page (GET /plugins). Drawn as the system's full-height Input Well
+// column; the brand is plain text in the ink.
 interface RailProps {
   inboxWaiting: number;
 }
@@ -103,9 +103,7 @@ export default function Rail({ inboxWaiting }: RailProps) {
       <a href="/memory">{ICON_MEMORY}Memory</a>
       <a href="/mail">{ICON_MAIL}Mail</a>
       <a href="/capabilities">{ICON_CAPABILITIES}Capabilities</a>
-      <span className="nav-off" aria-disabled="true" title="Arrives in a later build">
-        {ICON_PLUGINS}Plugins
-      </span>
+      <a href="/plugins">{ICON_PLUGINS}Plugins</a>
       <a href="/settings">{ICON_SETTINGS}Settings</a>
       <div className="user">
         <span className="avatar" aria-hidden="true">AD</span>

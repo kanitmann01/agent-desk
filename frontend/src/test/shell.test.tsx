@@ -50,10 +50,10 @@ describe('the rail', () => {
     expect(nav).toHaveTextContent('Inbox');
     expect(nav).toHaveTextContent('Assistant');
     expect(nav).toHaveTextContent('Settings');
-    // Plugins stays the honest disabled entry.
-    expect(screen.getByText('Plugins').closest('span')).toHaveAttribute(
-      'aria-disabled',
-      'true',
+    // Plugins is a real link to the plugins page now.
+    expect(screen.getByText('Plugins').closest('a')).toHaveAttribute(
+      'href',
+      '/plugins',
     );
     expect(screen.getByText('2')).toBeInTheDocument();
   });

@@ -56,6 +56,8 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         # Mail (#44): off by default, no folder chosen.
         "mail_enabled": False,
         "mail_folder": "",
+        # Registry: no checkout pinned, so resolution is automatic.
+        "registry_path": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200
