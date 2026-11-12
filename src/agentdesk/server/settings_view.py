@@ -175,7 +175,7 @@ ones; a setting you have never touched is the right setting.</p>
 a different file, paste a path, upload the JSON by hand, or go back to
 automatic, open the <a href="/walkthrough/calendar">calendar source page</a>.</p>
 <h1 style="margin-top:24px">Review</h1>
-<p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
+<p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
 <h1 style="margin-top:24px">Activity log</h1>
 <p>Only what flows through the app: the asks you type into research and
 the assistant. No keystrokes, no screen, and this list is yours.</p>

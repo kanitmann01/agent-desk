@@ -24,12 +24,14 @@ import time
 from agentdesk.assistant import audit as audit_store
 from agentdesk.calendar.watcher import Adapters as CalendarAdapters
 from agentdesk.calendar.watcher import CalendarBridge
+from agentdesk.capabilities import GATES, CapabilitiesCache
 from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
 from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginRuntime
+from agentdesk.probe.core import UNKNOWN, GateResult
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
@@ -60,6 +62,27 @@ def _inert_inbox():
 
 def _inert_memory():
     return MemoryStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_capabilities_cache():
+    return CapabilitiesCache(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_gate_runners() -> dict:
+    """Honest placeholders, not fakes of a pass: a re-test under the
+    default harness records UNKNOWN and says no probe ran. Tests that
+    exercise a gate inject the real gate function over fakes, like the
+    probe tests do, so nothing here ever touches the environment."""
+    def runner_for(key: str, number: int, title: str):
+        def run() -> GateResult:
+            return GateResult(
+                key=key, number=number, title=title, status=UNKNOWN,
+                evidence=("injected test runner: no probe ran",),
+                note="the test harness's placeholder runner",
+            )
+        return run
+
+    return {key: runner_for(key, number, title) for key, number, title in GATES}
 
 
 def _inert_excel() -> ExcelWatch:
@@ -109,6 +132,11 @@ class Booted:
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
         kwargs.setdefault("memory_store", _inert_memory())
+        # The capabilities cache joins the inert in-memory defaults, and
+        # the runner set is the placeholder set: no boot in the suite can
+        # probe the real environment, even by accident.
+        kwargs.setdefault("capabilities_cache", _inert_capabilities_cache())
+        kwargs.setdefault("gate_runners", _inert_gate_runners())
         # The consent allows are in-memory and process-lifetime by design;
         # a fresh store per boot is the inert default.
         kwargs.setdefault("consents", ConsentStore())

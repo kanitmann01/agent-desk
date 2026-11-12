@@ -41,6 +41,7 @@ from agentdesk.calendar.watcher import (
     default_calendar_candidates,
     default_read_calendar,
 )
+from agentdesk.capabilities import GATES, CapabilitiesCache, GateRunners, default_gate_runners
 from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
@@ -68,6 +69,7 @@ from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.activity_view import DECISIONS, render_activity_page
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
+from agentdesk.server.capabilities_view import render_capabilities_page
 from agentdesk.server.commitments import (
     render_commitments_unavailable,
     render_commitments_widget,
@@ -447,6 +449,8 @@ class AgentDeskServer(ThreadingHTTPServer):
         wizard_store: WizardStore | None = None,
         consents: ConsentStore | None = None,
         memory_store: MemoryStore | None = None,
+        capabilities_cache: CapabilitiesCache | None = None,
+        gate_runners: GateRunners | None = None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -465,6 +469,11 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.plugins = plugins
         self.wizard_store = wizard_store
         self.memory = memory_store
+        # The capabilities cache may be absent (its store could not open);
+        # the runner set defaults to the real probe bundle. Building that
+        # set probes nothing: gates run only when a re-test POST calls one.
+        self.capabilities_cache = capabilities_cache
+        self.gate_runners = gate_runners if gate_runners is not None else _default_gate_runners()
         # Process-lifetime consent allows: (plugin, scope) pairs accepted
         # "for this plugin". A fresh set unless injected; restart forgets.
         self.consents = consents if consents is not None else ConsentStore()
@@ -731,6 +740,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/capabilities":
+            self._send_capabilities_page()
         elif path == "/widgets/inbox":
             self._send_inbox_count()
         elif path == "/settings":
@@ -932,6 +943,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_delete(_memory_id_from_path(path, "/delete"))
         elif path == "/memory/recall":
             self._memory_recall()
+        elif path.startswith("/capabilities/") and path.endswith("/retest"):
+            self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
             if self.server.consolidator is None:  # type: ignore[attr-defined]
                 self._send_json(503, {"error": "the repetition detector is not available"})
@@ -1656,6 +1669,51 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(status, payload)
 
+    # -- capabilities: the cached page and the one probing path (ticket #43)
+
+    def _send_capabilities_page(self) -> None:
+        """The capabilities page from the cache and the live table only.
+
+        GET never probes the environment: gate cards render the cached
+        results (or the never-tested state), and probing belongs to the
+        explicit re-test POST. The cards age by the cache's own clock, so
+        a stored result never reads fresher than it is."""
+        cache = self.server.capabilities_cache
+        if cache is None:
+            self._send_json(503, {"error": "the capabilities cache is not available"})
+            return
+        excel = self.server.excel  # type: ignore[attr-defined]
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        page = render_capabilities_page(
+            {key: cache.cached(key) for key, _number, _title in GATES},
+            live_sources(self.server),
+            excel.status() if excel is not None else None,
+            calendar.status() if calendar is not None else None,
+            self._endpoint_status(),
+            agentdesk.__version__,
+            now_ts=cache.clock(),
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _capabilities_retest(self, gate_key: str) -> None:
+        """The one probing path: run exactly one gate with the server's
+        runner set and re-cache the answer. An unknown gate address is a
+        404 before any runner is touched."""
+        server = self.server  # type: ignore[attr-defined]
+        cache = server.capabilities_cache
+        if cache is None:
+            self._send_json(503, {"error": "the capabilities cache is not available"})
+            return
+        runner = (server.gate_runners or {}).get(gate_key)
+        if runner is None:
+            self._send_error_page(404, "Nothing here", "No gate lives at this address.")
+            return
+        cached = cache.save_result(runner())
+        if self._is_form_submit():
+            self._send_redirect("/capabilities")
+            return
+        self._send_json(200, cached.to_json())
+
     def _on_fact_carried(self, card) -> None:
         """An accepted card may carry a fact in its meta ("fact": "...").
         The only non-page creation path. The fact's source names the
@@ -2194,6 +2252,8 @@ def create_server(
     wizard_store: WizardStore | None = None,
     consents: ConsentStore | None = None,
     memory_store: MemoryStore | None = None,
+    capabilities_cache: CapabilitiesCache | None = None,
+    gate_runners: GateRunners | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -2237,6 +2297,10 @@ def create_server(
         wizard_store = _default_wizard_store()
     if memory_store is None:
         memory_store = _default_memory_store()
+    if capabilities_cache is None:
+        capabilities_cache = _default_capabilities_cache()
+    if gate_runners is None:
+        gate_runners = _default_gate_runners()
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
@@ -2258,6 +2322,8 @@ def create_server(
             wizard_store=wizard_store,
             consents=consents,
             memory_store=memory_store,
+            capabilities_cache=capabilities_cache,
+            gate_runners=gate_runners,
         )
 
     if port is None:
@@ -2370,6 +2436,29 @@ def _default_memory_store() -> MemoryStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("memory store unavailable")
         return None
+
+
+def _default_capabilities_cache() -> CapabilitiesCache | None:
+    """Cached gate results over the persistent store, or None when it
+    cannot open. A missing cache degrades the page to never-tested
+    cards, never to a fabricated answer."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "capabilities.sqlite3", check_same_thread=False)
+        return CapabilitiesCache(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("capabilities cache unavailable")
+        return None
+
+
+def _default_gate_runners() -> GateRunners:
+    """The real probe bundle over a workdir beside the other data.
+
+    Building the set probes nothing (plain closures over the adapters),
+    so carrying it from startup costs nothing and page renders stay
+    side-effect free; the gates run only when a re-test POST calls one."""
+    return default_gate_runners(default_data_dir() / "probe-run")
 
 
 def _default_plugins() -> PluginRuntime | None:
