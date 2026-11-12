@@ -126,6 +126,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         footLines={2}
         sparse
         stamp={{ fresh: false, text: 'Paused' }}
+        menuItems={[{ label: 'Open settings', href: '/settings' }]}
         foot="No ingestion while off."
       >
         <EmptyState
@@ -147,6 +148,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         footLines={2}
         sparse
         stamp={{ fresh: false, text: 'Unavailable' }}
+        menuItems={[{ label: 'Open settings', href: '/settings' }]}
         foot="Nothing is being read while the bridge is unavailable."
       >
         <EmptyState icon={ICON_CALENDAR}>
@@ -172,6 +174,10 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         span="span-5"
         footLines={2}
         stamp={stamp}
+        menuItems={[
+          { label: 'Re-test now', onSelect: retest, disabled: busy },
+          { label: 'Open settings', href: '/settings' },
+        ]}
         foot={`From your calendar via the OneDrive sync. Nothing leaves the machine but the meeting's name.${first ? ` Connected ${first}.` : ''}`}
       >
         <KeyEventBlock event={status.keyEvent} />
@@ -207,6 +213,10 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         footLines={2}
         sparse
         stamp={stamp}
+        menuItems={[
+          { label: 'Re-test now', onSelect: retest, disabled: busy },
+          { label: 'Open settings', href: '/settings' },
+        ]}
         foot="From your calendar via the OneDrive sync."
       >
         <EmptyState icon={ICON_CALENDAR}>
@@ -225,6 +235,10 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         footLines={2}
         sparse
         stamp={stamp}
+        menuItems={[
+          { label: 'Connect your calendar', href: WALKTHROUGH_PATH },
+          { label: 'Open settings', href: '/settings' },
+        ]}
         foot="Setup happens in your browser. No terminal, no admin."
       >
         <EmptyState
@@ -249,6 +263,11 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         sparse
         stamp={stamp}
         amber
+        menuItems={[
+          { label: 'Re-test now', onSelect: retest, disabled: busy },
+          { label: 'Open the walkthrough', href: WALKTHROUGH_PATH },
+          { label: 'Open settings', href: '/settings' },
+        ]}
         foot="Stale data is labeled, never shown as current."
       >
         <div className="alert" role="status"><span>{status.cause}</span></div>

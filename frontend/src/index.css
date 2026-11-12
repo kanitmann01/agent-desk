@@ -199,6 +199,22 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease;
 }
 .icon-btn:hover{background:var(--hover-wash);color:var(--ink-1)}
+/* The overflow menu: a small white sheet under the dots, the paper-lift
+   shadow the only depth, items answering with the hover wash. The
+   stamp keeps its own auto margin, so the dots follow it tightly. */
+.w-menu-wrap{position:relative;flex:none}
+.w-menu{
+  position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:176px;
+  display:flex;flex-direction:column;padding:4px;border-radius:var(--r-control);
+  background:var(--surface);box-shadow:var(--shadow-card-hover);
+}
+.w-menuitem{
+  display:flex;align-items:center;width:100%;padding:8px 10px;border-radius:var(--r-inner);
+  font-size:13px;font-weight:600;color:var(--ink-1);text-align:left;text-decoration:none;
+  transition:background var(--dur) ease;
+}
+.w-menuitem:hover:not(:disabled){background:var(--hover-wash)}
+.w-menuitem:disabled{opacity:.55;cursor:default}
 
 .empty-state{
   display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;

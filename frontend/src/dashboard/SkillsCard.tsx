@@ -47,6 +47,7 @@ export default function SkillsCard({ skills, busy, onRun }: SkillsCardProps) {
       title="Your skills"
       span="span-4"
       stamp={{ fresh: true, text: `${skills.length} saved` }}
+      menuItems={[{ label: 'Open settings', href: '/settings' }]}
       foot="Click one to run it; the result lands in Research."
     >
       <ul className="skills-list">
