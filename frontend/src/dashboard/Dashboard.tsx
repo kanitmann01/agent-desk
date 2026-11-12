@@ -6,7 +6,6 @@
 // client-side; the source line is only ever the truth, as on the
 // server-rendered page.
 import { useState } from 'react';
-import { motion, useReducedMotion, type Variants } from 'motion/react';
 import { postJson } from '../api';
 import { dateLineFor, greetingFor } from '../fmt';
 import type { DashboardData } from '../types';
@@ -39,12 +38,6 @@ interface ResearchResponse {
   sources?: string[];
 }
 
-// The grid staggers its cells in; each cell carries its own spring.
-const GRID_VARIANTS: Variants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.09, delayChildren: 0.22 } },
-};
-
 export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps) {
   // The skills strip and the research bar share one answer area and one
   // status line, exactly as the server-rendered page does.
@@ -53,7 +46,6 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const [statusText, setStatusText] = useState('');
   const [skillBusyId, setSkillBusyId] = useState<number | null>(null);
   const [researchBusy, setResearchBusy] = useState(false);
-  const reduce = useReducedMotion();
 
   const now = new Date();
   const greeting = greetingFor(now);
@@ -125,12 +117,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     <div className="app">
       <Rail inboxWaiting={data.inbox.waiting} />
       <main>
-        <motion.header
-          className="hero"
-          initial={reduce ? false : { opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ type: 'spring', stiffness: 140, damping: 20 }}
-        >
+        <header className="hero">
           <div>
             <h1 className="hero-title">{greeting}</h1>
             <div className="hero-meta">
@@ -148,15 +135,9 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
               <GlareButton tone="primary" type="submit">Add plugin</GlareButton>
             </form>
           </div>
-        </motion.header>
+        </header>
         <CommandBar busy={researchBusy} onAsk={ask} />
-        <motion.section
-          className="bento"
-          aria-label="Dashboard"
-          variants={GRID_VARIANTS}
-          initial="hidden"
-          animate="show"
-        >
+        <section className="bento" aria-label="Dashboard">
           <SalesCard sales={data.sales} onRefetch={onRefetch} onExpired={onExpired} />
           <CommitmentsCard commitments={data.commitments} onRefetch={onRefetch} onExpired={onExpired} />
           <ResearchCard
@@ -177,7 +158,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
           {data.plugins.cards.map((card) => (
             <PluginCardView key={card.id} card={card} />
           ))}
-        </motion.section>
+        </section>
         <footer className="page-foot">
           <span>Agent Desk <span className="mono">{data.version}</span>.</span>
           <span>Cards show only what their connected sources report.</span>

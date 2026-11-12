@@ -71,10 +71,6 @@ svg{display:block;flex:none}
 *{scrollbar-width:thin;scrollbar-color:var(--ink-4) transparent}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 
-/* The recorded dark-glass backdrop is removed at the component layer in
-   the shell ticket; until then its elements stay invisible. */
-.backdrop,.backdrop-grid,.backdrop-aurora{display:none}
-
 .app{position:relative;z-index:1;display:grid;grid-template-columns:224px 1fr;min-height:100vh}
 
 /* The rail: a full-height Input Well column with a hairline right
@@ -119,7 +115,6 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 /* The hero band: the greeting is the page's one Display line; the date
    and the live source line read as quiet stamps beside it. */
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px}
-.hero-eyebrow{display:none}
 .hero-title{
   font-family:var(--font-display);font-weight:800;
   font-size:28px;line-height:1.15;letter-spacing:-.02em;

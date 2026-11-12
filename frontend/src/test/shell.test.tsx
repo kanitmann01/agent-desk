@@ -27,7 +27,16 @@ const DATA: DashboardData = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
+
+// The hero tests pin the clock so a minute rollover between render and
+// assertion cannot flake the greeting or the date line.
+const NOON = new Date(2026, 10, 12, 12, 0, 0);
+function pinClock() {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOON);
+}
 
 describe('the rail', () => {
   it('renders the brand as plain text and the five entries', () => {
@@ -57,17 +66,19 @@ describe('the rail', () => {
 
 describe('the hero band', () => {
   it('greets in one plain display line with the honest source line', () => {
+    pinClock();
     render(<Dashboard data={DATA} onRefetch={async () => {}} onExpired={() => {}} />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      greetingFor(new Date()),
+      greetingFor(NOON),
     );
     // The eyebrow kicker is banned by the design contract.
     expect(document.querySelector('.hero-eyebrow')).toBeNull();
-    expect(screen.getByText(dateLineFor(new Date()))).toBeInTheDocument();
+    expect(screen.getByText(dateLineFor(NOON))).toBeInTheDocument();
     expect(screen.getByText('Live: 1 of 3 sources connected.')).toBeInTheDocument();
   });
 
   it('says plainly when nothing is connected', () => {
+    pinClock();
     const cold = {
       ...DATA,
       sources: { connected: 0, total: 3, items: [] },
