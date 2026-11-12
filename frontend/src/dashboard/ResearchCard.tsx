@@ -42,6 +42,7 @@ export default function ResearchCard({
       span={span}
       sparse={!answer}
       stamp={stamp}
+      menuItems={[{ label: 'Open settings', href: '/settings' }]}
       foot="Searches run through the company endpoint. Every call is logged: what was asked, never file contents."
     >
       {answer && (

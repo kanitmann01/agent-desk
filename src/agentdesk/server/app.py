@@ -766,7 +766,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             hint = default_calendar_hint(explicit)
             self._send_bytes(
                 200,
-                pages.render_walkthrough(str(hint), explicit_path=explicit or "").encode("utf-8"),
+                pages.render_walkthrough(str(hint), explicit_path=explicit or "",
+                                        version=agentdesk.__version__,
+                                        inbox_count=self._inbox_waiting_count()).encode("utf-8"),
                 "text/html; charset=utf-8",
             )
         elif path == "/assistant":
@@ -1291,7 +1293,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         turns = []
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             turns = threadlog.turns(self.server.audit_conn)  # type: ignore[attr-defined]
-        page = render_assistant_page(turns, agentdesk.__version__)
+        page = render_assistant_page(turns, agentdesk.__version__,
+                                     inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _send_audit_tail(self) -> None:
@@ -1326,6 +1329,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             endpoint_status=self._endpoint_status(),
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
             registry_status=self._registry_status_for_settings(),
+            inbox_count=self._inbox_waiting_count(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1524,7 +1528,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         observed: set[str] = set()
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             observed = audit_store.observed_actions(self.server.audit_conn)  # type: ignore[attr-defined]
-        page = render_touches(observed, agentdesk.__version__, datetime.now())
+        page = render_touches(observed, agentdesk.__version__, datetime.now(),
+                              inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _maybe_briefs(self) -> None:
@@ -1548,6 +1553,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         now_ts = inbox.now_ts()
         page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _inbox_waiting_count(self) -> int:
+        """The rail's inbox pill count, the same number every surface
+        shows: waiting cards, evaluated, on the store's own clock."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            return 0
+        self._maybe_briefs()
+        self._evaluate_inbox(inbox)
+        return len(inbox.waiting())
 
     def _send_inbox_count(self) -> None:
         inbox = self.server.inbox  # type: ignore[attr-defined]
@@ -1698,7 +1713,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_store.decision_entries(self.server.audit_conn, tuple(DECISIONS))  # type: ignore[attr-defined]
             if self.server.audit_conn is not None else []  # type: ignore[attr-defined]
         )
-        page = render_activity_page(entries, agentdesk.__version__)
+        page = render_activity_page(entries, agentdesk.__version__,
+                                    inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     # -- memory: the page and its actions (ticket #42) --------------------
@@ -1714,7 +1730,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the memory store is not available"})
             return
         page = render_memory_page(
-            memory.all(), agentdesk.__version__, recall=recall, query=query
+            memory.all(), agentdesk.__version__, recall=recall, query=query,
+            inbox_count=self._inbox_waiting_count(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1814,6 +1831,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             agentdesk.__version__,
             now_ts=cache.clock(),
             mail=self._mail_capabilities(),
+            inbox_count=self._inbox_waiting_count(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1902,7 +1920,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             off_reason = ("The mail watcher is not available on this machine "
                           "(its store could not open).")
         view = mail.view() if (mail is not None and not off_reason) else None
-        page = render_mail_page(agentdesk.__version__, view, off_reason=off_reason)
+        page = render_mail_page(agentdesk.__version__, view, off_reason=off_reason,
+                                inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _mail_retest(self) -> None:
@@ -2322,7 +2341,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         listing = self._registry_listing_for_request()
         page = render_plugins_page(
             records, listing, str(listing.get("origin", "none")),
-            agentdesk.__version__, notice=notice)
+            agentdesk.__version__, notice=notice,
+            inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _plugins_page_action(self, path: str) -> None:

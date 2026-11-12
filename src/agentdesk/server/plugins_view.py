@@ -5,10 +5,13 @@ this page's own routes, which drive the same runtime methods the JSON
 API uses. Registry state is honest at every step: an unavailable or
 invalid registry shows amber with its cause, never an empty success,
 and an installed plugin says which version is active and whether a
-re-consent is waiting.
+re-consent is waiting. The page rides the shared shell (rail plus
+footer), so navigation belongs to the rail.
 """
 
 import html
+
+from agentdesk.server import pages
 
 _RISK_NOTE = {
     "low": "low risk",
@@ -61,7 +64,7 @@ def _installed_block(record: dict) -> str:
     if freshness == "fresh":
         body += "<p class='empty'>Data source fresh.</p>"
     else:
-        body += (f"<div class='alert'><p>{cause}</p></div>")
+        body += f"<div class='alert'><p>{cause}</p></div>"
 
     actions = []
     if state == "enabled":
@@ -118,7 +121,8 @@ def _registry_block(entry: dict, installed_ids: set[str]) -> str:
 
 
 def render_plugins_page(records: list[dict], listing: dict, origin: str,
-                        version: str, notice: str = "") -> str:
+                        version: str, notice: str = "",
+                        inbox_count: int = 0) -> str:
     installed = [record for record in records
                  if record.get("state") != "uninstalled"]
     uninstalled = [record for record in records
@@ -136,14 +140,12 @@ def render_plugins_page(records: list[dict], listing: dict, origin: str,
     graveyard_html = ""
     if uninstalled:
         graveyard_html = (
-            "<h1 style='margin-top:24px'>Removed, data kept</h1>"
+            "<h2>Removed, data kept</h2>"
             + "".join(_installed_block(record) for record in uninstalled))
 
     if listing.get("ok"):
         origin_note = html.escape(str(listing.get("path", "")))
         entries = listing.get("plugins", [])
-        available = [entry for entry in entries
-                     if str(entry["id"]) not in installed_ids]
         registry_html = (
             f"<p class='empty mono'>{origin_note} (from {html.escape(origin)})</p>")
         if entries:
@@ -160,28 +162,16 @@ def render_plugins_page(records: list[dict], listing: dict, origin: str,
 
     notice_html = f"<div class='alert'><p>{html.escape(notice)}</p></div>" if notice else ""
 
-    esc_version = html.escape(version)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plugins, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Plugins</h1>
-<p>Installed plugins run their declared data sources and show their own
-card on the dashboard. Every install goes through the same validator
-the registry's CI runs; nothing executes before it passes.</p>
-{notice_html}
-{installed_html}
-<h1 style="margin-top:24px">From the registry</h1>
-{registry_html}
-{graveyard_html}
-<p class="empty" style="margin-top:18px"><a href="/">Back to the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-</body>
-</html>
-"""
+    content = (
+        "<h1>Plugins</h1>"
+        "<p>Installed plugins run their declared data sources and show "
+        "their own card on the dashboard. Every install goes through the "
+        "same validator the registry's CI runs; nothing executes before "
+        "it passes.</p>"
+        f"{notice_html}"
+        f"<h2>Installed</h2>{installed_html}"
+        f"<h2>From the registry</h2>{registry_html}"
+        f"{graveyard_html}"
+    )
+    return pages.page_shell("Plugins", "/plugins", content, version,
+                            inbox_count=inbox_count)

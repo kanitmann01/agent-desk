@@ -35,6 +35,14 @@ _ICON_INBOX = (
     'stroke-linejoin="round" aria-hidden="true"><path d="M3.5 13.5 5 20h14l1.5-6.5M3.5 13.5h17M12 15v-4"/>'
     "</svg>"
 )
+_ICON_ASSISTANT = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-6.5L8 20.5v-4H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z"/>'
+    '<path d="M8.5 10h7M8.5 13h4"/>'
+    "</svg>"
+)
 _ICON_PLUGINS = (
     '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
     'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
@@ -96,12 +104,14 @@ STYLES = """
 body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 button:disabled{opacity:.55;cursor:default}
+a{color:var(--primary);text-decoration:none}
+a:hover{text-decoration:underline}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
 svg{display:block;flex:none}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
 .rail{border-right:1px solid var(--hairline);background:var(--surface-2);padding:20px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
-.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
 .brand .mark{width:28px;height:28px;border-radius:8px;background:var(--primary);display:grid;place-items:center;color:var(--primary-ink)}
 .brand b{font-size:14px;font-weight:800;letter-spacing:-.01em}
 .rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
@@ -122,6 +132,11 @@ svg{display:block;flex:none}
 .skills-strip .skill-btn{background:var(--surface);color:var(--ink-1);border-radius:var(--r-control);box-shadow:inset 0 0 0 1px var(--hairline),var(--shadow-card);padding:8px 14px;font-weight:700;font-size:13px;transition:background var(--dur) ease}
 .skills-strip .skill-btn:hover{background:var(--surface-2)}
 .settings-block{display:flex;flex-direction:column;gap:8px;max-width:460px}
+.cardform{display:flex;flex-direction:column;gap:8px;margin:8px 0;max-width:460px}
+.cardform .btn{align-self:flex-start}
+.cardform label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.cardform input,.cardform textarea{font:inherit;font-size:13.5px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
+.cardform input:focus,.cardform textarea:focus{outline:2px solid var(--primary);outline-offset:1px}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .field input{font:inherit;font-size:13.5px;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
 .field input:focus{outline:2px solid var(--primary);outline-offset:1px}
@@ -141,16 +156,16 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .btn-primary{background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
-.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
 .icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 .widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
 .widget:hover{box-shadow:var(--shadow-card-hover)}
 .col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
-.w-head{display:flex;align-items:center;gap:10px}
-.w-head h2{font-size:16px;font-weight:800;letter-spacing:-.01em}
-.stamp{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);font-weight:600}
-.w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
+.w-head{display:flex;align-items:center;gap:12px}
+.w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:12px;font-size:12px;line-height:1.5;color:var(--ink-3)}
 .kpi{display:flex;gap:24px;align-items:flex-start}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px;overflow-wrap:anywhere}
@@ -197,13 +212,14 @@ table.rows td.neg{color:var(--bad)}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
-.doc h1{font-size:20px;font-weight:800;margin-bottom:6px}
+.doc h1{font-size:20px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.doc > h2{font-size:16px;font-weight:700;margin:24px 0 0;letter-spacing:-.01em}
 .doc p{color:var(--ink-2);font-size:13.5px;margin:8px 0}
 .doc ol{margin:12px 0;padding-left:20px;color:var(--ink-2);font-size:13.5px;display:flex;flex-direction:column;gap:8px}
 .doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
 .doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .doc a.btn{text-decoration:none}
-.page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
+.page-foot{margin-top:48px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
 .page-foot a:hover{text-decoration:underline}
 .touches td{vertical-align:top;font-size:13px}
@@ -213,8 +229,13 @@ table.rows td.neg{color:var(--bad)}
 .error-card h1{font-size:20px;font-weight:800}
 .error-card p{color:var(--ink-2);font-size:13.5px}
 @media (max-width:980px){
-  .app{grid-template-columns:1fr}
-  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 14px;gap:8px}
+  /* The single-column shell becomes a block, matching the dashboard
+     SPA: a sticky grid item inside its own auto-sized row has no
+     travel, so the strip would still scroll away. */
+  .app{display:block}
+  /* The strip stays pinned while the page scrolls and its entries wrap
+     instead of clipping, matching the dashboard SPA's behavior. */
+  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 14px;gap:8px}
   .rail .brand{padding:0 12px 0 0}
   .rail .user{display:none}
   .grid{grid-template-columns:1fr}
@@ -549,26 +570,74 @@ def _widget_html(widget: Widget) -> str:
     )
 
 
-def _rail(inbox_count: int = 0) -> str:
+def _rail(active: str = "/", inbox_count: int = 0) -> str:
+    """The rail, shared by every page. The entry whose href is `active`
+    is the one marked as the page you are on."""
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
+
+    def entry(href: str, icon: str, label: str, extra: str = "") -> str:
+        current = ' aria-current="page"' if href == active else ""
+        return f'<a href="{href}"{current}>{icon}{label}{extra}</a>'
+
     return (
         '<nav class="rail" aria-label="Main">'
         '<div class="brand"><span class="mark" aria-hidden="true">'
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="2.4" stroke-linecap="round"><path d="M4 12h6M8 8v8M14 10h6M17 7v10"/></svg>'
         '</span><b>Agent Desk</b></div>'
-        f'<a href="/" aria-current="page">{_ICON_DASHBOARD}Dashboard</a>'
-        f'<a href="/inbox">{_ICON_INBOX}Inbox{badge}</a>'
-        f'<a href="/activity">{_ICON_ACTIVITY}Activity</a>'
-        f'<a href="/memory">{_ICON_MEMORY}Memory</a>'
-        f'<a href="/mail">{_ICON_MAIL}Mail</a>'
-        f'<a href="/capabilities">{_ICON_CAPABILITIES}Capabilities</a>'
-        f'<a href="/plugins">{_ICON_PLUGINS}Plugins</a>'
-        f'<a href="/settings">{_ICON_SETTINGS}Settings</a>'
+        f'{entry("/", _ICON_DASHBOARD, "Dashboard")}'
+        # The count rides inside the link: one row on the rail, and
+        # the accessible name carries the waiting number.
+        f'{entry("/inbox", _ICON_INBOX, "Inbox", badge)}'
+        f'{entry("/assistant", _ICON_ASSISTANT, "Assistant")}'
+        f'{entry("/activity", _ICON_ACTIVITY, "Activity")}'
+        f'{entry("/memory", _ICON_MEMORY, "Memory")}'
+        f'{entry("/mail", _ICON_MAIL, "Mail")}'
+        f'{entry("/capabilities", _ICON_CAPABILITIES, "Capabilities")}'
+        f'{entry("/plugins", _ICON_PLUGINS, "Plugins")}'
+        f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
     )
+
+
+def page_shell(
+    title: str,
+    active: str,
+    content_html: str,
+    version: str,
+    inbox_count: int = 0,
+) -> str:
+    """The shared document shell for the server-rendered pages: the rail
+    beside the content column, then the footer that owns the version and
+    the what-this-touches link. Navigation lives in the rail, so no page
+    carries a dangling back-link.
+
+    `content_html` is authored by the caller (each view escapes its own
+    dynamic values) and sits inside the .doc column; the app.js actions
+    script ships with every page.
+    """
+    esc_version = html.escape(version)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}, Agent Desk</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">{_rail(active, inbox_count)}
+<main><div class="doc">
+{content_html}
+</div>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
+"""
 
 
 def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0) -> str:
@@ -602,7 +671,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 </head>
 <body>
 <div class="app">
-{_rail(inbox_count)}
+{_rail("/", inbox_count)}
 <main>
 <div class="topbar">
   <div>
@@ -644,7 +713,7 @@ def render_error_page(title: str, message: str) -> str:
 """
 
 
-def render_walkthrough(watch_hint: str, explicit_path: str = "") -> str:
+def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0) -> str:
     """The calendar connection walkthrough: three browser steps, no terminal.
 
     The user creates the Power Automate flow themselves in their browser;
@@ -670,17 +739,7 @@ def render_walkthrough(watch_hint: str, explicit_path: str = "") -> str:
             '<button class="btn btn-secondary" data-calendar-reset>'
             "Reset to automatic discovery</button>"
         )
-    return """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect your calendar, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Connect your calendar</h1>
+    content = """<h1>Connect your calendar</h1>
 <p>Agent Desk reads one file that a small Power Automate flow keeps fresh
 in your OneDrive. You create that flow once, in your browser: no admin,
 no terminal, nothing installed.</p>
@@ -728,13 +787,9 @@ aria-label="Calendar JSON file to upload">
 <div class="alert" id="calendar-note" hidden></div>
 <div class="cardrow">
 <button class="btn btn-primary" data-calendar-retest>Check for calendar data now</button>
-<a class="btn btn-secondary" href="/">Back to the dashboard</a>
 </div>
-<p style="margin-top:14px">If your tenant blocks personal flows, ask the
+<p>If your tenant blocks personal flows, ask the
 technical owner: the same file can be produced any way IT prefers. The
 app only ever reads it.</p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
 """
+    return page_shell("Connect your calendar", "", content, version, inbox_count=inbox_count)

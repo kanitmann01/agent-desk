@@ -112,12 +112,13 @@ class RailScan(HTMLParser):
 def test_rail_links_the_four_consolidation_pages(page):
     scan = RailScan()
     scan.feed(page)
-    # Dashboard, inbox, then the four pages the consolidation shipped
-    # (activity, memory, mail, capabilities), then the plugins page,
-    # then settings.
+    # Dashboard, inbox, assistant, then the four pages the consolidation
+    # shipped (activity, memory, mail, capabilities), then the plugins
+    # page, then settings: the rail matches the SPA's entries, so
+    # Assistant and Plugins are on every page too.
     assert scan.hrefs == [
-        "/", "/inbox", "/activity", "/memory", "/mail", "/capabilities",
-        "/plugins", "/settings",
+        "/", "/inbox", "/assistant", "/activity", "/memory", "/mail",
+        "/capabilities", "/plugins", "/settings",
     ]
 
 

@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe('the widget card header contract', () => {
-  it('renders title, freshness stamp, overflow menu, body and foot', () => {
+  it('renders title, freshness stamp, body and foot', () => {
     render(
       <WidgetCard
         title="Sales, last 24h"
@@ -27,7 +27,9 @@ describe('the widget card header contract', () => {
     );
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Sales, last 24h');
     expect(screen.getByText('updated 3 min ago')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Widget options' })).toBeInTheDocument();
+    // No menu items declared: the dots are not rendered, so no dead
+    // control ships.
+    expect(screen.queryByRole('button', { name: 'Widget options' })).toBeNull();
     expect(screen.getByText('body copy')).toBeInTheDocument();
     expect(screen.getByText('foot text')).toBeInTheDocument();
     // The card body is the article itself: no glass wrapper between.
@@ -96,6 +98,111 @@ describe('the widget card header contract', () => {
       </WidgetCard>,
     );
     expect(document.querySelector('.cell.span-8')).not.toBeNull();
+  });
+});
+
+describe('the widget card overflow menu', () => {
+  const MENU_ITEMS = [
+    { label: 'Re-test now', onSelect: vi.fn() },
+    { label: 'Open settings', onSelect: vi.fn() },
+  ];
+
+  function renderWithMenu() {
+    MENU_ITEMS.forEach((item) => { item.onSelect.mockClear(); });
+    render(
+      <WidgetCard
+        title="Sales, last 24h"
+        span="span-7"
+        stamp={{ fresh: true, text: 'Ready' }}
+        menuItems={MENU_ITEMS}
+        foot="note"
+      >
+        <p>body copy</p>
+      </WidgetCard>,
+    );
+  }
+
+  it('declares the trigger, opens the menu and fires one item once', async () => {
+    const user = userEvent.setup();
+    renderWithMenu();
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await user.click(trigger);
+    const menu = screen.getByRole('menu', { name: 'Widget options, Sales, last 24h' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(menu).toBeInTheDocument();
+    const retest = screen.getByRole('menuitem', { name: 'Re-test now' });
+    expect(screen.getByRole('menuitem', { name: 'Open settings' })).toBeInTheDocument();
+    await user.click(retest);
+    expect(MENU_ITEMS[0].onSelect).toHaveBeenCalledTimes(1);
+    expect(MENU_ITEMS[1].onSelect).not.toHaveBeenCalled();
+    // The action closes the menu and the trigger is the focus again.
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+
+  it('closes on Escape and returns focus to the trigger', async () => {
+    const user = userEvent.setup();
+    renderWithMenu();
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+    // Escape fired no action.
+    expect(MENU_ITEMS.every((item) => item.onSelect.mock.calls.length === 0)).toBe(true);
+  });
+
+  it('closes when the pointer goes down outside the menu', async () => {
+    const user = userEvent.setup();
+    renderWithMenu();
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await user.click(document.body);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps the menu open across a re-render that does not change the items', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <WidgetCard title="T" span="span-7" stamp={{ fresh: true, text: 'Ready' }}
+        menuItems={MENU_ITEMS} foot="note"><p>body</p></WidgetCard>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Widget options, T' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    rerender(
+      <WidgetCard title="T" span="span-7" stamp={{ fresh: true, text: 'Ready' }}
+        menuItems={MENU_ITEMS} foot="note"><p>other body</p></WidgetCard>,
+    );
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('takes focus when it opens, walks with the arrow keys and Home and End', async () => {
+    const user = userEvent.setup();
+    renderWithMenu();
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
+    await user.click(trigger);
+    // Opening puts focus on the first item, so the arrows work at once.
+    const first = screen.getByRole('menuitem', { name: 'Re-test now' });
+    const second = screen.getByRole('menuitem', { name: 'Open settings' });
+    expect(first).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(second).toHaveFocus();
+    // The walk wraps instead of stopping at the ends.
+    await user.keyboard('{ArrowDown}');
+    expect(first).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(second).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(second).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(first).toHaveFocus();
   });
 });
 

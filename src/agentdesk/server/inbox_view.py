@@ -11,6 +11,7 @@ from datetime import datetime
 from agentdesk.inbox.core import STATUS_DISMISSED, Card
 from agentdesk.server.core import ATTENTION, FRESH, Freshness
 from agentdesk.server.demo import Widget  # noqa: F401  (contract reference)
+from agentdesk.server.pages import page_shell
 
 _KIND_LABEL = {
     "suggestion": "Suggestion",
@@ -101,7 +102,6 @@ def card_html(card: Card, now_ts: float) -> str:
 
 def render_inbox_page(waiting: list[Card], dismissed: list[Card], version: str, now_ts: float) -> str:
     """The full inbox document, with the good empty and the recovery shelf."""
-    esc_version = html.escape(version)
     if waiting:
         cards_html = "".join(card_html(c, now_ts) for c in waiting)
         empty = ""
@@ -109,7 +109,7 @@ def render_inbox_page(waiting: list[Card], dismissed: list[Card], version: str, 
         cards_html = ""
         empty = (
             "<div class='widget' id='inbox-empty'>"
-            "<div class='w-head'><h2 style='font-size:16px'>Nothing needs your attention</h2></div>"
+            "<div class='w-head'><h2>Nothing needs your attention</h2></div>"
             "<p>When the agent notices a pattern, an update, or a brief worth "
             "seeing, it lands here as a card. It never interrupts you otherwise.</p>"
             "<p><a href='/what-this-touches'>See what the app has been doing</a></p>"
@@ -124,28 +124,13 @@ def render_inbox_page(waiting: list[Card], dismissed: list[Card], version: str, 
             "Restore</button></div>"
             for c in dismissed
         )
-        shelf = f"<h1 style='margin-top:28px'>Dismissed</h1>{shelf}"
+        shelf = f"<h2>Dismissed</h2>{shelf}"
     else:
-        shelf = "<p class='empty' style='margin-top:18px'>Dismissed cards stay recoverable here for 30 days. Nothing expires silently.</p>"
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Inbox, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Inbox</h1>
+        shelf = "<p class='empty'>Dismissed cards stay recoverable here for 30 days. Nothing expires silently.</p>"
+    content = f"""<h1>Inbox</h1>
 <p>Everything the agent initiates waits here under your interruption
 budget: quiet hours 18:00-08:00, at most three notifications a day.</p>
 {empty}
 {cards_html}
-{shelf}
-<p class="empty"><a href="/">Back to the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
-"""
+{shelf}"""
+    return page_shell("Inbox", "/inbox", content, version, inbox_count=len(waiting))

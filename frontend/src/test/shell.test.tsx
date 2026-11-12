@@ -100,8 +100,12 @@ describe('the hero band', () => {
     };
     render(<Dashboard data={cold} onRefetch={async () => {}} onExpired={() => {}} />);
     expect(
-      screen.getByText('Not connected yet: each card below has its own one-step connect.'),
+      screen.getByText('Not connected yet: each card below has its own'),
     ).toBeInTheDocument();
+    // "one-step" cannot break across the line: the phrase rides in a
+    // nowrap span so a narrow greeting band never splits it.
+    const nowrap = document.querySelector<HTMLElement>('.hero-live .nowrap');
+    expect(nowrap).toHaveTextContent('one-step connect.');
   });
 });
 
