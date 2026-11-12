@@ -66,20 +66,6 @@ class OneDriveInfo:
 
 
 @dataclass(frozen=True)
-class Verdict:
-    """Aggregated go/no-go answer over all gate results."""
-
-    name: str
-    detail: str = ""  # names failed gates with one remediation clause each
-    notes: tuple[str, ...] = ()  # caveats (e.g. uv absent) that do not block GO
-    failed_gates: tuple[GateResult, ...] = ()
-
-    @property
-    def exit_code(self) -> int:
-        return {VERDICT_GO: EXIT_GO, VERDICT_RESHAPE: EXIT_RESHAPE, VERDICT_NO_GO: EXIT_NO_GO}[self.name]
-
-
-@dataclass(frozen=True)
 class GateResult:
     """One gate's answer with evidence lines (command output or method)."""
 
@@ -89,3 +75,20 @@ class GateResult:
     status: str
     evidence: tuple[str, ...] = ()
     note: str = ""
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Aggregated go/no-go answer over all gate results."""
+
+    name: str
+    detail: str = ""  # names failed gates with one remediation clause each
+    notes: tuple[str, ...] = ()  # caveats (e.g. uv absent) that do not block GO
+    # GateResult is defined above: the annotation is evaluated eagerly on
+    # Pythons before 3.14 (PEP 649 made it lazy there), and a forward
+    # reference to a later class is a NameError at import time on them.
+    failed_gates: tuple[GateResult, ...] = ()
+
+    @property
+    def exit_code(self) -> int:
+        return {VERDICT_GO: EXIT_GO, VERDICT_RESHAPE: EXIT_RESHAPE, VERDICT_NO_GO: EXIT_NO_GO}[self.name]
