@@ -1,12 +1,9 @@
-// The research command bar: the centerpiece. One glass slab holding the
-// question input and the Magnet submit; the rim turns into a slow cyan
-// to violet to green sweep once focused, and the submit sends a click
-// burst through the vendored ClickSpark. Enter asks, Shift+Enter gives
-// a new line. Behavior mirrors the old ask well exactly.
+// The research command bar: the centerpiece. One white well holding the
+// question input and the surface's one solid-green send control. Enter
+// asks, Shift+Enter gives a new line. Behavior mirrors the old ask well
+// exactly; the sweep, the magnet pull, the click burst and the entrance
+// motion are gone.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
-import ClickSpark from '../vendor/reactbits/ClickSpark';
-import Magnet from '../vendor/reactbits/Magnet';
 
 // Five rows of the 15.5px field before it scrolls.
 const MAX_FIELD_HEIGHT = 152;
@@ -37,7 +34,6 @@ const ICON_SEND = (
 export default function CommandBar({ busy, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
   const fieldRef = useRef<HTMLTextAreaElement>(null);
-  const reduce = useReducedMotion();
 
   // One-row by default, growing with the question up to five rows.
   useEffect(() => {
@@ -62,13 +58,7 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
   }
 
   return (
-    <motion.section
-      className="cmd"
-      aria-label="Ask the company endpoint"
-      initial={reduce ? false : { opacity: 0, y: 18, scale: 0.985 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 150, damping: 19, delay: 0.12 }}
-    >
+    <section className="cmd" aria-label="Ask the company endpoint">
       <div className="cmd-inner">
         {ICON_SPARK}
         <textarea
@@ -85,14 +75,12 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
         <span className="cmd-hint" aria-hidden="true">
           <kbd>Enter</kbd> to ask
         </span>
-        <Magnet padding={56} magnetStrength={3} maxOffset={10} scale={1.03} wrapperClassName="cmd-magnet">
-          <ClickSpark sparkColor={['#14594E', '#4C5A55']} sparkSize={9} sparkRadius={22} sparkCount={8} duration={480}>
-            <button className="cmd-send" type="button" onClick={() => void ask()} disabled={busy}>
-              Research {ICON_SEND}
-            </button>
-          </ClickSpark>
-        </Magnet>
+        <span className="cmd-magnet">
+          <button className="cmd-send" type="button" onClick={() => void ask()} disabled={busy}>
+            Research {ICON_SEND}
+          </button>
+        </span>
       </div>
-    </motion.section>
+    </section>
   );
 }
