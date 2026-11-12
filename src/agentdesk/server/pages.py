@@ -2,9 +2,11 @@
 
 The host renders every pixel; plugins later ship declarative UI schemas,
 never HTML (research A9.2 rule 7). Pages are offline by construction: no
-font CDN, no script tags from anywhere but /static, no inline styles or
-inline scripts, so the strict Content-Security-Policy holds without
-unsafe-inline exceptions.
+font CDN, no script tags from anywhere but /static, and no inline
+<script> blocks. The pages may carry minimal inline style attributes for
+one-off spacing; the CSP's style-src 'unsafe-inline' relaxation covers
+exactly those (style attributes cannot execute code), while scripts stay
+prohibited outright.
 """
 
 import html
@@ -43,6 +45,34 @@ _ICON_SETTINGS = (
     'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
     '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h9M17 17h3"/><circle cx="15" cy="7" r="2"/>'
     '<circle cx="9" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg>'
+)
+_ICON_ACTIVITY = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M3.5 12h4l2.5-6.5 4 13 2.5-6.5h4"/></svg>'
+)
+_ICON_MEMORY = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true">'
+    '<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/>'
+    '<path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13"/>'
+    '<path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/></svg>'
+)
+_ICON_MAIL = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true">'
+    '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/>'
+    '<path d="m4.5 8 7.5 5.5L19.5 8"/></svg>'
+)
+_ICON_CAPABILITIES = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M12 3.5 5 6.2v4.6c0 4.6 3 8.6 7 9.7 4-1.1 7-5.1 7-9.7V6.2L12 3.5Z"/>'
+    '<path d="m9 11.5 2.2 2.2 3.8-4.4"/></svg>'
 )
 
 # The design language tokens, verbatim from docs/design-language.md. Font
@@ -529,6 +559,10 @@ def _rail(inbox_count: int = 0) -> str:
         '</span><b>Agent Desk</b></div>'
         f'<a href="/" aria-current="page">{_ICON_DASHBOARD}Dashboard</a>'
         f'<a href="/inbox">{_ICON_INBOX}Inbox{badge}</a>'
+        f'<a href="/activity">{_ICON_ACTIVITY}Activity</a>'
+        f'<a href="/memory">{_ICON_MEMORY}Memory</a>'
+        f'<a href="/mail">{_ICON_MAIL}Mail</a>'
+        f'<a href="/capabilities">{_ICON_CAPABILITIES}Capabilities</a>'
         f'<span class="nav-off" aria-disabled="true" title="Arrives in a later build">{_ICON_PLUGINS}Plugins</span>'
         f'<a href="/settings">{_ICON_SETTINGS}Settings</a>'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'

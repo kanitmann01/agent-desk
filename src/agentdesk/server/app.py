@@ -132,8 +132,9 @@ LOG = logging.getLogger("agentdesk.server")
 # elements, which 'unsafe-inline' in style-src governs. Style attributes
 # cannot execute code; scripts still can, so script-src stays 'self' and
 # no inline <script> block ships anywhere: the SPA loads only its own
-# hashed bundles from /static/spa/. The server-rendered pages are
-# unaffected (they never used inline styles either).
+# hashed bundles from /static/spa/. The server-rendered pages use the
+# same relaxation for their minimal inline style attributes (one-off
+# spacing), and use no inline scripts either.
 # font-src is 'self' for the same reason scripts and styles are: the
 # SPA's two typefaces (Plus Jakarta Sans and IBM Plex Mono, SIL OFL
 # 1.1) are .woff2 files inside the committed bundle, served from

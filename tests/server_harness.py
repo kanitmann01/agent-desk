@@ -37,6 +37,7 @@ from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
 from agentdesk.settings import SettingsStore
+from agentdesk.wizard.core import WizardStore
 
 
 def _inert_audit():
@@ -63,6 +64,10 @@ def _inert_inbox():
 
 def _inert_memory():
     return MemoryStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_wizard_store():
+    return WizardStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
 def _inert_mail_store():
@@ -137,6 +142,11 @@ class Booted:
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
         kwargs.setdefault("memory_store", _inert_memory())
+        # The wizard sessions join the inert in-memory defaults: without
+        # this, a boot with no injection falls through to create_server's
+        # _default_wizard_store(), which writes the real
+        # ~/.agent-desk/wizard.sqlite3. Tests that care inject their own.
+        kwargs.setdefault("wizard_store", _inert_wizard_store())
         # The capabilities cache joins the inert in-memory defaults, and
         # the runner set is the placeholder set: no boot in the suite can
         # probe the real environment, even by accident.

@@ -45,6 +45,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("llm.research", "endpoint", "Research questions are sent to the company LLM endpoint, as derived text only."),
     ("llm.assistant", "endpoint", "Assistant questions are sent to the company LLM endpoint, with widget context attached."),
     ("llm.breakdown", "endpoint", "Meeting breakdowns are sent to the company LLM endpoint, meeting name only."),
+    ("llm.wizard", "endpoint", "Your plain-English plugin description, with the app's fixed list of data-source kinds, is sent to the company LLM endpoint so the wizard can draft its questions and the plugin manifest. No workbook, calendar or mail data is attached."),
     # The mail vocabulary (ticket #44), off by default in settings. The
     # mail path is metadata-only by construction: bodies are discarded
     # at parse time and no LLM call exists anywhere in it.
