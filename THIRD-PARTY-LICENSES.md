@@ -30,7 +30,7 @@ and which only run at development time.
 | react 19.3.1 | UI library | MIT | yes, compiled into the JavaScript |
 | react-dom 19.3.1 | DOM renderer | MIT | yes, compiled into the JavaScript |
 | motion 12.43.0 | animation (the framer-motion package) | MIT | yes, compiled into the JavaScript |
-| react-bits (vendored components in `frontend/src/vendor/reactbits/`) | Aurora, TiltedCard, Magnet, GradientText, ShinyText, DecryptedText, AnimatedList, LatticeLoader, StatusMark, GlassSurface, GlareHover, CountUp, ClickSpark | MIT + Commons Clause | yes, the ones the app imports, compiled into the JavaScript |
+| react-bits (vendored components in `frontend/src/vendor/reactbits/`) | AnimatedList, LatticeLoader, TextType, CountUp, ClickSpark | MIT + Commons Clause | yes, the ones the app imports, compiled into the JavaScript |
 | @fontsource-variable/plus-jakarta-sans | Plus Jakarta Sans Variable, the display and UI typeface | OFL-1.1 | yes, the .woff2 files unchanged |
 | @fontsource/ibm-plex-mono | IBM Plex Mono, the numeric typeface | OFL-1.1 | yes, the .woff2 files unchanged |
 | tailwindcss 4.3.5, @tailwindcss/vite 4.3.5 | styling | MIT | only the CSS it generates |

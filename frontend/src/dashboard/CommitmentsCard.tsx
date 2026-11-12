@@ -1,9 +1,8 @@
 // The commitments card: healthy (key event, persisted subtask checks,
 // followup chips), clear, empty (walkthrough link), stale and unreadable
 // amber with Re-test, plus the disabled and unavailable branches. Copy
-// and flows follow pages.py and commitments.py exactly. The tilt shell
-// leans the whole card toward the pointer; under prefers-reduced-motion
-// it stays flat.
+// and flows follow pages.py and commitments.py exactly; every card is
+// the plain Card White article from the shared chrome.
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import { commitmentsStamp, hhmmFromIso } from '../fmt';

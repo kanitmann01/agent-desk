@@ -186,7 +186,6 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   color:var(--attention-ink);background:var(--attention-bg);
   border-radius:var(--r-pill);padding:4px 10px;
 }
-.stamp-mark{display:inline-flex}
 .w-body{flex:1;display:flex;flex-direction:column;min-height:0;container-type:inline-size}
 /* A sparse state (empty, paused, one message) sits centered between the
    header and the foot instead of hugging the top and leaving a void. */

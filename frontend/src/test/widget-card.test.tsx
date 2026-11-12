@@ -126,6 +126,14 @@ describe('the plain button', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('passes type through, so a button can submit its form', () => {
+    render(<Button tone="primary" type="submit">Add plugin</Button>);
+    expect(screen.getByRole('button', { name: 'Add plugin' })).toHaveAttribute(
+      'type',
+      'submit',
+    );
+  });
+
   it('renders a href as a link styled as the button', () => {
     render(<Button tone="primary" href="/settings">Turn it back on</Button>);
     const link = screen.getByRole('link', { name: 'Turn it back on' });

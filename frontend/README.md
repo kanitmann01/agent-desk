@@ -11,43 +11,49 @@ need node: the Python launcher serves the committed bundle directly.
     npm run build
 
 Then commit the new contents of `src/agentdesk/server/static/spa/`.
-`npm run check` runs the TypeScript compiler only.
+`npm run check` runs the TypeScript compiler only. `npm test` runs the
+unit suite (vitest: the design-contract tests and the component
+behavior tests).
 
 ## What lives here
 
-- `src/vendor/reactbits/`: components vendored from react-bits
-  (github.com/DavidHDev/react-bits, MIT plus Commons Clause: free for
-  personal and commercial use, selling the library itself is
-  restricted; this is an internal tool, not sold). Each file carries a
-  provenance header naming its upstream path and the commit it was
-  fetched from. The shadcn CLI route (`npx shadcn@latest add
+- `src/vendor/reactbits/`: the five components still vendored from
+  react-bits (github.com/DavidHDev/react-bits, MIT plus Commons
+  Clause: free for personal and commercial use, selling the library
+  itself is restricted; this is an internal tool, not sold). Each file
+  carries a provenance header naming its upstream path and the commit
+  it was fetched from. The shadcn CLI route (`npx shadcn@latest add
   @react-bits/<Name>-TS-TW`) wants to scaffold a shadcn project first,
   so files are fetched from upstream `src/ts-tailwind/` by hand.
   No component brings an npm dependency beyond motion (MIT):
-  - Aurora (the page backdrop) is the one WebGL component: raw WebGL2
-    with its own shaders, no ogl, no three.js. Without WebGL2 its canvas
-    stays empty and the static wash in `index.css` shows instead.
-    GlassSurface is mounted with `renderer="svg"`, so its optional
-    WebGL path never activates. Everything else is CSS, 2D canvas or
-    motion.
   - AnimatedList is vendored without its demo rows and the two icon
     packages they import (the one local change, stated in its header).
-  - TextType and SplitText are in-repo equivalents: the upstream
-    components animate through GSAP, which is outside the repo's
-    permissive license allowlist, so the same effects are built on
-    plain timers and on motion.
-- `src/components/`: the shells built on those parts. `Backdrop` is
-  mounted outside `React.StrictMode` on purpose (the reason is in the
-  file); `WidgetCard` is the bento cell with its plain and tilt
-  shells and its composed empty states; `CommandBar` is the research
-  bar.
-- Fonts: Inter Variable and Space Grotesk Variable from
-  `@fontsource-variable` (SIL OFL 1.1), imported at the top of
-  `index.css`. Vite copies their `.woff2` files into the bundle; the
+  - TextType is an in-repo equivalent: the upstream component animates
+    through GSAP, which is outside the repo's permissive license
+    allowlist, so the same effect is built on plain timers.
+  The warm-paper design contract (docs/design-language.md) bans the
+  glass, gradient and spectacle components the dashboard used to mount
+  (Aurora, GlassSurface, TiltedCard, GlareHover, Magnet, GradientText,
+  ShinyText, DecryptedText, SplitText, SpotlightCard, StatusMark); they
+  are gone, and the design-contract tests keep them out.
+- `src/components/`: the shared shells. `WidgetCard` is the bento cell
+  (the three-part header contract over the hairline-topped foot);
+  `Button` is the plain control (one solid-green primary per surface);
+  `Stamp` is the freshness stamp with its status dot; `EmptyState` is
+  the composed empty row; `CommandBar` is the research bar.
+- Fonts: Plus Jakarta Sans Variable and IBM Plex Mono from the
+  `@fontsource` packages (SIL OFL 1.1), imported at the top of
+  `index.css`. Vite copies their `.woff2` files into the bundle (and
+  never inlines one as a `data:` URL; the CSP allows `self` only); the
   license texts in `public/licenses/` ship beside them.
 - `src/dashboard/`: the dashboard cards, one branch per source state,
   mirroring the server renderers in `src/agentdesk/server/sales.py`,
   `commitments.py` and `research.py`.
+- `src/test/`: the vitest suite. `tokens.test.ts` pins the design
+  contract to the stylesheet, the shell HTML and the committed bundle;
+  the component suites render the rail, hero, command bar, card chrome
+  and button semantics in jsdom (the setup stubs the browser APIs jsdom
+  lacks: matchMedia, the observers, CSS.supports).
 - The server composes everything the dashboard shows as JSON in
   `GET /api/dashboard`; the SPA renders only from that payload. When the
   built bundle is missing (a source checkout without a build), `/`
@@ -65,7 +71,6 @@ Then commit the new contents of `src/agentdesk/server/static/spa/`.
 - The CSP serves the bundled fonts from `self` (`font-src 'self'` in
   SECURITY_HEADERS): same-origin only, like scripts and styles. No font
   host, no `data:` URLs.
-- Motion is honest: every animated component honors
-  `prefers-reduced-motion`, and the card entrances, the tilt, the typing
-  answer and the command bar sweep all render their final state at once
-  when it is set.
+- Motion honors the contract: 150-200ms on color, opacity and shadow
+  only; no entrances, no stagger, no parallax; every animated behavior
+  degrades to an instant state change under `prefers-reduced-motion`.
