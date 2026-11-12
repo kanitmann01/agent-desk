@@ -351,7 +351,7 @@ table.rows td.neg{color:var(--bad)}
 }
 @media (max-width:980px){
   .app{grid-template-columns:minmax(0,1fr)}
-  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
+  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;scrollbar-width:none;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
   .rail .brand{padding:0 12px 0 0;flex:none}
   .rail a,.rail .nav-off{flex:none}
   .rail .user{display:none}
