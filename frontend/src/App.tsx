@@ -67,7 +67,7 @@ export default function App() {
           <LatticeLoader
             label="Reading the dashboard."
             pattern="orbit"
-            color="#22D3EE"
+            color="#14594E"
             cellSize={5}
             gap={2}
             fontSize={13.5}

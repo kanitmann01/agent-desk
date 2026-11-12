@@ -142,8 +142,18 @@ def test_manifest_file_exists_and_states_the_allowlist():
     assert "Python runtime has no third-party" in manifest
     assert "dashboard SPA bundle does ship third-party work" in manifest
     assert "no third-party components" not in manifest
-    for shipped in ("react 19", "motion 12", "@fontsource-variable/inter", "OFL-1.1"):
+    # The bundle ships the warm-paper system fonts (the dark-glass
+    # theme's Inter/Space Grotesk left with that theme; see DESIGN.md).
+    for shipped in (
+        "react 19",
+        "motion 12",
+        "@fontsource-variable/plus-jakarta-sans",
+        "@fontsource/ibm-plex-mono",
+        "OFL-1.1",
+    ):
         assert shipped in manifest, shipped
+    for gone in ("@fontsource-variable/inter", "@fontsource-variable/space-grotesk"):
+        assert gone not in manifest, gone
     assert "MIT" in manifest and "Apache-2.0" in manifest
 
 

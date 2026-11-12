@@ -1,52 +1,50 @@
-/* Agent Desk dashboard SPA styles: the OLED dark glass theme.
+/* Agent Desk dashboard SPA styles: the warm-paper design system from
+   DESIGN.md ("Mission Control for One").
 
-   Palette: deep space navy ground #020617, glass card surfaces #0E1223
-   behind a 1px #334155 rim, text #F8FAFC with muted #94A3B8, one neon
-   green accent #22C55E that is allowed to glow, and a cyan #22D3EE to
-   violet #8B5CF6 gradient reserved for headlines and the aurora behind
-   the page. Amber #F59E0B stays the color of stale, blocked and paused
-   states.
-
-   Fonts are self-hosted through @fontsource (Space Grotesk Variable for
-   display, Inter Variable for body) and emitted into the bundle, and
-   the CSP serves them from 'self': nothing is fetched from another
-   origin. Every component that animates honors
-   prefers-reduced-motion, and the reduced-motion block at the bottom
-   freezes the CSS-driven spectacle too. */
+   The room is calm and warm: Warm Ledger Paper ground, white cards,
+   four-level green-gray ink, one commanding Ink Bottle Green for action
+   and healthy status, terracotta only when a number goes down, and the
+   Manila pair (flag ground, ink text) for "look here soon". Numerals
+   are the actors: IBM Plex Mono, always tabular, the KPI value the only
+   28px mono object on the page. Depth is layered paper lift only: a
+   hairline-weight ink ring and a stacked soft shadow; nothing blurs,
+   glows, or floats. Every animated behavior honors
+   prefers-reduced-motion and degrades to an instant state change. */
 @import "tailwindcss";
-@import "@fontsource-variable/inter/wght.css";
-@import "@fontsource-variable/space-grotesk/wght.css";
+@import "@fontsource-variable/plus-jakarta-sans/wght.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 
 :root{
-  color-scheme: dark;
-  --bg:#020617;
-  --surface:#0E1223;
-  --surface-soft:rgba(255,255,255,.04);
-  --surface-lift:rgba(255,255,255,.08);
-  --border:#334155;
-  --border-soft:rgba(51,65,85,.55);
-  --text:#F8FAFC;
-  --ink-2:#B0BACD;
-  --ink-3:#A2ADC2;
-  --accent:#22C55E;
-  --accent-bright:#4ADE80;
-  --accent-ink:#04170B;
-  --accent-soft:rgba(34,197,94,.12);
-  --cyan:#22D3EE;
-  --violet:#8B5CF6;
-  --amber:#F59E0B;
-  --amber-soft:rgba(245,158,11,.12);
-  --bad:#F87171;
-  --r-card:24px;
-  --r-control:14px;
-  --r-inner:12px;
+  color-scheme: light;
+  --bg:#F6F4EF;
+  --surface:#FFFFFF;
+  --surface-2:#FBFAF7;
+  --hairline:#E5E1D6;
+  --ink-1:#1F2A27;
+  --ink-2:#4C5A55;
+  --ink-3:#77847E;
+  --ink-4:#A9B1AC;
+  --primary:#14594E;
+  --primary-ink:#F6FBF9;
+  --primary-soft:#E4EEE9;
+  --good:#14594E;
+  --bad:#B3402A;
+  --bad-soft:rgba(179,64,42,.10);
+  --attention-bg:#FBF3E2;
+  --attention-ink:#8A5A14;
+  --hover-wash:#EFEDE5;
+  --r-card:12px;
+  --r-control:8px;
+  --r-inner:6px;
   --r-pill:999px;
-  --dur:180ms;
-  --font-display:"Space Grotesk Variable","Space Grotesk","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
-  --font-ui:"Inter Variable","Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
-  --font-mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
-  --glow-accent:0 0 0 1px rgba(34,197,94,.55),0 10px 30px -8px rgba(34,197,94,.5);
-  --shadow-card:0 18px 44px -22px rgba(0,0,0,.9),0 4px 14px -8px rgba(0,0,0,.6);
+  --dur:160ms;
+  --font-display:"Plus Jakarta Sans Variable","Plus Jakarta Sans","Segoe UI",system-ui,sans-serif;
+  --font-ui:"Plus Jakarta Sans Variable","Plus Jakarta Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --font-mono:"IBM Plex Mono","Consolas",monospace;
+  --shadow-card:0 0 0 1px rgba(31,42,39,.05), 0 1px 2px -1px rgba(31,42,39,.06), 0 2px 4px 0 rgba(31,42,39,.04);
+  --shadow-card-hover:0 0 0 1px rgba(31,42,39,.07), 0 1px 2px -1px rgba(31,42,39,.08), 0 2px 4px 0 rgba(31,42,39,.06);
 }
 /* Margin, padding and box-sizing are reset by Tailwind's preflight (in
    its base layer). They are deliberately not reset again here: an
@@ -57,217 +55,172 @@ html{background:var(--bg)}
 body{
   font-family:var(--font-ui);
   background:var(--bg);
-  color:var(--text);
+  color:var(--ink-1);
   font-size:14px;
-  line-height:1.55;
+  line-height:1.5;
   -webkit-font-smoothing:antialiased;
   overflow-x:hidden;
 }
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 button:disabled{opacity:.55;cursor:default}
-a{color:var(--cyan);text-decoration:none}
-code{font-family:var(--font-mono);font-size:.92em;background:var(--surface-lift);border-radius:5px;padding:1px 5px}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+a{color:var(--primary);text-decoration:none}
+code{font-family:var(--font-mono);font-size:.92em;background:var(--surface-2);border-radius:5px;padding:1px 5px}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
 svg{display:block;flex:none}
-::selection{background:rgba(34,197,94,.35)}
-*{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+::selection{background:rgba(20,89,78,.16);color:var(--ink-1)}
+*{scrollbar-width:thin;scrollbar-color:var(--ink-4) transparent}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 
-/* The full-bleed backdrop: a static cyan to violet wash plus a faint
-   dot grid, and the vendored Aurora (WebGL2, zero dependencies) flowing
-   across the top. When WebGL2 is unavailable the static wash alone
-   still carries the page. */
-.backdrop{position:fixed;inset:0;z-index:0;pointer-events:none;background:
-  radial-gradient(62% 52% at 16% -4%,rgba(34,211,238,.14),transparent 70%),
-  radial-gradient(58% 48% at 84% -6%,rgba(139,92,246,.18),transparent 72%),
-  var(--bg)}
-.backdrop-grid{position:absolute;inset:0;background-image:radial-gradient(rgba(148,163,184,.07) 1px,transparent 1px);background-size:30px 30px;mask-image:linear-gradient(180deg,#000,transparent 62%)}
-.backdrop-aurora{position:absolute;left:0;right:0;top:0;height:min(72vh,720px)}
-.backdrop::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,6,23,.24),rgba(2,6,23,.5) 52%,var(--bg) 96%)}
+/* The recorded dark-glass backdrop is removed at the component layer in
+   the shell ticket; until then its elements stay invisible. */
+.backdrop,.backdrop-grid,.backdrop-aurora{display:none}
 
-.app{position:relative;z-index:1;display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
+.app{position:relative;z-index:1;display:grid;grid-template-columns:224px 1fr;min-height:100vh}
 
-/* The rail: a floating glass column. Same four entries and the same
-   honest disabled Plugins entry as before. */
+/* The rail: a full-height Input Well column with a hairline right
+   border. Same four entries and the same honest disabled Plugins entry
+   as before. */
 .rail{
-  position:sticky;top:16px;height:calc(100vh - 32px);margin:16px 0 16px 16px;
-  padding:18px 12px 14px;display:flex;flex-direction:column;gap:4px;
-  border-radius:var(--r-card);border:1px solid var(--border-soft);
-  background:linear-gradient(180deg,rgba(14,18,35,.78),rgba(14,18,35,.55));
-  box-shadow:var(--shadow-card);
-  backdrop-filter:blur(20px) saturate(1.35);
-  -webkit-backdrop-filter:blur(20px) saturate(1.35);
+  position:sticky;top:0;height:100vh;
+  padding:20px 12px 14px;display:flex;flex-direction:column;gap:4px;
+  background:var(--surface-2);border-right:1px solid var(--hairline);
 }
-.brand{display:flex;align-items:center;gap:11px;padding:2px 8px 18px}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
 .brand .mark{
-  width:30px;height:30px;border-radius:10px;display:grid;place-items:center;color:#04170B;
-  background:linear-gradient(135deg,var(--cyan),var(--violet) 62%,var(--accent));
-  box-shadow:0 0 0 1px rgba(148,163,184,.28),0 6px 18px -6px rgba(34,211,238,.55);
+  width:28px;height:28px;border-radius:var(--r-control);display:grid;place-items:center;
+  color:var(--primary-ink);background:var(--primary);
 }
-.brand .brand-name{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.brand .brand-name{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
 .rail a,.rail .nav-off{
-  display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--r-control);
-  color:var(--ink-2);font-weight:600;font-size:13.5px;
-  transition:background var(--dur) ease,color var(--dur) ease,box-shadow var(--dur) ease;
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);
+  color:var(--ink-2);font-weight:600;font-size:13.5px;text-decoration:none;
+  transition:background var(--dur) ease,color var(--dur) ease;
 }
-.rail a:hover{background:var(--surface-soft);color:var(--text)}
-.rail a[aria-current="page"]{
-  background:linear-gradient(90deg,rgba(34,197,94,.16),rgba(34,197,94,.05));
-  color:var(--accent-bright);
-  box-shadow:inset 2px 0 0 var(--accent);
-}
-.rail .nav-off{opacity:.4}
+.rail a:hover{background:var(--hover-wash);color:var(--ink-1)}
+.rail a[aria-current="page"]{background:var(--primary-soft);color:var(--primary)}
+.rail .nav-off{opacity:.45}
 .rail .count{
   margin-left:auto;font-family:var(--font-mono);font-size:11px;font-weight:600;
-  background:var(--accent);color:var(--accent-ink);border-radius:var(--r-pill);padding:1px 8px;
-  box-shadow:0 0 12px rgba(34,197,94,.6);
+  background:var(--primary);color:var(--primary-ink);border-radius:var(--r-pill);padding:1px 7px;
 }
-.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:12px 8px 4px;border-top:1px solid var(--border-soft)}
+.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px 4px;border-top:1px solid var(--hairline)}
 .rail .user .avatar{
   width:30px;height:30px;border-radius:var(--r-pill);display:grid;place-items:center;
-  font-weight:700;font-size:12px;color:var(--accent-bright);background:var(--accent-soft);
-  box-shadow:inset 0 0 0 1px rgba(34,197,94,.35);
+  font-weight:800;font-size:12px;color:var(--primary);background:var(--primary-soft);
 }
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px;font-weight:600}
-.dot{width:7px;height:7px;border-radius:var(--r-pill);background:var(--accent);display:inline-block;flex:none;box-shadow:0 0 8px rgba(34,197,94,.8)}
-.dot.sample{background:var(--ink-3);box-shadow:none}
+.dot{width:7px;height:7px;border-radius:var(--r-pill);background:var(--good);display:inline-block;flex:none}
+.dot.amber{background:var(--attention-ink)}
+.dot.sample{background:var(--ink-4)}
 
-main{padding:38px 40px 88px;max-width:1280px;width:100%;min-width:0;margin:0 auto}
+main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 auto}
 
-/* The hero band: greeting, date line, and the live source line. */
-.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:24px}
-.hero-eyebrow{
-  font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--ink-2);display:flex;align-items:center;gap:9px;margin-bottom:12px;
-}
-.hero-eyebrow .rule{height:1px;width:34px;background:linear-gradient(90deg,var(--cyan),var(--violet));opacity:.7}
+/* The hero band: the greeting is the page's one Display line; the date
+   and the live source line read as quiet stamps beside it. */
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px}
+.hero-eyebrow{display:none}
 .hero-title{
-  font-family:var(--font-display);font-weight:700;
-  font-size:clamp(38px,4.6vw,64px);line-height:1.04;letter-spacing:-.035em;
+  font-family:var(--font-display);font-weight:800;
+  font-size:28px;line-height:1.15;letter-spacing:-.02em;
 }
-.hero-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:16px;color:var(--ink-2);font-size:14.5px;font-weight:500}
-.hero-live{display:inline-flex;align-items:center;gap:9px;padding:7px 13px 7px 11px;border-radius:var(--r-pill);background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--border-soft)}
-.hero-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding-bottom:6px}
+.hero-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:8px;color:var(--ink-2);font-size:13px}
+.hero-live{
+  display:inline-flex;align-items:center;gap:8px;padding:5px 11px;border-radius:var(--r-pill);
+  background:var(--surface);font-size:12.5px;font-weight:600;color:var(--ink-2);
+  box-shadow:inset 0 0 0 1px var(--hairline);
+}
+.hero-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding-bottom:4px}
 
-/* The research command bar: the centerpiece. A glass slab whose rim
-   turns into a slow cyan to violet to green sweep once focused. */
-.cmd{position:relative;margin:2px 0 30px;border-radius:20px;padding:1.5px;isolation:isolate}
-.cmd::before{
-  content:"";position:absolute;inset:0;border-radius:inherit;z-index:-1;
-  background:conic-gradient(from var(--cmd-angle,210deg),var(--cyan),var(--violet),var(--accent),var(--cyan));
-  opacity:.35;transition:opacity var(--dur) ease;
+/* The research command bar: a white well on the paper, an inset
+   hairline ring, and the surface's one solid-green send control. */
+.cmd{
+  position:relative;margin:2px 0 26px;border-radius:var(--r-control);
+  background:var(--surface);box-shadow:var(--shadow-card);
 }
-.cmd::after{
-  content:"";position:absolute;inset:-14px;border-radius:34px;z-index:-2;
-  background:conic-gradient(from var(--cmd-angle,210deg),var(--cyan),var(--violet),var(--accent),var(--cyan));
-  filter:blur(26px);opacity:0;transition:opacity 320ms ease;
-}
-.cmd:focus-within::before{opacity:1;animation:cmd-spin 5.5s linear infinite}
-.cmd:focus-within::after{opacity:.32;animation:cmd-spin 5.5s linear infinite}
 .cmd-inner{
-  display:flex;align-items:flex-end;gap:12px;padding:14px 14px 14px 20px;border-radius:18.5px;
-  background:linear-gradient(180deg,rgba(14,18,35,.94),rgba(14,18,35,.84));
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  box-shadow:var(--shadow-card);
+  display:flex;align-items:flex-end;gap:12px;padding:10px 10px 10px 16px;border-radius:inherit;
 }
-.cmd-icon{color:var(--cyan);padding-bottom:9px}
+.cmd-icon{color:var(--ink-3);padding-bottom:10px}
 .cmd-field{
-  flex:1;min-width:0;border:none;background:none;color:var(--text);
-  font:500 15.5px/1.5 var(--font-ui);resize:none;outline:none;padding:6px 0;
+  flex:1;min-width:0;border:none;background:none;color:var(--ink-1);
+  font:400 15px/1.5 var(--font-ui);resize:none;padding:6px 0;
   max-height:9.5em;
 }
-.cmd-field::placeholder{color:var(--ink-3);font-weight:400}
+.cmd-field::placeholder{color:var(--ink-3)}
+.cmd-field:focus{outline:2px solid var(--primary);outline-offset:1px;border-radius:var(--r-inner)}
 .cmd-hint{align-self:center;color:var(--ink-3);font-size:12px;white-space:nowrap;padding:0 2px}
 .cmd-hint kbd{
-  font-family:var(--font-mono);font-size:10.5px;color:#D7DEEB;
-  background:var(--surface-lift);border-radius:6px;padding:2px 6px;
-  box-shadow:inset 0 0 0 1px var(--border-soft);
+  font-family:var(--font-mono);font-size:10.5px;color:var(--ink-2);
+  background:var(--surface-2);border-radius:6px;padding:2px 6px;
+  box-shadow:inset 0 0 0 1px var(--hairline);
 }
 .cmd-send{
-  display:inline-flex;align-items:center;gap:8px;border-radius:13px;padding:10px 18px;
-  font-weight:700;font-size:14px;color:var(--accent-ink);white-space:nowrap;
-  background:linear-gradient(180deg,var(--accent-bright),var(--accent));
-  box-shadow:var(--glow-accent);
-  transition:filter var(--dur) ease,transform var(--dur) ease;
+  display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;
+  min-height:36px;font-weight:700;font-size:14px;color:var(--primary-ink);white-space:nowrap;
+  background:var(--primary);box-shadow:var(--shadow-card);
+  transition:box-shadow var(--dur) ease,filter var(--dur) ease;
 }
-.cmd-send:hover:not(:disabled){filter:brightness(1.08)}
-.cmd-send:active:not(:disabled){transform:translateY(1px)}
-@property --cmd-angle{syntax:"<angle>";inherits:false;initial-value:210deg}
-@keyframes cmd-spin{to{--cmd-angle:570deg}}
+.cmd-send:hover:not(:disabled){box-shadow:var(--shadow-card-hover)}
+.cmd-send:active:not(:disabled){filter:brightness(1.05)}
 
-/* The bento grid. */
-.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:18px;align-items:stretch}
+/* The bento grid: role-sized spans, never a uniform mosaic. */
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;align-items:stretch}
 .cell{position:relative;display:flex;min-width:0}
 .span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-7{grid-column:span 7}
 .span-8{grid-column:span 8}.span-12{grid-column:span 12}
 
-/* The card shell: a 1.5px rim of steel gradient around the glass.
-   Under the glass sits a mostly solid #0E1223 fill with its own heavy
-   blur, so the aurora behind reads as a soft tint inside the card and
-   never as a line or edge through the content. */
+/* The card shell: Card White on paper, lifted only on hover. The
+   paper-lift shadow is the only depth in the system. */
 .card{
-  position:relative;flex:1;display:flex;min-width:0;border-radius:var(--r-card);padding:1.5px;
-  background:linear-gradient(180deg,rgba(148,163,184,.30),rgba(51,65,85,.14) 34%,rgba(51,65,85,.10));
-  box-shadow:var(--shadow-card);
+  position:relative;flex:1;display:flex;min-width:0;border-radius:var(--r-card);
+  background:var(--surface);box-shadow:var(--shadow-card);
+  transition:box-shadow 200ms ease;
 }
-.card.amber{background:linear-gradient(180deg,rgba(245,158,11,.6),rgba(245,158,11,.18) 40%,rgba(245,158,11,.12))}
-.card-body{
-  position:relative;flex:1;display:flex;min-width:0;
-  border-radius:calc(var(--r-card) - 1.5px);
-  background:rgba(14,18,35,.84);
-  backdrop-filter:blur(22px);
-  -webkit-backdrop-filter:blur(22px);
-}
-/* The vendored glass paints its own diagonal sheen from the top left;
-   even as a whisper reviewers read it as a rendering bug, so the
-   diagonal is off entirely. The rim stays for the glassy feel. */
-.card-body > div > span:first-of-type{opacity:0}
-/* Amber glass: an amber wash over the same mostly solid fill. */
-.card.amber .card-body{background:linear-gradient(180deg,rgba(245,158,11,.16),rgba(245,158,11,0) 46%),rgba(14,18,35,.84)}
-/* In the SPA the glass surface component carries the card chrome, so
-   .widget is layout only. GlassSurface's inner wrapper adds 8px padding,
-   which sums with the widget's own 14px. */
-.widget{padding:16px 16px 12px;display:flex;flex-direction:column;gap:14px;height:100%;width:100%;align-self:stretch;color:var(--text);font-weight:400;line-height:1.55;text-align:left}
+.card:hover{box-shadow:var(--shadow-card-hover)}
+/* Amber stays a stamp-level treatment (the Manila pair on the freshness
+   stamp and the alert block); the card itself stays paper-white. */
+.card-body{position:relative;flex:1;display:flex;min-width:0;border-radius:inherit}
+/* The card chrome component still mounts until its ticket lands; its
+   inner wrapper adds 8px padding, which sums with the widget's own. */
+.widget{padding:18px 18px 14px;display:flex;flex-direction:column;gap:12px;height:100%;width:100%;align-self:stretch;color:var(--ink-1);line-height:1.5;text-align:left}
 .w-head{display:flex;align-items:center;gap:12px;min-height:30px;flex:none}
-.w-head h2{font-family:var(--font-display);font-size:17px;font-weight:600;letter-spacing:-.012em;min-width:0;overflow-wrap:anywhere}
+.w-head h2{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
 .stamp{
   margin-left:auto;display:inline-flex;align-items:center;gap:7px;flex:none;
-  font-size:12px;font-weight:500;color:var(--ink-2);white-space:nowrap;
-  padding:4px 10px 4px 8px;border-radius:var(--r-pill);
-  background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--border-soft);
+  font-size:12px;font-weight:600;color:var(--ink-3);white-space:nowrap;
 }
-.stamp.amber{color:#FCD34D;background:var(--amber-soft);box-shadow:inset 0 0 0 1px rgba(245,158,11,.35)}
+.stamp.amber{
+  color:var(--attention-ink);background:var(--attention-bg);
+  border-radius:var(--r-pill);padding:4px 10px;
+}
 .stamp-mark{display:inline-flex}
 .w-body{flex:1;display:flex;flex-direction:column;min-height:0;container-type:inline-size}
 /* A sparse state (empty, paused, one message) sits centered between the
    header and the foot instead of hugging the top and leaving a void. */
 .w-body.sparse{justify-content:center}
 .w-body-inner{display:flex;flex-direction:column;gap:12px}
-.w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--border-soft);padding-top:11px;font-size:12px;line-height:1.55;color:var(--ink-3);margin-top:auto;flex:none}
-/* 11px of padding plus two 12px lines at 1.55. */
-.w-foot.two-line{min-height:49px}
+.w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:11px;font-size:12px;line-height:1.5;color:var(--ink-3);margin-top:auto;flex:none}
+/* 11px of padding plus two 12px lines at 1.5. */
+.w-foot.two-line{min-height:47px}
 .badge-pilot{
-  font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--amber);
-  background:var(--amber-soft);border-radius:var(--r-pill);padding:3px 10px;
-  box-shadow:inset 0 0 0 1px rgba(245,158,11,.4);
+  font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--attention-ink);
+  background:var(--attention-bg);border-radius:var(--r-pill);padding:3px 10px;
 }
 .icon-btn{
   display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
-  border-radius:9px;color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease;
+  border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease;
 }
-.icon-btn:hover{background:var(--surface-soft);color:var(--text)}
+.icon-btn:hover{background:var(--hover-wash);color:var(--ink-1)}
 
 .empty-state{
   display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;
   border-radius:var(--r-inner);padding:13px 16px;
-  background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--border-soft);
+  background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hairline);
 }
-.empty-icon{color:var(--cyan);flex:none;display:inline-flex;filter:drop-shadow(0 0 8px rgba(34,211,238,.3))}
-.card.amber .empty-icon{color:var(--amber);filter:drop-shadow(0 0 8px rgba(245,158,11,.3))}
+.empty-icon{color:var(--ink-3);flex:none;display:inline-flex}
 .empty-text{flex:1 1 220px;min-width:0;color:var(--ink-2);font-size:13.5px;margin:0}
 .empty-action{flex:none;margin-left:auto}
-.empty-action .glare-host{margin:0}
 /* On a narrow card the action drops under the message and lines up with
    the text, not with the far edge. */
 @container (max-width:470px){
@@ -276,136 +229,127 @@ main{padding:38px 40px 88px;max-width:1280px;width:100%;min-width:0;margin:0 aut
   .empty-action{flex:1 1 100%;margin-left:36px}
 }
 
-/* The tilting card (commitments): the vendored TiltedCard lays its face
-   out absolutely, so the cell reserves the measured content height and
-   the tilt fills it. The cell carries the resting shadow (the face
-   would clip it), and the TiltedCard rim highlights are switched off so
-   both cards of the top row read with the same rim weight. Text stays
-   selectable inside the tilt. */
-.tilt-cell{border-radius:var(--r-card);box-shadow:var(--shadow-card)}
-.tilt-fill{position:absolute;inset:0;--tc-rim-color:transparent;--tc-rim-light:transparent}
-.tilt-content{position:absolute;inset:0;display:flex;user-select:text;-webkit-user-select:text;cursor:auto}
-
-/* The hero KPI. */
+/* The hero KPI. The value is the only 28px mono object on the page; its
+   command comes from that, not from size. Green when healthy,
+   terracotta when down. */
 .kpi{display:flex;flex-direction:column;gap:6px;padding:6px 0 2px}
-.kpi .label{font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.09em}
+.kpi .label{font-size:12px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.09em}
 .kpi .value{
-  font-family:var(--font-display);font-size:clamp(56px,6vw,84px);font-weight:700;line-height:1;
-  letter-spacing:-.03em;color:var(--accent-bright);
-  text-shadow:0 0 26px rgba(34,197,94,.42),0 0 68px rgba(34,197,94,.18);
+  font-family:var(--font-mono);font-size:28px;font-weight:600;line-height:1.1;
+  letter-spacing:-.01em;color:var(--good);
   font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
 }
-.kpi .sub{font-size:12.5px;color:var(--ink-3)}
+.kpi .value.down{color:var(--bad)}
+.kpi .sub{font-size:12px;color:var(--ink-3)}
 .kpi-split{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.kpi-chip{display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:11.5px;font-weight:600;border-radius:var(--r-pill);padding:3px 10px}
-.kpi-chip.up{color:var(--accent-bright);background:var(--accent-soft);box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}
-.kpi-chip.down{color:var(--bad);background:rgba(248,113,113,.10);box-shadow:inset 0 0 0 1px rgba(248,113,113,.35)}
+.kpi-chip{
+  display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:11.5px;font-weight:600;
+  border-radius:var(--r-pill);padding:3px 10px;
+}
+.kpi-chip.up{color:var(--primary);background:var(--primary-soft)}
+.kpi-chip.down{color:var(--bad);background:var(--bad-soft)}
 /* Healthy sales: the count on the left, what changed on the right. */
 .sales-hero{display:grid;grid-template-columns:minmax(0,236px) minmax(0,1fr);gap:8px 28px;align-items:start}
 .sales-delta{min-width:0;padding-top:4px}
 table.rows{width:100%;border-collapse:collapse;font-size:13px}
-table.rows td{padding:8px 8px 8px 0;border-bottom:1px solid rgba(51,65,85,.4);overflow-wrap:anywhere}
+table.rows td{padding:8px 8px 8px 0;border-bottom:1px solid var(--hairline);overflow-wrap:anywhere}
 table.rows tr:last-child td{border-bottom:none}
 table.rows td.neg{color:var(--bad)}
-.delta{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;margin-right:6px;font-family:var(--font-mono);font-size:12px;font-weight:700}
-.delta.up{color:var(--accent-bright);background:var(--accent-soft)}
-.delta.down{color:var(--bad);background:rgba(248,113,113,.12)}
+.delta{
+  display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;
+  border-radius:var(--r-inner);margin-right:6px;padding:0 4px;
+  font-family:var(--font-mono);font-size:12px;font-weight:600;
+}
+.delta.up{color:var(--primary);background:var(--primary-soft)}
+.delta.down{color:var(--bad);background:var(--bad-soft)}
 .empty{color:var(--ink-3);font-size:13px}
 
-.event{
-  display:flex;gap:14px;border-radius:var(--r-inner);padding:13px 14px;
-  background:linear-gradient(160deg,rgba(34,211,238,.10),rgba(139,92,246,.07));
-  box-shadow:inset 0 0 0 1px rgba(51,65,85,.6);
-}
-.event .when{font-family:var(--font-mono);font-size:12.5px;font-weight:600;color:var(--cyan);white-space:nowrap;padding-top:2px;text-shadow:0 0 14px rgba(34,211,238,.35)}
-.event b{display:block;font-weight:650;overflow-wrap:anywhere}
+.event{display:flex;gap:14px;border-radius:var(--r-inner);padding:12px 14px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hairline)}
+.event .when{font-family:var(--font-mono);font-size:12.5px;font-weight:600;color:var(--primary);white-space:nowrap;padding-top:2px}
+.event b{display:block;font-weight:700;overflow-wrap:anywhere}
 .event small{color:var(--ink-2)}
-.w-big{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--text)}
+.w-big{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12.5px;color:var(--ink-3)}
-.subhead{font-size:11px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.09em}
+.subhead{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.09em}
 .subhead-tight{margin-bottom:4px}
 
 .check{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13.5px;cursor:pointer}
 .check .box{
-  width:18px;height:18px;border-radius:6px;box-shadow:inset 0 0 0 1.5px var(--border);
+  width:18px;height:18px;border-radius:var(--r-inner);border:1.5px solid var(--ink-4);
   display:grid;place-items:center;color:transparent;transition:all var(--dur) ease;margin-top:1px;flex:none;
 }
-.check:hover .box{box-shadow:inset 0 0 0 1.5px rgba(148,163,184,.7)}
+.check:hover .box{border-color:var(--ink-2)}
 .check[aria-checked="true"] .box{
-  background:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent),0 0 10px rgba(34,197,94,.5);
-  color:var(--accent-ink);
+  background:var(--primary);border-color:var(--primary);
+  color:var(--primary-ink);
 }
 .check[aria-checked="true"] span:not(.box){text-decoration:line-through;color:var(--ink-3)}
 .follow{
-  display:inline-flex;align-items:center;gap:8px;background:var(--amber-soft);color:#FCD34D;
+  display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);
   border-radius:var(--r-pill);padding:5px 12px;font-size:12.5px;font-weight:600;align-self:flex-start;
-  box-shadow:inset 0 0 0 1px rgba(245,158,11,.35);
 }
 
 .well{
-  display:flex;gap:10px;align-items:center;border-radius:var(--r-inner);padding:12px 14px;
-  background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--border-soft);
+  display:flex;gap:10px;align-items:center;border-radius:var(--r-control);padding:12px 14px;
+  background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hairline);
 }
 .well-input{
-  flex:1;min-width:0;font:inherit;color:var(--text);background:rgba(2,6,23,.6);
-  box-shadow:inset 0 0 0 1px var(--border);border:none;border-radius:10px;padding:9px 12px;resize:vertical;
+  flex:1;min-width:0;font:inherit;color:var(--ink-1);background:var(--surface);
+  border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical;
 }
 .well-input::placeholder{color:var(--ink-3)}
-.well-input:focus{outline:2px solid var(--cyan);outline-offset:1px}
+.well-input:focus{outline:2px solid var(--primary);outline-offset:1px}
 
 .answer{
-  border-radius:var(--r-inner);padding:15px 16px;font-size:13.5px;color:#E2E8F0;
-  background:linear-gradient(170deg,rgba(34,211,238,.07),rgba(139,92,246,.06) 55%,rgba(34,197,94,.05));
-  box-shadow:inset 0 0 0 1px var(--border-soft);
+  border-radius:var(--r-inner);padding:14px 16px;font-size:13.5px;color:var(--ink-1);
+  background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hairline);
 }
-.answer .aq{font-family:var(--font-display);font-weight:600;font-size:14.5px;margin-bottom:8px;color:var(--text)}
+.answer .aq{font-family:var(--font-display);font-weight:700;font-size:14.5px;margin-bottom:8px;color:var(--ink-1)}
 .src{
-  display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--cyan);
-  background:rgba(34,211,238,.08);box-shadow:inset 0 0 0 1px rgba(34,211,238,.35);
+  display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);
+  background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);
   border-radius:var(--r-pill);padding:3px 10px;margin:10px 8px 0 0;
 }
 .research-status{display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:13px}
 /* The typing cursor takes no inline width, so the text behind it never
    reflows when it goes away. */
 .tt-cursor{position:relative;display:inline-block;width:0;height:1em;vertical-align:baseline}
-.tt-cursor::after{content:"";position:absolute;left:1px;bottom:-.16em;width:2px;height:1.05em;border-radius:1px;background:var(--accent-bright);box-shadow:0 0 8px rgba(34,197,94,.8);animation:tt-blink 1s steps(2,jump-none) infinite}
+.tt-cursor::after{content:"";position:absolute;left:1px;bottom:-.16em;width:2px;height:1.05em;border-radius:1px;background:var(--primary);animation:tt-blink 1s steps(2,jump-none) infinite}
 .research-status .ll-text{white-space:normal}
 .tt-rest{visibility:hidden}
 @keyframes tt-blink{50%{opacity:0}}
 
 /* Stacked: a plugin's alert carries two paragraphs (the cause, then
    what Re-test does) and they read top to bottom. */
-.alert{display:flex;flex-direction:column;gap:6px;align-items:flex-start;color:#FCD34D;font-size:13.5px}
+.alert{display:flex;flex-direction:column;gap:6px;align-items:flex-start;color:var(--attention-ink);font-size:13.5px}
 .btn-start{align-self:flex-start}
 .addplugin-form{display:inline-flex;margin:0}
 
-/* Buttons. Neon green primary, quiet glass secondary. */
+/* Buttons. One solid-green primary per surface, quiet white secondary. */
 .btn{
-  display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:9px 16px;
-  font-weight:700;min-height:38px;white-space:nowrap;color:var(--text);
-  transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease,filter var(--dur) ease;
+  display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;
+  min-height:36px;font-weight:700;white-space:nowrap;color:var(--ink-1);
+  transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;
 }
 .btn-primary{
-  background:linear-gradient(180deg,var(--accent-bright),var(--accent));
-  color:var(--accent-ink);box-shadow:var(--glow-accent);
+  background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card);
 }
-.btn-primary:hover:not(:disabled){filter:brightness(1.08)}
-.btn-secondary{background:var(--surface-soft);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}
-.btn-secondary:hover:not(:disabled){background:var(--surface-lift);box-shadow:inset 0 0 0 1px rgba(148,163,184,.6),0 0 18px -6px rgba(34,211,238,.4)}
-/* GlareHover wraps a real button or link; the wrapper only adds the
-   light sweep, so form semantics, hit area and focus stay with the
-   element inside. */
-.glare-host{align-self:flex-start;border-radius:var(--r-control)}
-.glare-host.primary{box-shadow:var(--glow-accent)}
-.glare-host.primary .btn{box-shadow:none}
+.btn-primary:hover:not(:disabled){box-shadow:var(--shadow-card-hover)}
+.btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btn-secondary:hover:not(:disabled){background:var(--surface-2)}
+/* GlareHover wraps a real button or link until its ticket lands; the
+   wrapper adds no styling of its own, so form semantics, hit area and
+   focus stay with the element inside. */
+.glare-host{align-self:flex-start}
+.glare-host.primary{box-shadow:none}
+.glare-host.primary .btn{box-shadow:var(--shadow-card)}
 
-/* The skills strip: the vendored AnimatedList in a slim card, drawn
-   with the card's own row template (title, up to two description lines,
-   and a quiet run chevron). */
+/* The skills strip: plain rows (title, up to two description lines, and
+   a quiet run chevron). */
 .skills-list{width:100%;min-width:0;margin-top:2px}
 .skill-item{padding:12px 12px 12px 14px;gap:12px}
 .skill-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.skill-name{font-size:14px;font-weight:600;line-height:1.35;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.skill-name{font-size:14px;font-weight:600;line-height:1.35;color:var(--ink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .skill-desc{color:var(--ink-2);font-size:12.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .skill-go{flex:none;color:var(--ink-3);align-self:center}
 
@@ -413,16 +357,14 @@ table.rows td.neg{color:var(--bad)}
 .center-wrap{position:relative;z-index:1;min-height:100vh;display:grid;place-items:center;padding:24px}
 .center-card{
   max-width:460px;width:100%;border-radius:var(--r-card);padding:28px;display:flex;flex-direction:column;gap:10px;
-  background:linear-gradient(180deg,rgba(14,18,35,.85),rgba(14,18,35,.6));
-  box-shadow:0 0 0 1px var(--border-soft),var(--shadow-card);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  background:var(--surface);box-shadow:var(--shadow-card);
 }
 .center-card h1{font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-.01em}
 .center-card p{color:var(--ink-2);font-size:13.5px}
 .center-loader{display:flex;align-items:center;gap:10px;color:var(--ink-2);padding-top:2px}
 
-.page-foot{margin-top:44px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--border-soft);padding-top:14px;display:flex;gap:16px;flex-wrap:wrap}
-.page-foot a{color:var(--cyan);font-weight:600}
+.page-foot{margin-top:44px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px;flex-wrap:wrap}
+.page-foot a{color:var(--primary);font-weight:600}
 .page-foot a:hover{text-decoration:underline}
 
 @media (max-width:1120px){
@@ -431,7 +373,7 @@ table.rows td.neg{color:var(--bad)}
 }
 @media (max-width:980px){
   .app{grid-template-columns:minmax(0,1fr)}
-  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;margin:12px 12px 0;padding:10px 12px;gap:6px}
+  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
   .rail .brand{padding:0 12px 0 0;flex:none}
   .rail a,.rail .nav-off{flex:none}
   .rail .user{display:none}
@@ -444,15 +386,16 @@ table.rows td.neg{color:var(--bad)}
   .sales-hero{grid-template-columns:1fr}
 }
 @media (max-width:560px){
-  /* The bar stacks: the question on top, the submit across the bottom. */
+  /* The bar stacks: the question on top, the submit across the bottom.
+     The send control sits inside a vendored wrapper, so the wrapper is
+     the flex item that has to grow. */
   .cmd-inner{flex-wrap:wrap;align-items:center;padding:14px}
   .cmd-icon{padding-bottom:0}
   .cmd-field{flex:1 1 calc(100% - 40px)}
-  .cmd-magnet{flex:1 1 100%}
+  .cmd-magnet{flex:1 1 100%;display:flex}
   .cmd-magnet .cmd-send{width:100%;justify-content:center}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}
-  .cmd:focus-within::before,.cmd:focus-within::after{animation:none}
   .tt-cursor::after{animation:none}
 }

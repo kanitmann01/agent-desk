@@ -65,7 +65,7 @@ export default function Rail({ inboxWaiting }: RailProps) {
         </span>
         <GradientText
           className="brand-name"
-          colors={['#7DD3FC', '#A5B4FC', '#7DD3FC']}
+          colors={['#1F2A27', '#4C5A55', '#1F2A27']}
           animationSpeed={12}
         >
           Agent Desk

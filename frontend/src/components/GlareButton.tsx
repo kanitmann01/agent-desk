@@ -22,7 +22,7 @@ export default function GlareButton({ children, tone = 'secondary', href, classN
     <GlareHover
       background="transparent"
       borderRadius="14px"
-      glareColor={primary ? '#F0FFF6' : '#7DD3FC'}
+      glareColor={primary ? '#F6FBF9' : '#E4EEE9'}
       // A disabled button keeps its place in the tree (focus is not
       // lost while a request runs) but stops answering the pointer.
       glareOpacity={disabled ? 0 : primary ? 0.5 : 0.32}

@@ -110,11 +110,12 @@ LOG = logging.getLogger("agentdesk.server")
 # hashed bundles from /static/spa/. The server-rendered pages are
 # unaffected (they never used inline styles either).
 # font-src is 'self' for the same reason scripts and styles are: the
-# SPA's two typefaces (Inter and Space Grotesk, SIL OFL 1.1) are .woff2
-# files inside the committed bundle, served from /static/spa/assets/.
-# Without the directive, font loads fall back to default-src 'none' and
-# the bundled fonts are blocked. Self only: no font host, no data: URLs,
-# so the page still fetches nothing from another origin.
+# SPA's two typefaces (Plus Jakarta Sans and IBM Plex Mono, SIL OFL
+# 1.1) are .woff2 files inside the committed bundle, served from
+# /static/spa/assets/. Without the directive, font loads fall back to
+# default-src 'none' and the bundled fonts are blocked. Self only: no
+# font host, no data: URLs, so the page still fetches nothing from
+# another origin.
 SECURITY_HEADERS = (
     ("Content-Security-Policy",
      "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; "

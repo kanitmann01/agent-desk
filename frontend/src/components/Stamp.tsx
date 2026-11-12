@@ -17,8 +17,8 @@ export default function Stamp({ fresh, text }: StampProps) {
       <span className="stamp-mark" aria-hidden="true">
         <StatusMark
           status={fresh ? 'done' : 'pending'}
-          color="#F59E0B"
-          doneColor="#22C55E"
+          color="#8A5A14"
+          doneColor="#14594E"
           size={15}
           strokeWidth={2}
           dashes={6}

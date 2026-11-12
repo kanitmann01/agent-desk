@@ -162,7 +162,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
         <EmptyState
           icon={ICON_SHEET}
           action={(
-            <ClickSpark sparkColor={['#22C55E', '#22D3EE']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
+            <ClickSpark sparkColor={['#14594E', '#4C5A55']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
               <GlareButton tone="primary" onClick={pick} disabled={busy}>
                 Connect a workbook
               </GlareButton>
