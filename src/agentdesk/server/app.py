@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -40,9 +41,11 @@ from agentdesk.calendar.watcher import (
     default_calendar_candidates,
     default_read_calendar,
 )
+from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
-from agentdesk.inbox.core import UnknownCard
+from agentdesk.inbox.core import KIND_UPDATE_CONSENT, UnknownCard
+from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
 from agentdesk.llm import (
     DEFAULT_MODEL,
@@ -59,6 +62,7 @@ from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
+from agentdesk.server.activity_view import DECISIONS, render_activity_page
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.commitments import (
@@ -354,6 +358,48 @@ def form_body_fields(raw: bytes) -> dict | None:
     return {name: values[0] for name, values in fields.items() if values}
 
 
+def plain_preview(text: str, limit: int = 140) -> str:
+    """A one-line plain-text preview of a draft for the audit log: the
+    donor approvals module's plainText. Tags and entities out, whitespace
+    collapsed, capped, so the log never carries markup."""
+    stripped = re.sub(r"<[^>]*>", " ", text)
+    stripped = re.sub(r"&[a-zA-Z]+;", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()[:limit]
+
+
+def _flag(body: dict, *names: str) -> bool:
+    """A checkbox-style flag from either a JSON body (true) or a form
+    post ("1", "true", "on"): the same choice, two wire shapes."""
+    for name in names:
+        value = body.get(name)
+        if value is True or (isinstance(value, str)
+                             and value.strip().lower() in ("1", "true", "on")):
+            return True
+    return False
+
+
+def _plugin_audit_detail(action: str, result: dict) -> str:
+    """What each plugin lifecycle row says, from the action's own result."""
+    result = result if isinstance(result, dict) else {}
+    if action == "update":
+        if result.get("applied"):
+            return f"applied v{result.get('version', '')}"
+        return "held for consent: adds " + "; ".join(result.get("added_scopes", []))
+    if action == "consent":
+        return f"applied v{result.get('version', '')}"
+    if action == "rollback":
+        return f"rolled back to {result.get('rolled_back_to', '')}"
+    if action in ("enable", "disable"):
+        return f"state: {result.get('state', action)}"
+    if action == "uninstall":
+        return "program files deleted, data preserved"
+    if action == "purge-data":
+        return "data folder deleted after confirmation"
+    if action == "retest":
+        return f"data source: {result.get('status', '')}"
+    return ""
+
+
 class AgentDeskServer(ThreadingHTTPServer):
     """The app server: sessions, source table, and the excel watch."""
 
@@ -378,6 +424,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         plugins: PluginRuntime | None = None,
         pick_calendar=None,
         wizard_store: WizardStore | None = None,
+        consents: ConsentStore | None = None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -395,6 +442,9 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.settings = settings_store
         self.plugins = plugins
         self.wizard_store = wizard_store
+        # Process-lifetime consent allows: (plugin, scope) pairs accepted
+        # "for this plugin". A fresh set unless injected; restart forgets.
+        self.consents = consents if consents is not None else ConsentStore()
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
             if activity_log is not None and inbox_store is not None and skill_store is not None
@@ -654,6 +704,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_assistant_page()
         elif path == "/inbox":
             self._send_inbox_page()
+        elif path == "/activity":
+            self._send_activity_page()
         elif path == "/widgets/inbox":
             self._send_inbox_count()
         elif path == "/settings":
@@ -828,16 +880,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     action_label=str(body.get("actionLabel", "")),
                     window_hours=body.get("windowHours"),
                     meta=body.get("meta") or {},
+                    draft=str(body.get("draft", "")),
                 )
             except (ValueError, TypeError) as exc:
                 self._send_json(400, {"error": str(exc)})
                 return
-            inbox_service.evaluate(self.server.inbox, _local_now(), **self._budget_values())  # type: ignore[attr-defined]
+            self._evaluate_inbox(self.server.inbox)  # type: ignore[attr-defined]
             self._send_json(201, self.server.inbox.get(card.id).to_json(self.server.inbox.now_ts()))  # type: ignore[attr-defined]
         elif path.startswith("/inbox/cards/") and path.endswith("/accept"):
             self._inbox_decide(path[len("/inbox/cards/"):-len("/accept")], "accept")
         elif path.startswith("/inbox/cards/") and path.endswith("/dismiss"):
             self._inbox_decide(path[len("/inbox/cards/"):-len("/dismiss")], "dismiss")
+        elif path.startswith("/inbox/cards/") and path.endswith("/edit"):
+            self._inbox_edit(path[len("/inbox/cards/"):-len("/edit")])
+        elif path.startswith("/inbox/cards/") and path.endswith("/snooze"):
+            self._inbox_snooze(path[len("/inbox/cards/"):-len("/snooze")])
+        elif path.startswith("/inbox/cards/") and path.endswith("/more-info"):
+            self._inbox_more_info(path[len("/inbox/cards/"):-len("/more-info")])
         elif path.startswith("/inbox/dismissed/") and path.endswith("/restore"):
             self._inbox_restore(path[len("/inbox/dismissed/"):-len("/restore")])
         elif path == "/inbox/consolidate":
@@ -1335,8 +1394,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
-        inbox_service.evaluate(inbox, _local_now(), **self._budget_values())
-        now_ts = time.time()
+        self._evaluate_inbox(inbox)
+        # The store's own clock, like every payload: cards never age by
+        # two different clocks.
+        now_ts = inbox.now_ts()
         page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1346,7 +1407,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
-        inbox_service.evaluate(inbox, _local_now(), **self._budget_values())
+        self._evaluate_inbox(inbox)
         waiting = inbox.waiting()
         self._send_json(200, {
             "waiting": len(waiting),
@@ -1359,6 +1420,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
             return
+        body = self._read_json_body() or {}
         try:
             card = inbox.accept(card_id) if decision == "accept" else inbox.dismiss(card_id)
         except UnknownCard as exc:
@@ -1366,7 +1428,144 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if card.kind == "skill_proposal":
             self._on_skill_proposal_decided(card, decision)
-        self._send_json(200, card.to_json(inbox.now_ts()))
+        if card.kind == KIND_UPDATE_CONSENT:
+            self._on_update_consent_decided(card, decision, body)
+        self._audit(
+            "inbox.approved" if decision == "accept" else "inbox.denied",
+            target=card.id, detail=card.title,
+        )
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_edit(self, card_id: str) -> None:
+        """Update the card's draft; the decision vocabulary calls it
+        edited. An identical draft is a no-op, like the donor's edit."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        draft = body.get("draft")
+        if not isinstance(draft, str):
+            self._send_json(400, {"error": 'expected {"draft": "..."}'})
+            return
+        try:
+            card = inbox.get(card_id)
+            if card.draft != draft:
+                card = inbox.edit_draft(card_id, draft)
+                self._audit("inbox.edited", target=card.id,
+                            detail=plain_preview(draft) or "Edited the draft")
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_snooze(self, card_id: str) -> None:
+        """Hide the card for one hour or until the next morning. The
+        store's own clock judges the return time, like every payload."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        choice = body.get("choice")
+        if choice not in SNOOZE_CHOICES:
+            self._send_json(400, {"error": "expected a snooze choice: 1h or tomorrow"})
+            return
+        until = snooze_until(datetime.fromtimestamp(inbox.now_ts()).astimezone(),
+                             str(choice))
+        try:
+            card = inbox.snooze(card_id, until)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._audit("inbox.snoozed", target=card.id,
+                    detail="until " + datetime.fromtimestamp(until).strftime("%Y-%m-%d %H:%M"))
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_more_info(self, card_id: str) -> None:
+        """Attach the user's instruction; the card stays waiting for the
+        decision, and a running snooze ends so it is visible again."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        instruction = body.get("instruction")
+        if not isinstance(instruction, str) or not instruction.strip():
+            self._send_json(400, {"error": 'expected {"instruction": "..."}'})
+            return
+        instruction = instruction.strip()
+        try:
+            card = inbox.more_info(card_id, instruction)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._audit("inbox.more-info", target=card.id, detail=instruction[:200])
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_action_response(self, payload: dict) -> None:
+        """A no-JS form post lands back on the inbox; JSON gets JSON."""
+        if self._is_form_submit():
+            self._send_redirect("/inbox")
+            return
+        self._send_json(200, payload)
+
+    def _send_activity_page(self) -> None:
+        """The decision log: inbox decisions from the audit store, newest
+        first. Non-decision rows stay in the CSV export, not here; the
+        decision filter runs in the store so background polls cannot push
+        a decision past the page's window."""
+        entries = (
+            audit_store.decision_entries(self.server.audit_conn, tuple(DECISIONS))  # type: ignore[attr-defined]
+            if self.server.audit_conn is not None else []  # type: ignore[attr-defined]
+        )
+        page = render_activity_page(entries, agentdesk.__version__)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
+        """Accepting applies the held update; the "for this plugin"
+        choice also records the (plugin, scope) allow so an identical
+        re-ask never re-prompts. A widened scope is a different key and
+        always re-asks."""
+        server = self.server  # type: ignore[attr-defined]
+        plugins = server.plugins
+        if plugins is None:
+            return
+        plugin_id = str(card.meta.get("pluginId", ""))
+        if not plugin_id:
+            return
+        if decision == "accept":
+            if _flag(body, "forPlugin", "for_plugin"):
+                server.consents.allow(plugin_id, str(card.meta.get("scope", "")))
+            try:
+                applied = plugins.consent(plugin_id)
+            except PluginError as exc:
+                # The held update may already be gone (uninstalled, or
+                # consented through the plugin screen): the card's
+                # decision stands; nothing is silently re-held.
+                LOG.warning("update consent apply failed: %s", exc)
+                return
+            # Every successful apply writes the lifecycle row, whichever
+            # path applied it, so the touches badge cannot lie by flow.
+            self._audit("plugin.consent", target=plugin_id,
+                        detail=_plugin_audit_detail("consent", applied))
+
+    def _evaluate_inbox(self, inbox: InboxStore) -> None:
+        """One evaluation with the audit hook: a snooze that returns is
+        logged as pending, never a silent reappearance."""
+
+        def on_return(card) -> None:
+            self._audit("inbox.pending", target=card.id,
+                        detail=f"{card.title} snooze returned")
+
+        inbox_service.evaluate(inbox, _local_now(), on_snooze_return=on_return,
+                               **self._budget_values())
+
+    def _audit(self, action: str, target: str = "", detail: str = "") -> None:
+        """The one inbox/plugin path into the append-only audit store."""
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(self.server.audit_conn, action,
+                               target=target, detail=detail)
 
     def _on_skill_proposal_decided(self, card, decision: str) -> None:
         """Accepting activates the skill; dismissing cools the pattern down."""
@@ -1411,7 +1610,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "bad-request",
                                       "message": 'expected {"zip_path": "..."}'})
                 return
-            self._send_json(200, plugins.install(body["zip_path"], source=body.get("source", "zip")))
+            result = plugins.install(body["zip_path"], source=body.get("source", "zip"))
+            self._audit("plugin.install", target=str(result.get("id", "")),
+                        detail=f"v{result.get('version', '')} pilot install")
+            self._send_json(200, result)
             return
         if len(parts) < 3:
             self._send_json(404, {"error": "not-found", "message": path})
@@ -1431,7 +1633,50 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if action not in actions:
             self._send_json(404, {"error": "not-found", "message": path})
             return
-        self._send_json(200, actions[action]())
+        result = actions[action]()
+        if (action == "update" and isinstance(result, dict)
+                and result.get("status") == "pending-consent"):
+            result = self._hold_update_for_consent(plugins, plugin_id, result)
+        self._audit(f"plugin.{action}", target=plugin_id,
+                    detail=_plugin_audit_detail(action, result))
+        self._send_json(200, result)
+
+    def _hold_update_for_consent(self, plugins: PluginRuntime, plugin_id: str,
+                                 result: dict) -> dict:
+        """A widened update holds in the runtime; the user meets it as an
+        update_consent card. The consents check sits right here, where
+        the card would be created: an allow recorded for exactly this
+        (plugin, scope) pair answers the re-ask without prompting, and a
+        widened further scope (a different key) still creates the card."""
+        server = self.server  # type: ignore[attr-defined]
+        scope = "; ".join(result.get("added_scopes", []))
+        try:
+            version = str(plugins.pending_diff(plugin_id).get("version", ""))
+        except PluginError:
+            version = ""
+        if server.consents.allowed(plugin_id, scope):
+            applied = plugins.consent(plugin_id)
+            self._audit("plugin.consent", target=plugin_id,
+                        detail=_plugin_audit_detail("consent", applied))
+            self._audit("inbox.approved", target=plugin_id,
+                        detail=f"{plugin_id} update pre-approved for this plugin")
+            return {"applied": True, "version": applied.get("version"),
+                    "auto_consented": True}
+        inbox = server.inbox
+        if inbox is not None:
+            card = inbox.add(
+                kind=KIND_UPDATE_CONSENT,
+                origin=(f"The update widens what {plugin_id} may do; it "
+                        "holds until you decide."),
+                title=f"{plugin_id} {version} asks for more access",
+                body=f"New access: {scope}",
+                action_label="Allow update",
+                meta={"pluginId": plugin_id, "scope": scope, "version": version},
+            )
+            self._audit("inbox.pending", target=card.id,
+                        detail=f"{plugin_id} update waiting: adds {scope}"[:200])
+            self._evaluate_inbox(inbox)
+        return result
 
     def _plugin_widget(self, card: dict) -> Widget:
         """One installed plugin's dashboard card: pilot badge, amber state.
@@ -1800,6 +2045,7 @@ def create_server(
     plugins: PluginRuntime | None = None,
     pick_calendar=None,
     wizard_store: WizardStore | None = None,
+    consents: ConsentStore | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -1860,6 +2106,7 @@ def create_server(
             plugins=plugins,
             pick_calendar=pick_calendar,
             wizard_store=wizard_store,
+            consents=consents,
         )
 
     if port is None:

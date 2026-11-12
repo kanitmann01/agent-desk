@@ -111,7 +111,8 @@ def generate_briefs(bridge, inbox: InboxStore, activity: ActivityLog, clock, lea
 
 def _has_brief(inbox: InboxStore, meeting_id: str) -> bool:
     needle = f'"meetingId": "{meeting_id}"'
-    for card in inbox.waiting() + inbox.dismissed():
+    # Snoozed briefs included: hiding one for an hour must not mint a twin.
+    for card in inbox.waiting(include_snoozed=True) + inbox.dismissed():
         if needle in json.dumps(card.meta, ensure_ascii=False):
             return True
     return False

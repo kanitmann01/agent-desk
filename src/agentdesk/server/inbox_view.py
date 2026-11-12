@@ -17,6 +17,7 @@ _KIND_LABEL = {
     "skill_proposal": "Pattern noticed",
     "update_consent": "Update needs your OK",
     "brief": "Before your meeting",
+    "feature_request": "Feature request",
 }
 
 
@@ -36,6 +37,47 @@ def card_html(card: Card, now_ts: float) -> str:
         f"<button class='btn btn-primary' data-accept='{html.escape(card.id)}'>"
         f"{html.escape(card.action_label or 'Accept')}</button>"
     )
+    card_id = html.escape(card.id)
+    # The no-JS actions: edit the draft, snooze, ask for more info. Plain
+    # forms, the wizard's style; each POSTs urlencoded and lands back on
+    # the inbox via redirect.
+    forms = (
+        "<div class='cardrow cardforms'>"
+        f"<form method='post' action='/inbox/cards/{card_id}/edit' class='cardform'>"
+        f"<label class='empty' for='draft-{card_id}'>Draft</label>"
+        f"<textarea id='draft-{card_id}' name='draft' rows='2'>"
+        f"{html.escape(card.draft)}</textarea>"
+        "<button class='btn btn-secondary' type='submit'>Save draft</button>"
+        "</form>"
+        f"<form method='post' action='/inbox/cards/{card_id}/snooze' class='cardform'>"
+        f"<label class='empty' for='snooze-{card_id}'>Snooze</label>"
+        f"<select id='snooze-{card_id}' name='choice'>"
+        "<option value='1h'>One hour</option>"
+        "<option value='tomorrow'>Tomorrow morning</option>"
+        "</select>"
+        "<button class='btn btn-secondary' type='submit'>Snooze</button>"
+        "</form>"
+        f"<form method='post' action='/inbox/cards/{card_id}/more-info' class='cardform'>"
+        f"<label class='empty' for='info-{card_id}'>More info</label>"
+        f"<input id='info-{card_id}' type='text' name='instruction' "
+        "placeholder='What should the agent clarify?'>"
+        "<button class='btn btn-secondary' type='submit'>Ask for more info</button>"
+        "</form>"
+    )
+    if card.kind == "update_consent":
+        # The scope choice the consents store keys on: accepting with the
+        # box checked allows this exact widening for this plugin forever
+        # (process lifetime), so identical re-asks never re-prompt.
+        forms += (
+            f"<form method='post' action='/inbox/cards/{card_id}/accept' class='cardform'>"
+            "<label class='empty'>"
+            "<input type='checkbox' name='for_plugin' value='1'>"
+            " Also allow this exact widening for this plugin"
+            "</label>"
+            "<button class='btn btn-primary' type='submit'>Accept</button>"
+            "</form>"
+        )
+    forms += "</div>"
     return (
         f"<article class='widget{expired_class}' id='card-{html.escape(card.id)}' "
         f"data-freshness-status='{'attention' if expired else 'fresh'}'>"
@@ -49,7 +91,9 @@ def card_html(card: Card, now_ts: float) -> str:
         "<div class='cardrow'>"
         f"{action}"
         f"<button class='btn btn-secondary' data-dismiss='{html.escape(card.id)}'>Dismiss</button>"
-        "</div></article>"
+        "</div>"
+        f"{forms}"
+        "</article>"
     )
 
 

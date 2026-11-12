@@ -24,6 +24,7 @@ import time
 from agentdesk.assistant import audit as audit_store
 from agentdesk.calendar.watcher import Adapters as CalendarAdapters
 from agentdesk.calendar.watcher import CalendarBridge
+from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
@@ -102,6 +103,9 @@ class Booted:
         kwargs.setdefault("skill_store", _inert_skills())
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
+        # The consent allows are in-memory and process-lifetime by design;
+        # a fresh store per boot is the inert default.
+        kwargs.setdefault("consents", ConsentStore())
         # The inert plugin runtime lives in a temp folder owned by this
         # boot and removed in close(), mirroring the in-memory stores.
         # Built only when no runtime was given, so injected ones spare

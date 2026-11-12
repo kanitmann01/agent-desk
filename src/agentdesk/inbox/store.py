@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS cards (
   notified_ts REAL,
   dismissed_ts REAL,
   accepted_ts REAL,
+  draft TEXT NOT NULL DEFAULT '',
+  snoozed_until REAL,
   meta TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS notifications (
@@ -43,9 +45,25 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 """
 
+_COLUMNS = (
+    "id, kind, origin, title, body, action_label, status, created_ts,"
+    " window_hours, notified_ts, dismissed_ts, accepted_ts, draft,"
+    " snoozed_until, meta"
+)
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # Append-only migration for stores created by earlier builds: new
+    # columns are added, never rewritten (the audit store's precedent).
+    for ddl in (
+        "ALTER TABLE cards ADD COLUMN draft TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE cards ADD COLUMN snoozed_until REAL",
+    ):
+        try:
+            conn.execute(ddl)
+        except sqlite3.OperationalError:
+            pass  # column already there
     conn.commit()
 
 
@@ -74,6 +92,7 @@ class InboxStore:
         window_hours: float | None = None,
         meta: dict | None = None,
         card_id: str | None = None,
+        draft: str = "",
     ) -> Card:
         card = Card(
             id=card_id or new_card_id(),
@@ -86,14 +105,16 @@ class InboxStore:
             created_ts=self.clock(),
             window_hours=window_hours,
             meta=meta or {},
+            draft=draft,
         )
         with self.conn:
             self.conn.execute(
                 "INSERT INTO cards (id, kind, origin, title, body, action_label, status,"
-                " created_ts, window_hours, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " created_ts, window_hours, draft, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (card.id, card.kind, card.origin, card.title, card.body,
                  card.action_label, card.status, card.created_ts,
-                 card.window_hours, json.dumps(card.meta, ensure_ascii=False)),
+                 card.window_hours, card.draft,
+                 json.dumps(card.meta, ensure_ascii=False)),
             )
         return card
 
@@ -114,6 +135,65 @@ class InboxStore:
                 (STATUS_ACCEPTED, self.clock(), card_id),
             )
         return self.get(card_id)
+
+    def edit_draft(self, card_id: str, draft: str) -> Card:
+        """Update the card's editable draft. The card keeps waiting; only
+        what accepting would apply has changed."""
+        self.get(card_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE cards SET draft = ? WHERE id = ?", (draft, card_id)
+            )
+        return self.get(card_id)
+
+    def snooze(self, card_id: str, until_ts: float) -> Card:
+        """Hide a waiting card until `until_ts` passes. Not a status: the
+        card stays waiting, merely out of sight; evaluation returns it
+        when due (the donor's tick)."""
+        self.get(card_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE cards SET snoozed_until = ? WHERE id = ?",
+                (until_ts, card_id),
+            )
+        return self.get(card_id)
+
+    def more_info(self, card_id: str, instruction: str) -> Card:
+        """Attach the user's instruction and bring the card back to the
+        visible waiting set (a running snooze ends early)."""
+        card = self.get(card_id)
+        meta = dict(card.meta)
+        meta["instruction"] = instruction
+        with self.conn:
+            self.conn.execute(
+                "UPDATE cards SET snoozed_until = NULL, meta = ? WHERE id = ?",
+                (json.dumps(meta, ensure_ascii=False), card_id),
+            )
+        return self.get(card_id)
+
+    def return_due_snoozes(self) -> list[Card]:
+        """The donor's tick(): every waiting card whose snooze time has
+        passed returns to the visible waiting set. Returns the returned
+        cards so the caller can log the return. The clear is conditional
+        (only a still-snoozed row counts), so concurrent evaluations
+        (/inbox and /widgets/inbox) cannot double-report, and so
+        double-log, one return."""
+        now = self.clock()
+        due = [
+            card for card in self._by_status(STATUS_WAITING)
+            if card.snoozed_until is not None and card.snoozed_until <= now
+        ]
+        returned = []
+        for card in due:
+            with self.conn:
+                cleared = self.conn.execute(
+                    "UPDATE cards SET snoozed_until = NULL"
+                    " WHERE id = ? AND snoozed_until IS NOT NULL",
+                    (card.id,),
+                )
+            if cleared.rowcount:
+                returned.append(card)
+        return returned
 
     def restore(self, card_id: str) -> Card:
         """Bring a dismissed card back. After 30 days it is gone: the row
@@ -150,9 +230,7 @@ class InboxStore:
 
     def get(self, card_id: str) -> Card:
         row = self.conn.execute(
-            "SELECT id, kind, origin, title, body, action_label, status, created_ts,"
-            " window_hours, notified_ts, dismissed_ts, accepted_ts, meta"
-            " FROM cards WHERE id = ?",
+            f"SELECT {_COLUMNS} FROM cards WHERE id = ?",
             (card_id,),
         ).fetchone()
         if row is None:
@@ -161,11 +239,22 @@ class InboxStore:
             id=row[0], kind=row[1], origin=row[2], title=row[3], body=row[4],
             action_label=row[5], status=row[6], created_ts=row[7],
             window_hours=row[8], notified_ts=row[9], dismissed_ts=row[10],
-            accepted_ts=row[11], meta=json.loads(row[12]),
+            accepted_ts=row[11], draft=row[12], snoozed_until=row[13],
+            meta=json.loads(row[14]),
         )
 
-    def waiting(self) -> list[Card]:
-        return self._by_status(STATUS_WAITING)
+    def waiting(self, include_snoozed: bool = False) -> list[Card]:
+        """The visible waiting set: a card snoozed into the future is
+        still waiting, but it is not shown until its snooze passes.
+        Dedupe callers (briefs, the consolidator) pass include_snoozed so
+        a snoozed card still suppresses its own duplicates."""
+        if include_snoozed:
+            return self._by_status(STATUS_WAITING)
+        now = self.clock()
+        return [
+            card for card in self._by_status(STATUS_WAITING)
+            if not card.is_snoozed(now)
+        ]
 
     def dismissed(self) -> list[Card]:
         return self._by_status(STATUS_DISMISSED)

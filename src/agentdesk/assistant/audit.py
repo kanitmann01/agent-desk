@@ -45,6 +45,23 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("llm.research", "endpoint", "Research questions are sent to the company LLM endpoint, as derived text only."),
     ("llm.assistant", "endpoint", "Assistant questions are sent to the company LLM endpoint, with widget context attached."),
     ("llm.breakdown", "endpoint", "Meeting breakdowns are sent to the company LLM endpoint, meeting name only."),
+    # The approvals vocabulary (ticket #41): every decision on an inbox
+    # card, and every plugin lifecycle mutation.
+    ("inbox.approved", "decision", "You accepted a card in the inbox; the acceptance is recorded against that card."),
+    ("inbox.denied", "decision", "You dismissed a card in the inbox; the dismissal is recorded against that card."),
+    ("inbox.edited", "decision", "You edited a card's draft; a plain-text preview of the draft is recorded, never markup."),
+    ("inbox.snoozed", "decision", "You snoozed a card for one hour or until the next morning; the return time is recorded."),
+    ("inbox.more-info", "decision", "You asked for more information; your instruction is recorded with the card."),
+    ("inbox.pending", "decision", "A snoozed card came back due, or a plugin update began waiting for your OK; recorded so nothing reappears silently."),
+    ("plugin.install", "plugin", "A plugin zip you chose is validated and installed under the app's own data folder, in pilot mode."),
+    ("plugin.update", "plugin", "A plugin update is validated; identical or narrower permissions apply, wider ones hold for your OK."),
+    ("plugin.consent", "plugin", "A held plugin update is applied after you approved its added permissions."),
+    ("plugin.enable", "plugin", "An installed plugin is turned back on; its widget returns to the dashboard."),
+    ("plugin.disable", "plugin", "An installed plugin is turned off; its files and data stay untouched."),
+    ("plugin.uninstall", "plugin", "An installed plugin's program files are deleted; its data is kept until a separate purge."),
+    ("plugin.rollback", "plugin", "A plugin is switched back to its previous version; both versions stay recorded."),
+    ("plugin.retest", "plugin", "A plugin's declared data source is checked again, right now, to refresh its card."),
+    ("plugin.purge-data", "plugin", "A plugin's kept data folder is deleted, only after the separate named confirmation."),
 ]
 
 ACTOR = "agent-desk"
@@ -80,12 +97,11 @@ def record(
         )
 
 
-def entries(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
-    rows = conn.execute(
-        "SELECT ts, actor, action, target, status, model, request_bytes, detail"
-        " FROM audit ORDER BY id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
+_SELECT = ("SELECT ts, actor, action, target, status, model, request_bytes,"
+           " detail FROM audit")
+
+
+def _as_entries(rows) -> list[dict]:
     return [
         {
             "ts": r[0],
@@ -99,6 +115,33 @@ def entries(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def entries(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
+    rows = conn.execute(
+        _SELECT + " ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return _as_entries(rows)
+
+
+def decision_entries(conn: sqlite3.Connection, actions, limit: int = 100) -> list[dict]:
+    """Rows for the given actions only, newest first, filtered in SQL.
+
+    The background polls (hourly excel, half-hourly calendar) fill the
+    newest-100 window of a plain entries() call in a couple of days; a
+    page that promises every decision must filter before the limit, not
+    after it.
+    """
+    actions = tuple(actions)
+    if not actions:
+        return []
+    placeholders = ",".join("?" for _ in actions)
+    rows = conn.execute(
+        f"{_SELECT} WHERE action IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+        (*actions, limit),
+    ).fetchall()
+    return _as_entries(rows)
 
 
 def observed_actions(conn: sqlite3.Connection) -> set[str]:

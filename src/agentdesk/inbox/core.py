@@ -43,6 +43,8 @@ class Card:
     notified_ts: float | None = None
     dismissed_ts: float | None = None
     accepted_ts: float | None = None
+    draft: str = ""  # the editable payload: what accepting would apply
+    snoozed_until: float | None = None  # waiting, but hidden until this passes
     meta: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -55,6 +57,10 @@ class Card:
         if self.window_hours is None:
             return False
         return now_ts >= self.created_ts + self.window_hours * 3600
+
+    def is_snoozed(self, now_ts: float) -> bool:
+        """Waiting, but hidden: snoozed_until is still in the future."""
+        return self.snoozed_until is not None and now_ts < self.snoozed_until
 
     def dismissed_for_days(self, now_ts: float) -> float:
         if self.dismissed_ts is None:
@@ -77,5 +83,7 @@ class Card:
             "expired": self.is_expired(now_ts),
             "notified": self.notified_ts is not None,
             "dismissedDays": round(self.dismissed_for_days(now_ts), 1),
+            "draft": self.draft,
+            "snoozedUntil": self.snoozed_until,
             "meta": self.meta,
         }
