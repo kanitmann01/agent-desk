@@ -14,8 +14,6 @@ import type { DeltaPayload, SalesStatus } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import Button from '../components/Button';
 import EmptyState, { ICON_SHEET } from '../components/EmptyState';
-import ClickSpark from '../vendor/reactbits/ClickSpark';
-import CountUp from '../vendor/reactbits/CountUp';
 
 const MAX_EXAMPLE_ROWS = 8;
 
@@ -162,11 +160,9 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
         <EmptyState
           icon={ICON_SHEET}
           action={(
-            <ClickSpark sparkColor={['#14594E', '#4C5A55']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
-              <Button tone="primary" onClick={pick} disabled={busy}>
-                Connect a workbook
-              </Button>
-            </ClickSpark>
+            <Button tone="primary" onClick={pick} disabled={busy}>
+              Connect a workbook
+            </Button>
           )}
         >
           No workbook is connected yet, so there is nothing to show here. Once
@@ -206,9 +202,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
       <div className="sales-hero">
         <div className="kpi">
           <div className="label">Rows changed, 24 h</div>
-          <div className="value">
-            <CountUp to={changed} duration={1.4} separator="," easing="expo" />
-          </div>
+          <div className="value">{changed.toLocaleString('en-US')}</div>
           <div className="sub">Row-hash diff against the snapshot from 24 hours ago</div>
           {changed > 0 ? (
             <div className="kpi-split">

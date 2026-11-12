@@ -146,7 +146,6 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             answer={answer}
             answerSeq={answerSeq}
             statusText={statusText}
-            busy={researchBusy || skillBusyId !== null}
           />
           {hasSkills && (
             <SkillsCard

@@ -302,13 +302,6 @@ table.rows td.neg{color:var(--bad)}
   border-radius:var(--r-pill);padding:3px 10px;margin:10px 8px 0 0;
 }
 .research-status{display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:13px}
-/* The typing cursor takes no inline width, so the text behind it never
-   reflows when it goes away. */
-.tt-cursor{position:relative;display:inline-block;width:0;height:1em;vertical-align:baseline}
-.tt-cursor::after{content:"";position:absolute;left:1px;bottom:-.16em;width:2px;height:1.05em;border-radius:1px;background:var(--primary);animation:tt-blink 1s steps(2,jump-none) infinite}
-.research-status .ll-text{white-space:normal}
-.tt-rest{visibility:hidden}
-@keyframes tt-blink{50%{opacity:0}}
 
 /* Stacked: a plugin's alert carries two paragraphs (the cause, then
    what Re-test does) and they read top to bottom. */
@@ -331,8 +324,13 @@ table.rows td.neg{color:var(--bad)}
 
 /* The skills strip: plain rows (title, up to two description lines, and
    a quiet run chevron). */
-.skills-list{width:100%;min-width:0;margin-top:2px}
-.skill-item{padding:12px 12px 12px 14px;gap:12px}
+.skills-list{width:100%;min-width:0;margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column}
+.skill-item{
+  display:flex;align-items:center;width:100%;padding:12px 12px 12px 14px;gap:12px;
+  border-radius:var(--r-inner);text-align:left;font:inherit;color:inherit;
+  transition:background var(--dur) ease;
+}
+.skill-item:hover:not(:disabled){background:var(--hover-wash)}
 .skill-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .skill-name{font-size:14px;font-weight:600;line-height:1.35;color:var(--ink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .skill-desc{color:var(--ink-2);font-size:12.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -382,5 +380,4 @@ table.rows td.neg{color:var(--bad)}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}
-  .tt-cursor::after{animation:none}
 }
