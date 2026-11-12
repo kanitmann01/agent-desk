@@ -3,7 +3,7 @@
 // manifest and the license records must speak the warm-paper system from
 // DESIGN.md (docs/design-language.md), and must not carry any of the
 // recorded dark-glass drift. These tests read files; they render nothing.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -21,6 +21,30 @@ const pkg = JSON.parse(readFileSync(resolve(frontend, 'package.json'), 'utf8')) 
 };
 const manifest = readFileSync(resolve(repo, 'THIRD-PARTY-LICENSES.md'), 'utf8');
 const licenses = readdirSync(resolve(frontend, 'public', 'licenses'));
+
+// The committed bundle stylesheet, wherever the build put it.
+const spaAssets = resolve(repo, 'src', 'agentdesk', 'server', 'static', 'spa', 'assets');
+const bundleCss = readdirSync(spaAssets)
+  .filter((f) => f.endsWith('.css'))
+  .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
+  .join('\n');
+
+// Component sources walk: every .ts/.tsx under src/ except the vendored
+// drawer (its internals go when the components tickets land) and the
+// test tree itself.
+function walkSources(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (entry === 'vendor' || entry === 'test') continue;
+    const full = resolve(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...walkSources(full));
+    else if (/\.(ts|tsx)$/.test(entry)) out.push(full);
+  }
+  return out;
+}
+const sources = walkSources(resolve(frontend, 'src'))
+  .map((f) => readFileSync(f, 'utf8'))
+  .join('\n');
 
 // The fourteen DESIGN.md frontmatter colors, each asserted as the exact
 // hex so a near-miss (a re-darkened green, a colder paper) fails.
@@ -138,6 +162,50 @@ describe('the SPA shell declares the light paper world', () => {
     expect(html).toContain('#F6F4EF');
     expect(html).not.toContain('#020617');
     expect(html).not.toContain('content="dark"');
+  });
+});
+
+describe('component sources speak the system inks', () => {
+  // The dark-glass theme hardcoded pastel paints (ShinyText, GradientText,
+  // glare sweeps, the status mark) that are near-invisible on paper. No
+  // component may pass a drift color; effects carry system tokens or die
+  // with the components tickets.
+  it('carries none of the drift paints', () => {
+    const driftPaints = [
+      '#B6C0D2',
+      '#D5DDE9',
+      '#8FD8F2',
+      '#B3AEF5',
+      '#7DD3FC',
+      '#A5B4FC',
+      '#F8FAFC',
+      '#F0FFF6',
+      '#22C55E',
+      '#F59E0B',
+    ];
+    for (const hex of driftPaints) {
+      expect(sources, `drift paint survived in src: ${hex}`).not.toContain(hex);
+    }
+  });
+});
+
+describe('the authored sheet keeps its interaction promises', () => {
+  it('gives the command bar field a visible focus ring', () => {
+    expect(css).toContain('.cmd-field:focus{outline:2px solid var(--primary)');
+  });
+
+  it('stacks the command bar through its wrapper on small screens', () => {
+    expect(css).toContain('.cmd-magnet{flex:1 1 100%');
+  });
+});
+
+describe('the committed bundle honors the contract', () => {
+  // Vite inlines small assets as data: URLs; the CSP's font-src 'self'
+  // would silently block any font that arrives that way.
+  it('inlines no font as a data url', () => {
+    expect(bundleCss, 'font shipped as a data: url, blocked by font-src \'self\'').not.toContain(
+      'data:font',
+    );
   });
 });
 

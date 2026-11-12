@@ -48,5 +48,8 @@ export default defineConfig({
     outDir: '../src/agentdesk/server/static/spa',
     emptyOutDir: true,
     sourcemap: false,
+    // The CSP allows fonts from 'self' only, so no font may travel as a
+    // data: URL (vite inlines small assets by default).
+    assetsInlineLimit: 0,
   },
 });

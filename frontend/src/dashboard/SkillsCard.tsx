@@ -45,8 +45,8 @@ const LIST_TINT = {
   '--al-tile-edge': 'rgba(51,65,85,.6)',
   '--al-tile-highlight': 'rgba(255,255,255,.07)',
   '--al-tile-shadow': 'none',
-  '--al-ink': '#F8FAFC',
-  '--al-muted': '#B0BACD',
+  '--al-ink': '#1F2A27',
+  '--al-muted': '#4C5A55',
   '--al-thumb': 'rgba(148,163,184,.3)',
 } as CSSProperties;
 
@@ -86,7 +86,7 @@ export default function SkillsCard({ skills, busy, onRun }: SkillsCardProps) {
                   }}
                   frame={false}
                   theme="dark"
-                  accentColor="#22C55E"
+                  accentColor="#14594E"
                   radius={12}
                   gap={8}
                   width="100%"

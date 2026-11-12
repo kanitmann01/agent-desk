@@ -80,7 +80,7 @@ export default function ResearchCard({
           <LatticeLoader
             label={statusText}
             pattern="orbit"
-            color="#22D3EE"
+            color="#14594E"
             cellSize={4}
             gap={2}
             fontSize={13}

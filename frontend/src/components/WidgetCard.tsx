@@ -142,7 +142,7 @@ export default function WidgetCard({
           rotateAmplitude={reduce ? 0 : 6}
           scaleOnHover={reduce ? 1 : 1.012}
           glare={reduce ? 0 : 0.28}
-          glareColor="#7DD3FC"
+          glareColor="#E4EEE9"
           // The cell carries the same resting shadow as a plain card, so
           // the tilt adds none of its own.
           shadow={0}

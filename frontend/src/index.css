@@ -144,10 +144,11 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .cmd-icon{color:var(--ink-3);padding-bottom:10px}
 .cmd-field{
   flex:1;min-width:0;border:none;background:none;color:var(--ink-1);
-  font:400 15px/1.5 var(--font-ui);resize:none;outline:none;padding:6px 0;
+  font:400 15px/1.5 var(--font-ui);resize:none;padding:6px 0;
   max-height:9.5em;
 }
 .cmd-field::placeholder{color:var(--ink-3)}
+.cmd-field:focus{outline:2px solid var(--primary);outline-offset:1px;border-radius:var(--r-inner)}
 .cmd-hint{align-self:center;color:var(--ink-3);font-size:12px;white-space:nowrap;padding:0 2px}
 .cmd-hint kbd{
   font-family:var(--font-mono);font-size:10.5px;color:var(--ink-2);
@@ -385,11 +386,14 @@ table.rows td.neg{color:var(--bad)}
   .sales-hero{grid-template-columns:1fr}
 }
 @media (max-width:560px){
-  /* The bar stacks: the question on top, the submit across the bottom. */
+  /* The bar stacks: the question on top, the submit across the bottom.
+     The send control sits inside a vendored wrapper, so the wrapper is
+     the flex item that has to grow. */
   .cmd-inner{flex-wrap:wrap;align-items:center;padding:14px}
   .cmd-icon{padding-bottom:0}
   .cmd-field{flex:1 1 calc(100% - 40px)}
-  .cmd-send{flex:1 1 100%;justify-content:center}
+  .cmd-magnet{flex:1 1 100%;display:flex}
+  .cmd-magnet .cmd-send{width:100%;justify-content:center}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}

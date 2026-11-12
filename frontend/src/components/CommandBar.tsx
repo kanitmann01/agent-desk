@@ -86,7 +86,7 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
           <kbd>Enter</kbd> to ask
         </span>
         <Magnet padding={56} magnetStrength={3} maxOffset={10} scale={1.03} wrapperClassName="cmd-magnet">
-          <ClickSpark sparkColor={['#22C55E', '#22D3EE']} sparkSize={9} sparkRadius={22} sparkCount={8} duration={480}>
+          <ClickSpark sparkColor={['#14594E', '#4C5A55']} sparkSize={9} sparkRadius={22} sparkCount={8} duration={480}>
             <button className="cmd-send" type="button" onClick={() => void ask()} disabled={busy}>
               Research {ICON_SEND}
             </button>

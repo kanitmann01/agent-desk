@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Aurora from '../vendor/reactbits/Aurora';
 
-const AURORA_STOPS = ['#22D3EE', '#8B5CF6', '#22C55E'];
+const AURORA_STOPS = ['#E4EEE9', '#FBF3E2', '#EFEDE5'];
 
 export default function Backdrop() {
   const hostRef = useRef<HTMLDivElement>(null);
