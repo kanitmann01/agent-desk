@@ -111,7 +111,7 @@ svg{display:block;flex:none}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
 .rail{border-right:1px solid var(--hairline);background:var(--surface-2);padding:20px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
-.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
 .brand .mark{width:28px;height:28px;border-radius:8px;background:var(--primary);display:grid;place-items:center;color:var(--primary-ink)}
 .brand b{font-size:14px;font-weight:800;letter-spacing:-.01em}
 .rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
@@ -132,6 +132,10 @@ svg{display:block;flex:none}
 .skills-strip .skill-btn{background:var(--surface);color:var(--ink-1);border-radius:var(--r-control);box-shadow:inset 0 0 0 1px var(--hairline),var(--shadow-card);padding:8px 14px;font-weight:700;font-size:13px;transition:background var(--dur) ease}
 .skills-strip .skill-btn:hover{background:var(--surface-2)}
 .settings-block{display:flex;flex-direction:column;gap:8px;max-width:460px}
+.cardform{display:flex;flex-direction:column;gap:8px;margin:8px 0;max-width:460px}
+.cardform label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.cardform input,.cardform textarea{font:inherit;font-size:13.5px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
+.cardform input:focus,.cardform textarea:focus{outline:2px solid var(--primary);outline-offset:1px}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .field input{font:inherit;font-size:13.5px;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
 .field input:focus{outline:2px solid var(--primary);outline-offset:1px}
@@ -151,15 +155,15 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .btn-primary{background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
-.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
 .icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 .widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
 .widget:hover{box-shadow:var(--shadow-card-hover)}
 .col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
-.w-head{display:flex;align-items:center;gap:10px}
-.w-head h2{font-size:16px;font-weight:800;letter-spacing:-.01em}
-.stamp{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-head{display:flex;align-items:center;gap:12px}
+.w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3);font-weight:600}
 .w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
 .kpi{display:flex;gap:24px;align-items:flex-start}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
