@@ -214,7 +214,9 @@ table.rows td.neg{color:var(--bad)}
 .error-card p{color:var(--ink-2);font-size:13.5px}
 @media (max-width:980px){
   .app{grid-template-columns:1fr}
-  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 14px;gap:8px}
+  /* The strip stays pinned while the page scrolls and its entries wrap
+     instead of clipping, matching the dashboard SPA's behavior. */
+  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 14px;gap:8px}
   .rail .brand{padding:0 12px 0 0}
   .rail .user{display:none}
   .grid{grid-template-columns:1fr}
