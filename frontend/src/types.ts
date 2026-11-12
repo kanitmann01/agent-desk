@@ -45,6 +45,16 @@ export interface CommitmentsStatus {
   generatedAt?: string | null;
 }
 
+// One bound ui-schema element the host computed for a plugin widget:
+// metric (a value with a label) or text (a note line). Anything the
+// host could not bind is dropped server-side, never invented here.
+export interface PluginElement {
+  kind: 'metric' | 'text';
+  label?: string;
+  value?: string;
+  text?: string;
+}
+
 export interface PluginCard {
   id: string;
   title: string;
@@ -53,6 +63,8 @@ export interface PluginCard {
   state: string;
   freshness: string; // fresh | attention
   cause: string;
+  checkedAt?: string;
+  payload?: { elements: PluginElement[] } | null;
 }
 
 export interface DashboardData {

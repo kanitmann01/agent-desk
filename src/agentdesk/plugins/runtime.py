@@ -20,6 +20,7 @@ from datetime import datetime
 from glob import glob
 from pathlib import Path
 
+from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.validator.core import validate_plugin
 
 PILOT_VIEWS = 3
@@ -111,11 +112,13 @@ class PluginRuntime:
     """Owns the installed plugin set: the lockfile is its source of truth."""
 
     def __init__(self, plugins_dir: Path, data_dir: Path, workspace_dir: Path,
-                 now: str | None = None) -> None:
+                 now: str | None = None,
+                 runner: PluginWidgetRunner | None = None) -> None:
         self.plugins_dir = Path(plugins_dir)
         self.data_dir = Path(data_dir)
         self.workspace_dir = Path(workspace_dir)
         self.now = now or datetime.now().isoformat(timespec="seconds")
+        self.runner = runner if runner is not None else PluginWidgetRunner(workspace_dir)
         self._lockfile = self.plugins_dir / "lockfile.json"
         self._staging = self.plugins_dir / ".staging"
 
@@ -147,6 +150,24 @@ class PluginRuntime:
             if version["version"] == active:
                 return Path(version["dir"])
         return Path(entry["versions"][-1]["dir"])
+
+    def _attach_runner(self, plugin_id: str, entry: dict) -> dict:
+        """Run the plugin's declared data source through the widget runner.
+
+        The runner returns probe-shaped status (fresh/attention with a
+        cause) whether it executed the source or honestly could not; a
+        runner failure falls back to the probe so an install never fails
+        on the widget half alone.
+        """
+        version_dir = self._active_version_dir(entry)
+        manifest: dict = {}
+        try:
+            manifest = json.loads((version_dir / "manifest.json").read_text(
+                encoding="utf-8"))
+            return self.runner.attach(plugin_id, manifest, version_dir,
+                                      Path(entry["data_dir"]))
+        except Exception:  # noqa: BLE001 - the probe is the honest fallback
+            return self.probe(plugin_id, manifest)
 
     # ---- lifecycle ----
 
@@ -198,8 +219,8 @@ class PluginRuntime:
             "pending_update": None,
             "schedules": schedules,
             "data_dir": str(data_dir),
-            "data_source": self.probe(plugin_id, manifest),
         }
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
         state["plugins"][plugin_id] = entry
         self._write(state)
         return {"ok": True, "id": plugin_id, "version": version,
@@ -260,6 +281,7 @@ class PluginRuntime:
                                   "installed_at": self.now})
         entry["active_version"] = version
         entry["sha256"] = digest
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
         self._write(state)
         return {"applied": True, "status": "updated", "version": version}
 
@@ -282,6 +304,7 @@ class PluginRuntime:
         entry["active_version"] = pending["version"]
         entry["sha256"] = pending["sha256"]
         entry["pending_update"] = None
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
         self._write(state)
         return {"applied": True, "version": pending["version"]}
 
@@ -308,13 +331,22 @@ class PluginRuntime:
         previous = versions[index - 1]
         entry["active_version"] = previous["version"]
         entry["sha256"] = previous["sha256"]
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
         self._write(state)
         return {"rolled_back_to": previous["version"]}
 
     def enable(self, plugin_id: str) -> dict:
-        return self._set_state(plugin_id, "enabled")
+        result = self._set_state(plugin_id, "enabled")
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        entry["data_source"] = self._attach_runner(plugin_id, entry)
+        self._write(state)
+        return result
 
     def disable(self, plugin_id: str) -> dict:
+        # A disabled plugin stops touching its declared files: the
+        # runner detaches, which stops polling and closes the store.
+        self.runner.detach(plugin_id)
         return self._set_state(plugin_id, "disabled")
 
     def _set_state(self, plugin_id: str, state_name: str) -> dict:
@@ -327,6 +359,7 @@ class PluginRuntime:
     def uninstall(self, plugin_id: str) -> dict:
         state = self._read()
         entry = self._entry(state, plugin_id)
+        self.runner.detach(plugin_id)
         for version_entry in entry["versions"]:
             version_dir = Path(version_entry["dir"])
             if version_dir.exists():
@@ -385,7 +418,10 @@ class PluginRuntime:
     def retest(self, plugin_id: str) -> dict:
         state = self._read()
         entry = self._entry(state, plugin_id)
-        entry["data_source"] = self.probe(plugin_id)
+        if self.runner.attached(plugin_id):
+            entry["data_source"] = self.runner.retest(plugin_id)
+        else:
+            entry["data_source"] = self.probe(plugin_id)
         self._write(state)
         return dict(entry["data_source"])
 
@@ -413,7 +449,12 @@ class PluginRuntime:
 
     def widget_cards(self) -> list[dict]:
         """Widget card data for enabled, installed plugins, pilot and amber
-        included. One dashboard view spends one pilot view per plugin."""
+        included. One dashboard view spends one pilot view per plugin.
+
+        An attached data source is read live (stale marking included);
+        the ui-schema render model rides along as ``payload`` for views
+        that can draw it.
+        """
         state = self._read()
         cards = []
         dirty = False
@@ -424,7 +465,12 @@ class PluginRuntime:
             manifest_path = self._active_version_dir(entry) / "manifest.json"
             if manifest_path.exists():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            data = entry.get("data_source") or {}
+            if self.runner.attached(entry["id"]):
+                data = self.runner.status(entry["id"])
+                payload = self.runner.payload(entry["id"])
+            else:
+                data = entry.get("data_source") or {}
+                payload = None
             cards.append({
                 "id": entry["id"],
                 "title": entry.get("name", entry["id"]),
@@ -433,7 +479,9 @@ class PluginRuntime:
                 "state": entry["state"],
                 "freshness": data.get("status", "attention"),
                 "cause": data.get("cause", ""),
+                "checked_at": data.get("checked_at", ""),
                 "manifest": manifest,
+                "payload": payload,
             })
             if entry["pilot_views_left"] > 0:
                 entry["pilot_views_left"] -= 1
@@ -441,3 +489,12 @@ class PluginRuntime:
         if dirty:
             self._write(state)
         return cards
+
+    def widget_payload(self, plugin_id: str) -> dict | None:
+        """The bound ui-schema render model for one plugin, or None."""
+        self._entry(self._read(), plugin_id)
+        return self.runner.payload(plugin_id) if self.runner.attached(plugin_id) else None
+
+    def start_widget_polls(self) -> None:
+        """Resume hourly polling for every attached data source."""
+        self.runner.start_all_polling()

@@ -1,15 +1,30 @@
 // One installed plugin's dashboard card, rendered from the payload's
-// plugin data (never server HTML). Fresh: the version and what it is
-// reading. Attention: the cause and the honest note about Re-test, amber.
-import type { PluginCard } from '../types';
+// plugin data (never server HTML). Fresh with a bound payload: the
+// host-computed metrics and notes the ui-schema asked for. Fresh
+// without one: the version and what it is reading. Attention: the cause
+// and the honest note about Re-test, amber.
+import type { PluginCard, PluginElement } from '../types';
 import WidgetCard from '../components/WidgetCard';
 
 interface PluginCardViewProps {
   card: PluginCard;
 }
 
+function ElementView({ element }: { element: PluginElement }) {
+  if (element.kind === 'metric') {
+    return (
+      <>
+        <p className="w-big">{element.value ?? ''}</p>
+        {element.label ? <p className="w-note">{element.label}</p> : null}
+      </>
+    );
+  }
+  return <p className="w-note">{element.text ?? ''}</p>;
+}
+
 export default function PluginCardView({ card }: PluginCardViewProps) {
   const fresh = card.freshness === 'fresh';
+  const elements = fresh ? (card.payload?.elements ?? []) : [];
   return (
     <WidgetCard
       title={card.title}
@@ -19,7 +34,9 @@ export default function PluginCardView({ card }: PluginCardViewProps) {
       amber={!fresh}
       foot={`plugin v${card.version}`}
     >
-      {fresh ? (
+      {fresh && elements.length > 0 ? (
+        elements.map((element, i) => <ElementView key={i} element={element} />)
+      ) : fresh ? (
         <>
           <p className="w-big">{card.version}</p>
           <p className="w-note">reading the data source</p>

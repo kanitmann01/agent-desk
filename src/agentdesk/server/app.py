@@ -641,6 +641,8 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
                     "state": c["state"],
                     "freshness": c["freshness"],
                     "cause": c["cause"],
+                    "checkedAt": c.get("checked_at", ""),
+                    "payload": c.get("payload"),
                 }
                 for c in plugin_cards
             ],
@@ -2155,13 +2157,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         The amber treatment matches the built-in widgets, and every
         plugin-controlled string is escaped here: the shell renders widget
-        bodies as authored HTML, so this is the boundary."""
+        bodies as authored HTML, so this is the boundary. A bound
+        ui-schema payload (metrics the host computed) draws the fresh
+        body; without one the card falls back to the version line."""
         status = FRESH if card.get("freshness") == "fresh" else ATTENTION
         plugin_id = html.escape(str(card["id"]))
         cause = html.escape(str(card.get("cause") or "data source has not run"))
         file_name = html.escape(str(card.get("file") or "the data source"))
         version = html.escape(str(card["version"]))
-        if status == FRESH:
+        payload = card.get("payload") or {}
+        elements = payload.get("elements") if isinstance(payload, dict) else None
+        if status == FRESH and elements:
+            parts = []
+            for element in elements:
+                if not isinstance(element, dict):
+                    continue
+                if element.get("kind") == "metric":
+                    parts.append('<p class="w-big">'
+                                 + html.escape(str(element.get("value", "")))
+                                 + "</p>")
+                    label = str(element.get("label", "")).strip()
+                    if label:
+                        parts.append('<p class="w-note">'
+                                     + html.escape(label) + "</p>")
+                elif element.get("kind") == "text":
+                    parts.append('<p class="w-note">'
+                                 + html.escape(str(element.get("text", "")))
+                                 + "</p>")
+            body = "".join(parts) or (
+                '<p class="w-big">' + version + '</p><p class="w-note">'
+                "reading " + file_name + "</p>")
+            extra = ""
+        elif status == FRESH:
             cause = f"reading {file_name}"
             body = '<p class="w-big">' + version + '</p><p class="w-note">' + cause + "</p>"
             extra = ""
@@ -2224,6 +2251,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "pilot": record.get("pilot_views_left", 0) > 0
                 and record.get("state") == "enabled",
                 "data_source": record.get("data_source"),
+                "payload": plugins.widget_payload(record["id"]),
                 "pending_diff": record.get("pending_diff"),
             })
         return out
@@ -2916,6 +2944,11 @@ def start_background_polls(server: AgentDeskServer) -> None:
     if mail is not None and allowed("mail_enabled"):
         mail.start_polling()
         threading.Thread(target=_poll_mail_once, args=(mail,), daemon=True).start()
+    plugins = server.plugins
+    if plugins is not None:
+        # Attached plugin data sources resume their hourly loops; each
+        # already polled once at attach, so no immediate poll is needed.
+        plugins.start_widget_polls()
 
 
 def _poll_mail_once(watch: MailWatch) -> None:

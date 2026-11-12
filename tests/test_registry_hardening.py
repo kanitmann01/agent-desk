@@ -141,10 +141,23 @@ def test_workflow_never_interpolates_the_base_ref_into_shell():
 
 
 def test_registry_root_document_is_seeded():
+    """The committed index loads and tells the truth about the plugin
+    directories next to it: every entry's pin equals the recomputed
+    tree digest of its plugin directory (the first publish is
+    sales-delta-widget 0.1.0)."""
     repo = Path(__file__).resolve().parents[1]
-    index = json.loads((repo / "registry" / "index.json").read_text(encoding="utf-8"))
-    assert index == {"plugins": [], "schemaVersion": 1}
-    assert load_index((repo / "registry" / "index.json").read_text(encoding="utf-8")) is not None
+    raw = (repo / "registry" / "index.json").read_text(encoding="utf-8")
+    index = load_index(raw)
+    assert index is not None
+    ids = {entry.id for entry in index.plugins}
+    assert "sales-delta-widget" in ids
+    from agentdesk.registry.install import tree_digest
+    for entry in index.plugins:
+        release = entry.release_for(entry.latest)
+        assert release is not None, entry.id
+        plugin_dir = repo / "registry" / "plugins" / entry.id
+        assert plugin_dir.is_dir(), entry.id
+        assert release.sha256 == tree_digest(plugin_dir), entry.id
 
 
 def test_empty_base_index_means_nothing_published_yet(tmp_path):
