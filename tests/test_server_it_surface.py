@@ -121,6 +121,10 @@ def test_touches_page_is_generated_from_the_vocabulary(env, auth):
     assert "Processes started:" in page and "none" in page
     assert "Persistence:" in page and "No Run key" in page
     assert "delete the folder" in page
+    # The claim matches THIRD-PARTY-LICENSES.md: the Python runtime is
+    # clean, the bundle carries the documented, licensed set.
+    assert "Python runtime has no third-party dependencies" in page
+    assert "No third-party components" not in page
 
 
 def test_license_manifest_gate():

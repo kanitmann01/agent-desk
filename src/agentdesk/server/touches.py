@@ -68,7 +68,7 @@ happened on this machine. Generated {html.escape(generated)}, version
 <li><b>Network:</b> only the company LLM endpoint, only derived text, every call logged in the audit you can export as CSV.</li>
 <li><b>Data location:</b> <span class="mono">{html.escape(data_dir_statement())}</span>. The watched workbook is copied to the temp folder before parsing and never modified.</li>
 <li><b>Uninstall:</b> delete the folder. Nothing is left behind, nothing to unregister.</li>
-<li><b>License:</b> MIT. No third-party components; see <span class="mono">THIRD-PARTY-LICENSES.md</span>.</li>
+<li><b>License:</b> MIT. The Python runtime has no third-party dependencies; the dashboard bundle ships a documented, licensed set (see <span class="mono">THIRD-PARTY-LICENSES.md</span>).</li>
 </ul>
 <p class="empty"><a href="/">Back to the dashboard</a></p>
 </div>
