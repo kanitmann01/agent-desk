@@ -133,7 +133,7 @@ svg{display:block;flex:none}
 .dot{width:7px;height:7px;border-radius:var(--r-pill);background:var(--accent);display:inline-block;flex:none;box-shadow:0 0 8px rgba(34,197,94,.8)}
 .dot.sample{background:var(--ink-3);box-shadow:none}
 
-main{padding:38px 40px 64px;max-width:1280px;width:100%;min-width:0;margin:0 auto}
+main{padding:38px 40px 88px;max-width:1280px;width:100%;min-width:0;margin:0 auto}
 
 /* The hero band: greeting, date line, and the live source line. */
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:24px}
@@ -202,17 +202,29 @@ main{padding:38px 40px 64px;max-width:1280px;width:100%;min-width:0;margin:0 aut
 .span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-7{grid-column:span 7}
 .span-8{grid-column:span 8}.span-12{grid-column:span 12}
 
-/* The card shell: a 1.5px rim of steel gradient around the glass. The
-   #0E1223 surface sits under the glass so the aurora tints it without
-   washing the text out. */
+/* The card shell: a 1.5px rim of steel gradient around the glass.
+   Under the glass sits a mostly solid #0E1223 fill with its own heavy
+   blur, so the aurora behind reads as a soft tint inside the card and
+   never as a line or edge through the content. */
 .card{
   position:relative;flex:1;display:flex;min-width:0;border-radius:var(--r-card);padding:1.5px;
   background:linear-gradient(180deg,rgba(148,163,184,.30),rgba(51,65,85,.14) 34%,rgba(51,65,85,.10));
   box-shadow:var(--shadow-card);
 }
 .card.amber{background:linear-gradient(180deg,rgba(245,158,11,.6),rgba(245,158,11,.18) 40%,rgba(245,158,11,.12))}
-.card-body{position:relative;flex:1;display:flex;min-width:0;border-radius:calc(var(--r-card) - 1.5px);background:rgba(14,18,35,.62)}
-.card.amber .card-body{background:linear-gradient(180deg,rgba(245,158,11,.10),rgba(14,18,35,.66) 46%)}
+.card-body{
+  position:relative;flex:1;display:flex;min-width:0;
+  border-radius:calc(var(--r-card) - 1.5px);
+  background:rgba(14,18,35,.84);
+  backdrop-filter:blur(22px);
+  -webkit-backdrop-filter:blur(22px);
+}
+/* The vendored glass paints its own diagonal sheen from the top left;
+   at full strength it reads as a streak through the card, so it is
+   kept only as a whisper. The rim stays for the glassy feel. */
+.card-body > div > span:first-of-type{opacity:.07}
+/* Amber glass: an amber wash over the same mostly solid fill. */
+.card.amber .card-body{background:linear-gradient(180deg,rgba(245,158,11,.16),rgba(245,158,11,0) 46%),rgba(14,18,35,.84)}
 /* In the SPA the glass surface component carries the card chrome, so
    .widget is layout only. GlassSurface's inner wrapper adds 8px padding,
    which sums with the widget's own 14px. */
@@ -425,7 +437,7 @@ table.rows td.neg{color:var(--bad)}
   .rail .user{display:none}
   .bento{grid-template-columns:1fr}
   .span-4,.span-5,.span-7,.span-8,.span-12{grid-column:auto}
-  main{padding:22px 16px 44px}
+  main{padding:22px 16px 56px}
   .hero{flex-direction:column;align-items:flex-start}
   .hero-actions{align-items:flex-start;padding-bottom:0}
   .cmd-hint{display:none}
