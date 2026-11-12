@@ -342,9 +342,28 @@ def test_write_reply_creates_the_outbox_folder(tmp_path):
 @pytest.mark.parametrize("odd_date_ts", [-86400.0, 10.0 ** 20])
 def test_format_header_ts_survives_odd_dates(odd_date_ts):
     """A pre-1970 Date header raises OSError on Windows and an
-    out-of-range one raises OverflowError; the page must read
-    'unknown date' instead of losing the whole render."""
-    assert format_header_ts(odd_date_ts) == "unknown date"
+    out-of-range one raises OverflowError, while POSIX builds accept
+    both and render them. The portable contract is only that an odd
+    date never costs the page its render: some string comes back."""
+    rendered = format_header_ts(odd_date_ts)
+    assert isinstance(rendered, str)
+    assert rendered
+
+
+@pytest.mark.parametrize("error", [OSError, OverflowError, ValueError])
+def test_format_header_ts_reads_unknown_date_when_the_clock_refuses(monkeypatch, error):
+    """When the platform's clock refuses a date outright (OSError on
+    Windows for pre-1970, OverflowError for out-of-range years, and a
+    malformed one raising ValueError), the page reads 'unknown date'
+    instead of losing the whole render."""
+
+    class RefusingClock:
+        @staticmethod
+        def fromtimestamp(_ts):
+            raise error("the platform refused this date")
+
+    monkeypatch.setattr("agentdesk.mail.core.datetime", RefusingClock)
+    assert format_header_ts(10.0 ** 20) == "unknown date"
 
 
 # -- the header injection guard -------------------------------------------

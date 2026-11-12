@@ -884,7 +884,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             # Stored before the poll so the choice survives restarts; the
             # poll right now is the card's feedback that it took effect.
-            calendar_store.set_calendar_path(calendar.conn, chosen)
+            # Through the bridge so the write lands under its lock, like
+            # every other use of the shared connection.
+            calendar.set_explicit_path(chosen)
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())
@@ -907,7 +909,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             target = default_data_dir() / "calendar_sync.json"
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(raw)
-            calendar_store.set_calendar_path(calendar.conn, str(target))
+            calendar.set_explicit_path(str(target))
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())
@@ -915,7 +917,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if calendar is None:
                 self._send_json(503, {"error": "the calendar bridge is not available"})
                 return
-            calendar_store.clear_calendar_path(calendar.conn)
+            calendar.clear_explicit_path()
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())

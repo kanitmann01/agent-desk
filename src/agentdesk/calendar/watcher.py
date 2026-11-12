@@ -126,9 +126,18 @@ class CalendarBridge:
         self._cause = ""
         self._document = None
         store.ensure_schema(conn)
+        # One sqlite connection shared by the poll thread, the request
+        # threads and the settings routes: every use is serialized. An
+        # RLock because poll, status and retest call one another while
+        # holding it.
+        self._lock = threading.RLock()
 
     def poll(self) -> dict:
         """One poll: read, parse, pick, attach. Returns the status dict."""
+        with self._lock:
+            return self._poll_locked()
+
+    def _poll_locked(self) -> dict:
         now_dt = _now_from_clock(self.adapters.clock)
         now = self.adapters.clock()
         found = None
@@ -170,7 +179,18 @@ class CalendarBridge:
 
     def explicit_path(self) -> str | None:
         """The file the user chose in the app, when one is stored."""
-        return store.get_calendar_path(self.conn)
+        with self._lock:
+            return store.get_calendar_path(self.conn)
+
+    def set_explicit_path(self, path: str) -> None:
+        """Persist the user's file choice under the bridge's own lock."""
+        with self._lock:
+            store.set_calendar_path(self.conn, path)
+
+    def clear_explicit_path(self) -> None:
+        """Forget the user's file choice under the bridge's own lock."""
+        with self._lock:
+            store.clear_calendar_path(self.conn)
 
     def _read_calendar(self):
         """The read the poll uses, in precedence order: the explicitly
@@ -186,6 +206,10 @@ class CalendarBridge:
     def upcoming(self, now: datetime, within_hours: float = 1.0) -> list:
         """Events starting within the window, soonest first. None when no
         document has been read yet."""
+        with self._lock:
+            return self._upcoming_locked(now, within_hours)
+
+    def _upcoming_locked(self, now: datetime, within_hours: float = 1.0) -> list:
         if self._document is None:
             return []
         horizon = now + timedelta(hours=within_hours)
@@ -196,6 +220,10 @@ class CalendarBridge:
 
     def status(self) -> dict:
         """The widget payload: state, key event, breakdown, freshness."""
+        with self._lock:
+            return self._status_locked()
+
+    def _status_locked(self) -> dict:
         now_dt = _now_from_clock(self.adapters.clock)
         payload = {
             "configured": True,
@@ -242,7 +270,8 @@ class CalendarBridge:
 
     def toggle_check(self, event_id: str, idx: int, checked: bool) -> None:
         """The checkbox API: persists across refreshes and restarts."""
-        store.set_check(self.conn, event_id, idx, checked)
+        with self._lock:
+            store.set_check(self.conn, event_id, idx, checked)
 
     def _audit(self, action: str, status: str) -> None:
         """Record a brokered touch when the audit hook is wired."""
