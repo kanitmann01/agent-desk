@@ -331,6 +331,28 @@ describe('the two sheets agree on the shared header contract', () => {
   ])('%s spaces the brand row identically', (_name, sheet) => {
     expect(decl(sheet, '.brand', 'padding')).toBe('2px 8px 18px');
   });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s spaces the stamp beside its 7px dot identically', (_name, sheet) => {
+    expect(decl(sheet, '.stamp', 'gap')).toBe('7px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s keeps the header row on the 12px internal gap', (_name, sheet) => {
+    expect(decl(sheet, '.w-head', 'gap')).toBe('12px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s spaces the foot divider identically', (_name, sheet) => {
+    expect(decl(sheet, '.w-foot', 'padding-top')).toBe('12px');
+    expect(decl(sheet, '.page-foot', 'margin-top')).toBe('48px');
+  });
 });
 
 describe('the committed bundle honors the contract', () => {

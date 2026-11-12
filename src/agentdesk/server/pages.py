@@ -133,6 +133,7 @@ svg{display:block;flex:none}
 .skills-strip .skill-btn:hover{background:var(--surface-2)}
 .settings-block{display:flex;flex-direction:column;gap:8px;max-width:460px}
 .cardform{display:flex;flex-direction:column;gap:8px;margin:8px 0;max-width:460px}
+.cardform .btn{align-self:flex-start}
 .cardform label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .cardform input,.cardform textarea{font:inherit;font-size:13.5px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
 .cardform input:focus,.cardform textarea:focus{outline:2px solid var(--primary);outline-offset:1px}
@@ -164,7 +165,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .w-head{display:flex;align-items:center;gap:12px}
 .w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
 .stamp{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3);font-weight:600}
-.w-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);padding-top:10px;font-size:12px;color:var(--ink-3)}
+.w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:12px;font-size:12px;line-height:1.5;color:var(--ink-3)}
 .kpi{display:flex;gap:24px;align-items:flex-start}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .kpi .value{font-family:var(--font-mono);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--good);margin-top:2px;overflow-wrap:anywhere}
@@ -218,7 +219,7 @@ table.rows td.neg{color:var(--bad)}
 .doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
 .doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .doc a.btn{text-decoration:none}
-.page-foot{margin-top:40px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px}
+.page-foot{margin-top:48px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
 .page-foot a:hover{text-decoration:underline}
 .touches td{vertical-align:top;font-size:13px}
