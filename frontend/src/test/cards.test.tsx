@@ -27,6 +27,26 @@ const HEALTHY_SALES: SalesStatus = {
   },
 };
 
+const COMMITMENTS_HEALTHY = {
+  state: 'healthy',
+  path: null,
+  keyEvent: {
+    id: 'evt-1',
+    subject: 'Budget review',
+    start: '2026-11-12T09:30:00',
+    end: '2026-11-12T10:00:00',
+    location: 'Teams',
+    attendees: 4,
+  },
+  breakdown: {
+    subtasks: ['Pull the October actuals', 'Draft the variance note'],
+    followups: [{ text: 'Send the note to Amara', deadline: 'Friday' }],
+  },
+  checks: { 0: true },
+  firstDetected: '2026-11-12T08:40:00',
+  generatedAt: '2026-11-12T08:40:00',
+};
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -139,25 +159,7 @@ describe('the sales card', () => {
 });
 
 describe('the commitments card', () => {
-  const STATUS = {
-    state: 'healthy',
-    path: null,
-    keyEvent: {
-      id: 'evt-1',
-      subject: 'Budget review',
-      start: '2026-11-12T09:30:00',
-      end: '2026-11-12T10:00:00',
-      location: 'Teams',
-      attendees: 4,
-    },
-    breakdown: {
-      subtasks: ['Pull the October actuals', 'Draft the variance note'],
-      followups: [{ text: 'Send the note to Amara', deadline: 'Friday' }],
-    },
-    checks: { 0: true },
-    firstDetected: '2026-11-12T08:40:00',
-    generatedAt: '2026-11-12T08:40:00',
-  };
+  const STATUS = COMMITMENTS_HEALTHY;
 
   it('shows the key event, the persisted checks and the follow-up chips', () => {
     render(
@@ -269,6 +271,8 @@ describe('the plugin card', () => {
     render(
       <PluginCardView
         card={{ id: 'p1', title: 'Invoice tracker', version: '1.2.0', pilot: true, state: 'active', freshness: 'fresh', cause: '' }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
       />,
     );
     expect(screen.getByText('PILOT')).toHaveClass('badge-pilot');
@@ -279,12 +283,161 @@ describe('the plugin card', () => {
     render(
       <PluginCardView
         card={{ id: 'p1', title: 'Invoice tracker', version: '1.2.0', pilot: true, state: 'active', freshness: 'attention', cause: 'data source has not run' }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
       />,
     );
     expect(document.querySelector('.card')).toHaveClass('amber');
     expect(document.querySelector('.stamp')).toHaveClass('amber');
     expect(screen.getByText('data source has not run')).toBeInTheDocument();
     expect(screen.getByText(/Re-test runs the plugin's data source again/)).toBeInTheDocument();
+  });
+
+  it('re-tests from the overflow menu against the plugin endpoint, once', async () => {
+    const fetchMock = vi.fn(
+      async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({}),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const onRefetch = vi.fn(async () => {});
+    const user = userEvent.setup();
+    render(
+      <PluginCardView
+        card={{ id: 'p1', title: 'Invoice tracker', version: '1.2.0', pilot: false, state: 'active', freshness: 'attention', cause: 'data source has not run' }}
+        onRefetch={onRefetch}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
+    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/plugins/p1/retest');
+    expect(retestCall?.[0]).toBe('/api/plugins/p1/retest');
+    await vi.waitFor(() => expect(onRefetch).toHaveBeenCalled());
+  });
+
+  it('disables the re-test item while one is already running', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      await gate;
+      return Response.json({});
+    }));
+    const user = userEvent.setup();
+    render(
+      <PluginCardView
+        card={{ id: 'p1', title: 'Invoice tracker', version: '1.2.0', pilot: false, state: 'active', freshness: 'attention', cause: 'data source has not run' }}
+        onRefetch={async () => {}}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
+    // Open the menu again while the first re-test is still in flight.
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    expect(screen.getByRole('menuitem', { name: 'Re-test now' })).toBeDisabled();
+    release();
+    // When the re-test settles, the item answers again.
+    await vi.waitFor(() =>
+      expect(screen.getByRole('menuitem', { name: 'Re-test now' })).toBeEnabled(),
+    );
+  });
+});
+
+describe('the card overflow menus', () => {
+  it('offers Connect a workbook and Open settings when sales is unconfigured', async () => {
+    const user = userEvent.setup();
+    render(
+      <SalesCard
+        sales={{ enabled: true, mode: 'unconfigured', status: null }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    const menu = screen.getByRole('menu', { name: /^Widget options/ });
+    expect(menu).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Connect a workbook' })).toBeInTheDocument();
+    const settings = screen.getByRole('menuitem', { name: 'Open settings' });
+    expect(settings).toHaveAttribute('href', '/settings');
+  });
+
+  it('re-tests the sales source from the menu when live', async () => {
+    const fetchMock = vi.fn(
+      async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({}),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const onRefetch = vi.fn(async () => {});
+    const user = userEvent.setup();
+    render(
+      <SalesCard
+        sales={{ enabled: true, mode: 'live', status: HEALTHY_SALES }}
+        onRefetch={onRefetch}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
+    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/sources/excel-watch/retest');
+    expect(retestCall?.[0]).toBe('/sources/excel-watch/retest');
+    await vi.waitFor(() => expect(onRefetch).toHaveBeenCalled());
+  });
+
+  it('offers Re-test, the walkthrough and settings on the commitments card', async () => {
+    const fetchMock = vi.fn(
+      async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({}),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <CommitmentsCard
+        commitments={{ enabled: true, mode: 'live', status: { ...COMMITMENTS_HEALTHY, state: 'stale', cause: 'The OneDrive file is behind.' } }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
+    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/sources/calendar-bridge/retest');
+    expect(retestCall?.[0]).toBe('/sources/calendar-bridge/retest');
+  });
+
+  it('offers Connect your calendar when the calendar is empty', async () => {
+    const user = userEvent.setup();
+    render(
+      <CommitmentsCard
+        commitments={{ enabled: true, mode: 'live', status: { ...COMMITMENTS_HEALTHY, state: 'empty' } }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    const connect = screen.getByRole('menuitem', { name: 'Connect your calendar' });
+    expect(connect).toHaveAttribute('href', '/walkthrough/calendar');
+    expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
+  });
+
+  it('carries Open settings on the research and skills cards', async () => {
+    const user = userEvent.setup();
+    render(
+      <ResearchCard
+        span="span-8"
+        lastAnsweredTs={null}
+        answer={null}
+        answerSeq={0}
+        statusText=""
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
+    cleanup();
+    render(
+      <SkillsCard
+        skills={[{ id: 1, name: 'Monday numbers', description: '' }]}
+        busy={false}
+        onRun={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
   });
 });
 

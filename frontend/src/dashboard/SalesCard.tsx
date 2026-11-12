@@ -137,6 +137,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
         footLines={2}
         sparse
         stamp={{ fresh: false, text: 'Paused' }}
+        menuItems={[{ label: 'Open settings', href: '/settings' }]}
         foot="No ingestion while off. Your snapshots stay on this machine."
       >
         <EmptyState
@@ -158,6 +159,10 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
         footLines={2}
         sparse
         stamp={{ fresh: false, text: 'Not connected' }}
+        menuItems={[
+          { label: 'Connect a workbook', onSelect: () => void pick() },
+          { label: 'Open settings', href: '/settings' },
+        ]}
         foot="Read-only: the file is copied before parsing, never opened in place."
       >
         <EmptyState
@@ -255,6 +260,10 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
       sparse={status.state !== 'healthy'}
       stamp={stamp}
       amber={amber}
+      menuItems={[
+        { label: 'Re-test now', onSelect: retest, disabled: busy },
+        { label: 'Open settings', href: '/settings' },
+      ]}
       foot={`Watches ${fileNameOf(status.path)}, hourly, read-only. The file is copied before parsing, never opened in place.`}
     >
       {body}

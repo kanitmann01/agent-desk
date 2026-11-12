@@ -155,7 +155,12 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             />
           )}
           {data.plugins.cards.map((card) => (
-            <PluginCardView key={card.id} card={card} />
+            <PluginCardView
+              key={card.id}
+              card={card}
+              onRefetch={onRefetch}
+              onExpired={onExpired}
+            />
           ))}
         </section>
         <footer className="page-foot">
