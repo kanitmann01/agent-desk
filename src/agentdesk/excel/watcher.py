@@ -72,6 +72,10 @@ class ExcelWatch:
         self.audit_hook = audit_hook
         self._stop = threading.Event()
         self._timer: threading.Timer | None = None
+        # One sqlite connection shared by the poll thread and the request
+        # threads: every use is serialized. An RLock because register,
+        # retest and resume end up inside poll while holding it.
+        self._lock = threading.RLock()
         store.ensure_schema(conn)
 
     @property
@@ -80,6 +84,10 @@ class ExcelWatch:
 
     def register(self, path: str) -> PollResult:
         """Point the watch at a workbook (the file picker's outcome)."""
+        with self._lock:
+            return self._register_locked(path)
+
+    def _register_locked(self, path: str) -> PollResult:
         self._path = path
         # Persisted before the poll so a restart resumes this workbook
         # even when the first poll finds the file locked or unreadable.
@@ -89,6 +97,10 @@ class ExcelWatch:
 
     def poll(self) -> PollResult:
         """One poll: shadow copy, parse, diff against T-24h, snapshot."""
+        with self._lock:
+            return self._poll_locked()
+
+    def _poll_locked(self) -> PollResult:
         if self._path is None:
             raise RuntimeError("no workbook registered")
         ts = self.adapters.clock()
@@ -147,6 +159,10 @@ class ExcelWatch:
         Freshness presentation (status dot, stamp text) is the server's
         job; this reports the raw state and when the last good poll ran.
         """
+        with self._lock:
+            return self._status_locked()
+
+    def _status_locked(self) -> dict:
         now = self.adapters.clock()
         result = self._last_result
         if result is None:
@@ -181,10 +197,13 @@ class ExcelWatch:
         itself never blocks on the read), and the interval loop continues
         as after a normal registration. False when nothing is registered.
         """
-        if self._path is None:
-            self._path = store.get_meta(self.conn, store.WORKBOOK_PATH_KEY)
-        if self._path is None:
-            return False
+        with self._lock:
+            if self._path is None:
+                self._path = store.get_meta(self.conn, store.WORKBOOK_PATH_KEY)
+            if self._path is None:
+                return False
+        # The threads start outside the lock: a poll must never wait for
+        # it indirectly while the resumer still holds it.
         self.start_polling()
         threading.Thread(target=self._poll_quietly, daemon=True).start()
         return True

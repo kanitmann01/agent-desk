@@ -28,6 +28,7 @@ TOGGLES = {
     "calendar_enabled": True,
     "endpoint_enabled": True,
     "quiet_hours": True,
+    "mail_enabled": False,  # mail digest: off until the user turns it on
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
@@ -36,6 +37,7 @@ TEXT_KEYS = {
     "llm_base": "",  # OpenAI-compatible base URL
     "llm_key": "",   # API key; secret, rendered only in masked form
     "llm_model": "",  # empty means the adapter's default model
+    "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
 }
 DEFAULTS = {**TOGGLES, "daily_cap": 3, **TEXT_KEYS}
 

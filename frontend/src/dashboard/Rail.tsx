@@ -1,8 +1,9 @@
 // The rail: brand, the entries, the inbox count badge and the user
 // line. Dashboard, Inbox, Assistant and Settings are real server pages
-// (GET /inbox, /assistant, /settings); Plugins stays switched off until
-// a plugins page exists. Drawn as the system's full-height Input Well
-// column; the brand is plain text in the ink.
+// (GET /inbox, /assistant, /settings); so are the four consolidation
+// pages (GET /activity, /memory, /mail, /capabilities). Plugins stays
+// switched off until a plugins page exists. Drawn as the system's
+// full-height Input Well column; the brand is plain text in the ink.
 interface RailProps {
   inboxWaiting: number;
 }
@@ -50,6 +51,38 @@ const ICON_SETTINGS = (
   </svg>
 );
 
+const ICON_ACTIVITY = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3.5 12h4l2.5-6.5 4 13 2.5-6.5h4" />
+  </svg>
+);
+
+const ICON_MEMORY = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <ellipse cx="12" cy="5.5" rx="7.5" ry="2.5" />
+    <path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13" />
+    <path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5" />
+  </svg>
+);
+
+const ICON_MAIL = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+    <path d="m4.5 8 7.5 5.5L19.5 8" />
+  </svg>
+);
+
+const ICON_CAPABILITIES = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3.5 5 6.2v4.6c0 4.6 3 8.6 7 9.7 4-1.1 7-5.1 7-9.7V6.2L12 3.5Z" />
+    <path d="m9 11.5 2.2 2.2 3.8-4.4" />
+  </svg>
+);
+
 export default function Rail({ inboxWaiting }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   return (
@@ -66,6 +99,10 @@ export default function Rail({ inboxWaiting }: RailProps) {
       <a href="/" aria-current="page">{ICON_DASHBOARD}Dashboard</a>
       <a href="/inbox">{ICON_INBOX}Inbox{badge}</a>
       <a href="/assistant">{ICON_ASSISTANT}Assistant</a>
+      <a href="/activity">{ICON_ACTIVITY}Activity</a>
+      <a href="/memory">{ICON_MEMORY}Memory</a>
+      <a href="/mail">{ICON_MAIL}Mail</a>
+      <a href="/capabilities">{ICON_CAPABILITIES}Capabilities</a>
       <span className="nav-off" aria-disabled="true" title="Arrives in a later build">
         {ICON_PLUGINS}Plugins
       </span>

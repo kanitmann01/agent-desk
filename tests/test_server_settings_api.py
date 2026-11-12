@@ -53,6 +53,9 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "llm_base": "",
         "llm_key": "",
         "llm_model": "",
+        # Mail (#44): off by default, no folder chosen.
+        "mail_enabled": False,
+        "mail_folder": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

@@ -49,11 +49,24 @@ def _calendar_lines(calendar_status: dict | None) -> list[str]:
     ]
 
 
-def build_context(excel_status: dict | None, calendar_status: dict | None) -> str:
-    """The context block prepended to assistant and research prompts."""
-    lines = ["Connected widget context (derived, read-only):"]
+def build_context(
+    excel_status: dict | None,
+    calendar_status: dict | None,
+    facts_block: str = "",
+) -> str:
+    """The context block prepended to assistant and research prompts.
+
+    `facts_block` (the memory recall, already bounded by memory/service)
+    rides first when the assistant turn recalls anything: derived
+    abstractions the prompt may read, never instructions or content the
+    user did not review on the memory page.
+    """
+    lines = []
+    if facts_block:
+        lines.append(facts_block)
+    lines.append("Connected widget context (derived, read-only):")
     lines += _excel_lines(excel_status)
     lines += _calendar_lines(calendar_status)
-    if len(lines) == 1:
+    if lines[-1] == "Connected widget context (derived, read-only):":
         lines.append("(no sources connected yet)")
     return "\n".join(lines)

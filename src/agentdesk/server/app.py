@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -21,6 +22,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, unquote
 
 import agentdesk
 from agentdesk.assistant import audit as audit_store
@@ -39,10 +41,26 @@ from agentdesk.calendar.watcher import (
     default_calendar_candidates,
     default_read_calendar,
 )
+from agentdesk.capabilities import GATES, CapabilitiesCache, GateRunners, default_gate_runners
+from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
-from agentdesk.inbox.core import UnknownCard
+from agentdesk.inbox.core import (
+    KIND_MAIL_FOLLOW_UP,
+    KIND_UPDATE_CONSENT,
+    STATUS_WAITING,
+    UnknownCard,
+)
+from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
+from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
+from agentdesk.mail.store import MailStore
+from agentdesk.mail.watcher import (
+    STATE_ERROR,
+    STATE_UNCONFIGURED,
+    STATE_WATCHING,
+    MailWatch,
+)
 from agentdesk.llm import (
     DEFAULT_MODEL,
     LlmUnavailable,
@@ -54,17 +72,24 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
+from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.service import build_facts_block
+from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
+from agentdesk.server.activity_view import DECISIONS, render_activity_page
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
+from agentdesk.server.capabilities_view import render_capabilities_page
 from agentdesk.server.commitments import (
     render_commitments_unavailable,
     render_commitments_widget,
 )
 from agentdesk.server.inbox_view import render_inbox_page
+from agentdesk.server.mail_view import render_mail_page
+from agentdesk.server.memory_view import render_memory_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
 from agentdesk.server.wizard_view import (
@@ -126,6 +151,26 @@ SECURITY_HEADERS = (
 )
 
 MAX_BODY_BYTES = 1024 * 1024
+
+# A body over MAX_BODY_BYTES is refused but still drained, so a keep-alive
+# connection survives the refusal; this is the hard bound on that draining.
+# Beyond it the server answers and closes instead of reading unboundedly:
+# keeping a localhost connection is never worth reading gigabytes.
+MAX_DRAIN_BYTES = 8 * MAX_BODY_BYTES
+
+
+def body_drain_plan(length: int) -> str:
+    """What to do with a request body of this declared length: 'skip'
+    (nothing declared), 'stash' it for the route, 'discard' it (over the
+    stash limit but within the hard cap), or 'close' (beyond the cap;
+    the answer goes out with Connection: close)."""
+    if length <= 0:
+        return "skip"
+    if length <= MAX_BODY_BYTES:
+        return "stash"
+    if length <= MAX_DRAIN_BYTES:
+        return "discard"
+    return "close"
 
 # The committed SPA build, emitted by frontend/ (npm run build) directly
 # into this folder and committed, so the double-click launcher serves it
@@ -321,6 +366,77 @@ def calendar_path_problem(path_text: str) -> str:
     return calendar_document_problem(data)
 
 
+def form_body_fields(raw: bytes) -> dict | None:
+    """Form-urlencoded bytes as the dict the JSON handlers read: each
+    field mapped to its first value. The fallback for bodies that declare
+    the form content type (the no-JS screens), never a speculative parse
+    of anything else."""
+    try:
+        fields = parse_qs(raw.decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
+    return {name: values[0] for name, values in fields.items() if values}
+
+
+def plain_preview(text: str, limit: int = 140) -> str:
+    """A one-line plain-text preview of a draft for the audit log: the
+    donor approvals module's plainText. Tags and entities out, whitespace
+    collapsed, capped, so the log never carries markup."""
+    stripped = re.sub(r"<[^>]*>", " ", text)
+    stripped = re.sub(r"&[a-zA-Z]+;", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()[:limit]
+
+
+def _flag(body: dict, *names: str) -> bool:
+    """A checkbox-style flag from either a JSON body (true) or a form
+    post ("1", "true", "on"): the same choice, two wire shapes."""
+    for name in names:
+        value = body.get(name)
+        if value is True or (isinstance(value, str)
+                             and value.strip().lower() in ("1", "true", "on")):
+            return True
+    return False
+
+
+def _memory_id_from_path(path: str, suffix: str) -> int | None:
+    """The fact id in /memory/<id>/edit (or /delete), or None when the
+    address names no fact."""
+    raw = path[len("/memory/"):-len(suffix)]
+    return int(raw) if raw.isascii() and raw.isdigit() else None
+
+
+def _fact_json(fact) -> dict:
+    """A fact as the API answers it."""
+    return {
+        "id": fact.id,
+        "text": fact.text,
+        "source": fact.source,
+        "createdTs": fact.created_ts,
+    }
+
+
+def _plugin_audit_detail(action: str, result: dict) -> str:
+    """What each plugin lifecycle row says, from the action's own result."""
+    result = result if isinstance(result, dict) else {}
+    if action == "update":
+        if result.get("applied"):
+            return f"applied v{result.get('version', '')}"
+        return "held for consent: adds " + "; ".join(result.get("added_scopes", []))
+    if action == "consent":
+        return f"applied v{result.get('version', '')}"
+    if action == "rollback":
+        return f"rolled back to {result.get('rolled_back_to', '')}"
+    if action in ("enable", "disable"):
+        return f"state: {result.get('state', action)}"
+    if action == "uninstall":
+        return "program files deleted, data preserved"
+    if action == "purge-data":
+        return "data folder deleted after confirmation"
+    if action == "retest":
+        return f"data source: {result.get('status', '')}"
+    return ""
+
+
 class AgentDeskServer(ThreadingHTTPServer):
     """The app server: sessions, source table, and the excel watch."""
 
@@ -345,6 +461,13 @@ class AgentDeskServer(ThreadingHTTPServer):
         plugins: PluginRuntime | None = None,
         pick_calendar=None,
         wizard_store: WizardStore | None = None,
+        consents: ConsentStore | None = None,
+        memory_store: MemoryStore | None = None,
+        capabilities_cache: CapabilitiesCache | None = None,
+        gate_runners: GateRunners | None = None,
+        mail: MailWatch | None = None,
+        mail_store: MailStore | None = None,
+        outbox_dir=None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -362,6 +485,21 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.settings = settings_store
         self.plugins = plugins
         self.wizard_store = wizard_store
+        self.memory = memory_store
+        # The capabilities cache may be absent (its store could not open);
+        # the runner set defaults to the real probe bundle. Building that
+        # set probes nothing: gates run only when a re-test POST calls one.
+        self.capabilities_cache = capabilities_cache
+        self.gate_runners = gate_runners if gate_runners is not None else _default_gate_runners()
+        # Process-lifetime consent allows: (plugin, scope) pairs accepted
+        # "for this plugin". A fresh set unless injected; restart forgets.
+        self.consents = consents if consents is not None else ConsentStore()
+        # The mail watcher exists only when mail is enabled (the toggle
+        # defaults to off, so a default boot has no watcher at all); the
+        # handled-thread store and the outbox folder exist regardless.
+        self.mail = mail
+        self.mail_store = mail_store
+        self.outbox_dir = Path(outbox_dir) if outbox_dir is not None else _default_outbox_dir()
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
             if activity_log is not None and inbox_store is not None and skill_store is not None
@@ -532,6 +670,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 (http.server contract)
         self._responded = False
+        self._close_with_response = False
         try:
             self._route_post()
         except Exception:  # noqa: BLE001
@@ -545,22 +684,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- the gate every request passes ----------------------------------
 
     def _gate(self) -> bool:
-        """Origin/Host guard, then session auth. Sends the answer itself."""
+        """Origin/Host guard, then session auth. Sends the answer itself.
+
+        Both refusals end the connection: the gate runs before the body
+        is drained, and an unread body on a kept-alive connection is
+        exactly what the drain exists to prevent."""
         verdict = check_request(
             self.headers.get("Host"),
             self.headers.get("Origin"),
             self.server.port,  # type: ignore[attr-defined]
         )
         if not verdict.allowed:
-            self._send_error_page(403, "Blocked", "This request did not come from the dashboard's own address.")
+            self._refuse_and_close(403, "Blocked", "This request did not come from the dashboard's own address.")
             return False
         if not self._authenticated():
-            self._send_error_page(
+            self._refuse_and_close(
                 401, "Session required",
                 "Open Agent Desk from its shortcut to get a fresh link.",
             )
             return False
         return True
+
+    def _refuse_and_close(self, status: int, title: str, message: str) -> None:
+        """Answer a refusal with Connection: close. The body is read up
+        to the stash limit first, because closing over an unread buffer
+        sends RST on Windows and can eat the very response being sent; a
+        larger body is not worth reading for a request that already
+        failed the gate."""
+        length = self._declared_length()
+        if 0 < length <= MAX_BODY_BYTES:
+            self.rfile.read(length)
+        self._close_with_response = True
+        self.close_connection = True
+        self._send_error_page(status, title, message)
 
     # -- GET -------------------------------------------------------------
 
@@ -603,6 +759,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_assistant_page()
         elif path == "/inbox":
             self._send_inbox_page()
+        elif path == "/activity":
+            self._send_activity_page()
+        elif path == "/memory":
+            self._send_memory_page()
+        elif path == "/mail":
+            self._send_mail_page()
+        elif path == "/capabilities":
+            self._send_capabilities_page()
         elif path == "/widgets/inbox":
             self._send_inbox_count()
         elif path == "/settings":
@@ -720,7 +884,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             # Stored before the poll so the choice survives restarts; the
             # poll right now is the card's feedback that it took effect.
-            calendar_store.set_calendar_path(calendar.conn, chosen)
+            # Through the bridge so the write lands under its lock, like
+            # every other use of the shared connection.
+            calendar.set_explicit_path(chosen)
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())
@@ -729,10 +895,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(503, {"error": "the calendar bridge is not available"})
                 return
             raw = getattr(self, "_raw_body", b"")
-            try:
-                declared = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                declared = 0
+            declared = getattr(self, "_content_length", 0)
             if declared > MAX_BODY_BYTES:
                 self._send_json(400, {"error": "The calendar file is larger than 1 MB. Trim the export, or point at the file by path instead."})
                 return
@@ -746,7 +909,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             target = default_data_dir() / "calendar_sync.json"
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(raw)
-            calendar_store.set_calendar_path(calendar.conn, str(target))
+            calendar.set_explicit_path(str(target))
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())
@@ -754,19 +917,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if calendar is None:
                 self._send_json(503, {"error": "the calendar bridge is not available"})
                 return
-            calendar_store.clear_calendar_path(calendar.conn)
+            calendar.clear_explicit_path()
             calendar.retest()
             self._maybe_briefs()
             self._send_json(200, calendar.status())
         elif path == "/research":
-            body = self._read_json_body()
-            question = (body or {}).get("question")
-            if not isinstance(question, str) or not question.strip():
+            question = self._ask_question_from_body()
+            if not question:
                 self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
                 return
-            self._log_activity("research", question.strip())
+            self._log_activity("research", question)
             self._send_json(200, self._run_llm_turn(
-                question.strip(), summary_mode=True).to_json())
+                question, summary_mode=True).to_json())
         elif path == "/inbox/cards":
             if self.server.inbox is None:  # type: ignore[attr-defined]
                 self._send_json(503, {"error": "the inbox is not available"})
@@ -781,18 +943,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     action_label=str(body.get("actionLabel", "")),
                     window_hours=body.get("windowHours"),
                     meta=body.get("meta") or {},
+                    draft=str(body.get("draft", "")),
                 )
             except (ValueError, TypeError) as exc:
                 self._send_json(400, {"error": str(exc)})
                 return
-            inbox_service.evaluate(self.server.inbox, _local_now(), **self._budget_values())  # type: ignore[attr-defined]
+            self._evaluate_inbox(self.server.inbox)  # type: ignore[attr-defined]
             self._send_json(201, self.server.inbox.get(card.id).to_json(self.server.inbox.now_ts()))  # type: ignore[attr-defined]
         elif path.startswith("/inbox/cards/") and path.endswith("/accept"):
             self._inbox_decide(path[len("/inbox/cards/"):-len("/accept")], "accept")
         elif path.startswith("/inbox/cards/") and path.endswith("/dismiss"):
             self._inbox_decide(path[len("/inbox/cards/"):-len("/dismiss")], "dismiss")
+        elif path.startswith("/inbox/cards/") and path.endswith("/edit"):
+            self._inbox_edit(path[len("/inbox/cards/"):-len("/edit")])
+        elif path.startswith("/inbox/cards/") and path.endswith("/snooze"):
+            self._inbox_snooze(path[len("/inbox/cards/"):-len("/snooze")])
+        elif path.startswith("/inbox/cards/") and path.endswith("/more-info"):
+            self._inbox_more_info(path[len("/inbox/cards/"):-len("/more-info")])
         elif path.startswith("/inbox/dismissed/") and path.endswith("/restore"):
             self._inbox_restore(path[len("/inbox/dismissed/"):-len("/restore")])
+        elif path == "/memory/add":
+            self._memory_add()
+        elif path.startswith("/memory/") and path.endswith("/edit"):
+            self._memory_edit(_memory_id_from_path(path, "/edit"))
+        elif path.startswith("/memory/") and path.endswith("/delete"):
+            self._memory_delete(_memory_id_from_path(path, "/delete"))
+        elif path == "/memory/recall":
+            self._memory_recall()
+        elif path.startswith("/capabilities/") and path.endswith("/retest"):
+            self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
             if self.server.consolidator is None:  # type: ignore[attr-defined]
                 self._send_json(503, {"error": "the repetition detector is not available"})
@@ -808,6 +987,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_save()
         elif path == "/settings/endpoint/test":
             self._endpoint_test()
+        elif path == "/settings/mail/folder":
+            self._mail_folder_save()
+        elif path == "/mail/retest":
+            self._mail_retest()
+        elif path.startswith("/mail/") and path.endswith("/draft"):
+            if not self._source_allowed("mail_enabled"):
+                self._send_json(409, {"error": "Mail digest is off in settings.", "reconnect": "/settings"})
+                return
+            self._mail_draft(unquote(path[len("/mail/"):-len("/draft")]))
         elif path.startswith("/wizard"):
             self._route_wizard(method, path)
             return
@@ -847,18 +1035,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return "application/x-www-form-urlencoded" in (self.headers.get("Content-Type") or "")
 
     def _ask_question_from_body(self) -> str | None:
-        raw = getattr(self, "_raw_body", b"")
-        if not raw:
-            return None
-        if self._is_form_submit():
-            from urllib.parse import parse_qs
-
-            fields = parse_qs(raw.decode("utf-8"))
-            values = fields.get("question", [])
-            return values[0].strip() if values and values[0].strip() else None
         body = self._read_json_body()
         question = (body or {}).get("question")
         return question.strip() if isinstance(question, str) and question.strip() else None
+
+    def _answers_from_form(self, body: dict, questions: list,
+                           earlier: dict | None = None) -> dict | None:
+        """A form post's fields as an answers dict, or None when the body
+        is not one question form's shape. Each form carries the question's
+        index in a hidden field and the chosen option in the answer field;
+        earlier answers win over defaults, this form's choice wins over
+        both, so answering the forms one at a time keeps every choice."""
+        choice = body.get("answer")
+        if not isinstance(choice, str) or not choice.strip():
+            return None
+        index_text = str(body.get("question", ""))
+        if not index_text.isascii() or not index_text.isdigit():
+            return None
+        index = int(index_text)
+        if index >= len(questions):
+            return None
+        answers = {q["id"]: q.get("default", "") for q in questions}
+        answers.update(earlier or {})
+        answers[questions[index]["id"]] = choice.strip()
+        return answers
 
     def _run_llm_turn(self, question: str, *, summary_mode: bool):
         server = self.server  # type: ignore[attr-defined]
@@ -875,6 +1075,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         context = build_context(
             server.excel.status() if server.excel is not None else None,
             server.calendar.status() if server.calendar is not None else None,
+            facts_block=self._facts_block(question) if not summary_mode else "",
         )
         llm, endpoint, model = self._effective_llm()
         common = {
@@ -886,6 +1087,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if summary_mode:
             return research(question, context, **common)
         return assistant_reply(question, context, **common)
+
+    def _facts_block(self, question: str) -> str:
+        """The bounded recalled-facts block for the assistant prompt,
+        ranked against the user's question. Recall only: this path never
+        creates a fact; the bounds live in memory/service."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return ""
+        return build_facts_block(memory.recall(question))
 
     def _effective_llm(self) -> tuple:
         """The client this request uses, resolved per call: saved settings
@@ -900,20 +1110,44 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return chat_client(base, key, model), base, model
         return server.llm, server.llm_endpoint, server.llm_model
 
-    def _drain_body(self) -> bytes:
-        """Read and stash the request body; the route decides what it means."""
+    def _declared_length(self) -> int:
+        """The Content-Length header as an int, 0 when absent or malformed.
+        The one place the header is parsed; everything else reads this."""
         try:
-            length = int(self.headers.get("Content-Length", "0"))
+            return int(self.headers.get("Content-Length", "0"))
         except ValueError:
+            return 0
+
+    def _drain_body(self) -> bytes:
+        """Read and stash the request body; the route decides what it means.
+
+        An over-limit body is still read and discarded (up to the hard
+        cap in body_drain_plan) so a keep-alive connection survives the
+        refusal; beyond the cap the connection is closed with the answer
+        instead of draining, because no connection is worth reading
+        unboundedly many bytes for."""
+        length = self._declared_length()
+        if length <= 0:
             return b""
-        if length <= 0 or length > MAX_BODY_BYTES:
+        # Stashed beside the body so routes read the parsed value rather
+        # than re-parsing the header.
+        self._content_length = length
+        plan = body_drain_plan(length)
+        if plan == "close":
+            self._close_with_response = True
+            self.close_connection = True
             return b""
-        return self.rfile.read(length)
+        if plan == "discard":
+            self.rfile.read(length)
+            return b""
+        return self.rfile.read(length)  # stash
 
     def _read_json_body(self) -> dict | None:
         raw = getattr(self, "_raw_body", b"")
         if not raw:
             return None
+        if self._is_form_submit():
+            return form_body_fields(raw)
         try:
             parsed = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -1062,6 +1296,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             entries, skills, histories, agentdesk.__version__,
             settings_values=self._settings_public_values(),
             endpoint_status=self._endpoint_status(),
+            mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1149,7 +1384,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap"):
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -1158,7 +1393,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _apply_source_toggles(self, key: str, value) -> None:
         """Toggling a source off stops its ingestion immediately; on it
-        resumes watching with one poll right now, like at startup."""
+        resumes watching with one poll right now, like at startup. Mail
+        is stricter: off at boot means no watcher exists, so toggling on
+        constructs the default one first (and wires its audit hook)."""
         server = self.server  # type: ignore[attr-defined]
         if key == "excel_enabled" and server.excel is not None:
             if value:
@@ -1173,6 +1410,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ).start()
             else:
                 server.calendar.stop_polling()
+        if key == "mail_enabled":
+            if value and server.mail is None:
+                if server.inbox is not None and server.mail_store is not None:
+                    settings = server.settings
+                    if settings is not None:
+                        server.mail = _default_mail_watch(
+                            settings, server.inbox, server.mail_store)
+                        _wire_mail_audit(server)
+            if server.mail is not None:
+                if value:
+                    server.mail.start_polling()
+                    threading.Thread(
+                        target=_poll_mail_once, args=(server.mail,), daemon=True
+                    ).start()
+                else:
+                    server.mail.stop_polling()
 
     def _source_allowed(self, key: str) -> bool:
         settings = self.server.settings  # type: ignore[attr-defined]
@@ -1252,8 +1505,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
-        inbox_service.evaluate(inbox, _local_now(), **self._budget_values())
-        now_ts = time.time()
+        self._evaluate_inbox(inbox)
+        # The store's own clock, like every payload: cards never age by
+        # two different clocks.
+        now_ts = inbox.now_ts()
         page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -1263,7 +1518,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
-        inbox_service.evaluate(inbox, _local_now(), **self._budget_values())
+        self._evaluate_inbox(inbox)
         waiting = inbox.waiting()
         self._send_json(200, {
             "waiting": len(waiting),
@@ -1276,6 +1531,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
             return
+        body = self._read_json_body() or {}
+        try:
+            current = inbox.get(card_id)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        # Decide-once: only a waiting card can be decided. A second
+        # accept used to be a harmless second stamp; mail made it
+        # user-visible (a duplicate .eml in the outbox), so every kind
+        # is guarded now. A replayed JSON decision answers 409 with the
+        # card's current state; a replayed form post redirects back to
+        # the inbox, which is what a double-click means.
+        if current.status != STATUS_WAITING:
+            if self._is_form_submit():
+                self._send_redirect("/inbox")
+                return
+            self._send_json(409, {
+                "error": "that card was already decided",
+                "card": current.to_json(inbox.now_ts()),
+            })
+            return
+        # The mail draft's effect lands before the acceptance is
+        # recorded: if the outbox write fails, the card stays waiting
+        # and the user can retry, rather than an accepted card having
+        # written nothing.
+        if decision == "accept" and isinstance(current.meta.get("mailDraft"), dict):
+            if not self._write_mail_reply(current):
+                return
         try:
             card = inbox.accept(card_id) if decision == "accept" else inbox.dismiss(card_id)
         except UnknownCard as exc:
@@ -1283,7 +1566,478 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if card.kind == "skill_proposal":
             self._on_skill_proposal_decided(card, decision)
-        self._send_json(200, card.to_json(inbox.now_ts()))
+        if card.kind == KIND_UPDATE_CONSENT:
+            self._on_update_consent_decided(card, decision, body)
+        if card.kind == KIND_MAIL_FOLLOW_UP:
+            self._on_mail_follow_up_decided(card)
+        if decision == "accept":
+            self._on_fact_carried(card)
+        self._audit(
+            "inbox.approved" if decision == "accept" else "inbox.denied",
+            target=card.id, detail=card.title,
+        )
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_edit(self, card_id: str) -> None:
+        """Update the card's draft; the decision vocabulary calls it
+        edited. An identical draft is a no-op, like the donor's edit."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        draft = body.get("draft")
+        if not isinstance(draft, str):
+            self._send_json(400, {"error": 'expected {"draft": "..."}'})
+            return
+        try:
+            card = inbox.get(card_id)
+            if card.draft != draft:
+                card = inbox.edit_draft(card_id, draft)
+                self._audit("inbox.edited", target=card.id,
+                            detail=plain_preview(draft) or "Edited the draft")
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_snooze(self, card_id: str) -> None:
+        """Hide the card for one hour or until the next morning. The
+        store's own clock judges the return time, like every payload."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        choice = body.get("choice")
+        if choice not in SNOOZE_CHOICES:
+            self._send_json(400, {"error": "expected a snooze choice: 1h or tomorrow"})
+            return
+        until = snooze_until(datetime.fromtimestamp(inbox.now_ts()).astimezone(),
+                             str(choice))
+        try:
+            card = inbox.snooze(card_id, until)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._audit("inbox.snoozed", target=card.id,
+                    detail="until " + datetime.fromtimestamp(until).strftime("%Y-%m-%d %H:%M"))
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_more_info(self, card_id: str) -> None:
+        """Attach the user's instruction; the card stays waiting for the
+        decision, and a running snooze ends so it is visible again."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        instruction = body.get("instruction")
+        if not isinstance(instruction, str) or not instruction.strip():
+            self._send_json(400, {"error": 'expected {"instruction": "..."}'})
+            return
+        instruction = instruction.strip()
+        try:
+            card = inbox.more_info(card_id, instruction)
+        except UnknownCard as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._audit("inbox.more-info", target=card.id, detail=instruction[:200])
+        self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _inbox_action_response(self, payload: dict) -> None:
+        """A no-JS form post lands back on the inbox; JSON gets JSON."""
+        if self._is_form_submit():
+            self._send_redirect("/inbox")
+            return
+        self._send_json(200, payload)
+
+    def _send_activity_page(self) -> None:
+        """The decision log: inbox decisions from the audit store, newest
+        first. Non-decision rows stay in the CSV export, not here; the
+        decision filter runs in the store so background polls cannot push
+        a decision past the page's window."""
+        entries = (
+            audit_store.decision_entries(self.server.audit_conn, tuple(DECISIONS))  # type: ignore[attr-defined]
+            if self.server.audit_conn is not None else []  # type: ignore[attr-defined]
+        )
+        page = render_activity_page(entries, agentdesk.__version__)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    # -- memory: the page and its actions (ticket #42) --------------------
+
+    def _send_memory_page(
+        self,
+        recall: list | None = None,
+        query: str = "",
+    ) -> None:
+        """The memory page; with a recall preview when a query came in."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        page = render_memory_page(
+            memory.all(), agentdesk.__version__, recall=recall, query=query
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _memory_add(self) -> None:
+        """The page's one explicit creation path. The assistant and
+        research paths may recall, never create."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json(400, {"error": 'expected {"text": "..."}'})
+            return
+        fact = memory.add(text.strip(), source="page")
+        self._memory_response(_fact_json(fact), status=201)
+
+    def _memory_edit(self, fact_id: int | None) -> None:
+        if fact_id is None:
+            self._send_error_page(404, "Nothing here", "No fact lives at this address.")
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json(400, {"error": 'expected {"text": "..."}'})
+            return
+        try:
+            fact = memory.edit(fact_id, text.strip())
+        except UnknownFact as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._memory_response(_fact_json(fact))
+
+    def _memory_delete(self, fact_id: int | None) -> None:
+        if fact_id is None:
+            self._send_error_page(404, "Nothing here", "No fact lives at this address.")
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        try:
+            memory.delete(fact_id)
+        except UnknownFact as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._memory_response({"deleted": fact_id})
+
+    def _memory_recall(self) -> None:
+        """The preview: render the page with the ranked answers, best
+        first, so the manager sees exactly what the assistant would ride."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        body = self._read_json_body() or {}
+        query = body.get("query")
+        if not isinstance(query, str) or not query.strip():
+            self._send_json(400, {"error": 'expected {"query": "..."}'})
+            return
+        query = query.strip()
+        self._send_memory_page(recall=memory.recall(query), query=query)
+
+    def _memory_response(self, payload: dict, status: int = 200) -> None:
+        """A no-JS form post lands back on the memory page; JSON gets JSON."""
+        if self._is_form_submit():
+            self._send_redirect("/memory")
+            return
+        self._send_json(status, payload)
+
+    # -- capabilities: the cached page and the one probing path (ticket #43)
+
+    def _send_capabilities_page(self) -> None:
+        """The capabilities page from the cache and the live table only.
+
+        GET never probes the environment: gate cards render the cached
+        results (or the never-tested state), and probing belongs to the
+        explicit re-test POST. The cards age by the cache's own clock, so
+        a stored result never reads fresher than it is."""
+        cache = self.server.capabilities_cache
+        if cache is None:
+            self._send_json(503, {"error": "the capabilities cache is not available"})
+            return
+        excel = self.server.excel  # type: ignore[attr-defined]
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        page = render_capabilities_page(
+            {key: cache.cached(key) for key, _number, _title in GATES},
+            live_sources(self.server),
+            excel.status() if excel is not None else None,
+            calendar.status() if calendar is not None else None,
+            self._endpoint_status(),
+            agentdesk.__version__,
+            now_ts=cache.clock(),
+            mail=self._mail_capabilities(),
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _mail_capabilities(self) -> dict | None:
+        """The mail card's data: off, unconfigured, watching or error,
+        read from the toggle and the watch in one place. None when the
+        toggle does not exist (no settings store), so the card only
+        appears when there is something honest to say."""
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if settings is None:
+            return None
+        if not self._source_allowed("mail_enabled"):
+            return {
+                "word": "off",
+                "detail": "Mail digest is off in settings. Nothing is read.",
+                "cause": "",
+            }
+        mail = server.mail
+        if mail is None:
+            return {
+                "word": "unconfigured",
+                "detail": "The mail watcher is not available on this machine.",
+                "cause": "",
+            }
+        status = mail.status()
+        state = status.get("state", "")
+        folder = status.get("folder")
+        cause = str(status.get("cause", ""))
+        # The words are the watcher's own exported states, never
+        # re-spelled literals (the capabilities page's house rule).
+        if state == STATE_ERROR:
+            return {"word": "error", "detail": cause or "The folder could not be read.", "cause": cause}
+        if state == STATE_UNCONFIGURED or not folder:
+            return {"word": "unconfigured", "detail": "No mail folder chosen yet.", "cause": ""}
+        return {
+            "word": "watching",
+            "detail": f"Watches {folder}. Headers only; bodies are never read.",
+            "cause": "",
+        }
+
+    def _capabilities_retest(self, gate_key: str) -> None:
+        """The one probing path: run exactly one gate with the server's
+        runner set and re-cache the answer. An unknown gate address is a
+        404 before any runner is touched."""
+        server = self.server  # type: ignore[attr-defined]
+        cache = server.capabilities_cache
+        if cache is None:
+            self._send_json(503, {"error": "the capabilities cache is not available"})
+            return
+        runner = (server.gate_runners or {}).get(gate_key)
+        if runner is None:
+            self._send_error_page(404, "Nothing here", "No gate lives at this address.")
+            return
+        cached = cache.save_result(runner())
+        if self._is_form_submit():
+            self._send_redirect("/capabilities")
+            return
+        self._send_json(200, cached.to_json())
+
+    def _on_fact_carried(self, card) -> None:
+        """An accepted card may carry a fact in its meta ("fact": "...").
+        The only non-page creation path. The fact's source names the
+        card, and the audit row names that source, never the text."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return
+        text = card.meta.get("fact")
+        if not isinstance(text, str) or not text.strip():
+            return
+        fact = memory.add(text.strip(), source=f"inbox card {card.id}")
+        self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+
+    # -- mail: the page, the watcher controls, the reply drafts -----------
+
+    def _send_mail_page(self) -> None:
+        """The mail page. Off (or unconstructed) is an honest state with
+        an enable pointer, never a blank screen."""
+        server = self.server  # type: ignore[attr-defined]
+        mail = server.mail
+        off_reason = ""
+        if not self._source_allowed("mail_enabled"):
+            off_reason = ("Mail digest is off. It stays off until you turn it on "
+                          "in settings; nothing has been read.")
+        elif mail is None:
+            off_reason = ("The mail watcher is not available on this machine "
+                          "(its store could not open).")
+        view = mail.view() if (mail is not None and not off_reason) else None
+        page = render_mail_page(agentdesk.__version__, view, off_reason=off_reason)
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _mail_retest(self) -> None:
+        """One poll right now: read the folder, file the deltas, evaluate."""
+        server = self.server  # type: ignore[attr-defined]
+        mail = server.mail
+        if mail is None or not self._source_allowed("mail_enabled"):
+            self._send_json(409, {"error": "Mail digest is off in settings.",
+                                  "reconnect": "/settings"})
+            return
+        status = mail.retest()
+        if server.inbox is not None:
+            self._evaluate_inbox(server.inbox)
+        if self._is_form_submit():
+            self._send_redirect("/mail")
+            return
+        self._send_json(200, status)
+
+    def _mail_draft(self, message_id: str) -> None:
+        """The reply draft flow's opening move: a card from the message's
+        headers (recipients, subject) wrapping the text the user typed.
+        No message content goes into the card: the draft body is the
+        user's own words, by construction and by rule."""
+        server = self.server  # type: ignore[attr-defined]
+        mail = server.mail
+        if mail is None:
+            self._send_json(503, {"error": "the mail watcher is not available"})
+            return
+        if server.inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("body")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json(400, {"error": 'expected {"body": "..."}: the reply text you want to send'})
+            return
+        message = next((m for m in mail.view()["messages"] if m.id == message_id), None)
+        if message is None:
+            self._send_json(404, {"error": f"no message {message_id} in the mail folder"})
+            return
+        try:
+            recipients = reply_recipients(message, self_address=mail.self_address)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        subject = reply_subject(message.thread or message.subject)
+        card = server.inbox.add(
+            kind="suggestion",
+            origin=("Your reply draft for this thread. Accepting writes the "
+                    ".eml to the local outbox folder; sending it stays yours."),
+            title=f"Reply draft: {subject}",
+            body=f"To: {recipients}",
+            action_label="Write to outbox",
+            draft=text.strip(),
+            meta={"mailDraft": {
+                "messageId": message.id,
+                "to": recipients,
+                "subject": subject,
+                "thread": message.thread,
+            }},
+        )
+        self._audit("mail.draft", target=message.id, detail=f"To: {recipients}")
+        self._evaluate_inbox(server.inbox)
+        if self._is_form_submit():
+            self._send_redirect("/mail")
+            return
+        self._send_json(201, card.to_json(server.inbox.now_ts()))
+
+    def _write_mail_reply(self, card) -> bool:
+        """Acceptance's effect, done first: write the threaded .eml into
+        the outbox. False means the write failed and the response is
+        already sent; the card stays waiting for a retry. A line break
+        in the reply metadata (possible through the generic cards
+        route, which stores meta as given) is the write_reply header
+        injection guard speaking: refused with a 400, nothing written,
+        the card untouched."""
+        draft_info = card.meta.get("mailDraft")
+        try:
+            path = write_reply(
+                self.server.outbox_dir,  # type: ignore[attr-defined]
+                original_id=str(draft_info.get("messageId", "")),
+                to=str(draft_info.get("to", "")),
+                subject=str(draft_info.get("subject", "")),
+                body=card.draft,
+            )
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return False
+        except OSError as exc:
+            LOG.exception("outbox write failed")
+            self._send_json(500, {"error": f"the reply file could not be written: {exc}"})
+            return False
+        # The audit row names the file, never the reply text.
+        self._audit("mail.sent", target=path.name, detail=str(path))
+        return True
+
+    def _on_mail_follow_up_decided(self, card) -> None:
+        """Either decision on a follow-up card ends the nagging: the
+        thread is marked handled and no later poll re-mints its card."""
+        server = self.server  # type: ignore[attr-defined]
+        mail_store = server.mail_store
+        if mail_store is None:
+            return
+        thread = card.meta.get("thread")
+        if isinstance(thread, str) and thread:
+            mail_store.mark_handled(thread)
+
+    def _mail_folder_save(self) -> None:
+        """The settings page's mail folder field. An empty value clears
+        the choice; the watcher re-reads the folder right away."""
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        folder = body.get("folder")
+        if not isinstance(folder, str):
+            self._send_json(400, {"error": 'expected {"folder": "..."}'})
+            return
+        settings.set("mail_folder", folder.strip())
+        if server.mail is not None and folder.strip():
+            server.mail.retest()
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
+
+    def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
+        """Accepting applies the held update; the "for this plugin"
+        choice also records the (plugin, scope) allow so an identical
+        re-ask never re-prompts. A widened scope is a different key and
+        always re-asks."""
+        server = self.server  # type: ignore[attr-defined]
+        plugins = server.plugins
+        if plugins is None:
+            return
+        plugin_id = str(card.meta.get("pluginId", ""))
+        if not plugin_id:
+            return
+        if decision == "accept":
+            if _flag(body, "forPlugin", "for_plugin"):
+                server.consents.allow(plugin_id, str(card.meta.get("scope", "")))
+            try:
+                applied = plugins.consent(plugin_id)
+            except PluginError as exc:
+                # The held update may already be gone (uninstalled, or
+                # consented through the plugin screen): the card's
+                # decision stands; nothing is silently re-held.
+                LOG.warning("update consent apply failed: %s", exc)
+                return
+            # Every successful apply writes the lifecycle row, whichever
+            # path applied it, so the touches badge cannot lie by flow.
+            self._audit("plugin.consent", target=plugin_id,
+                        detail=_plugin_audit_detail("consent", applied))
+
+    def _evaluate_inbox(self, inbox: InboxStore) -> None:
+        """One evaluation with the audit hook: a snooze that returns is
+        logged as pending, never a silent reappearance."""
+
+        def on_return(card) -> None:
+            self._audit("inbox.pending", target=card.id,
+                        detail=f"{card.title} snooze returned")
+
+        inbox_service.evaluate(inbox, _local_now(), on_snooze_return=on_return,
+                               **self._budget_values())
+
+    def _audit(self, action: str, target: str = "", detail: str = "") -> None:
+        """The one inbox/plugin path into the append-only audit store."""
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(self.server.audit_conn, action,
+                               target=target, detail=detail)
 
     def _on_skill_proposal_decided(self, card, decision: str) -> None:
         """Accepting activates the skill; dismissing cools the pattern down."""
@@ -1328,7 +2082,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "bad-request",
                                       "message": 'expected {"zip_path": "..."}'})
                 return
-            self._send_json(200, plugins.install(body["zip_path"], source=body.get("source", "zip")))
+            result = plugins.install(body["zip_path"], source=body.get("source", "zip"))
+            self._audit("plugin.install", target=str(result.get("id", "")),
+                        detail=f"v{result.get('version', '')} pilot install")
+            self._send_json(200, result)
             return
         if len(parts) < 3:
             self._send_json(404, {"error": "not-found", "message": path})
@@ -1348,7 +2105,50 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if action not in actions:
             self._send_json(404, {"error": "not-found", "message": path})
             return
-        self._send_json(200, actions[action]())
+        result = actions[action]()
+        if (action == "update" and isinstance(result, dict)
+                and result.get("status") == "pending-consent"):
+            result = self._hold_update_for_consent(plugins, plugin_id, result)
+        self._audit(f"plugin.{action}", target=plugin_id,
+                    detail=_plugin_audit_detail(action, result))
+        self._send_json(200, result)
+
+    def _hold_update_for_consent(self, plugins: PluginRuntime, plugin_id: str,
+                                 result: dict) -> dict:
+        """A widened update holds in the runtime; the user meets it as an
+        update_consent card. The consents check sits right here, where
+        the card would be created: an allow recorded for exactly this
+        (plugin, scope) pair answers the re-ask without prompting, and a
+        widened further scope (a different key) still creates the card."""
+        server = self.server  # type: ignore[attr-defined]
+        scope = "; ".join(result.get("added_scopes", []))
+        try:
+            version = str(plugins.pending_diff(plugin_id).get("version", ""))
+        except PluginError:
+            version = ""
+        if server.consents.allowed(plugin_id, scope):
+            applied = plugins.consent(plugin_id)
+            self._audit("plugin.consent", target=plugin_id,
+                        detail=_plugin_audit_detail("consent", applied))
+            self._audit("inbox.approved", target=plugin_id,
+                        detail=f"{plugin_id} update pre-approved for this plugin")
+            return {"applied": True, "version": applied.get("version"),
+                    "auto_consented": True}
+        inbox = server.inbox
+        if inbox is not None:
+            card = inbox.add(
+                kind=KIND_UPDATE_CONSENT,
+                origin=(f"The update widens what {plugin_id} may do; it "
+                        "holds until you decide."),
+                title=f"{plugin_id} {version} asks for more access",
+                body=f"New access: {scope}",
+                action_label="Allow update",
+                meta={"pluginId": plugin_id, "scope": scope, "version": version},
+            )
+            self._audit("inbox.pending", target=card.id,
+                        detail=f"{plugin_id} update waiting: adds {scope}"[:200])
+            self._evaluate_inbox(inbox)
+        return result
 
     def _plugin_widget(self, card: dict) -> Widget:
         """One installed plugin's dashboard card: pilot badge, amber state.
@@ -1532,9 +2332,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._advance_describe(session, description)
             self._send_redirect(f"/wizard/{session_id}")
             return
-        answers = body.get("answers") or {
-            q["id"]: q.get("default", "") for q in session.questions
-        }
+        answers = body.get("answers")
+        if answers is None and self._is_form_submit():
+            answers = self._answers_from_form(body, session.questions,
+                                              session.answers)
+        if not answers:
+            answers = {
+                q["id"]: q.get("default", "") for q in session.questions
+            }
         session.answers = answers
         compiler = self._wizard_compiler()
         if compiler is None:
@@ -1687,6 +2492,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _common_headers(self) -> None:
         for name, value in SECURITY_HEADERS:
             self.send_header(name, value)
+        if getattr(self, "_close_with_response", False):
+            # The request leaves the connection unusable (its body was
+            # beyond the drain cap, or refused before the drain): the
+            # answer names the close (send_header also flips
+            # close_connection).
+            self.send_header("Connection", "close")
 
 
 def create_server(
@@ -1706,6 +2517,13 @@ def create_server(
     plugins: PluginRuntime | None = None,
     pick_calendar=None,
     wizard_store: WizardStore | None = None,
+    consents: ConsentStore | None = None,
+    memory_store: MemoryStore | None = None,
+    capabilities_cache: CapabilitiesCache | None = None,
+    gate_runners: GateRunners | None = None,
+    mail: MailWatch | None = None,
+    mail_store: MailStore | None = None,
+    outbox_dir=None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -1715,7 +2533,8 @@ def create_server(
     is the fallback, so the auth URL always names the port that actually
     opened. The excel watch, the calendar bridge and the audit store
     default to real ones over the user data directory; tests pass their
-    own.
+    own. The mail watcher is constructed only when the (default-off)
+    toggle is on: off means the watcher does not exist.
     """
     resolved = "127.0.0.1" if host == "localhost" else host
     if resolved != "127.0.0.1":
@@ -1743,16 +2562,47 @@ def create_server(
         pick_workbook = tk_pick_workbook
     if pick_calendar is None:
         pick_calendar = tk_pick_calendar
-    if settings_store is None:
-        settings_store = _default_settings_store()
+    if plugins is None:
+        plugins = _default_plugins()
     if wizard_store is None:
         wizard_store = _default_wizard_store()
+    if memory_store is None:
+        memory_store = _default_memory_store()
+    if capabilities_cache is None:
+        capabilities_cache = _default_capabilities_cache()
+    if gate_runners is None:
+        gate_runners = _default_gate_runners()
+    if mail_store is None:
+        mail_store = _default_mail_store()
+    if mail is None and inbox_store is not None and mail_store is not None \
+            and bool(settings_store.get("mail_enabled")):
+        mail = _default_mail_watch(settings_store, inbox_store, mail_store)
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
-            (resolved, bind_port), sessions, excel, pick_workbook,
-            calendar, llm, audit_conn, llm_endpoint, llm_model, inbox_store,
-            activity_log, skill_store, settings_store, plugins, pick_calendar, wizard_store,
+            (resolved, bind_port),
+            sessions=sessions,
+            excel=excel,
+            pick_workbook=pick_workbook,
+            calendar=calendar,
+            llm=llm,
+            audit_conn=audit_conn,
+            llm_endpoint=llm_endpoint,
+            llm_model=llm_model,
+            inbox_store=inbox_store,
+            activity_log=activity_log,
+            skill_store=skill_store,
+            settings_store=settings_store,
+            plugins=plugins,
+            pick_calendar=pick_calendar,
+            wizard_store=wizard_store,
+            consents=consents,
+            memory_store=memory_store,
+            capabilities_cache=capabilities_cache,
+            gate_runners=gate_runners,
+            mail=mail,
+            mail_store=mail_store,
+            outbox_dir=outbox_dir,
         )
 
     if port is None:
@@ -1783,6 +2633,8 @@ def _wire_audit(server: AgentDeskServer) -> None:
 
     if server.excel is not None:
         server.excel.audit_hook = hook
+    if server.mail is not None:
+        server.mail.audit_hook = hook
     if server.calendar is not None:
         server.calendar.audit_hook = hook
         inner_llm = server.calendar.llm
@@ -1803,6 +2655,17 @@ def _wire_audit(server: AgentDeskServer) -> None:
             return result
 
         server.calendar.llm = audited_llm
+
+
+def _wire_mail_audit(server: AgentDeskServer) -> None:
+    """The mail watcher's audit hook, for watches constructed after boot
+    (the mail toggle turning on mid-session). Read-only polls say so;
+    there is nothing here that could log message content."""
+    if server.audit_conn is None or server.mail is None:
+        return
+    conn = server.audit_conn
+    server.mail.audit_hook = lambda action, target, status="ok": audit_store.record(
+        conn, action, target=target, status=status)
 
 
 def _default_audit_conn():
@@ -1851,6 +2714,93 @@ def _default_wizard_store() -> WizardStore | None:
         return WizardStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("wizard store unavailable")
+        return None
+
+
+def _default_memory_store() -> MemoryStore | None:
+    """Facts over the persistent store (they outlive a restart by
+    design), or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "memory.sqlite3", check_same_thread=False)
+        return MemoryStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("memory store unavailable")
+        return None
+
+
+def _default_outbox_dir() -> Path:
+    """Where accepted reply drafts land as .eml files: a folder beside
+    the other data, AGENTDESK_DATA moves it like everything else."""
+    return default_data_dir() / "outbox"
+
+
+def _default_mail_store() -> MailStore | None:
+    """Handled-thread markers over the persistent store, or None when it
+    cannot open. Messages are never stored: the folder is the source."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "mail.sqlite3", check_same_thread=False)
+        return MailStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("mail store unavailable")
+        return None
+
+
+def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
+    """The real mail watcher: settings decide the folder on every poll,
+    so a folder saved in the app applies without a restart."""
+    try:
+        return MailWatch(
+            inbox=inbox_store,
+            store=mail_store,
+            folder_provider=lambda: settings_store.get("mail_folder"),
+        )
+    except (OSError, sqlite3.Error):
+        LOG.exception("mail watcher unavailable")
+        return None
+
+
+def _default_capabilities_cache() -> CapabilitiesCache | None:
+    """Cached gate results over the persistent store, or None when it
+    cannot open. A missing cache degrades the page to never-tested
+    cards, never to a fabricated answer."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "capabilities.sqlite3", check_same_thread=False)
+        return CapabilitiesCache(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("capabilities cache unavailable")
+        return None
+
+
+def _default_gate_runners() -> GateRunners:
+    """The real probe bundle over a workdir beside the other data.
+
+    Building the set probes nothing (plain closures over the adapters),
+    so carrying it from startup costs nothing and page renders stay
+    side-effect free; the gates run only when a re-test POST calls one."""
+    return default_gate_runners(default_data_dir() / "probe-run")
+
+
+def _default_plugins() -> PluginRuntime | None:
+    """The plugin runtime over the user data directory, or None when it
+    cannot open. Installed plugins, their data and the ${workspace} root
+    each get their own folder under the same data dir the stores use, so
+    the delete-folder uninstall story stays true."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return PluginRuntime(
+            plugins_dir=data_dir / "plugins",
+            data_dir=data_dir / "plugin-data",
+            workspace_dir=data_dir / "workspace",
+        )
+    except OSError:
+        LOG.exception("plugin runtime unavailable")
         return None
 
 
@@ -1962,6 +2912,18 @@ def start_background_polls(server: AgentDeskServer) -> None:
     if calendar is not None and allowed("calendar_enabled"):
         calendar.start_polling()  # passive file watch, keeps itself fresh
         threading.Thread(target=_poll_calendar_once, args=(calendar,), daemon=True).start()
+    mail = server.mail
+    if mail is not None and allowed("mail_enabled"):
+        mail.start_polling()
+        threading.Thread(target=_poll_mail_once, args=(mail,), daemon=True).start()
+
+
+def _poll_mail_once(watch: MailWatch) -> None:
+    """One immediate read so the first inbox look already sees the digest."""
+    try:
+        watch.poll()
+    except Exception:  # noqa: BLE001 - startup must not crash on a poll
+        LOG.exception("mail startup poll failed")
 
 
 def _poll_calendar_once(bridge) -> None:

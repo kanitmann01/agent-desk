@@ -85,6 +85,41 @@ def _scan(page: str) -> WidgetScan:
     return scan
 
 
+class RailScan(HTMLParser):
+    """The anchor hrefs inside the rail nav, in document order."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_rail = False
+        self.hrefs: list[str] = []
+
+    @staticmethod
+    def _classes(attrs: dict) -> list[str]:
+        return (attrs.get("class") or "").split()
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "nav" and "rail" in self._classes(a):
+            self.in_rail = True
+        elif self.in_rail and tag == "a":
+            self.hrefs.append(a.get("href"))
+
+    def handle_endtag(self, tag):
+        if self.in_rail and tag == "nav":
+            self.in_rail = False
+
+
+def test_rail_links_the_four_consolidation_pages(page):
+    scan = RailScan()
+    scan.feed(page)
+    # Dashboard, inbox, then the four pages the consolidation shipped
+    # (activity, memory, mail, capabilities), then settings. Plugins
+    # stays the disabled span between them, so no href carries it.
+    assert scan.hrefs == [
+        "/", "/inbox", "/activity", "/memory", "/mail", "/capabilities", "/settings",
+    ]
+
+
 def test_dashboard_serves_three_widgets_in_varying_sizes(page):
     scan = _scan(page)
     assert len(scan.widgets) == 3

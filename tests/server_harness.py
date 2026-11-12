@@ -9,6 +9,7 @@ booted fixture) so no listener outlives a test.
 import http.client
 import json
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -23,13 +24,20 @@ import time
 from agentdesk.assistant import audit as audit_store
 from agentdesk.calendar.watcher import Adapters as CalendarAdapters
 from agentdesk.calendar.watcher import CalendarBridge
+from agentdesk.capabilities import GATES, CapabilitiesCache
+from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
+from agentdesk.mail.store import MailStore
+from agentdesk.memory.store import MemoryStore
+from agentdesk.plugins.runtime import PluginRuntime
+from agentdesk.probe.core import UNKNOWN, GateResult
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
 from agentdesk.server import app as server_app
 from agentdesk.settings import SettingsStore
+from agentdesk.wizard.core import WizardStore
 
 
 def _inert_audit():
@@ -54,6 +62,39 @@ def _inert_inbox():
     return InboxStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
+def _inert_memory():
+    return MemoryStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_wizard_store():
+    return WizardStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_mail_store():
+    return MailStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_capabilities_cache():
+    return CapabilitiesCache(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_gate_runners() -> dict:
+    """Honest placeholders, not fakes of a pass: a re-test under the
+    default harness records UNKNOWN and says no probe ran. Tests that
+    exercise a gate inject the real gate function over fakes, like the
+    probe tests do, so nothing here ever touches the environment."""
+    def runner_for(key: str, number: int, title: str):
+        def run() -> GateResult:
+            return GateResult(
+                key=key, number=number, title=title, status=UNKNOWN,
+                evidence=("injected test runner: no probe ran",),
+                note="the test harness's placeholder runner",
+            )
+        return run
+
+    return {key: runner_for(key, number, title) for key, number, title in GATES}
+
+
 def _inert_excel() -> ExcelWatch:
     """A watch that never polls: tests inject their own when they care."""
     adapters = ExcelAdapters(
@@ -68,6 +109,19 @@ def _inert_calendar() -> CalendarBridge:
     """A bridge that finds no file: the designed empty state."""
     adapters = CalendarAdapters(read_calendar=lambda: None, clock=time.time)
     return CalendarBridge(sqlite3.connect(":memory:", check_same_thread=False), adapters)
+
+
+def _inert_plugins(root: Path) -> PluginRuntime:
+    """A runtime rooted in the boot's own temp folder: create_server now
+    builds a real one under the user data directory when none is given,
+    so the default here keeps the suite off the real disk. Tests that
+    care inject their own."""
+    return PluginRuntime(
+        plugins_dir=root / "plugins",
+        data_dir=root / "plugin-data",
+        workspace_dir=root / "workspace",
+        now="2026-11-11T16:00:00",
+    )
 
 
 class Booted:
@@ -87,6 +141,40 @@ class Booted:
         kwargs.setdefault("skill_store", _inert_skills())
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
+        kwargs.setdefault("memory_store", _inert_memory())
+        # The wizard sessions join the inert in-memory defaults: without
+        # this, a boot with no injection falls through to create_server's
+        # _default_wizard_store(), which writes the real
+        # ~/.agent-desk/wizard.sqlite3. Tests that care inject their own.
+        kwargs.setdefault("wizard_store", _inert_wizard_store())
+        # The capabilities cache joins the inert in-memory defaults, and
+        # the runner set is the placeholder set: no boot in the suite can
+        # probe the real environment, even by accident.
+        kwargs.setdefault("capabilities_cache", _inert_capabilities_cache())
+        kwargs.setdefault("gate_runners", _inert_gate_runners())
+        # The mail handled-thread store joins the inert in-memory
+        # defaults. The mail watcher itself is never booted here: the
+        # toggle defaults to off and create_server constructs a watcher
+        # only when it is on, so no boot in the suite polls a folder.
+        # Outbox writes (only from tests that accept a reply draft
+        # explicitly) land in a tmp folder owned by this boot.
+        kwargs.setdefault("mail_store", _inert_mail_store())
+        if "outbox_dir" not in kwargs:
+            self._outbox_root = tempfile.TemporaryDirectory(prefix="agentdesk-outbox-")
+            outbox = Path(self._outbox_root.name) / "outbox"
+            outbox.mkdir(parents=True, exist_ok=True)
+            kwargs["outbox_dir"] = outbox
+        # The consent allows are in-memory and process-lifetime by design;
+        # a fresh store per boot is the inert default.
+        kwargs.setdefault("consents", ConsentStore())
+        # The inert plugin runtime lives in a temp folder owned by this
+        # boot and removed in close(), mirroring the in-memory stores.
+        # Built only when no runtime was given, so injected ones spare
+        # the temp dir entirely.
+        if "plugins" not in kwargs:
+            self._plugins_root = tempfile.TemporaryDirectory(
+                prefix="agentdesk-plugins-")
+            kwargs["plugins"] = _inert_plugins(Path(self._plugins_root.name))
         # Same spirit as the inert watches: unless a test says otherwise,
         # no endpoint is configured, so tests never depend on this
         # machine's real AGENTDESK_LLM_BASE.
@@ -133,3 +221,9 @@ class Booted:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=5)
+        root = getattr(self, "_plugins_root", None)
+        if root is not None:
+            root.cleanup()
+        outbox_root = getattr(self, "_outbox_root", None)
+        if outbox_root is not None:
+            outbox_root.cleanup()

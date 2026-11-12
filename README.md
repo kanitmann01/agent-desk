@@ -2,7 +2,7 @@
 
 A no-code personal agent for a locked-down corporate Windows laptop. One double-click opens a local web dashboard: what changed in the sales file overnight, today's key commitment broken into subtasks, a research panel, and plugins described in plain English that the agent builds, previews, and installs after one consolidated approval. No admin rights, no terminal, no data leaving the machine except derived abstractions sent to the corporate LLM endpoint.
 
-Status: the dashboard, the excel and calendar widgets, research and the assistant, the inbox, the repetition detector, briefs, settings, the plugin runtime and the internal registry are built (#2 to #7, #12 to #15, plus #9 and #10); the English-to-plugin wizard is in flight (#11). The canonical spec lives in this repo's issue tracker (issue #1, labeled `ready-for-agent`).
+Status: the dashboard, the excel and calendar widgets, research and the assistant, the inbox, the repetition detector, briefs, settings, the plugin runtime, the internal registry and the English-to-plugin wizard are built (#2 to #7, #11 to #15, plus #9 and #10). The consolidation (#38) shipped the teammate's four surfaces on this chassis: approvals with the decision vocabulary and the decision log (`/activity`), persistent assistant memory with deterministic recall and no auto-capture (`/memory`), a capabilities panel for the environment gates, endpoint and sources (`/capabilities`), and a metadata-only mail digest with reply drafts (`/mail`, off by default: turn it on in Settings). CI runs the Python test matrix on Windows and macOS, the frontend typecheck, and the license gate. 767 tests green. What came from where is recorded in `docs/merge/2026-11-12-consolidation.md`. The canonical spec lives in this repo's issue tracker (issue #1, labeled `ready-for-agent`).
 
 ## Start it
 
@@ -36,7 +36,7 @@ Recognized keys are the `AGENTDESK_` ones: `AGENTDESK_LLM_BASE`, `AGENTDESK_LLM_
 
 ## The dashboard UI
 
-The dashboard is a React single-page app (source in `frontend/`, data from `GET /api/dashboard`); its build output is committed at `src/agentdesk/server/static/spa/`, so the double-click launcher serves it with no node involved. Rebuilding it needs node once: `npm ci`, then `npm run build` in `frontend/`, then commit the output. Every other page (inbox, assistant, settings, the calendar walkthrough, what-this-touches, the audit surfaces, the wizard) is server-rendered, and the dashboard itself falls back to that server rendering when the build output is not present in a checkout.
+The dashboard is a React single-page app (source in `frontend/`, data from `GET /api/dashboard`); its build output is committed at `src/agentdesk/server/static/spa/`, so the double-click launcher serves it with no node involved. Rebuilding it needs node once: `npm ci`, then `npm run build` in `frontend/`, then commit the output. Every other page (inbox, assistant, settings, activity, memory, mail, capabilities, the calendar walkthrough, what-this-touches, the audit surfaces, the wizard) is server-rendered, and the dashboard itself falls back to that server rendering when the build output is not present in a checkout.
 
 ## Where things are
 

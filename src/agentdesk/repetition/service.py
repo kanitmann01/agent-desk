@@ -100,8 +100,10 @@ class Consolidator:
         return now - dismissed < timedelta(days=COOLDOWN_DAYS)
 
     def _already_proposed(self, pattern: str) -> bool:
-        """One live proposal per pattern: accepted or waiting is enough."""
-        for card in self.inbox.waiting() + self.inbox.dismissed():
+        """One live proposal per pattern: accepted or waiting is enough
+        (a snoozed proposal counts: snoozing defers, it does not mint a
+        twin)."""
+        for card in self.inbox.waiting(include_snoozed=True) + self.inbox.dismissed():
             if card.meta.get("patternHash") == pattern:
                 return True
         for skill in self.skills.active():

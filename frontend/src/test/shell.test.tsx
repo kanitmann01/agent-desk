@@ -39,7 +39,7 @@ function pinClock() {
 }
 
 describe('the rail', () => {
-  it('renders the brand as plain text and the five entries', () => {
+  it('renders the brand as plain text and the nine entries', () => {
     render(<Rail inboxWaiting={2} />);
     // The brand carries no gradient: a plain span in the ink.
     const brand = document.querySelector<HTMLElement>('.brand-name');
@@ -61,6 +61,21 @@ describe('the rail', () => {
   it('shows no inbox count when nothing waits', () => {
     render(<Rail inboxWaiting={0} />);
     expect(document.querySelector('.rail .count')).toBeNull();
+  });
+
+  it('links the four consolidation pages', () => {
+    render(<Rail inboxWaiting={0} />);
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    for (const [name, href] of [
+      ['Activity', '/activity'],
+      ['Memory', '/memory'],
+      ['Mail', '/mail'],
+      ['Capabilities', '/capabilities'],
+    ] as Array<[string, string]>) {
+      const link = screen.getByRole('link', { name });
+      expect(link).toHaveAttribute('href', href);
+      expect(nav).toContainElement(link);
+    }
   });
 });
 

@@ -14,7 +14,17 @@ KIND_SKILL_PROPOSAL = "skill_proposal"
 KIND_UPDATE_CONSENT = "update_consent"
 KIND_BRIEF = "brief"
 KIND_FEATURE_REQUEST = "feature_request"
-CARD_KINDS = (KIND_SUGGESTION, KIND_SKILL_PROPOSAL, KIND_UPDATE_CONSENT, KIND_BRIEF, KIND_FEATURE_REQUEST)
+KIND_MAIL_DIGEST = "mail_digest"      # threads active in the last 24 hours, headers only
+KIND_MAIL_FOLLOW_UP = "mail_follow_up"  # a thread with no action from the user past the threshold
+CARD_KINDS = (
+    KIND_SUGGESTION,
+    KIND_SKILL_PROPOSAL,
+    KIND_UPDATE_CONSENT,
+    KIND_BRIEF,
+    KIND_FEATURE_REQUEST,
+    KIND_MAIL_DIGEST,
+    KIND_MAIL_FOLLOW_UP,
+)
 
 STATUS_WAITING = "waiting"
 STATUS_ACCEPTED = "accepted"
@@ -43,6 +53,8 @@ class Card:
     notified_ts: float | None = None
     dismissed_ts: float | None = None
     accepted_ts: float | None = None
+    draft: str = ""  # the editable payload: what accepting would apply
+    snoozed_until: float | None = None  # waiting, but hidden until this passes
     meta: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -55,6 +67,10 @@ class Card:
         if self.window_hours is None:
             return False
         return now_ts >= self.created_ts + self.window_hours * 3600
+
+    def is_snoozed(self, now_ts: float) -> bool:
+        """Waiting, but hidden: snoozed_until is still in the future."""
+        return self.snoozed_until is not None and now_ts < self.snoozed_until
 
     def dismissed_for_days(self, now_ts: float) -> float:
         if self.dismissed_ts is None:
@@ -77,5 +93,7 @@ class Card:
             "expired": self.is_expired(now_ts),
             "notified": self.notified_ts is not None,
             "dismissedDays": round(self.dismissed_for_days(now_ts), 1),
+            "draft": self.draft,
+            "snoozedUntil": self.snoozed_until,
             "meta": self.meta,
         }
