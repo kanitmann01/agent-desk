@@ -1,15 +1,14 @@
 // The commitments card: healthy (key event, persisted subtask checks,
 // followup chips), clear, empty (walkthrough link), stale and unreadable
 // amber with Re-test, plus the disabled and unavailable branches. Copy
-// and flows follow pages.py and commitments.py exactly. The tilt shell
-// leans the whole card toward the pointer; under prefers-reduced-motion
-// it stays flat.
+// and flows follow pages.py and commitments.py exactly; every card is
+// the plain Card White article from the shared chrome.
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import { commitmentsStamp, hhmmFromIso } from '../fmt';
 import type { CommitmentsStatus, KeyEvent } from '../types';
 import WidgetCard from '../components/WidgetCard';
-import GlareButton from '../components/GlareButton';
+import Button from '../components/Button';
 import EmptyState, { ICON_CALENDAR } from '../components/EmptyState';
 
 const WALKTHROUGH_PATH = '/walkthrough/calendar';
@@ -125,14 +124,13 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         title="Today's key commitment"
         span="span-5"
         footLines={2}
-        shell="tilt"
         sparse
         stamp={{ fresh: false, text: 'Paused' }}
         foot="No ingestion while off."
       >
         <EmptyState
           icon={ICON_CALENDAR}
-          action={<GlareButton tone="primary" href="/settings">Turn it back on</GlareButton>}
+          action={<Button tone="primary" href="/settings">Turn it back on</Button>}
         >
           Calendar reading is turned off in settings. Your day is not being
           read right now.
@@ -147,7 +145,6 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         title="Today's key commitment"
         span="span-5"
         footLines={2}
-        shell="tilt"
         sparse
         stamp={{ fresh: false, text: 'Unavailable' }}
         foot="Nothing is being read while the bridge is unavailable."
@@ -174,7 +171,6 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         title="Today's key commitment"
         span="span-5"
         footLines={2}
-        shell="tilt"
         stamp={stamp}
         foot={`From your calendar via the OneDrive sync. Nothing leaves the machine but the meeting's name.${first ? ` Connected ${first}.` : ''}`}
       >
@@ -209,7 +205,6 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         title="Today's key commitment"
         span="span-5"
         footLines={2}
-        shell="tilt"
         sparse
         stamp={stamp}
         foot="From your calendar via the OneDrive sync."
@@ -228,14 +223,13 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         title="Today's key commitment"
         span="span-5"
         footLines={2}
-        shell="tilt"
         sparse
         stamp={stamp}
         foot="Setup happens in your browser. No terminal, no admin."
       >
         <EmptyState
           icon={ICON_CALENDAR}
-          action={<GlareButton tone="primary" href={WALKTHROUGH_PATH}>Connect your calendar</GlareButton>}
+          action={<Button tone="primary" href={WALKTHROUGH_PATH}>Connect your calendar</Button>}
         >
           No calendar data yet. Agent Desk watches
           <code> agent-desk/calendar_sync.json </code>
@@ -252,15 +246,14 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
         title="Today's key commitment"
         span="span-5"
         footLines={2}
-        shell="tilt"
         sparse
         stamp={stamp}
         amber
         foot="Stale data is labeled, never shown as current."
       >
         <div className="alert" role="status"><span>{status.cause}</span></div>
-        <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
-        <GlareButton className="btn-start" href={WALKTHROUGH_PATH}>Open the walkthrough</GlareButton>
+        <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
+        <Button className="btn-start" href={WALKTHROUGH_PATH}>Open the walkthrough</Button>
         {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
       </WidgetCard>
     );
@@ -272,14 +265,13 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       title="Today's key commitment"
       span="span-5"
       footLines={2}
-      shell="tilt"
       sparse
       stamp={stamp}
       amber
       foot="The file is there but not readable as calendar data."
     >
       <div className="alert" role="status"><span>{status.cause}</span></div>
-      <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
+      <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
       {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
     </WidgetCard>
   );

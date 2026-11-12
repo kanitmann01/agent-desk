@@ -12,7 +12,7 @@ import {
 } from '../fmt';
 import type { DeltaPayload, SalesStatus } from '../types';
 import WidgetCard from '../components/WidgetCard';
-import GlareButton from '../components/GlareButton';
+import Button from '../components/Button';
 import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import ClickSpark from '../vendor/reactbits/ClickSpark';
 import CountUp from '../vendor/reactbits/CountUp';
@@ -140,7 +140,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
       >
         <EmptyState
           icon={ICON_SHEET}
-          action={<GlareButton tone="primary" href="/settings">Turn it back on</GlareButton>}
+          action={<Button tone="primary" href="/settings">Turn it back on</Button>}
         >
           Sales watching is turned off in settings. Nothing is being read from
           the workbook right now.
@@ -163,9 +163,9 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
           icon={ICON_SHEET}
           action={(
             <ClickSpark sparkColor={['#14594E', '#4C5A55']} sparkSize={10} sparkRadius={26} sparkCount={8} duration={500}>
-              <GlareButton tone="primary" onClick={pick} disabled={busy}>
+              <Button tone="primary" onClick={pick} disabled={busy}>
                 Connect a workbook
-              </GlareButton>
+              </Button>
             </ClickSpark>
           )}
         >
@@ -236,14 +236,14 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
           This data is old, so it is shown as stale rather than current.
           Re-test to refresh it now.
         </span></div>
-        <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
+        <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
       </>
     );
   } else {
     body = (
       <>
         <div className="alert" role="status"><span>{status.cause}</span></div>
-        <GlareButton className="btn-start" onClick={retest} disabled={busy}>Re-test now</GlareButton>
+        <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
       </>
     );
   }

@@ -16,7 +16,7 @@ import ResearchCard, { RESEARCH_BUSY, UNREACHABLE_SEND, type ResearchAnswer } fr
 import PluginCardView from './PluginCardView';
 import SkillsCard from './SkillsCard';
 import CommandBar from '../components/CommandBar';
-import GlareButton from '../components/GlareButton';
+import Button from '../components/Button';
 
 interface DashboardProps {
   data: DashboardData;
@@ -132,7 +132,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             {/* The wizard is a server-rendered surface: a plain form
                 post, exactly like the rendered dashboard's button. */}
             <form method="post" action="/wizard/start" className="addplugin-form">
-              <GlareButton tone="primary" type="submit">Add plugin</GlareButton>
+              <Button tone="primary" type="submit">Add plugin</Button>
             </form>
           </div>
         </header>

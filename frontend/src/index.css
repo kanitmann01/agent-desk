@@ -175,9 +175,6 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .card:hover{box-shadow:var(--shadow-card-hover)}
 /* Amber stays a stamp-level treatment (the Manila pair on the freshness
    stamp and the alert block); the card itself stays paper-white. */
-.card-body{position:relative;flex:1;display:flex;min-width:0;border-radius:inherit}
-/* The card chrome component still mounts until its ticket lands; its
-   inner wrapper adds 8px padding, which sums with the widget's own. */
 .widget{padding:18px 18px 14px;display:flex;flex-direction:column;gap:12px;height:100%;width:100%;align-self:stretch;color:var(--ink-1);line-height:1.5;text-align:left}
 .w-head{display:flex;align-items:center;gap:12px;min-height:30px;flex:none}
 .w-head h2{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
@@ -189,7 +186,6 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   color:var(--attention-ink);background:var(--attention-bg);
   border-radius:var(--r-pill);padding:4px 10px;
 }
-.stamp-mark{display:inline-flex}
 .w-body{flex:1;display:flex;flex-direction:column;min-height:0;container-type:inline-size}
 /* A sparse state (empty, paused, one message) sits centered between the
    header and the foot instead of hugging the top and leaving a void. */
@@ -332,12 +328,6 @@ table.rows td.neg{color:var(--bad)}
 .btn-primary:hover:not(:disabled){box-shadow:var(--shadow-card-hover)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
-/* GlareHover wraps a real button or link until its ticket lands; the
-   wrapper adds no styling of its own, so form semantics, hit area and
-   focus stay with the element inside. */
-.glare-host{align-self:flex-start}
-.glare-host.primary{box-shadow:none}
-.glare-host.primary .btn{box-shadow:var(--shadow-card)}
 
 /* The skills strip: plain rows (title, up to two description lines, and
    a quiet run chevron). */
