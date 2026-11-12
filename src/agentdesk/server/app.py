@@ -102,13 +102,13 @@ LOG = logging.getLogger("agentdesk.server")
 # Strict CSP: everything self-hosted, no inline script. This is a product
 # commitment from the first commit, not decoration: plugins will never be
 # allowed to loosen it. One measured exception: style-src also allows
-# 'unsafe-inline' because the SPA's animation library (motion, the
-# framer-motion package) animates by writing style ATTRIBUTES on
-# elements, which 'unsafe-inline' in style-src governs. Style attributes
-# cannot execute code; scripts still can, so script-src stays 'self' and
-# no inline <script> block ships anywhere: the SPA loads only its own
-# hashed bundles from /static/spa/. The server-rendered pages are
-# unaffected (they never used inline styles either).
+# 'unsafe-inline' because the server-rendered pages compose small style
+# ATTRIBUTES (a margin above a heading, a spacing line), which
+# 'unsafe-inline' in style-src governs. Style attributes cannot execute
+# code; scripts still can, so script-src stays 'self' and no inline
+# <script> block ships anywhere: the SPA loads only its own hashed
+# bundles from /static/spa/, and styles itself through the stylesheet
+# and the CSSOM (which the CSP does not govern), never inline styles.
 # font-src is 'self' for the same reason scripts and styles are: the
 # SPA's two typefaces (Plus Jakarta Sans and IBM Plex Mono, SIL OFL
 # 1.1) are .woff2 files inside the committed bundle, served from
