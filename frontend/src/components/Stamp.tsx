@@ -1,11 +1,9 @@
 // The freshness stamp: the same header contract every card carries on
-// the server-rendered dashboard (a mark plus the stamp text), with the
-// mark drawn by the vendored StatusMark. Fresh sources get the green
-// check; anything stale, blocked, paused or not connected gets the
-// amber waiting ring. The mark is decoration: the stamp text beside it
-// is the whole message, so assistive tech reads the text alone.
-import StatusMark from '../vendor/reactbits/StatusMark';
-
+// the server-rendered dashboard, a 7px status dot plus the stamp text.
+// Fresh sources get the green dot; anything stale, blocked, paused or
+// not connected gets the amber dot inside the Manila pair pill. The dot
+// is decoration: the stamp text beside it is the whole message, so
+// assistive tech reads the text alone.
 export interface StampProps {
   fresh: boolean;
   text: string;
@@ -14,16 +12,7 @@ export interface StampProps {
 export default function Stamp({ fresh, text }: StampProps) {
   return (
     <span className={fresh ? 'stamp' : 'stamp amber'}>
-      <span className="stamp-mark" aria-hidden="true">
-        <StatusMark
-          status={fresh ? 'done' : 'pending'}
-          color="#8A5A14"
-          doneColor="#14594E"
-          size={15}
-          strokeWidth={2}
-          dashes={6}
-        />
-      </span>
+      <span className={fresh ? 'dot' : 'dot amber'} aria-hidden="true" />
       {text}
     </span>
   );

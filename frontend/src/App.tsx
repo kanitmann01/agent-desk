@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { getJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
 import type { DashboardData } from './types';
 import Dashboard from './dashboard/Dashboard';
-import GlareButton from './components/GlareButton';
+import Button from './components/Button';
 
 // The centered card every non-dashboard state shares.
 function Centered({ children }: { children: ReactNode }) {
@@ -43,7 +43,7 @@ export default function App() {
       <Centered>
         <h1>{SESSION_EXPIRED_TITLE}</h1>
         <p>{SESSION_EXPIRED_MESSAGE}</p>
-        <GlareButton onClick={() => window.location.reload()}>Try again</GlareButton>
+        <Button onClick={() => window.location.reload()}>Try again</Button>
       </Centered>
     );
   }
@@ -54,7 +54,7 @@ export default function App() {
         <Centered>
           <h1>The dashboard did not load</h1>
           <p>The dashboard could not reach its own server. Try again; if it repeats, restart the app.</p>
-          <GlareButton onClick={() => void refetch()}>Try again</GlareButton>
+          <Button onClick={() => void refetch()}>Try again</Button>
         </Centered>
       );
     }

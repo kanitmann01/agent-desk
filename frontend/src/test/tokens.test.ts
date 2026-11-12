@@ -46,6 +46,12 @@ const sources = walkSources(resolve(frontend, 'src'))
   .map((f) => readFileSync(f, 'utf8'))
   .join('\n');
 
+// The shared card chrome lives in src/components; nothing there may
+// reach into the vendored effects drawer.
+const componentSources = walkSources(resolve(frontend, 'src', 'components'))
+  .map((f) => readFileSync(f, 'utf8'))
+  .join('\n');
+
 // The fourteen DESIGN.md frontmatter colors, each asserted as the exact
 // hex so a near-miss (a re-darkened green, a colder paper) fails.
 const SYSTEM_COLORS: Array<[string, string]> = [
@@ -186,6 +192,12 @@ describe('component sources speak the system inks', () => {
     for (const hex of driftPaints) {
       expect(sources, `drift paint survived in src: ${hex}`).not.toContain(hex);
     }
+  });
+
+  it('builds the shared card chrome with no vendored effects', () => {
+    expect(componentSources, 'src/components imports the vendored drawer').not.toContain(
+      'vendor/reactbits',
+    );
   });
 });
 
