@@ -110,7 +110,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 
 /* The hero band: the greeting is the page's one Display line; the date
    and the live source line read as quiet stamps beside it. */
-.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:24px}
 .hero-title{
   font-family:var(--font-display);font-weight:800;
   font-size:28px;line-height:1.15;letter-spacing:-.02em;
@@ -126,7 +126,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 /* The research command bar: a white well on the paper, an inset
    hairline ring, and the surface's one solid-green send control. */
 .cmd{
-  position:relative;margin:2px 0 26px;border-radius:var(--r-control);
+  position:relative;margin:0 0 28px;border-radius:var(--r-control);
   background:var(--surface);box-shadow:var(--shadow-card);
 }
 .cmd-inner{
@@ -187,9 +187,9 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
    header and the foot instead of hugging the top and leaving a void. */
 .w-body.sparse{justify-content:center}
 .w-body-inner{display:flex;flex-direction:column;gap:12px}
-.w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:11px;font-size:12px;line-height:1.5;color:var(--ink-3);margin-top:auto;flex:none}
-/* 11px of padding plus two 12px lines at 1.5. */
-.w-foot.two-line{min-height:47px}
+.w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:12px;font-size:12px;line-height:1.5;color:var(--ink-3);margin-top:auto;flex:none}
+/* 12px of padding plus two 12px lines at 1.5. */
+.w-foot.two-line{min-height:48px}
 .badge-pilot{
   font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--attention-ink);
   background:var(--attention-bg);border-radius:var(--r-pill);padding:3px 10px;
@@ -357,7 +357,7 @@ table.rows td.neg{color:var(--bad)}
 .center-card p{color:var(--ink-2);font-size:13.5px}
 .center-loader{display:flex;align-items:center;gap:10px;color:var(--ink-2);padding-top:2px}
 
-.page-foot{margin-top:44px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--hairline);padding-top:14px;display:flex;gap:16px;flex-wrap:wrap}
+.page-foot{margin-top:48px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot a{color:var(--primary);font-weight:600}
 .page-foot a:hover{text-decoration:underline}
 

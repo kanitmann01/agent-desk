@@ -264,6 +264,97 @@ describe('the rail stays on screen at every width', () => {
   });
 });
 
+// The value of one declaration inside a rule, so contract tests can pin
+// exact spacing values without reimplementing CSS parsing.
+function decl(text: string, selector: string, property: string): string {
+  const rule = text.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\{([^}]*)\\}`))?.[1] ?? '';
+  const m = rule.match(new RegExp(`${property}\\s*:\\s*([^;]+)`));
+  return m ? m[1].trim() : '';
+}
+
+function onGrid(value: string): boolean {
+  // Every px value inside the declaration sits on the 4px grid.
+  const pxs = value.match(/(\d+(?:\.\d+)?)px/g) ?? [];
+  return pxs.length > 0 && pxs.every((p) => Number.parseFloat(p) % 4 === 0);
+}
+
+describe('the shell rhythm sits on the 4px grid', () => {
+  // The named band gaps, exactly as shipped, so a half-step cannot
+  // creep back in.
+  it('keeps the named rhythm values as grid multiples', () => {
+    expect(decl(css, '.hero', 'margin-bottom')).toBe('24px');
+    expect(decl(css, '.cmd', 'margin')).toBe('0 0 28px');
+    expect(decl(css, '.page-foot', 'margin-top')).toBe('48px');
+    expect(decl(css, '.w-foot', 'padding-top')).toBe('12px');
+    expect(decl(css, '.w-foot.two-line', 'min-height')).toBe('48px');
+  });
+
+  it('carries no off-grid px step in the named rhythm declarations', () => {
+    for (const [selector, property] of [
+      ['.hero', 'margin-bottom'],
+      ['.cmd', 'margin'],
+      ['.page-foot', 'margin-top'],
+      ['.w-foot', 'padding-top'],
+      ['.hero-meta', 'margin-top'],
+      ['.bento', 'gap'],
+      ['.w-head', 'gap'],
+      ['.widget', 'gap'],
+    ] as Array<[string, string]>) {
+      const value = decl(css, selector, property);
+      expect(value, `${selector} ${property}`).not.toBe('');
+      expect(onGrid(value), `${selector} ${property} = ${value} is off the 4px grid`).toBe(true);
+    }
+  });
+});
+
+describe('the two sheets agree on the shared header contract', () => {
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s styles the icon button at the system size', (_name, sheet) => {
+    expect(decl(sheet, '.icon-btn', 'width')).toBe('28px');
+    expect(decl(sheet, '.icon-btn', 'height')).toBe('28px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s sets the card title in the 16px/700 title voice', (_name, sheet) => {
+    const weight = decl(sheet, '.w-head h2', 'font-weight');
+    expect(weight).toBe('700');
+    expect(decl(sheet, '.w-head h2', 'font-size')).toBe('16px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s spaces the brand row identically', (_name, sheet) => {
+    expect(decl(sheet, '.brand', 'padding')).toBe('2px 8px 18px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s spaces the stamp beside its 7px dot identically', (_name, sheet) => {
+    expect(decl(sheet, '.stamp', 'gap')).toBe('7px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s keeps the header row on the 12px internal gap', (_name, sheet) => {
+    expect(decl(sheet, '.w-head', 'gap')).toBe('12px');
+  });
+
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s spaces the foot divider identically', (_name, sheet) => {
+    expect(decl(sheet, '.w-foot', 'padding-top')).toBe('12px');
+    expect(decl(sheet, '.page-foot', 'margin-top')).toBe('48px');
+  });
+});
+
 describe('the committed bundle honors the contract', () => {
   // Vite inlines small assets as data: URLs; the CSP's font-src 'self'
   // would silently block any font that arrives that way.
