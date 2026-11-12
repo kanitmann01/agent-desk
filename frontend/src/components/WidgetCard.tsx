@@ -5,7 +5,8 @@
 //
 // A sparse card (an empty or single-message state) centers its body
 // between the header and the foot instead of leaving a void under it.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState,
+  type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import Stamp, { type StampProps } from './Stamp';
 
 export type CardSpan = 'span-4' | 'span-5' | 'span-7' | 'span-8' | 'span-12';
@@ -30,15 +31,20 @@ const ICON_DOTS = (
 );
 
 // The header contract's overflow menu: a trigger that announces itself,
-// a menu of real items, Escape and outside-click to leave, and the
-// focus handed back to the trigger on the way out.
-function CardMenu({ items }: { items: CardMenuItem[] }) {
+// a menu of real items that takes focus when it opens and walks with
+// the arrow keys, Escape and outside-click to leave, and the focus
+// handed back to the trigger on the way out.
+function CardMenu({ title, items }: { title: string; items: CardMenuItem[] }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return undefined;
+    // The menu takes focus when it opens, so the arrow keys work
+    // immediately and the screen reader lands inside the list.
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     function onPointerDown(event: PointerEvent) {
       if (wrapRef.current && event.target instanceof Node && wrapRef.current.contains(event.target)) {
         return;
@@ -59,13 +65,44 @@ function CardMenu({ items }: { items: CardMenuItem[] }) {
     };
   }, [open]);
 
+  function walkItems(direction: 1 | -1 | 'first' | 'last') {
+    const menuItems = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+    );
+    if (menuItems.length === 0) return;
+    const current = document.activeElement instanceof HTMLElement
+      ? menuItems.indexOf(document.activeElement)
+      : -1;
+    let next: number;
+    if (direction === 'first') next = 0;
+    else if (direction === 'last') next = menuItems.length - 1;
+    else next = (current + direction + menuItems.length) % menuItems.length;
+    menuItems[next]?.focus();
+  }
+
+  function onMenuKeyDown(event: ReactKeyboardEvent) {
+    switch (event.key) {
+      case 'ArrowDown': event.preventDefault(); walkItems(1); break;
+      case 'ArrowUp': event.preventDefault(); walkItems(-1); break;
+      case 'Home': event.preventDefault(); walkItems('first'); break;
+      case 'End': event.preventDefault(); walkItems('last'); break;
+      case 'Tab':
+        // The menu closes and focus moves on with the Tab, as the menu
+        // pattern promises.
+        setOpen(false);
+        triggerRef.current?.focus();
+        break;
+      default: break;
+    }
+  }
+
   return (
     <div className="w-menu-wrap" ref={wrapRef}>
       <button
         ref={triggerRef}
         className="icon-btn"
         type="button"
-        aria-label="Widget options"
+        aria-label={`Widget options, ${title}`}
         aria-haspopup="menu"
         aria-expanded={open ? 'true' : 'false'}
         onClick={() => setOpen((value) => !value)}
@@ -73,7 +110,7 @@ function CardMenu({ items }: { items: CardMenuItem[] }) {
         {ICON_DOTS}
       </button>
       {open ? (
-        <div className="w-menu" role="menu" aria-label="Widget options">
+        <div className="w-menu" role="menu" aria-label={`Widget options, ${title}`} ref={menuRef} onKeyDown={onMenuKeyDown}>
           {items.map((item) => (
             item.href !== undefined ? (
               <a
@@ -142,7 +179,7 @@ export default function WidgetCard({
             <h2>{title}</h2>
             {badge ? <span className="badge-pilot">{badge}</span> : null}
             <Stamp {...stamp} />
-            {menuItems && menuItems.length > 0 ? <CardMenu items={menuItems} /> : null}
+            {menuItems && menuItems.length > 0 ? <CardMenu title={title} items={menuItems} /> : null}
           </div>
           <div className={sparse ? 'w-body sparse' : 'w-body'}>
             <div className="w-body-inner">{children}</div>

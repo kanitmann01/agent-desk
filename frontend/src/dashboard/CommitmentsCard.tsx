@@ -287,6 +287,10 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
       sparse
       stamp={stamp}
       amber
+      menuItems={[
+        { label: 'Re-test now', onSelect: retest, disabled: busy },
+        { label: 'Open settings', href: '/settings' },
+      ]}
       foot="The file is there but not readable as calendar data."
     >
       <div className="alert" role="status"><span>{status.cause}</span></div>

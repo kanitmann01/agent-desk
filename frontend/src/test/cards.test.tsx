@@ -307,7 +307,7 @@ describe('the plugin card', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
     const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/plugins/p1/retest');
     expect(retestCall?.[0]).toBe('/api/plugins/p1/retest');
@@ -329,10 +329,10 @@ describe('the plugin card', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
     // Open the menu again while the first re-test is still in flight.
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     expect(screen.getByRole('menuitem', { name: 'Re-test now' })).toBeDisabled();
     release();
     // When the re-test settles, the item answers again.
@@ -352,8 +352,8 @@ describe('the card overflow menus', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
-    const menu = screen.getByRole('menu', { name: 'Widget options' });
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
+    const menu = screen.getByRole('menu', { name: /^Widget options/ });
     expect(menu).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Connect a workbook' })).toBeInTheDocument();
     const settings = screen.getByRole('menuitem', { name: 'Open settings' });
@@ -374,7 +374,7 @@ describe('the card overflow menus', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
     const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/sources/excel-watch/retest');
     expect(retestCall?.[0]).toBe('/sources/excel-watch/retest');
@@ -394,7 +394,7 @@ describe('the card overflow menus', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
     const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/sources/calendar-bridge/retest');
     expect(retestCall?.[0]).toBe('/sources/calendar-bridge/retest');
@@ -409,7 +409,7 @@ describe('the card overflow menus', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     const connect = screen.getByRole('menuitem', { name: 'Connect your calendar' });
     expect(connect).toHaveAttribute('href', '/walkthrough/calendar');
     expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
@@ -426,7 +426,7 @@ describe('the card overflow menus', () => {
         statusText=""
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
     cleanup();
     render(
@@ -436,7 +436,7 @@ describe('the card overflow menus', () => {
         onRun={() => {}}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
   });
 });

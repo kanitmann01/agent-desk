@@ -125,11 +125,11 @@ describe('the widget card overflow menu', () => {
   it('declares the trigger, opens the menu and fires one item once', async () => {
     const user = userEvent.setup();
     renderWithMenu();
-    const trigger = screen.getByRole('button', { name: 'Widget options' });
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await user.click(trigger);
-    const menu = screen.getByRole('menu', { name: 'Widget options' });
+    const menu = screen.getByRole('menu', { name: 'Widget options, Sales, last 24h' });
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(menu).toBeInTheDocument();
     const retest = screen.getByRole('menuitem', { name: 'Re-test now' });
@@ -146,7 +146,7 @@ describe('the widget card overflow menu', () => {
   it('closes on Escape and returns focus to the trigger', async () => {
     const user = userEvent.setup();
     renderWithMenu();
-    const trigger = screen.getByRole('button', { name: 'Widget options' });
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
     await user.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -160,7 +160,7 @@ describe('the widget card overflow menu', () => {
   it('closes when the pointer goes down outside the menu', async () => {
     const user = userEvent.setup();
     renderWithMenu();
-    const trigger = screen.getByRole('button', { name: 'Widget options' });
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
     await user.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.click(document.body);
@@ -174,13 +174,35 @@ describe('the widget card overflow menu', () => {
       <WidgetCard title="T" span="span-7" stamp={{ fresh: true, text: 'Ready' }}
         menuItems={MENU_ITEMS} foot="note"><p>body</p></WidgetCard>,
     );
-    await user.click(screen.getByRole('button', { name: 'Widget options' }));
+    await user.click(screen.getByRole('button', { name: 'Widget options, T' }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
     rerender(
       <WidgetCard title="T" span="span-7" stamp={{ fresh: true, text: 'Ready' }}
         menuItems={MENU_ITEMS} foot="note"><p>other body</p></WidgetCard>,
     );
     expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('takes focus when it opens, walks with the arrow keys and Home and End', async () => {
+    const user = userEvent.setup();
+    renderWithMenu();
+    const trigger = screen.getByRole('button', { name: 'Widget options, Sales, last 24h' });
+    await user.click(trigger);
+    // Opening puts focus on the first item, so the arrows work at once.
+    const first = screen.getByRole('menuitem', { name: 'Re-test now' });
+    const second = screen.getByRole('menuitem', { name: 'Open settings' });
+    expect(first).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(second).toHaveFocus();
+    // The walk wraps instead of stopping at the ends.
+    await user.keyboard('{ArrowDown}');
+    expect(first).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(second).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(second).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(first).toHaveFocus();
   });
 });
 
