@@ -8,6 +8,8 @@ is the human answer to "what did I decide and when".
 """
 
 import html
+
+from agentdesk.server.pages import page_shell
 from datetime import datetime
 
 # The decision vocabulary and the plain word each renders as.
@@ -33,9 +35,8 @@ def decision_rows(entries: list[dict]) -> list[dict]:
     ]
 
 
-def render_activity_page(entries: list[dict], version: str) -> str:
+def render_activity_page(entries: list[dict], version: str, inbox_count: int = 0) -> str:
     """The full activity document: the decision log, newest first."""
-    esc_version = html.escape(version)
     rows = decision_rows(entries)
     if rows:
         body = "".join(
@@ -57,26 +58,12 @@ def render_activity_page(entries: list[dict], version: str) -> str:
             "snoozes, more-info asks and returns will be listed here, "
             "newest first.</p>"
         )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Activity, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Activity</h1>
+    content = f"""<h1>Activity</h1>
 <p>Every decision you have made on the inbox's cards, newest first:
 approved, denied, edited, snoozed, more-info, and the returns of cards
 whose snooze ran out. The full audit log behind it, including model
 calls and file reads, is the <a href="/audit/export.csv">CSV export</a>
 Security reviews.</p>
 {table}
-<p class="empty"><a href="/inbox">Back to the inbox</a> <span class="empty">or</span> <a href="/">the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
 """
+    return page_shell("Activity", "/activity", content, version, inbox_count=inbox_count)

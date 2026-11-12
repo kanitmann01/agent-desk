@@ -8,6 +8,8 @@ in its prompt as one bounded block, nothing more.
 """
 
 import html
+
+from agentdesk.server.pages import page_shell
 from datetime import datetime
 
 from agentdesk.memory.core import Fact
@@ -76,36 +78,22 @@ def render_memory_page(
     version: str,
     recall: list[tuple[float, Fact]] | None = None,
     query: str = "",
+    inbox_count: int = 0,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview."""
-    esc_version = html.escape(version)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Memory, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Memory</h1>
+    content = f"""<h1>Memory</h1>
 <p>Facts saved on this machine. The assistant recalls at most five of
 them, 500 characters in total, as derived abstractions it may read;
 nothing is captured from your conversations. Facts arrive here, or with
 an inbox card you accept.</p>
 {_recall_section(recall, query)}
-<h2 style="margin-top:24px">Add a fact</h2>
+<h2>Add a fact</h2>
 <form method="post" action="/memory/add" class="cardform">
 <label class="empty" for="new-fact">Fact</label>
 <input id="new-fact" type="text" name="text" placeholder="The revenue total is 220.">
 <button class="btn btn-primary" type="submit">Save fact</button>
 </form>
-<h2 style="margin-top:24px">Saved facts</h2>
+<h2>Saved facts</h2>
 {_fact_rows(facts)}
-<p class="empty" style="margin-top:18px"><a href="/settings">Back to settings</a> <span class="empty">or</span> <a href="/">the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
 """
+    return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)

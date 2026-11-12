@@ -9,6 +9,7 @@ import html
 from datetime import datetime
 
 from agentdesk.server.core import FRESH, Freshness
+from agentdesk.server.pages import page_shell
 from agentdesk.server.demo import Widget
 
 RESEARCH_BUSY = "Asking the company endpoint for a sourced summary"
@@ -40,9 +41,8 @@ def render_research_widget(last_answered_ts: float | None, now: datetime) -> Wid
     )
 
 
-def render_assistant_page(turns: list, version: str) -> str:
+def render_assistant_page(turns: list, version: str, inbox_count: int = 0) -> str:
     """The assistant page: the thread so far, one input, one button."""
-    esc_version = html.escape(version)
     if turns:
         blocks = []
         for turn in turns:
@@ -59,17 +59,7 @@ def render_assistant_page(turns: list, version: str) -> str:
             "anything you pasted. I already know what the connected widgets "
             "know; you never have to re-explain it.</p></div>"
         )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Assistant, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Assistant</h1>
+    content = f"""<h1>Assistant</h1>
 <p>One thread with your dashboard's context attached. Requests go to the
 company endpoint; every call is logged.</p>
 <div class="thread" aria-label="Conversation">
@@ -80,10 +70,6 @@ company endpoint; every call is logged.</p>
  aria-label="Ask the assistant" placeholder="What changed, and what should I do about it?"></textarea>
 <button class="btn btn-primary" type="submit">Ask</button>
 </form>
-<p class="empty">Version <span class="mono">{esc_version}</span>. Answers lean on the connected widgets when they can; they say so when they cannot.</p>
-<p class="empty"><a href="/">Back to the dashboard</a></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
-"""
+<p class="empty">Answers lean on the connected widgets when they can; they
+say so when they cannot.</p>"""
+    return page_shell("Assistant", "/assistant", content, version, inbox_count=inbox_count)

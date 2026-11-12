@@ -11,6 +11,8 @@ are reachable from here.
 import html
 from datetime import datetime
 
+from agentdesk.server.pages import page_shell
+
 from agentdesk.repetition.skills import render_skill_md
 
 _LABELS = {
@@ -95,8 +97,8 @@ def render_settings_page(
     settings_values: dict | None = None,
     endpoint_status: dict | None = None,
     mail_folder: str = "",
+    inbox_count: int = 0,
 ) -> str:
-    esc_version = html.escape(version)
     settings_values = settings_values or {}
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
 
@@ -154,29 +156,19 @@ def render_settings_page(
     else:
         skills_html = "<p class='empty'>No skills yet. Accept a proposal in the inbox and it appears here with its history.</p>"
 
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Settings</h1>
+    content = f"""<h1>Settings</h1>
 <p>Toggles plus the endpoint form. The defaults are the recommended
 ones; a setting you have never touched is the right setting.</p>
 <div class='settings-block'>
 {toggles_html}
 </div>
-<h1 style="margin-top:24px">Endpoint</h1>
+<h2>Endpoint</h2>
 {endpoint_html}
-<h1 style="margin-top:24px">Calendar source</h1>
+<h2>Calendar source</h2>
 <p>Calendar reading follows the OneDrive sync file by default. To pick
 a different file, paste a path, upload the JSON by hand, or go back to
 automatic, open the <a href="/walkthrough/calendar">calendar source page</a>.</p>
-<h1 style="margin-top:24px">Mail source</h1>
+<h2>Mail source</h2>
 <p>Mail digest is <b>off by default</b>. When the toggle above is on,
 the app polls one folder of .eml files and reads only their headers
 (From, To, Cc, Subject, Date, Message-ID, In-Reply-To); bodies are
@@ -190,17 +182,13 @@ AGENTDESK_MAIL_FOLDER environment variable.</p>
 <button class="btn btn-secondary" type="submit">Save folder</button>
 </form>
 <p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
-<h1 style="margin-top:24px">Review</h1>
+<h2>Review</h2>
 <p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/mail">review the mail digest</a> (headers only, off by default), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
-<h1 style="margin-top:24px">Activity log</h1>
+<h2>Activity log</h2>
 <p>Only what flows through the app: the asks you type into research and
 the assistant. No keystrokes, no screen, and this list is yours.</p>
 {activity}
-<h1 style="margin-top:24px">Skills</h1>
+<h2>Skills</h2>
 {skills_html}
-<p class="empty" style="margin-top:18px"><a href="/">Back to the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
 """
+    return page_shell("Settings", "/settings", content, version, inbox_count=inbox_count)

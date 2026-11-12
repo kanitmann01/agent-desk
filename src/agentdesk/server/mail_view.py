@@ -11,26 +11,16 @@ because the app never read them.
 import html
 from urllib.parse import quote
 
+from agentdesk.server.pages import page_shell
 from agentdesk.mail.core import format_header_ts
 from agentdesk.mail.watcher import STATE_ERROR
 
 
-def _off_page(version: str, off_reason: str) -> str:
-    esc_version = html.escape(version)
+def _off_page(version: str, off_reason: str, inbox_count: int = 0) -> str:
     esc_reason = html.escape(off_reason)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mail, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Mail</h1>
+    content = f"""<h1>Mail</h1>
 <div class="widget" id="mail-off">
-<div class="w-head"><h2 style="font-size:16px">Mail digest is off</h2></div>
+<div class="w-head"><h2>Mail digest is off</h2></div>
 <p>{esc_reason}</p>
 <p>When it is on, this page shows a digest of the threads active in the
 last 24 hours, threads waiting on you, and a reply draft box per
@@ -40,13 +30,8 @@ bodies are discarded at parse time, nothing is sent to any model, and
 nothing leaves this machine.</p>
 <p><a href="/settings">Turn it on in settings</a> (the mail toggle, plus
 the folder it watches).</p>
-</div>
-<p class="empty"><a href="/settings">Back to settings</a> <span class="empty">or</span> <a href="/">the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
-"""
+</div>"""
+    return page_shell("Mail", "/mail", content, version, inbox_count=inbox_count)
 
 
 def _status_line(view: dict) -> str:
@@ -80,7 +65,7 @@ def _digest_section(view: dict) -> str:
     digest = view.get("digest") or []
     if not digest:
         return (
-            "<h2 style='margin-top:24px'>Active in the last 24 hours</h2>"
+            "<h2>Active in the last 24 hours</h2>"
             "<p class='empty' id='mail-digest-empty'>No thread has seen a message in "
             "the last 24 hours, so there is no digest.</p>"
         )
@@ -90,7 +75,7 @@ def _digest_section(view: dict) -> str:
         f"{html.escape(d['lastFrom'])} at {format_header_ts(d['lastTs'])}</span></div>"
         for d in digest
     )
-    return f"<h2 style='margin-top:24px'>Active in the last 24 hours</h2>{rows}"
+    return f"<h2>Active in the last 24 hours</h2>{rows}"
 
 
 def _followups_section(view: dict) -> str:
@@ -98,7 +83,7 @@ def _followups_section(view: dict) -> str:
     days = html.escape(str(view.get("followUpDays", "")))
     if not follow_ups:
         return (
-            "<h2 style='margin-top:24px'>Waiting on you</h2>"
+            "<h2>Waiting on you</h2>"
             "<p class='empty' id='mail-followups-empty'>Nothing is waiting: every "
             f"thread either saw a message from you in the last {days} days, or is "
             "marked handled below.</p>"
@@ -110,14 +95,14 @@ def _followups_section(view: dict) -> str:
         "you. Decide the card in the inbox (either way) to mark it handled.</span></div>"
         for i, f in enumerate(follow_ups)
     )
-    return f"<h2 style='margin-top:24px'>Waiting on you</h2>{rows}"
+    return f"<h2>Waiting on you</h2>{rows}"
 
 
 def _message_rows(view: dict) -> str:
     messages = view.get("messages") or []
     if not messages:
         return (
-            "<h2 style='margin-top:24px'>Messages</h2>"
+            "<h2>Messages</h2>"
             "<p class='empty' id='mail-messages-empty'>No .eml files in the folder "
             "yet. Drop some in and check the folder again.</p>"
         )
@@ -143,14 +128,14 @@ def _message_rows(view: dict) -> str:
             "</form>"
             "</article>"
         )
-    return f"<h2 style='margin-top:24px'>Messages</h2>{''.join(rows)}"
+    return f"<h2>Messages</h2>{''.join(rows)}"
 
 
 def _handled_section(view: dict) -> str:
     handled = view.get("handled") or []
     if not handled:
         return (
-            "<h2 style='margin-top:24px'>Handled</h2>"
+            "<h2>Handled</h2>"
             "<p class='empty' id='mail-handled-empty'>No thread is marked handled "
             "yet. Deciding a follow-up card in the inbox marks its thread.</p>"
         )
@@ -159,25 +144,14 @@ def _handled_section(view: dict) -> str:
         "<span class='empty'>marked handled; follow-ups stay quiet</span></div>"
         for name in handled
     )
-    return f"<h2 style='margin-top:24px'>Handled</h2>{rows}"
+    return f"<h2>Handled</h2>{rows}"
 
 
-def render_mail_page(version: str, view: dict | None, off_reason: str = "") -> str:
+def render_mail_page(version: str, view: dict | None, off_reason: str = "", inbox_count: int = 0) -> str:
     """The full mail document: off state, or the live digest view."""
     if view is None:
-        return _off_page(version, off_reason)
-    esc_version = html.escape(version)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mail, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Mail</h1>
+        return _off_page(version, off_reason, inbox_count)
+    content = f"""<h1>Mail</h1>
 <p>A metadata-only digest of the folder you chose: thread names, senders
 and dates. Message bodies are discarded the moment the file is read;
 nothing goes to any model; reply drafts contain the words you type
@@ -188,10 +162,5 @@ yourself.</p>
 {_digest_section(view)}
 {_followups_section(view)}
 {_message_rows(view)}
-{_handled_section(view)}
-<p class="empty" style="margin-top:18px"><a href="/settings">Back to settings</a> <span class="empty">or</span> <a href="/">the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
-"""
+{_handled_section(view)}"""
+    return page_shell("Mail", "/mail", content, version, inbox_count=inbox_count)
