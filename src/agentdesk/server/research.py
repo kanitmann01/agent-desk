@@ -41,9 +41,8 @@ def render_research_widget(last_answered_ts: float | None, now: datetime) -> Wid
     )
 
 
-def render_assistant_page(turns: list, version: str) -> str:
+def render_assistant_page(turns: list, version: str, inbox_count: int = 0) -> str:
     """The assistant page: the thread so far, one input, one button."""
-    esc_version = html.escape(version)
     if turns:
         blocks = []
         for turn in turns:
@@ -73,4 +72,4 @@ company endpoint; every call is logged.</p>
 </form>
 <p class="empty">Answers lean on the connected widgets when they can; they
 say so when they cannot.</p>"""
-    return page_shell("Assistant", "/assistant", content, version)
+    return page_shell("Assistant", "/assistant", content, version, inbox_count=inbox_count)

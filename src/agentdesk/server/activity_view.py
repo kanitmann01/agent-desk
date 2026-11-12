@@ -35,7 +35,7 @@ def decision_rows(entries: list[dict]) -> list[dict]:
     ]
 
 
-def render_activity_page(entries: list[dict], version: str) -> str:
+def render_activity_page(entries: list[dict], version: str, inbox_count: int = 0) -> str:
     """The full activity document: the decision log, newest first."""
     rows = decision_rows(entries)
     if rows:
@@ -66,4 +66,4 @@ calls and file reads, is the <a href="/audit/export.csv">CSV export</a>
 Security reviews.</p>
 {table}
 """
-    return page_shell("Activity", "/activity", content, version)
+    return page_shell("Activity", "/activity", content, version, inbox_count=inbox_count)

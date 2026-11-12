@@ -26,7 +26,7 @@ def data_dir_statement() -> str:
     return str(default_data_dir())
 
 
-def render_touches(observed: set[str], version: str, now: datetime) -> str:
+def render_touches(observed: set[str], version: str, now: datetime, inbox_count: int = 0) -> str:
     """The one-page statement IT reviews."""
     esc_version = html.escape(version)
     rows = []
@@ -63,4 +63,4 @@ happened on this machine. Generated {html.escape(generated)}, version
 <li><b>Uninstall:</b> delete the folder. Nothing is left behind, nothing to unregister.</li>
 <li><b>License:</b> MIT. The Python runtime has no third-party dependencies; the dashboard bundle ships a documented, licensed set (see <span class="mono">THIRD-PARTY-LICENSES.md</span>).</li>
 </ul>"""
-    return page_shell("What this app touches", "", content, version)
+    return page_shell("What this app touches", "", content, version, inbox_count=inbox_count)

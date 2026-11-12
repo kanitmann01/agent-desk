@@ -16,7 +16,7 @@ from agentdesk.mail.core import format_header_ts
 from agentdesk.mail.watcher import STATE_ERROR
 
 
-def _off_page(version: str, off_reason: str) -> str:
+def _off_page(version: str, off_reason: str, inbox_count: int = 0) -> str:
     esc_reason = html.escape(off_reason)
     content = f"""<h1>Mail</h1>
 <div class="widget" id="mail-off">
@@ -31,7 +31,7 @@ nothing leaves this machine.</p>
 <p><a href="/settings">Turn it on in settings</a> (the mail toggle, plus
 the folder it watches).</p>
 </div>"""
-    return page_shell("Mail", "/mail", content, version)
+    return page_shell("Mail", "/mail", content, version, inbox_count=inbox_count)
 
 
 def _status_line(view: dict) -> str:
@@ -147,10 +147,10 @@ def _handled_section(view: dict) -> str:
     return f"<h2>Handled</h2>{rows}"
 
 
-def render_mail_page(version: str, view: dict | None, off_reason: str = "") -> str:
+def render_mail_page(version: str, view: dict | None, off_reason: str = "", inbox_count: int = 0) -> str:
     """The full mail document: off state, or the live digest view."""
     if view is None:
-        return _off_page(version, off_reason)
+        return _off_page(version, off_reason, inbox_count)
     content = f"""<h1>Mail</h1>
 <p>A metadata-only digest of the folder you chose: thread names, senders
 and dates. Message bodies are discarded the moment the file is read;
@@ -163,4 +163,4 @@ yourself.</p>
 {_followups_section(view)}
 {_message_rows(view)}
 {_handled_section(view)}"""
-    return page_shell("Mail", "/mail", content, version)
+    return page_shell("Mail", "/mail", content, version, inbox_count=inbox_count)

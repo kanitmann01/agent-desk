@@ -224,6 +224,7 @@ def render_capabilities_page(
     version: str,
     now_ts: float,
     mail: dict | None = None,
+    inbox_count: int = 0,
 ) -> str:
     """The full capabilities document: gate cards from the cache, the
     endpoint card and source cards from the live table, and the mail
@@ -240,4 +241,4 @@ command-line probe stays available for IT.</p>
 {_endpoint_card(sources, endpoint)}
 {_source_cards(sources, excel_status, calendar_status)}
 {mail_html}"""
-    return page_shell("Capabilities", "/capabilities", content, version)
+    return page_shell("Capabilities", "/capabilities", content, version, inbox_count=inbox_count)

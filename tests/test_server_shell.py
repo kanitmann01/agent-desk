@@ -48,10 +48,6 @@ def _get(booted, path):
     return body.decode("utf-8")
 
 
-def _anchors(page: str) -> list[tuple[str, dict]]:
-    return re.findall(r"<a ([^>]*?)>(.*?)</a>", page, flags=re.S)
-
-
 @pytest.mark.parametrize("path,label,active", SHELL_PAGES)
 def test_every_page_carries_the_rail_marking_the_active_entry(booted, path, label, active):
     page = _get(booted, path)
@@ -71,10 +67,11 @@ def test_every_page_carries_the_rail_marking_the_active_entry(booted, path, labe
 def test_every_page_ends_in_the_shared_footer(booted, path, label, _active):
     page = _get(booted, path)
     assert '<footer class="page-foot">' in page, path
-    # The footer owns the version and the what-this-touches link.
+    # The footer owns the version (never empty) and the
+    # what-this-touches link.
     foot = page.split('<footer class="page-foot">')[1]
     assert "/what-this-touches" in foot
-    assert "Agent Desk" in foot
+    assert re.search(r'<span class="mono">[^<]+</span>\.', foot), foot[:160]
     # The dangling back-link fragments are gone; the rail owns navigation.
     assert "Back to the dashboard" not in page, path
 

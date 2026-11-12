@@ -97,8 +97,8 @@ def render_settings_page(
     settings_values: dict | None = None,
     endpoint_status: dict | None = None,
     mail_folder: str = "",
+    inbox_count: int = 0,
 ) -> str:
-    esc_version = html.escape(version)
     settings_values = settings_values or {}
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
 
@@ -191,4 +191,4 @@ the assistant. No keystrokes, no screen, and this list is yours.</p>
 <h2>Skills</h2>
 {skills_html}
 """
-    return page_shell("Settings", "/settings", content, version)
+    return page_shell("Settings", "/settings", content, version, inbox_count=inbox_count)

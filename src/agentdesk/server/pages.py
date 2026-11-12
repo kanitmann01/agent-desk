@@ -208,7 +208,7 @@ table.rows td.neg{color:var(--bad)}
 .empty{color:var(--ink-3);font-size:13px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
 .doc h1{font-size:20px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
-.doc h2{font-size:16px;font-weight:700;margin:24px 0 0;letter-spacing:-.01em}
+.doc > h2{font-size:16px;font-weight:700;margin:24px 0 0;letter-spacing:-.01em}
 .doc p{color:var(--ink-2);font-size:13.5px;margin:8px 0}
 .doc ol{margin:12px 0;padding-left:20px;color:var(--ink-2);font-size:13.5px;display:flex;flex-direction:column;gap:8px}
 .doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
@@ -570,9 +570,9 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     is the one marked as the page you are on."""
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
 
-    def entry(href: str, icon: str, label: str) -> str:
+    def entry(href: str, icon: str, label: str, extra: str = "") -> str:
         current = ' aria-current="page"' if href == active else ""
-        return f'<a href="{href}"{current}>{icon}{label}</a>'
+        return f'<a href="{href}"{current}>{icon}{label}{extra}</a>'
 
     return (
         '<nav class="rail" aria-label="Main">'
@@ -581,7 +581,9 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         'stroke-width="2.4" stroke-linecap="round"><path d="M4 12h6M8 8v8M14 10h6M17 7v10"/></svg>'
         '</span><b>Agent Desk</b></div>'
         f'{entry("/", _ICON_DASHBOARD, "Dashboard")}'
-        f'{entry("/inbox", _ICON_INBOX, "Inbox")}{badge}'
+        # The count rides inside the link: one row on the rail, and
+        # the accessible name carries the waiting number.
+        f'{entry("/inbox", _ICON_INBOX, "Inbox", badge)}'
         f'{entry("/assistant", _ICON_ASSISTANT, "Assistant")}'
         f'{entry("/activity", _ICON_ACTIVITY, "Activity")}'
         f'{entry("/memory", _ICON_MEMORY, "Memory")}'
@@ -706,7 +708,7 @@ def render_error_page(title: str, message: str) -> str:
 """
 
 
-def render_walkthrough(watch_hint: str, explicit_path: str = "", version: str = "") -> str:
+def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0) -> str:
     """The calendar connection walkthrough: three browser steps, no terminal.
 
     The user creates the Power Automate flow themselves in their browser;
@@ -785,4 +787,4 @@ aria-label="Calendar JSON file to upload">
 technical owner: the same file can be produced any way IT prefers. The
 app only ever reads it.</p>
 """
-    return page_shell("Connect your calendar", "", content, version)
+    return page_shell("Connect your calendar", "", content, version, inbox_count=inbox_count)

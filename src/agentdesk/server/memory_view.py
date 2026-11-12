@@ -78,6 +78,7 @@ def render_memory_page(
     version: str,
     recall: list[tuple[float, Fact]] | None = None,
     query: str = "",
+    inbox_count: int = 0,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview."""
     content = f"""<h1>Memory</h1>
@@ -95,4 +96,4 @@ an inbox card you accept.</p>
 <h2>Saved facts</h2>
 {_fact_rows(facts)}
 """
-    return page_shell("Memory", "/memory", content, version)
+    return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)

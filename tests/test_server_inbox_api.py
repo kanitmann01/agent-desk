@@ -207,6 +207,9 @@ def test_rail_carries_the_inbox_count(env, auth):
     _add(env, auth)
     page = env.request("GET", "/", auth)[2].decode("utf-8")
     assert '<span class="count">1</span>' in page
+    # The pill rides inside the Inbox link: one rail row, and the
+    # accessible name carries the waiting number.
+    assert "Inbox<span class=\"count\">1</span></a>" in page
 
 
 def test_unknown_card_is_a_404(env, auth):
