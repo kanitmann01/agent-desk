@@ -15,6 +15,7 @@ names its error, it never reads green.
 import html
 from datetime import datetime
 
+from agentdesk.server.pages import page_shell
 from agentdesk.calendar.watcher import (
     STATE_CLEAR as CALENDAR_CLEAR,
     STATE_HEALTHY as CALENDAR_HEALTHY,
@@ -228,19 +229,8 @@ def render_capabilities_page(
     endpoint card and source cards from the live table, and the mail
     card when the mail toggle exists. Rendering probes nothing; the
     re-test forms are the only probing path."""
-    esc_version = html.escape(version)
     mail_html = _mail_card(mail) if mail is not None else ""
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Capabilities, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>Capabilities</h1>
+    content = f"""<h1>Capabilities</h1>
 <p>What this laptop offers the agent: the five environment gates the
 probe checks, the company endpoint, and the data sources. Gate results
 are stored, not probed live: every card names when it was tested, and
@@ -249,10 +239,5 @@ command-line probe stays available for IT.</p>
 {_gate_cards(cached, now_ts)}
 {_endpoint_card(sources, endpoint)}
 {_source_cards(sources, excel_status, calendar_status)}
-{mail_html}
-<p class="empty" style="margin-top:18px"><a href="/settings">Back to settings</a> <span class="empty">or</span> <a href="/">the dashboard</a> <span class="mono">{esc_version}</span></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
-"""
+{mail_html}"""
+    return page_shell("Capabilities", "/capabilities", content, version)

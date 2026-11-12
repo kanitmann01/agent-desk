@@ -7,6 +7,8 @@ same file as the code that would change them.
 """
 
 import html
+
+from agentdesk.server.pages import page_shell
 from datetime import datetime
 
 from agentdesk.assistant import audit as audit_store
@@ -42,17 +44,7 @@ def render_touches(observed: set[str], version: str, now: datetime) -> str:
         )
     table = "".join(rows)
     generated = now.strftime("%Y-%m-%d %H:%M")
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What this app touches, Agent Desk</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<div class="doc">
-<h1>What this app touches</h1>
+    content = f"""<h1>What this app touches</h1>
 <p>One page, kept honest by the audit log: every line below is a kind of
 touch the app can make, and the badge says whether it has actually
 happened on this machine. Generated {html.escape(generated)}, version
@@ -61,7 +53,7 @@ happened on this machine. Generated {html.escape(generated)}, version
 <thead><tr><th scope="col">Action</th><th scope="col">Kind</th><th scope="col">What it means</th><th scope="col">Status</th></tr></thead>
 <tbody>{table}</tbody>
 </table>
-<h1 style="margin-top:28px">The facts</h1>
+<h2>The facts</h2>
 <ul>
 <li><b>Processes started:</b> none. The app never launches another program.</li>
 <li><b>Persistence:</b> none. No Run key, no scheduled task, no service. The app runs only while you keep it open.</li>
@@ -70,10 +62,5 @@ happened on this machine. Generated {html.escape(generated)}, version
 <li><b>Data location:</b> <span class="mono">{html.escape(data_dir_statement())}</span>. The watched workbook is copied to the temp folder before parsing and never modified.</li>
 <li><b>Uninstall:</b> delete the folder. Nothing is left behind, nothing to unregister.</li>
 <li><b>License:</b> MIT. The Python runtime has no third-party dependencies; the dashboard bundle ships a documented, licensed set (see <span class="mono">THIRD-PARTY-LICENSES.md</span>).</li>
-</ul>
-<p class="empty"><a href="/">Back to the dashboard</a></p>
-</div>
-<script src="/static/app.js"></script>
-</body>
-</html>
-"""
+</ul>"""
+    return page_shell("What this app touches", "", content, version)
