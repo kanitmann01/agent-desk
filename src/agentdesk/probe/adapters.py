@@ -79,32 +79,38 @@ def copy_file(source, dest) -> None:
     shutil.copy(source, dest)
 
 
-def list_processes() -> RunResult:
+def list_processes(windows: bool | None = None) -> RunResult:
     """List running processes for the EDR gate (stdlib only).
 
     Windows: tasklist with its service columns. Other platforms (macOS
     and Linux): ps is the portable shape. The gates only consume stdout
-    as text, so either listing feeds them the same way.
+    as text, so either listing feeds them the same way. The branch
+    follows os.name; tests pass `windows` explicitly to drive a
+    platform's shape on any host without patching process globals.
     """
     import os
 
-    if os.name == "nt":
+    is_windows = os.name == "nt" if windows is None else windows
+    if is_windows:
         return subprocess_runner(["tasklist", "/svc", "/fo", "csv", "/nh"], timeout=30)
     return subprocess_runner(["ps", "-axo", "pid,comm"], timeout=30)
 
 
-def discover_onedrive() -> OneDriveInfo | None:
+def discover_onedrive(windows: bool | None = None) -> OneDriveInfo | None:
     """Find the OneDrive sync root for the current user.
 
     Windows: the OneDrive environment variables first, then a OneDrive*
     folder under the user profile. macOS: the sync root lives under
     ~/Library/CloudStorage/OneDrive-<tenant>, so glob that shape. The
     evidence string names what was actually checked. Never writes
-    anything.
+    anything. The branch follows os.name; tests pass `windows`
+    explicitly to drive a platform's shape on any host without patching
+    process globals.
     """
     import os
 
-    if os.name != "nt":
+    is_windows = os.name == "nt" if windows is None else windows
+    if not is_windows:
         home = Path.home()
         for entry in sorted(home.glob("Library/CloudStorage/OneDrive*")):
             if entry.is_dir():

@@ -2,11 +2,11 @@
 
 The subprocess-runner tests need a real child process (no network, no
 files). The platform-selection tests (which listing command, which
-OneDrive sync-root shape) monkeypatch os.name and Path.home, so the same
-code paths run on any host without touching anything outside tmp_path.
+OneDrive sync-root shape) pass the platform explicitly and monkeypatch
+Path.home, so the same code paths run on any host without touching
+anything outside tmp_path.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -48,9 +48,8 @@ class TestListProcessesPlatform:
     def test_windows_asks_tasklist_for_processes_and_services(self, monkeypatch):
         runner = RecordingRunner()
         monkeypatch.setattr("agentdesk.probe.adapters.subprocess_runner", runner)
-        monkeypatch.setattr(os, "name", "nt")
 
-        result = list_processes()
+        result = list_processes(windows=True)
 
         assert isinstance(result, RunResult)
         assert runner.commands == [["tasklist", "/svc", "/fo", "csv", "/nh"]]
@@ -58,9 +57,8 @@ class TestListProcessesPlatform:
     def test_everything_else_uses_the_portable_ps_shape(self, monkeypatch):
         runner = RecordingRunner()
         monkeypatch.setattr("agentdesk.probe.adapters.subprocess_runner", runner)
-        monkeypatch.setattr(os, "name", "posix")
 
-        result = list_processes()
+        result = list_processes(windows=False)
 
         assert isinstance(result, RunResult)
         assert runner.commands == [["ps", "-axo", "pid,comm"]]
@@ -73,12 +71,11 @@ class TestDiscoverOneDrivePlatform:
         root = tmp_path / "Library" / "CloudStorage" / "OneDrive-Contoso"
         root.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(os, "name", "posix")
         # The Windows environment variables are not consulted on macOS, even
         # when one happens to be set in the test's own environment.
         monkeypatch.setenv("OneDrive", str(tmp_path))
 
-        info = discover_onedrive()
+        info = discover_onedrive(windows=False)
 
         assert isinstance(info, OneDriveInfo)
         assert info.path == str(root)
@@ -87,17 +84,15 @@ class TestDiscoverOneDrivePlatform:
     def test_macos_answers_none_without_a_cloudstorage_folder(self, monkeypatch, tmp_path):
         (tmp_path / "Library" / "CloudStorage").mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(os, "name", "posix")
 
-        assert discover_onedrive() is None
+        assert discover_onedrive(windows=False) is None
 
     def test_windows_environment_variable_still_wins_first(self, monkeypatch, tmp_path):
         od = tmp_path / "od"
         od.mkdir()
         monkeypatch.setenv("OneDrive", str(od))
-        monkeypatch.setattr(os, "name", "nt")
 
-        info = discover_onedrive()
+        info = discover_onedrive(windows=True)
 
         assert info == OneDriveInfo(path=str(od), how="environment variable OneDrive")
 
@@ -107,9 +102,8 @@ class TestDiscoverOneDrivePlatform:
         profile = tmp_path / "profile"
         (profile / "OneDrive - Contoso").mkdir(parents=True)
         monkeypatch.setenv("USERPROFILE", str(profile))
-        monkeypatch.setattr(os, "name", "nt")
 
-        info = discover_onedrive()
+        info = discover_onedrive(windows=True)
 
         assert info is not None
         assert info.path == str(profile / "OneDrive - Contoso")
