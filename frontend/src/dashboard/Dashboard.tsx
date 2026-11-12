@@ -54,6 +54,16 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const sourceLine = connected > 0
     ? `Live: ${connected} of ${data.sources.total} sources connected.`
     : 'Not connected yet: each card below has its own one-step connect.';
+  // "one-step" never breaks across the line: the phrase rides in a
+  // nowrap span so a narrow band wraps at the spaces around it.
+  const sourceLineBody = connected > 0
+    ? sourceLine
+    : (
+      <>
+        Not connected yet: each card below has its own{' '}
+        <span className="nowrap">one-step connect.</span>
+      </>
+    );
 
   function showAnswer(next: ResearchAnswer | null) {
     setAnswer(next);
@@ -124,7 +134,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
               <span>{dateLine}</span>
               <span className="hero-live">
                 <span className={connected > 0 ? 'dot' : 'dot sample'} aria-hidden="true" />
-                {sourceLine}
+                {sourceLineBody}
               </span>
             </div>
           </div>

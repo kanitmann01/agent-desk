@@ -366,8 +366,14 @@ table.rows td.neg{color:var(--bad)}
   .span-8{grid-column:span 12}
 }
 @media (max-width:980px){
-  .app{grid-template-columns:minmax(0,1fr)}
-  .rail{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto;scrollbar-width:none;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
+  /* The single-column shell becomes a block: a sticky grid item inside
+     its own auto-sized row has no travel, so the strip would still
+     scroll away. As a block child the rail sticks to the viewport for
+     the whole scroll. */
+  .app{display:block}
+  /* The strip stays pinned while the page scrolls and its entries wrap
+     instead of clipping, so no nav entry is ever out of reach. */
+  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
   .rail .brand{padding:0 12px 0 0;flex:none}
   .rail a,.rail .nav-off{flex:none}
   .rail .user{display:none}
@@ -388,7 +394,12 @@ table.rows td.neg{color:var(--bad)}
   .cmd-field{flex:1 1 calc(100% - 40px)}
   .cmd-magnet{flex:1 1 100%;display:flex}
   .cmd-magnet .cmd-send{width:100%;justify-content:center}
+  /* The greeting band stacks: the source line becomes a full-width
+     quiet line instead of a squeezed pill that breaks mid-word. */
+  .hero-meta{display:block}
+  .hero-live{display:flex;width:100%;white-space:normal}
 }
+.nowrap{white-space:nowrap}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}
 }

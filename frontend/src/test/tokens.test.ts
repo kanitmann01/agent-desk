@@ -211,6 +211,59 @@ describe('the authored sheet keeps its interaction promises', () => {
   });
 });
 
+// The text of one media query, balanced to its closing brace, so
+// contract tests can pin what the narrow-width world does.
+function mediaBlock(text: string, query: string): string {
+  const marker = `@media (${query}){`;
+  const start = text.indexOf(marker);
+  if (start === -1) return '';
+  let depth = 0;
+  for (let i = start + marker.length - 1; i < text.length; i += 1) {
+    if (text[i] === '{') depth += 1;
+    else if (text[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return '';
+}
+
+// The server-rendered pages carry their own copy of the shell CSS; both
+// must agree, so the tests read it out of the Python source.
+const serverPages = readFileSync(
+  resolve(repo, 'src', 'agentdesk', 'server', 'pages.py'),
+  'utf8',
+);
+const serverStylesMatch = /STYLES = """(.*?)"""/s.exec(serverPages);
+const serverStyles = serverStylesMatch ? serverStylesMatch[1] : '';
+
+describe('the rail stays on screen at every width', () => {
+  it.each([
+    ['the SPA sheet', css],
+    ['the server sheet', serverStyles],
+  ])('%s keeps the narrow-width rail pinned and wrapping', (_name, sheet) => {
+    const narrow = mediaBlock(sheet, 'max-width:980px');
+    expect(narrow, 'no 980px media block').not.toBe('');
+    const railRule = narrow.match(/\.rail\{[^}]*\}/)?.[0] ?? '';
+    expect(railRule, 'narrow rail must stay sticky').toContain('position:sticky;top:0');
+    expect(railRule, 'narrow rail must release the desktop full height').toContain('height:auto');
+    expect(railRule, 'narrow rail entries must wrap, not clip').toContain('flex-wrap:wrap');
+    expect(railRule, 'narrow rail must not scroll sideways').not.toContain('overflow-x');
+    expect(railRule, 'sticky strip must paint above the content').toContain('z-index');
+    // Sticky inside its own auto-sized grid row has no travel: the
+    // single-column shell must become a block for the pin to work.
+    expect(narrow, 'single-column shell must become a block').toContain('.app{display:block}');
+  });
+
+  it('keeps a nowrap helper and stacks the hero source line on narrow screens', () => {
+    expect(css).toContain('.nowrap{white-space:nowrap}');
+    const narrow = mediaBlock(css, 'max-width:560px');
+    expect(narrow, 'no 560px media block').not.toBe('');
+    expect(narrow).toContain('.hero-live');
+    expect(narrow).toContain('width:100%');
+  });
+});
+
 describe('the committed bundle honors the contract', () => {
   // Vite inlines small assets as data: URLs; the CSP's font-src 'self'
   // would silently block any font that arrives that way.
