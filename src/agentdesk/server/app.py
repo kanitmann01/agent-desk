@@ -58,6 +58,9 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
+from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.service import build_facts_block
+from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
@@ -70,6 +73,7 @@ from agentdesk.server.commitments import (
     render_commitments_widget,
 )
 from agentdesk.server.inbox_view import render_inbox_page
+from agentdesk.server.memory_view import render_memory_page
 from agentdesk.server.research import render_assistant_page, render_research_widget
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
 from agentdesk.server.wizard_view import (
@@ -378,6 +382,23 @@ def _flag(body: dict, *names: str) -> bool:
     return False
 
 
+def _memory_id_from_path(path: str, suffix: str) -> int | None:
+    """The fact id in /memory/<id>/edit (or /delete), or None when the
+    address names no fact."""
+    raw = path[len("/memory/"):-len(suffix)]
+    return int(raw) if raw.isascii() and raw.isdigit() else None
+
+
+def _fact_json(fact) -> dict:
+    """A fact as the API answers it."""
+    return {
+        "id": fact.id,
+        "text": fact.text,
+        "source": fact.source,
+        "createdTs": fact.created_ts,
+    }
+
+
 def _plugin_audit_detail(action: str, result: dict) -> str:
     """What each plugin lifecycle row says, from the action's own result."""
     result = result if isinstance(result, dict) else {}
@@ -425,6 +446,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         pick_calendar=None,
         wizard_store: WizardStore | None = None,
         consents: ConsentStore | None = None,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self.sessions = sessions
         self.excel = excel
@@ -442,6 +464,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.settings = settings_store
         self.plugins = plugins
         self.wizard_store = wizard_store
+        self.memory = memory_store
         # Process-lifetime consent allows: (plugin, scope) pairs accepted
         # "for this plugin". A fresh set unless injected; restart forgets.
         self.consents = consents if consents is not None else ConsentStore()
@@ -706,6 +729,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_inbox_page()
         elif path == "/activity":
             self._send_activity_page()
+        elif path == "/memory":
+            self._send_memory_page()
         elif path == "/widgets/inbox":
             self._send_inbox_count()
         elif path == "/settings":
@@ -899,6 +924,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._inbox_more_info(path[len("/inbox/cards/"):-len("/more-info")])
         elif path.startswith("/inbox/dismissed/") and path.endswith("/restore"):
             self._inbox_restore(path[len("/inbox/dismissed/"):-len("/restore")])
+        elif path == "/memory/add":
+            self._memory_add()
+        elif path.startswith("/memory/") and path.endswith("/edit"):
+            self._memory_edit(_memory_id_from_path(path, "/edit"))
+        elif path.startswith("/memory/") and path.endswith("/delete"):
+            self._memory_delete(_memory_id_from_path(path, "/delete"))
+        elif path == "/memory/recall":
+            self._memory_recall()
         elif path == "/inbox/consolidate":
             if self.server.consolidator is None:  # type: ignore[attr-defined]
                 self._send_json(503, {"error": "the repetition detector is not available"})
@@ -993,6 +1026,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         context = build_context(
             server.excel.status() if server.excel is not None else None,
             server.calendar.status() if server.calendar is not None else None,
+            facts_block=self._facts_block(question) if not summary_mode else "",
         )
         llm, endpoint, model = self._effective_llm()
         common = {
@@ -1004,6 +1038,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if summary_mode:
             return research(question, context, **common)
         return assistant_reply(question, context, **common)
+
+    def _facts_block(self, question: str) -> str:
+        """The bounded recalled-facts block for the assistant prompt,
+        ranked against the user's question. Recall only: this path never
+        creates a fact; the bounds live in memory/service."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return ""
+        return build_facts_block(memory.recall(question))
 
     def _effective_llm(self) -> tuple:
         """The client this request uses, resolved per call: saved settings
@@ -1430,6 +1473,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._on_skill_proposal_decided(card, decision)
         if card.kind == KIND_UPDATE_CONSENT:
             self._on_update_consent_decided(card, decision, body)
+        if decision == "accept":
+            self._on_fact_carried(card)
         self._audit(
             "inbox.approved" if decision == "accept" else "inbox.denied",
             target=card.id, detail=card.title,
@@ -1521,6 +1566,108 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         page = render_activity_page(entries, agentdesk.__version__)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    # -- memory: the page and its actions (ticket #42) --------------------
+
+    def _send_memory_page(
+        self,
+        recall: list | None = None,
+        query: str = "",
+    ) -> None:
+        """The memory page; with a recall preview when a query came in."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        page = render_memory_page(
+            memory.all(), agentdesk.__version__, recall=recall, query=query
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _memory_add(self) -> None:
+        """The page's one explicit creation path. The assistant and
+        research paths may recall, never create."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json(400, {"error": 'expected {"text": "..."}'})
+            return
+        fact = memory.add(text.strip(), source="page")
+        self._memory_response(_fact_json(fact), status=201)
+
+    def _memory_edit(self, fact_id: int | None) -> None:
+        if fact_id is None:
+            self._send_error_page(404, "Nothing here", "No fact lives at this address.")
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json(400, {"error": 'expected {"text": "..."}'})
+            return
+        try:
+            fact = memory.edit(fact_id, text.strip())
+        except UnknownFact as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._memory_response(_fact_json(fact))
+
+    def _memory_delete(self, fact_id: int | None) -> None:
+        if fact_id is None:
+            self._send_error_page(404, "Nothing here", "No fact lives at this address.")
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        try:
+            memory.delete(fact_id)
+        except UnknownFact as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._memory_response({"deleted": fact_id})
+
+    def _memory_recall(self) -> None:
+        """The preview: render the page with the ranked answers, best
+        first, so the manager sees exactly what the assistant would ride."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        body = self._read_json_body() or {}
+        query = body.get("query")
+        if not isinstance(query, str) or not query.strip():
+            self._send_json(400, {"error": 'expected {"query": "..."}'})
+            return
+        query = query.strip()
+        self._send_memory_page(recall=memory.recall(query), query=query)
+
+    def _memory_response(self, payload: dict, status: int = 200) -> None:
+        """A no-JS form post lands back on the memory page; JSON gets JSON."""
+        if self._is_form_submit():
+            self._send_redirect("/memory")
+            return
+        self._send_json(status, payload)
+
+    def _on_fact_carried(self, card) -> None:
+        """An accepted card may carry a fact in its meta ("fact": "...").
+        The only non-page creation path. The fact's source names the
+        card, and the audit row names that source, never the text."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return
+        text = card.meta.get("fact")
+        if not isinstance(text, str) or not text.strip():
+            return
+        fact = memory.add(text.strip(), source=f"inbox card {card.id}")
+        self._audit("memory.fact", target=str(fact.id), detail=fact.source)
 
     def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
         """Accepting applies the held update; the "for this plugin"
@@ -2046,6 +2193,7 @@ def create_server(
     pick_calendar=None,
     wizard_store: WizardStore | None = None,
     consents: ConsentStore | None = None,
+    memory_store: MemoryStore | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -2087,6 +2235,8 @@ def create_server(
         plugins = _default_plugins()
     if wizard_store is None:
         wizard_store = _default_wizard_store()
+    if memory_store is None:
+        memory_store = _default_memory_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
@@ -2107,6 +2257,7 @@ def create_server(
             pick_calendar=pick_calendar,
             wizard_store=wizard_store,
             consents=consents,
+            memory_store=memory_store,
         )
 
     if port is None:
@@ -2205,6 +2356,19 @@ def _default_wizard_store() -> WizardStore | None:
         return WizardStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("wizard store unavailable")
+        return None
+
+
+def _default_memory_store() -> MemoryStore | None:
+    """Facts over the persistent store (they outlive a restart by
+    design), or None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "memory.sqlite3", check_same_thread=False)
+        return MemoryStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("memory store unavailable")
         return None
 
 

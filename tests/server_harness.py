@@ -28,6 +28,7 @@ from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
+from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginRuntime
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.skills import SkillStore
@@ -55,6 +56,10 @@ def _inert_settings():
 
 def _inert_inbox():
     return InboxStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_memory():
+    return MemoryStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
 def _inert_excel() -> ExcelWatch:
@@ -103,6 +108,7 @@ class Booted:
         kwargs.setdefault("skill_store", _inert_skills())
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
+        kwargs.setdefault("memory_store", _inert_memory())
         # The consent allows are in-memory and process-lifetime by design;
         # a fresh store per boot is the inert default.
         kwargs.setdefault("consents", ConsentStore())

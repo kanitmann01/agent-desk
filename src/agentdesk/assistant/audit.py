@@ -53,6 +53,9 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("inbox.snoozed", "decision", "You snoozed a card for one hour or until the next morning; the return time is recorded."),
     ("inbox.more-info", "decision", "You asked for more information; your instruction is recorded with the card."),
     ("inbox.pending", "decision", "A snoozed card came back due, or a plugin update began waiting for your OK; recorded so nothing reappears silently."),
+    # The memory vocabulary (ticket #42): the one non-page creation path.
+    # The row names the fact's source, never the fact's text.
+    ("memory.fact", "decision", "An accepted inbox card carried a fact, and it was saved to the memory store. The row names where the fact came from, never the fact itself."),
     ("plugin.install", "plugin", "A plugin zip you chose is validated and installed under the app's own data folder, in pilot mode."),
     ("plugin.update", "plugin", "A plugin update is validated; identical or narrower permissions apply, wider ones hold for your OK."),
     ("plugin.consent", "plugin", "A held plugin update is applied after you approved its added permissions."),
