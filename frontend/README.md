@@ -17,25 +17,6 @@ behavior tests).
 
 ## What lives here
 
-- `src/vendor/reactbits/`: the five components still vendored from
-  react-bits (github.com/DavidHDev/react-bits, MIT plus Commons
-  Clause: free for personal and commercial use, selling the library
-  itself is restricted; this is an internal tool, not sold). Each file
-  carries a provenance header naming its upstream path and the commit
-  it was fetched from. The shadcn CLI route (`npx shadcn@latest add
-  @react-bits/<Name>-TS-TW`) wants to scaffold a shadcn project first,
-  so files are fetched from upstream `src/ts-tailwind/` by hand.
-  No component brings an npm dependency beyond motion (MIT):
-  - AnimatedList is vendored without its demo rows and the two icon
-    packages they import (the one local change, stated in its header).
-  - TextType is an in-repo equivalent: the upstream component animates
-    through GSAP, which is outside the repo's permissive license
-    allowlist, so the same effect is built on plain timers.
-  The warm-paper design contract (docs/design-language.md) bans the
-  glass, gradient and spectacle components the dashboard used to mount
-  (Aurora, GlassSurface, TiltedCard, GlareHover, Magnet, GradientText,
-  ShinyText, DecryptedText, SplitText, SpotlightCard, StatusMark); they
-  are gone, and the design-contract tests keep them out.
 - `src/components/`: the shared shells. `WidgetCard` is the bento cell
   (the three-part header contract over the hairline-topped foot);
   `Button` is the plain control (one solid-green primary per surface);
@@ -50,10 +31,14 @@ behavior tests).
   mirroring the server renderers in `src/agentdesk/server/sales.py`,
   `commitments.py` and `research.py`.
 - `src/test/`: the vitest suite. `tokens.test.ts` pins the design
-  contract to the stylesheet, the shell HTML and the committed bundle;
-  the component suites render the rail, hero, command bar, card chrome
-  and button semantics in jsdom (the setup stubs the browser APIs jsdom
-  lacks: matchMedia, the observers, CSS.supports).
+  contract to the stylesheet, the shell HTML, the package manifest and
+  the committed bundle; the component suites render the rail, hero,
+  command bar, card chrome, button semantics and the honest card
+  states in jsdom (the setup stubs the browser APIs jsdom lacks:
+  matchMedia, the observers, CSS.supports).
+- The styling is one plain stylesheet: no CSS framework, no utility
+  classes, no animation library. Every visual behavior is the
+  system's own CSS (150-200ms on color, opacity and shadow).
 - The server composes everything the dashboard shows as JSON in
   `GET /api/dashboard`; the SPA renders only from that payload. When the
   built bundle is missing (a source checkout without a build), `/`

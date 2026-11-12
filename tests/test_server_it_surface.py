@@ -142,11 +142,14 @@ def test_manifest_file_exists_and_states_the_allowlist():
     assert "Python runtime has no third-party" in manifest
     assert "dashboard SPA bundle does ship third-party work" in manifest
     assert "no third-party components" not in manifest
-    # The bundle ships the warm-paper system fonts (the dark-glass
-    # theme's Inter/Space Grotesk left with that theme; see DESIGN.md).
+    # The bundle ships React and the warm-paper system fonts (the
+    # dark-glass theme's fonts, its vendored effects drawer, motion,
+    # Tailwind and clsx all left with that theme; see DESIGN.md). The
+    # manifest's history note may name what left; the table must not
+    # claim any of it ships, so the shipped list here is the contract,
+    # and the replaced fonts must be gone from the file entirely.
     for shipped in (
         "react 19",
-        "motion 12",
         "@fontsource-variable/plus-jakarta-sans",
         "@fontsource/ibm-plex-mono",
         "OFL-1.1",

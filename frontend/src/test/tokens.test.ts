@@ -3,7 +3,7 @@
 // manifest and the license records must speak the warm-paper system from
 // DESIGN.md (docs/design-language.md), and must not carry any of the
 // recorded dark-glass drift. These tests read files; they render nothing.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -29,13 +29,12 @@ const bundleCss = readdirSync(spaAssets)
   .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
   .join('\n');
 
-// Component sources walk: every .ts/.tsx under src/ except the vendored
-// drawer (its internals go when the components tickets land) and the
-// test tree itself.
+// Component sources walk: every .ts/.tsx under src/ except the test
+// tree itself.
 function walkSources(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
-    if (entry === 'vendor' || entry === 'test') continue;
+    if (entry === 'test') continue;
     const full = resolve(dir, entry);
     if (statSync(full).isDirectory()) out.push(...walkSources(full));
     else if (/\.(ts|tsx)$/.test(entry)) out.push(full);
@@ -194,8 +193,9 @@ describe('component sources speak the system inks', () => {
     }
   });
 
-  it('builds the shared card chrome with no vendored effects', () => {
-    expect(componentSources, 'src/components imports the vendored drawer').not.toContain(
+  it('builds on no vendored effects: the drawer is gone', () => {
+    expect(existsSync(resolve(frontend, 'src', 'vendor'))).toBe(false);
+    expect(componentSources, 'src/components imports a vendored drawer').not.toContain(
       'vendor/reactbits',
     );
   });
@@ -235,6 +235,17 @@ describe('the toolchain matches the system', () => {
     expect(pkg.devDependencies['jsdom']).toBeTruthy();
     expect(pkg.devDependencies['@testing-library/react']).toBeTruthy();
     expect(pkg.devDependencies['@testing-library/jest-dom']).toBeTruthy();
+  });
+
+  it('carries no unused animation, class-helper or utility libraries', () => {
+    expect(pkg.dependencies['motion']).toBeUndefined();
+    expect(pkg.dependencies['clsx']).toBeUndefined();
+    expect(pkg.devDependencies['tailwindcss']).toBeUndefined();
+    expect(pkg.devDependencies['@tailwindcss/vite']).toBeUndefined();
+  });
+
+  it('styles the sheet without a utility framework', () => {
+    expect(css).not.toContain('tailwindcss');
   });
 
   it('records the system fonts in the license manifest', () => {
