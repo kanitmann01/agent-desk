@@ -28,6 +28,10 @@ const bundleCss = readdirSync(spaAssets)
   .filter((f) => f.endsWith('.css'))
   .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
   .join('\n');
+const bundleJs = readdirSync(spaAssets)
+  .filter((f) => f.endsWith('.js'))
+  .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
+  .join('\n');
 
 // Component sources walk: every .ts/.tsx under src/ except the test
 // tree itself.
@@ -362,6 +366,24 @@ describe('the committed bundle honors the contract', () => {
     expect(bundleCss, 'font shipped as a data: url, blocked by font-src \'self\'').not.toContain(
       'data:font',
     );
+  });
+
+  // The bundle is the product: a source fix that never reaches the
+  // committed build ships nothing. One rhythm value and the shipped
+  // behavior marks, so staleness fails here instead of silently.
+  it('carries the shipped shell rhythm, not a stale build', () => {
+    expect(decl(bundleCss, '.hero', 'margin-bottom')).toBe('24px');
+    expect(decl(bundleCss, '.w-foot', 'padding-top')).toBe('12px');
+  });
+
+  it('carries the overflow menu and the nowrap helper the cards ship', () => {
+    expect(bundleCss).toContain('.w-menu{');
+    expect(bundleCss).toContain('.w-menuitem{');
+    expect(bundleCss).toContain('.nowrap{white-space:nowrap}');
+    // The menu's announced behavior lives in the JS bundle: a stale
+    // script would ship the dead dots again.
+    expect(bundleJs).toContain('aria-haspopup');
+    expect(bundleJs).toContain('w-menu');
   });
 });
 

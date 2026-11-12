@@ -53,16 +53,19 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const connected = data.sources.connected;
   const sourceLine = connected > 0
     ? `Live: ${connected} of ${data.sources.total} sources connected.`
-    : 'Not connected yet: each card below has its own one-step connect.';
-  // "one-step" never breaks across the line: the phrase rides in a
-  // nowrap span so a narrow band wraps at the spaces around it.
+    : '';
+  // The pill's flex children are the dot and one text span: a bare text
+  // node beside the nowrap span would become a second flex item and let
+  // the flex gap read as a double space. Inside that span, "one-step"
+  // never breaks across the line, so a narrow band wraps at the spaces
+  // around it.
   const sourceLineBody = connected > 0
     ? sourceLine
     : (
-      <>
+      <span>
         Not connected yet: each card below has its own{' '}
         <span className="nowrap">one-step connect.</span>
-      </>
+      </span>
     );
 
   function showAnswer(next: ResearchAnswer | null) {
