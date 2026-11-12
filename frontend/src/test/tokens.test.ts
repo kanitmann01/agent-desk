@@ -28,6 +28,10 @@ const bundleCss = readdirSync(spaAssets)
   .filter((f) => f.endsWith('.css'))
   .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
   .join('\n');
+const bundleJs = readdirSync(spaAssets)
+  .filter((f) => f.endsWith('.js'))
+  .map((f) => readFileSync(resolve(spaAssets, f), 'utf8'))
+  .join('\n');
 
 // Component sources walk: every .ts/.tsx under src/ except the test
 // tree itself.
@@ -376,6 +380,10 @@ describe('the committed bundle honors the contract', () => {
     expect(bundleCss).toContain('.w-menu{');
     expect(bundleCss).toContain('.w-menuitem{');
     expect(bundleCss).toContain('.nowrap{white-space:nowrap}');
+    // The menu's announced behavior lives in the JS bundle: a stale
+    // script would ship the dead dots again.
+    expect(bundleJs).toContain('aria-haspopup');
+    expect(bundleJs).toContain('w-menu');
   });
 });
 
