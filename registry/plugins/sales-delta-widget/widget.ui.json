@@ -1,0 +1,10 @@
+{
+  "type": "card",
+  "title": "Sales delta (24h)",
+  "elements": [
+    { "type": "metric", "binding": "delta24h", "label": "Changed rows" },
+    { "type": "metric", "binding": "addedCount", "label": "New rows" },
+    { "type": "metric", "binding": "removedCount", "label": "Removed rows" },
+    { "type": "text", "binding": "windowNote" }
+  ]
+}

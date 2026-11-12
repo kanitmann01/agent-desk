@@ -1,4 +1,20 @@
 {
-  "plugins": [],
+  "plugins": [
+    {
+      "class": "declarative",
+      "id": "sales-delta-widget",
+      "latest": "0.1.0",
+      "publisher": "agent-desk",
+      "releases": [
+        {
+          "sha256": "9766f7f687053ec4fd30edb620edfdd5f00ed1564e4809742b148a2fdf4f44ba",
+          "tag": "sales-delta-widget-0.1.0",
+          "version": "0.1.0",
+          "yanked": false
+        }
+      ],
+      "risk": "low"
+    }
+  ],
   "schemaVersion": 1
 }

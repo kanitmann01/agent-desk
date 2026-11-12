@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "sales-delta-widget",
+  "name": "Sales 24h Delta",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "license": "MIT",
+  "permissions": {
+    "filesystem": { "read": ["${workspace}/reports/*.xlsx"], "write": ["${pluginData}"] },
+    "network": { "allow": [] },
+    "llm": { "allow": false },
+    "shell": "none"
+  },
+  "activationEvents": ["onWidget:sales-delta", "onSchedule:0 * * * *"],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "sales-delta",
+        "size": "2x1",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/reports/*.xlsx",
+          "deltaWindow": "24h"
+        },
+        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+      }
+    ],
+    "skills": ["skills/sales-summary/SKILL.md"],
+    "preferences": [
+      {
+        "name": "thresholdPct",
+        "type": "number",
+        "default": 5,
+        "title": "Alert threshold (%)"
+      }
+    ]
+  }
+}
