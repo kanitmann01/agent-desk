@@ -245,10 +245,14 @@ describe('the rail stays on screen at every width', () => {
     const narrow = mediaBlock(sheet, 'max-width:980px');
     expect(narrow, 'no 980px media block').not.toBe('');
     const railRule = narrow.match(/\.rail\{[^}]*\}/)?.[0] ?? '';
-    expect(railRule, 'narrow rail must stay sticky').toContain('position:sticky');
+    expect(railRule, 'narrow rail must stay sticky').toContain('position:sticky;top:0');
+    expect(railRule, 'narrow rail must release the desktop full height').toContain('height:auto');
     expect(railRule, 'narrow rail entries must wrap, not clip').toContain('flex-wrap:wrap');
     expect(railRule, 'narrow rail must not scroll sideways').not.toContain('overflow-x');
     expect(railRule, 'sticky strip must paint above the content').toContain('z-index');
+    // Sticky inside its own auto-sized grid row has no travel: the
+    // single-column shell must become a block for the pin to work.
+    expect(narrow, 'single-column shell must become a block').toContain('.app{display:block}');
   });
 
   it('keeps a nowrap helper and stacks the hero source line on narrow screens', () => {
