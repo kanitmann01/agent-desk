@@ -5,10 +5,14 @@ parser returns a mutable list, the clock is a number the test moves),
 so these tests cover the runner's own behavior: probe-shaped status,
 honest amber states, and the binding of real poll results into the
 ui-schema render model. The excel arithmetic itself is covered by the
-excel suite; here it only has to arrive.
+excel suite; here it only has to arrive. The pipeline bindings
+(calendar-read, mail-digest, research-brief) run against real bridges,
+watches and stores over in-memory sqlite and frozen clocks: the same
+objects the dashboard's own cards read.
 """
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -242,3 +246,543 @@ def test_uninstall_detaches_but_keeps_data(workspace, tmp_path):
     runtime.uninstall("sales-delta-widget")
     assert not runner.attached("sales-delta-widget")
     assert data_dir.exists()  # preserved until the named purge
+
+
+# The pipeline bindings (#64): calendar-read, mail-digest and
+# research-brief execute against the built-in pipelines, injected the
+# way the excel path injects its watches. A real bridge/watch/store over
+# an in-memory sqlite and a frozen clock, so every state here is the
+# state the dashboard's own cards would see.
+
+def _pipeline_manifest(source_type: str) -> dict:
+    """A pipeline-backed widget: the data lives in the shared pipeline,
+    so the data source names its type and nothing else."""
+    return {
+        "id": f"{source_type}-widget",
+        "contributes": {"widgets": [{
+            "id": "w",
+            "dataSource": {"type": source_type},
+            "render": {"type": "ui-schema", "file": "widget.ui.json"},
+        }]},
+    }
+
+
+def _bridge(tmp_path, now, events, llm=None):
+    """A real CalendarBridge over a seeded calendar_sync.json body, its
+    clock frozen at `now`, already polled once so its document is live.
+    events=None seeds no file at all: the bridge's empty state."""
+    import sqlite3
+
+    from agentdesk.calendar.watcher import Adapters as CalendarAdapters
+    from agentdesk.calendar.watcher import CalendarBridge
+
+    def read_calendar():
+        if events is None:
+            return None
+        doc = json.dumps({"generatedAt": now.isoformat(), "events": events})
+        return ("onedrive/agent-desk/calendar_sync.json", doc.encode("utf-8"))
+
+    adapters = CalendarAdapters(read_calendar=read_calendar,
+                                clock=lambda: now.timestamp())
+    if llm is None:
+        llm = lambda _p: '{"subtasks": [], "followups": []}'  # noqa: E731
+    bridge = CalendarBridge(sqlite3.connect(":memory:", check_same_thread=False),
+                            adapters, llm=llm)
+    bridge.poll()
+    return bridge
+
+
+def test_calendar_read_binds_today_from_the_bridge(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    events = [
+        {"id": "a", "subject": "Q4 pipeline review",
+         "start": now.replace(hour=14).isoformat(),
+         "end": now.replace(hour=15).isoformat()},
+        {"id": "b", "subject": "Later sync",
+         "start": now.replace(hour=16).isoformat(),
+         "end": now.replace(hour=17).isoformat()},
+        {"id": "c", "subject": "Tomorrow",
+         "start": (now + timedelta(days=1)).replace(hour=10).isoformat(),
+         "end": (now + timedelta(days=1)).replace(hour=11).isoformat()},
+    ]
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, events))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "nextEventTitle", "label": "Next"},
+        {"type": "metric", "binding": "nextEventTime", "label": "At"},
+        {"type": "metric", "binding": "eventsToday", "label": "Today"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("calendar-read"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    assert payload["cause"] == ""
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Next", "value": "Q4 pipeline review"},
+        {"kind": "metric", "label": "At", "value": now.replace(hour=14).strftime("%H:%M")},
+        {"kind": "metric", "label": "Today", "value": "2"},
+        {"kind": "text",
+         "text": "The next commitment and today's count, from the calendar file your flow syncs."},
+    ]
+
+
+def test_calendar_read_with_no_calendar_is_amber_with_cause(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, None))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "nextEventTitle", "label": "Next"},
+        {"type": "metric", "binding": "eventsToday", "label": "Today"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("calendar-read"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "calendar" in status["cause"].lower()
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    # Amber binds nothing: no invented titles, counts or notes.
+    assert payload["elements"] == []
+
+
+def test_calendar_read_without_a_bridge_is_amber(workspace, tmp_path):
+    runner = PluginWidgetRunner(workspace)  # no calendar wired
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "metric", "binding": "nextEventTitle",
+                             "label": "Next"}])
+    status = runner.attach("p1", _pipeline_manifest("calendar-read"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "calendar bridge" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_calendar_card_retest_makes_no_llm_call(workspace, tmp_path):
+    """The plugin card's re-test must spend zero endpoint requests
+    (#75 review): it polls the shared bridge breakdown-free, so the
+    counting client sees only the test's own setup poll."""
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    calls: list[str] = []
+
+    def llm(prompt):
+        calls.append(prompt)
+        return '{"subtasks": [], "followups": []}'
+
+    events = [
+        {"id": "a", "subject": "Q4 pipeline review",
+         "start": now.replace(hour=14).isoformat(),
+         "end": now.replace(hour=15).isoformat()},
+    ]
+    bridge = _bridge(tmp_path, now, events, llm=llm)
+    assert len(calls) == 1  # the setup poll's own breakdown
+    runner = PluginWidgetRunner(workspace, calendar=bridge)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "nextEventTitle", "label": "Next"},
+    ])
+    runner.attach("p1", _pipeline_manifest("calendar-read"),
+                  version_dir, tmp_path / "data")
+    assert len(calls) == 1  # attaching reads the day view only
+
+    # Move the event so the breakdown cache no longer answers for it:
+    # a poll that wants a breakdown would have to ask the model now.
+    events[0]["subject"] = "Moved review"
+    events[0]["start"] = now.replace(hour=15).isoformat()
+    events[0]["end"] = now.replace(hour=16).isoformat()
+    status = runner.retest("p1")
+
+    assert len(calls) == 1  # the re-test itself: no endpoint request
+    assert status["status"] == "fresh"
+    assert runner.payload("p1")["elements"] == [
+        {"kind": "metric", "label": "Next", "value": "Moved review"},
+    ]
+
+
+def test_calendar_read_renders_busy_for_an_unnamed_event(workspace, tmp_path):
+    """A real key event whose subject is empty is a busy slot, not an
+    empty day (#75 review): the clear-day fallback applies only when
+    there is no key event at all."""
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    events = [
+        {"id": "a", "subject": "",
+         "start": now.replace(hour=14).isoformat(),
+         "end": now.replace(hour=15).isoformat()},
+    ]
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, events))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "nextEventTitle", "label": "Next"},
+    ])
+    runner.attach("p1", _pipeline_manifest("calendar-read"),
+                  version_dir, tmp_path / "data")
+    assert runner.payload("p1")["elements"] == [
+        {"kind": "metric", "label": "Next", "value": "Busy"},
+    ]
+
+    # The fallback stays honest on a genuinely clear day: everything
+    # already over, no key event left.
+    over = [
+        {"id": "done", "subject": "Standup",
+         "start": now.replace(hour=7).isoformat(),
+         "end": now.replace(hour=8).isoformat()},
+    ]
+    clear = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, over))
+    clear.attach("p2", _pipeline_manifest("calendar-read"),
+                 version_dir, tmp_path / "data2")
+    assert clear.payload("p2")["elements"] == [
+        {"kind": "metric", "label": "Next", "value": "Nothing left today"},
+    ]
+
+
+def test_calendar_card_ignores_excel_and_unknown_bindings(workspace, tmp_path):
+    """Bindings are per source: a calendar card asking for excel counts
+    or an invented name renders nothing for them, never a number."""
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    events = [
+        {"id": "a", "subject": "Q4 pipeline review",
+         "start": now.replace(hour=14).isoformat(),
+         "end": now.replace(hour=15).isoformat()},
+    ]
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, events))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "delta24h", "label": "Changed"},
+        {"type": "metric", "binding": "inventedNumber", "label": "Made up"},
+        {"type": "metric", "binding": "eventsToday", "label": "Today"},
+        {"type": "text", "text": "Static note"},
+    ])
+    runner.attach("p1", _pipeline_manifest("calendar-read"),
+                  version_dir, tmp_path / "data")
+    payload = runner.payload("p1")
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Today", "value": "1"},
+        {"kind": "text", "text": "Static note"},
+    ]
+
+
+# The mail-digest binding: a real MailWatch over a seeded .eml folder.
+# The fixture files carry a placeholder body on purpose: the pipeline
+# discards it at parse time (the Message record has no body field), and
+# the tests pin that the bound card can only ever carry header counts.
+
+def _eml(message_id: str, subject: str, sender: str, date_ts: float,
+         in_reply_to: str = "") -> bytes:
+    from email.utils import formatdate
+
+    lines = [
+        f"From: {sender}",
+        "To: employee@example.com",
+        f"Subject: {subject}",
+        f"Date: {formatdate(date_ts, usegmt=True)}",
+        f"Message-ID: {message_id}",
+    ]
+    if in_reply_to:
+        lines.append(f"In-Reply-To: {in_reply_to}")
+    lines += ["MIME-Version: 1.0",
+              "Content-Type: text/plain; charset=utf-8",
+              "",
+              "a body that must never reach a card"]
+    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+
+
+def _mail_runner(workspace, tmp_path, now_ts: float, files: dict,
+                 folder=lambda: ""):
+    import sqlite3
+
+    from agentdesk.inbox.store import InboxStore
+    from agentdesk.mail.core import read_eml_folder_reported
+    from agentdesk.mail.store import MailStore
+    from agentdesk.mail.watcher import Adapters as MailAdapters
+    from agentdesk.mail.watcher import MailWatch
+
+    folder_path = tmp_path / "mail"
+    folder_path.mkdir(exist_ok=True)
+    for name, raw in files.items():
+        (folder_path / name).write_bytes(raw)
+    chosen = folder()
+    watch = MailWatch(
+        inbox=InboxStore(sqlite3.connect(":memory:", check_same_thread=False),
+                         lambda: now_ts),
+        store=MailStore(sqlite3.connect(":memory:", check_same_thread=False),
+                        lambda: now_ts),
+        adapters=MailAdapters(read_folder=read_eml_folder_reported,
+                              clock=lambda: now_ts),
+        folder_provider=lambda: chosen,
+    )
+    return PluginWidgetRunner(workspace, mail=watch)
+
+
+MAIL_WINDOW_NOTE = ("Counts cover the last 24 hours of message headers; "
+                    "bodies are never read.")
+
+
+def test_mail_digest_binds_header_only_counts(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    files = {
+        # One active thread ("Q4 pricing": three messages, two senders)
+        # and one thread whose only message is three days old.
+        "m1.eml": _eml("<1@x>", "Q4 pricing", "a@example.com", now - 2 * 3600),
+        "m2.eml": _eml("<2@x>", "Re: Q4 pricing", "b@example.com",
+                       now - 3600, in_reply_to="<1@x>"),
+        "m3.eml": _eml("<3@x>", "Re: Q4 pricing", "a@example.com",
+                       now - 1800, in_reply_to="<2@x>"),
+        "m4.eml": _eml("<4@x>", "Old thread", "c@example.com", now - 3 * DAY),
+    }
+    runner = _mail_runner(workspace, tmp_path, now, files,
+                          folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "metric", "binding": "threads", "label": "Threads"},
+        {"type": "metric", "binding": "topSenders", "label": "Top senders"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("mail-digest"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Messages", "value": "3"},
+        {"kind": "metric", "label": "Threads", "value": "1"},
+        {"kind": "metric", "label": "Top senders",
+         "value": "a@example.com (2), b@example.com (1)"},
+        {"kind": "text", "text": MAIL_WINDOW_NOTE},
+    ]
+
+
+def test_mail_digest_payload_carries_no_body_field(workspace, tmp_path):
+    """The no-body rule is by construction, and pinned: the Message
+    record has no body field, the binding vocabulary has no body-ish
+    name, and a card asking for one renders nothing for it."""
+    from dataclasses import fields
+
+    from agentdesk.mail.core import Message
+    from agentdesk.plugins.execute import BINDINGS
+
+    assert "body" not in {f.name for f in fields(Message)}
+    assert not any("body" in name.lower() for name in BINDINGS)
+
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    files = {"m1.eml": _eml("<1@x>", "Q4 pricing", "a@example.com", now - 60)}
+    runner = _mail_runner(workspace, tmp_path, now, files,
+                          folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "metric", "binding": "body", "label": "Body"},
+        {"type": "metric", "binding": "messageBody", "label": "Message body"},
+        {"type": "metric", "binding": "bodyPreview", "label": "Preview"},
+    ])
+    runner.attach("p1", _pipeline_manifest("mail-digest"),
+                  version_dir, tmp_path / "data")
+    payload = runner.payload("p1")
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Messages", "value": "1"},
+    ]
+    assert "a body that must never reach a card" not in json.dumps(payload)
+
+
+def test_mail_digest_without_a_folder_is_amber_with_cause(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    runner = _mail_runner(workspace, tmp_path, now, {}, folder=lambda: "")
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("mail-digest"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "Settings" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_mail_digest_not_running_is_amber(workspace, tmp_path):
+    runner = PluginWidgetRunner(workspace)  # no mail watcher wired
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("mail-digest"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "mail digest" in status["cause"].lower()
+    assert runner.payload("p1")["elements"] == []
+
+
+# The research-brief binding: the latest stored sourced answer, read
+# from the local store. No endpoint client exists anywhere in the
+# runner, so the plugin path cannot call one.
+
+RESEARCH_WINDOW_NOTE = ("The latest stored research answer; showing it "
+                        "made no endpoint call.")
+
+
+def _research_store(now_ts: float, answer=None):
+    import sqlite3
+
+    from agentdesk.assistant.research_store import ResearchStore
+
+    store = ResearchStore(
+        sqlite3.connect(":memory:", check_same_thread=False),
+        clock=lambda: now_ts)
+    if answer is not None:
+        store.save(answer[0], answer[1])
+    return store
+
+
+def test_research_brief_binds_the_latest_stored_answer(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 41, 0).astimezone()
+    runner = PluginWidgetRunner(workspace, research=_research_store(
+        now.timestamp(),
+        ("Five of nine EU partners reflected the new prices.",
+         ["eu-price-memo.pdf", "channel-weekly.xlsx"])))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "text", "binding": "summary"},
+        {"type": "metric", "binding": "sourcesCount", "label": "Sources"},
+        {"type": "metric", "binding": "answeredAt", "label": "Answered"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("research-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    assert payload["elements"] == [
+        {"kind": "text",
+         "text": "Five of nine EU partners reflected the new prices."},
+        {"kind": "metric", "label": "Sources", "value": "2"},
+        {"kind": "metric", "label": "Answered", "value": "2026-11-13 09:41"},
+        {"kind": "text", "text": RESEARCH_WINDOW_NOTE},
+    ]
+
+
+def test_research_brief_with_nothing_asked_is_the_honest_empty_state(
+        workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 41, 0).astimezone()
+    runner = PluginWidgetRunner(workspace,
+                                research=_research_store(now.timestamp()))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "text", "binding": "summary"},
+        {"type": "metric", "binding": "sourcesCount", "label": "Sources"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("research-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "Research" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_research_brief_reads_only_the_local_store(workspace, tmp_path):
+    """No LLM call occurs in the plugin path, pinned by construction:
+    the binding's only data source is the store, and every read of the
+    pipeline is a read of it."""
+    now = datetime(2026, 11, 13, 9, 41, 0).astimezone()
+    store = _research_store(now.timestamp(), ("Summary.", ["src"]))
+    reads = []
+    inner_latest = store.latest
+
+    def counting_latest():
+        reads.append(1)
+        return inner_latest()
+
+    store.latest = counting_latest
+    runner = PluginWidgetRunner(workspace, research=store)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "text", "binding": "summary"}])
+    runner.attach("p1", _pipeline_manifest("research-brief"),
+                  version_dir, tmp_path / "data")
+    runner.status("p1")
+    payload = runner.payload("p1")
+    assert payload["elements"] == [{"kind": "text", "text": "Summary."}]
+    assert reads  # every pipeline read went through the store
+    assert not hasattr(runner, "llm")  # and no endpoint client exists to call
+
+
+def test_dashboard_build_reads_the_mail_folder_once(workspace, tmp_path):
+    """One dashboard render, one pipeline read (#75 review): the runtime
+    builds a plugin card's freshness and its bound payload from a single
+    status+bindings pass, so the mail folder is read and parsed once per
+    view, not once per half."""
+    import sqlite3
+
+    from agentdesk.inbox.store import InboxStore
+    from agentdesk.mail.core import read_eml_folder_reported
+    from agentdesk.mail.store import MailStore
+    from agentdesk.mail.watcher import Adapters as MailAdapters
+    from agentdesk.mail.watcher import MailWatch
+
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    folder = tmp_path / "mail"
+    folder.mkdir()
+    (folder / "m1.eml").write_bytes(
+        _eml("<1@x>", "Q4 pricing", "a@example.com", now - 60))
+    reads = []
+
+    def read_folder(path):
+        reads.append(path)
+        return read_eml_folder_reported(path)
+
+    watch = MailWatch(
+        inbox=InboxStore(sqlite3.connect(":memory:", check_same_thread=False),
+                         lambda: now),
+        store=MailStore(sqlite3.connect(":memory:", check_same_thread=False),
+                        lambda: now),
+        adapters=MailAdapters(read_folder=read_folder, clock=lambda: now),
+        folder_provider=lambda: str(folder),
+    )
+    runner = PluginWidgetRunner(workspace, mail=watch)
+    runtime = PluginRuntime(plugins_dir=tmp_path / "plugins",
+                            data_dir=tmp_path / "plugin-data",
+                            workspace_dir=workspace, runner=runner)
+    source = tmp_path / "plugin-src"
+    source.mkdir()
+    (source / "manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "id": "desk-mail-digest",
+        "name": "Mail digest",
+        "version": "1.0.0",
+        "publisher": "desk",
+        "class": "declarative",
+        "engines": {"dashboardHost": ">=1.0.0 <2.0.0"},
+        "license": "MIT",
+        "permissions": {
+            "filesystem": {"read": [], "write": ["${pluginData}"]},
+            "network": {"allow": []},
+            "llm": {"allow": False},
+            "shell": "none",
+        },
+        "activationEvents": ["onWidget:mail-digest"],
+        "contributes": {"widgets": [{
+            "id": "mail-digest", "size": "2x1",
+            "dataSource": {"type": "mail-digest"},
+            "render": {"type": "ui-schema", "file": "widget.ui.json"},
+        }]},
+    }), encoding="utf-8")
+    (source / "widget.ui.json").write_text(json.dumps({
+        "type": "card", "elements": [
+            {"type": "metric", "binding": "messages", "label": "Messages"},
+        ]}), encoding="utf-8")
+    assert runtime.install(source)["ok"] is True
+    reads.clear()  # the install's own attach read once already
+
+    cards = runtime.widget_cards()
+
+    assert len(cards) == 1
+    assert cards[0]["freshness"] == "fresh"
+    metrics = [e["value"] for e in cards[0]["payload"]["elements"]
+               if e["kind"] == "metric"]
+    assert metrics == ["1"]
+    assert len(reads) == 1  # one read for the whole dashboard build

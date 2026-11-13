@@ -15,7 +15,17 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 WORKSPACE_ROOT = "${workspace}/"
 PLUGIN_DATA_ROOT = "${pluginData}"
 
-KNOWN_DATA_SOURCE_TYPES = ("excel-watch", "json-watch", "http-get", "calendar-read")
+# The declarative vocabulary of data source types. The pipeline-backed
+# kinds (calendar-read, mail-digest, research-brief) read the shared
+# built-in pipelines, so their manifests declare no glob of their own.
+KNOWN_DATA_SOURCE_TYPES = (
+    "excel-watch",
+    "json-watch",
+    "http-get",
+    "calendar-read",
+    "mail-digest",
+    "research-brief",
+)
 
 
 def validate_permission_lint(manifest, reader) -> list[Failure]:

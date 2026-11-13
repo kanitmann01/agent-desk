@@ -132,12 +132,19 @@ class CalendarBridge:
         # holding it.
         self._lock = threading.RLock()
 
-    def poll(self) -> dict:
-        """One poll: read, parse, pick, attach. Returns the status dict."""
-        with self._lock:
-            return self._poll_locked()
+    def poll(self, breakdown: bool = True) -> dict:
+        """One poll: read, parse, pick, attach. Returns the status dict.
 
-    def _poll_locked(self) -> dict:
+        ``breakdown=False`` skips the breakdown entirely, so the poll
+        makes no model call and reads no cache: surfaces that must never
+        spend an endpoint request (a plugin card's re-test) poll this
+        way. The built-in card keeps the default, breakdown cache first,
+        model second.
+        """
+        with self._lock:
+            return self._poll_locked(breakdown=breakdown)
+
+    def _poll_locked(self, breakdown: bool = True) -> dict:
         now_dt = _now_from_clock(self.adapters.clock)
         now = self.adapters.clock()
         found = None
@@ -147,7 +154,7 @@ class CalendarBridge:
             found = None
         if found is None:
             self._state, self._cause = STATE_EMPTY, ""
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         path, data = found
         self._source_path = path
         self._last_read_ts = now
@@ -157,7 +164,7 @@ class CalendarBridge:
             self._state = STATE_UNREADABLE
             self._cause = f"Can't read the calendar file: {exc}"
             self._audit("calendar.poll", "error")
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         self._document = document
         self._audit("calendar.ingest", "ok")
         if now - document.generated_at.timestamp() > self.stale_s:
@@ -167,15 +174,15 @@ class CalendarBridge:
                 "current. Re-test after your flow has run, or walk through "
                 "the setup again."
             )
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         if store.get_flag(self.conn, FIRST_DETECTED_FLAG) is None:
             store.set_flag(self.conn, FIRST_DETECTED_FLAG, now_dt.isoformat())
         key = pick_key_event(document.events, now_dt)
         if key is None:
             self._state, self._cause = STATE_CLEAR, ""
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         self._state, self._cause = STATE_HEALTHY, ""
-        return self.status()
+        return self._status_locked(breakdown=breakdown)
 
     def explicit_path(self) -> str | None:
         """The file the user chose in the app, when one is stored."""
@@ -223,7 +230,7 @@ class CalendarBridge:
         with self._lock:
             return self._status_locked()
 
-    def _status_locked(self) -> dict:
+    def _status_locked(self, breakdown: bool = True) -> dict:
         now_dt = _now_from_clock(self.adapters.clock)
         payload = {
             "configured": True,
@@ -250,10 +257,35 @@ class CalendarBridge:
             "location": key.location,
             "attendees": key.attendees,
         }
-        breakdown = self._breakdown_for(key)
-        payload["breakdown"] = breakdown
-        payload["checks"] = {str(k): v for k, v in store.get_checks(self.conn, key.id).items()}
+        if breakdown:
+            payload["breakdown"] = self._breakdown_for(key)
+            payload["checks"] = {str(k): v for k, v in store.get_checks(self.conn, key.id).items()}
         return payload
+
+    def day_view(self) -> dict:
+        """Today's calendar facts for surfaces that must not spend a
+        model call: the same read as status() (state, cause, the key
+        event, the file's own generatedAt) minus the breakdown, plus the
+        count of today's events. Plugin bindings read this, so no plugin
+        card can ever trigger a breakdown request; the commitments card
+        keeps status(), breakdown and checkboxes included."""
+        with self._lock:
+            now_dt = _now_from_clock(self.adapters.clock)
+            view = self._status_locked(breakdown=False)
+            for key in ("configured", "path", "firstDetected",
+                        "breakdown", "checks"):
+                view.pop(key, None)
+            view["eventsToday"] = len(self._todays_locked(now_dt))
+            return view
+
+    def _todays_locked(self, now_dt: datetime) -> list:
+        """Today's events, soonest first; empty before the first poll."""
+        if self._document is None:
+            return []
+        return sorted(
+            (e for e in self._document.events if e.start.date() == now_dt.date()),
+            key=lambda e: e.start,
+        )
 
     def _breakdown_for(self, key) -> dict:
         cache_key = f"{key.id}:{key.start.isoformat()}"

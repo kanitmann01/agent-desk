@@ -22,6 +22,7 @@ import sqlite3
 import time
 
 from agentdesk.assistant import audit as audit_store
+from agentdesk.assistant.research_store import ResearchStore
 from agentdesk.calendar.watcher import Adapters as CalendarAdapters
 from agentdesk.calendar.watcher import CalendarBridge
 from agentdesk.capabilities import GATES, CapabilitiesCache
@@ -77,6 +78,14 @@ def _inert_wizard_store():
 
 def _inert_mail_store():
     return MailStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_research_store():
+    """The research answer store joins the inert in-memory defaults:
+    without this, a boot with no injection falls through to
+    create_server's _default_research_store(), which writes the real
+    ~/.agent-desk/research.sqlite3."""
+    return ResearchStore(sqlite3.connect(":memory:", check_same_thread=False))
 
 
 def _inert_capabilities_cache():
@@ -167,6 +176,7 @@ class Booted:
         # Outbox writes (only from tests that accept a reply draft
         # explicitly) land in a tmp folder owned by this boot.
         kwargs.setdefault("mail_store", _inert_mail_store())
+        kwargs.setdefault("research_store", _inert_research_store())
         if "outbox_dir" not in kwargs:
             self._outbox_root = tempfile.TemporaryDirectory(prefix="agentdesk-outbox-")
             outbox = Path(self._outbox_root.name) / "outbox"

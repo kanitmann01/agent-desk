@@ -123,7 +123,8 @@ def test_all_v1_data_source_types_pass_the_type_check(tmp_path):
         "excel-watch": "${workspace}/reports/*.xlsx",
         "json-watch": "${workspace}/data/feed.json",
     }
-    for source_type in ("excel-watch", "json-watch", "http-get", "calendar-read"):
+    for source_type in ("excel-watch", "json-watch", "http-get", "calendar-read",
+                        "mail-digest", "research-brief"):
         manifest = manifest_copy()
         data_source = {"type": source_type}
         if source_type in known_files:
