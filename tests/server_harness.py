@@ -33,6 +33,7 @@ from agentdesk.inbox.store import InboxStore
 from agentdesk.layout import LayoutStore
 from agentdesk.mail.store import MailStore
 from agentdesk.memory.store import MemoryStore
+from agentdesk.peers.store import PeerStore
 from agentdesk.plugins.runtime import PluginRuntime
 from agentdesk.probe.core import UNKNOWN, GateResult
 from agentdesk.repetition.activity import ActivityLog
@@ -86,6 +87,9 @@ def _inert_research_store():
     create_server's _default_research_store(), which writes the real
     ~/.agent-desk/research.sqlite3."""
     return ResearchStore(sqlite3.connect(":memory:", check_same_thread=False))
+
+def _inert_peer_store():
+    return PeerStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
 
 
 def _inert_capabilities_cache():
@@ -177,6 +181,14 @@ class Booted:
         # explicitly) land in a tmp folder owned by this boot.
         kwargs.setdefault("mail_store", _inert_mail_store())
         kwargs.setdefault("research_store", _inert_research_store())
+
+        # The peer store joins the inert in-memory defaults: without
+        # this, a boot with no injection falls through to
+        # create_server's _default_peer_store(), which writes the real
+        # ~/.agent-desk/peers.sqlite3. Discovery is never started by a
+        # boot (only the peers page starts it), so no boot in the suite
+        # sends a UDP packet unless its test asks for the peers page.
+        kwargs.setdefault("peer_store", _inert_peer_store())
         if "outbox_dir" not in kwargs:
             self._outbox_root = tempfile.TemporaryDirectory(prefix="agentdesk-outbox-")
             outbox = Path(self._outbox_root.name) / "outbox"

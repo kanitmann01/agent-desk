@@ -1,9 +1,10 @@
 // The rail: brand, the entries, the inbox count badge and the user
 // line. Dashboard, Inbox, Assistant and Settings are real server pages
 // (GET /inbox, /assistant, /settings); so are the four consolidation
-// pages (GET /activity, /memory, /mail, /capabilities) and the plugins
-// page (GET /plugins). Drawn as the system's full-height Input Well
-// column; the brand is plain text in the ink.
+// pages (GET /activity, /memory, /mail, /capabilities), the plugins
+// page (GET /plugins) and the peers page (GET /peers). Drawn as the
+// system's full-height Input Well column; the brand is plain text in
+// the ink.
 interface RailProps {
   inboxWaiting: number;
 }
@@ -83,6 +84,16 @@ const ICON_CAPABILITIES = (
   </svg>
 );
 
+const ICON_PEERS = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="8" cy="8" r="3" />
+    <circle cx="16" cy="16" r="3" />
+    <path d="M10.5 10.5 13.5 13.5" />
+    <path d="M3.5 8h1.5M19 16h1.5" />
+  </svg>
+);
+
 export default function Rail({ inboxWaiting }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   return (
@@ -104,6 +115,7 @@ export default function Rail({ inboxWaiting }: RailProps) {
       <a href="/mail">{ICON_MAIL}Mail</a>
       <a href="/capabilities">{ICON_CAPABILITIES}Capabilities</a>
       <a href="/plugins">{ICON_PLUGINS}Plugins</a>
+      <a href="/peers">{ICON_PEERS}Peers</a>
       <a href="/settings">{ICON_SETTINGS}Settings</a>
       <div className="user">
         <span className="avatar" aria-hidden="true">AD</span>

@@ -9,6 +9,10 @@ must pass through check_request; nothing may grow a second entry path.
 The function stays pure: callers resolve the allowed set (loopback, plus
 the user-sanctioned extra hosts from Settings) and hand it in, so the
 guard itself never reads a store or a clock.
+
+The peer-to-peer surface (issue #67) adds no second path either: its
+requests go through check_peer_request, which answers with check_request
+plus one measured token-scoped extension, documented there.
 """
 
 from dataclasses import dataclass
@@ -76,3 +80,29 @@ def check_request(
         return GuardVerdict(False, f"Origin not allowed: {origin_header}",
                             rejected=origin_header)
     return GuardVerdict(True)
+
+
+def check_peer_request(
+    host_header: str | None,
+    origin_header: str | None,
+    port: int,
+    token_ok: bool,
+) -> GuardVerdict:
+    """The same rules, with one measured extension for /peer/ paths.
+
+    Another desk holds a channel token, not a browser session, so the
+    Host it sends may name this machine's LAN address rather than the
+    loopback. A valid peer token answers both concerns the Host check
+    exists for (DNS rebinding and cross-site riding) on these
+    read-only paths, so it admits the request where the plain check
+    would refuse. Without a token the answer is exactly what
+    check_request says, so nothing outside a paired peer changes. The
+    pairing path itself sends no token (its code is the gate) and
+    therefore always takes the plain check.
+    """
+    verdict = check_request(host_header, origin_header, port)
+    if verdict.allowed:
+        return verdict
+    if token_ok:
+        return GuardVerdict(True)
+    return verdict

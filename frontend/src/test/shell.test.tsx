@@ -63,6 +63,11 @@ describe('the rail', () => {
       'href',
       '/plugins',
     );
+    // So is Peers (ticket #67): the peer-sharing page.
+    expect(screen.getByText('Peers').closest('a')).toHaveAttribute(
+      'href',
+      '/peers',
+    );
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 

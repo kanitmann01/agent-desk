@@ -82,6 +82,19 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # decision like the others, and both turns say exactly what happened.
     ("demo.seeded", "decision", "The Sample data switch was turned on: labelled sample cards and sample fixtures (a workbook, a calendar file, header-only mail files) were created under the app's sample folder. Everything is marked Sample; none of it is live."),
     ("demo.cleared", "decision", "The Sample data switch was turned off: the labelled sample cards and the sample folder were removed. Nothing you created yourself is touched."),
+
+    # The peer-to-peer vocabulary (ticket #67): sharing plugins between
+    # desks with nothing centralized. Discovery announces on the local
+    # network only and starts on the first peers page visit; reads are
+    # token-gated; installs run the shared validator exactly like
+    # registry installs.
+    ("peer.code", "decision", "A short-lived single-use pairing code was generated so another desk can pair with this one. The code itself is never recorded; only the fact that one was made."),
+    ("peer.pair", "network", "This desk submitted a pairing code to another desk over the local network and pinned that desk's identity and channel token, so its shared plugins can be installed here."),
+    ("peer.paired", "network", "Another desk redeemed a pairing code on this desk; its identity and the channel token are now recorded here. Verification compares only the token's hash; the token is kept so pairing works in both directions, like any API client credential."),
+    ("peer.share", "plugin", "An installed plugin was marked shared (or unshared) with paired desks. Only shared plugins are ever served to a peer, and only their plugin files, never this desk's data."),
+    ("peer.read", "network", "A paired desk read this desk's shared plugin list, a manifest, or a bundle over the token-gated local peer endpoint. The row names what was read, not any content."),
+    ("peer.install", "plugin", "A plugin was downloaded from a paired desk, verified against the publisher's recorded digest, validated by the shared validator, and installed with the peer recorded as its source."),
+    ("peer.update", "plugin", "A plugin that came from a paired desk was updated to the publisher's newer version, through the same validate-and-consent path as every update."),
 ]
 
 ACTOR = "agent-desk"
