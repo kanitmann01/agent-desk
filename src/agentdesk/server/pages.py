@@ -169,6 +169,23 @@ svg{display:block;flex:none}
 /* Waiting inbox cards rest in a spaced stack: the audit measured 0px
    between consecutive cards, so they read as one merged block. */
 .card-stack{display:flex;flex-direction:column;gap:16px}
+/* The plugin and peer entry cards. `article.card` shipped with no rule
+   at all: transparent ground, no shadow, loose text on paper (the audit
+   measured backgroundColor rgba(0,0,0,0) and box-shadow none). One
+   rhythm block: the 12px flex gap is the only spacer, so the paragraph
+   and title margins cannot double it. */
+.doc .card{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;display:flex;flex-direction:column;gap:12px;margin:16px 0 0;transition:box-shadow 200ms ease}
+.doc .card:hover{box-shadow:var(--shadow-card-hover)}
+.doc .card p{margin:0}
+.doc .card h3{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.doc .card .cardrow{margin-top:0}
+/* The widget cards' internal rhythm: the 12px gap is the single spacer.
+   The audit measured 20px between a gate's heading and text and 28px
+   before its button, because .doc p and .cardform margins stack on the
+   flex gap instead of collapsing. */
+.doc .widget p{margin:0}
+.doc .widget .cardform{margin:0}
+.reg-origin{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--ink-3);margin:4px 0 0}
 .crumbs{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:12px}
 .crumbs a{color:var(--ink-3);font-weight:600}
 .crumbs a:hover{color:var(--primary)}

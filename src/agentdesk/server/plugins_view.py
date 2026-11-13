@@ -186,7 +186,7 @@ def render_plugins_page(records: list[dict], listing: dict, origin: str,
         origin_note = html.escape(str(listing.get("path", "")))
         entries = listing.get("plugins", [])
         registry_html = (
-            f"<p class='empty mono'>{origin_note} (from {html.escape(origin)})</p>")
+            f"<p class='reg-origin'>{origin_note} (from {html.escape(origin)})</p>")
         if entries:
             registry_html += "".join(
                 _registry_block(entry, installed_ids) for entry in entries)

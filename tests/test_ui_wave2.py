@@ -323,3 +323,62 @@ def test_the_footer_lives_in_the_page_column(booted):
     # hairline matches the text column instead of spanning main.
     doc = page.split('<div class="doc">')[1]
     assert '<footer class="page-foot">' in doc, "the footer sits outside the content column"
+
+
+# -- Plugin and peer entry cards ------------------------------------------
+# The plugins page rendered its entries as bare text: `article.card` had
+# no rule in the served stylesheet at all (transparent background, no
+# shadow), and the same dead class carried the peers page's paired-desk
+# entries. The registry origin line sat as loud mono over the list.
+
+def test_entry_cards_get_real_chrome(booted):
+    css = _stylesheet(booted)
+    rule = re.search(r"\.doc \.card\{[^}]*\}", css)
+    assert rule, "no .doc .card rule: the plugin and peer entries render bare"
+    assert "background:var(--surface)" in rule.group(0), rule.group(0)
+    assert "box-shadow:var(--shadow-card)" in rule.group(0), rule.group(0)
+    assert "border-radius:var(--r-card)" in rule.group(0), rule.group(0)
+
+
+def test_entry_cards_read_as_one_rhythm_block(booted):
+    css = _stylesheet(booted)
+    rule = re.search(r"\.doc \.card\{[^}]*\}", css)
+    assert rule and "display:flex;flex-direction:column;gap:12px" in rule.group(0), \
+        rule.group(0) if rule else "missing"
+    p = re.search(r"\.doc \.card p\{[^}]*\}", css)
+    assert p and "margin:0" in p.group(0), "paragraph margins double the card gap"
+    title = re.search(r"\.doc \.card h3\{[^}]*\}", css)
+    assert title and "font-size:16px" in title.group(0), title.group(0) if title else "missing"
+
+
+def test_the_registry_origin_line_reads_quiet(booted):
+    css = _stylesheet(booted)
+    rule = re.search(r"\.reg-origin\{[^}]*\}", css)
+    assert rule, "no .reg-origin rule"
+    assert "font-size:12px" in rule.group(0) and "color:var(--ink-3)" in rule.group(0)
+
+
+def test_the_plugins_page_marks_its_origin_line():
+    # The suite boots an inert registry root by default; this page's
+    # contract needs a real listing, so this boot points at the repo's
+    # own checkout the way the live app discovers it.
+    server = server_harness.Booted(registry_root=str(ROOT / "registry"))
+    try:
+        headers = server.exchange()
+        status, _headers, resp = server.request("GET", "/plugins", headers)
+        page = resp.decode("utf-8")
+        assert status == 200, status
+        assert "class='reg-origin'" in page, "the registry origin line carries no quiet class"
+        # The entries themselves ride the card chrome.
+        assert "<article class='card'>" in page
+    finally:
+        server.close()
+
+
+def test_widget_paragraphs_do_not_double_the_card_gap(booted):
+    css = _stylesheet(booted)
+    rule = re.search(r"\.doc \.widget p\{[^}]*\}", css)
+    assert rule and "margin:0" in rule.group(0), \
+        "paragraph margins stack on the widget gap (20px/28px rhythm measured)"
+    form = re.search(r"\.doc \.widget \.cardform\{[^}]*\}", css)
+    assert form and "margin:0" in form.group(0), form.group(0) if form else "missing"
