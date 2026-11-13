@@ -66,6 +66,7 @@ from agentdesk.llm import (
     DEFAULT_MODEL,
     LlmUnavailable,
     REQUEST_TIMEOUT_S,
+    base_url_problem,
     chat,
     chat_client,
     effective_llm_config,
@@ -496,6 +497,11 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.pick_calendar = pick_calendar
         self.calendar = calendar
         self.llm = llm if llm is not None else env_chat()
+        # Whether llm is the env-default client rather than an injected
+        # one: with no endpoint anywhere, callers that only want nicer
+        # copy (the wizard) take their deterministic path instead of
+        # consulting a client that can only raise.
+        self.llm_defaulted_to_env = llm is None
         self.audit_conn = audit_conn
         env_endpoint, _key, env_model = env_config()
         self.llm_endpoint = llm_endpoint if llm_endpoint is not None else env_endpoint
@@ -1433,14 +1439,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, self._settings_public_values())
 
     def _endpoint_save(self) -> None:
-        """Save (or clear, with empty strings) the three endpoint rows."""
+        """Save (or clear, with empty strings) the three endpoint rows.
+
+        Unknown field names are a 400 naming the accepted fields, and a
+        base that is not a full http(s) address is refused: a silent ok
+        is how a typo'd field name loses a key."""
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
+        unknown = sorted(name for name in body if name not in ("base", "key", "model"))
+        if unknown:
+            self._send_json(400, {"error": (
+                "unknown endpoint field(s): " + ", ".join(unknown)
+                + "; accepted fields are base, key, model"
+            )})
+            return
+        base = str(body.get("base", "")).strip()
+        problem = base_url_problem(base)
+        if problem:
+            self._send_json(400, {"error": problem})
+            return
         saved = {
-            "llm_base": str(body.get("base", "")).strip(),
+            "llm_base": base,
             "llm_key": str(body.get("key", "")).strip(),
             "llm_model": str(body.get("model", "")).strip(),
         }
@@ -2652,7 +2674,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 # The dashboard button lands here first: ask for the words
                 # before a session exists. No-JS: a plain form.
                 page = render_wizard_page(
-                    WIZARD_DESCRIBING_PAYLOAD, agentdesk.__version__)
+                    {"id": "new", "state": "describing", "description": "",
+                     "questions": [], "draft": {}, "ui_schema": None,
+                     "sample_rows": [], "degradedNote": self._wizard_endpoint_note()},
+                    agentdesk.__version__,
+                )
                 self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
                 return
             session = wizard.create(description)
@@ -2692,28 +2718,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.server.wizard_store.save(session)  # type: ignore[attr-defined]
 
     def _wizard_compiler(self):
+        """The compiler's endpoint client, audited: the settings-saved
+        endpoint over the startup one. None when nothing is configured
+        anywhere, so the deterministic path runs on purpose instead of a
+        client that raises on every call; the wizard never blocks on
+        the llm."""
         server = self.server  # type: ignore[attr-defined]
-        if server.audit_conn is not None and server.llm is not None:
-            conn = server.audit_conn
-            endpoint, _key, model = env_config()
+        if server.audit_conn is None:
+            return WizardCompiler(None)
+        settings = server.settings
+        if settings is not None and settings.get("llm_base"):
+            base, _key, model = effective_llm_config(settings)
+            inner, endpoint = settings_chat(settings), base
+        elif getattr(server, "llm_defaulted_to_env", False) and not server.llm_endpoint:
+            return WizardCompiler(None)
+        else:
             inner = server.llm
+            endpoint, _key, model = env_config()
+        conn = server.audit_conn
 
-            def audited_llm(prompt: str) -> str:
-                try:
-                    result = inner(prompt)
-                except Exception as exc:  # noqa: BLE001 - audit then re-raise
-                    audit_store.record(conn, "llm.wizard", target=endpoint,
-                                       status="error", model=model,
-                                       request_bytes=len(prompt.encode("utf-8")),
-                                       detail=str(exc)[:200])
-                    raise
+        def audited_llm(prompt: str) -> str:
+            try:
+                result = inner(prompt)
+            except Exception as exc:  # noqa: BLE001 - audit then re-raise
                 audit_store.record(conn, "llm.wizard", target=endpoint,
-                                   status="ok", model=model,
-                                   request_bytes=len(prompt.encode("utf-8")))
-                return result
+                                   status="error", model=model,
+                                   request_bytes=len(prompt.encode("utf-8")),
+                                   detail=str(exc)[:200])
+                raise
+            audit_store.record(conn, "llm.wizard", target=endpoint,
+                               status="ok", model=model,
+                               request_bytes=len(prompt.encode("utf-8")))
+            return result
 
-            return WizardCompiler(audited_llm)
-        return WizardCompiler(None)
+        return WizardCompiler(audited_llm)
 
     def _wizard_answer(self, session_id: str) -> None:
         """Answers in, then build with capped self-repair. Redirects to the
@@ -2854,8 +2892,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
         payload["installed"] = (draft.get("installed")
                                 if isinstance(draft, dict) else None)
         payload["approval"] = approval_summary(payload["draft"]) if payload["draft"] else {}
+        payload["degradedNote"] = self._wizard_endpoint_note()
         page = render_wizard_page(payload, agentdesk.__version__)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _wizard_endpoint_note(self) -> str:
+        """'' when an endpoint will shape the wizard's questions and
+        copy, else the honest line that names the cause: the standard
+        questions are the whole path until one is configured. Derived
+        from the same compiler the build will use, so the note never
+        claims an absence an injected endpoint fills."""
+        compiler = self._wizard_compiler()
+        if compiler.llm is not None:
+            return ""
+        return (
+            "No corporate endpoint is configured: the wizard asks its "
+            "standard questions and builds the same way. Add an endpoint "
+            "in Settings for questions tailored to your ask."
+        )
 
     def _send_redirect(self, location: str) -> None:
         self.send_response(303)

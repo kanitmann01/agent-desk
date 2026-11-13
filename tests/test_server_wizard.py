@@ -265,6 +265,46 @@ def test_approve_installs_in_pilot_mode_with_consolidated_summary(env, auth):
     assert records[0]["pilot_views_left"] > 0  # pilot mode
 
 
+def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
+    """The deterministic path is a first-class path (#62): with no
+    endpoint configured anywhere, start asks the standard questions, the
+    page names why, and answer/approve still install."""
+    for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    from agentdesk.wizard.core import DEFAULT_QUESTIONS, WizardStore
+
+    clock = FakeClock(NOW)
+    booted = server_harness.Booted(
+        plugins=make_runtime(tmp_path),
+        wizard_store=WizardStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+        inbox_store=InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+    )
+    try:
+        auth = booted.exchange()
+        started = json.loads(booted.post_json("/wizard/start",
+                                              {"description": CANONICAL}, auth)[2])
+        assert [q["id"] for q in started["questions"]] == [
+            q["id"] for q in DEFAULT_QUESTIONS
+        ]
+        # The questions screen says why they are the standard ones.
+        page = booted.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
+        assert "No corporate endpoint is configured" in page
+        assert booted.post_json(f"/wizard/{started['id']}/answer", {}, auth)[0] == 303
+        status, _h, body = booted.request("POST", f"/wizard/{started['id']}/approve",
+                                          auth, b"")
+        assert status == 200
+        assert json.loads(body)["status"] == "installed"
+        assert [r["state"] for r in booted.server.plugins.list_records()] == ["enabled"]
+    finally:
+        booted.close()
+
+
+def test_wizard_with_an_endpoint_does_not_claim_it_is_missing(env, auth):
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+    page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
+    assert "No corporate endpoint is configured" not in page
+
+
 def test_form_body_fields_maps_each_field_to_its_first_value():
     from agentdesk.server.app import form_body_fields
 
