@@ -2,16 +2,18 @@
 
 The create-to-publish loop: an installed plugin (wizard-made or
 otherwise) becomes a registry release without leaving the machine. The
-shared validator runs first, the tree lands in ``plugins/<id>/`` with
-the same layout the PR-published plugins carry, and the index gains a
-release pinned by the same tree digest install verifies. The release is
-``source: "local"``: no git tag exists for it, so installs resolve it
-straight from the plugins directory. Every refusal carries a named
-code, validator style.
+shared validator runs first, the tree lands in ``plugins/<id>/<version>/``
+(its own directory: every local release is digest-pinned to the exact
+tree it published, so a later publish never disturbs an earlier pin),
+and the index gains a release pinned by the same tree digest install
+verifies. The release is ``source: "local"``: no git tag exists for it,
+so installs resolve it straight from that versioned directory. Every
+refusal carries a named code, validator style.
 """
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 from dataclasses import replace
@@ -39,6 +41,25 @@ def _require_safe_name(value: str, what: str) -> None:
             or ".." in value):
         raise RegistryError("publish:unsafe-name",
                             f"{what} is not a safe name: {value[:40]!r}")
+
+
+def version_key(version: str) -> tuple:
+    """Numeric-aware comparison key for dotted versions: 0.10.0 sorts
+    above 0.9.0, which a plain string compare would get backwards.
+
+    Each dot chunk contributes ``(rank, number, suffix)``: chunks with a
+    leading number compare numerically first, non-numeric chunks sort
+    after them lexically. Tuples of different lengths compare as usual,
+    so 0.2 < 0.2.0, matching how the extra chunk reads as a suffix.
+    """
+    key = []
+    for chunk in str(version).split("."):
+        head = re.match(r"\d+", chunk)
+        if head:
+            key.append((1, int(head.group()), chunk[head.end():]))
+        else:
+            key.append((0, 0, chunk))
+    return tuple(key)
 
 
 def resolve_publish_root(settings_store=None, environ=None) -> Path:
@@ -114,17 +135,22 @@ def publish_to_registry(registry_root: Path | str, plugin_id: str, *,
             f"{plugin_id} {version} is already published; publish a new "
             "version instead")
 
-    plugin_dir = registry_root / "plugins" / plugin_id
-    plugin_dir.parent.mkdir(parents=True, exist_ok=True)
+    # The release tree is versioned: plugins/<id>/<version>/. Earlier
+    # local releases of this id stay pinned to their own directories,
+    # so publishing 0.2.0 never disturbs a 0.1.0 pin.
+    version_dir = registry_root / "plugins" / plugin_id / version
+    version_dir.parent.mkdir(parents=True, exist_ok=True)
     # Stage outside the registry, then swap in: a half-copied tree never
-    # sits where installs would read it.
+    # sits where installs would read it. A leftover directory for a
+    # version the index does not list can only be a publish that died
+    # between copy and index write; replacing it is the honest repair.
     with tempfile.TemporaryDirectory(prefix="agentdesk-publish-") as tmp:
         staged = Path(tmp) / "plugin"
         shutil.copytree(source_dir, staged)
-        if plugin_dir.exists():
-            shutil.rmtree(plugin_dir)
-        shutil.copytree(staged, plugin_dir)
-    digest = tree_digest(plugin_dir)
+        if version_dir.exists():
+            shutil.rmtree(version_dir)
+        shutil.copytree(staged, version_dir)
+    digest = tree_digest(version_dir)
 
     release = Release(version=version, sha256=digest, tag="", source="local")
     index = _append_release(index, plugin_id, version, release, manifest)
@@ -136,7 +162,7 @@ def publish_to_registry(registry_root: Path | str, plugin_id: str, *,
         "version": version,
         "sha256": digest,
         "source": "local",
-        "path": str(plugin_dir),
+        "path": str(version_dir),
     }
 
 
@@ -145,9 +171,12 @@ def _append_release(index: RegistryIndex, plugin_id: str, version: str,
     """The index with the release appended, as a new document.
 
     Append-only by construction: existing entries and releases are
-    never rewritten, only extended; ``latest`` moves forward to the
-    newly published version. The document is rebuilt through the model
-    so what lands on disk always reloads through the total loader.
+    never rewritten, only extended. ``latest`` advances to the new
+    version only when it compares greater (a publish of an older
+    version, say after a rollback, is history, not a pointer move), so
+    unpinned installs never follow an append backwards. The document is
+    rebuilt through the model so what lands on disk always reloads
+    through the total loader.
     """
     entry = index.plugin(plugin_id)
     if entry is None:
@@ -160,11 +189,13 @@ def _append_release(index: RegistryIndex, plugin_id: str, version: str,
             releases=(release,),
         )
         return replace(index, plugins=index.plugins + (entry,))
+    latest = version if version_key(version) > version_key(entry.latest) \
+        else entry.latest
     return replace(
         index,
         plugins=tuple(
             replace(existing, releases=existing.releases + (release,),
-                    latest=version)
+                    latest=latest)
             if existing.id == plugin_id else existing
             for existing in index.plugins
         ),

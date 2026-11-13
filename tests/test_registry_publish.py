@@ -68,8 +68,8 @@ def test_publish_lands_a_local_release_pinned_by_digest(tmp_path):
     assert out["plugin"] == "team-notes-widget"
     assert out["version"] == "0.1.0"
     assert out["source"] == "local"
-    # The tree landed in the registry, layout matching sales-delta-widget.
-    landed = root / "plugins" / "team-notes-widget"
+    # The tree landed in the registry, versioned under the plugin id.
+    landed = root / "plugins" / "team-notes-widget" / "0.1.0"
     assert (landed / "manifest.json").is_file()
     assert (landed / "widget.ui.json").is_file()
     # The pin is the tree digest of exactly what landed.
@@ -124,7 +124,8 @@ def test_tampered_local_release_refuses_on_hash(tmp_path):
     root = bare_registry(tmp_path)
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
     publish(root, "team-notes-widget", "0.1.0", source)
-    manifest_path = root / "plugins" / "team-notes-widget" / "manifest.json"
+    manifest_path = (root / "plugins" / "team-notes-widget" / "0.1.0"
+                     / "manifest.json")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["name"] = "Quietly different"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n",
@@ -141,7 +142,7 @@ def test_missing_plugins_dir_refuses_with_named_error(tmp_path):
     root = bare_registry(tmp_path)
     source = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
     publish(root, "team-notes-widget", "0.1.0", source)
-    shutil.rmtree(root / "plugins" / "team-notes-widget")
+    shutil.rmtree(root / "plugins" / "team-notes-widget" / "0.1.0")
 
     from agentdesk.registry.install import RegistryError, install_from_registry
     with pytest.raises(RegistryError) as excinfo:
@@ -177,13 +178,98 @@ def test_new_version_appends_cleanly_and_ci_stays_green(tmp_path):
     entry = index.plugin("team-notes-widget")
     assert [r.version for r in entry.releases] == ["0.1.0", "0.2.0"]
     assert entry.latest == "0.2.0"
-    # The plugins directory holds the newly published tree.
-    assert tree_digest(root / "plugins" / "team-notes-widget") == out["sha256"]
+    # The plugins directory holds the newly published tree, versioned.
+    assert tree_digest(root / "plugins" / "team-notes-widget" / "0.2.0") \
+        == out["sha256"]
     # Registry CI over the mutated index: green.
     review = review_registry_changes(
-        root, [root / "plugins" / "team-notes-widget"],
+        root, [root / "plugins" / "team-notes-widget" / "0.2.0"],
         base_index_text=base_index)
     assert review["ok"] is True, review["reasons"]
+
+
+def test_publishing_a_new_version_keeps_earlier_local_releases(tmp_path):
+    """The P1 review fix, pinned: each local release is digest-pinned to
+    its own versioned directory, so publishing 0.2.0 must leave 0.1.0
+    exactly where its pin says it is."""
+    root = bare_registry(tmp_path)
+    first = make_plugin(tmp_path, "team-notes-widget", "0.1.0")
+    published_1 = publish(root, "team-notes-widget", "0.1.0", first)
+    second = make_plugin(tmp_path, "team-notes-widget", "0.2.0")
+    publish(root, "team-notes-widget", "0.2.0", second)
+
+    # Both versioned trees exist side by side, each with its manifest.
+    for version, sha in (("0.1.0", published_1["sha256"]),):
+        tree = root / "plugins" / "team-notes-widget" / version
+        assert (tree / "manifest.json").is_file()
+        assert (tree / "widget.ui.json").is_file()
+        assert tree_digest(tree) == sha
+    assert (root / "plugins" / "team-notes-widget" / "0.2.0"
+            / "manifest.json").is_file()
+
+    # The old release installs by exact pin and hash-verifies.
+    from agentdesk.registry.install import install_from_registry
+    out = install_from_registry(root, "team-notes-widget", version="0.1.0",
+                                sha256=published_1["sha256"],
+                                destination=tmp_path / "client")
+    assert out["ok"] is True
+    assert out["sha256"] == published_1["sha256"]
+    installed_manifest = json.loads(
+        (tmp_path / "client" / "team-notes-widget-0.1.0" / "manifest.json")
+        .read_text(encoding="utf-8"))
+    assert installed_manifest["version"] == "0.1.0"
+
+    # And the new one still installs too, unpinned (latest resolves it).
+    out = install_from_registry(root, "team-notes-widget", version="0.2.0",
+                                destination=tmp_path / "client2")
+    assert out["version"] == "0.2.0"
+
+
+def test_publishing_an_older_version_keeps_latest(tmp_path):
+    """The P2 review fix, pinned: publishing an older version (say after
+    a rollback) appends history without dragging latest, and therefore
+    unpinned installs, backwards."""
+    from agentdesk.registry.index import load_index
+
+    root = bare_registry(tmp_path)
+    publish(root, "team-notes-widget", "0.1.0",
+            make_plugin(tmp_path, "team-notes-widget", "0.1.0"))
+    publish(root, "team-notes-widget", "0.2.0",
+            make_plugin(tmp_path, "team-notes-widget", "0.2.0"))
+    publish(root, "team-notes-widget", "0.1.1",
+            make_plugin(tmp_path, "team-notes-widget", "0.1.1"))
+
+    index = load_index((root / "index.json").read_text(encoding="utf-8"))
+    entry = index.plugin("team-notes-widget")
+    assert [r.version for r in entry.releases] == ["0.1.0", "0.2.0", "0.1.1"]
+    assert entry.latest == "0.2.0"
+
+    # Unpinned resolution follows latest, not the last append.
+    from agentdesk.registry.source import stage_registry_install
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        staged = stage_registry_install(root, "team-notes-widget",
+                                        staging_dir=Path(tmp))
+        assert staged["version"] == "0.2.0"
+
+
+def test_latest_advances_by_numeric_compare_not_lexical(tmp_path):
+    """0.10.0 is newer than 0.9.0; a string compare would say otherwise."""
+    from agentdesk.registry.index import load_index
+
+    root = bare_registry(tmp_path)
+    publish(root, "team-notes-widget", "0.9.0",
+            make_plugin(tmp_path, "team-notes-widget", "0.9.0"))
+    publish(root, "team-notes-widget", "0.10.0",
+            make_plugin(tmp_path, "team-notes-widget", "0.10.0"))
+
+    index = load_index((root / "index.json").read_text(encoding="utf-8"))
+    assert index.plugin("team-notes-widget").latest == "0.10.0"
+
+    publish(root, "team-notes-widget", "0.2.0",
+            make_plugin(tmp_path, "team-notes-widget", "0.2.0"))
+    index = load_index((root / "index.json").read_text(encoding="utf-8"))
+    assert index.plugin("team-notes-widget").latest == "0.10.0"
 
 
 def test_publish_refuses_an_invalid_plugin(tmp_path):

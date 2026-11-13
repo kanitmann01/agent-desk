@@ -101,19 +101,21 @@ def _archive_plugin(registry_root: Path, tag: str, plugin_prefix: str,
         shutil.copytree(source, destination)
 
 
-def _stage_local_plugin(registry_root: Path, plugin_id: str,
+def _stage_local_plugin(registry_root: Path, plugin_id: str, version: str,
                         destination: Path) -> None:
-    """Copy plugins/<id> out of the registry's working tree.
+    """Copy plugins/<id>/<version> out of the registry's working tree.
 
-    A local release is pinned by digest to the directory publish wrote;
-    there is no tag to extract, so git is never invoked. The digest
-    check right after this copy is the whole verification story.
+    A local release is pinned by digest to its own versioned directory
+    (the one publish wrote); there is no tag to extract, so git is never
+    invoked. The digest check right after this copy is the whole
+    verification story.
     """
-    source = registry_root / "plugins" / plugin_id
+    source = registry_root / "plugins" / plugin_id / version
     if not source.is_dir():
         raise RegistryError(
             "install:local-plugin-missing",
-            f"{plugin_id} is not present in the registry plugins folder")
+            f"{plugin_id} {version} is not present in the registry "
+            "plugins folder")
     shutil.copytree(source, destination)
 
 
@@ -137,7 +139,8 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
     with tempfile.TemporaryDirectory() as tmp:
         staged = Path(tmp) / "plugin"
         if release.source == "local":
-            _stage_local_plugin(registry_root, plugin_id, staged)
+            _stage_local_plugin(registry_root, plugin_id, release.version,
+                                staged)
         else:
             _archive_plugin(registry_root, release.tag, plugin_prefix, staged)
         actual = tree_digest(staged)
