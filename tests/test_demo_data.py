@@ -167,7 +167,9 @@ def test_toggling_on_writes_the_sample_fixtures_under_the_data_dir(env, auth):
     workbook = folder / "sample-sales.xlsx"
     assert workbook.exists()
     rows = parse_workbook_bytes(workbook.read_bytes())  # the real reader
-    assert rows and rows[0][0] == "Product line"
+    assert rows[0] == ["Deal", "Region", "Stage", "Amount", "Close date", "Owner"]
+    assert len(rows) == 101
+    assert all(r[0].startswith("Sample: ") for r in rows[1:])
     calendar = json.loads((folder / "sample-calendar.json").read_text("utf-8"))
     assert calendar["events"]
     assert all(e["subject"].startswith("Sample:") for e in calendar["events"])
