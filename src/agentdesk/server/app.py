@@ -2416,11 +2416,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         inbox_service.evaluate(inbox, _local_now(), on_snooze_return=on_return,
                                **self._budget_values())
 
-    def _audit(self, action: str, target: str = "", detail: str = "") -> None:
+    def _audit(self, action: str, target: str = "", detail: str = "",
+               status: str = "ok") -> None:
         """The one inbox/plugin path into the append-only audit store."""
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             audit_store.record(self.server.audit_conn, action,
-                               target=target, detail=detail)
+                               target=target, status=status, detail=detail)
 
     def _on_skill_proposal_decided(self, card, decision: str) -> None:
         """Accepting activates the skill; dismissing cools the pattern down."""
@@ -3228,19 +3229,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                "The peer store is not available.")
             return
         body = self._read_json_body() or {}
-        address = str(body.get("address", "")).strip()
+        typed_address = str(body.get("address", "")).strip()
         code = str(body.get("code", "")).strip()
-        if not address or not code:
+        if not typed_address or not code:
             self._peers_refuse(
                 "peer:bad-request",
                 "Type both the other desk's address (host:port) and its "
                 "pairing code.", 400)
             return
-        address = _normalize_peer_address(address)
+        address = _normalize_peer_address(typed_address)
         if address is None:
             self._peers_refuse(
                 "peer:bad-address",
-                f"{address!r} is not a host:port address.", 400)
+                f"{typed_address!r} is not a host:port address.", 400)
             return
         desk = store.desk()
         try:
@@ -3309,7 +3310,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         bundle, recompute the tree digest against the publisher's, run
         the shared validator through the runtime, and record the peer
         as the source."""
-        store, plugins, peer, plugin_id = self._peers_flow_args()
+        store, plugins, peer, plugin_id, names_ok = self._peers_flow_args()
+        if not names_ok:
+            return  # the refusal already went out
         if store is None:
             self._peers_refuse("peers:unavailable",
                                "The peer store is not available.")
@@ -3342,8 +3345,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             staged = self._peer_stage(plugins, peer, plugin_id, Path(tmp))
             if staged is None:
                 return  # the refusal already went out
-            result = plugins.install(staged["dir"],
-                                     source=f"peer:{peer['name']}")
+            try:
+                result = plugins.install(staged["dir"],
+                                         source=f"peer:{peer['name']}")
+            except PluginError as exc:
+                self._audit("peer.install", target=plugin_id,
+                            status="error",
+                            detail=f"refused by the shared validator: "
+                                   f"{exc.code}")
+                self._peers_refuse(exc.code, str(exc), exc.status)
+                return
         store.record_seen(plugin_id, peer["peer_id"], staged["version"],
                           staged["sha256"])
         store.set_installed(plugin_id, peer["peer_id"], result["version"])
@@ -3361,7 +3372,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """One click to the publisher's newer version: same staging and
         verification, then the runtime's own update path (a widened
         permission set still holds for consent)."""
-        store, plugins, peer, plugin_id = self._peers_flow_args()
+        store, plugins, peer, plugin_id, names_ok = self._peers_flow_args()
+        if not names_ok:
+            return  # the refusal already went out
         if store is None:
             self._peers_refuse("peers:unavailable",
                                "The peer store is not available.")
@@ -3387,6 +3400,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 result = plugins.update(plugin_id, zip_path)
             except PluginError as exc:
+                self._audit("peer.update", target=plugin_id,
+                            status="error",
+                            detail=f"refused: {exc.code}")
                 self._peers_refuse(exc.code, str(exc), exc.status)
                 return
         if isinstance(result, dict) and result.get("status") == "pending-consent":
@@ -3411,12 +3427,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, result if isinstance(result, dict) else {})
 
     def _peers_flow_args(self):
+        """(store, plugins, peer, plugin_id, names_ok) for the install
+        and update flows. ids that are not safe names are refused here,
+        before either can name a file (a planted ../id would otherwise
+        escape the staging dir) or a store row."""
         body = self._read_json_body() or {}
         peer_id = str(body.get("peer_id", "")).strip()
         plugin_id = str(body.get("plugin_id", "")).strip()
+        names_ok = self._peer_flow_names_ok(peer_id, plugin_id)
         store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        peer = store.peer(peer_id) if store is not None else None
-        return store, self.server.plugins, peer, plugin_id  # type: ignore[attr-defined]
+        peer = store.peer(peer_id) if store is not None and names_ok else None
+        return (store, self.server.plugins, peer, plugin_id, names_ok)  # type: ignore[attr-defined]
+
+    def _peer_flow_names_ok(self, peer_id: str, plugin_id: str) -> bool:
+        for name, what in ((peer_id, "peer id"), (plugin_id, "plugin id")):
+            if name and not _PEER_SAFE_NAME.match(name):
+                self._peers_refuse(
+                    "peer:unsafe-name",
+                    f"The {what} is not a safe name: {name[:40]!r}.", 400)
+                return False
+        return True
 
     def _peer_stage(self, plugins: PluginRuntime, peer: dict,
                     plugin_id: str, tmp: Path) -> dict | None:
@@ -3449,7 +3479,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return None
         digest = tree_digest(staged_dir)
         expected = str(offered.get("sha256", ""))
-        if expected and digest != expected:
+        if not expected:
+            # No announced digest means nothing to verify against: a
+            # refusal, never a silent skip that the audit row would
+            # then call verified.
+            self._audit("peer.install", target=plugin_id, status="error",
+                        detail=f"{peer['name']} publishes no digest for "
+                               f"{plugin_id}; refused")
+            self._peers_refuse(
+                "peer:digest-unknown",
+                f"{peer['name']} publishes no digest for {plugin_id}, so "
+                "this desk cannot verify the bundle against anything. "
+                "Nothing was installed.")
+            return None
+        if digest != expected:
+            self._audit("peer.install", target=plugin_id, status="error",
+                        detail=f"bundle digest {digest[:12]} does not match "
+                               f"the published {expected[:12]}; refused")
             self._peers_refuse(
                 "peer:digest-mismatch",
                 f"The bundle from {peer['name']} does not match the "

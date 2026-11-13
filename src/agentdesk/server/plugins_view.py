@@ -86,21 +86,31 @@ def _installed_block(record: dict, shared_ids: set[str] | None = None,
         "</form>"
         for label, action, cls in actions)
     # The Share toggle (ticket #67): paired desks can install this
-    # plugin from this desk while it is shared.
+    # plugin from this desk while it is shared. The count beside it
+    # keeps the button honest: sharing to zero desks does nothing yet.
     shared = str(record["id"]) in shared_ids
+    notes = []
     if shared:
-        share_note = ("<p class='empty'>Shared with paired desks: they "
-                      "see its manifest and bundle, never your data.</p>")
         share_form = (
             f"<form method='post' action='/plugins/{plugin_id}/unshare' "
             "class='inlineform'><button class='btn btn-secondary' "
             "type='submit'>Stop sharing</button></form>")
+        if peers_paired:
+            notes.append(
+                f"Shared with {peers_paired} paired desk"
+                f"{'s' if peers_paired != 1 else ''}: they see its "
+                "manifest and bundle, never your data.")
     else:
-        share_note = ""
         share_form = (
             f"<form method='post' action='/plugins/{plugin_id}/share' "
             "class='inlineform'><button class='btn btn-secondary' "
             "type='submit'>Share with peers</button></form>")
+        if not peers_paired:
+            notes.append(
+                "No desks are paired yet; pair one on the "
+                "<a href='/peers'>peers page</a> or sharing has nobody "
+                "to serve.")
+    share_note = "".join(f"<p class='empty'>{note}</p>" for note in notes)
     forms = share_form + forms
     body += f"<div class='cardrow'>{forms}</div>{share_note}"
 

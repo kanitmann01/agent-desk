@@ -15,9 +15,12 @@ invented: one attempt, one honest answer.
 
 import http.client
 import json
+import tempfile
 import zipfile
 from pathlib import Path
 from urllib.parse import quote
+
+from agentdesk.plugins.runtime import PluginError, extract_plugin_zip
 
 DEFAULT_TIMEOUT_S = 5.0
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024  # bundles are small; refuse huge ones
@@ -32,33 +35,24 @@ class PeerClientError(Exception):
 
 
 def extract_bundle(bundle: bytes, destination: Path) -> None:
-    """Extract a downloaded bundle into ``destination``, member by
-    member with containment enforced (the same rule the plugin runtime
-    applies to zips): a member that would escape the destination is a
-    named refusal, and nothing is written past it."""
+    """Extract a downloaded bundle into ``destination`` through the one
+    extractor the app uses for plugin zips (the runtime's, with its
+    containment rules); the peer-specific naming happens here, so a
+    bundle that cannot be read or would escape the staging folder is
+    ``peer:bad-bundle``."""
     destination = Path(destination)
-    try:
-        archive = zipfile.ZipFile(__import__("io").BytesIO(bundle))
-    except (zipfile.BadZipFile, ValueError) as exc:
-        raise PeerClientError(
-            "peer:bad-bundle",
-            f"The downloaded bundle is not a readable zip: {exc}") from exc
-    for info in archive.infolist():
-        name = Path(info.filename)
-        if name.is_absolute() or ".." in name.parts:
+    with tempfile.TemporaryDirectory(prefix="agentdesk-bundle-") as tmp:
+        zip_path = Path(tmp) / "bundle.zip"
+        zip_path.write_bytes(bundle)
+        try:
+            extract_plugin_zip(zip_path, destination)
+        except zipfile.BadZipFile as exc:
             raise PeerClientError(
                 "peer:bad-bundle",
-                f"The bundle contains an unsafe entry: {info.filename}")
-        target = destination / name
-        if not str(target.resolve()).startswith(str(destination.resolve())):
+                f"The downloaded bundle is not a readable zip: {exc}") from exc
+        except PluginError as exc:
             raise PeerClientError(
-                "peer:bad-bundle",
-                f"The bundle entry escapes the staging folder: {info.filename}")
-        if info.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(archive.read(info))
+                "peer:bad-bundle", str(exc)) from exc
 
 
 class PeerClient:

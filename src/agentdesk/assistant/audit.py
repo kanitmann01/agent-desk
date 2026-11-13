@@ -90,7 +90,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # registry installs.
     ("peer.code", "decision", "A short-lived single-use pairing code was generated so another desk can pair with this one. The code itself is never recorded; only the fact that one was made."),
     ("peer.pair", "network", "This desk submitted a pairing code to another desk over the local network and pinned that desk's identity and channel token, so its shared plugins can be installed here."),
-    ("peer.paired", "network", "Another desk redeemed a pairing code on this desk; its identity and a hash of the channel token are now recorded here."),
+    ("peer.paired", "network", "Another desk redeemed a pairing code on this desk; its identity and the channel token are now recorded here. Verification compares only the token's hash; the token is kept so pairing works in both directions, like any API client credential."),
     ("peer.share", "plugin", "An installed plugin was marked shared (or unshared) with paired desks. Only shared plugins are ever served to a peer, and only their plugin files, never this desk's data."),
     ("peer.read", "network", "A paired desk read this desk's shared plugin list, a manifest, or a bundle over the token-gated local peer endpoint. The row names what was read, not any content."),
     ("peer.install", "plugin", "A plugin was downloaded from a paired desk, verified against the publisher's recorded digest, validated by the shared validator, and installed with the peer recorded as its source."),

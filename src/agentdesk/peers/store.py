@@ -7,11 +7,18 @@ channel token gates reads but is not a secret from the LAN. It is not
 meant to be: a paired peer may read only the plugin manifests and
 bundles this desk explicitly shares, every install still runs the same
 shared validator the registry uses before anything executes, and no
-peer path can mutate this desk. Only a hash of the channel token is
-stored, never the token itself. The server binds loopback only, so
-pairing and sharing work between desks on one machine; a desk on the
-LAN can be discovered and seen, but connections to it are refused until
-the bind policy changes.
+peer path can mutate this desk. Verification compares only a hash of
+the channel token; the token itself is also kept, so one code pairs
+both directions and each desk can read the other's shares, exactly like
+any API client credential. The server binds loopback only, so pairing
+and sharing work between desks on one machine; a desk on the LAN can be
+discovered and seen, but connections to it are refused until the bind
+policy changes.
+
+Pairing codes are throttled the simple way: each wrong code submitted
+while a code is live burns one of that code's attempts, and the fifth
+wrong attempt invalidates the live code outright (generate a fresh one
+to try again).
 
 Everything lives in one sqlite database with an injectable clock and
 append-friendly rows (created/paired timestamps, upserts that replace
@@ -28,12 +35,12 @@ from collections.abc import Callable
 
 # The pairing code alphabet: no 0/O or 1/I, so a code read aloud or
 # across a desk is never ambiguous. Eight characters of it.
+# One pairing at a time is plenty; refusing a second live code keeps the
+# page honest (the code shown is the only one that works).
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 8
 CODE_TTL_S = 10 * 60  # a code lives ten minutes, then it is dead
-
-# One pairing at a time is plenty; refusing a second live code keeps the
-# page honest (the code shown is the only one that works).
+MAX_PAIRING_MISSES = 5  # wrong submissions that invalidate the live code
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS desk (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -44,7 +51,8 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
   code TEXT PRIMARY KEY,
   created_at REAL NOT NULL,
   expires_at REAL NOT NULL,
-  used INTEGER NOT NULL DEFAULT 0
+  used INTEGER NOT NULL DEFAULT 0,
+  misses INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS peers (
   peer_id TEXT PRIMARY KEY,
@@ -97,7 +105,9 @@ def derive_token(code: str) -> str:
 
 
 def hash_token(token: str) -> str:
-    """What the store keeps: a hash of the token, never the token."""
+    """What verification compares against: a hash of the token. (The
+    token itself is also kept in the peers row, so pairing works in
+    both directions; this hash is the verifying side's copy.)"""
     return hashlib.sha256(
         f"agentdesk-peer-token:{token}".encode("utf-8")).hexdigest()
 
@@ -119,6 +129,14 @@ class PeerStore:
         self._lock = threading.Lock()
         with self._lock:
             self.conn.executescript(SCHEMA)
+            # Light migration for stores created by earlier builds:
+            # append-only means columns are added, never rewritten.
+            try:
+                self.conn.execute(
+                    "ALTER TABLE pairing_codes ADD COLUMN misses"
+                    " INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # column already there
             self.conn.commit()
 
     # -- this desk's identity ------------------------------------------
@@ -177,7 +195,10 @@ class PeerStore:
 
         Named refusals: unknown, expired, already used. The channel
         token is derived from the code, so the submitting desk (which
-        typed the code) can compute it too; only its hash is kept here.
+        typed the code) can compute it too; verification compares only
+        its hash, and the token is kept so this desk can read that
+        peer's shares in the other direction. A wrong code burns one of
+        the live code's attempts; the fifth wrong code invalidates it.
         """
         if not peer_id or not name or not base_url:
             raise PeerError("pairing:bad-request",
@@ -188,6 +209,7 @@ class PeerStore:
                 "SELECT expires_at, used FROM pairing_codes WHERE code = ?",
                 (code,)))
             if row is None:
+                self._burn_live_code()
                 raise PeerError("pairing:unknown-code",
                                 "That pairing code does not exist.")
             if self.clock() >= row["expires_at"]:
@@ -211,6 +233,27 @@ class PeerStore:
                  self.clock()))
             self.conn.commit()
         return {"ok": True, "token": token}
+
+    def _burn_live_code(self) -> None:
+        """One wrong submission against the live code: count it, and
+        invalidate the code outright once the attempts run out. Caller
+        holds the lock; the transaction commits with the caller's raise
+        path, so the burned attempt survives the refusal."""
+        live = _row(self.conn.execute(
+            "SELECT code FROM pairing_codes WHERE used = 0"))
+        if live is None:
+            return
+        self.conn.execute(
+            "UPDATE pairing_codes SET misses = misses + 1 WHERE code = ?",
+            (live["code"],))
+        counted = _row(self.conn.execute(
+            "SELECT misses FROM pairing_codes WHERE code = ?",
+            (live["code"],)))
+        spent = counted is not None and counted["misses"] >= MAX_PAIRING_MISSES
+        if spent:
+            self.conn.execute("DELETE FROM pairing_codes WHERE code = ?",
+                              (live["code"],))
+        self.conn.commit()
 
     # -- paired peers ------------------------------------------------------
 

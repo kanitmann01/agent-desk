@@ -63,10 +63,12 @@ def _tree_digest(plugin_dir: Path) -> str:
     return digest.hexdigest()
 
 
-def _extract_zip(zip_path: Path, destination: Path) -> None:
+def extract_plugin_zip(zip_path: Path, destination: Path) -> None:
     """Extract member by member. Python's zipfile has no extraction
     filter, so containment is enforced here: every resolved target must
-    stay inside ``destination``."""
+    stay inside ``destination``. The one extractor for every zip this
+    app opens (installs, updates, peer bundles); a refusal raises
+    PluginError with ``install:unsafe-zip``."""
     with zipfile.ZipFile(zip_path) as archive:
         for info in archive.infolist():
             name = Path(info.filename)
@@ -198,7 +200,7 @@ class PluginRuntime:
             if plugin_path.is_dir():
                 shutil.copytree(plugin_path, staged)
             else:
-                _extract_zip(plugin_path, staged)
+                extract_plugin_zip(plugin_path, staged)
             manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
             plugin_id = str(manifest["id"])
             version = str(manifest["version"])
@@ -262,7 +264,7 @@ class PluginRuntime:
         self._staging.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=self._staging) as tmp:
             staged = Path(tmp) / "plugin"
-            _extract_zip(Path(zip_path), staged)
+            extract_plugin_zip(Path(zip_path), staged)
             manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
             version = str(manifest["version"])
             digest = _tree_digest(staged)

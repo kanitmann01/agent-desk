@@ -24,6 +24,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness  # noqa: E402
+import pytest  # noqa: E402
 from plugins_fixtures import valid_zip  # noqa: E402
 
 from agentdesk.assistant import audit as audit_store  # noqa: E402
@@ -406,3 +407,185 @@ def test_plugins_page_carries_the_share_toggle(tmp_path):
         assert booted.server.peer_store.shared_ids() == set()
     finally:
         booted.close()
+
+
+# -- review fixes: verification and refusal honesty ------------------------
+
+
+class _FakePeerClient:
+    """Stands in for PeerClient inside the server: serves a scripted
+    info payload and bundle bytes without touching the network."""
+
+    def __init__(self, info_payload: dict, bundle_bytes: bytes) -> None:
+        self._info = info_payload
+        self._bundle = bundle_bytes
+
+    def info(self, base_url: str, token: str) -> dict:
+        return self._info
+
+    def bundle(self, base_url: str, token: str, plugin_id: str) -> bytes:
+        return self._bundle
+
+
+def _fake_paired_peer(booted) -> str:
+    booted.server.peer_store.add_peer(
+        peer_id="desk-fake", name="Fake Peer", base_url="127.0.0.1:1",
+        token="tok")
+    return "desk-fake"
+
+
+def test_missing_published_digest_is_a_named_refusal_never_verified(
+        tmp_path, monkeypatch):
+    """/peer/info without a sha256 must not skip verification while the
+    audit row still says verified: it is a named refusal."""
+    from agentdesk.server import app as server_app
+
+    booted = _boot()
+    try:
+        auth = booted.exchange()
+        peer_id = _fake_paired_peer(booted)
+        bundle = valid_zip(tmp_path / "p.zip").read_bytes()
+        fake = _FakePeerClient(
+            {"ok": True, "peer_id": peer_id, "name": "Fake Peer",
+             "plugins": [{"id": PLUGIN_ID, "version": "1.2.0",
+                          "sha256": ""}]},
+            bundle)
+        monkeypatch.setattr(server_app, "PeerClient", lambda: fake)
+        status, _h, body = booted.post_json(
+            "/peers/install", {"peer_id": peer_id, "plugin_id": PLUGIN_ID},
+            auth)
+        assert status == 409
+        assert json.loads(body)["error"] == "peer:digest-unknown"
+        rows = [row for row in audit_store.entries(booted.server.audit_conn, 50)
+                if row["action"] == "peer.install"]
+        assert rows and all(row["status"] == "error" for row in rows)
+        assert not any("verified" in row["detail"] for row in rows)
+    finally:
+        booted.close()
+
+
+def test_validator_refusal_on_peer_install_is_named_and_audited(
+        tmp_path, monkeypatch):
+    """A bundle that fails the shared validator is a named refusal with
+    an error audit row, never an unnamed 500."""
+    from agentdesk.plugins.runtime import PluginError
+    from agentdesk.server import app as server_app
+
+    booted = _boot()
+    try:
+        auth = booted.exchange()
+        peer_id = _fake_paired_peer(booted)
+        from plugins_fixtures import shell_zip
+
+        shell = shell_zip(tmp_path / "shell.zip")
+        staged = tmp_path / "staged"
+        staged.mkdir()
+        import zipfile as _zipfile
+
+        with _zipfile.ZipFile(shell) as archive:
+            archive.extractall(staged)
+        from agentdesk.registry.install import tree_digest as _digest
+
+        digest = _digest(staged)
+        fake = _FakePeerClient(
+            {"ok": True, "peer_id": peer_id, "name": "Fake Peer",
+             "plugins": [{"id": PLUGIN_ID, "version": "9.9.9",
+                          "sha256": digest}]},
+            shell.read_bytes())
+        monkeypatch.setattr(server_app, "PeerClient", lambda: fake)
+        status, _h, body = booted.post_json(
+            "/peers/install", {"peer_id": peer_id, "plugin_id": PLUGIN_ID},
+            auth)
+        assert status == 400, body
+        payload = json.loads(body)
+        assert payload["error"] == "install:validator-failed"
+        rows = [row for row in audit_store.entries(booted.server.audit_conn, 50)
+                if row["action"] == "peer.install"]
+        assert rows and rows[-1]["status"] == "error"
+        with pytest.raises(PluginError):
+            booted.server.plugins.record(PLUGIN_ID)
+    finally:
+        booted.close()
+
+
+def test_unsafe_flow_names_are_refused_before_any_staging():
+    """A plugin id or peer id that is not a safe name is refused before
+    it can name a file inside (or outside) the staging folder."""
+    booted = _boot()
+    try:
+        auth = booted.exchange()
+        _fake_paired_peer(booted)
+        for path, payload in (
+                ("/peers/update", {"peer_id": "desk-fake",
+                                   "plugin_id": "../x"}),
+                ("/peers/install", {"peer_id": "..\\evil",
+                                    "plugin_id": "fine-name"}),
+                ("/peers/install", {"peer_id": "desk-fake",
+                                    "plugin_id": "seems/ok"}),
+        ):
+            status, _h, body = booted.post_json(path, payload, auth)
+            assert status == 400, (path, body)
+            assert json.loads(body)["error"] == "peer:unsafe-name"
+    finally:
+        booted.close()
+
+
+def test_bad_address_refusal_names_the_typed_input():
+    booted = _boot()
+    try:
+        auth = booted.exchange()
+        status, _h, body = booted.post_json(
+            "/peers/pair", {"address": "not an address at all",
+                            "code": "ABCD2345"}, auth)
+        assert status == 400
+        payload = json.loads(body)
+        assert payload["error"] == "peer:bad-address"
+        assert "not an address at all" in payload["message"]
+        assert "None" not in payload["message"]
+    finally:
+        booted.close()
+
+
+def test_share_hint_says_when_no_desks_are_paired(tmp_path):
+    booted = _boot()
+    try:
+        auth = booted.exchange()
+        _install_plugin(booted, auth, tmp_path)
+        _s, _h, page = booted.request("GET", "/plugins", auth)
+        assert "No desks are paired yet" in page.decode("utf-8")
+        booted.server.peer_store.add_peer(
+            peer_id="desk-a", name="A", base_url="127.0.0.1:8801",
+            token="t")
+        _s, _h, page = booted.request("GET", "/plugins", auth)
+        assert "No desks are paired yet" not in page.decode("utf-8")
+    finally:
+        booted.close()
+
+
+def test_discovered_cards_do_not_prefill_unconnectable_addresses():
+    """A desk on another machine shows its real source address and an
+    honest not-connectable note; only same-machine desks prefill the
+    pair form."""
+    from agentdesk.server.peers_view import render_peers_page
+
+    catalog = {
+        "ok": True,
+        "desk": {"peer_id": "desk-me", "name": "This Desk"},
+        "pairingCode": None,
+        "discovered": [
+            {"peer_id": "desk-near", "name": "Near Desk",
+             "host": "127.0.0.1", "port": 8801, "source": "127.0.0.1",
+             "connectable": True, "pairing_required": True,
+             "last_seen": 1.0},
+            {"peer_id": "desk-far", "name": "Far Desk",
+             "host": "127.0.0.1", "port": 8802, "source": "203.0.113.9",
+             "connectable": False, "pairing_required": True,
+             "last_seen": 1.0},
+        ],
+        "paired": [],
+    }
+    page = render_peers_page(catalog, "test")
+    assert 'value="127.0.0.1:8801"' in page       # near desk prefills
+    assert "203.0.113.9" in page                  # far desk's source shown
+    assert "another machine" in page              # honest note
+    assert 'value="203.0.113.9' not in page       # never prefilled

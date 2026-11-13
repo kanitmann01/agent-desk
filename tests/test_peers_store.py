@@ -2,9 +2,11 @@
 
 Everything peer-related persists in one sqlite store with an injectable
 clock: the desk's own identity, short-lived single-use pairing codes,
-paired peers (token stored only as a hash), the plugin ids this desk
-publishes, and per-peer subscription snapshots. Wrong or expired codes
-are named refusals, never silent failures.
+paired peers (verification compares only the token's hash; the token
+itself is kept so pairing works in both directions, like any API client
+credential), the plugin ids this desk publishes, and per-peer
+subscription snapshots. Wrong or expired codes are named refusals,
+never silent failures.
 """
 import sqlite3
 import sys
@@ -19,6 +21,7 @@ for _p in (str(ROOT / "src"),):
 
 from agentdesk.peers.store import (  # noqa: E402
     CODE_TTL_S,
+    MAX_PAIRING_MISSES,
     PeerError,
     PeerStore,
     derive_token,
@@ -48,7 +51,9 @@ def test_pairing_code_exchange_persists_peer_with_hashed_token(store):
     peer = store.peer("peer-b")
     assert peer["name"] == "Desk B"
     assert peer["base_url"] == "127.0.0.1:8802"
-    # the stored secret is a hash of the derived token, never the token
+    # verification compares a hash of the derived token; the token
+    # itself is also kept (in the row's token column) so pairing works
+    # in both directions
     assert peer["token_hash"] == hash_token(derive_token(code))
     assert derive_token(code) not in peer["token_hash"]
     assert peer["token_hash"] != code
@@ -173,6 +178,48 @@ def test_pairing_code_shape_is_short_and_unambiguous(store):
     out = store.create_pairing_code()
     assert out["code"] != code
     assert out["expires_at"] == 1000.0 + CODE_TTL_S
+
+
+def test_wrong_code_attempts_burn_the_live_code(store):
+    """Five wrong submissions invalidate the live code: pairing has no
+    rate limit otherwise, so the counter is the throttle."""
+    code = store.create_pairing_code()["code"]
+    for attempt in range(MAX_PAIRING_MISSES - 1):
+        with pytest.raises(PeerError) as excinfo:
+            store.exchange_pairing_code(f"WRONG{attempt:02d}", peer_id="p",
+                                        name="n", base_url="127.0.0.1:1")
+        assert excinfo.value.code == "pairing:unknown-code"
+    # four misses so far: the right code still works
+    out = store.exchange_pairing_code(code, peer_id="peer-b", name="B",
+                                      base_url="127.0.0.1:8802")
+    assert out["ok"] is True
+
+
+def test_five_wrong_codes_invalidate_the_live_code(store):
+    code = store.create_pairing_code()["code"]
+    for attempt in range(MAX_PAIRING_MISSES):
+        with pytest.raises(PeerError):
+            store.exchange_pairing_code(f"MISS{attempt:02d}", peer_id="p",
+                                        name="n", base_url="127.0.0.1:1")
+    # the live code is dead: even the right one is refused by name
+    with pytest.raises(PeerError) as excinfo:
+        store.exchange_pairing_code(code, peer_id="p", name="n",
+                                    base_url="127.0.0.1:1")
+    assert excinfo.value.code == "pairing:unknown-code"
+    # and nothing was paired
+    assert store.peers() == []
+
+
+def test_a_fresh_code_resets_the_attempt_counter(store):
+    code = store.create_pairing_code()["code"]
+    for attempt in range(MAX_PAIRING_MISSES):
+        with pytest.raises(PeerError):
+            store.exchange_pairing_code(f"MISS{attempt:02d}", peer_id="p",
+                                        name="n", base_url="127.0.0.1:1")
+    fresh = store.create_pairing_code()["code"]
+    assert store.exchange_pairing_code(fresh, peer_id="peer-b", name="B",
+                                       base_url="127.0.0.1:8802")["ok"] is True
+    assert code != fresh
 
 
 def test_peer_refresh_state_records_the_honest_cause(store):

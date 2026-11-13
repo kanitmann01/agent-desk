@@ -66,14 +66,36 @@ def _discovered_section(catalog: dict) -> str:
     if discovered:
         cards = []
         for peer in discovered:
-            address = f"{peer.get('host', '127.0.0.1')}:{peer.get('port', '')}"
+            connectable = bool(peer.get("connectable", True))
+            if connectable:
+                address = (f"{peer.get('host', '127.0.0.1')}:"
+                           f"{peer.get('port', '')}")
+                note = (
+                    f"<p class='empty mono'>{_e(address)}</p>"
+                    "<p class='empty'>Discovered on this machine. Pairing "
+                    "still needs its code, shown on its own peers "
+                    "page.</p>"
+                )
+                form = _pair_form(address=address)
+            else:
+                # Every desk announces host 127.0.0.1 (the only address
+                # its server answers on), so a desk on another machine
+                # shows the address its announcement actually came from,
+                # marked honestly as not connectable from here: the pair
+                # form is never pre-filled with this desk's loopback.
+                source = peer.get("source") or "an unknown address"
+                note = (
+                    f"<p class='empty mono'>{_e(source)}</p>"
+                    "<div class='alert'><p>Discovered on another machine. "
+                    "This app listens on its own machine only, so it "
+                    "cannot be connected to from here; the address is "
+                    "shown for information.</p></div>"
+                )
+                form = _pair_form(address="")
             cards.append(
                 "<article class='card'>"
                 f"<h3>{_e(peer.get('name'))}</h3>"
-                f"<p class='empty mono'>{_e(address)}</p>"
-                "<p class='empty'>Discovered on this network. Pairing "
-                "still needs its code, shown on its own peers page.</p>"
-                + _pair_form(address=address)
+                + note + form
                 + "</article>"
             )
         body = "".join(cards)
@@ -86,7 +108,9 @@ def _discovered_section(catalog: dict) -> str:
     return (
         "<h2>Discovered desks</h2>"
         "<p class='empty'>Each desk announces itself over UDP on the "
-        "local network; nothing leaves it.</p>" + body
+        "local network; nothing leaves it. Desks on this machine can be "
+        "paired directly; desks elsewhere are listed with the address "
+        "their announcement came from.</p>" + body
     )
 
 

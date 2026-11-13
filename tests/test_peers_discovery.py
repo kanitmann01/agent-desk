@@ -102,6 +102,48 @@ def test_junk_announcements_are_ignored_not_fatal():
     assert a.discovered() == []
 
 
+def test_foreign_source_is_kept_for_display_and_marked_not_connectable():
+    """A desk on another machine announces host 127.0.0.1 (all any desk
+    can announce: the server binds loopback), so the receiver must keep
+    the packet's source address for display and mark the entry not
+    connectable, never pre-fill a pair form with its own loopback."""
+    a = DiscoveryService(peer_id="desk-aaa", name="Desk A", http_port=8801)
+    a.record_announcement(
+        {"app": "agent-desk", "peer_id": "desk-ccc", "name": "Far Desk",
+         "host": "127.0.0.1", "port": 8803, "pairing_required": True},
+        source_addr="203.0.113.9")  # TEST-NET-3: never one of ours
+    entry = a.discovered()[0]
+    assert entry["host"] == "127.0.0.1"  # what the desk announced
+    assert entry["source"] == "203.0.113.9"  # where it actually came from
+    assert entry["connectable"] is False
+
+
+def test_local_sources_stay_connectable():
+    a = DiscoveryService(peer_id="desk-aaa", name="Desk A", http_port=8801)
+    a.record_announcement(
+        {"app": "agent-desk", "peer_id": "desk-bbb", "name": "Desk B",
+         "host": "127.0.0.1", "port": 8802, "pairing_required": True},
+        source_addr="127.0.0.1")
+    assert a.discovered()[0]["connectable"] is True
+    # the same-machine broadcast arrives from this machine's LAN address
+    import socket
+
+    try:
+        _host, _alias, addresses = socket.gethostbyname_ex(
+            socket.gethostname())
+    except OSError:
+        addresses = []
+    if not addresses:
+        import pytest
+
+        pytest.skip("no interface address to test with")
+    a.record_announcement(
+        {"app": "agent-desk", "peer_id": "desk-bbb", "name": "Desk B",
+         "host": "127.0.0.1", "port": 8802, "pairing_required": True},
+        source_addr=addresses[0])
+    assert a.discovered()[0]["connectable"] is True
+
+
 def test_stop_ends_the_threads_and_frees_the_socket(announce_port):
     a = DiscoveryService(peer_id="desk-aaa", name="Desk A", http_port=8801,
                          announce_port=announce_port, interval=0.2)

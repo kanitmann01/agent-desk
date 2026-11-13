@@ -32,6 +32,26 @@ DEFAULT_INTERVAL_S = 3.0
 DEFAULT_TTL_S = 180.0  # a few minutes of silence and the entry is gone
 ANNOUNCE_MAX_BYTES = 4096
 
+# This machine's own addresses, resolved once and cached: a packet whose
+# source is one of them came from a desk on this machine (connectable,
+# because the servers bind loopback); anything else came from another
+# machine, which the pair form must never pre-fill with our loopback.
+_LOCAL_ADDRESSES: set[str] | None = None
+
+
+def _local_addresses() -> set[str]:
+    global _LOCAL_ADDRESSES
+    if _LOCAL_ADDRESSES is None:
+        addresses = {"127.0.0.1", "localhost", "::1"}
+        try:
+            _host, _alias, ips = socket.gethostbyname_ex(
+                socket.gethostname())
+            addresses.update(ips)
+        except OSError:
+            pass  # hostname unresolvable: loopback is still the truth
+        _LOCAL_ADDRESSES = addresses
+    return _LOCAL_ADDRESSES
+
 
 def _broadcast_targets() -> list[str]:
     """Where to send: the loopback, each interface's subnet broadcast,
@@ -207,7 +227,15 @@ class DiscoveryService:
 
     def record_announcement(self, payload: dict, source_addr: str) -> None:
         """One announcement into the discovered list, or ignored: only
-        this app's packets, only other desks, only complete identities."""
+        this app's packets, only other desks, only complete identities.
+
+        Every desk announces host 127.0.0.1 (the only address its server
+        answers on), so the packet's source address is kept separately:
+        a source on this machine marks the entry connectable (the pair
+        form may pre-fill 127.0.0.1), anything else is a desk on another
+        machine, listed with its real source and not connectable from
+        here until the bind policy changes.
+        """
         if not isinstance(payload, dict):
             return
         if payload.get("app") != APP_NAME:
@@ -219,10 +247,13 @@ class DiscoveryService:
         if not isinstance(port, int) or not (0 < port < 65536):
             return
         now = self.clock()
+        source = str(source_addr or "")
         entry = {
             "peer_id": peer_id,
             "name": str(payload.get("name") or peer_id),
-            "host": str(payload.get("host") or source_addr),
+            "host": str(payload.get("host") or "127.0.0.1"),
+            "source": source,
+            "connectable": source in _local_addresses(),
             "port": port,
             "pairing_required": bool(payload.get("pairing_required", True)),
             "last_seen": now,
