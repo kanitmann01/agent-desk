@@ -149,7 +149,18 @@ def test_amber_data_source_with_cause_and_retest(runtime, tmp_path):
     assert status["status"] == "attention"
     assert "reports" in status["cause"] or "no file" in status["cause"]
 
+    # A file that is not a workbook stays amber: Re-test attaches the
+    # real pipeline now (#69), and the parser's honest refusal beats a
+    # fresh-from-presence that binds nothing.
     (runtime.workspace_dir / "reports").mkdir(parents=True)
     (runtime.workspace_dir / "reports" / "q4.xlsx").write_bytes(b"x")
+    status = runtime.retest("sales-delta-widget")
+    assert status["status"] == "attention"
+
+    # A genuine workbook recovers to fresh through the same Re-test.
+    from excel_fixtures import make_xlsx
+
+    (runtime.workspace_dir / "reports" / "q4.xlsx").write_bytes(
+        make_xlsx([["Region", "Sales"], ["North", 10]]))
     status = runtime.retest("sales-delta-widget")
     assert status["status"] == "fresh"
