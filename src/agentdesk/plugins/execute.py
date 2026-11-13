@@ -33,9 +33,9 @@ from pathlib import Path
 
 from agentdesk.assistant.research_store import ResearchStore
 from agentdesk.calendar.watcher import (
+    STATE_CLEAR,
     STATE_EMPTY,
-    STATE_STALE,
-    STATE_UNREADABLE,
+    STATE_HEALTHY,
     CalendarBridge,
 )
 from agentdesk.excel.watcher import Adapters, ExcelWatch
@@ -111,10 +111,12 @@ class PluginWidgetRunner:
     """Runs installed plugins' widget data sources; one watch per plugin.
 
     The runner owns no lifecycle: the plugin runtime attaches and
-    detaches as plugins install, update, disable and uninstall, and the
-    runner only ever touches files under each plugin's own data dir and
-    the workspace globs the manifest declared (and the user consented
-    to) at install.
+    detaches as plugins install, update, disable and uninstall. An
+    excel-watch source runs over each plugin's own data dir and the
+    workspace glob the manifest declared (and the user consented to) at
+    install; the pipeline-backed types read the shared calendar bridge,
+    mail watcher and research store the server wired in, and write
+    nothing at all.
     """
 
     def __init__(self, workspace_dir: Path, adapters: Adapters | None = None,
@@ -417,7 +419,9 @@ class PluginWidgetRunner:
             return self._attention(
                 "No calendar data yet. Connect the calendar file on the "
                 "calendar walkthrough page, then re-test."), {}
-        if state in (STATE_STALE, STATE_UNREADABLE):
+        if state not in (STATE_HEALTHY, STATE_CLEAR):
+            # Stale, unreadable, or a state this host does not know:
+            # amber with the bridge's own cause, never a bound number.
             cause = str(view.get("cause") or
                         "the calendar data needs attention")
             return self._attention(cause), {}
