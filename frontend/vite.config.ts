@@ -17,7 +17,7 @@ const backendPaths = [
   // Every rail page: the consolidation surfaces and the plugins page are
   // server-rendered too, so their tabs must not fall back to this dev
   // shell. Pinned against the rail link set by src/test/devproxy.test.ts.
-  '/plugins', '/activity', '/memory', '/mail', '/capabilities',
+  '/plugins', '/activity', '/memory', '/mail', '/capabilities', '/peers',
   // The SPA's own widget calls (the commitments check) also go to the
   // Python server, not to this dev origin.
   '/widgets',
