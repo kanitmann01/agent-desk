@@ -232,9 +232,14 @@ def test_amber_widget_shows_cause_and_retest_recovers(running, tmp_path):
     assert 'data-freshness-status="attention"' in page
     assert "no file matches" in page
 
+    # A genuine workbook: Re-test attaches the pipeline (#69) and the
+    # card recovers with bound values, not mere file presence.
+    from excel_fixtures import make_xlsx
+
     reports = running.runtime.workspace_dir / "reports"
     reports.mkdir(parents=True)
-    (reports / "q4.xlsx").write_bytes(b"x")
+    (reports / "q4.xlsx").write_bytes(
+        make_xlsx([["Region", "Sales"], ["North", 10]]))
     status, out = running.post("/api/plugins/sales-delta-widget/retest", {})
     assert status == 200
     assert out["status"] == "fresh"

@@ -432,7 +432,17 @@ class PluginRuntime:
         entry = self._entry(state, plugin_id)
         if self.runner.attached(plugin_id):
             entry["data_source"] = self.runner.retest(plugin_id)
+        elif entry.get("state") == "enabled":
+            # The amber card's own recovery path: an install that found
+            # no workbook left the source unattached, and the file may
+            # have landed since. Re-test retries the attachment, so the
+            # card binds real values instead of only file presence;
+            # attach's probe-shaped status answers the still-missing
+            # case exactly as the probe did.
+            entry["data_source"] = self._attach_runner(plugin_id, entry)
         else:
+            # A disabled or uninstalled plugin never (re)attaches: its
+            # re-test only refreshes the honest probe line.
             entry["data_source"] = self.probe(plugin_id)
         self._write(state)
         return dict(entry["data_source"])

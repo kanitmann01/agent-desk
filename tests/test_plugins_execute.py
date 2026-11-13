@@ -213,6 +213,37 @@ def test_runtime_installs_executes_and_retests_the_widget(workspace, tmp_path):
     assert metrics[0] == "3 new rows."
 
 
+def test_retest_attaches_a_source_that_became_available(tmp_path):
+    """The amber install recovers through Re-test (#69): the workbook
+    lands in the workspace after install, and the re-test must retry the
+    attachment so the card binds real values, not just file presence."""
+    workspace = tmp_path / "workspace"
+    reports = workspace / "reports"
+    reports.mkdir(parents=True)  # empty: the install is honestly amber
+    workbook = FakeWorkbook([["Region", "Sales"], ["North", 10]])
+    clock = [1_000_000.0]
+    runner = _runner(workspace, workbook, clock)
+    runtime = PluginRuntime(plugins_dir=tmp_path / "plugins",
+                            data_dir=tmp_path / "plugin-data",
+                            workspace_dir=workspace, runner=runner)
+    runtime.install(valid_zip(tmp_path / "sales.zip"))
+    record = runtime.record("sales-delta-widget")
+    assert record["data_source"]["status"] == "attention"
+    assert "no file matches" in record["data_source"]["cause"]
+    assert not runner.attached("sales-delta-widget")
+
+    # the workbook arrives after the amber install; Re-test recovers
+    (reports / "sales.xlsx").write_bytes(b"xlsx")
+    status = runtime.retest("sales-delta-widget")
+    assert status["status"] == "fresh"
+    assert runner.attached("sales-delta-widget")
+    cards = runtime.widget_cards()
+    payload = cards[0]["payload"]
+    assert payload is not None
+    metrics = [e["value"] for e in payload["elements"] if e["kind"] == "metric"]
+    assert metrics == ["First snapshot taken; changes show on the next refresh."]
+
+
 def test_disable_detaches_and_enable_reattaches(workspace, tmp_path):
     workbook = FakeWorkbook([["North", 10]])
     clock = [1_000_000.0]
