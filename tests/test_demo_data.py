@@ -119,6 +119,26 @@ def test_toggling_sample_data_writes_its_audit_rows(env, auth):
 
 # -- seeding ---------------------------------------------------------------
 
+def test_sample_sales_rows_are_100_crm_deals():
+    rows = demo_data._sample_sales_rows()
+    assert rows[0] == ["Deal", "Region", "Stage", "Amount", "Close date", "Owner"]
+    assert len(rows) == 101
+    body = rows[1:]
+    assert len(body) == 100
+    for row in body:
+        assert len(row) == 6
+        deal, region, stage, amount, close_date, owner = row
+        assert isinstance(deal, str) and deal.startswith("Sample: ")
+        assert isinstance(region, str) and region
+        assert isinstance(stage, str) and stage
+        assert isinstance(amount, float)
+        assert isinstance(close_date, str) and len(close_date) == 10 and close_date[4] == "-"
+        assert isinstance(owner, str) and owner.startswith("Sample: ")
+    # Deterministic: two calls match, and workbook bytes round-trip the same rows
+    assert demo_data._sample_sales_rows() == rows
+    assert parse_workbook_bytes(demo_data.sample_workbook_bytes()) == rows
+
+
 def test_toggling_on_seeds_labelled_cards_of_each_kind(env, auth):
     _toggle(env, auth)
     cards = {c.id: c for c in _every_card(env.server.inbox)}
