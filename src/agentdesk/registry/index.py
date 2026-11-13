@@ -31,8 +31,13 @@ def _safe_name(value: str, what: str) -> str:
 class Release:
     version: str
     sha256: str
-    tag: str
+    tag: str = ""
     yanked: bool = False
+    # Where the release content lives: "tag" (extracted from git at the
+    # pinned tag, the PR-published shape) or "local" (the registry's own
+    # plugins/<id> directory, digest-pinned; published from inside the
+    # app with no git tag, so ``tag`` is empty by construction).
+    source: str = "tag"
 
 
 @dataclass(frozen=True)
@@ -91,13 +96,26 @@ def load_index(raw: str | bytes) -> RegistryIndex:
         releases = []
         for release in entry["releases"]:
             _require(isinstance(release, dict), "index:release-not-an-object")
-            for key in ("version", "sha256", "tag"):
+            for key in ("version", "sha256"):
                 _require(key in release, f"index:release-{key}-missing")
+            source = str(release.get("source", "tag"))
+            _require(source in ("tag", "local"),
+                     f"index:release-source-invalid:{source[:20]}")
+            if source == "local":
+                # A local release is pinned to the registry's plugins
+                # directory by digest; a tag on it would be a claim the
+                # release cannot keep, so the shape is refused outright.
+                _require("tag" not in release, "index:release-local-tag-present")
+                tag = ""
+            else:
+                _require("tag" in release, "index:release-tag-missing")
+                tag = _safe_name(str(release["tag"]), "tag")
             releases.append(Release(
                 version=_safe_name(str(release["version"]), "version"),
                 sha256=str(release["sha256"]),
-                tag=_safe_name(str(release["tag"]), "tag"),
+                tag=tag,
                 yanked=bool(release.get("yanked", False)),
+                source=source,
             ))
         plugins.append(PluginEntry(
             id=_safe_name(str(entry["id"]), "id"),
@@ -112,6 +130,14 @@ def load_index(raw: str | bytes) -> RegistryIndex:
 
 
 def _as_dict(index: RegistryIndex) -> dict:
+    def release_dict(r: Release) -> dict:
+        out = {"version": r.version, "sha256": r.sha256, "yanked": r.yanked}
+        if r.source == "local":
+            out["source"] = "local"  # digest-pinned to the plugins dir, no tag
+        else:
+            out["tag"] = r.tag
+        return out
+
     def plugin_dict(p: PluginEntry) -> dict:
         out = {
             "id": p.id,
@@ -119,11 +145,7 @@ def _as_dict(index: RegistryIndex) -> dict:
             "latest": p.latest,
             "risk": p.risk,
             "class": p.class_,
-            "releases": [
-                {"version": r.version, "sha256": r.sha256, "tag": r.tag,
-                 "yanked": r.yanked}
-                for r in p.releases
-            ],
+            "releases": [release_dict(r) for r in p.releases],
         }
         if p.dependencies:
             out["dependencies"] = list(p.dependencies)

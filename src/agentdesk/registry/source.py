@@ -87,7 +87,7 @@ def registry_listing(root: Path | None) -> dict:
                 "class": entry.class_,
                 "releases": [
                     {"version": r.version, "sha256": r.sha256, "tag": r.tag,
-                     "yanked": r.yanked}
+                     "yanked": r.yanked, "source": r.source}
                     for r in entry.releases
                 ],
             }

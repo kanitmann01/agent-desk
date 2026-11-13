@@ -9,6 +9,9 @@ index:
   in the index.
 - Hash consistency: the index pin must equal the recomputed tree digest
   of the plugin directory.
+- Local releases: every ``source: "local"`` release of a reviewed
+  plugin resolves from the registry's own working tree, so its
+  versioned directory must exist and hash to its pin.
 - Append-only history: releases may be appended or yanked, never
   dropped, because clients pinned to older versions must keep
   resolving.
@@ -46,6 +49,33 @@ def _hash_reasons(index, plugin_dir: Path, plugin_id: str) -> list[str]:
     if release.sha256 != tree_digest(plugin_dir):
         return [f"registry-ci:hash-mismatch:{plugin_id}@{version}"]
     return []
+
+
+def _local_release_reasons(index, registry_root: Path,
+                           plugin_id: str) -> list[str]:
+    """Every local release of a reviewed plugin must keep resolving.
+
+    A local release installs straight from the registry's working tree
+    (``plugins/<id>/<version>``, the directory publish wrote), so a
+    missing or tampered tree is a broken pin even when only the newest
+    version's directory changed in this review.
+    """
+    entry = index.plugin(plugin_id)
+    if entry is None:
+        return []
+    reasons = []
+    for release in entry.releases:
+        if release.source != "local":
+            continue
+        versioned = registry_root / "plugins" / plugin_id / release.version
+        if not versioned.is_dir():
+            reasons.append(
+                f"registry-ci:local-release-missing:{plugin_id}@{release.version}")
+            continue
+        if release.sha256 != tree_digest(versioned):
+            reasons.append(
+                f"registry-ci:hash-mismatch:{plugin_id}@{release.version}")
+    return reasons
 
 
 def _history_reasons(new_index, base_index_text: str | None) -> list[str]:
@@ -88,6 +118,7 @@ def review_registry_changes(registry_root: Path, plugin_dirs: list[Path],
 
     reasons += _history_reasons(index, base_index_text)
 
+    reviewed_ids: set[str] = set()
     for plugin_dir in plugin_dirs:
         plugin_dir = Path(plugin_dir)
         try:
@@ -106,5 +137,10 @@ def review_registry_changes(registry_root: Path, plugin_dirs: list[Path],
             continue
         reasons += _dependency_reasons(index, plugin_dir, plugin_id)
         reasons += _hash_reasons(index, plugin_dir, plugin_id)
+        # Once per plugin, however many of its directories the review
+        # was handed: every local release pin must resolve.
+        if plugin_id not in reviewed_ids:
+            reviewed_ids.add(plugin_id)
+            reasons += _local_release_reasons(index, registry_root, plugin_id)
 
     return {"ok": not reasons, "reasons": reasons}

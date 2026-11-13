@@ -74,6 +74,9 @@ def _installed_block(record: dict) -> str:
         actions.append(("Enable", "enable", "btn-primary"))
     if len(record.get("versions", [])) > 1:
         actions.append(("Roll back", "rollback", "btn-secondary"))
+    # The create-to-publish loop: every installed plugin can become a
+    # local registry release (validated, digest-pinned) in one click.
+    actions.append(("Publish", "publish", "btn-secondary"))
     actions.append(("Uninstall", "uninstall", "btn-secondary"))
     forms = "".join(
         f"<form method='post' action='/plugins/{plugin_id}/{action}' class='inlineform'>"
