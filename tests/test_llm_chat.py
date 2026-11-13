@@ -25,7 +25,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.llm import LlmUnavailable, chat, transport_cause
+from agentdesk.llm import LlmUnavailable, auth_headers, chat, transport_cause, uses_azure_api_key
 
 
 class GarbageEndpoint:
@@ -276,3 +276,33 @@ def test_causes_never_echo_url_credentials():
     assert "127.0.0.1:9" in cause
     assert "secret" not in cause
     assert "user" not in cause
+
+
+def test_uses_azure_api_key_matches_foundry_and_azure_hosts():
+    assert uses_azure_api_key("https://my-resource.openai.azure.com/openai/v1")
+    assert uses_azure_api_key("https://my-resource.services.ai.azure.com/openai/v1")
+    assert uses_azure_api_key("https://my-resource.cognitiveservices.azure.com/openai/v1")
+    assert uses_azure_api_key("https://my-gateway.azure-api.net/openai/v1")
+    assert uses_azure_api_key("https://openai.azure.com/openai/v1")  # apex
+    assert uses_azure_api_key("https://MY-RESOURCE.OPENAI.AZURE.COM/openai/v1")  # case
+    assert uses_azure_api_key("https://my-resource.openai.azure.com:443/openai/v1")  # port
+
+
+def test_uses_azure_api_key_rejects_non_azure_and_empty():
+    assert not uses_azure_api_key("https://api.openai.com/v1")
+    assert not uses_azure_api_key("https://llm.corp.example/v1")
+    assert not uses_azure_api_key("https://api.anthropic.com/v1")
+    assert not uses_azure_api_key("")
+    assert not uses_azure_api_key("not-a-url")
+
+
+def test_auth_headers_send_api_key_for_azure_and_bearer_otherwise():
+    azure = auth_headers("https://x.openai.azure.com/openai/v1", "secret")
+    assert azure["Content-Type"] == "application/json"
+    assert azure["api-key"] == "secret"
+    assert "Authorization" not in azure
+
+    other = auth_headers("https://api.openai.com/v1", "secret")
+    assert other["Content-Type"] == "application/json"
+    assert other["Authorization"] == "Bearer secret"
+    assert "api-key" not in other
