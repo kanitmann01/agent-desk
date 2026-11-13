@@ -20,6 +20,9 @@ DECISIONS = {
     "inbox.snoozed": "snoozed",
     "inbox.more-info": "more-info",
     "inbox.pending": "pending",
+    "inbox.restored": "restored",
+    "demo.seeded": "sample on",
+    "demo.cleared": "sample off",
 }
 
 
@@ -55,13 +58,14 @@ def render_activity_page(entries: list[dict], version: str, inbox_count: int = 0
     else:
         table = (
             "<p class='empty'>No decisions yet. Approvals, denials, edits, "
-            "snoozes, more-info asks and returns will be listed here, "
-            "newest first.</p>"
+            "snoozes, more-info asks, restores, returns and sample-data "
+            "turns will be listed here, newest first.</p>"
         )
     content = f"""<h1>Activity</h1>
 <p>Every decision you have made on the inbox's cards, newest first:
-approved, denied, edited, snoozed, more-info, and the returns of cards
-whose snooze ran out. The full audit log behind it, including model
+approved, denied, edited, snoozed, more-info, restores of dismissed
+cards, the returns of cards whose snooze ran out, and the sample-data
+switch. The full audit log behind it, including model
 calls and file reads, is the <a href="/audit/export.csv">CSV export</a>
 Security reviews.</p>
 {table}

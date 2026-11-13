@@ -11,6 +11,7 @@ from datetime import datetime
 from agentdesk.inbox.core import STATUS_DISMISSED, Card
 from agentdesk.server.core import ATTENTION, FRESH, Freshness
 from agentdesk.server.demo import Widget  # noqa: F401  (contract reference)
+from agentdesk.server.demo_data import is_sample_card
 from agentdesk.server.pages import page_shell
 
 _KIND_LABEL = {
@@ -81,11 +82,17 @@ def card_html(card: Card, now_ts: float) -> str:
             "</form>"
         )
     forms += "</div>"
+    # A seeded card says Sample twice: the tag beside its kind, and the
+    # origin line's own "Sample data:" opener. It can never read as live.
+    sample_tag = (
+        " <span class='tag-sample'>Sample</span>" if is_sample_card(card) else ""
+    )
     return (
         f"<article class='widget{expired_class}' id='card-{html.escape(card.id)}' "
         f"data-freshness-status='{'attention' if expired else 'fresh'}'>"
         "<div class='w-head'>"
         f"<span class='origin-line'>{html.escape(_KIND_LABEL.get(card.kind, card.kind))}</span>"
+        f"{sample_tag}"
         f"<span class='stamp'><span class='dot{' amber' if expired else ''}' aria-hidden='true'></span>"
         f"{html.escape(age)}</span></div>"
         f"<h3>{html.escape(card.title)}</h3>"
@@ -100,18 +107,40 @@ def card_html(card: Card, now_ts: float) -> str:
     )
 
 
-def render_inbox_page(waiting: list[Card], dismissed: list[Card], version: str, now_ts: float) -> str:
+def render_inbox_page(
+    waiting: list[Card],
+    dismissed: list[Card],
+    version: str,
+    now_ts: float,
+    sample_data_on: bool = False,
+) -> str:
     """The full inbox document, with the good empty and the recovery shelf."""
     if waiting:
         cards_html = "".join(card_html(c, now_ts) for c in waiting)
         empty = ""
     else:
         cards_html = ""
+        # The fresh desk's one offer: see the inbox working with labelled
+        # sample data. A plain no-JS form post, the page's own style; the
+        # switch also lives in Settings for later.
+        offer = (
+            "<form method='post' action='/settings/toggle' class='cardform'>"
+            "<input type='hidden' name='key' value='sample_data'>"
+            "<button class='btn btn-secondary' type='submit'>"
+            "Show me what this looks like with sample data</button>"
+            "</form>"
+            "<p class='empty'>Sample data is labelled Sample everywhere it "
+            "appears and is removed the moment the switch goes off. The "
+            "switch also lives in <a href='/settings'>Settings</a>.</p>"
+            if not sample_data_on
+            else ""
+        )
         empty = (
             "<div class='widget' id='inbox-empty'>"
             "<div class='w-head'><h2>Nothing needs your attention</h2></div>"
             "<p>When the agent notices a pattern, an update, or a brief worth "
             "seeing, it lands here as a card. It never interrupts you otherwise.</p>"
+            f"{offer}"
             "<p><a href='/what-this-touches'>See what the app has been doing</a></p>"
             "</div>"
         )

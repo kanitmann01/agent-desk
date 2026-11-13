@@ -118,6 +118,7 @@ from agentdesk.server.core import (
     SourceStatus,
 )
 from agentdesk.server.demo import Widget
+from agentdesk.server import demo_data
 from agentdesk.server.guard import check_request
 from agentdesk.server.health import health_payload
 from agentdesk.server.sales import (
@@ -1425,12 +1426,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled"):
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
-        self._apply_source_toggles(key, value)
+        if key == "sample_data":
+            # The demo switch is not a data source: no watcher stops or
+            # starts, so it never joins _apply_source_toggles.
+            self._apply_sample_data(value)
+        else:
+            self._apply_source_toggles(key, value)
+        # The one form poster is the inbox empty state's offer, so a
+        # no-JS post lands back on the inbox it came from.
+        if self._is_form_submit():
+            self._send_redirect("/inbox")
+            return
         self._send_json(200, {"key": key, "value": value})
+
+    def _apply_sample_data(self, value) -> None:
+        """On seeds the labelled sample set into the real stores; off
+        removes exactly what the Sample markers identify. Both turns
+        write their audit row, so the decision log says what happened
+        and the activity page shows it."""
+        server = self.server  # type: ignore[attr-defined]
+        result = (
+            demo_data.seed(server.inbox, default_data_dir()) if value
+            else demo_data.clear(server.inbox, default_data_dir())
+        )
+        self._audit("demo.seeded" if value else "demo.cleared",
+                    target="sample_data", detail=result["detail"])
 
     def _apply_source_toggles(self, key: str, value) -> None:
         """Toggling a source off stops its ingestion immediately; on it
@@ -1551,7 +1575,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # The store's own clock, like every payload: cards never age by
         # two different clocks.
         now_ts = inbox.now_ts()
-        page = render_inbox_page(inbox.waiting(), inbox.dismissed(), agentdesk.__version__, now_ts)
+        settings = self.server.settings  # type: ignore[attr-defined]
+        sample_on = bool(settings.get("sample_data")) if settings is not None else False
+        page = render_inbox_page(inbox.waiting(), inbox.dismissed(),
+                                 agentdesk.__version__, now_ts,
+                                 sample_data_on=sample_on)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _inbox_waiting_count(self) -> int:
@@ -2129,6 +2157,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             else:
                 self._send_json(404, {"error": str(exc)})
             return
+        # A restore is a decision like the others: it is recorded, so a
+        # card never reappears silently (the pending rule's sibling).
+        self._audit("inbox.restored", target=card.id, detail=card.title)
         self._send_json(200, card.to_json(inbox.now_ts()))
 
     def _dispatch_plugin_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
