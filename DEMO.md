@@ -108,7 +108,10 @@ and it installs in pilot mode. No endpoint was needed for this.
 
 IF IT FAILS: the preview names exactly what it would read; if the words
 cannot be built safely the wizard says so and exports the request to
-the inbox instead of guessing. That dead-end is the honest path.
+the inbox instead of guessing. That dead-end is the honest path. If the
+preview's metric line shows its label without a number, that is the
+honest state before any workbook matches the glob; Beat 7's excel-report
+card carries the real numbers once a workbook is connected.
 
 ## Beat 5: publish it to the registry (1 minute)
 

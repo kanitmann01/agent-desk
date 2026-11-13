@@ -10,6 +10,7 @@ state, never the value.
 """
 
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 
@@ -54,13 +55,21 @@ class SettingsStore:
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time) -> None:
         self.conn = conn
         self.clock = clock
+        # One lock around every statement: the connection is shared
+        # across request threads (check_same_thread=False), the guard
+        # reads it on EVERY request, and without this the interleaved
+        # cursor use raises InterfaceError on the hot path (the same
+        # shared-connection class the calendar bridge fixed with a
+        # lock; see the research store for the third instance).
+        self._lock = threading.RLock()
         ensure_schema(conn)
 
     def get(self, key: str):
         """The stored value, or the default. Unknown keys are not settings."""
         if key not in DEFAULTS:
             raise KeyError(f"unknown setting: {key}")
-        row = self.conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        with self._lock:
+            row = self.conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         if row is None:
             return DEFAULTS[key]
         default = DEFAULTS[key]
@@ -81,7 +90,7 @@ class SettingsStore:
             if value not in CHOICES[key]:
                 raise ValueError(f"{key} must be one of {CHOICES[key]}")
             stored = str(value)
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
