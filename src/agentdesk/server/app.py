@@ -54,6 +54,13 @@ from agentdesk.inbox.core import (
 )
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
+from agentdesk.layout import (
+    BUILTIN_KEYS as BUILTIN_LAYOUT_KEYS,
+    LayoutError,
+    LayoutStore,
+    parse_layout,
+    resolved_layout,
+)
 from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
 from agentdesk.mail.store import MailStore
 from agentdesk.mail.watcher import (
@@ -484,6 +491,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         wizard_store: WizardStore | None = None,
         consents: ConsentStore | None = None,
         memory_store: MemoryStore | None = None,
+        layout_store: LayoutStore | None = None,
         capabilities_cache: CapabilitiesCache | None = None,
         gate_runners: GateRunners | None = None,
         mail: MailWatch | None = None,
@@ -513,6 +521,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.plugins = plugins
         self.wizard_store = wizard_store
         self.memory = memory_store
+        # The dashboard card arrangement (order, hidden, titles); None
+        # when its store could not open, in which case reads resolve the
+        # canonical default and saves refuse.
+        self.layout = layout_store
         # The capabilities cache may be absent (its store could not open);
         # the runner set defaults to the real probe bundle. Building that
         # set probes nothing: gates run only when a re-test POST calls one.
@@ -589,6 +601,22 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     ]
 
 
+def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
+    """The plugin ids whose cards exist right now, in listing order.
+
+    Only enabled plugins render a card (the same filter widget_cards
+    applies), so those are the layout's plugin universe. This call is
+    read-only: unlike widget_cards it never spends a pilot view.
+    """
+    plugins = server.plugins
+    if plugins is None:
+        return []
+    return [
+        entry["id"] for entry in plugins.list_records()
+        if entry.get("state") == "enabled"
+    ]
+
+
 def dashboard_payload(server: AgentDeskServer) -> dict:
     """Everything the dashboard shows, as data: one JSON payload for the
     SPA shell (and any later client). The same source-state branches the
@@ -631,6 +659,16 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
     sources = live_sources(server)
     inbox = server.inbox  # type: ignore[attr-defined]
+    # The layout the dashboard renders in: hidden cards are omitted from
+    # this listing (GET /api/layout still lists them, so hiding is always
+    # recoverable) and custom titles ride each entry; a plugin's custom
+    # title also overrides its card title below, so the layout and the
+    # card data can never disagree.
+    layout_entries = resolved_layout(server.layout, enabled_plugin_ids(server))
+    custom_titles = {
+        entry["key"]: entry["title"]
+        for entry in layout_entries if entry["title"]
+    }
     return {
         "version": agentdesk.__version__,
         "flags": {
@@ -664,11 +702,17 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
             {"id": s["id"], "name": s["name"], "description": s["description"]}
             for s in skills
         ],
+        "layout": {
+            "cards": [
+                {"key": entry["key"], "title": entry["title"]}
+                for entry in layout_entries if not entry["hidden"]
+            ],
+        },
         "plugins": {
             "cards": [
                 {
                     "id": c["id"],
-                    "title": c["title"],
+                    "title": custom_titles.get(c["id"], c["title"]),
                     "version": c["version"],
                     "pilot": c["pilot"],
                     "state": c["state"],
@@ -859,6 +903,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._registry_listing_for_request())
         elif path == "/api/dashboard":
             self._send_json(200, dashboard_payload(self.server))
+        elif path == "/api/layout":
+            # The full layout, hidden cards included: the recoverable
+            # truth behind the payload's visible-only listing.
+            self._send_json(200, {
+                "cards": resolved_layout(
+                    self.server.layout,  # type: ignore[attr-defined]
+                    enabled_plugin_ids(self.server)),
+            })
         elif path.startswith("/api/plugins/"):
             self._send_json(200, self._plugin_record_or_404(path[len("/api/plugins/"):]))
         elif path == "/audit/export.csv":
@@ -1058,6 +1110,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._skill_undo(int(path[len("/skills/"):-len("/undo")].strip("/")))
         elif path == "/settings/toggle":
             self._settings_toggle()
+        elif path == "/api/layout":
+            self._layout_save()
         elif path == "/settings/endpoint/save":
             self._endpoint_save()
         elif path == "/settings/endpoint/test":
@@ -1528,6 +1582,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         self._audit("demo.seeded" if value else "demo.cleared",
                     target="sample_data", detail=result["detail"])
+
+    def _layout_save(self) -> None:
+        """Save the full desired dashboard layout (issue #66).
+
+        The body is the complete card list in the desired order; the
+        array order is the card order, and unmentioned rows are dropped.
+        Keys outside the current card universe (builtins plus installed
+        plugins) are refused with the named layout errors, so a stale
+        plugin id cannot be stored forever and a typo cannot invent a
+        card.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.layout is None:
+            self._send_json(503, {"error": "the layout store is not available"})
+            return
+        body = self._read_json_body() or {}
+        known = set(BUILTIN_LAYOUT_KEYS) | set(enabled_plugin_ids(server))
+        try:
+            cards = parse_layout(body.get("cards"), known)
+        except LayoutError as exc:
+            payload = {"error": exc.code, "message": str(exc)}
+            if exc.key is not None:
+                payload["key"] = exc.key
+            self._send_json(400, payload)
+            return
+        server.layout.replace(cards)
+        self._send_json(200, {
+            "cards": resolved_layout(server.layout, enabled_plugin_ids(server)),
+        })
 
     def _apply_source_toggles(self, key: str, value) -> None:
         """Toggling a source off stops its ingestion immediately; on it
@@ -2988,6 +3071,7 @@ def create_server(
     wizard_store: WizardStore | None = None,
     consents: ConsentStore | None = None,
     memory_store: MemoryStore | None = None,
+    layout_store: LayoutStore | None = None,
     capabilities_cache: CapabilitiesCache | None = None,
     gate_runners: GateRunners | None = None,
     mail: MailWatch | None = None,
@@ -3038,6 +3122,8 @@ def create_server(
         wizard_store = _default_wizard_store()
     if memory_store is None:
         memory_store = _default_memory_store()
+    if layout_store is None:
+        layout_store = _default_layout_store()
     if capabilities_cache is None:
         capabilities_cache = _default_capabilities_cache()
     if gate_runners is None:
@@ -3068,6 +3154,7 @@ def create_server(
             wizard_store=wizard_store,
             consents=consents,
             memory_store=memory_store,
+            layout_store=layout_store,
             capabilities_cache=capabilities_cache,
             gate_runners=gate_runners,
             mail=mail,
@@ -3198,6 +3285,19 @@ def _default_memory_store() -> MemoryStore | None:
         return MemoryStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("memory store unavailable")
+        return None
+
+
+def _default_layout_store() -> LayoutStore | None:
+    """The dashboard card arrangement over the persistent store, or None
+    when it cannot open (reads then resolve the canonical default)."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "layout.sqlite3", check_same_thread=False)
+        return LayoutStore(conn)
+    except (OSError, sqlite3.Error):
+        LOG.exception("layout store unavailable")
         return None
 
 

@@ -29,6 +29,7 @@ from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
+from agentdesk.layout import LayoutStore
 from agentdesk.mail.store import MailStore
 from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.runtime import PluginRuntime
@@ -64,6 +65,10 @@ def _inert_inbox():
 
 def _inert_memory():
     return MemoryStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_layout():
+    return LayoutStore(sqlite3.connect(":memory:", check_same_thread=False))
 
 
 def _inert_wizard_store():
@@ -142,6 +147,9 @@ class Booted:
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
         kwargs.setdefault("memory_store", _inert_memory())
+        # The layout store joins the inert in-memory defaults, so no boot
+        # in the suite touches the real ~/.agent-desk/layout.sqlite3.
+        kwargs.setdefault("layout_store", _inert_layout())
         # The wizard sessions join the inert in-memory defaults: without
         # this, a boot with no injection falls through to create_server's
         # _default_wizard_store(), which writes the real
