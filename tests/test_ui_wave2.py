@@ -238,14 +238,31 @@ def test_the_rail_carries_a_collapse_control(booted):
     page = _get(booted, "/inbox")
     assert 'class="rail-toggle"' in page, page[:400]
     toggle = page.split('class="rail-toggle"')[1].split("</button>")[0]
-    assert 'aria-expanded="false"' in toggle, toggle[:200]
+    # The rail starts expanded, and the button expands the nav, so the
+    # initial state is expanded: aria-expanded true.
+    assert 'aria-expanded="true"' in toggle, toggle[:200]
     assert "aria-label" in toggle, toggle[:200]
+
+
+def test_every_rail_link_keeps_its_accessible_name(booted):
+    page = _sample_inbox_page(booted)
+    rail = page.split('<nav class="rail"')[1].split("</nav>")[0]
+    anchors = re.findall(r'<a href="([^"]+)"', rail)
+    assert len(anchors) >= 10, anchors
+    # Collapse hides the visible labels, so each anchor must name
+    # itself; the Inbox link also names its waiting count.
+    for href in anchors:
+        anchor = re.search(rf'<a href="{re.escape(href)}"[^>]*>', rail).group(0)
+        assert 'aria-label="' in anchor, (href, anchor)
+    assert 'aria-label="Inbox, 4 waiting"' in rail, "the inbox link lost its count name"
 
 
 def test_the_collapse_state_persists_through_the_app_script(booted):
     js = _app_js(booted)
     assert "agentdesk.railCollapsed" in js, "the rail state has no persistence key"
     assert "rail-collapsed" in js, "the script never applies the collapsed class"
+    # The button expands the nav: expanded rail announces expanded.
+    assert "collapsed ? 'false' : 'true'" in js, js[-600:]
 
 
 def test_the_stylesheet_collapses_the_rail_to_its_marks(booted):
@@ -260,12 +277,34 @@ def test_the_stylesheet_collapses_the_rail_to_its_marks(booted):
     assert hide, "no collapsed-entry rule"
 
 
+def _media_block(css: str, query: str) -> str:
+    """One balanced @media block, so the test reads exactly what ships."""
+    marker = f"@media {query}{{"
+    start = css.find(marker)
+    if start == -1:
+        return ""
+    depth = 0
+    for i in range(start + len(marker) - 1, len(css)):
+        if css[i] == "{":
+            depth += 1
+        elif css[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[start:i + 1]
+    return ""
+
+
 def test_the_collapse_control_leaves_the_narrow_strip_alone(booted):
     css = _stylesheet(booted)
-    narrow = css.split("@media (max-width:980px){")[1].split("}@media")[0] \
-        if "@media (max-width:980px){" in css else ""
+    narrow = _media_block(css, "(max-width:980px)")
     assert narrow, "no narrow-width media block"
     assert ".rail-toggle{display:none}" in narrow, narrow[:400]
+    # The collapsed rules live in a wide-rail guard: a state set at a
+    # wide width must not leak into the strip that has no toggle.
+    wide = _media_block(css, "(min-width:981px)")
+    assert wide, "no wide-rail guard block"
+    assert ".app.rail-collapsed" in wide, "the collapsed rules are not scoped to the wide rail"
+    assert ".rail-collapsed .rail .rail-label{display:none}" in wide
 
 
 # -- Contrast and the footer column ---------------------------------------

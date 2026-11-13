@@ -184,7 +184,11 @@ svg{display:block;flex:none}
 .rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;transition:background var(--dur) ease,color var(--dur) ease}
 .rail-toggle:hover{background:#EFEDE5;color:var(--ink-1)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
-   drops its text; the column narrows to the mark width. */
+   drops its text; the column narrows to the mark width. Scoped to the
+   wide rail: below 981px the strip shows every entry and hides the
+   toggle, so a collapsed state must not leak into it (the toggle that
+   could undo it is not there). */
+@media (min-width:981px){
 .app.rail-collapsed{grid-template-columns:68px 1fr}
 .rail-collapsed .rail{padding:20px 10px}
 .rail-collapsed .rail a{position:relative;justify-content:center;padding:8px 0;gap:0}
@@ -195,6 +199,7 @@ svg{display:block;flex:none}
 .rail-collapsed .brand b,.rail-collapsed .brand-name{display:none}
 .rail-collapsed .rail .user{justify-content:center;padding:10px 0}
 .rail-collapsed .rail .user > div{display:none}
+}
 main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
 .topbar h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
@@ -255,7 +260,8 @@ table.rows td.neg{color:var(--bad)}
 .thread .who{font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.06em}
 .thread p{color:var(--ink-1);font-size:13.5px}
 .answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px;display:flex;flex-direction:column;gap:8px}
-.answer .aq{font-weight:700;margin-bottom:0}
+.answer p{margin:0}
+.answer .aq{font-weight:700}
 .answer .well-input{width:100%}
 .src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
 .tag-sample{font-size:10px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
@@ -603,6 +609,8 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
 // The rail collapse: one control, persisted, applied as the script
 // loads. The class narrows the column and keeps the marks (icons, the
 // inbox count, the avatar); the label span text stays for the wide rail.
+// The button expands the nav, so its aria-expanded reads the rail's
+// state: expanded true, collapsed false.
 (function () {
   var KEY = 'agentdesk.railCollapsed';
   var app = document.querySelector('.app');
@@ -610,7 +618,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
   if (!app || !btn) return;
   var apply = function (collapsed) {
     app.classList.toggle('rail-collapsed', collapsed);
-    btn.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
     var label = btn.querySelector('.rail-toggle-label');
     if (label) label.textContent = collapsed ? 'Expand' : 'Collapse';
@@ -619,7 +627,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
   try { stored = localStorage.getItem(KEY); } catch (e) { stored = null; }
   apply(stored === '1');
   btn.addEventListener('click', function () {
-    var next = btn.getAttribute('aria-expanded') !== 'true';
+    var next = !app.classList.contains('rail-collapsed');
     try { localStorage.setItem(KEY, next ? '1' : '0'); } catch (e) {}
     apply(next);
   });
@@ -660,7 +668,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     marks; the collapse control sits under the entries."""
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
     toggle = (
-        '<button type="button" class="rail-toggle" aria-expanded="false" '
+        '<button type="button" class="rail-toggle" aria-expanded="true" '
         'aria-label="Collapse navigation">'
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
@@ -670,7 +678,13 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
 
     def entry(href: str, icon: str, label: str, extra: str = "") -> str:
         current = ' aria-current="page"' if href == active else ""
-        return f'<a href="{href}"{current}>{icon}<span class="rail-label">{label}</span>{extra}</a>'
+        # The accessible name survives collapse: the visible label hides
+        # with the wide rail, so every link carries its own aria-label,
+        # and the Inbox link names its waiting count.
+        name = label
+        if href == "/inbox" and inbox_count:
+            name = f"{label}, {inbox_count} waiting"
+        return f'<a href="{href}"{current} aria-label="{name}">{icon}<span class="rail-label">{label}</span>{extra}</a>'
 
     return (
         '<nav class="rail" aria-label="Main">'
