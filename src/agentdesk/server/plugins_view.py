@@ -24,7 +24,9 @@ _CLASS_NOTE = {
 }
 
 
-def _installed_block(record: dict) -> str:
+def _installed_block(record: dict, shared_ids: set[str] | None = None,
+                     peers_paired: int = 0) -> str:
+    shared_ids = shared_ids or set()
     plugin_id = html.escape(str(record["id"]))
     name = html.escape(str(record.get("name", record["id"])))
     version = html.escape(str(record.get("active_version", "")))
@@ -83,7 +85,24 @@ def _installed_block(record: dict) -> str:
         f"<button class='btn {cls}' type='submit'>{html.escape(label)}</button>"
         "</form>"
         for label, action, cls in actions)
-    body += f"<div class='cardrow'>{forms}</div>"
+    # The Share toggle (ticket #67): paired desks can install this
+    # plugin from this desk while it is shared.
+    shared = str(record["id"]) in shared_ids
+    if shared:
+        share_note = ("<p class='empty'>Shared with paired desks: they "
+                      "see its manifest and bundle, never your data.</p>")
+        share_form = (
+            f"<form method='post' action='/plugins/{plugin_id}/unshare' "
+            "class='inlineform'><button class='btn btn-secondary' "
+            "type='submit'>Stop sharing</button></form>")
+    else:
+        share_note = ""
+        share_form = (
+            f"<form method='post' action='/plugins/{plugin_id}/share' "
+            "class='inlineform'><button class='btn btn-secondary' "
+            "type='submit'>Share with peers</button></form>")
+    forms = share_form + forms
+    body += f"<div class='cardrow'>{forms}</div>{share_note}"
 
     if pending:
         added = html.escape("; ".join(pending.get("added_scopes", [])))
@@ -125,7 +144,9 @@ def _registry_block(entry: dict, installed_ids: set[str]) -> str:
 
 def render_plugins_page(records: list[dict], listing: dict, origin: str,
                         version: str, notice: str = "",
-                        inbox_count: int = 0) -> str:
+                        inbox_count: int = 0,
+                        shared_ids: set[str] | None = None,
+                        peers_paired: int = 0) -> str:
     installed = [record for record in records
                  if record.get("state") != "uninstalled"]
     uninstalled = [record for record in records
@@ -133,7 +154,9 @@ def render_plugins_page(records: list[dict], listing: dict, origin: str,
     installed_ids = {str(record["id"]) for record in installed}
 
     if installed:
-        installed_html = "".join(_installed_block(record) for record in installed)
+        installed_html = "".join(
+            _installed_block(record, shared_ids, peers_paired)
+            for record in installed)
     else:
         installed_html = (
             "<p class='empty'>Nothing installed yet. The wizard builds one "

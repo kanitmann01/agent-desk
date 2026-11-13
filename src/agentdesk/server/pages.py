@@ -82,6 +82,14 @@ _ICON_CAPABILITIES = (
     '<path d="M12 3.5 5 6.2v4.6c0 4.6 3 8.6 7 9.7 4-1.1 7-5.1 7-9.7V6.2L12 3.5Z"/>'
     '<path d="m9 11.5 2.2 2.2 3.8-4.4"/></svg>'
 )
+_ICON_PEERS = (
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true">'
+    '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/>'
+    '<path d="M10.5 10.5 13.5 13.5"/><path d="M3.5 8h1.5M19 16h1.5"/>'
+    '</svg>'
+)
 
 # The design language tokens, verbatim from docs/design-language.md. Font
 # families resolve locally: the named faces when installed, otherwise the
@@ -597,6 +605,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/mail", _ICON_MAIL, "Mail")}'
         f'{entry("/capabilities", _ICON_CAPABILITIES, "Capabilities")}'
         f'{entry("/plugins", _ICON_PLUGINS, "Plugins")}'
+        f'{entry("/peers", _ICON_PEERS, "Peers")}'
         f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'

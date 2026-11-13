@@ -114,11 +114,12 @@ def test_rail_links_the_four_consolidation_pages(page):
     scan.feed(page)
     # Dashboard, inbox, assistant, then the four pages the consolidation
     # shipped (activity, memory, mail, capabilities), then the plugins
-    # page, then settings: the rail matches the SPA's entries, so
-    # Assistant and Plugins are on every page too.
+    # page, then the peers page (ticket #67), then settings: the rail
+    # matches the SPA's entries, so Assistant, Plugins and Peers are on
+    # every page too.
     assert scan.hrefs == [
         "/", "/inbox", "/assistant", "/activity", "/memory", "/mail",
-        "/capabilities", "/plugins", "/settings",
+        "/capabilities", "/plugins", "/peers", "/settings",
     ]
 
 
