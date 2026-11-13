@@ -384,3 +384,156 @@ def test_calendar_card_ignores_excel_and_unknown_bindings(workspace, tmp_path):
         {"kind": "metric", "label": "Today", "value": "1"},
         {"kind": "text", "text": "Static note"},
     ]
+
+
+# The mail-digest binding: a real MailWatch over a seeded .eml folder.
+# The fixture files carry a placeholder body on purpose: the pipeline
+# discards it at parse time (the Message record has no body field), and
+# the tests pin that the bound card can only ever carry header counts.
+
+def _eml(message_id: str, subject: str, sender: str, date_ts: float,
+         in_reply_to: str = "") -> bytes:
+    from email.utils import formatdate
+
+    lines = [
+        f"From: {sender}",
+        "To: employee@example.com",
+        f"Subject: {subject}",
+        f"Date: {formatdate(date_ts, usegmt=True)}",
+        f"Message-ID: {message_id}",
+    ]
+    if in_reply_to:
+        lines.append(f"In-Reply-To: {in_reply_to}")
+    lines += ["MIME-Version: 1.0",
+              "Content-Type: text/plain; charset=utf-8",
+              "",
+              "a body that must never reach a card"]
+    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+
+
+def _mail_runner(workspace, tmp_path, now_ts: float, files: dict,
+                 folder=lambda: ""):
+    import sqlite3
+
+    from agentdesk.inbox.store import InboxStore
+    from agentdesk.mail.core import read_eml_folder_reported
+    from agentdesk.mail.store import MailStore
+    from agentdesk.mail.watcher import Adapters as MailAdapters
+    from agentdesk.mail.watcher import MailWatch
+
+    folder_path = tmp_path / "mail"
+    folder_path.mkdir(exist_ok=True)
+    for name, raw in files.items():
+        (folder_path / name).write_bytes(raw)
+    chosen = folder()
+    watch = MailWatch(
+        inbox=InboxStore(sqlite3.connect(":memory:", check_same_thread=False),
+                         lambda: now_ts),
+        store=MailStore(sqlite3.connect(":memory:", check_same_thread=False),
+                        lambda: now_ts),
+        adapters=MailAdapters(read_folder=read_eml_folder_reported,
+                              clock=lambda: now_ts),
+        folder_provider=lambda: chosen,
+    )
+    return PluginWidgetRunner(workspace, mail=watch)
+
+
+MAIL_WINDOW_NOTE = ("Counts cover the last 24 hours of message headers; "
+                    "bodies are never read.")
+
+
+def test_mail_digest_binds_header_only_counts(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    files = {
+        # One active thread ("Q4 pricing": three messages, two senders)
+        # and one thread whose only message is three days old.
+        "m1.eml": _eml("<1@x>", "Q4 pricing", "a@example.com", now - 2 * 3600),
+        "m2.eml": _eml("<2@x>", "Re: Q4 pricing", "b@example.com",
+                       now - 3600, in_reply_to="<1@x>"),
+        "m3.eml": _eml("<3@x>", "Re: Q4 pricing", "a@example.com",
+                       now - 1800, in_reply_to="<2@x>"),
+        "m4.eml": _eml("<4@x>", "Old thread", "c@example.com", now - 3 * DAY),
+    }
+    runner = _mail_runner(workspace, tmp_path, now, files,
+                          folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "metric", "binding": "threads", "label": "Threads"},
+        {"type": "metric", "binding": "topSenders", "label": "Top senders"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("mail-digest"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Messages", "value": "3"},
+        {"kind": "metric", "label": "Threads", "value": "1"},
+        {"kind": "metric", "label": "Top senders",
+         "value": "a@example.com (2), b@example.com (1)"},
+        {"kind": "text", "text": MAIL_WINDOW_NOTE},
+    ]
+
+
+def test_mail_digest_payload_carries_no_body_field(workspace, tmp_path):
+    """The no-body rule is by construction, and pinned: the Message
+    record has no body field, the binding vocabulary has no body-ish
+    name, and a card asking for one renders nothing for it."""
+    from dataclasses import fields
+
+    from agentdesk.mail.core import Message
+    from agentdesk.plugins.execute import BINDINGS
+
+    assert "body" not in {f.name for f in fields(Message)}
+    assert not any("body" in name.lower() for name in BINDINGS)
+
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    files = {"m1.eml": _eml("<1@x>", "Q4 pricing", "a@example.com", now - 60)}
+    runner = _mail_runner(workspace, tmp_path, now, files,
+                          folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "metric", "binding": "body", "label": "Body"},
+        {"type": "metric", "binding": "messageBody", "label": "Message body"},
+        {"type": "metric", "binding": "bodyPreview", "label": "Preview"},
+    ])
+    runner.attach("p1", _pipeline_manifest("mail-digest"),
+                  version_dir, tmp_path / "data")
+    payload = runner.payload("p1")
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Messages", "value": "1"},
+    ]
+    assert "a body that must never reach a card" not in json.dumps(payload)
+
+
+def test_mail_digest_without_a_folder_is_amber_with_cause(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    runner = _mail_runner(workspace, tmp_path, now, {}, folder=lambda: "")
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("mail-digest"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "Settings" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_mail_digest_not_running_is_amber(workspace, tmp_path):
+    runner = PluginWidgetRunner(workspace)  # no mail watcher wired
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("mail-digest"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "mail digest" in status["cause"].lower()
+    assert runner.payload("p1")["elements"] == []
