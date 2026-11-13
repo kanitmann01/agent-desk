@@ -401,3 +401,30 @@ def test_the_demo_and_restore_actions_are_in_the_audit_vocabulary():
     actions = {action for action, _kind, _statement in audit_store.VOCABULARY}
     for action in ("demo.seeded", "demo.cleared", "inbox.restored"):
         assert action in actions
+
+
+def test_sample_mail_dates_fall_inside_the_digest_window(env, auth):
+    """The sample mail is dated relative to seeding time (#68 fix): the
+    digest counts the last 24 hours of headers, so fixtures pinned to
+    authored dates would bind zeros forever and the demo card would
+    look broken while behaving honestly. Parse the real Date headers
+    and require every one to sit inside the window."""
+    from datetime import timedelta
+    from email.utils import parsedate_to_datetime
+
+    _toggle(env, auth)
+    mails = sorted((env.data_dir / "sample" / "sample-mail").glob("*.eml"))
+    assert len(mails) >= 3
+    # The same clock the seed stamped the fixtures against: the inbox
+    # store's (frozen in this harness, the wall clock in production).
+    now = datetime.fromtimestamp(env.server.inbox.now_ts()).astimezone()
+    for path in mails:
+        date_line = next(
+            line for line in path.read_text("utf-8").splitlines()
+            if line.startswith("Date: ")
+        )
+        stamped = parsedate_to_datetime(date_line.removeprefix("Date: "))
+        age = now - stamped
+        assert timedelta(0) <= age <= timedelta(hours=24), (
+            f"{path.name} is dated {age} old; outside the 24-hour window"
+        )
