@@ -77,34 +77,52 @@ _SAMPLE_ROWS = [
 ]
 
 # Header-only .eml fixtures: the seven headers the mail path reads, no
-# blank line, no body, ever. Subjects say Sample.
+# blank line, no body, ever. Subjects say Sample. The Date headers are
+# built at seed time a few hours back: the digest counts the last 24
+# hours of headers, so fixtures pinned to authored dates would bind
+# zeros forever and the demo card would look broken while behaving
+# honestly.
 _SAMPLE_MAILS = (
     (
         "sample-thread-1.eml",
-        "From: sender@example.com\n"
-        "To: employee@example.com\n"
-        "Subject: Sample: Q4 plan\n"
-        "Date: Mon, 28 Sep 2026 12:00:00 GMT\n"
-        "Message-ID: <sample-thread-1@example.com>",
+        "sender@example.com",
+        "Sample: Q4 plan",
+        3.0,
+        False,
     ),
     (
         "sample-thread-2.eml",
-        "From: operations@example.com\n"
-        "To: employee@example.com\n"
-        "Subject: Sample: field services rollout\n"
-        "Date: Mon, 28 Sep 2026 15:30:00 GMT\n"
-        "Message-ID: <sample-thread-2@example.com>",
+        "operations@example.com",
+        "Sample: field services rollout",
+        6.0,
+        False,
     ),
     (
         "sample-thread-3.eml",
-        "From: finance@example.com\n"
-        "To: employee@example.com\n"
-        "Cc: manager@example.com\n"
-        "Subject: Sample: care plan pricing\n"
-        "Date: Tue, 29 Sep 2026 09:15:00 GMT\n"
-        "Message-ID: <sample-thread-3@example.com>",
+        "finance@example.com",
+        "Sample: care plan pricing",
+        9.0,
+        True,
     ),
 )
+
+
+def _sample_mail_headers(name: str, sender: str, subject: str, age_hours: float,
+                         cc: bool, now: datetime) -> str:
+    """One fixture's headers with its Date stamped from the seed clock."""
+    from email.utils import formatdate
+    lines = [
+        f"From: {sender}",
+        "To: employee@example.com",
+    ]
+    if cc:
+        lines.append("Cc: manager@example.com")
+    lines += [
+        f"Subject: {subject}",
+        f"Date: {formatdate(now.timestamp() - age_hours * 3600, usegmt=True)}",
+        f"Message-ID: <{name[:-4]}@example.com>",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _xml_escape(text: str) -> str:
@@ -256,7 +274,8 @@ def seed(inbox: InboxStore | None, data_dir: Path) -> dict:
     (folder / "sample-calendar.json").write_bytes(sample_calendar_bytes(now))
     mail_dir = folder / "sample-mail"
     mail_dir.mkdir(parents=True, exist_ok=True)
-    for name, headers in _SAMPLE_MAILS:
+    for name, sender, subject, age_hours, cc in _SAMPLE_MAILS:
+        headers = _sample_mail_headers(name, sender, subject, age_hours, cc, now)
         (mail_dir / name).write_text(headers, encoding="utf-8")
     files = 2 + len(_SAMPLE_MAILS)
     return {
