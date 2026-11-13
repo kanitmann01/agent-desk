@@ -7,6 +7,7 @@ import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 import pytest
 
@@ -60,6 +61,8 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "registry_path": "",
         # Demo sample data (#68): off until the user asks for it.
         "sample_data": False,
+        # Guard (#61): no extra hosts sanctioned, so loopback only.
+        "extra_allowed_hosts": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200
@@ -254,6 +257,59 @@ def test_widget_settings_values_never_carry_the_raw_key(env, auth):
 
 def test_unknown_setting_is_rejected(env, auth):
     status, _h, _b = env.post_json("/settings/toggle", {"key": "boss_mode"}, auth)
+    assert status == 400
+
+
+# -- the guard's extra allowed hosts (issue #61) ---------------------------
+
+
+def _post_form(env, path, fields, headers):
+    """A browser-shaped POST: form-urlencoded fields, no JavaScript."""
+    data = urlencode(fields).encode("utf-8")
+    merged = {"Content-Type": "application/x-www-form-urlencoded"}
+    merged.update(headers)
+    return env.request("POST", path, merged, data)
+
+
+def test_settings_page_carries_the_extra_hosts_form(env, auth):
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert 'action="/settings/hosts/save"' in page
+    assert 'name="hosts"' in page
+    # The default is stated: loopback only until something is sanctioned.
+    assert f"http://127.0.0.1:{env.port}" in page
+    assert f"http://localhost:{env.port}" in page
+
+
+def test_extra_allowed_hosts_form_round_trip_and_live_guard_effect(env, auth):
+    status, headers, _b = _post_form(
+        env, "/settings/hosts/save", {"hosts": "deskpc:8765 192.168.1.20:8765"}, auth)
+    assert status == 303
+    assert headers["Location"] == "/settings"
+    assert env.server.settings.get("extra_allowed_hosts") == (
+        "deskpc:8765 192.168.1.20:8765")
+    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values["extra_allowed_hosts"] == "deskpc:8765 192.168.1.20:8765"
+    # The guard applies the saved value on the very next request.
+    status, _h, _b = env.request("GET", "/", auth | {"Host": "deskpc:8765"})
+    assert status == 200
+    # Clearing the field returns to the loopback-only default.
+    _post_form(env, "/settings/hosts/save", {"hosts": ""}, auth)
+    status, _h, _b = env.request("GET", "/", auth | {"Host": "deskpc:8765"})
+    assert status == 403
+
+
+def test_extra_allowed_hosts_json_save_and_form_echo(env, auth):
+    status, _h, body = env.post_json(
+        "/settings/hosts/save", {"hosts": "deskpc:8765, desk.example"}, auth)
+    assert status == 200
+    assert json.loads(body) == {"key": "extra_allowed_hosts",
+                                "value": "deskpc:8765, desk.example"}
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "deskpc:8765, desk.example" in page
+
+
+def test_extra_hosts_save_rejects_a_non_string(env, auth):
+    status, _h, _b = env.post_json("/settings/hosts/save", {"hosts": 5}, auth)
     assert status == 400
 
 

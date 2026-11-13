@@ -125,6 +125,35 @@ def _toggle_button(key: str, value) -> str:
     )
 
 
+def _extra_hosts_section(extra_hosts: str, port: int) -> str:
+    """The guard's extra-address form: a plain no-JS text field.
+
+    By default the app answers only at its own loopback addresses; the
+    copy names them (with the port this boot actually opened) and the
+    field holds the sanctioned extras exactly as saved.
+    """
+    saved = html.escape(extra_hosts, quote=True)
+    return (
+        "<p>By default the app opens only at "
+        f"<b class='mono'>http://127.0.0.1:{port}</b> or "
+        f"<b class='mono'>http://localhost:{port}</b>, and refuses any other "
+        "address. If you deliberately serve it through another address (a "
+        "projected screen, a forwarded port), name it here and opening it "
+        "there will work too. Each entry is a host name with an optional "
+        "port, exactly as it appears in the address bar, separated by "
+        "commas or spaces.</p>"
+        '<form method="post" action="/settings/hosts/save" class="cardform">'
+        '<label class="empty" for="extra-hosts">Also allow these addresses</label>'
+        f'<input id="extra-hosts" type="text" name="hosts" value="{saved}" '
+        "placeholder=\"deskpc:8765 192.168.1.20:8765\" autocomplete=\"off\">"
+        '<button class="btn btn-secondary" type="submit">Save addresses</button>'
+        "</form>"
+        "<p class='empty'>Saving with the field empty goes back to the "
+        "default. The app itself keeps listening on this machine only, and "
+        "everything else about the guard is unchanged.</p>"
+    )
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -134,6 +163,8 @@ def render_settings_page(
     endpoint_status: dict | None = None,
     mail_folder: str = "",
     registry_status: dict | None = None,
+    extra_hosts: str = "",
+    server_port: int = 8765,
     inbox_count: int = 0,
 ) -> str:
     settings_values = settings_values or {}
@@ -229,6 +260,8 @@ same validator the registry's CI runs before anything executes. The
 path is read from this setting first, then the AGENTDESK_REGISTRY
 environment variable, then the app's own checkout.</p>
 {_registry_section(registry_status)}
+<h2>Where the app opens</h2>
+{_extra_hosts_section(extra_hosts, server_port)}
 <h2>Review</h2>
 <p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/mail">review the mail digest</a> (headers only, off by default), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
 <h2>Activity log</h2>

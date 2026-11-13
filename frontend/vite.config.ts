@@ -14,6 +14,13 @@ const backendPaths = [
   '/api', '/auth', '/sources', '/settings', '/research', '/assistant',
   '/inbox', '/skills', '/wizard', '/audit', '/health', '/walkthrough',
   '/what-this-touches', '/static/app',
+  // Every rail page: the consolidation surfaces and the plugins page are
+  // server-rendered too, so their tabs must not fall back to this dev
+  // shell. Pinned against the rail link set by src/test/devproxy.test.ts.
+  '/plugins', '/activity', '/memory', '/mail', '/capabilities',
+  // The SPA's own widget calls (the commitments check) also go to the
+  // Python server, not to this dev origin.
+  '/widgets',
 ];
 
 export default defineConfig({
