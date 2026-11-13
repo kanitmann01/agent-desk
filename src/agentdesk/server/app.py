@@ -2637,9 +2637,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the wizard is not available"})
             return
         parts = [part for part in path.split("/") if part]  # ["wizard", ...]
-        if method == "GET" and len(parts) < 2:
+        if method == "GET" and len(parts) < 2 and parts[0] == "wizard":
             # /wizard is the entry, not a 404: the describing screen a
-            # POST-less visitor can start from, behind the same gate.
+            # POST-less visitor can start from, behind the same gate. The
+            # exact single segment only: the router dispatches on the
+            # prefix, so a lookalike (/wizardx) must keep its 404.
             page = render_wizard_page(WIZARD_DESCRIBING_PAYLOAD, agentdesk.__version__)
             self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
             return

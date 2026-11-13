@@ -116,6 +116,13 @@ def test_get_wizard_renders_the_describe_start_form(env, auth):
     assert 'class="rail"' not in page
 
 
+def test_get_wizardx_is_still_a_404(env, auth):
+    # The route dispatches on the /wizard prefix; only the exact segment
+    # may render the start form, a lookalike name is no page.
+    status, _h, _b = env.request("GET", "/wizardx", auth)
+    assert status == 404
+
+
 def test_describe_returns_capped_questions_with_defaults(env, auth):
     status, _h, body = env.post_json("/wizard/start", {"description": CANONICAL}, auth)
     payload = json.loads(body)

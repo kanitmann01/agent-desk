@@ -56,6 +56,24 @@ const apiTargets = walkSources(resolve(frontend, 'src'))
   .flatMap((file) => readFileSync(file, 'utf8').match(/\b(?:getJson|postJson)\((`[^`]*`|'[^']*'|"[^"]*")/g) ?? [])
   .map((call) => call.slice(call.indexOf('(') + 2, -1).split('${')[0]);
 
+// Path constants the cards keep (WALKTHROUGH_PATH today): a named
+// constant holding a /-literal is still a link the SPA makes to a
+// server page, and the href scan above cannot see it. SCREAMING_CASE
+// names only, so prose strings cannot sneak in.
+const pathConstants = [
+  ...new Set(
+    walkSources(resolve(frontend, 'src', 'dashboard')).flatMap((file) =>
+      [
+        ...readFileSync(file, 'utf8').matchAll(
+          /const\s+[A-Z][A-Z0-9_]*\s*=\s*(?:'([^']+)'|"([^"]+)")/g,
+        ),
+      ]
+        .map((m) => m[1] ?? m[2])
+        .filter((value) => value.startsWith('/')),
+    ),
+  ),
+];
+
 // The route the dev server serves itself: the SPA shell at /.
 const SPA_ROUTES = ['/'];
 
@@ -66,6 +84,30 @@ function isProxied(target: string): boolean {
 describe('the dev proxy covers every server page the SPA links to', () => {
   it('parses a non-empty backendPaths list from vite.config.ts', () => {
     expect(backendPaths.length).toBeGreaterThan(0);
+  });
+
+  // The guards below keep the it.each blocks honest: if a refactor
+  // moves hrefs or actions behind constants the scans cannot read, the
+  // collection empties and these named cases fail instead of the each
+  // blocks quietly running zero cases and staying green.
+  it('collects a non-empty set of rail and footer hrefs to check', () => {
+    expect(linkedHrefs.length).toBeGreaterThan(0);
+    expect(linkedHrefs).toContain('/settings');
+  });
+
+  it('collects the dashboard form actions to check', () => {
+    expect(formActions.length).toBeGreaterThan(0);
+    expect(formActions).toContain('/wizard/start');
+  });
+
+  it('collects the API call targets to check', () => {
+    expect(new Set(apiTargets).size).toBeGreaterThan(0);
+  });
+
+  it('sees the card path constants the href scan cannot', () => {
+    // CommitmentsCard keeps its walkthrough link behind a constant; the
+    // scan must keep seeing it, or this pin has gone hollow.
+    expect(pathConstants).toContain('/walkthrough/calendar');
   });
 
   it.each(linkedHrefs)('rail or footer href %s is served in dev mode', (href) => {
@@ -81,6 +123,13 @@ describe('the dev proxy covers every server page the SPA links to', () => {
 
   it.each([...new Set(apiTargets)])('API call %s reaches the backend in dev mode', (target) => {
     expect(isProxied(target), `${target} is not covered by any backendPaths prefix`).toBe(true);
+  });
+
+  it.each(pathConstants)('path constant %s is served in dev mode', (target) => {
+    expect(
+      SPA_ROUTES.includes(target) || isProxied(target),
+      `${target} is neither an SPA route nor listed in backendPaths; add it to vite.config.ts`,
+    ).toBe(true);
   });
 
   it('lists the five pages whose rail tabs were dead in dev mode', () => {
