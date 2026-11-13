@@ -185,3 +185,21 @@ def test_missing_or_empty_cookie_header_yields_no_session():
     assert session_id_from_cookie(None) is None
     assert session_id_from_cookie("other=1") is None
     assert session_id_from_cookie("agentdesk_session=") is None
+
+
+def test_a_null_origin_form_post_with_a_session_reaches_the_handler(booted):
+    """The exact inbuilt-browser click (#60 stress F2): a native form
+    post from the app's own page in a webview that reports its origin
+    as opaque "null". With the SameSite=Strict session cookie present
+    and the Host loopback, the guard must let it through to the
+    handler, not answer the Wrong-address page."""
+    auth = booted.exchange()
+    headers = {**auth, "Origin": "null",
+               "Content-Type": "application/json"}
+    import json as _json
+    body = _json.dumps({"key": "sample_data"}).encode()
+    headers["Content-Length"] = str(len(body))
+    status, _h, resp = booted.request(
+        "POST", "/settings/toggle", headers, body=body)
+    assert status == 200, resp[:200]
+    assert _json.loads(resp) == {"key": "sample_data", "value": True}

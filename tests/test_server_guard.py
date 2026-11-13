@@ -140,3 +140,23 @@ def test_rejected_verdict_carries_the_offending_value():
     verdict = check_request(f"127.0.0.1:{PORT}", "https://evil.example", PORT)
     assert verdict.rejected == "https://evil.example"
     assert check_request(f"127.0.0.1:{PORT}", None, PORT).rejected == ""
+
+
+def test_an_opaque_null_origin_is_no_origin_information():
+    """Embedded browsers (sandboxed frames, webviews) send the literal
+    string "null" as the Origin of a native form post. Like a missing
+    Origin, it carries nothing to check, so it is not an attack signal:
+    the session cookie is SameSite=Strict, and a cross-site requester
+    cannot present it, so a null-origin POST with a live session can
+    only come from the user's own page in such a browser. A real origin
+    is still checked strictly."""
+    verdict = check_request("127.0.0.1:8765", "null", 8765)
+    assert verdict.allowed is True
+
+    verdict = check_request("localhost:8765", "NULL", 8765)
+    assert verdict.allowed is True  # case-insensitive
+
+    # every real origin keeps the strict check, byte for byte
+    verdict = check_request("127.0.0.1:8765", "http://evil.example", 8765)
+    assert verdict.allowed is False
+    assert verdict.rejected == "http://evil.example"
