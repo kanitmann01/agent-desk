@@ -13,6 +13,7 @@ import time as _time
 from dataclasses import dataclass
 
 from agentdesk.assistant import audit
+from agentdesk.llm import LlmUnavailable
 
 LOG = logging.getLogger("agentdesk.assistant")
 
@@ -105,7 +106,10 @@ def _ask(prompt: str, *, kind: str, llm, audit_conn, endpoint: str, model: str, 
                          model=model, request_bytes=request_bytes,
                          detail=str(exc)[:200], clock=now)
         LOG.debug("%s degraded: %s", kind, exc)
-        return Answer(status=STATUS_DEGRADED, cause=DEGRADED_CAUSE)
+        # A named endpoint cause is the vocabulary the adapter pinned;
+        # anything unexpected keeps the standing degraded line.
+        cause = str(exc) if isinstance(exc, LlmUnavailable) else DEGRADED_CAUSE
+        return Answer(status=STATUS_DEGRADED, cause=cause)
     if audit_conn is not None:
         audit.record(audit_conn, f"llm.{kind}", target=endpoint, status="ok",
                      model=model, request_bytes=request_bytes, clock=now)

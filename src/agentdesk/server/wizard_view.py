@@ -257,6 +257,11 @@ def _conversation_html(session_json: dict) -> str:
         "<p>Plain English only. A few questions, then a preview; "
         "nothing is added until you approve it.</p>",
     ]
+    note = str(session_json.get("degradedNote") or "")
+    if note:
+        # Honest degradation: the standard questions are named as such,
+        # never passed off as tailored ones.
+        parts.append(f'<div class="alert"><p>{_esc(note)}</p></div>')
     if description.strip():
         parts.append(
             '<section class="answer" aria-label="Your request">'

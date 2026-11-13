@@ -121,6 +121,8 @@ def test_endpoint_section_has_save_test_clear_and_the_hint(env, auth):
     assert "OpenAI-compatible" in page
     assert "https://api.anthropic.com/v1" in page
     assert "OpenRouter" in page and "LiteLLM" in page
+    # The base URL contract is in the copy: a full address, /v1 guidance.
+    assert "starts with http:// or https://" in page
     # Saving with an empty key field clears it: the page says so.
     assert "clears the saved key" in page
 
@@ -164,6 +166,70 @@ def test_endpoint_test_without_a_base_says_so(env, auth):
     assert status == 200
     assert payload["ok"] is False
     assert "base URL" in payload["cause"]
+
+
+def test_endpoint_save_refuses_unknown_field_names_instead_of_dropping_them(env, auth):
+    status, _h, body = env.post_json("/settings/endpoint/save", {
+        "base_url": "https://llm.corp.example/v1",
+        "api_key": "typed-key",
+        "model": "m",
+    }, auth)
+    payload = json.loads(body)
+    assert status == 400
+    # The refusal names the typos and the accepted names, both.
+    assert "base_url" in payload["error"] and "api_key" in payload["error"]
+    assert "accepted fields are base, key, model" in payload["error"]
+    # And nothing was saved: refusing beats a silent ok with dropped values.
+    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values["llm_base"] == "" and values["llm_key"] == ""
+
+
+def test_endpoint_save_refuses_a_base_without_a_scheme_or_host(env, auth):
+    for bad in ("llm.corp.example/v1", "https://", "ftp://llm.corp.example/v1",
+                "https://[::1/v1"):
+        status, _h, body = env.post_json("/settings/endpoint/save", {"base": bad}, auth)
+        assert status == 400, bad
+        assert "http" in json.loads(body)["error"]
+    # Nothing from the refused saves landed.
+    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values["llm_base"] == ""
+
+
+def test_endpoint_test_names_the_exact_cause_for_each_failure_shape(env, auth):
+    from test_llm_chat import ScriptedEndpoint
+
+    redirect = ScriptedEndpoint(status=302, body=b"", extra_headers={"Location": "/sso"})
+    login_page = ScriptedEndpoint(content_type="text/html",
+                                  body=b"<html><body>Sign in</body></html>")
+    rejected = ScriptedEndpoint(status=401, body=b'{"error": "bad key"}')
+    wrong_shape = ScriptedEndpoint(body=b'{"ok": true}')
+    try:
+        for stub, expected in (
+            (redirect, "redirect"),
+            (login_page, "web page"),
+            (rejected, "rejected the API key"),
+            (wrong_shape, "not an OpenAI chat reply"),
+        ):
+            status, _h, body = env.post_json("/settings/endpoint/test", {
+                "base": stub.base_url, "key": "k", "model": "m",
+            }, auth)
+            payload = json.loads(body)
+            assert status == 200
+            assert payload["ok"] is False, expected
+            assert expected in payload["cause"], payload["cause"]
+    finally:
+        for stub in (redirect, login_page, rejected, wrong_shape):
+            stub.close()
+
+
+def test_endpoint_test_surfaces_a_malformed_base_as_a_named_cause(env, auth):
+    status, _h, body = env.post_json("/settings/endpoint/test", {
+        "base": "llm.corp.example/v1", "key": "k", "model": "m",
+    }, auth)
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["ok"] is False
+    assert "must start with http" in payload["cause"]
 
 
 def test_research_uses_saved_settings_without_a_restart(env, auth, monkeypatch):

@@ -438,7 +438,9 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     show('Testing the connection');
     post('/settings/endpoint/test', typed()).then(function (r) { return r.json(); })
       .then(function (d) {
-        show(d.ok ? 'The endpoint answered.' : 'The endpoint did not answer: ' + (d.cause || 'unknown cause'));
+        // The cause is a full sentence from the adapter's vocabulary;
+        // it already says what to fix, so it is shown as-is.
+        show(d.ok ? 'The endpoint answered.' : (d.cause || 'The test did not run.'));
       })
       .catch(function () { show('The dashboard could not reach its own server; the test did not run.'); });
   });

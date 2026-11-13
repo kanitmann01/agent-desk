@@ -28,9 +28,12 @@ _LABELS = {
 ENDPOINT_HINT = (
     "<p>Works with any OpenAI-compatible endpoint: your company gateway, "
     "OpenAI, OpenRouter, LiteLLM, or Anthropic's OpenAI-compatible URL "
-    "(https://api.anthropic.com/v1 with a Claude model name). A key and "
-    "a URL are the whole login; there is no separate sign-in step. Saved "
-    "settings win over environment variables and config.env.</p>"
+    "(https://api.anthropic.com/v1 with a Claude model name). The base "
+    "URL is the full API address: it starts with http:// or https:// and "
+    "usually ends in the API version, like /v1; a portal sign-in page "
+    "there is not an API base. A key and a URL are the whole login; "
+    "there is no separate sign-in step. Saved settings win over "
+    "environment variables and config.env.</p>"
 )
 
 
