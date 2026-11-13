@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "outlook-digest",
+  "name": "Outlook Digest",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "license": "MIT",
+  "permissions": {
+    "filesystem": { "read": [], "write": [] },
+    "network": { "allow": [] },
+    "llm": { "allow": false },
+    "shell": "none"
+  },
+  "activationEvents": ["onWidget:outlook-digest", "onSchedule:0 * * * *"],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "outlook-digest",
+        "size": "2x1",
+        "dataSource": { "type": "mail-digest" },
+        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+      }
+    ],
+    "skills": ["skills/mail-overview/SKILL.md"]
+  }
+}

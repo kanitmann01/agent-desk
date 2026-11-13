@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "excel-report",
+  "name": "Excel Report Watch",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "license": "MIT",
+  "permissions": {
+    "filesystem": { "read": ["${workspace}/reports/*.xlsx"], "write": ["${pluginData}"] },
+    "network": { "allow": [] },
+    "llm": { "allow": false },
+    "shell": "none"
+  },
+  "activationEvents": ["onWidget:excel-report", "onSchedule:0 * * * *"],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "excel-report",
+        "size": "2x1",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/reports/*.xlsx",
+          "deltaWindow": "24h"
+        },
+        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+      }
+    ],
+    "skills": ["skills/workbook-report/SKILL.md"]
+  }
+}

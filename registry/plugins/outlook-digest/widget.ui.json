@@ -1,0 +1,10 @@
+{
+  "type": "card",
+  "title": "Mail digest (24h)",
+  "elements": [
+    { "type": "metric", "binding": "messages", "label": "Messages" },
+    { "type": "metric", "binding": "threads", "label": "Threads" },
+    { "type": "metric", "binding": "topSenders", "label": "Top senders" },
+    { "type": "text", "binding": "windowNote" }
+  ]
+}
