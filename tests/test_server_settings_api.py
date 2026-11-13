@@ -185,7 +185,8 @@ def test_endpoint_save_refuses_unknown_field_names_instead_of_dropping_them(env,
 
 
 def test_endpoint_save_refuses_a_base_without_a_scheme_or_host(env, auth):
-    for bad in ("llm.corp.example/v1", "https://", "ftp://llm.corp.example/v1"):
+    for bad in ("llm.corp.example/v1", "https://", "ftp://llm.corp.example/v1",
+                "https://[::1/v1"):
         status, _h, body = env.post_json("/settings/endpoint/save", {"base": bad}, auth)
         assert status == 400, bad
         assert "http" in json.loads(body)["error"]

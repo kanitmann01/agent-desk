@@ -2901,10 +2901,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         copy, else the honest line that names the cause: the standard
         questions are the whole path until one is configured. Derived
         from the same compiler the build will use, so the note never
-        claims an absence an injected endpoint fills."""
+        claims an absence an injected endpoint fills. A malformed saved
+        base is an absence too: every consult raises, so the questions
+        are the standard ones whether or not a base string exists."""
         compiler = self._wizard_compiler()
         if compiler.llm is not None:
-            return ""
+            settings = self.server.settings  # type: ignore[attr-defined]
+            saved_base = settings.get("llm_base") if settings is not None else ""
+            if not base_url_problem(saved_base):
+                return ""
         return (
             "No corporate endpoint is configured: the wizard asks its "
             "standard questions and builds the same way. Add an endpoint "

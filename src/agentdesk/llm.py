@@ -14,6 +14,7 @@ host that does not resolve. Redirects are never followed: a 3xx is an
 answer to report, not a hop to chase.
 """
 
+import http.client
 import json
 import os
 import socket
@@ -99,20 +100,39 @@ def effective_llm_config(settings_store=None) -> tuple[str, str, str]:
 
 
 def base_url_problem(base: str) -> str:
-    """"Empty when the base URL is usable, else the named reason it is not.
+    """Empty when the base URL is usable, else the named reason it is not.
 
     The whole requirement is an http(s) scheme and a host; the path is
     the caller's to get right and is never rewritten here. An empty
-    base is fine: that is the documented unconfigured state."""
+    base is fine: that is the documented unconfigured state. A URL
+    urlsplit cannot even parse (an unclosed IPv6 bracket, say) is the
+    no-scheme refusal: it is not a usable address either way."""
     base = (base or "").strip()
     if not base:
         return ""
-    parts = urlsplit(base)
+    try:
+        parts = urlsplit(base)
+    except ValueError:
+        return NO_SCHEME_CAUSE
     if parts.scheme not in ("http", "https"):
         return NO_SCHEME_CAUSE
     if not parts.hostname:
         return NO_HOST_CAUSE
     return ""
+
+
+def _host_of(base_url: str) -> str:
+    """The host (with port) the causes name, or "". The userinfo that
+    may ride in a URL (user:pass@) is dropped here and never echoed
+    into a cause or the audit log; an unparseable address names no
+    host, and the causes fall back to their own words."""
+    try:
+        parts = urlsplit(base_url)
+        host = parts.hostname or ""
+        port = parts.port
+    except ValueError:
+        return ""
+    return f"{host}:{port}" if port is not None else host
 
 
 def _http_cause(code: int) -> str:
@@ -209,7 +229,7 @@ def chat(
         },
         method="POST",
     )
-    host = urlsplit(base_url).netloc
+    host = _host_of(base_url)
     try:
         with _OPENER.open(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8", "replace")
@@ -223,6 +243,12 @@ def chat(
         raise LlmUnavailable(
             transport_cause(exc.reason, host=host, timeout=timeout)
         ) from exc
+    except http.client.HTTPException as exc:
+        # Broken responses http.client raises without an OSError
+        # wrapper: a non-HTTP answer (BadStatusLine), a truncated body
+        # (IncompleteRead), a nonnumeric port (InvalidURL). Classified
+        # like any transport failure, never a raw escape.
+        raise LlmUnavailable(transport_cause(exc, host=host, timeout=timeout)) from exc
     except OSError as exc:
         # Timeouts and resets that escape URLError arrive bare.
         raise LlmUnavailable(transport_cause(exc, host=host, timeout=timeout)) from exc

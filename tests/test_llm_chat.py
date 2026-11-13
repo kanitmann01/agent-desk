@@ -28,6 +28,35 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 from agentdesk.llm import LlmUnavailable, chat, transport_cause
 
 
+class GarbageEndpoint:
+    """One raw socket that answers bytes which are not HTTP (TLS
+    handshake bytes): the shape a https base pointed at a plain http
+    listener, or a broken middlebox, produces. http.client raises
+    BadStatusLine, which is the invariant to classify, not crash on."""
+
+    PAYLOAD = b"\x16\x03\x01\x00\x0a\x01\x00\x00\x06\x00\x00"
+
+    def __init__(self) -> None:
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(1)
+        self.base_url = f"http://127.0.0.1:{self.sock.getsockname()[1]}"
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self) -> None:
+        conn, _addr = self.sock.accept()
+        try:
+            conn.recv(1024)
+            conn.sendall(self.PAYLOAD)
+        finally:
+            conn.close()
+
+    def close(self):
+        self.sock.close()
+
+
 class ScriptedEndpoint:
     """A minimal loopback endpoint scripted per test: one status,
     content type, body and header set for every request, recorded.
@@ -218,3 +247,32 @@ def test_transport_causes_for_failures_a_stub_cannot_produce():
     assert "did not answer within" in timed_out and "10" in timed_out
     unknown = transport_cause(OSError("strange"), host="h")
     assert "endpoint" in unknown and "strange" in unknown
+
+
+def test_a_malformed_ipv6_literal_is_refused_not_crashed():
+    # A bracket that never closes used to raise ValueError out of
+    # urlsplit and escape as a 500; it is a named refusal instead.
+    assert "must start with http" in chat_cause("https://[::1/v1")
+
+
+def test_a_non_http_answer_is_classified_not_crashed():
+    """A TLS answer on an http base makes http.client raise
+    BadStatusLine; every failure stays an LlmUnavailable with a cause
+    (the pinned invariant the surfaces rely on)."""
+    stub = GarbageEndpoint()
+    try:
+        cause = chat_cause(stub.base_url)
+        assert "endpoint" in cause
+        assert "did not answer" in cause
+    finally:
+        stub.close()
+
+
+def test_causes_never_echo_url_credentials():
+    # user:pass@ riding in the base URL must not leak into causes. The
+    # failure class is whatever the resolver says; the pinned part is
+    # that the host is named without the credentials.
+    cause = chat_cause("http://user:secret@127.0.0.1:9/v1")
+    assert "127.0.0.1:9" in cause
+    assert "secret" not in cause
+    assert "user" not in cause

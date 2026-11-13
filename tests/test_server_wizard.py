@@ -305,6 +305,36 @@ def test_wizard_with_an_endpoint_does_not_claim_it_is_missing(env, auth):
     assert "No corporate endpoint is configured" not in page
 
 
+def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monkeypatch):
+    """A malformed saved base makes every consult raise, so the
+    questions are the standard ones: the note must say so instead of
+    implying endpoint-shaped questions that never arrive (#62 review)."""
+    for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    from agentdesk.wizard.core import DEFAULT_QUESTIONS, WizardStore
+
+    clock = FakeClock(NOW)
+    booted = server_harness.Booted(
+        plugins=make_runtime(tmp_path),
+        wizard_store=WizardStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+        inbox_store=InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+    )
+    try:
+        # The unreachable shape a bad save (or an older one) leaves in
+        # the store: a base that can never answer.
+        booted.server.settings.set("llm_base", "llm.corp.example/v1")
+        auth = booted.exchange()
+        started = json.loads(booted.post_json("/wizard/start",
+                                              {"description": CANONICAL}, auth)[2])
+        assert [q["id"] for q in started["questions"]] == [
+            q["id"] for q in DEFAULT_QUESTIONS
+        ]
+        page = booted.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
+        assert "No corporate endpoint is configured" in page
+    finally:
+        booted.close()
+
+
 def test_form_body_fields_maps_each_field_to_its_first_value():
     from agentdesk.server.app import form_body_fields
 
