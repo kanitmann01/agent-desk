@@ -298,8 +298,6 @@ class Walkthrough:
         status, _headers, body = desk.get("/inbox")
         check(status == 200, f"GET /inbox answered {status}")
         page = body.decode("utf-8")
-        for card_id in SAMPLE_CARD_IDS:
-            pass  # ids are internal; the page proves the set by its labels
         check(page.count("tag-sample") >= len(SAMPLE_CARD_IDS),
               "the labelled sample cards did not render with their Sample tag")
         check("Sample data:" in page, "the sample origin lines are missing")
