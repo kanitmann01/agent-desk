@@ -1,10 +1,11 @@
 """Pinned installation from the registry.
 
-The client resolves its lockfile pin against the index, checks out the
-pinned tag through ``git archive``, verifies the extracted tree digest
-against the pin, runs the shared validator, and only then installs into
-a versioned directory. Any refusal carries a named code, validator
-style.
+The client resolves its lockfile pin against the index, fetches the
+pinned content (``git archive`` at the tag for a tag-pinned release,
+the registry's own plugins directory for a digest-pinned local
+release), verifies the tree digest against the pin, runs the shared
+validator, and only then installs into a versioned directory. Any
+refusal carries a named code, validator style.
 """
 from __future__ import annotations
 
@@ -100,6 +101,22 @@ def _archive_plugin(registry_root: Path, tag: str, plugin_prefix: str,
         shutil.copytree(source, destination)
 
 
+def _stage_local_plugin(registry_root: Path, plugin_id: str,
+                        destination: Path) -> None:
+    """Copy plugins/<id> out of the registry's working tree.
+
+    A local release is pinned by digest to the directory publish wrote;
+    there is no tag to extract, so git is never invoked. The digest
+    check right after this copy is the whole verification story.
+    """
+    source = registry_root / "plugins" / plugin_id
+    if not source.is_dir():
+        raise RegistryError(
+            "install:local-plugin-missing",
+            f"{plugin_id} is not present in the registry plugins folder")
+    shutil.copytree(source, destination)
+
+
 def install_from_registry(registry_root: Path | str, plugin_id: str, *,
                           version: str, sha256: str | None = None,
                           destination: Path | str) -> dict:
@@ -119,7 +136,10 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
     installed.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         staged = Path(tmp) / "plugin"
-        _archive_plugin(registry_root, release.tag, plugin_prefix, staged)
+        if release.source == "local":
+            _stage_local_plugin(registry_root, plugin_id, staged)
+        else:
+            _archive_plugin(registry_root, release.tag, plugin_prefix, staged)
         actual = tree_digest(staged)
         if actual != release.sha256:
             raise RegistryError(

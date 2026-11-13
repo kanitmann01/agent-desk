@@ -122,3 +122,95 @@ def test_truncated_history_blocks(tmp_path):
     assert out["ok"] is False
     assert any(r.startswith("registry-ci:history-truncated")
                and "1.3.0" in r for r in out["reasons"])
+
+
+# -- local releases (ticket #63): published without a git tag ----------------
+
+
+def _published_registry(tmp_path, plugin_id="team-notes-widget",
+                        version="0.1.0"):
+    """A bare (non-git) registry with one locally published release."""
+    import shutil
+
+    from agentdesk.registry.publish import publish_to_registry
+
+    root = tmp_path / "local-registry"
+    (root / "plugins").mkdir(parents=True)
+    (root / "index.json").write_text(
+        json.dumps({"schemaVersion": 1, "plugins": []}, indent=2) + "\n",
+        encoding="utf-8")
+    source = tmp_path / "built" / plugin_id
+    shutil.copytree(PLUGIN_FIXTURE, source)
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    manifest["id"] = plugin_id
+    manifest["version"] = version
+    (source / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n",
+                                          encoding="utf-8")
+    publish_to_registry(root, plugin_id, version=version, source_dir=source)
+    return root, source
+
+
+def test_ci_green_over_a_local_release(tmp_path):
+    from agentdesk.registry.ci import review_registry_changes
+
+    root, _source = _published_registry(tmp_path)
+    out = review_registry_changes(root, [root / "plugins" / "team-notes-widget"])
+    assert out["ok"] is True, out["reasons"]
+    assert out["reasons"] == []
+
+
+def test_ci_blocks_a_tampered_local_release(tmp_path):
+    from agentdesk.registry.ci import review_registry_changes
+
+    root, _source = _published_registry(tmp_path)
+    manifest_path = root / "plugins" / "team-notes-widget" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["name"] = "Quietly different"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n",
+                             encoding="utf-8")
+    out = review_registry_changes(root, [root / "plugins" / "team-notes-widget"])
+    assert out["ok"] is False
+    assert any(r.startswith("registry-ci:hash-mismatch") for r in out["reasons"])
+
+
+def test_ci_history_understands_local_releases(tmp_path):
+    """A local release is history like any other: appending is green,
+    dropping it truncates a client's pin and is refused."""
+    from agentdesk.registry.ci import review_registry_changes
+    from agentdesk.registry.publish import publish_to_registry
+
+    root, source = _published_registry(tmp_path)
+    base = (root / "index.json").read_text(encoding="utf-8")
+
+    # Append a second local version: green over the mutated index.
+    second = tmp_path / "built" / "team-notes-widget-v2"
+    second.parent.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    manifest["version"] = "0.2.0"
+    second.mkdir()
+    for item in source.rglob("*"):
+        if item.is_file():
+            target = second / item.relative_to(source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(item.read_bytes())
+    (second / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n",
+                                         encoding="utf-8")
+    publish_to_registry(root, "team-notes-widget", version="0.2.0",
+                        source_dir=second)
+    out = review_registry_changes(
+        root, [root / "plugins" / "team-notes-widget"], base_index_text=base)
+    assert out["ok"] is True, out["reasons"]
+
+    # Dropping the local 0.1.0 release from history: refused by name.
+    out = review_registry_changes(root, [], base_index_text=base)
+    assert out["ok"] is True  # nothing was dropped yet
+    document = json.loads((root / "index.json").read_text(encoding="utf-8"))
+    entry = document["plugins"][0]
+    entry["releases"] = [r for r in entry["releases"]
+                         if r["version"] != "0.1.0"]
+    (root / "index.json").write_text(json.dumps(document, indent=2) + "\n",
+                                     encoding="utf-8")
+    out = review_registry_changes(root, [], base_index_text=base)
+    assert out["ok"] is False
+    assert any(r.startswith("registry-ci:history-truncated")
+               and "0.1.0" in r for r in out["reasons"])

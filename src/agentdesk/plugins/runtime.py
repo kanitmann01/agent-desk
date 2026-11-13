@@ -454,6 +454,11 @@ class PluginRuntime:
         entry = self._entry(state, plugin_id)
         return dict(entry)
 
+    def version_dir(self, plugin_id: str) -> Path:
+        """The directory of the active version: what publish republishes."""
+        entry = self._entry(self._read(), plugin_id)
+        return self._active_version_dir(entry)
+
     def list_records(self) -> list[dict]:
         return [dict(entry) for entry in self._read()["plugins"].values()]
 

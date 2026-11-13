@@ -309,14 +309,30 @@ def _preview_html(session_json: dict) -> str:
 
 
 def _approved_html(session_json: dict) -> str:
-    """The installed screen: summary, pilot-mode removal line, way back."""
+    """The installed screen: summary, pilot-mode removal line, the
+    publish step, way back."""
+    installed = session_json.get("installed")
+    plugin_id = ""
+    if isinstance(installed, dict):
+        candidate = str(installed.get("id", "")).strip()
+        plugin_id = candidate if candidate else ""
+    publish_form = ""
+    if plugin_id:
+        # The create-to-publish loop: a plain form post to the plugins
+        # page's publish action, no JavaScript anywhere in it.
+        publish_form = (
+            f'<form method="post" action="/plugins/{_esc(plugin_id)}/publish">'
+            '<button type="submit" class="btn btn-primary">'
+            "Publish to the registry</button></form>"
+        )
     return (
         "<h1>Added</h1>"
         "<p>The widget is on your dashboard now.</p>"
         '<p><span class="badge-pilot">Pilot</span> It runs in pilot mode. '
         "Remove it from the Plugins surface whenever you want.</p>"
         f"{_summary_html(approval_summary(_draft_of(session_json)))}"
-        '<div class="cardrow"><a class="btn btn-secondary" href="/">'
+        f'<div class="cardrow">{publish_form}'
+        '<a class="btn btn-secondary" href="/">'
         "Back to the dashboard</a></div>"
     )
 
@@ -377,9 +393,10 @@ def render_wizard_page(session_json: dict, version: str) -> str:
     form (POST /wizard/<id>/approve) and the escalate form (POST
     /wizard/<id>/escalate; a plain link cannot POST, so the escape is a
     quiet button). approved shows the summary, the pilot-mode removal
-    line and the way back. escalated is the honest dead-end: what the
-    wizard cannot do and the feature request exported in the user's own
-    words.
+    line, the publish step (POST /plugins/<id>/publish, offered when
+    the session recorded its install) and the way back. escalated is
+    the honest dead-end: what the wizard cannot do and the feature
+    request exported in the user's own words.
     """
     if not isinstance(session_json, dict):
         session_json = {}

@@ -74,6 +74,8 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("plugin.purge-data", "plugin", "A plugin's kept data folder is deleted, only after the separate named confirmation."),
     # The registry bridge: reads stay local, no network anywhere in it.
     ("registry.read", "file", "The plugins page reads the local registry checkout's index.json, read-only, to list what can be installed."),
+    # Publishing (ticket #63): the create-to-publish loop, local only.
+    ("registry.publish", "plugin", "An installed plugin is validated and copied into the local registry checkout as a new release pinned by a tree digest; the index entry is appended. No network anywhere in it."),
     ("settings.registry", "decision", "The registry checkout folder was saved or cleared in settings; the choice itself is the record."),
 ]
 

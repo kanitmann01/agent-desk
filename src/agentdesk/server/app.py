@@ -80,6 +80,7 @@ from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
 from agentdesk.registry.index import RegistryIndexError
 from agentdesk.registry.install import RegistryError
+from agentdesk.registry.publish import publish_to_registry
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
@@ -2148,6 +2149,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         plugin_id = parts[2]
         action = parts[3] if len(parts) > 3 else ""
+        if action == "publish":
+            # Registry-side, not a runtime lifecycle method: publish
+            # resolves the registry root and writes into it.
+            self._publish_plugin(plugins, plugin_id)
+            return
         actions = {
             "update": lambda: plugins.update(plugin_id, body["zip_path"]),
             "consent": lambda: plugins.consent(plugin_id),
@@ -2360,6 +2366,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         parts = [part for part in path.split("/") if part]
         plugin_id, action = unquote(parts[1]), parts[2]
+        if action == "publish":
+            # Registry-side, not a runtime lifecycle method: publish
+            # resolves the registry root and writes into it.
+            self._publish_plugin(plugins, plugin_id)
+            return
         body = self._read_json_body() or {}
         actions = {
             "enable": lambda: plugins.enable(plugin_id),
@@ -2435,6 +2446,57 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _registry_install_refused(self, code: str, message: str,
                                   status: int = 409) -> None:
+        if self._is_form_submit():
+            self._send_redirect(f"/plugins?notice={quote(message)}")
+            return
+        self._send_json(status, {"error": code, "message": message})
+
+    def _publish_plugin(self, plugins: PluginRuntime, plugin_id: str) -> None:
+        """Publish one installed plugin to the resolved registry (#63).
+
+        The registry machinery owns the write (shared validator first,
+        tree copy, digest pin, index append); the runtime only says
+        which version directory is active. Forms get a redirect with
+        the outcome as the notice line; JSON callers get the record.
+        """
+        try:
+            record = plugins.record(plugin_id)
+            if record.get("state") == "uninstalled" or not record.get("versions"):
+                raise PluginError(
+                    "publish:uninstalled",
+                    f"{plugin_id} has no installed version to publish", 409)
+            version = str(record.get("active_version", ""))
+            source_dir = plugins.version_dir(plugin_id)
+            root, origin = self._registry_root_for_request()
+            if root is None:
+                raise RegistryError(
+                    "publish:no-registry",
+                    "No plugin registry is configured, so there is nowhere "
+                    "to publish to. The registry resolves in this order: "
+                    "the registry_path saved in Settings, the "
+                    "AGENTDESK_REGISTRY environment variable, then this "
+                    "app's own checkout. Set one in Settings.")
+            result = publish_to_registry(root, plugin_id, version=version,
+                                         source_dir=source_dir)
+        except PluginError as exc:
+            self._publish_refused(exc.code, str(exc), exc.status)
+            return
+        except (RegistryError, RegistryIndexError) as exc:
+            self._publish_refused(
+                getattr(exc, "code", "publish:refused"), str(exc))
+            return
+        self._audit("registry.publish", target=plugin_id,
+                    detail=f"local v{result.get('version', '')} to the "
+                           f"{origin} registry")
+        if self._is_form_submit():
+            self._send_redirect(f"/plugins?notice={quote(
+                'Published ' + plugin_id + ' v'
+                + str(result.get('version', '')) + ' to the registry.')}")
+            return
+        self._send_json(200, result)
+
+    def _publish_refused(self, code: str, message: str,
+                         status: int = 409) -> None:
         if self._is_form_submit():
             self._send_redirect(f"/plugins?notice={quote(message)}")
             return
@@ -2674,6 +2736,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             {"Product line": "Field services", "Change": "-2.8%"},
         ]
         payload["sample_rows"] = sample
+        # The approved screen's publish step needs the install record
+        # (the plugin id); the draft keeps it after approval.
+        payload["installed"] = (draft.get("installed")
+                                if isinstance(draft, dict) else None)
         payload["approval"] = approval_summary(payload["draft"]) if payload["draft"] else {}
         page = render_wizard_page(payload, agentdesk.__version__)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
