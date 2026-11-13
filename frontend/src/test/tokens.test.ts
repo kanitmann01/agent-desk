@@ -293,6 +293,12 @@ describe('the shell rhythm sits on the 4px grid', () => {
     expect(decl(css, '.w-foot.two-line', 'min-height')).toBe('48px');
   });
 
+  it('lays the hero actions on one row, not a stacked column', () => {
+    // The audit found Add plugin and Customize stacked as two rows of
+    // buttons; the header actions are one row.
+    expect(decl(css, '.hero-actions', 'flex-direction')).toBe('row');
+  });
+
   it('carries no off-grid px step in the named rhythm declarations', () => {
     for (const [selector, property] of [
       ['.hero', 'margin-bottom'],
@@ -384,6 +390,15 @@ describe('the committed bundle honors the contract', () => {
     // script would ship the dead dots again.
     expect(bundleJs).toContain('aria-haspopup');
     expect(bundleJs).toContain('w-menu');
+  });
+
+  it('carries the collapsible rail the shell ships', () => {
+    // A source fix that misses the build ships an always-expanded rail:
+    // the collapsed rules and the persisted toggle must be in the bundle.
+    expect(bundleCss).toContain('.rail-collapsed');
+    expect(bundleCss).toContain('.rail-toggle{');
+    expect(bundleJs).toContain('agentdesk.railCollapsed');
+    expect(bundleJs).toContain('rail-toggle');
   });
 });
 

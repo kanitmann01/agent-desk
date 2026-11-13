@@ -36,6 +36,8 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  // The rail collapse persists by design; tests start from a neutral rail.
+  localStorage.removeItem('agentdesk.railCollapsed');
 });
 
 // The hero tests pin the clock so a minute rollover between render and
@@ -89,6 +91,47 @@ describe('the rail', () => {
       expect(link).toHaveAttribute('href', href);
       expect(nav).toContainElement(link);
     }
+  });
+
+  it('carries a collapse control that announces its state', () => {
+    render(<Rail inboxWaiting={0} />);
+    const toggle = screen.getByRole('button', { name: 'Collapse navigation' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('collapses on click, keeps the count badge, and persists', async () => {
+    const user = userEvent.setup();
+    render(
+      <div className="app">
+        <Rail inboxWaiting={4} />
+      </div>,
+    );
+    const toggle = screen.getByRole('button', { name: 'Collapse navigation' });
+    await user.click(toggle);
+    const app = document.querySelector('.app') as HTMLElement;
+    expect(app).toHaveClass('rail-collapsed');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-label', 'Expand navigation');
+    // The inbox count stays visible while the labels hide: it is the
+    // one signal worth keeping on a collapsed rail.
+    expect(document.querySelector('.rail .count')).not.toBeNull();
+    expect(localStorage.getItem('agentdesk.railCollapsed')).toBe('1');
+
+    await user.click(toggle);
+    expect(app).not.toHaveClass('rail-collapsed');
+    expect(localStorage.getItem('agentdesk.railCollapsed')).toBe('0');
+  });
+
+  it('opens collapsed when the stored state says so', () => {
+    localStorage.setItem('agentdesk.railCollapsed', '1');
+    render(
+      <div className="app">
+        <Rail inboxWaiting={0} />
+      </div>,
+    );
+    expect(document.querySelector('.app')).toHaveClass('rail-collapsed');
+    const toggle = screen.getByRole('button', { name: 'Expand navigation' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 });
 

@@ -102,6 +102,25 @@ svg{display:block;flex:none}
 }
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px;font-weight:600}
+.rail-toggle{
+  display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);
+  color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;
+  transition:background var(--dur) ease,color var(--dur) ease;
+}
+.rail-toggle:hover{background:var(--hover-wash);color:var(--ink-1)}
+/* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
+   drops its text; the column narrows to the mark width. Mirrors the
+   server sheet so both shells collapse identically. */
+.app.rail-collapsed{grid-template-columns:68px 1fr}
+.rail-collapsed .rail{padding:20px 10px 14px}
+.rail-collapsed .rail a{position:relative;justify-content:center;padding:8px 0;gap:0}
+.rail-collapsed .rail .rail-label{display:none}
+.rail-collapsed .rail .count{position:absolute;top:4px;right:4px;margin-left:0;padding:0 5px;font-size:10px}
+.rail-collapsed .rail .rail-toggle{justify-content:center;gap:0}
+.rail-collapsed .rail-toggle .rail-toggle-label{display:none}
+.rail-collapsed .brand b,.rail-collapsed .brand-name{display:none}
+.rail-collapsed .rail .user{justify-content:center;padding:10px 0 4px}
+.rail-collapsed .rail .user > div{display:none}
 .dot{width:7px;height:7px;border-radius:var(--r-pill);background:var(--good);display:inline-block;flex:none}
 .dot.amber{background:var(--attention-ink)}
 .dot.sample{background:var(--ink-4)}
@@ -121,7 +140,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   background:var(--surface);font-size:12.5px;font-weight:600;color:var(--ink-2);
   box-shadow:inset 0 0 0 1px var(--hairline);
 }
-.hero-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding-bottom:4px}
+.hero-actions{display:flex;flex-direction:row;align-items:center;gap:8px;padding-bottom:4px}
 
 /* The research command bar: a white well on the paper, an inset
    hairline ring, and the surface's one solid-green send control. */
@@ -377,6 +396,9 @@ table.rows td.neg{color:var(--bad)}
   .rail .brand{padding:0 12px 0 0;flex:none}
   .rail a,.rail .nav-off{flex:none}
   .rail .user{display:none}
+  /* The strip already carries every entry; collapse is a tall-rail
+     control and does nothing on the wrapping strip. */
+  .rail-toggle{display:none}
   .bento{grid-template-columns:1fr}
   .span-4,.span-5,.span-7,.span-8,.span-12{grid-column:auto}
   main{padding:22px 16px 56px}
