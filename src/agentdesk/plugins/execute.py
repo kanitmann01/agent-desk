@@ -38,6 +38,7 @@ from agentdesk.calendar.watcher import (
     CalendarBridge,
 )
 from agentdesk.excel.watcher import Adapters, ExcelWatch
+from agentdesk.mail.watcher import STATE_ERROR, STATE_UNCONFIGURED, MailWatch
 
 # The binding vocabulary, by data source type: the values the host
 # computes for a widget render. A ui-schema element whose binding is
@@ -59,13 +60,18 @@ BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
 # Sources whose data lives in a shared built-in pipeline rather than a
 # workspace glob: the runner reads the pipeline the dashboard's own
 # cards use, and their honest states come from the pipeline itself.
-PIPELINE_TYPES = ("calendar-read",)
+PIPELINE_TYPES = ("calendar-read", "mail-digest")
 
 EXECUTABLE_TYPES = ("excel-watch",) + PIPELINE_TYPES
 
 CALENDAR_WINDOW_NOTE = (
     "The next commitment and today's count, from the calendar file your "
     "flow syncs."
+)
+
+MAIL_WINDOW_NOTE = (
+    "Counts cover the last 24 hours of message headers; bodies are "
+    "never read."
 )
 
 
@@ -317,7 +323,46 @@ class PluginWidgetRunner:
         source_type = self._pipelines.get(plugin_id, "")
         if source_type == "calendar-read":
             return self._calendar_status()
+        if source_type == "mail-digest":
+            return self._mail_status()
         return self._attention("data source has not run"), {}
+
+    def _mail_status(self) -> "tuple[dict, dict]":
+        """mail-digest: header-only counts from the mail pipeline's own
+        read-only view, the same read the mail page makes (issue #64).
+        The Message record has no body field by construction, so no
+        binding here could carry one even by mistake."""
+        watch = self.mail
+        if watch is None:
+            return self._attention(
+                "The mail digest is not running. Turn it on in Settings "
+                "and choose a folder, then re-test."), {}
+        view = watch.view()
+        state = str(view.get("state", ""))
+        if state == STATE_UNCONFIGURED:
+            return self._attention(
+                "No mail folder is chosen yet. Turn on the mail digest "
+                "in Settings and pick a folder, then re-test."), {}
+        if state == STATE_ERROR:
+            cause = str(view.get("cause") or
+                        "the mail folder could not be read")
+            return self._attention(cause), {}
+        messages = view.get("messages") or []
+        cutoff = watch.adapters.clock() - watch.digest_hours * 3600
+        window = [m for m in messages if m.date_ts >= cutoff]
+        senders: dict[str, int] = {}
+        for message in window:
+            senders[message.sender] = senders.get(message.sender, 0) + 1
+        top = sorted(senders.items(), key=lambda item: (-item[1], item[0]))[:3]
+        values = {
+            "messages": len(window),
+            "threads": len(view.get("digest") or []),
+            "topSenders": ", ".join(
+                f"{sender} ({count})" for sender, count in top) or "None",
+            "windowNote": MAIL_WINDOW_NOTE,
+        }
+        return {"status": "fresh", "cause": "",
+                "checked_at": _iso(None)}, values
 
     def _calendar_status(self) -> "tuple[dict, dict]":
         """calendar-read: today's facts from the bridge's day view, the
