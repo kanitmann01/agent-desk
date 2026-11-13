@@ -131,13 +131,22 @@ def test_rollback_refuses_missing_versions_and_pins(tmp_path):
     assert excinfo.value.code == "rollback:unknown-pin"
 
 
-def test_workflow_never_interpolates_the_base_ref_into_shell():
-    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "registry.yml").read_text(encoding="utf-8")
-    assert "BASE_REF: ${{ github.base_ref }}" in workflow
-    assert "xargs -r" in workflow
-    for line in workflow.splitlines():
-        if line.strip().startswith("run:") or "git show" in line or "git diff" in line:
-            assert "${{ github.base_ref }}" not in line
+def test_no_shell_run_interpolates_an_untrusted_ref():
+    """The hosted registry workflow (retired with the paid runners)
+    interpolated the PR base ref into shell lines, guarded here. The
+    guard now covers whatever remains: any workflow file under
+    .github/workflows, and the local gate's shell=True call sites,
+    which must pass constant command lists only (ci_local's npm calls
+    name their fixed commands; no variable ever reaches a shell)."""
+    workflows_dir = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    for workflow in workflows_dir.glob("*.yml"):
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("run:") or "git show" in line or "git diff" in line:
+                assert "${{ github." not in line, f"{workflow.name}: {line.strip()}"
+    ci_local = (Path(__file__).resolve().parents[1] / "tools" / "ci_local.py").read_text(encoding="utf-8")
+    for line in ci_local.splitlines():
+        if "shell=" in line:
+            assert "${{" not in line and "os.environ" not in line.split("shell=")[0].rsplit("subprocess.run", 1)[-1], line.strip()
 
 
 def test_registry_root_document_is_seeded():
