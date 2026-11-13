@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "calendar-today",
+  "name": "Calendar Today",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "license": "MIT",
+  "permissions": {
+    "filesystem": { "read": [], "write": [] },
+    "network": { "allow": [] },
+    "llm": { "allow": false },
+    "shell": "none"
+  },
+  "activationEvents": ["onWidget:calendar-today", "onSchedule:0 * * * *"],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "calendar-today",
+        "size": "2x1",
+        "dataSource": { "type": "calendar-read" },
+        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+      }
+    ],
+    "skills": ["skills/day-briefing/SKILL.md"]
+  }
+}

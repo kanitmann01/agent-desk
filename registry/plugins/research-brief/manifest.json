@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "research-brief",
+  "name": "Research Brief",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "license": "MIT",
+  "permissions": {
+    "filesystem": { "read": [], "write": [] },
+    "network": { "allow": [] },
+    "llm": { "allow": false },
+    "shell": "none"
+  },
+  "activationEvents": ["onWidget:research-brief", "onSchedule:0 * * * *"],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "research-brief",
+        "size": "2x1",
+        "dataSource": { "type": "research-brief" },
+        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+      }
+    ],
+    "skills": ["skills/research-recap/SKILL.md"]
+  }
+}
