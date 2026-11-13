@@ -111,7 +111,7 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
     payload = get_dashboard(booted, auth)
     # The whole contract: nothing missing, nothing extra.
     assert sorted(payload) == [
-        "commitments", "flags", "inbox", "plugins", "research",
+        "commitments", "flags", "inbox", "layout", "plugins", "research",
         "sales", "skills", "sources", "version",
     ]
     assert payload["version"]
@@ -138,6 +138,13 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
     assert payload["inbox"]["waiting"] == 0
     assert payload["skills"] == []
     assert payload["plugins"]["cards"] == []
+    # Layout: the canonical default, visible cards only, in order.
+    assert payload["layout"]["cards"] == [
+        {"key": "sales", "title": None},
+        {"key": "commitments", "title": None},
+        {"key": "research", "title": None},
+        {"key": "skills", "title": None},
+    ]
 
 
 def test_payload_counts_connected_sources_when_one_exists(booted, auth):

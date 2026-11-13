@@ -19,6 +19,8 @@ const MAX_EXAMPLE_ROWS = 8;
 
 interface SalesCardProps {
   sales: { enabled: boolean; mode: 'disabled' | 'unconfigured' | 'live'; status: SalesStatus | null };
+  // The layout's custom title, when the user renamed the card.
+  title?: string;
   onRefetch: () => Promise<void>;
   onExpired: () => void;
 }
@@ -48,11 +50,12 @@ function DeltaRows({ delta }: { delta: DeltaPayload }) {
   );
 }
 
-export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProps) {
+export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesCardProps) {
   const [note, setNote] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const heading = title ?? 'Sales, last 24 hours';
 
   const show = (text: string) => setNote(text);
 
@@ -132,7 +135,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
   if (sales.mode === 'disabled') {
     return (
       <WidgetCard
-        title="Sales, last 24 hours"
+        title={heading}
         span="span-7"
         footLines={2}
         sparse
@@ -154,7 +157,7 @@ export default function SalesCard({ sales, onRefetch, onExpired }: SalesCardProp
   if (sales.mode === 'unconfigured' || status === null || !status.configured) {
     return (
       <WidgetCard
-        title="Sales, last 24 hours"
+        title={heading}
         span="span-7"
         footLines={2}
         sparse
