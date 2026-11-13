@@ -9,6 +9,7 @@ same way: named, plain-language, never an empty success.
 import json
 import sys
 import urllib.parse
+from urllib.parse import urlencode
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -255,5 +256,42 @@ def test_settings_page_shows_the_registry_section(tmp_path):
         assert "Plugin registry" in text
         assert "action='/settings/registry/path'" in text
         assert str(registry) in text
+    finally:
+        booted.close()
+
+
+def test_installing_the_same_release_twice_is_named_not_repeated_success(tmp_path):
+    """A second install of the installed id@version is an honest
+    already-installed answer (stress finding F3): the form notice must
+    not claim a fresh install that did not happen, and the JSON caller
+    gets the named state. State stays untouched either way."""
+    registry = make_registry(tmp_path)
+    booted = _boot(str(registry))
+    try:
+        auth = booted.exchange()
+        status, _h, _b = booted.post_json(
+            "/api/registry/install", {"id": PLUGIN_ID}, auth)
+        assert status == 200
+
+        status, _h, body = booted.post_json(
+            "/api/registry/install", {"id": PLUGIN_ID}, auth)
+        assert status == 200, body
+        result = json.loads(body)
+        assert result.get("already") is True, result
+        assert result.get("version") == "1.2.0"
+
+        # the form surface: the notice says already, not "Installed"
+        form = urlencode({"id": PLUGIN_ID, "version": "1.2.0"}).encode()
+        status, headers, _b = booted.request("POST", "/plugins/registry-install", headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Length": str(len(form)), **auth}, body=form)
+        assert status == 303, (status, _b[:200])
+        notice = headers.get("Location", "")
+        assert "Already" in notice and "installed" in notice, notice
+        assert "Installed " not in notice.replace("Already installed ", ""), notice
+
+        records = json.loads(booted.request("GET", "/api/plugins", auth)[2])["plugins"]
+        assert [r["id"] for r in records] == [PLUGIN_ID]
+        assert records[0]["active_version"] == "1.2.0"
     finally:
         booted.close()

@@ -2789,6 +2789,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "registry:not-configured",
                 "No plugin registry is configured. Set one in Settings.")
             return
+        # An id@version that is already the active install is an honest
+        # "already", not a second success (the double-click case): the
+        # state would not change, so neither may the notice. A request
+        # for a DIFFERENT version still proceeds: that is a legitimate
+        # install or rollback to it.
+        try:
+            record = plugins.record(plugin_id)
+        except PluginError:
+            record = None
+        if record is not None:
+            active = str(record.get("active_version", ""))
+            if active and (version is None or version == active):
+                self._audit("plugin.install", target=plugin_id,
+                            detail=f"already installed v{active}; nothing changed")
+                if self._is_form_submit():
+                    self._send_redirect(f"/plugins?notice={quote(
+                        'Already installed ' + plugin_id + ' v' + active + '.')}")
+                    return
+                self._send_json(200, {"ok": True, "already": True, "version": active})
+                return
         try:
             with tempfile.TemporaryDirectory(prefix="agentdesk-registry-") as tmp:
                 staged = registry_source.stage_registry_install(
