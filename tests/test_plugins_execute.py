@@ -5,10 +5,14 @@ parser returns a mutable list, the clock is a number the test moves),
 so these tests cover the runner's own behavior: probe-shaped status,
 honest amber states, and the binding of real poll results into the
 ui-schema render model. The excel arithmetic itself is covered by the
-excel suite; here it only has to arrive.
+excel suite; here it only has to arrive. The pipeline bindings
+(calendar-read, mail-digest, research-brief) run against real bridges,
+watches and stores over in-memory sqlite and frozen clocks: the same
+objects the dashboard's own cards read.
 """
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -242,3 +246,141 @@ def test_uninstall_detaches_but_keeps_data(workspace, tmp_path):
     runtime.uninstall("sales-delta-widget")
     assert not runner.attached("sales-delta-widget")
     assert data_dir.exists()  # preserved until the named purge
+
+
+# The pipeline bindings (#64): calendar-read, mail-digest and
+# research-brief execute against the built-in pipelines, injected the
+# way the excel path injects its watches. A real bridge/watch/store over
+# an in-memory sqlite and a frozen clock, so every state here is the
+# state the dashboard's own cards would see.
+
+def _pipeline_manifest(source_type: str) -> dict:
+    """A pipeline-backed widget: the data lives in the shared pipeline,
+    so the data source names its type and nothing else."""
+    return {
+        "id": f"{source_type}-widget",
+        "contributes": {"widgets": [{
+            "id": "w",
+            "dataSource": {"type": source_type},
+            "render": {"type": "ui-schema", "file": "widget.ui.json"},
+        }]},
+    }
+
+
+def _bridge(tmp_path, now, events):
+    """A real CalendarBridge over a seeded calendar_sync.json body, its
+    clock frozen at `now`, already polled once so its document is live.
+    events=None seeds no file at all: the bridge's empty state."""
+    import sqlite3
+
+    from agentdesk.calendar.watcher import Adapters as CalendarAdapters
+    from agentdesk.calendar.watcher import CalendarBridge
+
+    def read_calendar():
+        if events is None:
+            return None
+        doc = json.dumps({"generatedAt": now.isoformat(), "events": events})
+        return ("onedrive/agent-desk/calendar_sync.json", doc.encode("utf-8"))
+
+    adapters = CalendarAdapters(read_calendar=read_calendar,
+                                clock=lambda: now.timestamp())
+    bridge = CalendarBridge(sqlite3.connect(":memory:", check_same_thread=False),
+                            adapters,
+                            llm=lambda _p: '{"subtasks": [], "followups": []}')
+    bridge.poll()
+    return bridge
+
+
+def test_calendar_read_binds_today_from_the_bridge(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    events = [
+        {"id": "a", "subject": "Q4 pipeline review",
+         "start": now.replace(hour=14).isoformat(),
+         "end": now.replace(hour=15).isoformat()},
+        {"id": "b", "subject": "Later sync",
+         "start": now.replace(hour=16).isoformat(),
+         "end": now.replace(hour=17).isoformat()},
+        {"id": "c", "subject": "Tomorrow",
+         "start": (now + timedelta(days=1)).replace(hour=10).isoformat(),
+         "end": (now + timedelta(days=1)).replace(hour=11).isoformat()},
+    ]
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, events))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "nextEventTitle", "label": "Next"},
+        {"type": "metric", "binding": "nextEventTime", "label": "At"},
+        {"type": "metric", "binding": "eventsToday", "label": "Today"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("calendar-read"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    assert payload["cause"] == ""
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Next", "value": "Q4 pipeline review"},
+        {"kind": "metric", "label": "At", "value": now.replace(hour=14).strftime("%H:%M")},
+        {"kind": "metric", "label": "Today", "value": "2"},
+        {"kind": "text",
+         "text": "The next commitment and today's count, from the calendar file your flow syncs."},
+    ]
+
+
+def test_calendar_read_with_no_calendar_is_amber_with_cause(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, None))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "nextEventTitle", "label": "Next"},
+        {"type": "metric", "binding": "eventsToday", "label": "Today"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("calendar-read"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "calendar" in status["cause"].lower()
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    # Amber binds nothing: no invented titles, counts or notes.
+    assert payload["elements"] == []
+
+
+def test_calendar_read_without_a_bridge_is_amber(workspace, tmp_path):
+    runner = PluginWidgetRunner(workspace)  # no calendar wired
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "metric", "binding": "nextEventTitle",
+                             "label": "Next"}])
+    status = runner.attach("p1", _pipeline_manifest("calendar-read"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "calendar bridge" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_calendar_card_ignores_excel_and_unknown_bindings(workspace, tmp_path):
+    """Bindings are per source: a calendar card asking for excel counts
+    or an invented name renders nothing for them, never a number."""
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+    events = [
+        {"id": "a", "subject": "Q4 pipeline review",
+         "start": now.replace(hour=14).isoformat(),
+         "end": now.replace(hour=15).isoformat()},
+    ]
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, events))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "delta24h", "label": "Changed"},
+        {"type": "metric", "binding": "inventedNumber", "label": "Made up"},
+        {"type": "metric", "binding": "eventsToday", "label": "Today"},
+        {"type": "text", "text": "Static note"},
+    ])
+    runner.attach("p1", _pipeline_manifest("calendar-read"),
+                  version_dir, tmp_path / "data")
+    payload = runner.payload("p1")
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Today", "value": "1"},
+        {"kind": "text", "text": "Static note"},
+    ]

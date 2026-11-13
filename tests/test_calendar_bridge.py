@@ -179,6 +179,74 @@ def test_toggle_check_api_writes_through(tmp_path):
     assert bridge.status()["checks"] == {"2": True}
 
 
+# The day view (#64): today's facts for plugin cards, without any model
+# call. The commitments card asks the bridge for a breakdown (cache
+# first, model second); a plugin binding must never spend that call, so
+# the day view is the same read minus the breakdown half.
+
+def test_day_view_reads_today_without_any_model_call(tmp_path):
+    calls: list[str] = []
+
+    def llm(prompt):
+        calls.append(prompt)
+        return '{"subtasks": ["Prep"], "followups": []}'
+
+    events = sample_events(TODAY) + [
+        {
+            "id": "evt-2",
+            "subject": "Later sync",
+            "start": TODAY.replace(hour=16).isoformat(),
+            "end": TODAY.replace(hour=17).isoformat(),
+        },
+        {
+            "id": "evt-3",
+            "subject": "Tomorrow's thing",
+            "start": (TODAY + timedelta(days=1)).replace(hour=10).isoformat(),
+            "end": (TODAY + timedelta(days=1)).replace(hour=11).isoformat(),
+        },
+    ]
+    bridge, _clock = make_bridge(tmp_path, event_doc(TODAY, events), TODAY, llm=llm)
+    bridge.poll()
+    assert len(calls) == 1  # the poll's own breakdown, nothing else
+
+    view = bridge.day_view()
+
+    assert len(calls) == 1  # the day view added no model call
+    assert view["state"] == "healthy"
+    assert view["cause"] == ""
+    assert view["keyEvent"]["subject"] == "Q4 pipeline review"
+    assert view["keyEvent"]["start"] == TODAY.replace(hour=14).isoformat()
+    assert view["eventsToday"] == 2  # today's two; tomorrow is not today
+    assert view["generatedAt"] == TODAY.isoformat()
+    assert "breakdown" not in view  # not asked for, not paid for
+
+
+def test_day_view_before_any_poll_is_the_empty_state(tmp_path):
+    bridge, _clock = make_bridge(tmp_path, event_doc(TODAY, sample_events(TODAY)), TODAY)
+    view = bridge.day_view()
+    assert view["state"] == "empty"
+    assert view["keyEvent"] is None
+    assert view["eventsToday"] == 0
+    assert view.get("generatedAt") is None
+
+
+def test_day_view_on_a_clear_day_counts_nothing_ahead(tmp_path):
+    over = [
+        {
+            "id": "evt-done",
+            "subject": "Morning standup",
+            "start": TODAY.replace(hour=7).isoformat(),
+            "end": TODAY.replace(hour=8).isoformat(),
+        }
+    ]
+    bridge, _clock = make_bridge(tmp_path, event_doc(TODAY, over), TODAY)
+    assert bridge.poll()["state"] == "clear"
+    view = bridge.day_view()
+    assert view["state"] == "clear"
+    assert view["keyEvent"] is None
+    assert view["eventsToday"] == 1  # it happened today; that is still true
+
+
 def test_parse_breakdown_tolerates_fences_and_garbage():
     good = parse_breakdown('```json\n{"subtasks": ["a"], "followups": []}\n```')
     assert good["subtasks"] == ["a"]

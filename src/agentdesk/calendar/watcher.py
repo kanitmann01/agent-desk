@@ -223,7 +223,7 @@ class CalendarBridge:
         with self._lock:
             return self._status_locked()
 
-    def _status_locked(self) -> dict:
+    def _status_locked(self, breakdown: bool = True) -> dict:
         now_dt = _now_from_clock(self.adapters.clock)
         payload = {
             "configured": True,
@@ -250,10 +250,35 @@ class CalendarBridge:
             "location": key.location,
             "attendees": key.attendees,
         }
-        breakdown = self._breakdown_for(key)
-        payload["breakdown"] = breakdown
-        payload["checks"] = {str(k): v for k, v in store.get_checks(self.conn, key.id).items()}
+        if breakdown:
+            payload["breakdown"] = self._breakdown_for(key)
+            payload["checks"] = {str(k): v for k, v in store.get_checks(self.conn, key.id).items()}
         return payload
+
+    def day_view(self) -> dict:
+        """Today's calendar facts for surfaces that must not spend a
+        model call: the same read as status() (state, cause, the key
+        event, the file's own generatedAt) minus the breakdown, plus the
+        count of today's events. Plugin bindings read this, so no plugin
+        card can ever trigger a breakdown request; the commitments card
+        keeps status(), breakdown and checkboxes included."""
+        with self._lock:
+            now_dt = _now_from_clock(self.adapters.clock)
+            view = self._status_locked(breakdown=False)
+            for key in ("configured", "path", "firstDetected",
+                        "breakdown", "checks"):
+                view.pop(key, None)
+            view["eventsToday"] = len(self._todays_locked(now_dt))
+            return view
+
+    def _todays_locked(self, now_dt: datetime) -> list:
+        """Today's events, soonest first; empty before the first poll."""
+        if self._document is None:
+            return []
+        return sorted(
+            (e for e in self._document.events if e.start.date() == now_dt.date()),
+            key=lambda e: e.start,
+        )
 
     def _breakdown_for(self, key) -> dict:
         cache_key = f"{key.id}:{key.start.isoformat()}"
