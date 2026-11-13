@@ -212,3 +212,18 @@ def test_failed_calls_are_audited_as_errors(env, auth):
     entries = json.loads(env.request("GET", "/audit/tail", auth)[2])["entries"]
     assert entries[0]["status"] == "error"
     assert entries[0]["action"] == "llm.research"
+
+
+def test_research_degraded_names_the_actual_cause_from_the_endpoint(env, auth):
+    """The research bar speaks the adapter's vocabulary (#62): the cause
+    is what the endpoint did, not a standing generic line."""
+    from test_llm_chat import ScriptedEndpoint
+
+    rejected = ScriptedEndpoint(status=401, body=b'{"error": "bad key"}')
+    try:
+        env.server.llm = lambda prompt: chat(rejected.base_url, "k", "m", prompt)
+        payload = json.loads(env.post_json("/research", {"question": "q"}, auth)[2])
+        assert payload["status"] == "degraded"
+        assert "rejected the API key" in payload["cause"]
+    finally:
+        rejected.close()

@@ -6,19 +6,66 @@ environment (AGENTDESK_LLM_BASE, AGENTDESK_LLM_KEY,
 AGENTDESK_LLM_MODEL), every call is a plain POST with a short timeout,
 and every failure raises so the caller can degrade in its own language.
 No telemetry, no retry storms: one attempt per ask.
+
+Every failure carries a short plain-language cause (never a traceback),
+so the surfaces can show exactly what happened: a redirect to a login
+page, an HTML portal where the API base should be, a rejected key, a
+host that does not resolve. Redirects are never followed: a 3xx is an
+answer to report, not a hop to chase.
 """
 
 import json
 import os
+import socket
+import ssl
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 REQUEST_TIMEOUT_S = 10
 DEFAULT_MODEL = "gpt-4o-mini"
 
+# The pinned cause vocabulary. Every surface (settings test, research
+# bar, assistant, wizard) shows one of these strings as-is, so the words
+# live here once and nowhere else.
+NO_ENDPOINT_CAUSE = "no corporate endpoint configured"
+NO_SCHEME_CAUSE = (
+    "the base URL must start with http:// or https://, "
+    "for example https://llm.yourcompany.example/v1"
+)
+NO_HOST_CAUSE = (
+    "the base URL is missing its host, the part right after https://, "
+    "for example https://llm.yourcompany.example/v1"
+)
+REDIRECT_CAUSE = "the endpoint answered a redirect (possibly a login page), not an API"
+WEB_PAGE_CAUSE = (
+    "the endpoint answered a web page, not the API; check the base URL "
+    "is the API base, not the portal"
+)
+NOT_API_BASE_CAUSE = (
+    "the endpoint answered 404; the base URL is likely not the API "
+    "base: it usually ends in the API version, like /v1"
+)
+BAD_SHAPE_CAUSE = (
+    "the endpoint answered JSON that is not an OpenAI chat reply; check "
+    "the base URL is an OpenAI-compatible base, usually ending in /v1"
+)
+
 
 class LlmUnavailable(Exception):
     """No endpoint is configured, or the call did not go through."""
+
+
+class _NeverRedirect(urllib.request.HTTPRedirectHandler):
+    """A 3xx is an answer to classify, not a hop to follow: an SSO
+    portal redirect must be named to the user, never chased into a
+    login page the adapter cannot answer."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NeverRedirect)
 
 
 def env_config() -> tuple[str, str, str]:
@@ -51,6 +98,87 @@ def effective_llm_config(settings_store=None) -> tuple[str, str, str]:
     return base, key, model
 
 
+def base_url_problem(base: str) -> str:
+    """"Empty when the base URL is usable, else the named reason it is not.
+
+    The whole requirement is an http(s) scheme and a host; the path is
+    the caller's to get right and is never rewritten here. An empty
+    base is fine: that is the documented unconfigured state."""
+    base = (base or "").strip()
+    if not base:
+        return ""
+    parts = urlsplit(base)
+    if parts.scheme not in ("http", "https"):
+        return NO_SCHEME_CAUSE
+    if not parts.hostname:
+        return NO_HOST_CAUSE
+    return ""
+
+
+def _http_cause(code: int) -> str:
+    """The cause for one HTTP status the endpoint answered with."""
+    if 300 <= code < 400:
+        return REDIRECT_CAUSE
+    if code in (401, 403):
+        return f"the endpoint rejected the API key (HTTP {code}); check the key"
+    if code == 404:
+        return NOT_API_BASE_CAUSE
+    if 500 <= code < 600:
+        return (
+            f"the endpoint failed on its own side (HTTP {code}); nothing "
+            "is wrong with the key or the base URL"
+        )
+    return f"the endpoint refused the request (HTTP {code})"
+
+
+def transport_cause(exc: BaseException, host: str = "",
+                    timeout: float | None = None) -> str:
+    """The plain-language cause of one transport failure: DNS, TLS, a
+    timeout, a refused port, or the endpoint not answering. Short
+    strings the surfaces show as-is; never a traceback."""
+    if isinstance(exc, socket.gaierror):
+        return (
+            f"could not resolve the host {host or 'in the base URL'}: "
+            "check the base URL spelling, or the network"
+        )
+    if isinstance(exc, ssl.SSLError):
+        return (
+            "could not open a secure connection to the endpoint host "
+            "(TLS failed): check that the address and port are right"
+        )
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        waited = f"{timeout:g} seconds" if timeout is not None else "the waiting period"
+        return f"the endpoint did not answer within {waited} (timeout)"
+    if isinstance(exc, ConnectionRefusedError):
+        return (
+            f"the endpoint host refused the connection: nothing is "
+            f"listening at {host or 'that address'}"
+        )
+    return f"the endpoint did not answer: {exc}"
+
+
+def _reply_text(raw: str, content_type: str) -> str:
+    """The assistant message from one endpoint reply, or the named
+    cause it is not one: an HTML page is a portal answer, and anything
+    that is not an OpenAI chat object is a wrong-shape answer."""
+    if "html" in content_type.lower() or raw.lstrip().lower().startswith("<"):
+        raise LlmUnavailable(WEB_PAGE_CAUSE)
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise LlmUnavailable(BAD_SHAPE_CAUSE) from None
+    choices = body.get("choices") if isinstance(body, dict) else None
+    message = (
+        choices[0].get("message")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict)
+        else None
+    )
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str):
+        raise LlmUnavailable(BAD_SHAPE_CAUSE)
+    return content
+
+
 def chat(
     base_url: str,
     api_key: str,
@@ -61,7 +189,10 @@ def chat(
 ) -> str:
     """One completion against the OpenAI-compatible chat endpoint."""
     if not base_url:
-        raise LlmUnavailable("no corporate endpoint configured")
+        raise LlmUnavailable(NO_ENDPOINT_CAUSE)
+    problem = base_url_problem(base_url)
+    if problem:
+        raise LlmUnavailable(problem)
     payload = {
         "model": model,
         "temperature": 0,
@@ -78,14 +209,23 @@ def chat(
         },
         method="POST",
     )
+    host = urlsplit(base_url).netloc
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        return body["choices"][0]["message"]["content"]
+        with _OPENER.open(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8", "replace")
+            content_type = response.headers.get("Content-Type", "")
+        return _reply_text(raw, content_type)
     except LlmUnavailable:
         raise
-    except (urllib.error.URLError, OSError, KeyError, IndexError, ValueError) as exc:
-        raise LlmUnavailable(f"the company endpoint did not answer: {exc}") from exc
+    except urllib.error.HTTPError as exc:
+        raise LlmUnavailable(_http_cause(exc.code)) from exc
+    except urllib.error.URLError as exc:
+        raise LlmUnavailable(
+            transport_cause(exc.reason, host=host, timeout=timeout)
+        ) from exc
+    except OSError as exc:
+        # Timeouts and resets that escape URLError arrive bare.
+        raise LlmUnavailable(transport_cause(exc, host=host, timeout=timeout)) from exc
 
 
 def chat_client(base_url: str, api_key: str, model: str):
