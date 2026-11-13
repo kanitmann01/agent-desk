@@ -481,8 +481,12 @@ class PluginRuntime:
             if manifest_path.exists():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             if self.runner.attached(entry["id"]):
-                data = self.runner.status(entry["id"])
-                payload = self.runner.payload(entry["id"])
+                # One source read for both halves of the card (#75
+                # review): status and payload come from a single
+                # status+bindings pass, so a pipeline-backed source (the
+                # mail folder included) is read once per view.
+                card = self.runner.card(entry["id"])
+                data, payload = card["status"], card["payload"]
             else:
                 data = entry.get("data_source") or {}
                 payload = None

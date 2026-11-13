@@ -49,3 +49,46 @@ def test_a_new_answer_replaces_the_previous_one():
     assert latest["summary"] == "Second answer"
     assert latest["sources"] == ["b", "c"]
     assert latest["answeredTs"] == 1_763_000_060.0
+
+
+def test_concurrent_saves_and_reads_are_serialized(tmp_path):
+    """One connection serves request threads: POST /research writes the
+    latest answer while dashboard renders read it (#75 review). The
+    store serializes both halves around the connection; without the
+    lock, interleaved use of one sqlite connection raises
+    InterfaceError or tears a read."""
+    import threading
+
+    store = ResearchStore(
+        sqlite3.connect(tmp_path / "research.sqlite3", check_same_thread=False),
+        clock=lambda: 1.0)
+    errors: list[Exception] = []
+    barrier = threading.Barrier(8)
+
+    def writer(n: int) -> None:
+        try:
+            barrier.wait()
+            for i in range(300):
+                store.save(f"answer {n}-{i}", ["s"])
+        except Exception as exc:  # noqa: BLE001 - the test collects them
+            errors.append(exc)
+
+    def reader() -> None:
+        try:
+            barrier.wait()
+            for _ in range(300):
+                latest = store.latest()
+                if latest is not None and not isinstance(latest["summary"], str):
+                    errors.append(ValueError("torn read"))
+        except Exception as exc:  # noqa: BLE001 - the test collects them
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(n,)) for n in range(4)]
+    threads += [threading.Thread(target=reader) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert store.latest()["summary"].startswith("answer ")

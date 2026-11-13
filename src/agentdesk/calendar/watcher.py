@@ -132,12 +132,19 @@ class CalendarBridge:
         # holding it.
         self._lock = threading.RLock()
 
-    def poll(self) -> dict:
-        """One poll: read, parse, pick, attach. Returns the status dict."""
-        with self._lock:
-            return self._poll_locked()
+    def poll(self, breakdown: bool = True) -> dict:
+        """One poll: read, parse, pick, attach. Returns the status dict.
 
-    def _poll_locked(self) -> dict:
+        ``breakdown=False`` skips the breakdown entirely, so the poll
+        makes no model call and reads no cache: surfaces that must never
+        spend an endpoint request (a plugin card's re-test) poll this
+        way. The built-in card keeps the default, breakdown cache first,
+        model second.
+        """
+        with self._lock:
+            return self._poll_locked(breakdown=breakdown)
+
+    def _poll_locked(self, breakdown: bool = True) -> dict:
         now_dt = _now_from_clock(self.adapters.clock)
         now = self.adapters.clock()
         found = None
@@ -147,7 +154,7 @@ class CalendarBridge:
             found = None
         if found is None:
             self._state, self._cause = STATE_EMPTY, ""
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         path, data = found
         self._source_path = path
         self._last_read_ts = now
@@ -157,7 +164,7 @@ class CalendarBridge:
             self._state = STATE_UNREADABLE
             self._cause = f"Can't read the calendar file: {exc}"
             self._audit("calendar.poll", "error")
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         self._document = document
         self._audit("calendar.ingest", "ok")
         if now - document.generated_at.timestamp() > self.stale_s:
@@ -167,15 +174,15 @@ class CalendarBridge:
                 "current. Re-test after your flow has run, or walk through "
                 "the setup again."
             )
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         if store.get_flag(self.conn, FIRST_DETECTED_FLAG) is None:
             store.set_flag(self.conn, FIRST_DETECTED_FLAG, now_dt.isoformat())
         key = pick_key_event(document.events, now_dt)
         if key is None:
             self._state, self._cause = STATE_CLEAR, ""
-            return self.status()
+            return self._status_locked(breakdown=breakdown)
         self._state, self._cause = STATE_HEALTHY, ""
-        return self.status()
+        return self._status_locked(breakdown=breakdown)
 
     def explicit_path(self) -> str | None:
         """The file the user chose in the app, when one is stored."""

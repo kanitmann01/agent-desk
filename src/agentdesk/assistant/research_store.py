@@ -11,6 +11,7 @@ conclusion, not a history.
 
 import json
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 
@@ -36,11 +37,17 @@ class ResearchStore:
                  clock: Callable[[], float] = time.time) -> None:
         self.conn = conn
         self.clock = clock
+        # One connection serves request threads (a POST /research save
+        # while a dashboard render reads), so every use is serialized:
+        # interleaved sqlite calls on one connection raise or tear. The
+        # calendar bridge's pattern; an RLock because save and latest
+        # may nest under a future holder.
+        self._lock = threading.RLock()
         ensure_schema(conn)
 
     def save(self, summary: str, sources: list) -> None:
         """Record the newest answer; it replaces any earlier one."""
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute(
                 "INSERT INTO research_answer (id, ts, summary, sources)"
                 " VALUES (1, ?, ?, ?)"
@@ -53,9 +60,10 @@ class ResearchStore:
     def latest(self) -> dict | None:
         """The latest answer as ``{summary, sources, answeredTs}``, or
         None when nothing was ever asked."""
-        row = self.conn.execute(
-            "SELECT ts, summary, sources FROM research_answer WHERE id = 1"
-        ).fetchone()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT ts, summary, sources FROM research_answer WHERE id = 1"
+            ).fetchone()
         if row is None:
             return None
         return {

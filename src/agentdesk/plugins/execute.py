@@ -226,9 +226,11 @@ class PluginWidgetRunner:
             return self._watch_status(plugin_id)
         source_type = self._pipelines.get(plugin_id)
         if source_type == "calendar-read" and self.calendar is not None:
-            # The built-in card's own re-test: one poll of the shared
-            # bridge, breakdown cache first as always.
-            self.calendar.retest()
+            # One poll of the shared bridge, breakdown-free: a plugin
+            # card's re-test must never spend an endpoint request, so
+            # the poll skips the breakdown entirely (cache included).
+            # The built-in card's own re-test keeps its breakdown.
+            self.calendar.poll(breakdown=False)
         return self.status(plugin_id)
 
     def payload(self, plugin_id: str) -> dict | None:
@@ -240,6 +242,51 @@ class PluginWidgetRunner:
         """
         if not self.attached(plugin_id):
             return None
+        schema = self._schema_for(plugin_id)
+        if schema is None:
+            return None
+        if plugin_id in self._watches:
+            status = self._watch_status(plugin_id)
+            bindings = self._bindings(status)
+        else:
+            status, bindings = self._pipeline_status(plugin_id)
+        return self._render(schema, status, bindings)
+
+    def card(self, plugin_id: str) -> dict:
+        """One source read for both halves of a dashboard card: its
+        status and its bound payload, computed from a single
+        (status, bindings) pass (#75 review). Reading them separately
+        would read and parse a pipeline twice per view, the mail folder
+        included."""
+        if plugin_id in self._watches:
+            status = self._watch_status(plugin_id)
+            bindings = self._bindings(status)
+        elif plugin_id in self._pipelines:
+            status, bindings = self._pipeline_status(plugin_id)
+        else:
+            return {"status": self._attention("data source has not run"),
+                    "payload": None}
+        schema = self._schema_for(plugin_id)
+        payload = self._render(schema, status, bindings) if schema else None
+        return {"status": status, "payload": payload}
+
+    def start_polling(self, plugin_id: str) -> None:
+        watch = self._watches.get(plugin_id)
+        if watch is not None:
+            watch.start_polling()
+
+    def start_all_polling(self) -> None:
+        for watch in self._watches.values():
+            watch.start_polling()
+
+    def stop_all(self) -> None:
+        for plugin_id in list(self._watches):
+            self.detach(plugin_id)
+
+    # ---- internals ----
+
+    def _schema_for(self, plugin_id: str) -> dict | None:
+        """The widget's ui-schema document, or None when unrenderable."""
         base = self._dirs.get(plugin_id)
         manifest = self._manifests.get(plugin_id)
         if manifest is None or base is None:
@@ -250,14 +297,12 @@ class PluginWidgetRunner:
         render = widgets[0].get("render", {})
         if not isinstance(render, dict) or render.get("type") != "ui-schema":
             return None
-        schema = self._load_ui_schema(base, render)
-        if schema is None:
-            return None
-        if plugin_id in self._watches:
-            status = self._watch_status(plugin_id)
-            bindings = self._bindings(status)
-        else:
-            status, bindings = self._pipeline_status(plugin_id)
+        return self._load_ui_schema(base, render)
+
+    def _render(self, schema: dict, status: dict, bindings: dict) -> dict:
+        """Bind values into the whitelisted element kinds. A binding
+        outside the source's own set renders as nothing rather than an
+        invented number."""
         elements = []
         for element in schema.get("elements", []):
             if not isinstance(element, dict):
@@ -280,21 +325,6 @@ class PluginWidgetRunner:
                 elements.append({"kind": "text", "text": str(text)})
         return {"elements": elements, "status": status["status"],
                 "cause": status["cause"], "checked_at": status["checked_at"]}
-
-    def start_polling(self, plugin_id: str) -> None:
-        watch = self._watches.get(plugin_id)
-        if watch is not None:
-            watch.start_polling()
-
-    def start_all_polling(self) -> None:
-        for watch in self._watches.values():
-            watch.start_polling()
-
-    def stop_all(self) -> None:
-        for plugin_id in list(self._watches):
-            self.detach(plugin_id)
-
-    # ---- internals ----
 
     def _load_ui_schema(self, base: Path, render: dict) -> dict | None:
         name = str(render.get("file", ""))
@@ -426,8 +456,16 @@ class PluginWidgetRunner:
                         "the calendar data needs attention")
             return self._attention(cause), {}
         key = view.get("keyEvent") or {}
+        if key:
+            # A real event with an empty subject is a busy slot: "Busy"
+            # is the calendar flow's own default for a missing subject.
+            # "Nothing left today" belongs to the clear day alone, where
+            # there is no key event at all.
+            title = str(key.get("subject") or "Busy")
+        else:
+            title = "Nothing left today"
         values = {
-            "nextEventTitle": str(key.get("subject") or "Nothing left today"),
+            "nextEventTitle": title,
             "eventsToday": int(view.get("eventsToday", 0)),
             "windowNote": CALENDAR_WINDOW_NOTE,
         }

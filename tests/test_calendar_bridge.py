@@ -247,6 +247,32 @@ def test_day_view_on_a_clear_day_counts_nothing_ahead(tmp_path):
     assert view["eventsToday"] == 1  # it happened today; that is still true
 
 
+def test_poll_can_skip_the_breakdown_entirely(tmp_path):
+    """The breakdown-free poll (#75 review): reads the file, refreshes
+    the state, returns the status without ever touching the model, so a
+    plugin card's re-test cannot spend an endpoint request. The built-in
+    card's retest() keeps its breakdown: cache first, model second."""
+    calls: list[str] = []
+
+    def llm(prompt):
+        calls.append(prompt)
+        return '{"subtasks": ["Prep"], "followups": []}'
+
+    bridge, _clock = make_bridge(tmp_path, event_doc(TODAY, sample_events(TODAY)),
+                                 TODAY, llm=llm)
+    status = bridge.poll(breakdown=False)
+    assert calls == []  # no model call anywhere in the poll
+    assert status["state"] == "healthy"
+    assert status["keyEvent"]["subject"] == "Q4 pipeline review"
+    assert status["breakdown"] is None  # not asked for, not paid for
+
+    # The built-in re-test keeps its behaviour: breakdown attached, one
+    # call spent (then cached).
+    retested = bridge.retest()
+    assert len(calls) == 1
+    assert retested["breakdown"]["subtasks"] == ["Prep"]
+
+
 def test_parse_breakdown_tolerates_fences_and_garbage():
     good = parse_breakdown('```json\n{"subtasks": ["a"], "followups": []}\n```')
     assert good["subtasks"] == ["a"]
