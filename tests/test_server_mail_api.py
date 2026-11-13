@@ -497,3 +497,17 @@ def test_mail_folder_save_via_form_redirects_back_to_settings(env, auth):
 def _audit_entries(env):
     from agentdesk.assistant import audit as audit_store
     return audit_store.entries(env.server.audit_conn, 100)
+
+
+def test_toggling_mail_rewires_the_plugin_runner(env, auth):
+    """The runner's mail-digest binding follows the watcher the toggle
+    owns (#64): on, plugin cards read the live watcher; off, the digest
+    is paused and no plugin card reads the folder at all."""
+    assert env.server.plugins is not None
+    assert env.server.plugins.runner.mail is None  # off: no binding
+
+    _enable_mail(env, auth)
+    assert env.server.plugins.runner.mail is env.server.mail
+
+    env.post_json("/settings/toggle", {"key": "mail_enabled"}, auth)  # off
+    assert env.server.plugins.runner.mail is None

@@ -30,7 +30,8 @@ from agentdesk.assistant import audit as audit_store
 from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
-from agentdesk.assistant.loop import assistant_reply, research
+from agentdesk.assistant.loop import STATUS_OK, assistant_reply, research
+from agentdesk.assistant.research_store import ResearchStore
 from agentdesk.calendar import store as calendar_store
 from agentdesk.calendar.core import (
     CalendarUnreadable,
@@ -84,6 +85,7 @@ from agentdesk.llm import (
 from agentdesk.memory.core import UnknownFact
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore
+from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
 from agentdesk.registry.index import RegistryIndexError
@@ -496,6 +498,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         gate_runners: GateRunners | None = None,
         mail: MailWatch | None = None,
         mail_store: MailStore | None = None,
+        research_store: ResearchStore | None = None,
         outbox_dir=None,
         registry_root=None,
     ) -> None:
@@ -544,6 +547,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         # ever reaches a real checkout by accident.
         self.registry_root = registry_root
         self.mail_store = mail_store
+        # The latest sourced research answer (#64): written by the
+        # research panel's own turns, read by plugin cards. None means
+        # the store could not open, and the research card says so.
+        self.research_store = research_store
         self.outbox_dir = Path(outbox_dir) if outbox_dir is not None else _default_outbox_dir()
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
@@ -1224,7 +1231,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "model": model,
         }
         if summary_mode:
-            return research(question, context, **common)
+            answer = research(question, context, **common)
+            # The panel's sourced answers persist (#64): a plugin's
+            # research card reads the latest one later, without any
+            # endpoint call of its own. Failures are not stored; the
+            # store is what research concluded, never what it tried to.
+            if answer.status == STATUS_OK and server.research_store is not None:
+                server.research_store.save(answer.summary, answer.sources)
+            return answer
         return assistant_reply(question, context, **common)
 
     def _facts_block(self, question: str) -> str:
@@ -1647,6 +1661,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     ).start()
                 else:
                     server.mail.stop_polling()
+            # The plugin runner's mail-digest binding follows the watcher
+            # the toggle owns (#64): off pauses the digest, so no plugin
+            # card reads the folder either.
+            if server.plugins is not None:
+                server.plugins.runner.mail = server.mail if value else None
 
     def _source_allowed(self, key: str) -> bool:
         settings = self.server.settings  # type: ignore[attr-defined]
@@ -3076,6 +3095,7 @@ def create_server(
     gate_runners: GateRunners | None = None,
     mail: MailWatch | None = None,
     mail_store: MailStore | None = None,
+    research_store: ResearchStore | None = None,
     outbox_dir=None,
     registry_root=None,
 ) -> AgentDeskServer:
@@ -3116,8 +3136,6 @@ def create_server(
         pick_workbook = tk_pick_workbook
     if pick_calendar is None:
         pick_calendar = tk_pick_calendar
-    if plugins is None:
-        plugins = _default_plugins()
     if wizard_store is None:
         wizard_store = _default_wizard_store()
     if memory_store is None:
@@ -3133,6 +3151,19 @@ def create_server(
     if mail is None and inbox_store is not None and mail_store is not None \
             and bool(settings_store.get("mail_enabled")):
         mail = _default_mail_watch(settings_store, inbox_store, mail_store)
+    if research_store is None:
+        research_store = _default_research_store()
+    if plugins is None:
+        # After the mail block on purpose: the default runner's
+        # pipeline bindings read the very objects built above, so a
+        # calendar-read, mail-digest or research-brief plugin binds the
+        # same data the built-in cards show (#64). The settings toggle
+        # rewires mail as it rebuilds the watcher.
+        plugins = _default_plugins(
+            calendar=calendar,
+            mail=mail if bool(settings_store.get("mail_enabled")) else None,
+            research=research_store,
+        )
 
     def construct(bind_port: int) -> AgentDeskServer:
         return AgentDeskServer(
@@ -3159,6 +3190,7 @@ def create_server(
             gate_runners=gate_runners,
             mail=mail,
             mail_store=mail_store,
+            research_store=research_store,
             outbox_dir=outbox_dir,
             registry_root=registry_root,
         )
@@ -3357,21 +3389,41 @@ def _default_gate_runners() -> GateRunners:
     return default_gate_runners(default_data_dir() / "probe-run")
 
 
-def _default_plugins() -> PluginRuntime | None:
+def _default_plugins(calendar: CalendarBridge | None = None,
+                     mail: MailWatch | None = None,
+                     research: ResearchStore | None = None) -> PluginRuntime | None:
     """The plugin runtime over the user data directory, or None when it
     cannot open. Installed plugins, their data and the ${workspace} root
     each get their own folder under the same data dir the stores use, so
-    the delete-folder uninstall story stays true."""
+    the delete-folder uninstall story stays true. The runner carries the
+    shared pipelines so the binding types (calendar-read, mail-digest,
+    research-brief) read what the built-in cards read (#64)."""
     try:
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
+        runner = PluginWidgetRunner(data_dir / "workspace", calendar=calendar,
+                                    mail=mail, research=research)
         return PluginRuntime(
             plugins_dir=data_dir / "plugins",
             data_dir=data_dir / "plugin-data",
             workspace_dir=data_dir / "workspace",
+            runner=runner,
         )
     except OSError:
         LOG.exception("plugin runtime unavailable")
+        return None
+
+
+def _default_research_store() -> ResearchStore | None:
+    """The latest sourced research answer over the persistent store, or
+    None when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "research.sqlite3", check_same_thread=False)
+        return ResearchStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("research store unavailable")
         return None
 
 

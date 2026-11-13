@@ -70,7 +70,13 @@ def canonical_session() -> object:
 
 def test_pinned_constants_hold_and_match_the_validator_vocabulary():
     assert WIZARD_STATES == ("questions", "building", "preview", "approved", "escalated")
-    assert VOCABULARY == tuple(KNOWN_DATA_SOURCE_TYPES)
+    # The wizard drafts a subset: it composes a watched file glob for
+    # every kind it knows, so the glob-less pipeline kinds the validator
+    # accepts since #64 (mail-digest, research-brief) stay
+    # registry-authored until the wizard learns to draft them. The pin
+    # that matters: nothing the wizard drafts can fail the validator's
+    # type check.
+    assert set(VOCABULARY) <= set(KNOWN_DATA_SOURCE_TYPES)
     assert MAX_QUESTIONS == 5
     assert MAX_REPAIRS == 3
     assert len(DEFAULT_QUESTIONS) == 3

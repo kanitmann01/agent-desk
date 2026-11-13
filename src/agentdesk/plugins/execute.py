@@ -31,6 +31,7 @@ from datetime import datetime
 from glob import glob
 from pathlib import Path
 
+from agentdesk.assistant.research_store import ResearchStore
 from agentdesk.calendar.watcher import (
     STATE_EMPTY,
     STATE_STALE,
@@ -60,7 +61,7 @@ BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
 # Sources whose data lives in a shared built-in pipeline rather than a
 # workspace glob: the runner reads the pipeline the dashboard's own
 # cards use, and their honest states come from the pipeline itself.
-PIPELINE_TYPES = ("calendar-read", "mail-digest")
+PIPELINE_TYPES = ("calendar-read", "mail-digest", "research-brief")
 
 EXECUTABLE_TYPES = ("excel-watch",) + PIPELINE_TYPES
 
@@ -72,6 +73,10 @@ CALENDAR_WINDOW_NOTE = (
 MAIL_WINDOW_NOTE = (
     "Counts cover the last 24 hours of message headers; bodies are "
     "never read."
+)
+
+RESEARCH_WINDOW_NOTE = (
+    "The latest stored research answer; showing it made no endpoint call."
 )
 
 
@@ -115,8 +120,8 @@ class PluginWidgetRunner:
     def __init__(self, workspace_dir: Path, adapters: Adapters | None = None,
                  interval_s: float | None = None, *,
                  calendar: CalendarBridge | None = None,
-                 mail: "MailWatch | None" = None,
-                 research: "ResearchStore | None" = None) -> None:
+                 mail: MailWatch | None = None,
+                 research: ResearchStore | None = None) -> None:
         self.workspace_dir = Path(workspace_dir)
         self._adapters = adapters
         self._interval_s = interval_s
@@ -325,7 +330,40 @@ class PluginWidgetRunner:
             return self._calendar_status()
         if source_type == "mail-digest":
             return self._mail_status()
+        if source_type == "research-brief":
+            return self._research_status()
         return self._attention("data source has not run"), {}
+
+    def _research_status(self) -> "tuple[dict, dict]":
+        """research-brief: the latest stored sourced answer, a pure read
+        of the local research store (issue #64). No endpoint client
+        exists anywhere in the runner, so the plugin path cannot make a
+        model call even by accident."""
+        store = self.research
+        if store is None:
+            return self._attention(
+                "The research answer store is not available, so this "
+                "card cannot show the latest answer."), {}
+        latest = store.latest()
+        if latest is None:
+            return self._attention(
+                "No research answer is stored yet. Ask something on the "
+                "Research panel, then re-test."), {}
+        answered_at = ""
+        try:
+            answered_at = datetime.fromtimestamp(
+                float(latest.get("answeredTs", 0.0))).strftime("%Y-%m-%d %H:%M")
+        except (OSError, OverflowError, ValueError):
+            pass  # an undatable answer renders without the time, not wrongly
+        values = {
+            "summary": str(latest.get("summary", "")),
+            "sourcesCount": len(latest.get("sources") or []),
+            "windowNote": RESEARCH_WINDOW_NOTE,
+        }
+        if answered_at:
+            values["answeredAt"] = answered_at
+        return {"status": "fresh", "cause": "",
+                "checked_at": _iso(None)}, values
 
     def _mail_status(self) -> "tuple[dict, dict]":
         """mail-digest: header-only counts from the mail pipeline's own
