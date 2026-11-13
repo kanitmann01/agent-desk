@@ -51,12 +51,21 @@ export default function CustomizeCell({
     onRename(cardKey, (inputRef.current?.value ?? '').trim());
   }
 
+  // Leaving the rename editor hands focus back to the card's grip: the
+  // editor's own controls are about to unmount, and focus must not fall
+  // to the body on the way out.
+  function closeRename() {
+    const grip = document.querySelector<HTMLElement>(`[data-grip-key="${cardKey}"]`);
+    onRenaming(null);
+    grip?.focus();
+  }
+
   function onRenameKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
       submitRename();
     } else if (event.key === 'Escape') {
-      onRenaming(null);
+      closeRename();
     }
   }
 
@@ -102,6 +111,10 @@ export default function CustomizeCell({
               ref={inputRef}
               className="cust-rename"
               type="text"
+              // The editor takes focus when it mounts: activating Rename
+              // replaces the focused button, so without this the input
+              // arrives unfocused and keyboard users tab blind.
+              autoFocus
               aria-label={`Title for ${name}`}
               defaultValue={name}
               onKeyDown={onRenameKey}
@@ -109,7 +122,7 @@ export default function CustomizeCell({
             <button type="button" className="cust-btn" onClick={submitRename}>
               Save title
             </button>
-            <button type="button" className="cust-btn" onClick={() => onRenaming(null)}>
+            <button type="button" className="cust-btn" onClick={closeRename}>
               Cancel
             </button>
           </>

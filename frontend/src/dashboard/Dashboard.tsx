@@ -189,9 +189,24 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
 
   // -- customize mode ---------------------------------------------------
 
+  // The layout read, guarded like every other call the cards make: a
+  // rejected fetch answers null (the server is unreachable) instead of
+  // escaping as an unhandled rejection.
+  async function readLayout() {
+    try {
+      return await getJson('/api/layout');
+    } catch {
+      return null;
+    }
+  }
+
   async function enterCustomize() {
-    const res = await getJson('/api/layout');
-    if (res.status === 401) { onExpired(); return; }
+    const res = await readLayout();
+    if (res !== null && res.status === 401) { onExpired(); return; }
+    if (res === null) {
+      setCustomizeNote('The dashboard could not reach its own server; customize did not open.');
+      return;
+    }
     if (!res.ok) {
       setCustomizeNote('The dashboard could not read the layout; customize did not open.');
       return;
@@ -212,7 +227,8 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   }
 
   async function resyncLayout() {
-    const res = await getJson('/api/layout');
+    const res = await readLayout();
+    if (res === null) return; // unreachable: the screen keeps what it has
     if (res.status === 401) { onExpired(); return; }
     const d = (res.data ?? {}) as { cards?: LayoutCardState[] };
     setLayoutState(Array.isArray(d.cards) ? d.cards : []);
@@ -315,17 +331,22 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     );
   }
 
-  // Focus lands where the last action pointed it, once the layout it
-  // acted on has settled.
+  // Focus lands where the last action pointed it, once the element it
+  // aims at is actually on screen. A restore arms this before the
+  // refetched payload has rendered the card back into the bento, so the
+  // pending aim stays armed (consumed only when the element is found)
+  // and the effect retries when the payload lands.
   useEffect(() => {
     const pending = focusPending.current;
     if (pending === null) return;
-    focusPending.current = null;
     const selector = pending.kind === 'restore'
       ? `[data-restore-key="${pending.key}"]`
       : `[data-grip-key="${pending.key}"]`;
-    document.querySelector<HTMLElement>(selector)?.focus();
-  }, [layoutState]);
+    const target = document.querySelector<HTMLElement>(selector);
+    if (target === null) return; // not on screen yet: stay armed
+    focusPending.current = null;
+    target.focus();
+  }, [layoutState, data]);
 
   // -- the bento ----------------------------------------------------------
 

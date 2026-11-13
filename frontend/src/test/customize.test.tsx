@@ -145,6 +145,28 @@ describe('entering and leaving customize', () => {
     ).toBeDisabled();
   });
 
+  it('says so honestly when the layout read is unreachable', async () => {
+    // The dashboard is on screen, but GET /api/layout rejects: the
+    // server went away between the two calls.
+    vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url) === '/api/layout') {
+        throw new TypeError('network down');
+      }
+      return Response.json(payloadFor(DEFAULT_LAYOUT));
+    }));
+    await renderDashboard();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Customize' }));
+    // The honest note shows and customize did not open; no unhandled
+    // rejection, no half-open mode.
+    expect(
+      await screen.findByText(
+        'The dashboard could not reach its own server; customize did not open.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Done customizing' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument();
+  });
+
   it('returns the normal view on Done', async () => {
     bootLayoutServer();
     await renderDashboard();
@@ -161,6 +183,22 @@ describe('entering and leaving customize', () => {
 });
 
 describe('renaming a card', () => {
+  it('focuses the rename input, and Escape returns focus to the grip', async () => {
+    bootLayoutServer();
+    await renderDashboard();
+    await enterCustomize();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: `Rename ${RESEARCH}` }));
+    // The input takes focus on mount: activating Rename must not dump
+    // keyboard users on the body.
+    const field = screen.getByLabelText(`Title for ${RESEARCH}`);
+    expect(field).toHaveFocus();
+    await user.keyboard('{Escape}');
+    // Escape closes the editor and hands focus back to the card's grip.
+    expect(screen.queryByLabelText(`Title for ${RESEARCH}`)).toBeNull();
+    expect(screen.getByRole('button', { name: `Drag to reorder ${RESEARCH}` })).toHaveFocus();
+  });
+
   it('saves the custom title and the card carries it', async () => {
     const { posts } = bootLayoutServer();
     await renderDashboard();
@@ -224,6 +262,25 @@ describe('hiding and restoring a card', () => {
     expect(restore.body.cards.find((c) => c.key === 'research')?.hidden).toBe(false);
     expect(await screen.findByRole('heading', { level: 2, name: RESEARCH })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Hidden cards' })).toBeNull();
+  });
+
+  it('lands focus on the restored card once it is back on screen', async () => {
+    bootLayoutServer();
+    await renderDashboard();
+    await enterCustomize();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: `Hide ${RESEARCH}` }));
+    await screen.findByRole('region', { name: 'Hidden cards' });
+    await user.click(screen.getByRole('button', { name: `Restore ${RESEARCH}` }));
+    // The restored card is not in the bento until the refetched payload
+    // lands; focus must wait for that moment, not fire at the optimistic
+    // render and fall to the body.
+    await screen.findByRole('heading', { level: 2, name: RESEARCH });
+    await vi.waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: `Drag to reorder ${RESEARCH}` }),
+      ).toHaveFocus();
+    });
   });
 });
 
