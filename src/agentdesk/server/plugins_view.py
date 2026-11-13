@@ -49,7 +49,7 @@ def _installed_block(record: dict, shared_ids: set[str] | None = None,
             f"<label class='empty' for='purge-{plugin_id}'>Confirmation</label>"
             f"<input id='purge-{plugin_id}' type='text' name='confirmation' "
             f"placeholder='delete-data:{plugin_id}' autocomplete='off'>"
-            "<button class='btn btn-secondary' type='submit'>Purge data</button>"
+            "<button class='btn btn-danger' type='submit'>Purge data</button>"
             "</form>")
         return f"<article class='card'><h3>{name}</h3>{''.join(lines)}</article>"
 
@@ -140,11 +140,14 @@ def _registry_block(entry: dict, installed_ids: set[str]) -> str:
     elif yanked:
         action = "<p class='empty'>The latest release is yanked; it stays listed for pinned installs.</p>"
     else:
+        # One Voice Rule: a catalog row's Install is a routine action,
+        # not the surface's one commanding green, so it rides as a
+        # secondary control.
         action = (
             f"<form method='post' action='/plugins/registry-install' class='cardform'>"
             f"<input type='hidden' name='id' value='{plugin_id}'>"
             f"<input type='hidden' name='version' value='{latest}'>"
-            "<button class='btn btn-primary' type='submit'>Install</button>"
+            "<button class='btn btn-secondary' type='submit'>Install</button>"
             "</form>")
     return (
         f"<article class='card'><h3>{plugin_id} <span class='empty'>{publisher}</span></h3>"

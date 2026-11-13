@@ -367,17 +367,21 @@ def _escalated_html(session_json: dict) -> str:
 
 
 def _page_shell(title: str, body: str, version: str) -> str:
-    """The document shell: the local stylesheet only, nothing else."""
+    """The document shell: the local stylesheet only, nothing else. The
+    wizard keeps its focused no-rail shell, but carries the same
+    breadcrumb so the way back is never a mystery."""
+    esc_title = html.escape(title)
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}, Agent Desk</title>
+<title>{esc_title}, Agent Desk</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <div class="doc">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {body}
 <footer class="page-foot"><span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span><span>Local only: nothing here reaches the internet.</span></footer>
 </div>

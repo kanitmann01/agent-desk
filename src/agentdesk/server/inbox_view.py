@@ -50,9 +50,11 @@ def card_html(card: Card, now_ts: float) -> str:
     card_id = html.escape(card.id)
     # The no-JS actions: edit the draft, snooze, ask for more info. Plain
     # forms, the wizard's style; each POSTs urlencoded and lands back on
-    # the inbox via redirect.
+    # the inbox via redirect. One grouping head and one shared grid keep
+    # the three forms proportional and their buttons on one baseline.
     forms = (
         "<div class='cardrow cardforms'>"
+        "<div class='subhead subhead-tight'>Ask the agent to follow up</div>"
         f"<form method='post' action='/inbox/cards/{card_id}/edit' class='cardform'>"
         f"<label class='empty' for='draft-{card_id}'>Draft</label>"
         f"<textarea id='draft-{card_id}' name='draft' rows='2'>"
@@ -77,9 +79,10 @@ def card_html(card: Card, now_ts: float) -> str:
     if card.kind == "update_consent":
         # The scope choice the consents store keys on: accepting with the
         # box checked allows this exact widening for this plugin forever
-        # (process lifetime), so identical re-asks never re-prompt.
+        # (process lifetime), so identical re-asks never re-prompt. The
+        # wide form takes its own full-width band under the grid.
         forms += (
-            f"<form method='post' action='/inbox/cards/{card_id}/accept' class='cardform'>"
+            f"<form method='post' action='/inbox/cards/{card_id}/accept' class='cardform cardform-wide'>"
             "<label class='empty'>"
             "<input type='checkbox' name='for_plugin' value='1'>"
             " Also allow this exact widening for this plugin"
@@ -119,7 +122,13 @@ def render_inbox_page(
 ) -> str:
     """The full inbox document, with the good empty and the recovery shelf."""
     if waiting:
-        cards_html = "".join(card_html(c, now_ts) for c in waiting)
+        # The spaced stack: the audit measured 0px between consecutive
+        # cards, so they read as one merged block.
+        cards_html = (
+            "<div class='card-stack'>"
+            + "".join(card_html(c, now_ts) for c in waiting)
+            + "</div>"
+        )
         empty = ""
     else:
         cards_html = ""

@@ -1,12 +1,27 @@
-// The rail: brand, the entries, the inbox count badge and the user
-// line. Dashboard, Inbox, Assistant and Settings are real server pages
-// (GET /inbox, /assistant, /settings); so are the four consolidation
-// pages (GET /activity, /memory, /mail, /capabilities), the plugins
-// page (GET /plugins) and the peers page (GET /peers). Drawn as the
-// system's full-height Input Well column; the brand is plain text in
-// the ink.
+// The rail: brand, the entries, the inbox count badge, the collapse
+// control and the user line. Dashboard, Inbox, Assistant and Settings
+// are real server pages (GET /inbox, /assistant, /settings); so are the
+// four consolidation pages (GET /activity, /memory, /mail,
+// /capabilities), the plugins page (GET /plugins) and the peers page
+// (GET /peers). Drawn as the system's full-height Input Well column;
+// the brand is plain text in the ink. Each entry's label rides in a
+// .rail-label span so collapse can drop the words and keep the marks.
+// The collapsed state persists in localStorage and mirrors the
+// server-rendered pages' toggle (key: agentdesk.railCollapsed).
+import { useEffect, useState } from 'react';
+
 interface RailProps {
   inboxWaiting: number;
+}
+
+const RAIL_KEY = 'agentdesk.railCollapsed';
+
+function storedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(RAIL_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 const ICON_DASHBOARD = (
@@ -96,6 +111,28 @@ const ICON_PEERS = (
 
 export default function Rail({ inboxWaiting }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
+  const [collapsed, setCollapsed] = useState(storedCollapsed);
+
+  // The class lands on the .app shell, exactly where the stylesheet's
+  // collapsed rules read it; the server pages do the same in app.js.
+  useEffect(() => {
+    const app = document.querySelector('.app');
+    if (app) app.classList.toggle('rail-collapsed', collapsed);
+  }, [collapsed]);
+
+  function toggle() {
+    setCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(RAIL_KEY, next ? '1' : '0');
+      } catch {
+        // Storage unavailable (private mode): the toggle still works
+        // for this session.
+      }
+      return next;
+    });
+  }
+
   return (
     <nav className="rail" aria-label="Main">
       <div className="brand">
@@ -107,16 +144,29 @@ export default function Rail({ inboxWaiting }: RailProps) {
         </span>
         <span className="brand-name">Agent Desk</span>
       </div>
-      <a href="/" aria-current="page">{ICON_DASHBOARD}Dashboard</a>
-      <a href="/inbox">{ICON_INBOX}Inbox{badge}</a>
-      <a href="/assistant">{ICON_ASSISTANT}Assistant</a>
-      <a href="/activity">{ICON_ACTIVITY}Activity</a>
-      <a href="/memory">{ICON_MEMORY}Memory</a>
-      <a href="/mail">{ICON_MAIL}Mail</a>
-      <a href="/capabilities">{ICON_CAPABILITIES}Capabilities</a>
-      <a href="/plugins">{ICON_PLUGINS}Plugins</a>
-      <a href="/peers">{ICON_PEERS}Peers</a>
-      <a href="/settings">{ICON_SETTINGS}Settings</a>
+      <a href="/" aria-current="page">{ICON_DASHBOARD}<span className="rail-label">Dashboard</span></a>
+      <a href="/inbox">{ICON_INBOX}<span className="rail-label">Inbox</span>{badge}</a>
+      <a href="/assistant">{ICON_ASSISTANT}<span className="rail-label">Assistant</span></a>
+      <a href="/activity">{ICON_ACTIVITY}<span className="rail-label">Activity</span></a>
+      <a href="/memory">{ICON_MEMORY}<span className="rail-label">Memory</span></a>
+      <a href="/mail">{ICON_MAIL}<span className="rail-label">Mail</span></a>
+      <a href="/capabilities">{ICON_CAPABILITIES}<span className="rail-label">Capabilities</span></a>
+      <a href="/plugins">{ICON_PLUGINS}<span className="rail-label">Plugins</span></a>
+      <a href="/peers">{ICON_PEERS}<span className="rail-label">Peers</span></a>
+      <a href="/settings">{ICON_SETTINGS}<span className="rail-label">Settings</span></a>
+      <button
+        type="button"
+        className="rail-toggle"
+        aria-expanded={collapsed}
+        aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+        onClick={toggle}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+          <path d="M14.5 6.5 8 12l6.5 5.5" />
+        </svg>
+        <span className="rail-toggle-label">Collapse</span>
+      </button>
       <div className="user">
         <span className="avatar" aria-hidden="true">AD</span>
         <div>

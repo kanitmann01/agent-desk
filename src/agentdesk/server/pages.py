@@ -143,8 +143,36 @@ svg{display:block;flex:none}
 .cardform{display:flex;flex-direction:column;gap:8px;margin:8px 0;max-width:460px}
 .cardform .btn{align-self:flex-start}
 .cardform label{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.cardform input,.cardform textarea{font:inherit;font-size:13.5px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
-.cardform input:focus,.cardform textarea:focus{outline:2px solid var(--primary);outline-offset:1px}
+.cardform input,.cardform select,.cardform textarea{font:inherit;font-size:13.5px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;min-height:36px}
+.cardform input:focus,.cardform select:focus,.cardform textarea:focus{outline:2px solid var(--primary);outline-offset:1px}
+/* The inbox card's quick actions: one shared grid so the three forms
+   keep proportional columns and land their labels, controls and buttons
+   on the same three baselines. The audit measured natural-width columns
+   (162/132/175px), a native 17px select, and buttons on y=501/521/541;
+   the subgrid rows answer all three. The .doc prefix outranks
+   .doc .cardrow's flex, which would otherwise win on specificity and
+   source order. */
+.doc .cardrow.cardforms{display:grid;grid-template-columns:1.4fr 1fr 1.2fr;gap:12px;margin:12px 0 0;align-items:stretch}
+.cardforms .subhead{grid-column:1/-1}
+.cardforms .cardform{margin:0;max-width:none;display:grid;grid-template-rows:subgrid;grid-row:span 3;gap:8px}
+.cardforms .cardform-wide{grid-column:1/-1;grid-row:span 2}
+.cardforms input,.cardforms textarea,.cardforms select{width:100%}
+/* The consent checkbox rides inside a label: it keeps its 18px system
+   size, never the column width. */
+.cardforms input[type="checkbox"]{width:18px;height:18px;min-height:0;accent-color:var(--primary);margin:0 4px 0 0;vertical-align:middle}
+.cardforms textarea{field-sizing:content;min-height:60px}
+.cardforms .btn{width:100%;justify-content:center}
+@supports not (grid-template-rows: subgrid){
+  .cardforms .cardform{display:flex;flex-direction:column}
+  .cardforms .cardform .btn{margin-top:auto}
+}
+/* Waiting inbox cards rest in a spaced stack: the audit measured 0px
+   between consecutive cards, so they read as one merged block. */
+.card-stack{display:flex;flex-direction:column;gap:16px}
+.crumbs{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:12px}
+.crumbs a{color:var(--ink-3);font-weight:600}
+.crumbs a:hover{color:var(--primary)}
+.crumbs .crumb-sep{color:var(--ink-4)}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .field input{font:inherit;font-size:13.5px;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
 .field input:focus{outline:2px solid var(--primary);outline-offset:1px}
@@ -153,6 +181,20 @@ svg{display:block;flex:none}
 .rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px}
+.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;transition:background var(--dur) ease,color var(--dur) ease}
+.rail-toggle:hover{background:#EFEDE5;color:var(--ink-1)}
+/* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
+   drops its text; the column narrows to the mark width. */
+.app.rail-collapsed{grid-template-columns:68px 1fr}
+.rail-collapsed .rail{padding:20px 10px}
+.rail-collapsed .rail a{position:relative;justify-content:center;padding:8px 0;gap:0}
+.rail-collapsed .rail .rail-label{display:none}
+.rail-collapsed .rail .count{position:absolute;top:4px;right:4px;margin-left:0;padding:0 5px;font-size:10px}
+.rail-collapsed .rail .rail-toggle{justify-content:center;gap:0}
+.rail-collapsed .rail-toggle .rail-toggle-label{display:none}
+.rail-collapsed .brand b,.rail-collapsed .brand-name{display:none}
+.rail-collapsed .rail .user{justify-content:center;padding:10px 0}
+.rail-collapsed .rail .user > div{display:none}
 main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
 .topbar h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
@@ -164,6 +206,8 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .btn-primary{background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
+.btn-danger{background:var(--surface);color:var(--bad);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btn-danger:hover:not(:disabled){background:var(--surface-2)}
 .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
 .icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
@@ -181,7 +225,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .spark{margin-left:auto;text-align:right}
 .spark figcaption{font-size:11px;color:var(--ink-4);margin-top:4px}
 table.rows{width:100%;border-collapse:collapse;font-size:13px}
-table.rows th{text-align:left;font-size:11px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline)}
+table.rows th{text-align:left;font-size:11px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline)}
 table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline)}
 table.rows tr:last-child td{border-bottom:none}
 table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
@@ -210,10 +254,11 @@ table.rows td.neg{color:var(--bad)}
 .thread .reply p{margin:4px 0 0}
 .thread .who{font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.06em}
 .thread p{color:var(--ink-1);font-size:13.5px}
-.answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px}
-.answer .aq{font-weight:700;margin-bottom:6px}
+.answer{background:var(--surface-2);border-radius:var(--r-inner);padding:14px;font-size:13.5px;display:flex;flex-direction:column;gap:8px}
+.answer .aq{font-weight:700;margin-bottom:0}
+.answer .well-input{width:100%}
 .src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
-.tag-sample{font-size:10px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.08em}
+.tag-sample{font-size:10px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
 .widget.amber{background:var(--surface);box-shadow:0 0 0 1px rgba(138,90,20,.18),0 1px 2px -1px rgba(138,90,20,.10),0 2px 4px 0 rgba(138,90,20,.08)}
 .alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:13.5px}
 .badge-pilot{font-size:11px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
@@ -227,7 +272,7 @@ table.rows td.neg{color:var(--bad)}
 .doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
 .doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .doc a.btn{text-decoration:none}
-.page-foot{margin-top:48px;color:var(--ink-4);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
+.page-foot{margin-top:48px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
 .page-foot a:hover{text-decoration:underline}
 .touches td{vertical-align:top;font-size:13px}
@@ -249,6 +294,9 @@ table.rows td.neg{color:var(--bad)}
   .grid{grid-template-columns:1fr}
   .col-7,.col-5,.col-8,.col-4{grid-column:auto}
   main{padding:20px 16px 40px}
+  /* The strip already carries every entry; collapse is a tall-rail
+     control and does nothing on the wrapping strip. */
+  .rail-toggle{display:none}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important}
@@ -551,6 +599,31 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); btn.click(); }
   });
 })();
+
+// The rail collapse: one control, persisted, applied as the script
+// loads. The class narrows the column and keeps the marks (icons, the
+// inbox count, the avatar); the label span text stays for the wide rail.
+(function () {
+  var KEY = 'agentdesk.railCollapsed';
+  var app = document.querySelector('.app');
+  var btn = document.querySelector('.rail-toggle');
+  if (!app || !btn) return;
+  var apply = function (collapsed) {
+    app.classList.toggle('rail-collapsed', collapsed);
+    btn.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+    btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    var label = btn.querySelector('.rail-toggle-label');
+    if (label) label.textContent = collapsed ? 'Expand' : 'Collapse';
+  };
+  var stored = null;
+  try { stored = localStorage.getItem(KEY); } catch (e) { stored = null; }
+  apply(stored === '1');
+  btn.addEventListener('click', function () {
+    var next = btn.getAttribute('aria-expanded') !== 'true';
+    try { localStorage.setItem(KEY, next ? '1' : '0'); } catch (e) {}
+    apply(next);
+  });
+})();
 """
 
 _DOT_CLASS = {FRESH: "dot", ATTENTION: "dot amber", SAMPLE: "dot sample"}
@@ -582,12 +655,22 @@ def _widget_html(widget: Widget) -> str:
 
 def _rail(active: str = "/", inbox_count: int = 0) -> str:
     """The rail, shared by every page. The entry whose href is `active`
-    is the one marked as the page you are on."""
+    is the one marked as the page you are on. Each entry's label rides
+    in a .rail-label span so collapse can drop the words and keep the
+    marks; the collapse control sits under the entries."""
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
+    toggle = (
+        '<button type="button" class="rail-toggle" aria-expanded="false" '
+        'aria-label="Collapse navigation">'
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
+        '<path d="M14.5 6.5 8 12l6.5 5.5"/></svg>'
+        '<span class="rail-toggle-label">Collapse</span></button>'
+    )
 
     def entry(href: str, icon: str, label: str, extra: str = "") -> str:
         current = ' aria-current="page"' if href == active else ""
-        return f'<a href="{href}"{current}>{icon}{label}{extra}</a>'
+        return f'<a href="{href}"{current}>{icon}<span class="rail-label">{label}</span>{extra}</a>'
 
     return (
         '<nav class="rail" aria-label="Main">'
@@ -607,6 +690,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/plugins", _ICON_PLUGINS, "Plugins")}'
         f'{entry("/peers", _ICON_PEERS, "Peers")}'
         f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
+        f'{toggle}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
@@ -621,8 +705,9 @@ def page_shell(
     inbox_count: int = 0,
 ) -> str:
     """The shared document shell for the server-rendered pages: the rail
-    beside the content column, then the footer that owns the version and
-    the what-this-touches link. Navigation lives in the rail, so no page
+    beside the content column, a breadcrumb naming where you are, then
+    the footer inside the same column that owns the version and the
+    what-this-touches link. Navigation lives in the rail, so no page
     carries a dangling back-link.
 
     `content_html` is authored by the caller (each view escapes its own
@@ -630,20 +715,22 @@ def page_shell(
     script ships with every page.
     """
     esc_version = html.escape(version)
+    esc_title = html.escape(title)
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}, Agent Desk</title>
+<title>{esc_title}, Agent Desk</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <div class="app">{_rail(active, inbox_count)}
 <main><div class="doc">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
-</div>
 <footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
+</div>
 </main>
 <script src="/static/app.js"></script>
 </body>
