@@ -70,13 +70,23 @@ def check_request(
     Order of answers matters for tests and logs: a bad Host fails first
     (it defeats DNS rebinding), then a bad Origin (it defeats cross-site
     fetches). A missing Origin is allowed, a missing Host is not.
+
+    The opaque origin "null" counts as missing: sandboxed frames and
+    some embedded browsers send that literal string on native form
+    posts, and like an absent header it carries no origin information
+    to check. It is not an attack signal: the session cookie is
+    SameSite=Strict, and a cross-site requester cannot present it, so a
+    null-origin POST carrying a live session can only come from the
+    user's own page in such a browser. Every real origin is still
+    checked strictly.
     """
     if not host_header:
         return GuardVerdict(False, "missing Host header")
     if host_header.lower() not in {h.lower() for h in allowed_hosts(port, extra_hosts)}:
         return GuardVerdict(False, f"Host not allowed: {host_header}",
                             rejected=host_header)
-    if origin_header is not None and origin_header not in allowed_origins(port, extra_hosts):
+    if origin_header is not None and origin_header.lower() != "null" \
+            and origin_header not in allowed_origins(port, extra_hosts):
         return GuardVerdict(False, f"Origin not allowed: {origin_header}",
                             rejected=origin_header)
     return GuardVerdict(True)
