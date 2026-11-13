@@ -60,6 +60,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("inbox.snoozed", "decision", "You snoozed a card for one hour or until the next morning; the return time is recorded."),
     ("inbox.more-info", "decision", "You asked for more information; your instruction is recorded with the card."),
     ("inbox.pending", "decision", "A snoozed card came back due, or a plugin update began waiting for your OK; recorded so nothing reappears silently."),
+    ("inbox.restored", "decision", "You restored a dismissed card to the waiting inbox; the recovery is recorded against that card."),
     # The memory vocabulary (ticket #42): the one non-page creation path.
     # The row names the fact's source, never the fact's text.
     ("memory.fact", "decision", "An accepted inbox card carried a fact, and it was saved to the memory store. The row names where the fact came from, never the fact itself."),
@@ -75,6 +76,10 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # The registry bridge: reads stay local, no network anywhere in it.
     ("registry.read", "file", "The plugins page reads the local registry checkout's index.json, read-only, to list what can be installed."),
     ("settings.registry", "decision", "The registry checkout folder was saved or cleared in settings; the choice itself is the record."),
+    # The demo vocabulary (ticket #68): the Sample data switch is a
+    # decision like the others, and both turns say exactly what happened.
+    ("demo.seeded", "decision", "The Sample data switch was turned on: labelled sample cards and sample fixtures (a workbook, a calendar file, header-only mail files) were created under the app's sample folder. Everything is marked Sample; none of it is live."),
+    ("demo.cleared", "decision", "The Sample data switch was turned off: the labelled sample cards and the sample folder were removed. Nothing you created yourself is touched."),
 ]
 
 ACTOR = "agent-desk"

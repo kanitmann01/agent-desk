@@ -22,6 +22,7 @@ _LABELS = {
     "quiet_hours": "Quiet hours (18:00-08:00)",
     "daily_cap": "Notifications per day",
     "mail_enabled": "Mail digest (headers only)",
+    "sample_data": "Sample data",
 }
 
 ENDPOINT_HINT = (
@@ -197,6 +198,10 @@ ones; a setting you have never touched is the right setting.</p>
 <div class='settings-block'>
 {toggles_html}
 </div>
+<p class='empty'>Sample data fills a fresh desk with labelled example cards
+and sample files (a workbook, a calendar file, header-only mail) so every
+inbox action can be tried safely. Everything it adds is marked Sample,
+and turning it off removes exactly what it added.</p>
 <h2>Endpoint</h2>
 {endpoint_html}
 <h2>Calendar source</h2>

@@ -219,6 +219,18 @@ class InboxStore:
                 "UPDATE cards SET notified_ts = ? WHERE id = ?", (self.clock(), card_id)
             )
 
+    def delete(self, card_id: str) -> None:
+        """Remove a card outright, whatever its status.
+
+        Only the demo clear path may call this: a decision keeps its row
+        for the 30-day recovery window, but a seeded sample card is
+        scaffolding, not a decision, and the switch going off removes it
+        honestly rather than shelving it.
+        """
+        self.get(card_id)  # a missing id is an error, never a silent no-op
+        with self.conn:
+            self.conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+
     def record_notification(self, kind: str, card_count: int = 1) -> None:
         with self.conn:
             self.conn.execute(
@@ -258,6 +270,14 @@ class InboxStore:
 
     def dismissed(self) -> list[Card]:
         return self._by_status(STATUS_DISMISSED)
+
+    def all_cards(self) -> list[Card]:
+        """Every card regardless of status, oldest first: the demo clear
+        path walks this to find exactly what it seeded."""
+        rows = self.conn.execute(
+            "SELECT id FROM cards ORDER BY created_ts ASC"
+        ).fetchall()
+        return [self.get(r[0]) for r in rows]
 
     def _by_status(self, status: str) -> list[Card]:
         rows = self.conn.execute(

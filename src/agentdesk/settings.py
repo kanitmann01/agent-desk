@@ -29,6 +29,7 @@ TOGGLES = {
     "endpoint_enabled": True,
     "quiet_hours": True,
     "mail_enabled": False,  # mail digest: off until the user turns it on
+    "sample_data": False,  # demo seed (#68): off until the user asks for it
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
