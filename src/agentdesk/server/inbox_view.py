@@ -25,6 +25,12 @@ _KIND_LABEL = {
 }
 
 
+def _sample_tag(card: Card) -> str:
+    """The Sample tag, shared by the waiting card and the recovery
+    shelf, so a dismissed sample card cannot surface unlabelled."""
+    return " <span class='tag-sample'>Sample</span>" if is_sample_card(card) else ""
+
+
 def card_html(card: Card, now_ts: float) -> str:
     """One card: origin line, title, body, actions, visible aging."""
     created = datetime.fromtimestamp(card.created_ts)
@@ -84,15 +90,12 @@ def card_html(card: Card, now_ts: float) -> str:
     forms += "</div>"
     # A seeded card says Sample twice: the tag beside its kind, and the
     # origin line's own "Sample data:" opener. It can never read as live.
-    sample_tag = (
-        " <span class='tag-sample'>Sample</span>" if is_sample_card(card) else ""
-    )
     return (
         f"<article class='widget{expired_class}' id='card-{html.escape(card.id)}' "
         f"data-freshness-status='{'attention' if expired else 'fresh'}'>"
         "<div class='w-head'>"
         f"<span class='origin-line'>{html.escape(_KIND_LABEL.get(card.kind, card.kind))}</span>"
-        f"{sample_tag}"
+        f"{_sample_tag(card)}"
         f"<span class='stamp'><span class='dot{' amber' if expired else ''}' aria-hidden='true'></span>"
         f"{html.escape(age)}</span></div>"
         f"<h3>{html.escape(card.title)}</h3>"
@@ -146,7 +149,7 @@ def render_inbox_page(
         )
     if dismissed:
         shelf = "".join(
-            f"<div class='ask'><b>{html.escape(c.title)}</b> "
+            f"<div class='ask'><b>{html.escape(c.title)}</b>{_sample_tag(c)} "
             f"<span class='empty'>dismissed {c.dismissed_for_days(now_ts):.0f} days ago,"
             " recoverable for 30 days total</span> "
             f"<button class='btn btn-secondary btn-start' data-restore='{html.escape(c.id)}'>"

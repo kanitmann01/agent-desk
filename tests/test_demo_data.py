@@ -167,6 +167,18 @@ def test_the_sample_cards_render_with_a_sample_tag_and_origin(env, auth):
     assert "Sample data:" in page
 
 
+def test_the_dismissed_shelf_labels_sample_cards_too(env, auth):
+    # Two seeded titles carry no sample wording, so a bare shelf row
+    # would surface them unlabelled. Every shelf row for a sample card
+    # carries the same Sample tag the waiting card does.
+    _toggle(env, auth)
+    for card_id in SAMPLE_CARD_IDS:
+        assert env.post_json(f"/inbox/cards/{card_id}/dismiss", {}, auth)[0] == 200
+    page = env.request("GET", "/inbox", auth)[2].decode("utf-8")
+    assert "Nothing needs your attention" in page  # the waiting set is empty
+    assert page.count("tag-sample") >= len(SAMPLE_CARD_IDS)  # the shelf rows
+
+
 def test_seeding_twice_keeps_one_of_each_sample_card(env, auth):
     _toggle(env, auth)
     demo_data.seed(env.server.inbox, env.data_dir)  # a defensive re-seed
@@ -189,8 +201,39 @@ def test_toggling_off_removes_sample_cards_in_every_state_and_keeps_user_cards(e
     status, _h, body = _toggle(env, auth)
     assert status == 200 and json.loads(body)["value"] is False
     remaining = _every_card(env.server.inbox)
-    assert not [c for c in remaining if demo_data.is_sample_card(c)]
+    assert not [c for c in remaining if demo_data.is_seed_card(c)]
     assert any(c.title == "Keep me" for c in remaining)
+
+
+def test_a_user_card_flagged_sample_in_meta_survives_the_clear(env, auth):
+    # The meta flag renders a card as Sample; it must never mark one for
+    # deletion. A client-supplied {"sample": true} on the user's own card
+    # keeps its 30-day recovery like every other card they made.
+    _toggle(env, auth)
+    status, _h, _b = env.post_json("/inbox/cards", {
+        "kind": "suggestion", "origin": "You asked for this twice.",
+        "title": "Mine, flagged by mistake",
+        "meta": {"sample": True},
+    }, auth)
+    assert status == 201
+    _toggle(env, auth)  # off
+    remaining = _every_card(env.server.inbox)
+    assert any(c.title == "Mine, flagged by mistake" for c in remaining)
+    assert not [c for c in remaining if demo_data.is_seed_card(c)]
+
+
+def test_clear_deletes_only_the_id_prefix_not_the_meta_flag(tmp_path):
+    clock = FakeClock(MORNING)
+    store = _store(clock)
+    demo_data.seed(store, tmp_path)
+    flagged = store.add("suggestion", "origin", "user card, meta-flagged",
+                        card_id="card-user-1", meta={"sample": True})
+    cleared = demo_data.clear(store, tmp_path)
+    assert cleared["cards"] == len(SAMPLE_CARD_IDS)
+    ids = [c.id for c in store.all_cards()]
+    assert ids == [flagged.id]
+    # The flag still renders, it just never deletes.
+    assert demo_data.is_sample_card(flagged) and not demo_data.is_seed_card(flagged)
 
 
 def test_toggling_off_removes_the_sample_folder_and_nothing_else(env, auth):

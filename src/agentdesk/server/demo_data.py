@@ -6,8 +6,10 @@ own sample folder in the data dir. Everything seeded carries a visible
 Sample marker: card ids are prefixed, card meta flags them, every
 origin line starts with "Sample data:", and every file lives under
 sample/ with Sample in its name. Turning the switch off removes exactly
-what those markers identify; nothing the user created is touched, and no
-sample content can be mistaken for live data.
+what was seeded, hunted by the fixed id prefix alone; the meta flag only
+ever renders a card as Sample, never marks one for deletion, so nothing
+the user created is touched (their cards keep the 30-day recovery), and
+no sample content can be mistaken for live data.
 """
 
 import io
@@ -203,9 +205,18 @@ def sample_folder(data_dir: Path) -> Path:
     return Path(data_dir) / SAMPLE_DIR_NAME
 
 
+def is_seed_card(card: Card) -> bool:
+    """The deletion predicate: the fixed id prefix, nothing else. Both
+    the re-seed purge and clear() hunt by exactly this, so a user card
+    that happens to carry the meta flag is never deleted and keeps its
+    30-day recovery like every card they made."""
+    return card.id.startswith(CARD_ID_PREFIX)
+
+
 def is_sample_card(card: Card) -> bool:
-    """The one predicate: the id prefix or the meta flag. Clearing hunts
-    by exactly this, so user cards are never a match."""
+    """The rendering predicate: the id prefix or the meta flag. Wider
+    than is_seed_card on purpose, so anything that claims to be sample
+    is labelled Sample wherever it surfaces. It never deletes."""
     return card.id.startswith(CARD_ID_PREFIX) or bool(card.meta.get(SAMPLE_FLAG))
 
 
@@ -220,7 +231,7 @@ def seed(inbox: InboxStore | None, data_dir: Path) -> dict:
     cards = 0
     if inbox is not None:
         for card in list(inbox.all_cards()):
-            if is_sample_card(card):
+            if is_seed_card(card):
                 inbox.delete(card.id)
         now_ts = inbox.now_ts()
         for spec in _card_specs():
@@ -260,13 +271,14 @@ def seed(inbox: InboxStore | None, data_dir: Path) -> dict:
 
 
 def clear(inbox: InboxStore | None, data_dir: Path) -> dict:
-    """Remove exactly what seed() put there: every card the predicate
-    matches, in any status, and the one sample folder. User cards and
-    every other file stay untouched."""
+    """Remove exactly what seed() put there: every card with the fixed
+    sample- id prefix, in any status, and the one sample folder. User
+    cards (including one merely meta-flagged Sample) and every other
+    file stay untouched."""
     cards = 0
     if inbox is not None:
         for card in list(inbox.all_cards()):
-            if is_sample_card(card):
+            if is_seed_card(card):
                 inbox.delete(card.id)
                 cards += 1
     folder = sample_folder(data_dir)
