@@ -112,6 +112,10 @@ const ICON_PEERS = (
 export default function Rail({ inboxWaiting }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   const [collapsed, setCollapsed] = useState(storedCollapsed);
+  // The accessible name survives collapse: the visible label hides with
+  // the wide rail, so every link carries its own aria-label, and the
+  // Inbox link names its waiting count.
+  const inboxName = inboxWaiting > 0 ? `Inbox, ${inboxWaiting} waiting` : 'Inbox';
 
   // The class lands on the .app shell, exactly where the stylesheet's
   // collapsed rules read it; the server pages do the same in app.js.
@@ -144,20 +148,20 @@ export default function Rail({ inboxWaiting }: RailProps) {
         </span>
         <span className="brand-name">Agent Desk</span>
       </div>
-      <a href="/" aria-current="page">{ICON_DASHBOARD}<span className="rail-label">Dashboard</span></a>
-      <a href="/inbox">{ICON_INBOX}<span className="rail-label">Inbox</span>{badge}</a>
-      <a href="/assistant">{ICON_ASSISTANT}<span className="rail-label">Assistant</span></a>
-      <a href="/activity">{ICON_ACTIVITY}<span className="rail-label">Activity</span></a>
-      <a href="/memory">{ICON_MEMORY}<span className="rail-label">Memory</span></a>
-      <a href="/mail">{ICON_MAIL}<span className="rail-label">Mail</span></a>
-      <a href="/capabilities">{ICON_CAPABILITIES}<span className="rail-label">Capabilities</span></a>
-      <a href="/plugins">{ICON_PLUGINS}<span className="rail-label">Plugins</span></a>
-      <a href="/peers">{ICON_PEERS}<span className="rail-label">Peers</span></a>
-      <a href="/settings">{ICON_SETTINGS}<span className="rail-label">Settings</span></a>
+      <a href="/" aria-current="page" aria-label="Dashboard">{ICON_DASHBOARD}<span className="rail-label">Dashboard</span></a>
+      <a href="/inbox" aria-label={inboxName}>{ICON_INBOX}<span className="rail-label">Inbox</span>{badge}</a>
+      <a href="/assistant" aria-label="Assistant">{ICON_ASSISTANT}<span className="rail-label">Assistant</span></a>
+      <a href="/activity" aria-label="Activity">{ICON_ACTIVITY}<span className="rail-label">Activity</span></a>
+      <a href="/memory" aria-label="Memory">{ICON_MEMORY}<span className="rail-label">Memory</span></a>
+      <a href="/mail" aria-label="Mail">{ICON_MAIL}<span className="rail-label">Mail</span></a>
+      <a href="/capabilities" aria-label="Capabilities">{ICON_CAPABILITIES}<span className="rail-label">Capabilities</span></a>
+      <a href="/plugins" aria-label="Plugins">{ICON_PLUGINS}<span className="rail-label">Plugins</span></a>
+      <a href="/peers" aria-label="Peers">{ICON_PEERS}<span className="rail-label">Peers</span></a>
+      <a href="/settings" aria-label="Settings">{ICON_SETTINGS}<span className="rail-label">Settings</span></a>
       <button
         type="button"
         className="rail-toggle"
-        aria-expanded={collapsed}
+        aria-expanded={!collapsed}
         aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
         onClick={toggle}
       >

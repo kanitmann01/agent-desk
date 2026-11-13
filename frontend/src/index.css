@@ -110,17 +110,21 @@ svg{display:block;flex:none}
 .rail-toggle:hover{background:var(--hover-wash);color:var(--ink-1)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
    drops its text; the column narrows to the mark width. Mirrors the
-   server sheet so both shells collapse identically. */
-.app.rail-collapsed{grid-template-columns:68px 1fr}
-.rail-collapsed .rail{padding:20px 10px 14px}
-.rail-collapsed .rail a{position:relative;justify-content:center;padding:8px 0;gap:0}
-.rail-collapsed .rail .rail-label{display:none}
-.rail-collapsed .rail .count{position:absolute;top:4px;right:4px;margin-left:0;padding:0 5px;font-size:10px}
-.rail-collapsed .rail .rail-toggle{justify-content:center;gap:0}
-.rail-collapsed .rail-toggle .rail-toggle-label{display:none}
-.rail-collapsed .brand b,.rail-collapsed .brand-name{display:none}
-.rail-collapsed .rail .user{justify-content:center;padding:10px 0 4px}
-.rail-collapsed .rail .user > div{display:none}
+   server sheet so both shells collapse identically. Scoped to the wide
+   rail: below 981px the strip shows every entry and hides the toggle,
+   so a collapsed state must not leak into it. */
+@media (min-width:981px){
+  .app.rail-collapsed{grid-template-columns:68px 1fr}
+  .rail-collapsed .rail{padding:20px 10px 14px}
+  .rail-collapsed .rail a{position:relative;justify-content:center;padding:8px 0;gap:0}
+  .rail-collapsed .rail .rail-label{display:none}
+  .rail-collapsed .rail .count{position:absolute;top:4px;right:4px;margin-left:0;padding:0 5px;font-size:10px}
+  .rail-collapsed .rail .rail-toggle{justify-content:center;gap:0}
+  .rail-collapsed .rail-toggle .rail-toggle-label{display:none}
+  .rail-collapsed .brand b,.rail-collapsed .brand-name{display:none}
+  .rail-collapsed .rail .user{justify-content:center;padding:10px 0 4px}
+  .rail-collapsed .rail .user > div{display:none}
+}
 .dot{width:7px;height:7px;border-radius:var(--r-pill);background:var(--good);display:inline-block;flex:none}
 .dot.amber{background:var(--attention-ink)}
 .dot.sample{background:var(--ink-4)}

@@ -95,11 +95,13 @@ describe('the rail', () => {
 
   it('carries a collapse control that announces its state', () => {
     render(<Rail inboxWaiting={0} />);
+    // The rail starts expanded, and the button expands the nav, so the
+    // initial state is expanded.
     const toggle = screen.getByRole('button', { name: 'Collapse navigation' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('collapses on click, keeps the count badge, and persists', async () => {
+  it('collapses on click, keeps named links and the count, and persists', async () => {
     const user = userEvent.setup();
     render(
       <div className="app">
@@ -110,8 +112,13 @@ describe('the rail', () => {
     await user.click(toggle);
     const app = document.querySelector('.app') as HTMLElement;
     expect(app).toHaveClass('rail-collapsed');
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // The button expands the nav: a collapsed rail announces collapsed.
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(toggle).toHaveAttribute('aria-label', 'Expand navigation');
+    // The visible labels hide when collapsed, so each link carries its
+    // own accessible name; the Inbox link names its waiting count.
+    expect(screen.getByRole('link', { name: 'Inbox, 4 waiting' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     // The inbox count stays visible while the labels hide: it is the
     // one signal worth keeping on a collapsed rail.
     expect(document.querySelector('.rail .count')).not.toBeNull();
@@ -119,6 +126,7 @@ describe('the rail', () => {
 
     await user.click(toggle);
     expect(app).not.toHaveClass('rail-collapsed');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(localStorage.getItem('agentdesk.railCollapsed')).toBe('0');
   });
 
@@ -131,7 +139,7 @@ describe('the rail', () => {
     );
     expect(document.querySelector('.app')).toHaveClass('rail-collapsed');
     const toggle = screen.getByRole('button', { name: 'Expand navigation' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
