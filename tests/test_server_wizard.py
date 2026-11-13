@@ -97,6 +97,25 @@ def test_wizard_requires_a_session(env):
     assert status == 401
 
 
+def test_get_wizard_requires_a_session(env):
+    # The start form lives behind the same gate as every other page.
+    status, _h, _b = env.request("GET", "/wizard", env.host_header())
+    assert status == 401
+
+
+def test_get_wizard_renders_the_describe_start_form(env, auth):
+    """GET /wizard is the entry, not a 404: a POST-less visitor can start
+    describing, on the same describing screen the dashboard button uses."""
+    status, _h, body = env.request("GET", "/wizard", auth)
+    assert status == 200
+    page = body.decode("utf-8")
+    assert "Describe a plugin" in page
+    assert "<textarea" in page
+    assert 'action="/wizard/new/answer"' in page
+    # The focused shell, not the dashboard chrome.
+    assert 'class="rail"' not in page
+
+
 def test_describe_returns_capped_questions_with_defaults(env, auth):
     status, _h, body = env.post_json("/wizard/start", {"description": CANONICAL}, auth)
     payload = json.loads(body)

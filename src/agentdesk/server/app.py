@@ -159,6 +159,19 @@ SECURITY_HEADERS = (
 
 MAX_BODY_BYTES = 1024 * 1024
 
+# The wizard's describing screen before any session exists: the shape
+# render_wizard_page renders for GET /wizard and for a wordless POST to
+# /wizard/start (the dashboard button) alike.
+WIZARD_DESCRIBING_PAYLOAD = {
+    "id": "new",
+    "state": "describing",
+    "description": "",
+    "questions": [],
+    "draft": {},
+    "ui_schema": None,
+    "sample_rows": [],
+}
+
 # A body over MAX_BODY_BYTES is refused but still drained, so a keep-alive
 # connection survives the refusal; this is the hard bound on that draining.
 # Beyond it the server answers and closes instead of reading unboundedly:
@@ -2559,6 +2572,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the wizard is not available"})
             return
         parts = [part for part in path.split("/") if part]  # ["wizard", ...]
+        if method == "GET" and len(parts) < 2:
+            # /wizard is the entry, not a 404: the describing screen a
+            # POST-less visitor can start from, behind the same gate.
+            page = render_wizard_page(WIZARD_DESCRIBING_PAYLOAD, agentdesk.__version__)
+            self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            return
         if method == "POST" and path == "/wizard/start":
             body = self._read_json_body() or {}
             description = str(body.get("description", "")).strip()
@@ -2566,11 +2585,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 # The dashboard button lands here first: ask for the words
                 # before a session exists. No-JS: a plain form.
                 page = render_wizard_page(
-                    {"id": "new", "state": "describing", "description": "",
-                     "questions": [], "draft": {}, "ui_schema": None,
-                     "sample_rows": []},
-                    agentdesk.__version__,
-                )
+                    WIZARD_DESCRIBING_PAYLOAD, agentdesk.__version__)
                 self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
                 return
             session = wizard.create(description)
