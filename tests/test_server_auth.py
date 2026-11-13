@@ -91,6 +91,68 @@ def test_localhost_host_is_accepted(booted):
     assert status == 200
 
 
+# -- the rejection page and the settings-controlled extension (issue #61) --
+
+
+def test_rejected_host_gets_a_page_naming_the_addresses_that_work(booted):
+    status, _headers, body = booted.request("GET", "/", {"Host": f"deskpc:{booted.port}"})
+    assert status == 403
+    page = body.decode("utf-8")
+    # Plain words: where the app runs, where it was opened instead.
+    assert f"http://127.0.0.1:{booted.port}" in page
+    assert f"http://localhost:{booted.port}" in page
+    assert f"deskpc:{booted.port}" in page
+    assert "runs on your machine" in page
+    # No scary wording, no tracebacks.
+    assert "Traceback" not in page
+    assert "<h1>Blocked</h1>" not in page
+
+
+def test_rejected_origin_gets_the_same_plain_page(booted):
+    headers = booted.exchange() | {"Origin": "https://evil.example"}
+    status, _headers, body = booted.request("GET", "/", headers)
+    assert status == 403
+    page = body.decode("utf-8")
+    assert f"http://127.0.0.1:{booted.port}" in page
+    assert "https://evil.example" in page
+
+
+def test_settings_extra_hosts_are_admitted_by_the_guard(booted):
+    booted.server.settings.set(
+        "extra_allowed_hosts", f"deskpc:{booted.port}, 192.168.1.20:{booted.port}")
+    headers = booted.exchange()
+    # A sanctioned Host passes...
+    status, _h, _b = booted.request(
+        "GET", "/", headers | {"Host": f"deskpc:{booted.port}"})
+    assert status == 200
+    # ...and so does its Origin (a page opened there can fetch).
+    status, _h, _b = booted.request("GET", "/", headers | {
+        "Host": f"192.168.1.20:{booted.port}",
+        "Origin": f"http://192.168.1.20:{booted.port}"})
+    assert status == 200
+    # Anything else is still refused.
+    status, _h, _b = booted.request(
+        "GET", "/", headers | {"Host": "other.example:8765"})
+    assert status == 403
+
+
+def test_rejection_page_names_the_extra_addresses_too(booted):
+    booted.server.settings.set("extra_allowed_hosts", f"deskpc:{booted.port}")
+    status, _h, body = booted.request("GET", "/", {"Host": "other.example:8765"})
+    assert status == 403
+    page = body.decode("utf-8")
+    assert f"http://deskpc:{booted.port}" in page
+    assert f"http://127.0.0.1:{booted.port}" in page
+    assert "other.example:8765" in page
+
+
+def test_default_boot_still_refuses_non_loopback_hosts(booted):
+    # The default (empty) setting keeps today's loopback-only behaviour.
+    headers = booted.exchange() | {"Host": f"deskpc:{booted.port}"}
+    status, _h, _b = booted.request("GET", "/", headers)
+    assert status == 403
+
+
 def test_server_binds_loopback_only(booted):
     assert booted.server.server_address[0] == "127.0.0.1"
 

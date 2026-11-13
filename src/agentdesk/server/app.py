@@ -120,7 +120,7 @@ from agentdesk.server.core import (
 )
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
-from agentdesk.server.guard import check_request
+from agentdesk.server.guard import GuardVerdict, check_request
 from agentdesk.server.health import health_payload
 from agentdesk.server.sales import (
     render_sales_disabled,
@@ -718,13 +718,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         Both refusals end the connection: the gate runs before the body
         is drained, and an unread body on a kept-alive connection is
         exactly what the drain exists to prevent."""
-        verdict = check_request(
-            self.headers.get("Host"),
-            self.headers.get("Origin"),
-            self.server.port,  # type: ignore[attr-defined]
-        )
+        verdict = self._guard_verdict()
         if not verdict.allowed:
-            self._refuse_and_close(403, "Blocked", "This request did not come from the dashboard's own address.")
+            title, message = self._guard_refusal_copy(verdict)
+            self._refuse_and_close(403, title, message)
             return False
         if not self._authenticated():
             self._refuse_and_close(
@@ -733,6 +730,45 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return False
         return True
+
+    def _extra_allowed_hosts(self) -> frozenset[str]:
+        """The host[:port] entries the user sanctioned in Settings,
+        lowercased; empty (the default) keeps the guard loopback-only.
+        Resolved per request so a saved value applies without a restart."""
+        settings = self.server.settings  # type: ignore[attr-defined]
+        raw = settings.get("extra_allowed_hosts") if settings is not None else ""
+        return frozenset(
+            part.lower() for part in re.split(r"[,\s]+", str(raw)) if part.strip()
+        )
+
+    def _guard_verdict(self) -> GuardVerdict:
+        """The guard's answer for this request, with the sanctioned extra
+        hosts resolved here (the guard itself stays a pure function)."""
+        return check_request(
+            self.headers.get("Host"),
+            self.headers.get("Origin"),
+            self.server.port,  # type: ignore[attr-defined]
+            extra_hosts=self._extra_allowed_hosts(),
+        )
+
+    def _guard_refusal_copy(self, verdict: GuardVerdict) -> tuple[str, str]:
+        """(title, message) for a refused Host or Origin: plain words
+        naming the addresses that work, the extra ones the user
+        sanctioned, and the address that was used instead."""
+        port = self.server.port  # type: ignore[attr-defined]
+        extras = sorted(self._extra_allowed_hosts())
+        extra_line = (
+            " These addresses also work: "
+            + ", ".join(f"http://{host}" for host in extras) + "."
+            if extras else ""
+        )
+        opened = f" You opened it at {verdict.rejected}." if verdict.rejected else ""
+        message = (
+            "This app runs on your machine and is opened at "
+            f"http://127.0.0.1:{port} or http://localhost:{port}."
+            f"{extra_line}{opened}"
+        )
+        return "Wrong address", message
 
     def _refuse_and_close(self, status: int, title: str, message: str) -> None:
         """Answer a refusal with Connection: close. The body is read up
@@ -755,13 +791,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path.startswith("/auth/"):
             # The one route a session does not exist for yet: guard runs,
             # auth does not.
-            verdict = check_request(
-                self.headers.get("Host"),
-                self.headers.get("Origin"),
-                self.server.port,  # type: ignore[attr-defined]
-            )
+            verdict = self._guard_verdict()
             if not verdict.allowed:
-                self._send_error_page(403, "Blocked", "This request did not come from the dashboard's own address.")
+                self._send_error_page(403, *self._guard_refusal_copy(verdict))
                 return
             self._handle_auth(path[len("/auth/"):])
             return
@@ -1028,6 +1060,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._mail_folder_save()
         elif path == "/settings/registry/path":
             self._registry_path_save()
+        elif path == "/settings/hosts/save":
+            self._extra_hosts_save()
         elif path == "/api/registry/install":
             self._registry_install()
         elif path == "/plugins/registry-install":
@@ -1344,6 +1378,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             endpoint_status=self._endpoint_status(),
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
             registry_status=self._registry_status_for_settings(),
+            extra_hosts=(server.settings.get("extra_allowed_hosts")
+                         if server.settings is not None else ""),
+            server_port=server.port,
             inbox_count=self._inbox_waiting_count(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
@@ -2564,6 +2601,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._audit("settings.registry", target="registry_path",
                     detail="cleared" if not chosen else "updated")
         self._send_redirect("/plugins")
+
+    def _extra_hosts_save(self) -> None:
+        """The settings form for the guard's extra allowed hosts: the
+        host[:port] entries admitted beyond loopback. Stored as typed
+        (comma or space separated); the guard re-reads it on every
+        request, so an empty save returns to loopback-only at once."""
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        if self._is_form_submit():
+            # Form parsing drops an emptied field, so in a form post the
+            # field's absence IS the empty value: clearing works with no
+            # JavaScript and no second button.
+            hosts = body.get("hosts", "")
+        else:
+            hosts = body.get("hosts")
+            if not isinstance(hosts, str):
+                self._send_json(400, {"error": 'expected {"hosts": "..."}'})
+                return
+        settings.set("extra_allowed_hosts", hosts.strip())
+        self._audit("settings.hosts", target="extra_allowed_hosts",
+                    detail="cleared" if not hosts.strip() else "updated")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, {"key": "extra_allowed_hosts", "value": hosts.strip()})
 
     def _route_wizard(self, method: str, path: str) -> None:
         """The wizard surface: describe, answer, build, preview, approve."""

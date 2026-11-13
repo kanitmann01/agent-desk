@@ -40,6 +40,7 @@ TEXT_KEYS = {
     "llm_model": "",  # empty means the adapter's default model
     "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
     "registry_path": "",  # the local registry checkout the plugins page browses; empty means auto
+    "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated
 }
 DEFAULTS = {**TOGGLES, "daily_cap": 3, **TEXT_KEYS}
 

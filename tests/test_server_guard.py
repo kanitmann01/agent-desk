@@ -76,3 +76,67 @@ def test_https_self_origin_is_rejected():
 
 def test_bad_origin_fails_even_with_a_good_host():
     assert not check_request(f"127.0.0.1:{PORT}", "http://evil.example:80", PORT).allowed
+
+
+# -- the settings-controlled extension (issue #61) -----------------------
+#
+# extra_allowed_hosts admits exact host[:port] entries the user sanctioned
+# in Settings, on top of the loopback set; the default stays loopback-only.
+
+
+def test_extra_hosts_extend_the_allowed_sets():
+    extra = frozenset({"mymachine:8765", "192.168.1.20:8765"})
+    assert allowed_hosts(PORT, extra) == frozenset({
+        "127.0.0.1:8765", "localhost:8765", "mymachine:8765", "192.168.1.20:8765",
+    })
+    assert allowed_origins(PORT, extra) == frozenset({
+        "http://127.0.0.1:8765", "http://localhost:8765",
+        "http://mymachine:8765", "http://192.168.1.20:8765",
+    })
+
+
+def test_check_request_admits_extra_hosts_and_their_origins():
+    extra = frozenset({"mymachine:8765"})
+    assert check_request("mymachine:8765", None, PORT, extra_hosts=extra).allowed
+    assert check_request(
+        "127.0.0.1:8765", "http://mymachine:8765", PORT, extra_hosts=extra
+    ).allowed
+
+
+def test_check_request_still_refuses_everything_else_with_extras():
+    extra = frozenset({"mymachine:8765"})
+    assert not check_request("other.example:8765", None, PORT, extra_hosts=extra).allowed
+    # An extra Host does not open the door to foreign Origins.
+    assert not check_request(
+        "mymachine:8765", "http://evil.example", PORT, extra_hosts=extra
+    ).allowed
+    # A different port on the same name is a different address.
+    assert not check_request("mymachine:9999", None, PORT, extra_hosts=extra).allowed
+
+
+def test_extra_host_matching_is_case_insensitive():
+    # DNS names are case-insensitive; entries are lowered on admission.
+    assert check_request(
+        "MyMachine:8765", None, PORT, extra_hosts=frozenset({"mymachine:8765"})
+    ).allowed
+    assert check_request(
+        "mymachine:8765", None, PORT, extra_hosts=frozenset({"MyMachine:8765"})
+    ).allowed
+
+
+def test_default_call_stays_loopback_only():
+    # No extras passed: today's behaviour, byte for byte.
+    assert not check_request("mymachine:8765", None, PORT).allowed
+    assert allowed_hosts(PORT) == frozenset({"127.0.0.1:8765", "localhost:8765"})
+    assert allowed_origins(PORT) == frozenset(
+        {"http://127.0.0.1:8765", "http://localhost:8765"}
+    )
+
+
+def test_rejected_verdict_carries_the_offending_value():
+    # The refusal page names what was rejected; the verdict carries it.
+    verdict = check_request("evil.example:80", None, PORT)
+    assert verdict.rejected == "evil.example:80"
+    verdict = check_request(f"127.0.0.1:{PORT}", "https://evil.example", PORT)
+    assert verdict.rejected == "https://evil.example"
+    assert check_request(f"127.0.0.1:{PORT}", None, PORT).rejected == ""
