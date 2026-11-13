@@ -212,3 +212,31 @@ def test_failed_calls_are_audited_as_errors(env, auth):
     entries = json.loads(env.request("GET", "/audit/tail", auth)[2])["entries"]
     assert entries[0]["status"] == "error"
     assert entries[0]["action"] == "llm.research"
+
+
+def test_research_answers_are_stored_for_plugin_cards(env, auth):
+    """The panel's sourced answers persist locally (#64): the research
+    store keeps the latest one so a plugin card can show it without any
+    endpoint call of its own. Assistant turns and failures never land
+    there: the store is what research concluded, nothing else."""
+    status, _h, _b = env.post_json(
+        "/research", {"question": "What changed in the EU channel?"}, auth)
+    assert status == 200
+    latest = env.server.research_store.latest()
+    assert latest is not None
+    assert "EU partners" in latest["summary"]
+    assert latest["sources"] == ["eu-price-memo.pdf", "channel-weekly.xlsx, tab EU"]
+    assert latest["answeredTs"] > 0
+
+    status, _h, _b = env.post_json(
+        "/assistant/ask", {"question": "What should I prepare?"}, auth)
+    assert status == 200
+    assert "EU partners" in env.server.research_store.latest()["summary"]  # untouched
+
+
+def test_failed_research_answers_are_not_stored(env, auth):
+    from agentdesk.llm import chat as real_chat
+
+    env.server.llm = lambda prompt: real_chat("http://127.0.0.1:9", "k", "m", prompt)
+    env.post_json("/research", {"question": "q"}, auth)
+    assert env.server.research_store.latest() is None

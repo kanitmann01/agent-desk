@@ -537,3 +537,97 @@ def test_mail_digest_not_running_is_amber(workspace, tmp_path):
     assert status["status"] == "attention"
     assert "mail digest" in status["cause"].lower()
     assert runner.payload("p1")["elements"] == []
+
+
+# The research-brief binding: the latest stored sourced answer, read
+# from the local store. No endpoint client exists anywhere in the
+# runner, so the plugin path cannot call one.
+
+RESEARCH_WINDOW_NOTE = ("The latest stored research answer; showing it "
+                        "made no endpoint call.")
+
+
+def _research_store(now_ts: float, answer=None):
+    import sqlite3
+
+    from agentdesk.assistant.research_store import ResearchStore
+
+    store = ResearchStore(
+        sqlite3.connect(":memory:", check_same_thread=False),
+        clock=lambda: now_ts)
+    if answer is not None:
+        store.save(answer[0], answer[1])
+    return store
+
+
+def test_research_brief_binds_the_latest_stored_answer(workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 41, 0).astimezone()
+    runner = PluginWidgetRunner(workspace, research=_research_store(
+        now.timestamp(),
+        ("Five of nine EU partners reflected the new prices.",
+         ["eu-price-memo.pdf", "channel-weekly.xlsx"])))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "text", "binding": "summary"},
+        {"type": "metric", "binding": "sourcesCount", "label": "Sources"},
+        {"type": "metric", "binding": "answeredAt", "label": "Answered"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("research-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    assert payload["elements"] == [
+        {"kind": "text",
+         "text": "Five of nine EU partners reflected the new prices."},
+        {"kind": "metric", "label": "Sources", "value": "2"},
+        {"kind": "metric", "label": "Answered", "value": "2026-11-13 09:41"},
+        {"kind": "text", "text": RESEARCH_WINDOW_NOTE},
+    ]
+
+
+def test_research_brief_with_nothing_asked_is_the_honest_empty_state(
+        workspace, tmp_path):
+    now = datetime(2026, 11, 13, 9, 41, 0).astimezone()
+    runner = PluginWidgetRunner(workspace,
+                                research=_research_store(now.timestamp()))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "text", "binding": "summary"},
+        {"type": "metric", "binding": "sourcesCount", "label": "Sources"},
+        {"type": "text", "binding": "windowNote"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("research-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "Research" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_research_brief_reads_only_the_local_store(workspace, tmp_path):
+    """No LLM call occurs in the plugin path, pinned by construction:
+    the binding's only data source is the store, and every read of the
+    pipeline is a read of it."""
+    now = datetime(2026, 11, 13, 9, 41, 0).astimezone()
+    store = _research_store(now.timestamp(), ("Summary.", ["src"]))
+    reads = []
+    inner_latest = store.latest
+
+    def counting_latest():
+        reads.append(1)
+        return inner_latest()
+
+    store.latest = counting_latest
+    runner = PluginWidgetRunner(workspace, research=store)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "text", "binding": "summary"}])
+    runner.attach("p1", _pipeline_manifest("research-brief"),
+                  version_dir, tmp_path / "data")
+    runner.status("p1")
+    payload = runner.payload("p1")
+    assert payload["elements"] == [{"kind": "text", "text": "Summary."}]
+    assert reads  # every pipeline read went through the store
+    assert not hasattr(runner, "llm")  # and no endpoint client exists to call
