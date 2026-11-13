@@ -121,6 +121,7 @@ def test_endpoint_section_has_save_test_clear_and_the_hint(env, auth):
     assert "OpenAI-compatible" in page
     assert "https://api.anthropic.com/v1" in page
     assert "OpenRouter" in page and "LiteLLM" in page
+    assert "Azure AI Foundry" in page or "Foundry" in page
     # The base URL contract is in the copy: a full address, /v1 guidance.
     assert "starts with http:// or https://" in page
     # Saving with an empty key field clears it: the page says so.

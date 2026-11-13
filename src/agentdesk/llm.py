@@ -121,6 +121,45 @@ def base_url_problem(base: str) -> str:
     return ""
 
 
+_AZURE_API_KEY_HOST_SUFFIXES = (
+    ".openai.azure.com",
+    ".services.ai.azure.com",
+    ".cognitiveservices.azure.com",
+    ".azure-api.net",
+)
+
+
+def uses_azure_api_key(base_url: str) -> bool:
+    """True when the base host is an Azure / Foundry API host.
+
+    Those hosts expect the ``api-key`` header; everything else keeps
+    ``Authorization: Bearer``. Matching is case-insensitive on the
+    hostname only; ports and paths are ignored. Empty or unparseable
+    bases are not Azure.
+    """
+    try:
+        host = (urlsplit(base_url or "").hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    for suffix in _AZURE_API_KEY_HOST_SUFFIXES:
+        apex = suffix[1:]  # strip leading dot
+        if host == apex or host.endswith(suffix):
+            return True
+    return False
+
+
+def auth_headers(base_url: str, api_key: str) -> dict[str, str]:
+    """Request headers for one chat call: Azure api-key or Bearer."""
+    headers = {"Content-Type": "application/json"}
+    if uses_azure_api_key(base_url):
+        headers["api-key"] = api_key
+    else:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 def _host_of(base_url: str) -> str:
     """The host (with port) the causes name, or "". The userinfo that
     may ride in a URL (user:pass@) is dropped here and never echoed
@@ -223,10 +262,7 @@ def chat(
     request = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
+        headers=auth_headers(base_url, api_key),
         method="POST",
     )
     host = _host_of(base_url)

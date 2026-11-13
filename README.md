@@ -18,13 +18,14 @@ From a terminal instead: `python -m agentdesk.server` (add `--no-browser` to ski
 
 The app runs with zero configuration, and the two things you may ever need to set now have in-app surfaces:
 
-- **LLM endpoint** (research and the assistant): Settings, then Endpoint. Works with any OpenAI-compatible endpoint: a company gateway, OpenAI, OpenRouter, LiteLLM, or Anthropic's OpenAI-compatible URL (`https://api.anthropic.com/v1` with a Claude model name). Save, Test connection, and Clear are right there; the API key is stored locally and never shown again, only its masked state. Saved settings apply without a restart.
+- **LLM endpoint** (research and the assistant): Settings, then Endpoint. Works with any OpenAI-compatible endpoint: a company gateway, OpenAI, OpenRouter, LiteLLM, Azure AI Foundry, or Anthropic's OpenAI-compatible URL (`https://api.anthropic.com/v1` with a Claude model name). Save, Test connection, and Clear are right there; the API key is stored locally and never shown again, only its masked state. Saved settings apply without a restart.
 - **Calendar file**: the calendar walkthrough page (`/walkthrough/calendar`, linked from Settings) shows the path the app watches and offers Pick file, Paste path, Upload the JSON by hand, and Reset to automatic discovery. The explicit choice wins over automatic discovery and survives restarts.
 
 Text configuration still works: create a file at `%USERPROFILE%\.agent-desk\config.env` (`~/.agent-desk/config.env`):
 
 ```
 # Agent Desk settings, KEY=VALUE lines, # comments
+# Foundry example: AGENTDESK_LLM_BASE=https://<resource>.openai.azure.com/openai/v1
 AGENTDESK_LLM_BASE=https://llm.yourcompany.example/v1
 AGENTDESK_LLM_KEY=your-key
 AGENTDESK_LLM_MODEL=gpt-4o-mini
