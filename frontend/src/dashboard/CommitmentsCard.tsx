@@ -15,6 +15,8 @@ const WALKTHROUGH_PATH = '/walkthrough/calendar';
 
 interface CommitmentsCardProps {
   commitments: { enabled: boolean; mode: 'disabled' | 'unavailable' | 'live'; status: CommitmentsStatus | null };
+  // The layout's custom title, when the user renamed the card.
+  title?: string;
   onRefetch: () => Promise<void>;
   onExpired: () => void;
 }
@@ -72,8 +74,9 @@ function CheckLine(props: { eventId: string; idx: number; text: string; checked:
   );
 }
 
-export default function CommitmentsCard({ commitments, onRefetch, onExpired }: CommitmentsCardProps) {
+export default function CommitmentsCard({ commitments, title, onRefetch, onExpired }: CommitmentsCardProps) {
   const status = commitments.status;
+  const heading = title ?? "Today's key commitment";
   // Checks live in the payload; the click flips locally and persists
   // through the API, like the server-rendered card does. The local
   // flips are keyed by event and index and win over the payload, so the
@@ -121,7 +124,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   if (commitments.mode === 'disabled') {
     return (
       <WidgetCard
-        title="Today's key commitment"
+        title={heading}
         span="span-5"
         footLines={2}
         sparse
@@ -143,7 +146,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   if (commitments.mode === 'unavailable' || status === null) {
     return (
       <WidgetCard
-        title="Today's key commitment"
+        title={heading}
         span="span-5"
         footLines={2}
         sparse
@@ -170,7 +173,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
     const isChecked = (idx: number) => flips[`${eventId}:${idx}`] ?? Boolean(checks[String(idx)]);
     return (
       <WidgetCard
-        title="Today's key commitment"
+        title={heading}
         span="span-5"
         footLines={2}
         stamp={stamp}
@@ -208,7 +211,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   if (status.state === 'clear') {
     return (
       <WidgetCard
-        title="Today's key commitment"
+        title={heading}
         span="span-5"
         footLines={2}
         sparse
@@ -230,7 +233,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   if (status.state === 'empty') {
     return (
       <WidgetCard
-        title="Today's key commitment"
+        title={heading}
         span="span-5"
         footLines={2}
         sparse
@@ -257,7 +260,7 @@ export default function CommitmentsCard({ commitments, onRefetch, onExpired }: C
   if (status.state === 'stale') {
     return (
       <WidgetCard
-        title="Today's key commitment"
+        title={heading}
         span="span-5"
         footLines={2}
         sparse

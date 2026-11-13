@@ -67,6 +67,22 @@ export interface PluginCard {
   payload?: { elements: PluginElement[] } | null;
 }
 
+// One card in the dashboard's layout as the payload lists it: visible
+// cards only, in render order, a custom title riding along when the
+// user renamed the card (null means the card's default display name).
+export interface LayoutCard {
+  key: string; // "sales" | "commitments" | "research" | "skills" | plugin id
+  title: string | null;
+}
+
+// The full layout GET /api/layout returns and POST /api/layout takes:
+// every card, hidden ones included, in the desired order.
+export interface LayoutCardState {
+  key: string;
+  hidden: boolean;
+  title: string | null;
+}
+
 export interface DashboardData {
   version: string;
   flags: {
@@ -95,5 +111,6 @@ export interface DashboardData {
   };
   inbox: { waiting: number };
   skills: { id: number; name: string; description: string }[];
+  layout: { cards: LayoutCard[] };
   plugins: { cards: PluginCard[] };
 }

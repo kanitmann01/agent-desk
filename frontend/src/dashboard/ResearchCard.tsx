@@ -19,6 +19,8 @@ export interface ResearchAnswer {
 
 interface ResearchCardProps {
   span: CardSpan;
+  // The layout's custom title, when the user renamed the card.
+  title?: string;
   lastAnsweredTs: number | null;
   answer: ResearchAnswer | null;
   // Bumps on every new answer so the block remounts even when the same
@@ -30,7 +32,7 @@ interface ResearchCardProps {
 }
 
 export default function ResearchCard({
-  span, lastAnsweredTs, answer, answerSeq, statusText,
+  span, title, lastAnsweredTs, answer, answerSeq, statusText,
 }: ResearchCardProps) {
   const stamp = lastAnsweredTs !== null
     ? { fresh: true, text: `Answered ${hhmmFromTs(lastAnsweredTs)}` }
@@ -38,7 +40,7 @@ export default function ResearchCard({
 
   return (
     <WidgetCard
-      title="Research"
+      title={title ?? 'Research'}
       span={span}
       sparse={!answer}
       stamp={stamp}

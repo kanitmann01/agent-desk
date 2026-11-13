@@ -37,14 +37,16 @@ function SkillRow({ skill, busy, onRun }: { skill: DashboardData['skills'][numbe
 
 interface SkillsCardProps {
   skills: DashboardData['skills'];
+  // The layout's custom title, when the user renamed the card.
+  title?: string;
   busy: boolean;
   onRun: (id: number) => void;
 }
 
-export default function SkillsCard({ skills, busy, onRun }: SkillsCardProps) {
+export default function SkillsCard({ skills, title, busy, onRun }: SkillsCardProps) {
   return (
     <WidgetCard
-      title="Your skills"
+      title={title ?? 'Your skills'}
       span="span-4"
       stamp={{ fresh: true, text: `${skills.length} saved` }}
       menuItems={[{ label: 'Open settings', href: '/settings' }]}
