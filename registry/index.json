@@ -2,6 +2,66 @@
   "plugins": [
     {
       "class": "declarative",
+      "id": "calendar-today",
+      "latest": "0.1.0",
+      "publisher": "agent-desk",
+      "releases": [
+        {
+          "sha256": "bfa488fd3251f4f4c2146c56d825201947e9becc03fa906477aca8b9110fabcc",
+          "tag": "calendar-today-0.1.0",
+          "version": "0.1.0",
+          "yanked": false
+        }
+      ],
+      "risk": "low"
+    },
+    {
+      "class": "declarative",
+      "id": "excel-report",
+      "latest": "0.1.0",
+      "publisher": "agent-desk",
+      "releases": [
+        {
+          "sha256": "c11616e1a8bd35f0af6c4781f613ed3a62ca91f6e89df209131b5aad47f24e2d",
+          "tag": "excel-report-0.1.0",
+          "version": "0.1.0",
+          "yanked": false
+        }
+      ],
+      "risk": "low"
+    },
+    {
+      "class": "declarative",
+      "id": "outlook-digest",
+      "latest": "0.1.0",
+      "publisher": "agent-desk",
+      "releases": [
+        {
+          "sha256": "cb468f0b1d4783aee39160900debdb20058e2beb97c106e8768521d0ebee4280",
+          "tag": "outlook-digest-0.1.0",
+          "version": "0.1.0",
+          "yanked": false
+        }
+      ],
+      "risk": "low"
+    },
+    {
+      "class": "declarative",
+      "id": "research-brief",
+      "latest": "0.1.0",
+      "publisher": "agent-desk",
+      "releases": [
+        {
+          "sha256": "04056962ea6b1c3e20895588ccc55d99e4cc544883c5a442e9728ce150d1e15c",
+          "tag": "research-brief-0.1.0",
+          "version": "0.1.0",
+          "yanked": false
+        }
+      ],
+      "risk": "low"
+    },
+    {
+      "class": "declarative",
       "id": "sales-delta-widget",
       "latest": "0.1.0",
       "publisher": "agent-desk",

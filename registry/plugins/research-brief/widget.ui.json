@@ -1,0 +1,10 @@
+{
+  "type": "card",
+  "title": "Latest research",
+  "elements": [
+    { "type": "text", "binding": "summary" },
+    { "type": "metric", "binding": "sourcesCount", "label": "Sources" },
+    { "type": "metric", "binding": "answeredAt", "label": "Answered" },
+    { "type": "text", "binding": "windowNote" }
+  ]
+}
