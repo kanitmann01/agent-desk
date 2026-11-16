@@ -20,6 +20,12 @@ function moverName(row: unknown[]): string {
   return line || 'Row';
 }
 
+function signedChange(row: unknown[], sign: '+' | '−'): string {
+  const amount = row[3];
+  if (typeof amount === 'number') return `${sign}${amount.toLocaleString('en-US')}`;
+  return sign;
+}
+
 function Movers({ delta }: { delta: DeltaPayload }) {
   const ups = (delta.added ?? []).slice(0, 6);
   const downs = (delta.removed ?? []).slice(0, 6);
@@ -31,13 +37,13 @@ function Movers({ delta }: { delta: DeltaPayload }) {
       {ups.map((row, i) => (
         <li key={`u${i}`}>
           <span>{moverName(row)}</span>
-          <span className="mover up">+</span>
+          <span className="mover up">{signedChange(row, '+')}</span>
         </li>
       ))}
       {downs.map((row, i) => (
         <li key={`d${i}`}>
           <span>{moverName(row)}</span>
-          <span className="mover down">−</span>
+          <span className="mover down">{signedChange(row, '−')}</span>
         </li>
       ))}
     </ul>
@@ -183,6 +189,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
               <input
                 className="well-input"
                 type="text"
+                name="workbook-path"
+                autoComplete="off"
                 aria-label="Workbook path"
                 placeholder="Full path to the workbook"
                 value={pathInput}

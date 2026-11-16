@@ -338,7 +338,16 @@ def build_bundled_catalog(registry_root) -> dict:
                     if pinned is not None:
                         # The build-time digest stays authoritative even if
                         # the checkout tree drifted; install fails closed.
-                        entries.append(dict(pinned))
+                        # The one-line purpose lives on the manifest, which
+                        # the pin does not carry.
+                        enriched = dict(pinned)
+                        manifest = _read_json(
+                            root / "plugins" / plugin_id / "manifest.json")
+                        if isinstance(manifest, dict):
+                            for key in ("summary", "description", "highlights"):
+                                if not enriched.get(key) and manifest.get(key):
+                                    enriched[key] = manifest[key]
+                        entries.append(enriched)
                         continue
                     manifest = _read_json(root / "plugins" / plugin_id / "manifest.json")
                     if isinstance(manifest, dict):

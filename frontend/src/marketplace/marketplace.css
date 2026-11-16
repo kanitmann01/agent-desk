@@ -36,7 +36,7 @@
   padding: 0 14px;
   border-radius: var(--r-inner) var(--r-inner) 0 0;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   text-decoration: none;
   border-bottom: 2px solid transparent;
@@ -83,7 +83,7 @@
   border-radius: var(--r-control);
   color: var(--ink-3);
 }
-.mkt-search-field:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.mkt-search-field:focus-within { border-color: var(--ink-1); box-shadow: none; }
 .mkt-search-field input {
   flex: 1;
   min-width: 0;
@@ -94,7 +94,7 @@
   font-size: 14px;
   padding: 10px 0;
 }
-.mkt-search-field input:focus { outline: 2px solid var(--ink-1); outline-offset: 2px; }
+.mkt-search-field input:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; }
 
 .mkt-filters {
   display: flex;
@@ -106,7 +106,7 @@
   background: var(--surface-2);
 }
 .mkt-filter-group { display: flex; flex-direction: column; gap: 8px; }
-.mkt-filter-label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.mkt-filter-label { font-size: 14px; font-weight: 700; color: var(--ink-2); }
 .mkt-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .mkt-filter-chip {
   min-height: 30px;
@@ -127,7 +127,7 @@
   color: var(--primary-ink);
 }
 .mkt-filter-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
-.mkt-select { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.mkt-select { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700; color: var(--ink-2); }
 .mkt-select select {
   min-height: 34px;
   padding: 4px 10px;
@@ -136,7 +136,7 @@
   background: var(--surface);
   color: var(--ink-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
 }
 .mkt-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; font-size: 13px; color: var(--ink-2); }
 .mkt-toggle input { width: 16px; height: 16px; accent-color: var(--primary); }
@@ -159,7 +159,7 @@
 .mkt-row-featured .mkt-row-name { font-family: var(--font-display); font-size: 20px; }
 .mkt-row-name { font-weight: 650; font-size: 16px; }
 .mkt-row-summary { color: var(--ink-2); font-size: 14px; }
-.mkt-row-cat, .mkt-row-extra { font-size: 12px; color: var(--ink-3); }
+.mkt-row-cat, .mkt-row-extra { font-size: 14px; color: var(--ink-3); }
 .mkt-group { margin-top: 20px; }
 .mkt-group h2 { font-family: var(--font-display); font-size: 20px; font-weight: 560; margin: 0 0 4px; }
 @media (max-width: 800px) {
@@ -198,10 +198,10 @@
 .mkt-card-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .mkt-card-name { font-weight: 700; font-size: 14.5px; color: var(--ink-1); }
 .mkt-card-pub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
-.mkt-version { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+.mkt-version { font-family: var(--font-mono); font-size: 14px; color: var(--ink-3); white-space: nowrap; }
 .mkt-card-summary {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--ink-2);
   display: -webkit-box;
@@ -284,7 +284,7 @@
   border-radius: var(--r-control);
   background: var(--attention-bg);
   color: var(--attention-ink);
-  font-size: 13px;
+  font-size: 14px;
 }
 .mkt-offline strong { font-weight: 700; }
 .mkt-offline span { flex: 1 1 240px; }
@@ -424,11 +424,11 @@
   background: var(--surface);
   color: var(--ink-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
 }
 .mkt-field textarea { resize: vertical; }
-.mkt-field input:focus, .mkt-field textarea:focus, .mkt-field select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.mkt-field input:focus-visible, .mkt-field textarea:focus-visible, .mkt-field select:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; }
 .mkt-field small { color: var(--ink-3); font-weight: 400; }
 .mkt-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mkt-field-wide { grid-column: 1 / -1; }

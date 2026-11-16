@@ -210,7 +210,8 @@ describe('the authored sheet keeps its interaction promises', () => {
   });
 
   it('gives the command bar field a visible focus ring', () => {
-    expect(css).toContain('.cmd-field:focus{outline:2px solid var(--primary)');
+    expect(css).toContain(':focus-visible{outline:2px solid var(--ink-1)');
+    expect(css).not.toContain('.cmd-field:focus{outline:none');
   });
 
   it('stacks the command bar through its wrapper on small screens', () => {
@@ -442,7 +443,7 @@ describe('marketplace type stays inside the design language', () => {
   it('shows a keyboard ring on the marketplace main and keeps the search well ring', () => {
     expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--ink-1)');
     expect(marketCss).toContain('.mkt-search-field:focus-within');
-    expect(marketCss).toContain('.mkt-search-field input:focus { outline: 2px solid var(--ink-1)');
+    expect(marketCss).toContain('.mkt-search-field input:focus-visible { outline: 2px solid var(--ink-1)');
   });
 });
 

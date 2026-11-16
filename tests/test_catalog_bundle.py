@@ -79,6 +79,9 @@ def test_committed_bundle_pins_are_authoritative_over_a_drifted_checkout(tmp_pat
     entry = {item["id"]: item for item in catalog["plugins"]}[plugin_id]
     assert entry["digest"] == pinned["digest"]
     assert entry["digest"] != tree_digest(registry / "plugins" / plugin_id)
+    manifest_summary = json.loads(manifest.read_text(encoding="utf-8"))["summary"]
+    assert entry["summary"] == manifest_summary
+    assert entry["summary"]
 
 
 def test_catalog_cli_writes_the_bundle(tmp_path):
