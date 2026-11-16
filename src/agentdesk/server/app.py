@@ -86,7 +86,7 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
-from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.core import UnknownEntity, UnknownFact
 from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.extract import (
     EndpointExtractor,
@@ -124,7 +124,7 @@ from agentdesk.server.commitments import (
 )
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
-from agentdesk.server.memory_view import render_memory_page
+from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
 from agentdesk.server.plugins_view import render_plugins_page
 from agentdesk.server.peers_view import render_peers_page
 from agentdesk.server.research import (
@@ -468,6 +468,14 @@ def _fact_json(fact) -> dict:
         "source": fact.source,
         "createdTs": fact.created_ts,
     }
+
+
+def _memory_entity_id(value) -> int | None:
+    """A body's entity id, or None when it is not one (ticket #92's
+    merge form posts ids)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 _PEER_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -1004,6 +1012,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/memory/sweep":
+            self._memory_sweep_page()
         elif path == "/memory/encrypt":
             self._memory_encrypt_page()
         elif path == "/mail":
@@ -1240,6 +1250,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_delete(_memory_id_from_path(path, "/delete"))
         elif path == "/memory/recall":
             self._memory_recall()
+        elif path == "/memory/entities/merge":
+            self._memory_entities_merge()
+        elif path == "/memory/sweep":
+            self._memory_sweep()
         elif path == "/memory/encrypt":
             self._memory_encrypt()
         elif path == "/memory/retain":
@@ -2097,10 +2111,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         recall: list | None = None,
         query: str = "",
         encrypt: dict | None = None,
+        sweep: list | None = None,
+        notice: str | None = None,
     ) -> None:
         """The memory page; with a recall preview when a query came in,
-        the encryption state alongside the facts, and the locked banner
-        alone when the store is locked."""
+        the encryption state alongside the facts, the entities with
+        their merge form (ticket #92), the junk-sweep preview when
+        asked, and the locked banner alone when the store is locked."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             self._send_json(503, {"error": "the memory store is not available"})
@@ -2115,7 +2132,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 encrypt = {"already": True} if memory.is_sealed else {"link": True}
             page = render_memory_page(
                 memory.all(), agentdesk.__version__, recall=recall, query=query,
-                encrypt=encrypt, inbox_count=self._inbox_waiting_count(),
+                encrypt=encrypt, entities=memory.entities(), sweep=sweep,
+                notice=notice, inbox_count=self._inbox_waiting_count(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2146,11 +2164,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": 'expected {"text": "..."}'})
             return
         try:
-            fact = memory.edit(fact_id, text.strip())
+            result = memory.edit(fact_id, text.strip())
         except UnknownFact as exc:
             self._send_json(404, {"error": str(exc)})
             return
-        self._memory_response(_fact_json(fact))
+        # Ticket #92: an edit that landed on another fact's text merged
+        # into it; a form post renders the page with the plain notice,
+        # JSON carries the flag alongside the surviving fact.
+        if result.merged_into and self._is_form_submit():
+            self._send_memory_page(notice=EDIT_MERGE_NOTICE)
+            return
+        payload = _fact_json(result.fact)
+        payload["mergedIntoExisting"] = result.merged_into
+        self._memory_response(payload)
 
     def _memory_delete(self, fact_id: int | None) -> None:
         if fact_id is None:
@@ -2165,6 +2191,140 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": str(exc)})
             return
         self._memory_response({"deleted": fact_id})
+
+    def _memory_sweep_page(self) -> None:
+        """The sweep's dry run (ticket #92): the memory page with the
+        candidates, each carrying its reason and a checkbox. A locked
+        store renders the banner, like the main page does."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_memory_page()
+            return
+        self._send_memory_page(sweep=memory.sweep_candidates())
+
+    def _memory_sweep(self) -> None:
+        """Delete the checked candidates through the donor's removeFacts
+        semantics (ticket #92): every id must be a current junk
+        candidate and must exist, or the whole call is refused before
+        anything is written. The audit row names counts, never fact
+        text."""
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        ids = self._sweep_ids_from_body(body)
+        if not ids:
+            self._memory_hygiene_error_response(
+                400, 'expected {"ids": [...]} or the preview checkboxes'
+            )
+            return
+        candidates = {c.fact.id: c.reason for c in memory.sweep_candidates()}
+        for fact_id in ids:
+            if fact_id in candidates:
+                continue
+            try:
+                memory.get(fact_id)
+            except UnknownFact:
+                self._memory_hygiene_error_response(404, f"no fact {fact_id}")
+                return
+            self._memory_hygiene_error_response(
+                400,
+                "That fact is not a junk candidate; delete it from the "
+                "fact list instead.",
+            )
+            return
+        try:
+            removed = memory.remove_facts(ids)
+        except UnknownFact as exc:
+            # A candidate vanished between the preview and this post.
+            self._memory_hygiene_error_response(404, str(exc))
+            return
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "memory.sweep",
+                target=f"{len(removed.fact_ids)} facts",
+                detail=(f"swept {len(removed.observation_ids)} orphaned"
+                        f" observations and {len(removed.entity_ids)} orphaned"
+                        " entities"),
+            )
+        self._memory_response({
+            "status": "ok",
+            "deleted": len(removed.fact_ids),
+            "removedFactIds": list(removed.fact_ids),
+            "removedObservationIds": list(removed.observation_ids),
+            "removedEntityIds": list(removed.entity_ids),
+        })
+
+    def _sweep_ids_from_body(self, body: dict) -> list[int]:
+        """The checked candidate ids: a JSON id list, or one checkbox
+        per candidate (the no-JS form's unique names). Anything that is
+        not a fact id is a refused call, never a partial delete."""
+        raw = body.get("ids")
+        if isinstance(raw, list):
+            ids: list[int] = []
+            for value in raw:
+                if isinstance(value, bool) or not isinstance(value, int):
+                    return []
+                ids.append(value)
+            return sorted(set(ids))
+        checked: set[int] = set()
+        for name, value in body.items():
+            if not name.startswith("sweep_") or not value:
+                continue
+            suffix = name[len("sweep_"):]
+            if not suffix.isdigit():
+                return []
+            checked.add(int(suffix))
+        return sorted(checked)
+
+    def _memory_entities_merge(self) -> None:
+        """The page's entity merge (ticket #92): union the aliases,
+        relink every fact, one entity remains. The audit row names ids,
+        never entity names."""
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        survivor = _memory_entity_id(body.get("survivor"))
+        removed = _memory_entity_id(body.get("removed"))
+        if survivor is None or removed is None:
+            self._memory_hygiene_error_response(
+                400, 'expected {"survivor": <id>, "removed": <id>}'
+            )
+            return
+        try:
+            merged = memory.merge_entities(survivor, removed)
+        except ValueError as exc:
+            self._memory_hygiene_error_response(400, str(exc))
+            return
+        except UnknownEntity as exc:
+            self._memory_hygiene_error_response(404, str(exc))
+            return
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "memory.merge",
+                target=str(survivor),
+                detail=f"merged entity {removed} into entity {survivor}",
+            )
+        self._memory_response({
+            "status": "ok",
+            "survivor": merged.id,
+            "survivorName": merged.canonical_name,
+            "aliases": list(merged.aliases),
+            "type": merged.type,
+            "merged": removed,
+        })
+
+    def _memory_hygiene_error_response(self, status: int, cause: str) -> None:
+        """A refused hygiene action: the error page for a form post, the
+        JSON cause for an API call."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Memory hygiene", cause)
+            return
+        self._send_json(status, {"error": cause})
 
     def _memory_recall(self) -> None:
         """The preview: render the page with the ranked answers, best

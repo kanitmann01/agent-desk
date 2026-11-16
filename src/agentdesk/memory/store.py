@@ -42,7 +42,9 @@ vacuum. Duplicate detection on an encrypted bank compares the text_idx
 blind index, never plaintext (the exact-name entity guard narrows
 through entity_name_index the same way); the conversion's own dedupe
 runs while the bank is still plaintext, like the donor's, and write-
-time dedupe is ticket #92's scope, left out of this one.
+time dedupe gates every write (ticket #92): add() reuses the row a
+normalized duplicate matches, riding the text_idx blind index on a
+sealed bank with a decrypt-verify second.
 """
 
 import json
@@ -52,7 +54,15 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
-from agentdesk.memory.core import Fact, UnknownFact
+from agentdesk.memory.core import (
+    EditResult,
+    EntitySummary,
+    Fact,
+    RemovedFacts,
+    SweepCandidate,
+    UnknownEntity,
+    UnknownFact,
+)
 from agentdesk.memory.crypto import (
     KEY_FILE_NAME,
     CryptoBox,
@@ -63,11 +73,13 @@ from agentdesk.memory.crypto import (
 )
 from agentdesk.memory.extract import ENTITY_TYPES
 from agentdesk.memory.hybrid import EntityLink, normalize_name, rank_hybrid
+from agentdesk.memory.knowledge_gap import junk_reason
 from agentdesk.memory.resolve import (
     EntityRepo,
     EntityRef,
     Mention,
     StoredEntity,
+    dedupe_aliases,
     display_name,
     resolve_mentions,
 )
@@ -288,22 +300,32 @@ def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM facts WHERE id = ?", (extra_id,))
 
 
+def _prune_orphan_statements(conn: sqlite3.Connection) -> list[int]:
+    """The donor's pruneOrphanObservations body: delete the citations
+    whose fact is gone, then the observations left with zero citations,
+    and return the removed observation ids. Runs no transaction of its
+    own so the caller's write stays atomic (spec decision 24: orphan
+    citations and uncited observations are pruned whenever facts are
+    deleted)."""
+    conn.execute(
+        "DELETE FROM observation_sources WHERE fact_id NOT IN"
+        " (SELECT id FROM facts)"
+    )
+    doomed = conn.execute(
+        "SELECT id FROM observations WHERE id NOT IN"
+        " (SELECT observation_id FROM observation_sources)"
+    ).fetchall()
+    for (observation_id,) in doomed:
+        conn.execute("DELETE FROM observations WHERE id = ?", (observation_id,))
+    return [int(row[0]) for row in doomed]
+
+
 def _prune_orphan_observations(conn: sqlite3.Connection) -> None:
-    """The donor's pruneOrphanObservations (single bank): delete the
-    citations whose fact is gone, then the observations left with zero
-    citations. Runs before the conversion so nothing sealed is orphaned
-    by it afterwards."""
+    """The standalone prune (the conversion's pre-step): the statements
+    above in their own transaction. Runs before the conversion so
+    nothing sealed is orphaned by it afterwards."""
     with conn:
-        conn.execute(
-            "DELETE FROM observation_sources WHERE fact_id NOT IN"
-            " (SELECT id FROM facts)"
-        )
-        doomed = conn.execute(
-            "SELECT id FROM observations WHERE id NOT IN"
-            " (SELECT observation_id FROM observation_sources)"
-        ).fetchall()
-        for (observation_id,) in doomed:
-            conn.execute("DELETE FROM observations WHERE id = ?", (observation_id,))
+        _prune_orphan_statements(conn)
 
 
 def _read_marker(conn: sqlite3.Connection) -> str | None:
@@ -484,11 +506,17 @@ class MemoryStore:
         occurrence_ts: float | None = None,
         source_id: int | None = None,
     ) -> Fact:
-        """Insert one fact. The kind vocabulary and the numeric
-        occurrence are checked here so the caller hears ValueError
-        before the database would refuse the row. Sealed: the plaintext
-        column is blanked and the ciphertext plus blind index land in
-        the same transaction, bound to the row id the insert returns."""
+        """Insert one fact, unless a normalized duplicate already exists
+        (ticket #92, the donor's saveFact): then no row is inserted, the
+        incoming occurrence backfills the survivor's only if that is
+        null (embedding backfill arrives with ticket #95), and the
+        surviving Fact is returned, so a caller that resolves mentions
+        afterwards links them onto the existing row with INSERT OR
+        IGNORE edges. The kind vocabulary and the numeric occurrence are
+        checked here so the caller hears ValueError before the database
+        would refuse the row. Sealed: the plaintext column is blanked
+        and the ciphertext plus blind index land in the same
+        transaction, bound to the row id the insert returns."""
         self._guard()
         if kind not in _KINDS:
             raise ValueError(f"kind must be one of {_KINDS}, not {kind!r}")
@@ -496,29 +524,122 @@ class MemoryStore:
             raise ValueError("occurrence_ts must be a number or None")
         text = text.strip()
         with self.conn:
-            cursor = self.conn.execute(
-                "INSERT INTO facts (text, source, created_ts, kind, occurrence_ts,"
-                " source_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (self._plain(text), source, self.clock(), kind, occurrence_ts, source_id),
-            )
-            fact_id = int(cursor.lastrowid)
-            self._seal_fact_text(fact_id, text)
+            existing_id = self._find_identical_fact(text)
+            if existing_id is not None:
+                # Ticket #92, the donor's write-path reuse: the row is
+                # reused, the new occurrence fills only a null, and the
+                # embedding backfill into a null arrives with #95.
+                self._backfill_occurrence(existing_id, occurrence_ts)
+                fact_id = existing_id
+            else:
+                cursor = self.conn.execute(
+                    "INSERT INTO facts (text, source, created_ts, kind, occurrence_ts,"
+                    " source_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    (self._plain(text), source, self.clock(), kind, occurrence_ts, source_id),
+                )
+                fact_id = int(cursor.lastrowid)
+                self._seal_fact_text(fact_id, text)
         return self.get(fact_id)
 
-    def edit(self, fact_id: int, text: str) -> Fact:
-        """Replace the text; source and created_ts stay (provenance and
-        the recall tie-break are not the editor's to change). Sealed:
-        the same row id rebinds the new ciphertext."""
+    def _find_identical_fact(
+        self, text: str, exclude_id: int | None = None
+    ) -> int | None:
+        """The donor's findIdenticalFact: the oldest fact (created_ts,
+        then id) whose normalized text equals this one, its id or None.
+        An empty normalized text matches nothing, so blank rows are not
+        duplicates of each other. Plaintext banks scan like the reads
+        do; sealed banks take the text_idx blind lookup first and
+        decrypt-verify each candidate's normalized text second (the
+        seam ticket #94 maintains), so no plaintext is compared."""
+        target = _normalize_fact_text(text)
+        if not target:
+            return None
+        if self._box is not None:
+            rows = self.conn.execute(
+                "SELECT id, text_enc FROM facts WHERE text_idx = ?"
+                " ORDER BY created_ts ASC, id ASC",
+                (self._box.blind(target),),
+            ).fetchall()
+            for fact_id, text_enc in rows:
+                if exclude_id is not None and fact_id == exclude_id:
+                    continue
+                if text_enc is None:
+                    raise MemoryEncryptedError("Missing ciphertext for facts.text.")
+                stored = self._box.open(text_enc, "facts", "text", fact_id)
+                if _normalize_fact_text(stored) == target:
+                    return int(fact_id)
+            return None
+        rows = self.conn.execute(
+            "SELECT id, text FROM facts ORDER BY created_ts ASC, id ASC"
+        ).fetchall()
+        for fact_id, stored in rows:
+            if exclude_id is not None and fact_id == exclude_id:
+                continue
+            if _normalize_fact_text(stored) == target:
+                return int(fact_id)
+        return None
+
+    def _backfill_occurrence(self, fact_id: int, occurrence_ts: float | None) -> None:
+        """The donor's fillOccurrenceTime: an incoming occurrence fills
+        a null and never overwrites a value already on the row."""
+        if occurrence_ts is None:
+            return
+        self.conn.execute(
+            "UPDATE facts SET occurrence_ts = ?"
+            " WHERE id = ? AND occurrence_ts IS NULL",
+            (occurrence_ts, fact_id),
+        )
+
+    def edit(self, fact_id: int, text: str) -> EditResult:
+        """Replace the text, merging into an existing duplicate when the
+        new normalized text matches another fact's (ticket #92, the
+        donor's updateFact): the edited fact's entity mentions move onto
+        the survivor (INSERT OR IGNORE, then the source edges go), the
+        survivor's null occurrence is backfilled from the edited row,
+        the edited row and its citations are deleted, and any
+        observation left uncited is pruned with them. The survivor is
+        the oldest other fact, like the donor's ordering. An edit to a
+        unique text behaves exactly as before and reports no merge.
+        Sealed: the same row id rebinds the new ciphertext on the
+        non-merge path; the merge path only moves and deletes rows."""
         self._guard()
         self.get(fact_id)
         text = text.strip()
+        survivor_id = fact_id
+        merged = False
         with self.conn:
-            self.conn.execute(
-                "UPDATE facts SET text = ? WHERE id = ?",
-                (self._plain(text), fact_id),
-            )
-            self._seal_fact_text(fact_id, text)
-        return self.get(fact_id)
+            duplicate_id = self._find_identical_fact(text, exclude_id=fact_id)
+            if duplicate_id is not None:
+                merged = True
+                survivor_id = duplicate_id
+                # Move the edited fact's mentions onto the survivor.
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO edges (fact_id, entity_id)"
+                    " SELECT ?, entity_id FROM edges WHERE fact_id = ?",
+                    (duplicate_id, fact_id),
+                )
+                row = self.conn.execute(
+                    "SELECT occurrence_ts FROM facts WHERE id = ?", (fact_id,)
+                ).fetchone()
+                if row is not None and row[0] is not None:
+                    self._backfill_occurrence(duplicate_id, row[0])
+                self.conn.execute("DELETE FROM edges WHERE fact_id = ?", (fact_id,))
+                self.conn.execute(
+                    "DELETE FROM observation_sources WHERE fact_id = ?", (fact_id,)
+                )
+                self.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+                # Spec decision 24: pruning follows every fact deletion.
+                _prune_orphan_statements(self.conn)
+            else:
+                self.conn.execute(
+                    "UPDATE facts SET text = ? WHERE id = ?",
+                    (self._plain(text), fact_id),
+                )
+                self._seal_fact_text(fact_id, text)
+        return EditResult(
+            fact=self.get(survivor_id),
+            merged_into=merged,
+        )
 
     def delete(self, fact_id: int) -> None:
         self._guard()
@@ -575,6 +696,154 @@ class MemoryStore:
                     (fact_id, ref.id),
                 )
         return resolved
+
+    # -- hygiene actions (ticket #92) ---------------------------------------
+
+    def entities(self) -> list[EntitySummary]:
+        """Every entity with its names, type and fact count, canonical
+        name then id order. Sealed banks load through decryption, so
+        the ordering is applied over the decrypted names."""
+        self._guard()
+        counts = {
+            int(row[0]): int(row[1])
+            for row in self.conn.execute(
+                "SELECT entity_id, COUNT(*) FROM edges GROUP BY entity_id"
+            ).fetchall()
+        }
+        summaries = [
+            EntitySummary(
+                id=entity.id,
+                canonical_name=entity.canonical_name,
+                aliases=entity.aliases,
+                type=entity.type,
+                fact_count=counts.get(entity.id, 0),
+            )
+            for entity in self._entity_repo().load()
+        ]
+        summaries.sort(key=lambda summary: (summary.canonical_name, summary.id))
+        return summaries
+
+    def merge_entities(self, survivor_id: int, removed_id: int) -> StoredEntity:
+        """The page's manual entity merge (ticket #92): the removed
+        entity's aliases and canonical name union into the survivor's
+        alias list (deduped by normalized form, the donor's
+        dedupeAliases), every mention edge is relinked onto the survivor
+        (INSERT OR IGNORE), the removed entity and its index rows go,
+        and the survivor's type upgrades from "other" like the automatic
+        resolution's do. Merging an entity with itself is refused; an
+        unknown id is an UnknownEntity. One transaction; sealed banks
+        re-seal the survivor's names and rebuild its entity_name_index
+        rows through the same seam resolution writes."""
+        self._guard()
+        if survivor_id == removed_id:
+            raise ValueError("an entity cannot be merged with itself")
+        repo = self._entity_repo()
+        loaded = {entity.id: entity for entity in repo.load()}
+        survivor = loaded.get(survivor_id)
+        removed = loaded.get(removed_id)
+        if survivor is None:
+            raise UnknownEntity(f"no entity {survivor_id}")
+        if removed is None:
+            raise UnknownEntity(f"no entity {removed_id}")
+        merged_aliases = dedupe_aliases(
+            [*survivor.aliases, *removed.aliases, removed.canonical_name],
+            survivor.canonical_name,
+        )
+        merged_type = (
+            removed.type if survivor.type == "other" and removed.type != "other"
+            else survivor.type
+        )
+        with self.conn:
+            # Relink: every mention edge keeps its fact and swaps the
+            # removed entity for the survivor.
+            self.conn.execute(
+                "INSERT OR IGNORE INTO edges (fact_id, entity_id)"
+                " SELECT fact_id, ? FROM edges WHERE entity_id = ?",
+                (survivor_id, removed_id),
+            )
+            self.conn.execute("DELETE FROM edges WHERE entity_id = ?", (removed_id,))
+            self.conn.execute(
+                "DELETE FROM entity_name_index WHERE entity_id = ?", (removed_id,)
+            )
+            repo.save(survivor_id, survivor.canonical_name, merged_aliases, merged_type)
+            self.conn.execute("DELETE FROM entities WHERE id = ?", (removed_id,))
+        return StoredEntity(
+            id=survivor_id,
+            canonical_name=survivor.canonical_name,
+            aliases=merged_aliases,
+            type=merged_type,
+        )
+
+    def sweep_candidates(self) -> list[SweepCandidate]:
+        """The junk sweep's dry run (ticket #92): every fact the ported
+        junk_reason (memory/knowledge_gap) would drop, in creation
+        order, each with its reason. Sealed banks read decrypted text
+        like every other read; nothing is written here."""
+        self._guard()
+        candidates: list[SweepCandidate] = []
+        for fact in self.all():
+            reason = junk_reason(fact.text)
+            if reason is not None:
+                candidates.append(SweepCandidate(fact=fact, reason=reason))
+        return candidates
+
+    def remove_facts(self, fact_ids) -> RemovedFacts:
+        """The donor's removeFacts (ticket #92): all-or-nothing by id
+        (one missing id refuses the whole call before anything is
+        written), then one transaction deletes the facts' edges and
+        citations and the facts themselves, prunes the orphan
+        observations, and deletes the entities that the removed facts
+        mentioned and that are left with zero edges. Duplicate ids
+        collapse; an empty list is a ValueError."""
+        self._guard()
+        unique = list(dict.fromkeys(int(fact_id) for fact_id in fact_ids))
+        if not unique:
+            raise ValueError("at least one fact id is required")
+        marks = ",".join("?" for _ in unique)
+        with self.conn:
+            present = {
+                int(row[0])
+                for row in self.conn.execute(
+                    f"SELECT id FROM facts WHERE id IN ({marks})", unique
+                ).fetchall()
+            }
+            missing = [fact_id for fact_id in unique if fact_id not in present]
+            if missing:
+                raise UnknownFact(f"no fact {missing[0]}")
+            entity_ids = [
+                int(row[0])
+                for row in self.conn.execute(
+                    f"SELECT DISTINCT entity_id FROM edges WHERE fact_id IN ({marks})",
+                    unique,
+                ).fetchall()
+            ]
+            self.conn.execute(f"DELETE FROM edges WHERE fact_id IN ({marks})", unique)
+            self.conn.execute(
+                f"DELETE FROM observation_sources WHERE fact_id IN ({marks})", unique
+            )
+            self.conn.execute(f"DELETE FROM facts WHERE id IN ({marks})", unique)
+            observation_ids = _prune_orphan_statements(self.conn)
+            entity_removed: list[int] = []
+            for entity_id in entity_ids:
+                still_used = self.conn.execute(
+                    "SELECT 1 FROM edges WHERE entity_id = ? LIMIT 1", (entity_id,)
+                ).fetchone()
+                if still_used is not None:
+                    continue
+                # The donor deletes only edge-less entities; a sealed
+                # bank trims the blind index rows with the row itself.
+                self.conn.execute(
+                    "DELETE FROM entity_name_index WHERE entity_id = ?", (entity_id,)
+                )
+                self.conn.execute(
+                    "DELETE FROM entities WHERE id = ?", (entity_id,)
+                )
+                entity_removed.append(entity_id)
+        return RemovedFacts(
+            fact_ids=tuple(unique),
+            observation_ids=tuple(observation_ids),
+            entity_ids=tuple(entity_removed),
+        )
 
     # -- encryption action (ticket #94) -----------------------------------
 

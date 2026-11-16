@@ -194,25 +194,121 @@ def test_sealed_recall_finds_facts_by_keyword_and_entity():
     _close(store)
 
 
-def test_a_duplicate_add_behaves_exactly_as_the_plaintext_store():
-    # Current behavior, asserted precisely on both sides: write-time
-    # dedupe is ticket #92's scope, so a normalized-duplicate add creates
-    # a second row in both modes. The conversion dedupes (below); the
-    # blind index is there so #92 can ride it on an encrypted bank.
+def test_a_duplicate_add_reuses_the_row_in_both_modes():
+    # Ticket #92 deliberately updates this pin (it replaced #94's pin
+    # that a duplicate add creates a second row): write-time dedup gates
+    # every write now, on a plaintext bank by the scan and on a sealed
+    # bank through the text_idx blind lookup with a decrypt-verify
+    # second, so a normalized duplicate reuses the existing row in both
+    # modes and no second row appears.
     plain = _open(":memory:")
-    plain.add("Revenue is 220", source="page")
-    plain.add("  revenue\tis 220 ", source="page")
+    first = plain.add("Revenue is 220", source="page")
+    again = plain.add("  revenue\tis 220 ", source="page")
+    assert again.id == first.id
+    assert len(plain.all()) == 1
     sealed = _open(":memory:", key=KEY)
-    sealed.add("Revenue is 220", source="page")
-    sealed.add("  revenue\tis 220 ", source="page")
-    assert len(plain.all()) == len(sealed.all()) == 2
+    sealed_first = sealed.add("Revenue is 220", source="page")
+    sealed_again = sealed.add("  revenue\tis 220 ", source="page")
+    assert sealed_again.id == sealed_first.id
+    assert len(sealed.all()) == 1
     box = CryptoBox(KEY)
     idx = [r[0] for r in sealed.conn.execute(
         "SELECT text_idx FROM facts ORDER BY id"
     )]
-    assert idx == [box.blind("revenue is 220")] * 2
+    assert idx == [box.blind("revenue is 220")]
     _close(plain)
     _close(sealed)
+
+
+# -- hygiene parity (ticket #92) -----------------------------------------------
+
+
+def test_sealed_write_time_dedup_parity():
+    # The plaintext dedup story over a sealed bank: the duplicate rides
+    # the blind index (no plaintext is compared), the row is reused,
+    # the null occurrence is backfilled, and nothing plaintext lands on
+    # disk.
+    store = _open(":memory:", key=KEY)
+    first = store.add("Revenue is 220", source="page")
+    assert first.occurrence_ts is None
+    again = store.add(
+        "  revenue   is 220 ", source="inbox card 3", occurrence_ts=1700000000.0
+    )
+    assert again.id == first.id
+    facts = store.all()
+    assert len(facts) == 1
+    assert facts[0].text == "Revenue is 220", "the stored text wins"
+    assert facts[0].source == "page", "the existing provenance stays"
+    assert facts[0].occurrence_ts == 1700000000.0
+    row = _raw_fact_row(store)
+    assert row["text"] == "" and row["text_enc"] is not None
+    _close(store)
+
+
+def test_sealed_edit_merge_parity():
+    # The edit merge over a sealed bank: mentions move, the null
+    # occurrence is backfilled, the edited row goes, and every answer
+    # comes back through decryption.
+    store = _open(":memory:", key=KEY)
+    kept = store.add("Revenue is 220", source="page")
+    store.resolve_and_link(kept.id, [("Acme", "org")])
+    store.clock.advance(5.0)
+    edited = store.add("meeting room booked", source="page", occurrence_ts=1700000000.0)
+    store.resolve_and_link(edited.id, [("Maya", "person")])
+    result = store.edit(edited.id, "  revenue   is 220 ")
+    assert result.merged_into is True
+    assert result.fact.id == kept.id
+    facts = store.all()
+    assert [f.id for f in facts] == [kept.id]
+    assert facts[0].text == "Revenue is 220"
+    assert facts[0].occurrence_ts == 1700000000.0
+    # Both entities now hang off the survivor, readable by name.
+    assert [f.id for _s, f in store.recall("acme")] == [kept.id]
+    assert [f.id for _s, f in store.recall("maya")] == [kept.id]
+    raw_edges = store.conn.execute(
+        "SELECT fact_id, entity_id FROM edges ORDER BY 1"
+    ).fetchall()
+    assert raw_edges == [(kept.id, 1), (kept.id, 2)]
+    _close(store)
+
+
+def test_sealed_sweep_and_entity_merge_parity():
+    # The sweep and the entity merge read decrypted text and write no
+    # plaintext anywhere: candidates classify over ciphertext, the
+    # delete prunes orphans, and the merged survivor's names re-seal
+    # with a rebuilt name index.
+    store = _open(":memory:", key=KEY)
+    junk = store.add("I do not have any information about that.", source="page")
+    store.resolve_and_link(junk.id, [("Nothing Inc", "org")])
+    real = store.add("revenue is 220", source="page")
+    store.resolve_and_link(real.id, [("Acme", "org")])
+    other = store.add("Globex shipped the widget", source="page")
+    store.resolve_and_link(other.id, [("Globex", "org")])
+    candidates = {c.fact.id: c.reason for c in store.sweep_candidates()}
+    assert candidates == {junk.id: "knowledge-gap"}
+    removed = store.remove_facts([junk.id])
+    assert removed.fact_ids == (junk.id,)
+    assert removed.entity_ids == (1,), "the entity the junk alone mentioned went too"
+    assert [f.id for f in store.all()] == [real.id, other.id]
+    # The surviving entity keeps its blind index rows; only the removed
+    # entity's go.
+    box = CryptoBox(KEY)
+    surviving_index = store.conn.execute(
+        "SELECT name_idx FROM entity_name_index WHERE entity_id = 2"
+    ).fetchall()
+    assert [r[0] for r in surviving_index] == [box.blind("acme")]
+    survivor = store.merge_entities(2, 3)
+    assert survivor.canonical_name == "Acme"
+    assert survivor.aliases == ("Globex",)
+    indexed = store.conn.execute(
+        "SELECT name_idx FROM entity_name_index"
+    ).fetchall()
+    box = CryptoBox(KEY)
+    assert {r[0] for r in indexed} == {box.blind("acme"), box.blind("globex")}
+    # Sealed reads still answer; nothing plaintext was ever written.
+    # Recency puts the newer fact first.
+    assert [f.id for _s, f in store.recall("globex")] == [other.id, real.id]
+    _close(store)
 
 
 def test_sealed_plaintext_tables_stay_plaintext():
@@ -368,7 +464,10 @@ def test_key_file_permissions_are_user_only_where_the_platform_honors_it(tmp_pat
 def _plaintext_bank(path, key_path=None) -> MemoryStore:
     store = _open(path, key_path=key_path)
     first = store.add("Revenue is 220", source="page")
-    duplicate = store.add("  revenue   is 220 ", source="inbox card 3")
+    # Ticket #92: a normalized duplicate no longer inserts a row, so
+    # the fixture's doomed fact is a distinct one (write-time dedup
+    # only changes which text is used here, not the orphan shape).
+    spare = store.add("quarterly numbers pending review", source="inbox card 3")
     meeting = store.add("the meeting room is booked", source="page")
     store.add_source("we met Tuesday", speaker="Kanit", context="thread")
     store.resolve_and_link(first.id, [("Acme", "org")])
@@ -389,7 +488,7 @@ def _plaintext_bank(path, key_path=None) -> MemoryStore:
     )
     store.conn.execute(
         "INSERT INTO observation_sources (observation_id, fact_id) VALUES (2, ?)",
-        (duplicate.id,),
+        (spare.id,),
     )
     # The orphan state the prune step exists to fix: the fact is gone
     # but its citation and observation remain. Foreign keys would block
@@ -399,7 +498,7 @@ def _plaintext_bank(path, key_path=None) -> MemoryStore:
     # pragma is a no-op inside a transaction, hence the commits.
     store.conn.commit()
     store.conn.execute("PRAGMA foreign_keys = OFF")
-    store.conn.execute("DELETE FROM facts WHERE id = ?", (duplicate.id,))
+    store.conn.execute("DELETE FROM facts WHERE id = ?", (spare.id,))
     store.conn.commit()
     store.conn.execute("PRAGMA foreign_keys = ON")
     store.conn.commit()
@@ -479,8 +578,16 @@ def test_encrypt_all_twice_reports_already_encrypted_and_changes_nothing(tmp_pat
 def test_encrypt_all_dedupes_and_prunes_before_sealing(tmp_path):
     db = tmp_path / "memory.sqlite3"
     store = _plaintext_bank(db)
-    # A live duplicate of fact 1, merged by the pre-step.
-    store.add("revenue is 220", source="page")
+    # A duplicate of fact 1 that predates ticket #92 (a row an older
+    # build or a foreign writer left behind): write-time dedup would
+    # refuse it at add() today, and the conversion's own pre-step still
+    # merges such rows before sealing. The newer duplicate has no edges
+    # or citations, so the plain-DELETE pre-step keeps the older keeper.
+    store.conn.execute(
+        "INSERT INTO facts (text, source, created_ts)"
+        " VALUES ('revenue is 220', 'page', 110.0)"
+    )
+    store.conn.commit()
     store.encrypt_all(KEY)
     reopened = _open(db, key=KEY)
     texts = [f.text for f in reopened.all()]

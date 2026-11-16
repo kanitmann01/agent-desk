@@ -76,10 +76,13 @@ def test_get_returns_one_fact_and_unknown_raises():
 def test_edit_replaces_the_text_and_keeps_the_rest():
     store = _store()
     fact = store.add("revenue is 220", source="page")
-    edited = store.edit(fact.id, "revenue is 480")
-    assert edited.text == "revenue is 480"
-    assert edited.source == "page"
-    assert edited.created_ts == fact.created_ts
+    # Ticket #92: edit answers an EditResult; a unique-text edit carries
+    # the edited fact itself and merged_into False.
+    result = store.edit(fact.id, "revenue is 480")
+    assert result.merged_into is False
+    assert result.fact.text == "revenue is 480"
+    assert result.fact.source == "page"
+    assert result.fact.created_ts == fact.created_ts
     with pytest.raises(UnknownFact):
         store.edit(999, "nothing")
 
@@ -119,11 +122,11 @@ def _ts(year, month, day, hour=0, minute=0):
 NOW = _ts(2026, 11, 15, 12)
 
 
-def _seed_entity(conn, name, aliases="[]"):
+def _seed_entity(conn, name, aliases="[]", entity_type="org"):
     cursor = conn.execute(
         "INSERT INTO entities (canonical_name, aliases_json, type, created_ts)"
-        " VALUES (?, ?, 'org', 100.0)",
-        (name, aliases),
+        " VALUES (?, ?, ?, 100.0)",
+        (name, aliases, entity_type),
     )
     return int(cursor.lastrowid)
 
@@ -316,12 +319,18 @@ def test_v1_duplicates_collapse_into_the_oldest_row_once(tmp_path):
     with contextlib.closing(sqlite3.connect(str(path), check_same_thread=False)) as conn:
         reopened = MemoryStore(conn, FakeClock())
         assert [f.id for f in reopened.all()] == [4, 5, 1, 3]  # a reopen dedupes nothing
-        again = reopened.add("revenue is 220", source="page")  # no write-time dedupe yet
-        assert again.id not in {1, 3, 4, 5}
+        # Ticket #92: write-time dedup gates every write now, so a
+        # re-added normalized duplicate reuses the oldest matching row
+        # instead of inserting a second one.
+        again = reopened.add("revenue is 220", source="page")
+        assert again.id == 3
     with contextlib.closing(sqlite3.connect(str(path), check_same_thread=False)) as conn:
         final = MemoryStore(conn, FakeClock())
-        # the re-added duplicate survives the reopen: no second migration
-        assert {f.id for f in final.all()} == {1, 3, 4, 5, again.id}
+        # The re-added duplicate created no row (ticket #92), so the
+        # reopen finds the same four facts: no second migration, and no
+        # new duplicate for it to merge either.
+        assert {f.id for f in final.all()} == {1, 3, 4, 5}
+        assert [f.id for f in final.all()] == [4, 5, 1, 3]
 
 
 def test_new_tables_enforce_their_constraints():
@@ -485,3 +494,352 @@ def test_resolve_and_link_rejects_an_unknown_fact_and_a_bad_type():
         store.resolve_and_link(fact.id, [("Maya", "robot")])
     assert _entities(store.conn) == []
     assert _edges(store.conn) == []
+
+
+# -- hygiene (ticket #92): write-time dedup ----------------------------------
+
+
+def test_add_reuses_the_existing_row_for_a_normalized_duplicate():
+    store = _store()
+    first = store.add("Revenue is 220", source="page")
+    store.clock.advance(5.0)
+    again = store.add("  revenue\tis 220 ", source="inbox card 3")
+    assert again.id == first.id, "the duplicate reuses the row, it does not insert"
+    facts = store.all()
+    assert len(facts) == 1
+    assert facts[0].text == "Revenue is 220", "the stored (oldest) text wins"
+    assert facts[0].source == "page", "the existing provenance stays"
+    assert facts[0].created_ts == 100.0, "the existing creation time stays"
+    rows = store.conn.execute("SELECT COUNT(*) FROM facts").fetchone()
+    assert rows[0] == 1
+
+
+def test_add_of_a_distinct_text_still_creates_a_row():
+    store = _store()
+    store.add("revenue is 220", source="page")
+    other = store.add("revenue is 220!", source="page")  # punctuation differs
+    store.add("REVENU E IS 220", source="page")  # a token differs
+    assert len(store.all()) == 3
+    assert other.id == 2
+
+
+def test_dedup_links_new_entity_mentions_onto_the_existing_row():
+    store = _store()
+    first = store.add("Maya joined Acme", source="page")
+    store.resolve_and_link(first.id, [("Maya", "person")])
+    again = store.add("maya joined ACME", source="page")
+    assert again.id == first.id
+    store.resolve_and_link(again.id, [("Acme", "org")])
+    assert _entities(store.conn) == [(1, "Maya", [], "person"), (2, "Acme", [], "org")]
+    assert _edges(store.conn) == [(first.id, 1), (first.id, 2)]
+
+
+def test_dedup_backfills_occurrence_only_into_a_null():
+    store = _store()
+    first = store.add("launch happened", source="page")
+    assert first.occurrence_ts is None
+    again = store.add("  LAUNCH   happened ", occurrence_ts=1700000000.0)
+    assert again.id == first.id
+    assert store.get(first.id).occurrence_ts == 1700000000.0, "the null is filled"
+    third = store.add("launch happened", occurrence_ts=1800000000.0)
+    assert third.id == first.id
+    assert store.get(first.id).occurrence_ts == 1700000000.0, "a filled value stays"
+    # And an incoming None never blanks an existing occurrence.
+    fourth = store.add("launch happened")
+    assert fourth.id == first.id
+    assert store.get(first.id).occurrence_ts == 1700000000.0
+
+
+# -- hygiene (ticket #92): the edit merge -------------------------------------
+
+
+def test_edit_onto_another_facts_text_merges_and_reports():
+    store = _store()
+    kept = store.add("revenue is 220", source="page")
+    store.clock.advance(5.0)
+    edited = store.add("meeting room booked", source="page", occurrence_ts=1700000000.0)
+    store.resolve_and_link(edited.id, [("Acme", "org")])
+    result = store.edit(edited.id, "  REVENUE   IS 220 ")
+    assert result.merged_into is True
+    assert result.fact.id == kept.id, "the oldest fact survives"
+    assert result.fact.text == "revenue is 220"
+    facts = store.all()
+    assert [f.id for f in facts] == [kept.id], "the edited row is gone"
+    # The edited fact's mentions moved onto the survivor.
+    assert _edges(store.conn) == [(kept.id, 1)]
+    # The survivor's null occurrence is backfilled from the merged row.
+    assert facts[0].occurrence_ts == 1700000000.0
+    with pytest.raises(UnknownFact):
+        store.get(edited.id)
+
+
+def test_edit_merge_backfills_nothing_when_both_sides_have_a_null_occurrence():
+    store = _store()
+    kept = store.add("revenue is 220", source="page")
+    edited = store.add("meeting room booked", source="page")
+    result = store.edit(edited.id, "revenue is 220")
+    assert result.merged_into is True
+    assert result.fact.occurrence_ts is None
+
+
+def test_edit_to_a_unique_text_behaves_exactly_as_before():
+    store = _store()
+    fact = store.add("revenue is 220", source="page")
+    result = store.edit(fact.id, "revenue is 480")
+    assert result.merged_into is False
+    assert result.fact.id == fact.id
+    assert result.fact.text == "revenue is 480"
+    assert result.fact.source == "page"
+    assert result.fact.created_ts == fact.created_ts
+
+
+def test_edit_to_the_facts_own_text_merges_nothing():
+    store = _store()
+    first = store.add("revenue is 220", source="page")
+    second = store.add("meeting room booked", source="page")
+    result = store.edit(first.id, "  REVENUE IS 220 ")
+    assert result.merged_into is False, "the fact itself is excluded from the match"
+    assert result.fact.id == first.id
+    assert [f.id for f in store.all()] == [first.id, second.id]
+
+
+def test_edit_merge_prunes_observations_cited_only_by_the_edited_fact():
+    store = _store()
+    kept = store.add("revenue is 220", source="page")
+    edited = store.add("meeting room booked", source="page")
+    other = store.add("the offsite is planned", source="page")
+    store.conn.execute(
+        "INSERT INTO observations (scope_key, text, confidence, created_ts, updated_ts)"
+        " VALUES ('all', 'Doomed pattern.', 0.9, 100.0, 100.0)"
+    )
+    store.conn.execute(
+        "INSERT INTO observation_sources (observation_id, fact_id) VALUES (1, ?)",
+        (edited.id,),
+    )
+    store.conn.execute(
+        "INSERT INTO observations (scope_key, text, confidence, created_ts, updated_ts)"
+        " VALUES ('all', 'Surviving pattern.', 0.9, 100.0, 100.0)"
+    )
+    store.conn.execute(
+        "INSERT INTO observation_sources (observation_id, fact_id) VALUES (2, ?)",
+        (kept.id,),
+    )
+    store.conn.execute(
+        "INSERT INTO observation_sources (observation_id, fact_id) VALUES (2, ?)",
+        (other.id,),
+    )
+    store.conn.commit()
+    store.edit(edited.id, "revenue is 220")
+    rows = store.conn.execute(
+        "SELECT id, text FROM observations ORDER BY id"
+    ).fetchall()
+    assert [r[0] for r in rows] == [2], "the citation-less observation is pruned"
+    citations = store.conn.execute(
+        "SELECT observation_id, fact_id FROM observation_sources"
+    ).fetchall()
+    assert citations == [(2, kept.id), (2, other.id)]
+
+
+# -- hygiene (ticket #92): entity merge ---------------------------------------
+
+
+def test_merge_entities_unions_aliases_and_relinks_edges():
+    store = _store()
+    first = store.add("the acme merger closed", source="page")
+    second = store.add("the offsite is planned", source="page")
+    third = store.add("the bonus pool grew", source="page")
+    survivor = _seed_entity(store.conn, "Acme", aliases='["Acme Corp"]')
+    removed = _seed_entity(store.conn, "ACME Industries", aliases='["Bee"]')
+    _seed_edge(store.conn, first.id, survivor)
+    _seed_edge(store.conn, second.id, survivor)
+    _seed_edge(store.conn, second.id, removed)
+    _seed_edge(store.conn, third.id, removed)
+    merged = store.merge_entities(survivor, removed)
+    assert merged.id == survivor
+    assert merged.canonical_name == "Acme"
+    # Union of both alias lists plus the removed canonical name, deduped
+    # by normalized form, first-seen order kept.
+    assert merged.aliases == ("Acme Corp", "Bee", "ACME Industries")
+    entities = _entities(store.conn)
+    assert len(entities) == 1
+    assert entities[0] == (survivor, "Acme", ["Acme Corp", "Bee", "ACME Industries"], "org")
+    assert _edges(store.conn) == [
+        (first.id, survivor),
+        (second.id, survivor),
+        (third.id, survivor),
+    ]
+
+
+def test_merge_entities_upgrades_the_survivors_other_type():
+    store = _store()
+    survivor = _seed_entity(store.conn, "Acme", entity_type="other")
+    removed = _seed_entity(store.conn, "Acme Industries", entity_type="org")
+    merged = store.merge_entities(survivor, removed)
+    assert merged.type == "org", "types upgrade from other, like resolution does"
+
+
+def test_merge_entities_dedupes_an_alias_that_equals_the_survivors_canonical():
+    store = _store()
+    survivor = _seed_entity(store.conn, "Acme")
+    removed = _seed_entity(store.conn, "ACME", aliases='["A K A"]')
+    merged = store.merge_entities(survivor, removed)
+    assert merged.aliases == ("A K A",), "ACME normalizes onto the canonical and drops"
+
+
+def test_merge_entities_refuses_merging_an_entity_with_itself():
+    store = _store()
+    entity_id = _seed_entity(store.conn, "Acme")
+    with pytest.raises(ValueError, match="itself"):
+        store.merge_entities(entity_id, entity_id)
+    assert len(_entities(store.conn)) == 1
+
+
+def test_merge_entities_refuses_unknown_ids():
+    store = _store()
+    entity_id = _seed_entity(store.conn, "Acme")
+    from agentdesk.memory.core import UnknownEntity
+
+    with pytest.raises(UnknownEntity):
+        store.merge_entities(entity_id, 999)
+    with pytest.raises(UnknownEntity):
+        store.merge_entities(999, entity_id)
+    assert len(_entities(store.conn)) == 1
+    assert _edges(store.conn) == []
+
+
+# -- hygiene (ticket #92): the entity list -------------------------------------
+
+
+def test_entities_lists_canonical_names_aliases_types_and_fact_counts():
+    store = _store()
+    first = store.add("Maya joined Acme", source="page")
+    second = store.add("Acme shipped the widget", source="page")
+    third = store.add("the offsite is planned", source="page")
+    store.resolve_and_link(first.id, [("Maya Rahman", "person"), ("Acme", "org")])
+    store.resolve_and_link(second.id, [("Acme", "org")])
+    store.resolve_and_link(third.id, [("Offsite Club", "other")])
+    summaries = store.entities()
+    assert [(s.canonical_name, s.aliases, s.type, s.fact_count) for s in summaries] == [
+        ("Acme", (), "org", 2),
+        ("Maya Rahman", (), "person", 1),
+        ("Offsite Club", (), "other", 1),
+    ]
+
+
+def test_entities_on_an_empty_bank_is_empty():
+    store = _store()
+    assert store.entities() == []
+
+
+# -- hygiene (ticket #92): the junk sweep --------------------------------------
+
+
+def test_sweep_candidates_classify_with_the_donors_reasons():
+    store = _store()
+    gap = store.add("I do not have any information about that.", source="retain")
+    unknown = store.add("unknown", source="page")
+    empty = store.add("", source="page")
+    inability = store.add(
+        "Sorry, I could not find any details about it due to restrictions.",
+        source="retain",
+    )
+    narration = store.add("I searched Wikipedia for the revenue report.", source="retain")
+    priority = store.add(
+        "Sorry, I could not find any details about it due to restrictions."
+        " I do not have any information about that.",
+        source="retain",
+    )
+    dated = store.add("I tried to open the page yesterday.", source="retain")
+    mixed = store.add(
+        "I do not have that information. Revenue is 220.", source="retain"
+    )
+    real = store.add("revenue is 220", source="page")
+    candidates = {c.fact.id: c.reason for c in store.sweep_candidates()}
+    assert candidates[gap.id] == "knowledge-gap"
+    assert candidates[unknown.id] == "unknown"
+    assert candidates[empty.id] == "empty"
+    assert candidates[inability.id] == "inability"
+    assert candidates[narration.id] == "session-narration"
+    # Priority: inability over knowledge-gap over session-narration.
+    assert candidates[priority.id] == "inability"
+    # A dated event escapes the session-narration rule.
+    assert dated.id not in candidates
+    # A disclaimer mixed with a real sentence stays (sentence-level rule).
+    assert mixed.id not in candidates
+    assert real.id not in candidates
+
+
+def test_sweep_candidates_come_in_creation_order():
+    store = _store()
+    first = store.add("unknown", source="page")
+    store.clock.advance(5.0)
+    second = store.add("tbd", source="page")
+    candidates = [c.fact.id for c in store.sweep_candidates()]
+    assert candidates == [first.id, second.id]
+    assert [c.reason for c in store.sweep_candidates()] == ["unknown", "unknown"]
+
+
+# -- hygiene (ticket #92): removeFacts semantics --------------------------------
+
+
+def test_remove_facts_deletes_edges_and_citations_then_prunes_orphans():
+    store = _store()
+    doomed = store.add("meeting room booked", source="page")
+    linked_elsewhere = store.add("the offsite is planned", source="page")
+    store.resolve_and_link(doomed.id, [("Acme", "org"), ("Maya", "person")])
+    store.resolve_and_link(linked_elsewhere.id, [("Acme", "org")])
+    store.conn.execute(
+        "INSERT INTO observations (scope_key, text, confidence, created_ts, updated_ts)"
+        " VALUES ('all', 'Doomed pattern.', 0.9, 100.0, 100.0)"
+    )
+    store.conn.execute(
+        "INSERT INTO observation_sources (observation_id, fact_id) VALUES (1, ?)",
+        (doomed.id,),
+    )
+    store.conn.execute(
+        "INSERT INTO observations (scope_key, text, confidence, created_ts, updated_ts)"
+        " VALUES ('all', 'Surviving pattern.', 0.9, 100.0, 100.0)"
+    )
+    store.conn.execute(
+        "INSERT INTO observation_sources (observation_id, fact_id) VALUES (2, ?)",
+        (linked_elsewhere.id,),
+    )
+    store.conn.commit()
+    removed = store.remove_facts([doomed.id])
+    assert removed.fact_ids == (doomed.id,)
+    assert removed.observation_ids == (1,), "the citation-less observation went too"
+    assert sorted(removed.entity_ids) == [2], "Acme keeps an edge, Maya lost its last"
+    assert [f.id for f in store.all()] == [linked_elsewhere.id]
+    assert _edges(store.conn) == [(linked_elsewhere.id, 1)]
+    assert _entities(store.conn) == [(1, "Acme", [], "org")]
+    rows = store.conn.execute("SELECT id FROM observations").fetchall()
+    assert [r[0] for r in rows] == [2]
+    citations = store.conn.execute(
+        "SELECT observation_id, fact_id FROM observation_sources"
+    ).fetchall()
+    assert citations == [(2, linked_elsewhere.id)]
+
+
+def test_remove_facts_is_all_or_nothing_when_an_id_is_missing():
+    store = _store()
+    first = store.add("revenue is 220", source="page")
+    second = store.add("meeting room booked", source="page")
+    store.resolve_and_link(first.id, [("Acme", "org")])
+    with pytest.raises(UnknownFact):
+        store.remove_facts([first.id, 999])
+    assert [f.id for f in store.all()] == [first.id, second.id]
+    assert _edges(store.conn) == [(first.id, 1)], "nothing was deleted"
+
+
+def test_remove_facts_collapses_duplicate_ids():
+    store = _store()
+    fact = store.add("revenue is 220", source="page")
+    removed = store.remove_facts([fact.id, fact.id])
+    assert removed.fact_ids == (fact.id,)
+    assert store.all() == []
+
+
+def test_remove_facts_refuses_an_empty_id_list():
+    store = _store()
+    with pytest.raises(ValueError):
+        store.remove_facts([])

@@ -12,6 +12,12 @@ confirm checkbox), the already-encrypted note, and the locked banner a
 marker without its key renders instead of any fact surface. A locked
 store never reads or writes plaintext, so the page shows the cause and
 nothing else.
+
+Ticket #92 adds the hygiene surfaces: an entities section (canonical
+name, aliases, type, fact count) with the two-entity merge form, the
+junk-sweep preview (GET /memory/sweep lists the candidates with their
+reasons and a checkbox each), and the plain notice an edit that merged
+into an existing duplicate renders.
 """
 
 import html
@@ -19,11 +25,19 @@ import html
 from agentdesk.server.pages import page_shell
 from datetime import datetime
 
-from agentdesk.memory.core import Fact
+from agentdesk.memory.core import EntitySummary, Fact, SweepCandidate
 
 # The ranked recall preview keeps the server's honest score display:
 # deterministic, explainable, no pretense of intelligence.
 _SCORE_PLACES = 3
+
+# The plain notice the edit route renders when the edit merged into an
+# existing fact with the same text (ticket #92).
+EDIT_MERGE_NOTICE = (
+    "That edit matched a fact already saved with the same words: the "
+    "edited row merged into the older copy, its entity mentions moved "
+    "with it, and only one fact remains."
+)
 
 
 def _count(value: int, noun: str) -> str:
@@ -138,6 +152,82 @@ def _recall_section(recall: list[tuple[float, Fact]] | None, query: str) -> str:
     return form + f"<ol id='recall-preview'>{rows}</ol>"
 
 
+def _entities_section(entities: list[EntitySummary]) -> str:
+    """The compact entity list with the two-entity merge form (ticket
+    #92): one row per entity, canonical name, aliases, type and the
+    fact count; the form only renders when there is something to
+    merge."""
+    if not entities:
+        return (
+            "<h2>Entities</h2>"
+            "<p class='empty' id='entities-empty'>No entities yet: they "
+            "appear when a retained fact names someone or something.</p>"
+        )
+    rows = []
+    for entity in entities:
+        entity_id = html.escape(str(entity.id))
+        aka = ""
+        if entity.aliases:
+            aka = ", aka " + ", ".join(html.escape(a) for a in entity.aliases)
+        rows.append(
+            f"<li id='entity-{entity_id}'>{html.escape(entity.canonical_name)}"
+            f" <span class='empty mono'>{html.escape(entity.type)},"
+            f" {_count(entity.fact_count, 'fact')}{aka}</span></li>"
+        )
+    merge_form = ""
+    if len(entities) >= 2:
+        options = "".join(
+            f'<option value="{html.escape(str(entity.id))}">'
+            f"{html.escape(entity.canonical_name)}</option>"
+            for entity in entities
+        )
+        merge_form = (
+            '<form method="post" action="/memory/entities/merge" class="cardform">'
+            '<label class="empty" for="merge-survivor">Merge two entities the '
+            "automatic rules missed: the second one's names and facts join "
+            "the first.</label>"
+            f'<select id="merge-survivor" name="survivor">{options}</select>'
+            f'<select id="merge-removed" name="removed">{options}</select>'
+            '<button class="btn btn-secondary" type="submit">Merge entities</button>'
+            "</form>"
+        )
+    return (
+        "<h2>Entities</h2>"
+        f"<ul id='entities-list'>{''.join(rows)}</ul>{merge_form}"
+    )
+
+
+def _sweep_section(candidates: list[SweepCandidate]) -> str:
+    """The junk sweep preview (ticket #92): every candidate with its
+    reason and a checkbox, deleting only what is checked."""
+    if not candidates:
+        return (
+            "<h2 id='sweep'>Junk sweep</h2>"
+            "<p class='empty' id='sweep-empty'>No junk candidates: every "
+            "stored fact carries real content.</p>"
+        )
+    rows = []
+    for candidate in candidates:
+        fact_id = html.escape(str(candidate.fact.id))
+        rows.append(
+            f'<li><input type="checkbox" id="sweep-{fact_id}"'
+            f' name="sweep_{fact_id}" value="on">'
+            f'<label for="sweep-{fact_id}">{html.escape(candidate.fact.text)}</label>'
+            f' <span class="empty mono">{html.escape(candidate.reason)}</span></li>'
+        )
+    return (
+        '<h2 id="sweep">Junk sweep</h2>'
+        f"<p class='empty'>{_count(len(candidates), 'candidate')} the "
+        "assistant would drop (placeholders, its own knowledge gaps and "
+        "session narration). Check what to delete; citations, orphaned "
+        "observations and edge-less entities go with them.</p>"
+        '<form method="post" action="/memory/sweep" class="cardform">'
+        f"<ul id='sweep-candidates'>{''.join(rows)}</ul>"
+        '<button class="btn btn-secondary" type="submit">Delete checked</button>'
+        "</form>"
+    )
+
+
 def render_memory_page(
     facts: list[Fact],
     version: str,
@@ -146,16 +236,23 @@ def render_memory_page(
     inbox_count: int = 0,
     locked: str | None = None,
     encrypt: dict | None = None,
+    entities: list[EntitySummary] | None = None,
+    sweep: list[SweepCandidate] | None = None,
+    notice: str | None = None,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview,
+    the entities with their merge form, the optional junk-sweep preview,
     and the encryption surfaces. Locked: the banner alone."""
     if locked is not None:
         content = f"""<h1>Memory</h1>
 {_locked_banner(locked)}
 """
         return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)
+    notice_row = f'<p id="memory-notice">{html.escape(notice)}</p>\n' if notice else ""
+    sweep_row = _sweep_section(sweep) if sweep is not None else ""
+    entities_row = _entities_section(entities) if entities is not None else ""
     content = f"""<h1>Memory</h1>
-<p>Facts saved on this machine. The assistant recalls at most five of
+{notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
 them, 500 characters in total, as derived abstractions it may read;
 nothing is captured from your conversations. Facts arrive here, or with
 an inbox card you accept.</p>
@@ -169,5 +266,7 @@ an inbox card you accept.</p>
 </form>
 <h2>Saved facts</h2>
 {_fact_rows(facts)}
+{entities_row}
+{sweep_row}
 """
     return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)
