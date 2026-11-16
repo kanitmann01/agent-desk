@@ -1,50 +1,43 @@
-/* Agent Desk dashboard SPA styles: the warm-paper design system from
-   DESIGN.md ("Mission Control for One").
-
-   The room is calm and warm: Warm Ledger Paper ground, white cards,
-   four-level green-gray ink, one commanding Ink Bottle Green for action
-   and healthy status, terracotta only when a number goes down, and the
-   Manila pair (flag ground, ink text) for "look here soon". Numerals
-   are the actors: IBM Plex Mono, always tabular, the KPI value the only
-   28px mono object on the page. Depth is layered paper lift only: a
-   hairline-weight ink ring and a stacked soft shadow; nothing blurs,
-   glows, or floats. Every animated behavior honors
-   prefers-reduced-motion and degrades to an instant state change. */
-@import "@fontsource-variable/plus-jakarta-sans/wght.css";
+/* Agent Desk, morning brief. Stone paper, black rules, one oxide for
+   the action, fir only on a number that went up. Source Serif for the
+   greeting, Source Sans for the UI, IBM Plex Mono for figures.
+   Depth is a hard offset, never a blurred card shadow. */
+@import "@fontsource-variable/source-serif-4/wght.css";
+@import "@fontsource-variable/source-sans-3/wght.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
 :root{
   color-scheme: light;
-  --bg:#F6F4EF;
-  --surface:#FFFFFF;
-  --surface-2:#FBFAF7;
-  --hairline:#E5E1D6;
-  --ink-1:#1F2A27;
-  --ink-2:#4C5A55;
-  --ink-3:#77847E;
-  --ink-4:#A9B1AC;
-  --primary:#14594E;
-  --primary-ink:#F6FBF9;
-  --primary-soft:#E4EEE9;
-  --good:#14594E;
-  --bad:#B3402A;
-  --bad-soft:rgba(179,64,42,.10);
-  --attention-bg:#FBF3E2;
-  --attention-ink:#8A5A14;
-  --hover-wash:#EFEDE5;
-  --scrim:rgba(31,42,39,.36);
-  --r-card:12px;
-  --r-control:8px;
-  --r-inner:6px;
-  --r-pill:999px;
-  --dur:160ms;
-  --font-display:"Plus Jakarta Sans Variable","Plus Jakarta Sans","Segoe UI",system-ui,sans-serif;
-  --font-ui:"Plus Jakarta Sans Variable","Plus Jakarta Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --bg:#F6F3EC;
+  --surface:#FFFDF8;
+  --surface-2:#F6F3EC;
+  --hairline:#141414;
+  --ink-1:#141414;
+  --ink-2:#3A3A3A;
+  --ink-3:#5C5C5C;
+  --ink-4:#8A8A8A;
+  --primary:#8C2F2F;
+  --primary-ink:#FFFDF8;
+  --primary-soft:#F3E4E1;
+  --good:#1B6B3A;
+  --bad:#8C2F2F;
+  --bad-soft:#F3E4E1;
+  --attention-bg:#F6F3EC;
+  --attention-ink:#8C2F2F;
+  --hover-wash:#EFEAE0;
+  --scrim:rgba(20,20,20,.46);
+  --r-card:0px;
+  --r-control:0px;
+  --r-inner:0px;
+  --r-pill:0px;
+  --dur:120ms;
+  --font-display:"Source Serif 4 Variable","Source Serif 4","Iowan Old Style",Palatino,serif;
+  --font-ui:"Source Sans 3 Variable","Source Sans 3","Segoe UI",sans-serif;
   --font-mono:"IBM Plex Mono","Consolas",monospace;
-  --shadow-card:0 0 0 1px rgba(31,42,39,.05), 0 1px 2px -1px rgba(31,42,39,.06), 0 2px 4px 0 rgba(31,42,39,.04);
-  --shadow-card-hover:0 0 0 1px rgba(31,42,39,.07), 0 1px 2px -1px rgba(31,42,39,.08), 0 2px 4px 0 rgba(31,42,39,.06);
+  --shadow-card:6px 6px 0 #141414;
+  --shadow-card-hover:6px 6px 0 #141414;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body,#root{min-height:100%}
@@ -70,33 +63,31 @@ svg{display:block;flex:none}
 *{scrollbar-width:thin;scrollbar-color:var(--ink-4) transparent}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 
-.app{position:relative;z-index:1;display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+.app{position:relative;z-index:1;display:grid;grid-template-columns:200px 1fr;min-height:calc(100vh - 32px);margin:16px;background:var(--bg);border:2px solid var(--ink-1);box-shadow:8px 8px 0 var(--ink-1)}
 
 /* The rail: a full-height Input Well column with a hairline right
    border. Same four entries and the same honest disabled Plugins entry
    as before. */
 .rail{
-  position:sticky;top:0;height:100vh;
-  padding:20px 12px 14px;display:flex;flex-direction:column;gap:4px;
-  background:var(--surface-2);border-right:1px solid var(--hairline);
+  position:sticky;top:0;height:100%;
+  padding:20px 16px 16px;display:flex;flex-direction:column;gap:2px;
+  background:transparent;border-right:2px solid var(--ink-1);
 }
 .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
-.brand .mark{
-  width:28px;height:28px;border-radius:var(--r-control);display:grid;place-items:center;
-  color:var(--primary-ink);background:var(--primary);
-}
-.brand .brand-name{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.brand .mark{display:none}
+.brand .brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em;white-space:nowrap}
+.rail-mark{display:none;font-family:var(--font-mono);font-weight:600;font-size:14px}
 .rail a,.rail .nav-off{
   display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);
   color:var(--ink-2);font-weight:600;font-size:13.5px;text-decoration:none;
   transition:background var(--dur) ease,color var(--dur) ease;
 }
 .rail a:hover{background:var(--hover-wash);color:var(--ink-1)}
-.rail a[aria-current="page"]{background:var(--primary-soft);color:var(--primary)}
+.rail a[aria-current="page"]{background:transparent;color:var(--ink-1);box-shadow:inset 0 -2px 0 var(--ink-1);border-radius:0}
 .rail .nav-off{opacity:.45}
 .rail .count{
-  margin-left:auto;font-family:var(--font-mono);font-size:11px;font-weight:600;
-  background:var(--primary);color:var(--primary-ink);border-radius:var(--r-pill);padding:1px 7px;
+  margin-left:8px;font-family:var(--font-mono);font-size:14px;font-weight:500;
+  background:transparent;color:var(--ink-1);border-radius:0;padding:0;
 }
 .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px 4px;border-top:1px solid var(--hairline)}
 .rail .user .avatar{
@@ -121,6 +112,7 @@ svg{display:block;flex:none}
   .rail-collapsed .rail{padding:20px 10px 14px}
   .rail-collapsed .rail a{position:relative;justify-content:center;padding:8px 0;gap:0}
   .rail-collapsed .rail .rail-label{display:none}
+  .rail-collapsed .rail .rail-mark{display:inline}
   .rail-collapsed .rail .count{position:absolute;top:4px;right:4px;margin-left:0;padding:0 5px;font-size:10px}
   .rail-collapsed .rail .rail-toggle{justify-content:center;gap:0}
   .rail-collapsed .rail-toggle .rail-toggle-label{display:none}
@@ -138,22 +130,22 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
    and the live source line read as quiet stamps beside it. */
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:24px}
 .hero-title{
-  font-family:var(--font-display);font-weight:800;
-  font-size:28px;line-height:1.15;letter-spacing:-.02em;
+  font-family:var(--font-display);font-weight:560;
+  font-size:56px;line-height:1.05;letter-spacing:-.03em;
 }
 .hero-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:8px;color:var(--ink-2);font-size:13px}
 .hero-live{
-  display:inline-flex;align-items:center;gap:8px;padding:5px 11px;border-radius:var(--r-pill);
-  background:var(--surface);font-size:12.5px;font-weight:600;color:var(--ink-2);
-  box-shadow:inset 0 0 0 1px var(--hairline);
+  display:inline-flex;align-items:center;gap:8px;padding:0;border-radius:0;
+  background:transparent;font-size:14px;font-weight:600;color:var(--primary);
+  box-shadow:none;
 }
 .hero-actions{display:flex;flex-direction:row;align-items:center;gap:8px;padding-bottom:4px}
 
 /* The research command bar: a white well on the paper, an inset
    hairline ring, and the surface's one solid-green send control. */
 .cmd{
-  position:relative;margin:0 0 28px;border-radius:var(--r-control);
-  background:var(--surface);box-shadow:var(--shadow-card);
+  position:relative;margin:0 0 28px;border-radius:0;
+  background:var(--surface);border:2px solid var(--ink-1);box-shadow:none;
 }
 .cmd-inner{
   display:flex;align-items:flex-end;gap:12px;padding:10px 10px 10px 16px;border-radius:inherit;
@@ -175,10 +167,10 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .cmd-send{
   display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;
   min-height:36px;font-weight:700;font-size:14px;color:var(--primary-ink);white-space:nowrap;
-  background:var(--primary);box-shadow:var(--shadow-card);
+  background:transparent;color:var(--primary);box-shadow:none;
   transition:box-shadow var(--dur) ease,filter var(--dur) ease;
 }
-.cmd-send:hover:not(:disabled){box-shadow:var(--shadow-card-hover)}
+.cmd-send:hover:not(:disabled){text-decoration:underline}
 .cmd-send:active:not(:disabled){filter:brightness(.92)}
 
 /* The bento grid: role-sized spans, never a uniform mosaic. */
@@ -190,11 +182,11 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 /* The card shell: Card White on paper, lifted only on hover. The
    paper-lift shadow is the only depth in the system. */
 .card{
-  position:relative;flex:1;display:flex;min-width:0;border-radius:var(--r-card);
-  background:var(--surface);box-shadow:var(--shadow-card);
-  transition:box-shadow 200ms ease;
+  position:relative;flex:1;display:flex;min-width:0;border-radius:0;
+  background:var(--surface);border:2px solid var(--ink-1);box-shadow:none;
+  transition:box-shadow var(--dur) ease;
 }
-.card:hover{box-shadow:var(--shadow-card-hover)}
+.card:hover{box-shadow:4px 4px 0 var(--ink-1)}
 /* Amber stays a stamp-level treatment (the Manila pair on the freshness
    stamp and the alert block); the card itself stays paper-white. */
 .widget{padding:18px 18px 14px;display:flex;flex-direction:column;gap:12px;height:100%;width:100%;align-self:stretch;color:var(--ink-1);line-height:1.5;text-align:left}
@@ -264,7 +256,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .kpi{display:flex;flex-direction:column;gap:6px;padding:6px 0 2px}
 .kpi .label{font-size:12px;font-weight:600;color:var(--ink-3)}
 .kpi .value{
-  font-family:var(--font-mono);font-size:28px;font-weight:600;line-height:1.1;
+  font-family:var(--font-mono);font-size:64px;font-weight:500;line-height:1;
   letter-spacing:-.01em;color:var(--good);
   font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
 }
@@ -353,11 +345,11 @@ table.rows td.neg{color:var(--bad)}
   transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;
 }
 .btn-primary{
-  background:var(--primary);color:var(--primary-ink);box-shadow:var(--shadow-card);
+  background:var(--ink-1);color:var(--primary-ink);box-shadow:none;border:2px solid var(--ink-1);
 }
-.btn-primary:hover:not(:disabled){box-shadow:var(--shadow-card-hover)}
-.btn-primary:active:not(:disabled){filter:brightness(.92)}
-.btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btn-primary:hover:not(:disabled){box-shadow:4px 4px 0 var(--ink-1)}
+.btn-primary:active:not(:disabled){box-shadow:none}
+.btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:none;border:2px solid var(--ink-1)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
 
 /* The skills strip: plain rows (title, up to two description lines, and
@@ -406,10 +398,8 @@ table.rows td.neg{color:var(--bad)}
   /* Words hide; every link already carries its aria-label. The strip
      stays wrapping (it must not scroll sideways) and drops to icon
      height so the greeting starts higher. */
-  .rail .rail-label,.rail .brand b,.rail .brand-name{display:none}
-  .rail a{position:relative;justify-content:center;min-height:44px;min-width:44px}
-  .rail .count{position:absolute;top:2px;right:2px;margin-left:0}
-  html{scroll-padding-top:112px}
+  .rail a{min-height:44px}
+  html{scroll-padding-top:72px}
   .rail .user{display:none}
   /* The strip already carries every entry; collapse is a tall-rail
      control and does nothing on the wrapping strip. */

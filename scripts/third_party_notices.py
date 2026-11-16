@@ -154,7 +154,7 @@ def render(sbom: dict[str, Any], root: Path) -> tuple[str, list[str]]:
             "",
             "### Fonts",
             "",
-            "The dashboard uses IBM Plex Mono and Plus Jakarta Sans through",
+            "The dashboard uses IBM Plex Mono, Source Serif 4 and Source Sans 3 through",
             "`@fontsource` packages. Both are SIL Open Font License 1.1. The",
             "licence text and copyright notice ship with the font files in",
             "`frontend/public/licenses/` and are copied into the bundle.",

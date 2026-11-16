@@ -23,7 +23,8 @@ column is the repository path; `scripts/build_bundle.py` copies
 
 | Component | Version | Licence | Upstream text |
 |---|---|---|---|
-| @fontsource-variable/plus-jakarta-sans | 5.3.0 | OFL-1.1 | `frontend/public/licenses/OFL-PlusJakartaSans.txt` (sha256 `e281343ddd89d3dd381c3dc6636a7496723e9b64e94330c1c5aa0363d7c4c3a8`, 4627 bytes) |
+| @fontsource-variable/source-serif-4 | 5.3.1 | OFL-1.1 | `frontend/public/licenses/OFL-SourceSerif4.txt` |
+| @fontsource-variable/source-sans-3 | 5.3.1 | OFL-1.1 | `frontend/public/licenses/OFL-SourceSans3.txt` |
 | @fontsource/ibm-plex-mono | 5.3.0 | OFL-1.1 | `frontend/public/licenses/OFL-IBMPlexMono.txt` (sha256 `03b9b5ee8909a33418aaebfa6a807da48c6edebdde79b5b026258a2463e2919b`, 5392 bytes) |
 | cpython | bundled | PSF-2.0 | `licenses/third-party/python-LICENSE.txt` (sha256 `939d8e9fa591cbaff0d51e777edb4c1002045d2600ce43a1ae28530cecfc5b88`, 34824 bytes) |
 | react | 19.3.1 | MIT | `licenses/third-party/react-19.3.1-LICENSE.txt` (sha256 `da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93`, 1088 bytes) |
@@ -32,7 +33,7 @@ column is the repository path; `scripts/build_bundle.py` copies
 
 ### Fonts
 
-The dashboard uses IBM Plex Mono and Plus Jakarta Sans through
+The dashboard uses IBM Plex Mono, Source Serif 4 and Source Sans 3 through
 `@fontsource` packages. Both are SIL Open Font License 1.1. The
 licence text and copyright notice ship with the font files in
 `frontend/public/licenses/` and are copied into the bundle.

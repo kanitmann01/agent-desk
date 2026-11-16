@@ -44,7 +44,7 @@ NODE_RADIUS = 10.0
 # Presentation attributes per edge type (the CSP governs style
 # attributes, but SVG painting attributes keep the markup static).
 _EDGE_STYLE = {
-    "entity": {"stroke": "#14594E", "width": "1.5", "dash": None},
+    "entity": {"stroke": "#1B6B3A", "width": "1.5", "dash": None},
     "temporal": {"stroke": "#8A5A14", "width": "1.3", "dash": "5 4"},
     "derived": {"stroke": "#B3402A", "width": "1.3", "dash": None},
     "semantic": {"stroke": "#4C5A55", "width": "1.1", "dash": "1.5 3.5"},
@@ -151,7 +151,7 @@ def _node_groups(snapshot: GraphSnapshot, positions: dict) -> str:
     groups = []
     for node in snapshot.nodes:
         x, y = positions[node.id]
-        fill = "#B3402A" if node.derived else "#14594E"
+        fill = "#8C2F2F" if node.derived else "#1B6B3A"
         # Recency shading: a brand-new node paints full strength, the
         # thirty-day half-life fades the circle toward a quarter.
         opacity = 0.25 + 0.75 * max(0.0, min(1.0, node.recency))

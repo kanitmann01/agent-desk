@@ -67,8 +67,11 @@ LOCAL_LICENSE_FILES = {
     "pkg:npm/react@19.3.1": "licenses/third-party/react-19.3.1-LICENSE.txt",
     "pkg:npm/react-dom@19.3.1": "licenses/third-party/react-dom-19.3.1-LICENSE.txt",
     "pkg:npm/scheduler@0.28.0": "licenses/third-party/scheduler-0.28.0-LICENSE.txt",
-    "pkg:npm/%40fontsource-variable/plus-jakarta-sans@5.3.0": (
-        "frontend/public/licenses/OFL-PlusJakartaSans.txt"
+    "pkg:npm/%40fontsource-variable/source-serif-4@5.3.1": (
+        "frontend/public/licenses/OFL-SourceSerif4.txt"
+    ),
+    "pkg:npm/%40fontsource-variable/source-sans-3@5.3.1": (
+        "frontend/public/licenses/OFL-SourceSans3.txt"
     ),
     "pkg:npm/%40fontsource/ibm-plex-mono@5.3.0": (
         "frontend/public/licenses/OFL-IBMPlexMono.txt"
@@ -80,7 +83,8 @@ LOCAL_LICENSE_FILES = {
 # components listed here. Keep in sync with scripts/license_gate.py.
 LICENSE_EXCEPTIONS = {
     "pkg:generic/cpython": "PSF-2.0",
-    "pkg:npm/%40fontsource-variable/plus-jakarta-sans@5.3.0": "OFL-1.1",
+    "pkg:npm/%40fontsource-variable/source-serif-4@5.3.1": "OFL-1.1",
+    "pkg:npm/%40fontsource-variable/source-sans-3@5.3.1": "OFL-1.1",
     "pkg:npm/%40fontsource/ibm-plex-mono@5.3.0": "OFL-1.1",
     "pkg:npm/%40csstools/color-helpers@5.1.0": "MIT-0",
     "pkg:npm/caniuse-lite@1.0.30001826": "CC-BY-4.0",
