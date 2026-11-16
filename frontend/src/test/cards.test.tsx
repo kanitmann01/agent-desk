@@ -413,6 +413,10 @@ describe('the card overflow menus', () => {
     const connect = screen.getByRole('menuitem', { name: 'Connect your calendar' });
     expect(connect).toHaveAttribute('href', '/walkthrough/calendar');
     expect(screen.getByRole('menuitem', { name: 'Open settings' })).toHaveAttribute('href', '/settings');
+    const path = screen.getByText('agent-desk/calendar_sync.json');
+    expect(path.tagName).toBe('CODE');
+    expect(path).toHaveClass('nowrap');
+    expect(path.textContent).toBe('agent-desk/calendar_sync.json');
   });
 
   it('carries Open settings on the research and skills cards', async () => {
