@@ -9,8 +9,11 @@ fact from conversation text.
 
 Schema version 2 (ticket #89, the donor's migration): a schema_meta row
 stamps the version, facts gain kind, occurrence_ts and source_id, and
-the donor's sources, entities, edges and observations tables exist for
-the later tickets that populate them (enforcing their constraints is
+the donor's sources, entities, edges and observations tables exist.
+Retain (ticket #91) populates sources, entities and edges: add_source()
+records a retained excerpt, resolve_and_link() runs the donor's entity
+resolution (memory/resolve.py) for one accepted fact and writes its
+mention edges in one transaction (enforcing the tables' constraints is
 SQLite's job, not this module's). Opening a v1 database (no stamp)
 upgrades it in place and runs the donor's startup dedupe exactly once;
 a stamped database reopens untouched. Recall ranks through the hybrid
@@ -23,7 +26,16 @@ import sqlite3
 from collections.abc import Callable
 
 from agentdesk.memory.core import Fact, UnknownFact
+from agentdesk.memory.extract import ENTITY_TYPES
 from agentdesk.memory.hybrid import EntityLink, rank_hybrid
+from agentdesk.memory.resolve import (
+    EntityRepo,
+    EntityRef,
+    Mention,
+    StoredEntity,
+    display_name,
+    resolve_mentions,
+)
 
 SCHEMA_VERSION = "2"
 
@@ -246,6 +258,43 @@ class MemoryStore:
         with self.conn:
             self.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
 
+    def add_source(self, text: str, speaker: str = "", context: str = "") -> int:
+        """Record one retained excerpt and return its id: the provenance
+        every candidate fact from that retain shares."""
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO sources (text, speaker, context, created_ts)"
+                " VALUES (?, ?, ?, ?)",
+                (text, speaker, context, self.clock()),
+            )
+        return int(cursor.lastrowid)
+
+    def resolve_and_link(self, fact_id: int, mentions) -> list[EntityRef]:
+        """Resolve a fact's (name, type) mentions against the loaded
+        entities and write the entities and mention edges in one
+        transaction. Duplicate edges are tolerated (INSERT OR IGNORE);
+        an unknown fact or an unknown entity type is a ValueError or
+        UnknownFact before anything is written."""
+        self.get(fact_id)
+        cleaned: list[Mention] = []
+        for name, mention_type in mentions:
+            if mention_type not in ENTITY_TYPES:
+                raise ValueError(
+                    f"entity type must be one of {ENTITY_TYPES}, not {mention_type!r}"
+                )
+            folded = display_name(name)
+            if folded:
+                cleaned.append(Mention(folded, mention_type))
+        repo = _EntityRepo(self.conn, self.clock)
+        with self.conn:
+            resolved = resolve_mentions(repo, cleaned)
+            for ref in resolved:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO edges (fact_id, entity_id) VALUES (?, ?)",
+                    (fact_id, ref.id),
+                )
+        return resolved
+
     # -- reads ------------------------------------------------------------
 
     def get(self, fact_id: int) -> Fact:
@@ -303,3 +352,60 @@ class MemoryStore:
                 EntityLink(id=entity_id, name=name, aliases=_parse_aliases(aliases_json))
             )
         return links
+
+
+class _EntityRepo(EntityRepo):
+    """The resolution seam over the store's connection: entities load in
+    id order (the donor's insertion order) and every write runs inside
+    the transaction resolve_and_link opened, so a batch is all or
+    nothing."""
+
+    def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float]) -> None:
+        self.conn = conn
+        self.clock = clock
+
+    def load(self) -> list[StoredEntity]:
+        rows = self.conn.execute(
+            "SELECT id, canonical_name, aliases_json, type FROM entities"
+            " ORDER BY id ASC"
+        ).fetchall()
+        return [
+            StoredEntity(
+                id=row[0],
+                canonical_name=row[1],
+                aliases=_parse_aliases(row[2]),
+                type=row[3],
+            )
+            for row in rows
+        ]
+
+    def save(self, entity_id: int, canonical: str, aliases, entity_type: str) -> None:
+        self.conn.execute(
+            "UPDATE entities SET canonical_name = ?, aliases_json = ?, type = ?"
+            " WHERE id = ?",
+            (canonical, json.dumps(list(aliases), ensure_ascii=False), entity_type, entity_id),
+        )
+
+    def create(self, name: str, entity_type: str) -> int:
+        cursor = self.conn.execute(
+            "INSERT INTO entities (canonical_name, aliases_json, type, created_ts)"
+            " VALUES (?, '[]', ?, ?)",
+            (name, entity_type, self.clock()),
+        )
+        return int(cursor.lastrowid)
+
+    def linked_fact_ids(self, entity_ids) -> dict[int, set[int]]:
+        """The fact adjacency the co-occurrence winner reads: one entry
+        per asked id, empty sets included."""
+        ids = list(set(entity_ids))
+        linked: dict[int, set[int]] = {entity_id: set() for entity_id in ids}
+        if not ids:
+            return linked
+        marks = ",".join("?" for _ in ids)
+        rows = self.conn.execute(
+            f"SELECT entity_id, fact_id FROM edges WHERE entity_id IN ({marks})",
+            ids,
+        ).fetchall()
+        for entity_id, fact_id in rows:
+            linked[entity_id].add(int(fact_id))
+        return linked

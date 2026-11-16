@@ -7,6 +7,7 @@ closed properly, the way the app runs it.
 """
 
 import contextlib
+import json
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -357,3 +358,130 @@ def test_add_rejects_a_bad_kind_and_a_non_numeric_occurrence():
     assert fact.occurrence_ts == 1700000000.0
     assert fact.source_id is None
     assert [f.text for f in store.all()] == ["launch was friday"]
+
+
+# -- retain provenance and the entity graph (ticket #91) --------------------
+
+
+def _entities(conn):
+    rows = conn.execute(
+        "SELECT id, canonical_name, aliases_json, type FROM entities ORDER BY id"
+    ).fetchall()
+    return [
+        (r[0], r[1], json.loads(r[2]), r[3]) for r in rows
+    ]
+
+
+def _edges(conn):
+    rows = conn.execute(
+        "SELECT fact_id, entity_id FROM edges ORDER BY fact_id, entity_id"
+    ).fetchall()
+    return [tuple(r) for r in rows]
+
+
+def test_add_source_records_the_excerpt_with_speaker_and_context():
+    clock = FakeClock()
+    clock.advance(7.0)
+    store = _store(clock)
+    source_id = store.add_source("we met Tuesday", speaker="Kanit", context="thread")
+    row = store.conn.execute(
+        "SELECT text, speaker, context, created_ts FROM sources WHERE id = ?",
+        (source_id,),
+    ).fetchone()
+    assert row[0] == "we met Tuesday"
+    assert row[1] == "Kanit"
+    assert row[2] == "thread"
+    assert row[3] == 107.0
+
+
+def test_add_source_defaults_speaker_and_context_to_empty():
+    store = _store()
+    source_id = store.add_source("hello")
+    row = store.conn.execute(
+        "SELECT speaker, context FROM sources WHERE id = ?", (source_id,)
+    ).fetchone()
+    assert row == ("", "")
+
+
+def test_resolve_and_link_creates_entities_and_edges_for_a_new_fact():
+    store = _store()
+    fact = store.add("Maya joined Acme", source="page")
+    refs = store.resolve_and_link(
+        fact.id, [("Maya Rahman", "person"), ("Acme", "org")]
+    )
+    assert [(r.name, r.type) for r in refs] == [
+        ("Maya Rahman", "person"),
+        ("Acme", "org"),
+    ]
+    # Entities are created in mention order, ids ascending.
+    assert _entities(store.conn) == [
+        (1, "Maya Rahman", [], "person"),
+        (2, "Acme", [], "org"),
+    ]
+    assert _edges(store.conn) == [(fact.id, 1), (fact.id, 2)]
+
+
+def test_resolve_and_link_tolerates_a_duplicate_edge():
+    store = _store()
+    fact = store.add("Maya joined Acme", source="page")
+    store.resolve_and_link(fact.id, [("Maya Rahman", "person")])
+    store.resolve_and_link(fact.id, [("Maya Rahman", "person")])
+    assert _edges(store.conn) == [(fact.id, 1)]
+    assert len(_entities(store.conn)) == 1
+
+
+def test_resolve_and_link_merges_a_typo_into_one_entity():
+    store = _store()
+    first = store.add("Obermeier Lin owns the ledger", source="page")
+    second = store.add("Obermeir Lin owns the ledger", source="page")
+    store.resolve_and_link(first.id, [("Obermeier Lin", "person")])
+    refs = store.resolve_and_link(second.id, [("Obermeir Lin", "person")])
+    assert [r.id for r in refs] == [1]
+    entities = _entities(store.conn)
+    assert entities == [(1, "Obermeier Lin", [], "person")]
+    assert _edges(store.conn) == [(first.id, 1), (second.id, 1)]
+
+
+def test_resolve_and_link_promotes_a_longer_weak_match_to_canonical():
+    store = _store()
+    first = store.add("Maya sent the note", source="page")
+    second = store.add("Maya Rahman sent the note", source="page")
+    store.resolve_and_link(first.id, [("Maya", "person")])
+    refs = store.resolve_and_link(second.id, [("Maya Rahman", "person")])
+    assert [(r.id, r.name) for r in refs] == [(1, "Maya Rahman")]
+    assert _entities(store.conn) == [(1, "Maya Rahman", ["Maya"], "person")]
+
+
+def test_resolve_and_link_shares_entities_across_facts_by_cooccurrence():
+    store = _store()
+    review = store.add("Priya Nair reviewed the budget with Maya Chen", source="page")
+    lunch = store.add("Maya Chen lunched with Priya Nair on Tuesday", source="page")
+    met = store.add("Priya Nair met Maya Rahman yesterday", source="page")
+    brief = store.add("Priya met Maya today", source="page")
+    store.resolve_and_link(review.id, [("Priya Nair", "person"), ("Maya Chen", "person")])
+    store.resolve_and_link(lunch.id, [("Maya Chen", "person"), ("Priya Nair", "person")])
+    store.resolve_and_link(met.id, [("Priya Nair", "person"), ("Maya Rahman", "person")])
+    # "Maya" weak-matches both Mayas; the co-occurrence winner decides:
+    # Maya Chen shares two distinct facts with the bound Priya Nair,
+    # Maya Rahman only one.
+    refs = store.resolve_and_link(brief.id, [("Priya Nair", "person"), ("Maya", "person")])
+    assert sorted(r.id for r in refs) == [1, 2]
+    assert _entities(store.conn) == [
+        (1, "Priya Nair", [], "person"),
+        (2, "Maya Chen", ["Maya"], "person"),
+        (3, "Maya Rahman", [], "person"),
+    ]
+    assert (brief.id, 1) in _edges(store.conn)
+    assert (brief.id, 2) in _edges(store.conn)
+    assert (brief.id, 3) not in _edges(store.conn)
+
+
+def test_resolve_and_link_rejects_an_unknown_fact_and_a_bad_type():
+    store = _store()
+    with pytest.raises(UnknownFact):
+        store.resolve_and_link(999, [("Maya", "person")])
+    fact = store.add("a fact", source="page")
+    with pytest.raises(ValueError):
+        store.resolve_and_link(fact.id, [("Maya", "robot")])
+    assert _entities(store.conn) == []
+    assert _edges(store.conn) == []

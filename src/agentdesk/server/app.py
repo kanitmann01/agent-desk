@@ -21,6 +21,7 @@ import threading
 import time
 import webbrowser
 import zipfile
+from dataclasses import replace
 from io import BytesIO
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -51,6 +52,7 @@ from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import (
     KIND_MAIL_FOLLOW_UP,
+    KIND_MEMORY_DRAFT,
     KIND_UPDATE_CONSENT,
     STATUS_WAITING,
     UnknownCard,
@@ -85,6 +87,14 @@ from agentdesk.llm import (
     settings_chat,
 )
 from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.extract import (
+    EndpointExtractor,
+    ExtractionFailed,
+    ExtractorUnavailable,
+    FACT_KINDS,
+    facts_to_retain,
+    occurrence_from_source,
+)
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore
 from agentdesk.plugins.execute import PluginWidgetRunner
@@ -116,7 +126,11 @@ from agentdesk.server.mail_view import render_mail_page
 from agentdesk.server.memory_view import render_memory_page
 from agentdesk.server.plugins_view import render_plugins_page
 from agentdesk.server.peers_view import render_peers_page
-from agentdesk.server.research import render_assistant_page, render_research_widget
+from agentdesk.server.research import (
+    RETAIN_EXCERPT_MAX_CHARS,
+    render_assistant_page,
+    render_research_widget,
+)
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
 from agentdesk.server.wizard_view import (
     approval_summary,
@@ -557,6 +571,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         outbox_dir=None,
         registry_root=None,
         peer_store: PeerStore | None = None,
+        extractor=None,
         announce_port: int | None = None,
     ) -> None:
         self.sessions = sessions
@@ -581,6 +596,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.plugins = plugins
         self.wizard_store = wizard_store
         self.memory = memory_store
+        # The extractor port (ticket #91): None means the retain route
+        # builds an EndpointExtractor from the effective llm client per
+        # call; a test (or a future caller) injects its own.
+        self.extractor = extractor
         # The dashboard card arrangement (order, hidden, titles); None
         # when its store could not open, in which case reads resolve the
         # canonical default and saves refuse.
@@ -1218,6 +1237,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_delete(_memory_id_from_path(path, "/delete"))
         elif path == "/memory/recall":
             self._memory_recall()
+        elif path == "/memory/retain":
+            self._memory_retain()
         elif path.startswith("/capabilities/") and path.endswith("/retest"):
             self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
@@ -2134,6 +2155,125 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(status, payload)
 
+    # -- retain: the chat surface's save-to-memory action (ticket #91) ----
+
+    def _memory_retain(self) -> None:
+        """Turn a conversation excerpt into inbox cards, one per
+        surviving candidate fact, all sharing one source id.
+
+        The donor writes extracted facts directly; here nothing is
+        written until a card is accepted (spec decision 9), and both
+        extractor failure classes leave the bank untouched with a
+        plain-language error: JSON answers degraded like every LLM
+        turn, a form post gets the error page. The endpoint gate and
+        the llm.retain audit match every other model call. With no
+        extractor injected at construction, an EndpointExtractor is
+        built from the effective llm client per call.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        memory = server.memory
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if server.inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        excerpt = body.get("excerpt")
+        if not isinstance(excerpt, str) or not excerpt.strip():
+            self._send_json(400, {"error": 'expected {"excerpt": "..."}: the conversation you want to save'})
+            return
+        excerpt = excerpt.strip()[:RETAIN_EXCERPT_MAX_CHARS]
+        if not self._source_allowed("endpoint_enabled"):
+            self._retain_error_response(
+                409,
+                "Company endpoint calls are turned off in settings, so "
+                "this surface is paused. Everything else keeps working.",
+            )
+            return
+        _llm, endpoint, model = self._effective_llm()
+        extractor = server.extractor
+        if extractor is None:
+            extractor = EndpointExtractor(_llm)
+        try:
+            candidates = extractor.extract(excerpt)
+        except (ExtractorUnavailable, ExtractionFailed) as exc:
+            self._retain_audit(endpoint, model, self._extractor_bytes(extractor),
+                               status="error", detail=str(exc)[:200])
+            self._retain_error_response(502, str(exc))
+            return
+        self._retain_audit(endpoint, model, self._extractor_bytes(extractor))
+        kept = [
+            replace(candidate, occurrence_ts=occurrence_from_source(excerpt, candidate.occurrence_ts))
+            for candidate in facts_to_retain(candidates)
+        ]
+        if not kept:
+            # Nothing survived the donor's filters: no source row, no
+            # cards, no writes at all.
+            self._retain_response({"status": "ok", "cards": [], "sourceId": None})
+            return
+        source_id = memory.add_source(excerpt)
+        cards = [self._memory_draft_card(candidate, source_id) for candidate in kept]
+        self._evaluate_inbox(server.inbox)
+        self._retain_response({
+            "status": "ok",
+            "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
+            "sourceId": source_id,
+        })
+
+    def _extractor_bytes(self, extractor) -> int:
+        """The bytes of the prompt that went out, when the extractor
+        can say (the built-in one records it; an injected one may not)."""
+        return int(getattr(extractor, "last_request_bytes", 0) or 0)
+
+    def _retain_audit(self, endpoint: str, model: str, request_bytes: int,
+                      status: str = "ok", detail: str = "") -> None:
+        """The llm.retain row, the _ask pattern's fields."""
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "llm.retain", target=endpoint,
+                status=status, model=model, request_bytes=request_bytes, detail=detail,
+            )
+
+    def _memory_draft_card(self, candidate, source_id: int):
+        """One approval card per candidate: the editable draft is the
+        fact text, the meta carries what acceptance writes."""
+        names = ", ".join(name for name, _type in candidate.entities)
+        mentioned = names if names else "nothing named"
+        kind_word = "Experience" if candidate.kind == "experience" else "World"
+        return self.server.inbox.add(  # type: ignore[attr-defined]
+            kind=KIND_MEMORY_DRAFT,
+            origin=("Extracted from a conversation you chose to save. "
+                    "Accepting writes this fact to memory; dismissing "
+                    "leaves nothing behind."),
+            title=f"{kind_word} fact: {mentioned}",
+            body=f"From the conversation you saved. Mentions {mentioned}.",
+            action_label="Save to memory",
+            draft=candidate.text,
+            meta={"memoryFact": {
+                "kind": candidate.kind,
+                "occurrence_ts": candidate.occurrence_ts,
+                "entities": [[name, entity_type] for name, entity_type in candidate.entities],
+                "source_id": source_id,
+            }},
+        )
+
+    def _retain_response(self, payload: dict) -> None:
+        """A form post from the chat surface lands in the inbox, where
+        the new cards wait; JSON gets JSON."""
+        if self._is_form_submit():
+            self._send_redirect("/inbox")
+            return
+        self._send_json(200, payload)
+
+    def _retain_error_response(self, status: int, cause: str) -> None:
+        """A failed retain says so in plain language and writes nothing:
+        the error page for a form post, the degraded turn shape for JSON."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Save to memory", cause)
+            return
+        self._send_json(200, {"status": "degraded", "cause": cause})
+
     # -- capabilities: the cached page and the one probing path (ticket #43)
 
     def _send_capabilities_page(self) -> None:
@@ -2220,16 +2360,65 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, cached.to_json())
 
     def _on_fact_carried(self, card) -> None:
-        """An accepted card may carry a fact in its meta ("fact": "...").
-        The only non-page creation path. The fact's source names the
-        card, and the audit row names that source, never the text."""
+        """An accepted card may carry a fact. Two shapes: the memory
+        draft cards' structured meta ("memoryFact": the edited draft is
+        the text, with its kind, gated occurrence, source and entities,
+        ticket #91), and the legacy string meta ("fact": "..."), which
+        behaves exactly as before. The only non-page creation path. The
+        fact's source names the card, and the audit row names that
+        source, never the text."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
+            return
+        memory_fact = card.meta.get("memoryFact")
+        if isinstance(memory_fact, dict):
+            self._carry_memory_fact(card, memory_fact)
             return
         text = card.meta.get("fact")
         if not isinstance(text, str) or not text.strip():
             return
         fact = memory.add(text.strip(), source=f"inbox card {card.id}")
+        self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+
+    def _carry_memory_fact(self, card, memory_fact: dict) -> None:
+        """Write the accepted memory draft: one fact from the edited
+        draft text with its kind, occurrence and source, then the
+        mention edges. Anything malformed in the meta (it can arrive
+        through the generic cards route too) drops that piece rather
+        than failing the acceptance."""
+        text = card.draft.strip()
+        if not text:
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        kind = memory_fact.get("kind")
+        if kind not in FACT_KINDS:
+            return
+        occurrence_ts = memory_fact.get("occurrence_ts")
+        if occurrence_ts is not None and not isinstance(occurrence_ts, (int, float)):
+            occurrence_ts = None
+        source_id = memory_fact.get("source_id")
+        if not isinstance(source_id, int) or isinstance(source_id, bool):
+            source_id = None
+        entities = []
+        for pair in memory_fact.get("entities") or []:
+            if (
+                isinstance(pair, (list, tuple))
+                and len(pair) == 2
+                and isinstance(pair[0], str)
+                and isinstance(pair[1], str)
+            ):
+                entities.append((pair[0], pair[1]))
+        fact = memory.add(
+            text,
+            source=f"inbox card {card.id}",
+            kind=kind,
+            occurrence_ts=occurrence_ts,
+            source_id=source_id,
+        )
+        try:
+            memory.resolve_and_link(fact.id, entities)
+        except ValueError:
+            LOG.warning("memory card %s carried an invalid entity type; the fact stays unlinked", card.id)
         self._audit("memory.fact", target=str(fact.id), detail=fact.source)
 
     # -- mail: the page, the watcher controls, the reply drafts -----------
@@ -3871,6 +4060,7 @@ def create_server(
     outbox_dir=None,
     registry_root=None,
     peer_store: PeerStore | None = None,
+    extractor=None,
     announce_port: int | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
@@ -3971,6 +4161,7 @@ def create_server(
             outbox_dir=outbox_dir,
             registry_root=registry_root,
             peer_store=peer_store,
+            extractor=extractor,
             announce_port=announce_port,
         )
 

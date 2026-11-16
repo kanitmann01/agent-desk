@@ -64,6 +64,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # The memory vocabulary (ticket #42): the one non-page creation path.
     # The row names the fact's source, never the fact's text.
     ("memory.fact", "decision", "An accepted inbox card carried a fact, and it was saved to the memory store. The row names where the fact came from, never the fact itself."),
+    ("llm.retain", "endpoint", "A conversation excerpt you chose to save was sent to the company LLM endpoint to be turned into candidate facts; the excerpt is all the endpoint sees, and the candidates wait as inbox cards until you accept them."),
     ("plugin.install", "plugin", "A plugin zip you chose, or a registry release you picked, is validated and installed under the app's own data folder, in pilot mode."),
     ("plugin.update", "plugin", "A plugin update is validated; identical or narrower permissions apply, wider ones hold for your OK."),
     ("plugin.consent", "plugin", "A held plugin update is applied after you approved its added permissions."),

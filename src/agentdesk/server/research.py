@@ -14,6 +14,28 @@ from agentdesk.server.demo import Widget
 
 RESEARCH_BUSY = "Asking the company endpoint for a sourced summary"
 
+# The save-to-memory excerpt's bound (ticket #91): a few thousand
+# characters of the visible conversation, recent turns kept first.
+RETAIN_EXCERPT_MAX_CHARS = 4000
+
+
+def _retain_excerpt(turns: list) -> str:
+    """The visible conversation as plain text, turn structure kept
+    ("You: ..." / "Assistant: ..." lines), newest turn last. Recent
+    turns fill the cap from the end, so an older turn is dropped whole
+    rather than cut."""
+    lines = [
+        ("You" if turn["role"] == "user" else "Assistant") + ": " + turn["text"]
+        for turn in turns
+    ]
+    excerpt = ""
+    for line in reversed(lines):
+        candidate = line if not excerpt else line + "\n" + excerpt
+        if len(candidate) > RETAIN_EXCERPT_MAX_CHARS:
+            break
+        excerpt = candidate
+    return excerpt
+
 
 def render_research_widget(last_answered_ts: float | None, now: datetime) -> Widget:
     """The research card: the ask well, the answer area, honest stamp."""
@@ -41,8 +63,12 @@ def render_research_widget(last_answered_ts: float | None, now: datetime) -> Wid
     )
 
 
-def render_assistant_page(turns: list, version: str, inbox_count: int = 0) -> str:
-    """The assistant page: the thread so far, one input, one button."""
+def render_assistant_page(
+    turns: list, version: str, inbox_count: int = 0, retain_error: str = ""
+) -> str:
+    """The assistant page: the thread so far, one input, one button,
+    and the save-to-memory action (ticket #91). `retain_error` is the
+    plain-language cause a failed retain shows on its re-render."""
     if turns:
         blocks = []
         for turn in turns:
@@ -59,17 +85,34 @@ def render_assistant_page(turns: list, version: str, inbox_count: int = 0) -> st
             "anything you pasted. I already know what the connected widgets "
             "know; you never have to re-explain it.</p></div>"
         )
+    error_line = (
+        f'<p class="empty">{html.escape(retain_error)}</p>' if retain_error else ""
+    )
+    retain_form = ""
+    if turns:
+        excerpt = html.escape(_retain_excerpt(turns), quote=True)
+        retain_form = (
+            '<form class="cardrow" method="post" action="/memory/retain">'
+            f'<input type="hidden" name="excerpt" value="{excerpt}">'
+            '<button class="btn btn-secondary" type="submit">Save to memory</button>'
+            "</form>"
+            '<p class="empty">Saving sends the visible conversation to the '
+            "endpoint to be turned into candidate facts. Nothing is written "
+            "until you accept a card in the inbox.</p>"
+        )
     content = f"""<h1>Assistant</h1>
 <p>One thread with your dashboard's context attached. Requests go to the
 company endpoint; every call is logged.</p>
 <div class="thread" aria-label="Conversation">
 {thread}
 </div>
+{error_line}
 <form class="cardrow" method="post" action="/assistant/ask">
 <textarea class="well-input grow" name="question" rows="2" required
  aria-label="Ask the assistant" placeholder="What changed, and what should I do about it?"></textarea>
 <button class="btn btn-primary" type="submit">Ask</button>
 </form>
+{retain_form}
 <p class="empty">Answers lean on the connected widgets when they can; they
 say so when they cannot.</p>"""
     return page_shell("Assistant", "/assistant", content, version, inbox_count=inbox_count)
