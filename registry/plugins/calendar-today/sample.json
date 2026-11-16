@@ -1,0 +1,25 @@
+{
+  "bindings": {
+    "eventsToday": 3,
+    "rows": [
+      {
+        "primary": "Q4 pipeline review",
+        "secondary": "14:00-15:00",
+        "meta": "Teams"
+      },
+      {
+        "primary": "Vendor call: Contoso",
+        "secondary": "15:30-16:00",
+        "meta": "Due today"
+      },
+      {
+        "primary": "Weekly sync",
+        "secondary": "16:30-17:00",
+        "meta": "Notes pending"
+      }
+    ],
+    "nextEventTitle": "Q4 pipeline review"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

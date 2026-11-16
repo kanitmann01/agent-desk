@@ -1,0 +1,16 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-16T00:00:00Z"
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "mystery-lib",
+      "version": "0.0.1",
+      "purl": "pkg:generic/mystery-lib@0.0.1"
+    }
+  ]
+}

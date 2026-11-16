@@ -192,3 +192,37 @@ def test_resume_without_a_registration_is_a_no_op(tmp_path):
     watch, _clock = make_watch(tmp_path, [])
     assert watch.resume() is False
     assert watch._timer is None  # nothing started, nothing to stop
+
+
+def test_status_grid_is_bounded_to_50_rows_and_12_columns(tmp_path):
+    """The status grid is the plugin card's read model: bounded, so a
+    50,000-row workbook cannot bloat a payload."""
+    header = [f"Column {i}" for i in range(20)]
+    wide = [header] + [[f"r{row}-c{col}" for col in range(20)]
+                       for row in range(60)]
+    watch, _clock = make_watch(tmp_path, [wide])
+
+    watch.register("wide.xlsx")
+
+    status = watch.status()
+    grid = status["grid"]
+    assert len(grid["columns"]) == 12
+    assert grid["columns"] == header[:12]
+    assert len(grid["rows"]) == 50
+    assert all(len(row) == 12 for row in grid["rows"])
+    assert grid["rows"][0][0] == "r0-c0"
+    assert "examples" in status  # the pre-existing key stays put
+
+
+def test_status_grid_keeps_numbers_as_numbers_and_blanks_as_text(tmp_path):
+    """The grid only ever carries strings and numbers: booleans and
+    empty cells become text, so the renderer never sees a live object."""
+    rows = [["Name", "Amount", "Due"], ["Acme", 12.0, None],
+            ["Beta", 7, True]]
+    watch, _clock = make_watch(tmp_path, [rows])
+
+    watch.register("mixed.xlsx")
+
+    grid = watch.status()["grid"]
+    assert grid["columns"] == ["Name", "Amount", "Due"]
+    assert grid["rows"] == [["Acme", 12, ""], ["Beta", 7, "true"]]

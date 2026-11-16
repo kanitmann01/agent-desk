@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 2,
+  "id": "compliance-posture",
+  "name": "Compliance posture",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "operations",
+  "tags": [
+    "compliance",
+    "policy",
+    "governance",
+    "checks"
+  ],
+  "icon": "folder",
+  "summary": "Are the installed plugins inside the desk policy?",
+  "description": "Reads the desk policy state and shows a status line for the overall posture, a checklist of policy checks with due dates, and the active policy mode, so it is clear whether violations block or only log.",
+  "highlights": [
+    "Status line and tone for the whole posture",
+    "Policy checks as a checklist with due dates",
+    "The active policy mode: advisory or enforcing"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:compliance-posture"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "compliance-posture",
+        "size": "2x1",
+        "dataSource": {
+          "type": "desk-state",
+          "selector": "policy"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

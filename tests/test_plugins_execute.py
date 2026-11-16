@@ -25,6 +25,7 @@ for _p in (str(ROOT / "src"),):
 from agentdesk.excel.core import WorkbookLocked  # noqa: E402
 from agentdesk.excel.watcher import Adapters  # noqa: E402
 from agentdesk.plugins.execute import PluginWidgetRunner  # noqa: E402
+from agentdesk.plugins.render import PluginRenderError  # noqa: E402
 from agentdesk.plugins.runtime import PluginRuntime  # noqa: E402
 from plugins_fixtures import valid_zip  # noqa: E402
 
@@ -52,13 +53,17 @@ def _runner(workspace: Path, workbook: FakeWorkbook, clock: list[float]):
 
 
 def _manifest(tmp_path: Path, *, source_type="excel-watch",
-              file_glob="${workspace}/reports/*.xlsx", elements=None) -> dict:
+              file_glob="${workspace}/reports/*.xlsx", elements=None,
+              source: dict | None = None) -> dict:
+    data_source = {"type": source_type, "file": file_glob,
+                   "deltaWindow": "24h"}
+    if source:
+        data_source.update(source)
     return {
         "id": "sales-delta-widget",
         "contributes": {"widgets": [{
             "id": "sales-delta",
-            "dataSource": {"type": source_type, "file": file_glob,
-                           "deltaWindow": "24h"},
+            "dataSource": data_source,
             "render": {"type": "ui-schema", "file": "widget.ui.json"},
         }]},
     }
@@ -141,17 +146,24 @@ def test_locked_workbook_is_amber_with_cause(workspace, tmp_path):
     assert payload["status"] == "attention"
 
 
-def test_unexecutable_type_keeps_probe_parity(workspace, tmp_path):
+def test_json_watch_attaches_and_reports_its_blank_state(workspace, tmp_path):
+    """json-watch executes now: a selector-less source attaches as a
+    blank with the reason, instead of keeping probe silence."""
     workbook = FakeWorkbook([["x"]])
     clock = [1_000_000.0]
     runner = _runner(workspace, workbook, clock)
+    _write_ui(tmp_path / "plugin", [{"type": "metric", "binding": "value"}])
     status = runner.attach("p1", _manifest(tmp_path, source_type="json-watch"),
                            tmp_path / "plugin", tmp_path / "data")
-    assert status == {"status": "fresh", "cause": "",
-                      "checked_at": status["checked_at"],
-                      "file": "sales.xlsx"}
-    assert not runner.attached("p1")
-    assert runner.payload("p1") is None
+    assert status["status"] == "attention"
+    assert status["state"] == "blank"
+    assert status["reason"] == "bad-schema"
+    assert "selector" in status["cause"]
+    assert runner.attached("p1")
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["source"]["state"] == "blank"
+    assert payload["source"]["type"] == "json-watch"
 
 
 def test_no_matching_file_is_attention(workspace, tmp_path):
@@ -165,23 +177,41 @@ def test_no_matching_file_is_attention(workspace, tmp_path):
     assert "no file matches" in status["cause"]
 
 
-def test_unknown_bindings_and_kinds_are_dropped(workspace, tmp_path):
+def test_unknown_binding_renders_a_blank_element(workspace, tmp_path):
     workbook = FakeWorkbook([["North", 10]])
     clock = [1_000_000.0]
     runner = _runner(workspace, workbook, clock)
     version_dir = tmp_path / "plugin"
     _write_ui(version_dir, [
-        {"type": "metric", "binding": "inventedNumber"},
+        {"type": "metric", "binding": "inventedNumber", "label": "Made up"},
         {"type": "metric", "binding": "rowsSeen", "label": "Rows"},
-        {"type": "chart", "binding": "delta24h"},
         {"type": "text", "text": "Static note"},
     ])
     runner.attach("p1", _manifest(tmp_path), version_dir, tmp_path / "data")
     payload = runner.payload("p1")
-    assert payload["elements"] == [
+    assert payload["elements"][0] == {
+        "kind": "metric", "state": "blank",
+        "reason": "no value for binding inventedNumber",
+        "label": "Made up", "value": "",
+    }
+    assert payload["elements"][0]["value"] != "0"
+    assert payload["elements"][1:] == [
         {"kind": "metric", "label": "Rows", "value": "1"},
         {"kind": "text", "text": "Static note"},
     ]
+
+
+def test_unknown_element_kind_raises(workspace, tmp_path):
+    workbook = FakeWorkbook([["North", 10]])
+    clock = [1_000_000.0]
+    runner = _runner(workspace, workbook, clock)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "chart", "binding": "delta24h"}])
+    runner.attach("p1", _manifest(tmp_path), version_dir, tmp_path / "data")
+    with pytest.raises(PluginRenderError) as info:
+        runner.payload("p1")
+    assert info.value.code == "plugin:unknown-element"
+    assert "chart" in str(info.value)
 
 
 def test_runtime_installs_executes_and_retests_the_widget(workspace, tmp_path):
@@ -285,14 +315,18 @@ def test_uninstall_detaches_but_keeps_data(workspace, tmp_path):
 # an in-memory sqlite and a frozen clock, so every state here is the
 # state the dashboard's own cards would see.
 
-def _pipeline_manifest(source_type: str) -> dict:
+def _pipeline_manifest(source_type: str, source: dict | None = None) -> dict:
     """A pipeline-backed widget: the data lives in the shared pipeline,
-    so the data source names its type and nothing else."""
+    so the data source names its type. A source dict adds the optional
+    per-widget options (for example mail-digest's vips)."""
+    data_source = {"type": source_type}
+    if source:
+        data_source.update(source)
     return {
         "id": f"{source_type}-widget",
         "contributes": {"widgets": [{
             "id": "w",
-            "dataSource": {"type": source_type},
+            "dataSource": data_source,
             "render": {"type": "ui-schema", "file": "widget.ui.json"},
         }]},
     }
@@ -490,6 +524,12 @@ def test_calendar_card_ignores_excel_and_unknown_bindings(workspace, tmp_path):
                   version_dir, tmp_path / "data")
     payload = runner.payload("p1")
     assert payload["elements"] == [
+        {"kind": "metric", "state": "blank",
+         "reason": "no value for binding delta24h",
+         "label": "Changed", "value": ""},
+        {"kind": "metric", "state": "blank",
+         "reason": "no value for binding inventedNumber",
+         "label": "Made up", "value": ""},
         {"kind": "metric", "label": "Today", "value": "1"},
         {"kind": "text", "text": "Static note"},
     ]
@@ -612,8 +652,19 @@ def test_mail_digest_payload_carries_no_body_field(workspace, tmp_path):
     runner.attach("p1", _pipeline_manifest("mail-digest"),
                   version_dir, tmp_path / "data")
     payload = runner.payload("p1")
-    assert payload["elements"] == [
-        {"kind": "metric", "label": "Messages", "value": "1"},
+    assert payload["elements"][0] == {
+        "kind": "metric", "label": "Messages", "value": "1",
+    }
+    assert payload["elements"][1:] == [
+        {"kind": "metric", "state": "blank",
+         "reason": "no value for binding body",
+         "label": "Body", "value": ""},
+        {"kind": "metric", "state": "blank",
+         "reason": "no value for binding messageBody",
+         "label": "Message body", "value": ""},
+        {"kind": "metric", "state": "blank",
+         "reason": "no value for binding bodyPreview",
+         "label": "Preview", "value": ""},
     ]
     assert "a body that must never reach a card" not in json.dumps(payload)
 
@@ -817,3 +868,253 @@ def test_dashboard_build_reads_the_mail_folder_once(workspace, tmp_path):
                if e["kind"] == "metric"]
     assert metrics == ["1"]
     assert len(reads) == 1  # one read for the whole dashboard build
+
+# ---- header-mapped excel bindings ----
+
+AGING_UI = [
+    {"type": "metric", "binding": "value", "label": "Cash stuck"},
+    {"type": "status", "binding": "status", "toneBinding": "tone"},
+    {"type": "table", "title": "Aging buckets",
+     "rowsBinding": "bucketTable",
+     "columns": ["Bucket", "Amount", "Invoices"]},
+    {"type": "list", "title": "Oldest balances", "rowsBinding": "rows"},
+]
+
+
+def test_excel_header_mapping_builds_rows_table_and_aging_buckets(workspace, tmp_path):
+    """The manifest names columns; the workbook supplies the header. The
+    card gets header-mapped rows, the windowed aggregate and the aging
+    buckets, all capped and formatted, plus a target verdict."""
+    now = datetime(2026, 11, 15, 12, 0, 0).astimezone()
+    workbook = FakeWorkbook([
+        ["Customer", "Balance", "DueDate"],
+        ["Acme", 1200, "2026-11-10"],
+        ["Beta", 800, "2026-09-01"],
+        ["Gamma", 400, "2026-01-01"],
+    ])
+    clock = [now.timestamp()]
+    runner = _runner(workspace, workbook, clock)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, AGING_UI)
+    source = {"keyColumn": "Customer", "valueColumn": "Balance",
+              "dateColumn": "DueDate", "window": "90d", "aggregate": "sum",
+              "buckets": [30, 60, 90], "target": 1000}
+
+    status = runner.attach("p1", _manifest(tmp_path, source=source),
+                           version_dir, tmp_path / "data")
+
+    assert status["status"] == "fresh"
+    result, bindings = runner._read_pair("p1")
+    assert result.state == "ok"
+    assert bindings["value"] == 2000  # Gamma's 400 is outside the 90d window
+    assert bindings["rowsSeen"] == 4
+    assert bindings["direction"] == "flat"
+    assert bindings["columns"] == ["Customer", "Balance", "DueDate"]
+    assert bindings["rows"] == [
+        {"primary": "Acme", "secondary": "1,200", "meta": "2026-11-10"},
+        {"primary": "Beta", "secondary": "800", "meta": "2026-09-01"},
+    ]
+    assert bindings["table"] == {
+        "columns": ["Customer", "Balance", "DueDate"],
+        "rows": [["Acme", "1,200", "2026-11-10"],
+                 ["Beta", "800", "2026-09-01"]],
+    }
+    assert bindings["bucketTable"] == [
+        ["0-30", "1,200", "1"],
+        ["31-60", "", "0"],
+        ["61-90", "800", "1"],
+        ["90+", "", "0"],
+    ]
+    assert bindings["bucketRows"][0] == {
+        "primary": "0-30", "secondary": "1,200", "meta": "1 invoices"}
+    assert bindings["target"] == 1000
+    assert bindings["status"] == "over target"
+    assert bindings["tone"] == "attention"
+
+    payload = runner.payload("p1")
+    assert payload["elements"] == [
+        {"kind": "metric", "label": "Cash stuck", "value": "2000"},
+        {"kind": "status", "text": "over target", "tone": "attention"},
+        {"kind": "table", "title": "Aging buckets",
+         "columns": ["Bucket", "Amount", "Invoices"],
+         "rows": [["0-30", "1,200", "1"], ["31-60", "", "0"],
+                  ["61-90", "800", "1"], ["90+", "", "0"]]},
+        {"kind": "list", "title": "Oldest balances",
+         "rows": [
+             {"primary": "Acme", "secondary": "1,200", "meta": "2026-11-10"},
+             {"primary": "Beta", "secondary": "800", "meta": "2026-09-01"},
+         ]},
+    ]
+
+
+def test_excel_rows_and_table_are_capped_but_the_total_is_not(workspace, tmp_path):
+    """Caps bound the card, not the arithmetic: the aggregate still sums
+    every row in the window."""
+    now = datetime(2026, 11, 15, 12, 0, 0).astimezone()
+    workbook = FakeWorkbook(
+        [["Customer", "Balance"]]
+        + [[f"Customer {i}", 10] for i in range(30)])
+    clock = [now.timestamp()]
+    runner = _runner(workspace, workbook, clock)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "list", "rowsBinding": "rows"}])
+    source = {"keyColumn": "Customer", "valueColumn": "Balance"}
+
+    runner.attach("p1", _manifest(tmp_path, source=source), version_dir,
+                  tmp_path / "data")
+
+    _result_, bindings = runner._read_pair("p1")
+    assert len(bindings["rows"]) == 8
+    assert len(bindings["table"]["rows"]) == 20
+    assert bindings["value"] == 300
+
+
+def test_excel_without_a_target_reports_a_read_time_status(workspace, tmp_path):
+    """A source with no target gets a truthful freshness line, not a
+    made-up verdict."""
+    now = datetime(2026, 11, 15, 12, 0, 0).astimezone()
+    workbook = FakeWorkbook([["Customer", "Balance"], ["Acme", 1200]])
+    clock = [now.timestamp()]
+    runner = _runner(workspace, workbook, clock)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "status", "binding": "status",
+                             "toneBinding": "tone"}])
+    source = {"keyColumn": "Customer", "valueColumn": "Balance"}
+
+    status = runner.attach("p1", _manifest(tmp_path, source=source),
+                           version_dir, tmp_path / "data")
+
+    assert status["status"] == "fresh"
+    _result_, bindings = runner._read_pair("p1")
+    assert bindings["status"] == "Read 12:00"
+    assert bindings["tone"] == "ok"
+    assert "target" not in bindings
+    assert runner.payload("p1")["elements"] == [
+        {"kind": "status", "text": "Read 12:00", "tone": "ok"}]
+
+
+def test_excel_missing_column_blanks_with_the_column_name(workspace, tmp_path):
+    """A declared column the workbook does not have is a blank that names
+    it, never an empty card or an invented zero."""
+    now = datetime(2026, 11, 15, 12, 0, 0).astimezone()
+    workbook = FakeWorkbook([["Customer", "Balance"], ["Acme", 1200]])
+    clock = [now.timestamp()]
+    runner = _runner(workspace, workbook, clock)
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "metric", "binding": "value"}])
+    source = {"keyColumn": "Customer", "valueColumn": "Outstanding"}
+
+    status = runner.attach("p1", _manifest(tmp_path, source=source),
+                           version_dir, tmp_path / "data")
+
+    assert status["status"] == "attention"
+    assert "Outstanding" in status["cause"]
+    payload = runner.payload("p1")
+    assert payload["status"] == "attention"
+    assert payload["elements"] == []
+
+
+def test_calendar_day_view_binds_week_points_upcoming_and_prep(workspace, tmp_path):
+    """The bridge's day view carries the two-week load, the upcoming
+    timeline and the next event's attendee prep list; the calendar card
+    binds them without a model call."""
+    now = datetime(2026, 11, 13, 9, 0, 0).astimezone()
+
+    def at(days=0, hour=9):
+        return (now + timedelta(days=days)).replace(hour=hour, minute=0)
+
+    starts = {
+        "a": at(hour=14), "b": at(hour=16), "c": at(days=1, hour=10),
+        "d": at(days=3, hour=9), "e": at(days=20, hour=9),
+    }
+    events = [
+        {"id": "a", "subject": "Q4 pipeline review",
+         "start": starts["a"].isoformat(),
+         "end": starts["a"].replace(hour=15).isoformat(),
+         "attendees": ["Ana", "Ben"]},
+        {"id": "b", "subject": "Later sync",
+         "start": starts["b"].isoformat(),
+         "end": starts["b"].replace(hour=17).isoformat(),
+         "attendees": 3},
+        {"id": "c", "subject": "Tomorrow",
+         "start": starts["c"].isoformat(),
+         "end": starts["c"].replace(hour=12).isoformat(),
+         "location": "Room 4"},
+        {"id": "d", "subject": "Next week",
+         "start": starts["d"].isoformat(),
+         "end": starts["d"].replace(hour=10).isoformat()},
+        {"id": "e", "subject": "Far off",
+         "start": starts["e"].isoformat(),
+         "end": starts["e"].replace(hour=10).isoformat()},
+    ]
+    runner = PluginWidgetRunner(workspace, calendar=_bridge(tmp_path, now, events))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "sparkline", "pointsBinding": "weekPoints"},
+        {"type": "checklist", "itemsBinding": "items"},
+        {"type": "timeline", "itemsBinding": "upcoming"},
+        {"type": "metric", "binding": "weekHours", "label": "Hours"},
+    ])
+    runner.attach("p1", _pipeline_manifest("calendar-read"),
+                  version_dir, tmp_path / "data")
+
+    _result_, bindings = runner._read_pair("p1")
+    assert bindings["weekPoints"] == [2, 1, 0, 1] + [0] * 10
+    assert bindings["weekHours"] == 5.0  # 1h + 1h + 2h + 1h, next 7 days
+    assert bindings["upcoming"] == [
+        {"time": starts["a"].isoformat(), "title": "Q4 pipeline review",
+         "meta": "2 attendees"},
+        {"time": starts["b"].isoformat(), "title": "Later sync",
+         "meta": "3 attendees"},
+        {"time": starts["c"].isoformat(), "title": "Tomorrow",
+         "meta": "Room 4"},
+        {"time": starts["d"].isoformat(), "title": "Next week", "meta": ""},
+    ]
+    assert bindings["todayRows"] == [
+        {"primary": "Q4 pipeline review", "secondary": "14:00", "meta": ""},
+        {"primary": "Later sync", "secondary": "16:00", "meta": ""},
+    ]
+    assert bindings["rows"] == bindings["todayRows"]
+    assert bindings["items"] == [
+        {"text": "Confirm with Ana", "done": False,
+         "due": starts["a"].isoformat()},
+        {"text": "Confirm with Ben", "done": False,
+         "due": starts["a"].isoformat()},
+    ]
+
+    elements = runner.payload("p1")["elements"]
+    assert elements[0] == {"kind": "sparkline", "points": bindings["weekPoints"],
+                           "min": 0, "max": 2}
+    assert elements[1] == {"kind": "checklist", "items": bindings["items"]}
+    assert [item["title"] for item in elements[2]["items"]] == [
+        "Q4 pipeline review", "Later sync", "Tomorrow", "Next week"]
+    assert elements[3] == {"kind": "metric", "label": "Hours", "value": "5.0"}
+
+
+def test_mail_vips_filter_sender_rows_when_declared(workspace, tmp_path):
+    """A declared vips list narrows the sender rows; with none declared
+    the list is honestly empty rather than every sender relabelled VIP."""
+    now = datetime(2026, 11, 13, 12, 0, 0).astimezone().timestamp()
+    files = {
+        "m1.eml": _eml("<1@x>", "Pricing", "vip@example.com", now - 3600),
+        "m2.eml": _eml("<2@x>", "Lunch", "other@example.com", now - 1800),
+        "m3.eml": _eml("<3@x>", "Deck", "VIP@Example.com", now - 900),
+    }
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [{"type": "list", "rowsBinding": "vipRows"}])
+
+    with_vips = _mail_runner(workspace, tmp_path, now, files,
+                             folder=lambda: str(tmp_path / "mail"))
+    with_vips.attach("p1",
+                     _pipeline_manifest("mail-digest", {"vips": ["vip@"]}),
+                     version_dir, tmp_path / "data")
+    _result_, bindings = with_vips._read_pair("p1")
+    assert [row["primary"] for row in bindings["vipRows"]] == [
+        "VIP@Example.com", "vip@example.com"]
+
+    without_vips = _mail_runner(workspace, tmp_path, now, files,
+                                folder=lambda: str(tmp_path / "mail"))
+    without_vips.attach("p2", _pipeline_manifest("mail-digest"), version_dir,
+                        tmp_path / "data2")
+    _result_, bindings = without_vips._read_pair("p2")
+    assert bindings["vipRows"] == []

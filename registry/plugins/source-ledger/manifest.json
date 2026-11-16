@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "id": "source-ledger",
+  "name": "Source Ledger",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "research",
+  "tags": [
+    "research",
+    "sources",
+    "ledger"
+  ],
+  "icon": "book",
+  "summary": "Which sources backed the last answer, and were they actually used?",
+  "description": "Lists the sources attached to the latest stored research answer as a three-column ledger: source, title and whether the answer used it. Reads the same local research store as Research Brief; nothing is fetched to build the ledger.",
+  "highlights": [
+    "Every source behind the latest answer in one table",
+    "Title and used flag next to each source",
+    "Same stored answer as Research Brief; no refetch"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:source-ledger",
+    "onSchedule:0 * * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "source-ledger",
+        "size": "2x1",
+        "dataSource": {
+          "type": "research-brief"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

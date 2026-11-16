@@ -1,0 +1,350 @@
+// Plugin Studio: a small honest form, a live manifest, the real validator,
+// and a publish that ends in "pending review" rather than a fake install.
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import Button from '../components/Button';
+import { getMarket, marketErrorText, postMarket } from './client';
+import { CATEGORIES, categoryLabel } from './MarketGrid';
+import { SamplePreview } from './Sample';
+import type { InstalledResponse, MarketElement, MarketSample } from './types';
+
+const ICONS = ['calendar', 'chart', 'mail', 'book', 'checklist', 'clock', 'alert', 'folder', 'plugin', 'generic'];
+
+interface Draft {
+  id: string;
+  name: string;
+  summary: string;
+  category: string;
+  tags: string;
+  icon: string;
+  license: string;
+  version: string;
+}
+
+const BLANK: Draft = {
+  id: '', name: '', summary: '', category: 'reference', tags: '',
+  icon: 'generic', license: 'MIT', version: '0.1.0',
+};
+
+interface Verdict {
+  ok: boolean;
+  failures: { code: string; message: string }[];
+}
+
+function buildManifest(draft: Draft) {
+  const id = draft.id.trim() || 'untitled-plugin';
+  const name = draft.name.trim() || 'Untitled plugin';
+  const summary = draft.summary.trim();
+  const tags = draft.tags.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean).slice(0, 8);
+  const description = summary || `${name} is a local, declarative plugin.`;
+  const highlights = [
+    summary || `${name} runs on this desk.`,
+    'It reads only the scopes you approve.',
+    'It runs only while Agent Desk is open.',
+  ].map((line) => line.slice(0, 120));
+  return {
+    schemaVersion: 2,
+    id,
+    name,
+    version: draft.version.trim() || '0.1.0',
+    publisher: 'local',
+    class: 'declarative',
+    engines: { dashboardHost: '>=0.1.0' },
+    license: draft.license.trim(),
+    category: draft.category,
+    tags,
+    icon: draft.icon,
+    summary: description.slice(0, 120),
+    description,
+    highlights,
+    permissions: {
+      filesystem: { read: [], write: [] },
+      network: { allow: [] },
+      llm: { allow: false },
+      shell: 'none',
+    },
+    activationEvents: [`onWidget:${id}`],
+    contributes: {
+      widgets: [{
+        id,
+        size: '2x1',
+        dataSource: { type: 'manual-metric' },
+        render: { type: 'ui-schema', file: 'widget.ui.json' },
+      }],
+    },
+    sample: 'sample.json',
+    minHost: '>=0.1.0',
+  };
+}
+
+function buildWidgetUi(draft: Draft, manifest: ReturnType<typeof buildManifest>) {
+  const elements: MarketElement[] = [
+    { kind: 'metric', label: 'Value', value: '0' },
+    { kind: 'text', text: draft.summary.trim() || 'A small local plugin.' },
+  ];
+  return {
+    type: 'card',
+    title: manifest.name,
+    elements: elements.map((element) => element.kind === 'metric'
+      ? { kind: 'metric', label: element.label, binding: 'value' }
+      : { kind: 'text', label: 'About', binding: 'note' }),
+  };
+}
+
+function buildSample(): { bindings: Record<string, unknown>; state: string; checkedAt: string } {
+  return {
+    bindings: { value: 0, note: 'This is the plugin sample.' },
+    state: 'ok',
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export function StudioPage() {
+  const [draft, setDraft] = useState<Draft>(BLANK);
+  const [installed, setInstalled] = useState<InstalledResponse['plugins']>([]);
+  const [installedNote, setInstalledNote] = useState('');
+  const [loadingFrom, setLoadingFrom] = useState(false);
+  const [validation, setValidation] = useState<Verdict | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [changelog, setChangelog] = useState('');
+  const [grant, setGrant] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [pending, setPending] = useState<{ pendingId: string; status: string; validation: Verdict } | null>(null);
+
+  useEffect(() => {
+    getMarket<InstalledResponse>('/api/marketplace/installed')
+      .then((data) => setInstalled(data.plugins))
+      .catch(() => setInstalledNote('Installed plugins could not be listed. You can still start blank.'));
+  }, []);
+
+  const manifest = useMemo(() => buildManifest(draft), [draft]);
+  const widgetUi = useMemo(() => buildWidgetUi(draft, manifest), [draft, manifest]);
+  const sample = useMemo(() => buildSample(), []);
+  const previewSample: MarketSample = {
+    elements: widgetUi.elements as MarketElement[],
+    status: 'fresh',
+    cause: '',
+    checked_at: sample.checkedAt,
+  };
+
+  const set = (field: keyof Draft) => (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) => setDraft((current) => ({ ...current, [field]: event.target.value }));
+
+  const startFrom = async (id: string) => {
+    if (!id) {
+      setDraft(BLANK);
+      return;
+    }
+    setLoadingFrom(true);
+    setInstalledNote('');
+    try {
+      const data = await getMarket<{ plugin: { id: string; name: string; summary: string; category: string; tags: string[]; icon: string; license: string; version: string } }>(
+        `/api/marketplace/plugin/${encodeURIComponent(id)}`);
+      setDraft({
+        id: data.plugin.id,
+        name: data.plugin.name,
+        summary: data.plugin.summary,
+        category: data.plugin.category,
+        tags: data.plugin.tags.join(', '),
+        icon: data.plugin.icon,
+        license: data.plugin.license || 'MIT',
+        version: data.plugin.version,
+      });
+      setInstalledNote('Descriptive fields copied. Permissions start empty; add only what the plugin needs.');
+    } catch (err) {
+      setInstalledNote(marketErrorText(err));
+    } finally {
+      setLoadingFrom(false);
+    }
+  };
+
+  const validate = async () => {
+    setValidationError('');
+    setValidation(null);
+    if (!draft.id.trim() || !draft.name.trim() || !draft.version.trim()) {
+      setValidationError('Add an id, a name and a version before validating.');
+      return;
+    }
+    setValidating(true);
+    try {
+      const verdict = await postMarket<Verdict>('/api/marketplace/validate',
+        { manifest, widgetUi, sample });
+      setValidation(verdict);
+    } catch (err) {
+      setValidationError(marketErrorText(err));
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const publish = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!validation?.ok) {
+      setPublishError('Run the validator and fix its findings before publishing.');
+      return;
+    }
+    if (!changelog.trim()) {
+      setPublishError('Write the changelog that reviewers will read.');
+      return;
+    }
+    if (!grant) {
+      setPublishError('Confirm the license grant before publishing.');
+      return;
+    }
+    setPublishing(true);
+    setPublishError('');
+    try {
+      const res = await postMarket<{ pendingId: string; status: string; validation: Verdict }>(
+        '/api/marketplace/publish',
+        { manifest, widgetUi, sample, changelog, licenseGrant: true },
+      );
+      setPending(res);
+    } catch (err) {
+      setPublishError(marketErrorText(err));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  return (
+    <div className="mkt-page">
+      <header className="mkt-page-head">
+        <span className="mkt-eyebrow">Marketplace</span>
+        <h1>Plugin Studio</h1>
+        <p className="mkt-lede">
+          Build a declarative plugin manifest, run the real validator, then submit it for review.
+          Publishing never installs the plugin.
+        </p>
+      </header>
+
+      {pending && (
+        <section className="mkt-panel mkt-pending" aria-labelledby="mkt-pending-title" role="status">
+          <h2 id="mkt-pending-title">Pending review</h2>
+          <p>
+            Submitted as <code>{pending.pendingId}</code>. An operator reviews it before it can appear
+            in the catalog. Nothing is installed by this step.
+          </p>
+          <p className="w-note">
+            Validator at submission: {pending.validation?.ok ? 'passed' : 'failed'}
+            {pending.validation?.failures?.length
+              ? ` · ${pending.validation.failures.length} finding${pending.validation.failures.length === 1 ? '' : 's'}`
+              : ''}.
+          </p>
+        </section>
+      )}
+
+      <div className="mkt-studio">
+        <form className="mkt-studio-form" onSubmit={publish}>
+          <section className="mkt-panel" aria-labelledby="mkt-start">
+            <h2 id="mkt-start">Start from</h2>
+            <label className="mkt-field">
+              <span>Installed plugin or blank template</span>
+              <select defaultValue="" disabled={loadingFrom}
+                      onChange={(event) => void startFrom(event.target.value)}>
+                <option value="">Blank template</option>
+                {installed.map((record) => (
+                  <option key={record.id} value={record.id}>{record.name} v{record.version}</option>
+                ))}
+              </select>
+            </label>
+            {installedNote && <p className="w-note">{installedNote}</p>}
+          </section>
+
+          <section className="mkt-panel" aria-labelledby="mkt-basics">
+            <h2 id="mkt-basics">Manifest basics</h2>
+            <div className="mkt-field-grid">
+              <label className="mkt-field">
+                <span>Plugin id</span>
+                <input value={draft.id} onChange={set('id')} placeholder="my-plugin" required />
+              </label>
+              <label className="mkt-field">
+                <span>Version (semver)</span>
+                <input value={draft.version} onChange={set('version')} placeholder="0.1.0" required />
+              </label>
+              <label className="mkt-field mkt-field-wide">
+                <span>Name</span>
+                <input value={draft.name} onChange={set('name')} placeholder="My plugin" required />
+              </label>
+              <label className="mkt-field mkt-field-wide">
+                <span>Summary <small>({draft.summary.length}/120)</small></span>
+                <textarea value={draft.summary} onChange={set('summary')} rows={3} maxLength={120} />
+              </label>
+              <label className="mkt-field">
+                <span>Category</span>
+                <select value={draft.category} onChange={set('category')}>
+                  {CATEGORIES.map((category) => (
+                    <option key={category} value={category}>{categoryLabel(category)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="mkt-field">
+                <span>Icon</span>
+                <select value={draft.icon} onChange={set('icon')}>
+                  {ICONS.map((icon) => <option key={icon} value={icon}>{icon}</option>)}
+                </select>
+              </label>
+              <label className="mkt-field">
+                <span>License (SPDX)</span>
+                <input value={draft.license} onChange={set('license')} placeholder="MIT" required />
+              </label>
+              <label className="mkt-field">
+                <span>Tags (comma separated, max 8)</span>
+                <input value={draft.tags} onChange={set('tags')} placeholder="finance, invoices" />
+              </label>
+            </div>
+          </section>
+
+          <section className="mkt-panel" aria-labelledby="mkt-validate">
+            <h2 id="mkt-validate">Validate</h2>
+            <p className="w-note">The same validator that guards installs checks this manifest, widget and sample.</p>
+            <Button tone="secondary" disabled={validating} onClick={() => void validate()}>
+              {validating ? 'Validating…' : 'Run validator'}
+            </Button>
+            {validationError && <p className="mkt-error" role="alert">{validationError}</p>}
+            {validation && (
+              <div className={`mkt-verdict mkt-verdict-${validation.ok ? 'ok' : 'bad'}`} role="status">
+                <p><strong>{validation.ok ? 'Validator passed.' : 'Validator found problems.'}</strong></p>
+                {validation.failures.length > 0 && (
+                  <ul>
+                    {validation.failures.map((failure) => (
+                      <li key={failure.code}><code>{failure.code}</code> {failure.message}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="mkt-panel" aria-labelledby="mkt-publish">
+            <h2 id="mkt-publish">Publish for review</h2>
+            <label className="mkt-field">
+              <span>Changelog (required)</span>
+              <textarea value={changelog} onChange={(event) => setChangelog(event.target.value)}
+                        rows={4} placeholder="What changed in this version?" required />
+            </label>
+            <label className="mkt-check">
+              <input type="checkbox" checked={grant} onChange={(event) => setGrant(event.target.checked)} />
+              <span>I grant this desk permission to distribute the plugin under its declared license.</span>
+            </label>
+            {publishError && <p className="mkt-error" role="alert">{publishError}</p>}
+            <Button tone="primary" type="submit"
+                    disabled={publishing || !validation?.ok || !changelog.trim() || !grant}>
+              {publishing ? 'Submitting…' : 'Publish for review'}
+            </Button>
+            {!validation?.ok && <p className="w-note">Publish unlocks after the validator passes.</p>}
+          </section>
+        </form>
+
+        <div className="mkt-studio-preview">
+          <section className="mkt-panel" aria-labelledby="mkt-manifest-preview">
+            <h2 id="mkt-manifest-preview">manifest.json</h2>
+            <pre className="mkt-manifest" aria-label="Live manifest preview">{JSON.stringify(manifest, null, 2)}</pre>
+          </section>
+          <SamplePreview sample={previewSample} title={manifest.name} />
+        </div>
+      </div>
+    </div>
+  );
+}

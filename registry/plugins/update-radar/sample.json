@@ -1,0 +1,25 @@
+{
+  "bindings": {
+    "updateRows": [
+      {
+        "primary": "excel-report",
+        "secondary": "0.3.0 available",
+        "meta": "0.2.0 -> 0.3.0"
+      },
+      {
+        "primary": "outlook-digest",
+        "secondary": "0.2.0 available",
+        "meta": "0.1.4 -> 0.2.0"
+      },
+      {
+        "primary": "research-brief",
+        "secondary": "Up to date on 0.2.0",
+        "meta": "0.2.0 -> 0.2.0"
+      }
+    ],
+    "value": 2,
+    "direction": "up"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

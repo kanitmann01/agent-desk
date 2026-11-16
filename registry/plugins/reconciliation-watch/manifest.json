@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 2,
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "finance",
+  "minHost": ">=0.1.0",
+  "id": "reconciliation-watch",
+  "name": "Reconciliation Watch",
+  "version": "0.2.0",
+  "tags": [
+    "reconciliation",
+    "ledger",
+    "bank"
+  ],
+  "icon": "folder",
+  "summary": "What is in the ledger but not the bank, and vice versa?",
+  "description": "Reconciliation Watch compares the ledger workbook (${workspace}/finance/ledger*.xlsx) with the bank workbook (${workspace}/finance/bank*.xlsx) on the Reference column, reports the compare metric, lists the first differences marked left only, right only, or both, and shows the net delta direction. Both sides are local excel-watch sources.",
+  "highlights": [
+    "Compares ledger and bank workbooks keyed on Reference.",
+    "Differences list marks left only, right only, and both rows.",
+    "Net delta and direction show which side is ahead."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/finance/ledger*.xlsx",
+        "${workspace}/finance/bank*.xlsx"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:reconciliation-watch",
+    "onSchedule:0 9 * * 1"
+  ],
+  "requires": [],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "reconciliation-watch",
+        "size": "2x2",
+        "dataSource": {
+          "type": "compare",
+          "left": {
+            "type": "excel-watch",
+            "file": "${workspace}/finance/ledger*.xlsx",
+            "keyColumn": "Reference",
+            "valueColumn": "Amount",
+            "window": "30d"
+          },
+          "right": {
+            "type": "excel-watch",
+            "file": "${workspace}/finance/bank*.xlsx",
+            "keyColumn": "Reference",
+            "valueColumn": "Amount",
+            "window": "30d"
+          }
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

@@ -3,6 +3,8 @@
 import copy
 import json
 
+import pytest
+
 from .test_validator_support import VALID_MANIFEST, write_plugin
 from agentdesk.validator import validate_plugin
 
@@ -94,12 +96,213 @@ def test_unparseable_manifest_is_bad_json(tmp_path):
     assert verdict.failures[0].message.startswith("manifest.json is not valid JSON")
 
 
-def test_schema_version_must_be_one(tmp_path):
-    manifest = {**VALID_MANIFEST, "schemaVersion": 2}
+def test_schema_version_must_be_one_or_two(tmp_path):
+    manifest = {**VALID_MANIFEST, "schemaVersion": 3}
 
     verdict = validate_plugin(write_plugin(tmp_path, manifest))
 
-    assert ("bad-schema", "schemaVersion must be 1, got 2") in failures(verdict)
+    assert ("bad-schema", "schemaVersion must be 1 or 2, got 3") in failures(verdict)
+
+# ---- manifest v2 (T1) ----
+
+V2_REQUIRED_VALUES = {
+    "category": "finance",
+    "tags": ["sales", "weekly"],
+    "icon": "chart",
+    "summary": "Track workbook changes at a glance.",
+    "description": "A declarative widget that tracks workbook rows and changes.",
+    "highlights": ["Tracks changes", "Shows deltas", "No plugin code"],
+    "sample": "sample.json",
+}
+
+V2_OPTIONAL_VALUES = {
+    "requires": ["other-widget"],
+    "minHost": "1.0.0",
+}
+
+
+def v2_manifest():
+    manifest = manifest_copy()
+    manifest["schemaVersion"] = 2
+    manifest.update(copy.deepcopy(V2_REQUIRED_VALUES))
+    manifest.update(copy.deepcopy(V2_OPTIONAL_VALUES))
+    return manifest
+
+
+def write_v2(tmp_path, manifest=None, files=None):
+    merged = {
+        "sample.json": json.dumps({
+            "bindings": {},
+            "state": "ok",
+            "checkedAt": "2026-11-15T09:00:00",
+        })
+    }
+    merged.update(files or {})
+    return write_plugin(tmp_path, v2_manifest() if manifest is None else manifest,
+                        merged)
+
+
+def has(found, code, needle):
+    return any(c == code and needle in m for c, m in found)
+
+
+def test_v1_manifest_remains_valid(tmp_path):
+    assert validate_plugin(write_plugin(tmp_path)).ok
+
+
+def test_v2_full_manifest_is_valid(tmp_path):
+    verdict = validate_plugin(write_v2(tmp_path))
+
+    assert verdict.ok, verdict.as_dict()
+
+
+def test_v2_optional_fields_may_be_absent(tmp_path):
+    manifest = v2_manifest()
+    manifest.pop("requires")
+    manifest.pop("minHost")
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert verdict.ok, verdict.as_dict()
+
+
+@pytest.mark.parametrize("field", sorted(V2_REQUIRED_VALUES))
+def test_v2_missing_required_field_names_the_field(tmp_path, field):
+    manifest = v2_manifest()
+    del manifest[field]
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert ("bad-schema", f"missing required key: {field}") in failures(verdict)
+
+
+def test_v2_only_key_at_v1_is_still_unknown_key(tmp_path):
+    manifest = {**VALID_MANIFEST, "category": "finance"}
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert ("unknown-key", "unknown top-level key: category") in failures(verdict)
+
+
+def test_unknown_key_at_v2_is_unknown_key(tmp_path):
+    manifest = v2_manifest()
+    manifest["telemetry"] = True
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert ("unknown-key", "unknown top-level key: telemetry") in failures(verdict)
+
+
+def test_v2_category_must_be_in_the_enum(tmp_path):
+    manifest = v2_manifest()
+    manifest["category"] = "legal"
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert has(failures(verdict), "bad-schema", "category")
+
+
+def test_v2_icon_must_be_in_the_enum(tmp_path):
+    manifest = v2_manifest()
+    manifest["icon"] = "rocket"
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert has(failures(verdict), "bad-schema", "icon")
+
+
+def test_v2_tags_are_capped_at_eight(tmp_path):
+    manifest = v2_manifest()
+    manifest["tags"] = [f"tag-{index}" for index in range(9)]
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert has(failures(verdict), "bad-schema", "tags")
+
+
+def test_v2_tags_must_be_unique_slugs(tmp_path):
+    manifest = v2_manifest()
+    manifest["tags"] = ["sales", "sales"]
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "tags")
+
+    manifest = v2_manifest()
+    manifest["tags"] = ["Sales Team"]
+    verdict = validate_plugin(write_v2(tmp_path, manifest, files={
+        "sample.json": json.dumps({"bindings": {}},
+                                  ensure_ascii=False)}))
+    assert has(failures(verdict), "bad-schema", "tag")
+
+
+def test_v2_summary_is_required_to_be_short_and_nonempty(tmp_path):
+    manifest = v2_manifest()
+    manifest["summary"] = ""
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "summary")
+
+    manifest = v2_manifest()
+    manifest["summary"] = "x" * 121
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "summary")
+
+
+def test_v2_description_is_capped(tmp_path):
+    manifest = v2_manifest()
+    manifest["description"] = "x" * 4001
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert has(failures(verdict), "bad-schema", "description")
+
+
+def test_v2_highlights_must_be_exactly_three(tmp_path):
+    manifest = v2_manifest()
+    manifest["highlights"] = ["one", "two"]
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "highlights")
+
+    manifest = v2_manifest()
+    manifest["highlights"] = ["one", "", "three"]
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "highlight")
+
+
+def test_v2_sample_path_must_stay_relative(tmp_path):
+    for sample in ("../outside.json", "/abs/sample.json", "sub\\sample.json",
+                   "sample.txt"):
+        manifest = v2_manifest()
+        manifest["sample"] = sample
+
+        verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+        assert has(failures(verdict), "bad-schema", "sample"), sample
+
+
+def test_v2_requires_must_be_unique_safe_and_not_self(tmp_path):
+    manifest = v2_manifest()
+    manifest["requires"] = ["other-widget", "other-widget"]
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "requires")
+
+    manifest = v2_manifest()
+    manifest["requires"] = [manifest["id"]]
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "requires")
+
+    manifest = v2_manifest()
+    manifest["requires"] = ["../evil"]
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+    assert has(failures(verdict), "bad-schema", "requires")
+
+
+def test_v2_min_host_must_be_nonempty(tmp_path):
+    manifest = v2_manifest()
+    manifest["minHost"] = ""
+
+    verdict = validate_plugin(write_v2(tmp_path, manifest))
+
+    assert has(failures(verdict), "bad-schema", "minHost")
+
 
 
 def test_class_must_be_declarative(tmp_path):

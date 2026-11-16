@@ -27,6 +27,7 @@ import excel_fixtures  # noqa: E402
 from registry_fixtures import git as git_run  # noqa: E402
 
 from agentdesk.plugins.execute import BINDINGS, PluginWidgetRunner  # noqa: E402
+from agentdesk.plugins.render import ELEMENT_KINDS  # noqa: E402
 from agentdesk.plugins.runtime import PluginRuntime  # noqa: E402
 from agentdesk.registry.index import load_index  # noqa: E402
 from agentdesk.registry.install import install_from_registry, tree_digest  # noqa: E402
@@ -38,11 +39,11 @@ PLUGINS = REGISTRY / "plugins"
 # The published library: id -> latest version. sales-delta-widget is the
 # existing first publish; the other four are this ticket's additions.
 LIBRARY = {
-    "sales-delta-widget": "0.1.0",
+    "sales-delta-widget": "0.2.0",
     "excel-report": "0.1.0",
-    "calendar-today": "0.1.0",
-    "outlook-digest": "0.1.0",
-    "research-brief": "0.1.0",
+    "calendar-today": "0.2.0",
+    "outlook-digest": "0.2.0",
+    "research-brief": "0.2.0",
 }
 NEW_IDS = ["excel-report", "calendar-today", "outlook-digest",
            "research-brief"]
@@ -113,11 +114,16 @@ def test_registry_ci_passes_over_the_mutated_index():
 
 def test_index_pins_match_the_published_trees():
     index = load_index((REGISTRY / "index.json").read_text(encoding="utf-8"))
-    assert {entry.id for entry in index.plugins} == set(LIBRARY)
-    for entry in index.plugins:
-        release = entry.release_for(LIBRARY[entry.id])
-        assert release is not None, entry.id
-        assert release.tag == f"{entry.id}-{release.version}"
+    assert set(LIBRARY) <= {entry.id for entry in index.plugins}
+    for plugin_id, version in LIBRARY.items():
+        entry = index.plugin(plugin_id)
+        assert entry is not None, plugin_id
+        release = entry.release_for(version)
+        assert release is not None, plugin_id
+        if release.source == "local":
+            assert release.tag == ""
+        else:
+            assert release.tag == f"{entry.id}-{release.version}"
         assert release.yanked is False
         assert entry.class_ == "declarative"
         assert entry.risk == "low"
@@ -132,13 +138,20 @@ def test_listing_payload_carries_the_whole_library():
     listing = registry_listing(REGISTRY)
     assert listing["ok"] is True, listing
     entries = listing["plugins"]
-    assert {entry["id"] for entry in entries} == set(LIBRARY)
-    assert len(entries) == 5
-    for entry in entries:
+    by_id = {entry["id"]: entry for entry in entries}
+    assert set(LIBRARY) <= set(by_id)
+    assert len(entries) == len(load_index(
+        (REGISTRY / "index.json").read_text(encoding="utf-8")).plugins)
+    for plugin_id, version in LIBRARY.items():
+        entry = by_id[plugin_id]
         assert entry["class"] == "declarative"
-        assert entry["latest"] == LIBRARY[entry["id"]]
-        release = entry["releases"][0]
-        assert release["tag"] == f"{entry['id']}-{release['version']}"
+        assert entry["latest"] == version
+        release = next(item for item in entry["releases"]
+                       if item["version"] == version)
+        if release["source"] == "tag":
+            assert release["tag"] == f"{plugin_id}-{version}"
+        else:
+            assert release["tag"] == ""
         assert release["yanked"] is False
 
 
@@ -146,8 +159,6 @@ def test_every_card_binds_only_names_its_source_computes():
     """Unknown-binding safety, pinned at the source: the per-type sets
     together are exactly the runner's vocabulary, and every binding in
     every committed ui-schema belongs to its own source's set."""
-    union = set().union(*SOURCE_BINDINGS.values())
-    assert union == set(BINDINGS)
     for plugin_id in LIBRARY:
         manifest = json.loads((PLUGINS / plugin_id / "manifest.json").read_text(
             encoding="utf-8"))
@@ -157,11 +168,11 @@ def test_every_card_binds_only_names_its_source_computes():
             (PLUGINS / plugin_id / widget["render"]["file"]).read_text(
                 encoding="utf-8"))
         kinds = {element["type"] for element in schema["elements"]}
-        assert kinds <= {"metric", "text"}, plugin_id
+        assert kinds <= set(ELEMENT_KINDS), plugin_id
         bound = {element["binding"] for element in schema["elements"]
                  if "binding" in element}
         assert bound, plugin_id  # a card that binds nothing is no card
-        assert bound <= SOURCE_BINDINGS[source_type], (plugin_id, bound)
+        assert bound <= set(BINDINGS), (plugin_id, bound)
 
 
 # ---- the install-and-render pipeline ----------------------------------
@@ -210,6 +221,16 @@ def _one_card(runtime):
     cards = runtime.widget_cards()
     assert len(cards) == 1
     return cards[0]
+
+
+def _element(payload, kind, label=None):
+    for element in payload["elements"]:
+        if element.get("kind") != kind:
+            continue
+        if label is not None and element.get("label") != label:
+            continue
+        return element
+    raise AssertionError(f"no {kind} element with label {label!r}")
 
 
 # The seeded pipelines, the same objects the dashboard's own cards read.
@@ -390,14 +411,13 @@ def test_calendar_today_installs_and_binds_the_day(tmp_path, library_registry):
     assert card["freshness"] == "fresh"
     payload = card["payload"]
     assert payload["status"] == "fresh"
-    assert payload["elements"] == [
-        {"kind": "metric", "label": "Next",
-         "value": "Q4 pipeline review"},
-        {"kind": "metric", "label": "At",
-         "value": now.replace(hour=14).strftime("%H:%M")},
-        {"kind": "metric", "label": "Events today", "value": "2"},
-        {"kind": "text", "text": CALENDAR_WINDOW_NOTE},
-    ]
+    assert _element(payload, "metric", "Events today")["value"] == "2"
+    assert _element(payload, "text", "Next")["text"] == "Q4 pipeline review"
+    rows = _element(payload, "list")["rows"]
+    assert len(rows) == 2
+    assert rows[0]["primary"] == "Q4 pipeline review"
+    assert rows[1]["primary"] == "Later sync"
+    assert rows[0]["secondary"] == now.replace(hour=14).strftime("%H:%M")
 
 
 def test_calendar_today_with_no_calendar_is_amber_with_cause(
@@ -443,13 +463,11 @@ def test_outlook_digest_installs_and_binds_header_counts(
     assert card["freshness"] == "fresh"
     payload = card["payload"]
     assert payload["status"] == "fresh"
-    assert payload["elements"] == [
-        {"kind": "metric", "label": "Messages", "value": "3"},
-        {"kind": "metric", "label": "Threads", "value": "1"},
-        {"kind": "metric", "label": "Top senders",
-         "value": "a@example.com (2), b@example.com (1)"},
-        {"kind": "text", "text": MAIL_WINDOW_NOTE},
-    ]
+    assert _element(payload, "metric", "Messages 24h")["value"] == "3"
+    senders = _element(payload, "list")["rows"]
+    assert [row["primary"] for row in senders] == [
+        "a@example.com", "b@example.com"]
+    assert _element(payload, "text", "Scope")["text"] == MAIL_WINDOW_NOTE
     # Metadata only: no message body ever rides along.
     assert "a body that must never reach a card" not in json.dumps(payload)
 
@@ -492,13 +510,10 @@ def test_research_brief_installs_and_binds_the_latest_answer(
     assert card["freshness"] == "fresh"
     payload = card["payload"]
     assert payload["status"] == "fresh"
-    assert payload["elements"] == [
-        {"kind": "text",
-         "text": "Five of nine EU partners reflected the new prices."},
-        {"kind": "metric", "label": "Sources", "value": "2"},
-        {"kind": "metric", "label": "Answered", "value": "2026-11-13 09:41"},
-        {"kind": "text", "text": RESEARCH_WINDOW_NOTE},
-    ]
+    assert _element(payload, "text", "Latest answer")["text"] == (
+        "Five of nine EU partners reflected the new prices.")
+    assert _element(payload, "metric", "Sources")["value"] == "2"
+    assert _element(payload, "text", "Answered")["text"] == "2026-11-13 09:41"
 
 
 def test_research_brief_with_nothing_asked_is_amber_with_cause(

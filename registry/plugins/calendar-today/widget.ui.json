@@ -2,9 +2,20 @@
   "type": "card",
   "title": "Today",
   "elements": [
-    { "type": "metric", "binding": "nextEventTitle", "label": "Next" },
-    { "type": "metric", "binding": "nextEventTime", "label": "At" },
-    { "type": "metric", "binding": "eventsToday", "label": "Events today" },
-    { "type": "text", "binding": "windowNote" }
+    {
+      "type": "metric",
+      "binding": "eventsToday",
+      "label": "Events today"
+    },
+    {
+      "type": "list",
+      "rowsBinding": "rows",
+      "title": "What is left"
+    },
+    {
+      "type": "text",
+      "binding": "nextEventTitle",
+      "label": "Next"
+    }
   ]
 }

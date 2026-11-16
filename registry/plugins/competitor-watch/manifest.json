@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "id": "competitor-watch",
+  "name": "Competitor Watch",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "research",
+  "tags": [
+    "competitor",
+    "pricing",
+    "change"
+  ],
+  "icon": "alert",
+  "summary": "Did the competitor pricing page change since the last check?",
+  "description": "Fetches one public pricing page a day, hashes it, and reports whether it changed since the previous read, with the changed lines and the fetch time. The only plugin in the registry that opens a network connection; it reads no local files.",
+  "highlights": [
+    "One public pricing page, checked daily",
+    "Change flag plus the lines that changed",
+    "The only network plugin; needs admin approval"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "optionalPermissions": {
+    "network": {
+      "allow": [
+        "example.com"
+      ],
+      "userPrompt": "Allow this plugin to read https://example.com/pricing once a day to detect pricing changes?"
+    }
+  },
+  "activationEvents": [
+    "onWidget:competitor-watch",
+    "onSchedule:0 7 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "competitor-watch",
+        "size": "2x1",
+        "dataSource": {
+          "type": "http-get",
+          "url": "https://example.com/pricing",
+          "host": "example.com",
+          "allow": [
+            "example.com"
+          ]
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

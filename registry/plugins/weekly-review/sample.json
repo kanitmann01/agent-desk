@@ -1,0 +1,29 @@
+{
+  "bindings": {
+    "value": 4,
+    "rows": [
+      {
+        "primary": "sales-delta-widget",
+        "secondary": "3",
+        "meta": "fresh"
+      },
+      {
+        "primary": "follow-up-watch",
+        "secondary": "7",
+        "meta": "fresh"
+      },
+      {
+        "primary": "week-load",
+        "secondary": "9",
+        "meta": "fresh"
+      },
+      {
+        "primary": "plugin-health",
+        "secondary": "12",
+        "meta": "fresh"
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

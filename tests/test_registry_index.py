@@ -38,8 +38,14 @@ def test_index_round_trips(tmp_path):
     assert index.plugins[0].class_ == "declarative"
     assert index.plugins[0].releases[0].sha256
     assert index.plugins[0].releases[0].tag == "sales-delta-widget-1.2.0"
-    # Round-trip: file -> model -> file, byte-faithful modulo key order.
-    assert json.loads(index.to_json()) == json.loads(raw)
+    # The model normalises v1 into v2 in memory; ids and releases survive.
+    serialized = json.loads(index.to_json())
+    assert serialized["schemaVersion"] == 2
+    assert [plugin["id"] for plugin in serialized["plugins"]] == ["sales-delta-widget"]
+    release = serialized["plugins"][0]["releases"][0]
+    assert release["version"] == "1.2.0"
+    assert release["sha256"] == index.plugins[0].releases[0].sha256
+    assert release["tag"] == "sales-delta-widget-1.2.0"
 
 
 def test_malformed_index_raises_named_reason(tmp_path):

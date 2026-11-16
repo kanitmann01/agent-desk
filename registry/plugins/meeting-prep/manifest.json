@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "id": "meeting-prep",
+  "name": "Meeting Prep",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "minHost": ">=0.1.0",
+  "license": "MIT",
+  "category": "time",
+  "tags": [
+    "meetings",
+    "prep",
+    "calendar"
+  ],
+  "icon": "clock",
+  "summary": "What do I need before the next meeting?",
+  "description": "Shows the next meeting and what you need before it starts: the upcoming timeline, the next event's title, the notes you flagged and a prep checklist. Reads only the calendar bridge's next-event metadata and the checklist in your own meeting notes; it never invents attendees, agenda items or links.",
+  "highlights": [
+    "The next event and the timeline that follows",
+    "A prep checklist drawn from your meeting notes",
+    "Never invents attendees or agenda items"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:meeting-prep",
+    "onSchedule:0 7 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "meeting-prep",
+        "size": "2x1",
+        "dataSource": {
+          "type": "calendar-read"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

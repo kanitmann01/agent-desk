@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 2,
+  "id": "update-radar",
+  "name": "Update radar",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "operations",
+  "tags": [
+    "updates",
+    "versions",
+    "plugins",
+    "runtime"
+  ],
+  "icon": "checklist",
+  "summary": "Which installed plugins have a newer release waiting?",
+  "description": "Reads the desk runtime state for available releases and lists the plugins with an update waiting, the version gap in each row, and the pending count with its seven-day direction. Nothing is downloaded or installed from this card.",
+  "highlights": [
+    "Pending update count with its seven-day direction",
+    "Per-plugin old and new version in a single list",
+    "The version gap sits in the row meta, not release notes"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:update-radar"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "update-radar",
+        "size": "2x1",
+        "dataSource": {
+          "type": "desk-state",
+          "selector": "runtime"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

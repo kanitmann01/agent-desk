@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "finance",
+  "minHost": ">=0.1.0",
+  "id": "revenue-vs-target",
+  "name": "Revenue vs Target",
+  "version": "0.2.0",
+  "tags": [
+    "revenue",
+    "target",
+    "quarter"
+  ],
+  "icon": "chart",
+  "summary": "Booked revenue for the quarter against the 1,000,000 USD target.",
+  "description": "Revenue vs Target sums the Booked column by Region across the newest workbook under ${workspace}/finance/, then compares the total with the quarter target and shows the 24-hour change. The blank state names the workbook glob and the columns it needs instead of showing zero.",
+  "highlights": [
+    "Sums Booked by Region across the quarter's revenue workbooks.",
+    "Progress bar against the 1,000,000 USD quarter target.",
+    "Shows the 24-hour direction so a late push is visible."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/finance/revenue*.xlsx"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:revenue-vs-target",
+    "onSchedule:0 7 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "revenue-vs-target",
+        "size": "2x1",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/finance/revenue*.xlsx",
+          "keyColumn": "Region",
+          "valueColumn": "Booked",
+          "window": "90d",
+          "aggregate": "sum"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

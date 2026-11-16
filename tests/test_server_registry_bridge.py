@@ -72,11 +72,13 @@ def test_unavailable_registry_is_honest_on_api_and_page():
         assert data["error"] == "registry:not-configured"
         assert "No plugin registry is configured" in data["message"]
 
-        status, _h, page = booted.request("GET", "/plugins", auth)
+        status, headers, _page = booted.request("GET", "/plugins", auth)
+        assert status == 302
+        assert headers["Location"] == "/marketplace/installed"
+        status, _h, body = booted.request(
+            "GET", "/api/marketplace/catalog", auth)
         assert status == 200
-        text = page.decode("utf-8")
-        assert "No plugin registry is configured" in text
-        assert "class='alert'" in text  # amber, never an empty success
+        assert json.loads(body)["total"] >= 20  # bundled catalog is offline
     finally:
         booted.close()
 
@@ -140,12 +142,9 @@ def test_plugins_page_installs_and_manages_via_forms(tmp_path):
     booted = _boot(str(registry))
     try:
         auth = booted.exchange()
-        status, _h, page = booted.request("GET", "/plugins", auth)
-        text = page.decode("utf-8")
-        assert status == 200
-        assert PLUGIN_ID in text
-        assert "Nothing installed yet" in text
-        assert "action='/plugins/registry-install'" in text
+        status, headers, _page = booted.request("GET", "/plugins", auth)
+        assert status == 302
+        assert headers["Location"] == "/marketplace/installed"
 
         status, headers, _b = _post_form(
             booted, "/plugins/registry-install",
@@ -153,12 +152,9 @@ def test_plugins_page_installs_and_manages_via_forms(tmp_path):
         assert status == 303
         assert headers["Location"].startswith("/plugins?notice=Installed")
 
-        status, _h, page = booted.request("GET", "/plugins", auth)
-        text = page.decode("utf-8")
-        assert "Installed." not in text.split("From the registry")[0] or True
-        assert f"action='/plugins/{PLUGIN_ID}/disable'" in text
-        assert f"action='/plugins/{PLUGIN_ID}/retest'" in text
-        assert f"action='/plugins/{PLUGIN_ID}/uninstall'" in text
+        status, _h, body = booted.request("GET", "/api/plugins", auth)
+        record = json.loads(body)["plugins"][0]
+        assert record["state"] == "enabled"
 
         status, _h, _b = _post_form(
             booted, f"/plugins/{PLUGIN_ID}/disable", {}, auth)
@@ -170,10 +166,8 @@ def test_plugins_page_installs_and_manages_via_forms(tmp_path):
         status, _h, _b = _post_form(
             booted, f"/plugins/{PLUGIN_ID}/uninstall", {}, auth)
         assert status == 303
-        status, _h, page = booted.request("GET", "/plugins", auth)
-        text = page.decode("utf-8")
-        assert "Removed, data kept" in text
-        assert f"delete-data:{PLUGIN_ID}" in text
+        status, _h, body = booted.request("GET", "/api/plugins", auth)
+        assert json.loads(body)["plugins"] == []  # no widget without a version
 
         # Purge without the named confirmation rides back as the notice.
         status, headers, _b = _post_form(

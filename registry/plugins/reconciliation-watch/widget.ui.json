@@ -1,0 +1,22 @@
+{
+  "type": "card",
+  "title": "Reconciliation",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Unmatched"
+    },
+    {
+      "type": "list",
+      "title": "Differences",
+      "rowsBinding": "rows"
+    },
+    {
+      "type": "delta",
+      "binding": "delta",
+      "label": "Ledger vs bank",
+      "directionBinding": "direction"
+    }
+  ]
+}

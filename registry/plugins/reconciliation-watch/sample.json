@@ -1,0 +1,36 @@
+{
+  "bindings": {
+    "value": 21,
+    "delta": 2,
+    "direction": "up",
+    "rows": [
+      {
+        "primary": "INV-1042",
+        "secondary": "left only",
+        "meta": ""
+      },
+      {
+        "primary": "INV-1051",
+        "secondary": "left only",
+        "meta": ""
+      },
+      {
+        "primary": "INV-1063",
+        "secondary": "right only",
+        "meta": ""
+      },
+      {
+        "primary": "INV-1038",
+        "secondary": "both",
+        "meta": ""
+      },
+      {
+        "primary": "INV-1047",
+        "secondary": "both",
+        "meta": ""
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

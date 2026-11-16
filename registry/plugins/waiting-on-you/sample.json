@@ -1,0 +1,25 @@
+{
+  "bindings": {
+    "threads": 6,
+    "messages": 31,
+    "waitingRows": [
+      {
+        "primary": "Renewal confirmation",
+        "secondary": "Dana Whitfield",
+        "meta": "3d"
+      },
+      {
+        "primary": "Budget approval",
+        "secondary": "Marcus Lee",
+        "meta": "2d"
+      },
+      {
+        "primary": "Contract redlines",
+        "secondary": "Priya Raman",
+        "meta": "1d"
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

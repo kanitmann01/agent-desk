@@ -1,0 +1,30 @@
+{
+  "bindings": {
+    "items": [
+      {
+        "text": "Send the Q4 pricing deck to Priya",
+        "done": true,
+        "due": "2026-11-14"
+      },
+      {
+        "text": "Book the Turin visa appointment",
+        "done": false,
+        "due": "2026-11-18"
+      },
+      {
+        "text": "Reply to the Coforge onboarding survey",
+        "done": false,
+        "due": "2026-11-16"
+      },
+      {
+        "text": "Archive the October research notes",
+        "done": true,
+        "due": ""
+      }
+    ],
+    "openCount": 2,
+    "nextDue": "2026-11-16"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

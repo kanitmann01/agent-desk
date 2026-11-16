@@ -1,0 +1,25 @@
+{
+  "bindings": {
+    "changed": true,
+    "rows": [
+      {
+        "primary": "Starter plan",
+        "secondary": "$29 per seat per month",
+        "meta": "was $25"
+      },
+      {
+        "primary": "Team plan",
+        "secondary": "$79 per seat per month",
+        "meta": "was $69"
+      },
+      {
+        "primary": "Annual discount",
+        "secondary": "15 percent",
+        "meta": "was 20 percent"
+      }
+    ],
+    "fetchedAt": "2026-11-15T08:55:00"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

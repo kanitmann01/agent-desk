@@ -1,0 +1,34 @@
+{
+  "bindings": {
+    "value": 7,
+    "rows": [
+      {
+        "primary": "Priya Nair",
+        "secondary": "Pricing sheet for the Lumen renewal",
+        "meta": "6 days overdue"
+      },
+      {
+        "primary": "Marcus Bell",
+        "secondary": "Signed SOW for the pilot",
+        "meta": "3 days overdue"
+      },
+      {
+        "primary": "Dana Whitfield",
+        "secondary": "Security questionnaire answers",
+        "meta": "due today"
+      },
+      {
+        "primary": "Contoso AP",
+        "secondary": "Corrected invoice reference",
+        "meta": "due in 2 days"
+      },
+      {
+        "primary": "Sam Okafor",
+        "secondary": "Reference call slot",
+        "meta": "due in 4 days"
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

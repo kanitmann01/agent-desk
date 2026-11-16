@@ -63,16 +63,18 @@ def _local_release_reasons(index, registry_root: Path,
     entry = index.plugin(plugin_id)
     if entry is None:
         return []
+    from .install import local_release_source
+
     reasons = []
     for release in entry.releases:
         if release.source != "local":
             continue
-        versioned = registry_root / "plugins" / plugin_id / release.version
-        if not versioned.is_dir():
+        source = local_release_source(registry_root, plugin_id, release.version)
+        if source is None:
             reasons.append(
                 f"registry-ci:local-release-missing:{plugin_id}@{release.version}")
             continue
-        if release.sha256 != tree_digest(versioned):
+        if release.sha256 != tree_digest(source):
             reasons.append(
                 f"registry-ci:hash-mismatch:{plugin_id}@{release.version}")
     return reasons

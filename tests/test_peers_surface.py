@@ -386,25 +386,35 @@ def _install_plugin_newer(booted, auth, tmp_path) -> str:
 # -- the share toggle on the plugins page ---------------------------------
 
 
-def test_plugins_page_carries_the_share_toggle(tmp_path):
+def test_marketplace_share_toggle_drives_the_peer_store(tmp_path):
     booted = _boot()
     try:
         auth = booted.exchange()
         _install_plugin(booted, auth, tmp_path)
-        status, _h, page = booted.request("GET", "/plugins", auth)
-        text = page.decode("utf-8")
-        assert f"action='/plugins/{PLUGIN_ID}/share'" in text
 
-        status, _h, _b = _post_form(booted, f"/plugins/{PLUGIN_ID}/share",
-                                    {}, auth)
-        assert status == 303
+        status, _h, body = booted.post_json(
+            "/api/marketplace/share", {"id": PLUGIN_ID}, auth)
+        assert status == 200, body
+        assert json.loads(body)["shared"] is True
         assert booted.server.peer_store.shared_ids() == {PLUGIN_ID}
-        _s, _h, page = booted.request("GET", "/plugins", auth)
-        assert f"action='/plugins/{PLUGIN_ID}/unshare'" in \
-            page.decode("utf-8")
+        status, _h, body = booted.request(
+            "GET", "/api/marketplace/installed", auth)
+        installed = json.loads(body)["plugins"]
+        assert next(p for p in installed if p["id"] == PLUGIN_ID)["shared"] is True
 
-        _post_form(booted, f"/plugins/{PLUGIN_ID}/unshare", {}, auth)
+        status, _h, body = booted.post_json(
+            "/api/marketplace/unshare", {"id": PLUGIN_ID}, auth)
+        assert status == 200, body
+        assert json.loads(body)["shared"] is False
         assert booted.server.peer_store.shared_ids() == set()
+
+        status, _h, _body = booted.post_json(
+            "/api/marketplace/uninstall", {"id": PLUGIN_ID}, auth)
+        assert status == 200
+        status, _h, body = booted.post_json(
+            "/api/marketplace/share", {"id": PLUGIN_ID}, auth)
+        assert status == 404
+        assert json.loads(body)["error"] == "plugin:unknown"
     finally:
         booted.close()
 
@@ -546,18 +556,23 @@ def test_bad_address_refusal_names_the_typed_input():
         booted.close()
 
 
-def test_share_hint_says_when_no_desks_are_paired(tmp_path):
+def test_share_response_says_when_no_desks_are_paired(tmp_path):
     booted = _boot()
     try:
         auth = booted.exchange()
         _install_plugin(booted, auth, tmp_path)
-        _s, _h, page = booted.request("GET", "/plugins", auth)
-        assert "No desks are paired yet" in page.decode("utf-8")
+        status, _h, body = booted.post_json(
+            "/api/marketplace/share", {"id": PLUGIN_ID}, auth)
+        assert status == 200, body
+        assert json.loads(body)["paired"] == 0
+
         booted.server.peer_store.add_peer(
             peer_id="desk-a", name="A", base_url="127.0.0.1:8801",
             token="t")
-        _s, _h, page = booted.request("GET", "/plugins", auth)
-        assert "No desks are paired yet" not in page.decode("utf-8")
+        status, _h, body = booted.post_json(
+            "/api/marketplace/share", {"id": PLUGIN_ID}, auth)
+        assert status == 200, body
+        assert json.loads(body)["paired"] == 1
     finally:
         booted.close()
 

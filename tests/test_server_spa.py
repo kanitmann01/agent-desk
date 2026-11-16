@@ -150,6 +150,55 @@ def test_spa_assets_refuse_paths_outside_the_build(booted, monkeypatch, tmp_path
         assert status == 404, path
 
 
+def test_marketplace_deep_links_serve_the_spa_shell_after_the_gate(booted, monkeypatch, tmp_path):
+    spa = tmp_path / "spa"
+    (spa / "assets").mkdir(parents=True)
+    (spa / "index.html").write_text(SYNTHETIC_INDEX, encoding="utf-8")
+    monkeypatch.setattr(server_app, "SPA_DIR", spa)
+    headers = booted.exchange()
+    for path in ("/marketplace", "/marketplace/plugin/ar-aging",
+                 "/marketplace/pack/manager",
+                 "/marketplace/plugin/ar-aging/manage"):
+        status, resp_headers, body = booted.request("GET", path, headers)
+        assert status == 200, path
+        assert resp_headers["Content-Type"].startswith("text/html"), path
+        assert resp_headers["Cache-Control"] == "no-store", path
+        # write_text uses the platform newline; compare the shell's content.
+        assert body.decode("utf-8").replace("\r\n", "\n") == SYNTHETIC_INDEX, path
+
+    # A typo is a 404 even though the SPA shell renders the not-found view.
+    for path in ("/marketplace/unknown", "/marketplace/category",
+                 "/marketplace/plugin/ar-aging/nope"):
+        status, resp_headers, body = booted.request("GET", path, headers)
+        assert status == 404, path
+        assert resp_headers["Content-Type"].startswith("text/html"), path
+        assert body.decode("utf-8").replace("\r\n", "\n") == SYNTHETIC_INDEX, path
+
+    status, _h, body = booted.request("GET", "/api/marketplace/unknown", headers)
+    assert status == 404
+    payload = json.loads(body)
+    assert payload["error"] == "catalog:not-found"
+    assert "static/spa" not in body.decode("utf-8")
+
+
+def test_marketplace_deep_link_still_needs_a_session(booted, monkeypatch, tmp_path):
+    spa = tmp_path / "spa"
+    spa.mkdir()
+    (spa / "index.html").write_text(SYNTHETIC_INDEX, encoding="utf-8")
+    monkeypatch.setattr(server_app, "SPA_DIR", spa)
+    status, _h, _body = booted.request(
+        "GET", "/marketplace/plugin/ar-aging", headers=booted.host_header())
+    assert status == 401
+
+
+def test_plugins_redirects_to_installed_for_one_release(booted):
+    headers = booted.exchange()
+    status, resp_headers, body = booted.request("GET", "/plugins", headers)
+    assert status == 302
+    assert resp_headers["Location"] == "/marketplace/installed"
+    assert body == b""
+
+
 def test_committed_bundle_exists_and_is_referenced():
     """The build artifact is committed, so end users never need node."""
     index = COMMITTED_SPA_DIR / "index.html"

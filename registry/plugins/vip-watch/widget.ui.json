@@ -1,0 +1,21 @@
+{
+  "type": "card",
+  "title": "Sender watch",
+  "elements": [
+    {
+      "type": "list",
+      "title": "Top senders",
+      "rowsBinding": "sendersRows"
+    },
+    {
+      "type": "metric",
+      "binding": "messages",
+      "label": "Messages"
+    },
+    {
+      "type": "text",
+      "binding": "windowNote",
+      "label": "Window"
+    }
+  ]
+}

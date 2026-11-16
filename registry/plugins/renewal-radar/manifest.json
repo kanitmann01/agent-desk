@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "id": "renewal-radar",
+  "name": "Renewal Radar",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "minHost": ">=0.1.0",
+  "license": "MIT",
+  "category": "time",
+  "tags": [
+    "renewals",
+    "contracts",
+    "deadlines"
+  ],
+  "icon": "calendar",
+  "summary": "What hits its notice deadline in the next 30 days?",
+  "description": "Watches the contract workbook at ops/contracts*.xlsx for notice deadlines in the next 30 days. Keys each row on the notice date rather than the renewal date, lists the contracts with the notice date in the meta column, and counts how many fall due. Read-only: the workbook is never written, and only the contracts workbook is read.",
+  "highlights": [
+    "Notice deadlines, not renewal dates",
+    "Sorted by days remaining, 30-day window",
+    "Read-only view of ops/contracts*.xlsx"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/ops/contracts*.xlsx"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:renewal-radar",
+    "onSchedule:0 7 * * 1"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "renewal-radar",
+        "size": "2x1",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/ops/contracts*.xlsx",
+          "keyColumn": "Vendor",
+          "valueColumn": "NoticeDate",
+          "window": "30d",
+          "aggregate": "count",
+          "dateColumn": "NoticeDate"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

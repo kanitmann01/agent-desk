@@ -1,0 +1,16 @@
+{
+  "type": "card",
+  "title": "Weekly review",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Sources live"
+    },
+    {
+      "type": "list",
+      "title": "Stalled",
+      "rowsBinding": "rows"
+    }
+  ]
+}
