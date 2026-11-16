@@ -25,6 +25,7 @@ from agentdesk.capabilities import (
 from agentdesk.probe.adapters import Adapters
 from agentdesk.probe.core import (
     FAIL,
+    GATE_EMBEDDINGS,
     GATE_KEYS,
     PASS,
     ReachResult,
@@ -148,9 +149,14 @@ def _fake_adapters(counter: dict) -> Adapters:
     )
 
 
-def test_the_gate_table_names_all_five_gates():
-    assert [entry[0] for entry in GATES] == list(GATE_KEYS)
-    assert [entry[1] for entry in GATES] == [1, 2, 3, 4, 5]
+def test_the_gate_table_names_all_the_gates():
+    # Five environment gates, then the endpoint embeddings gate (#95):
+    # the embeddings probe rides the same cache-then-retest surface but
+    # is not part of the CLI environment verdict, so it sits after
+    # GATE_KEYS in the table.
+    assert [entry[0] for entry in GATES][:5] == list(GATE_KEYS)
+    assert [entry[0] for entry in GATES][5] == GATE_EMBEDDINGS
+    assert [entry[1] for entry in GATES] == [1, 2, 3, 4, 5, 6]
 
 
 def test_default_gate_runners_match_what_the_gates_themselves_say(tmp_path):

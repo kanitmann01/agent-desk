@@ -55,6 +55,7 @@ import secrets
 import sqlite3
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from agentdesk.memory.core import (
@@ -77,7 +78,20 @@ from agentdesk.memory.crypto import (
     load_key,
     make_marker,
 )
+from agentdesk.memory.embed import (
+    EmbedderUnavailable,
+    decode_embedding,
+    encode_embedding,
+    rank,
+)
 from agentdesk.memory.extract import ENTITY_TYPES
+from agentdesk.memory.graph import (
+    DEFAULT_GRAPH_LIMIT,
+    DEFAULT_MIN_SIMILARITY,
+    GraphFact,
+    GraphObservation,
+    build_graph,
+)
 from agentdesk.memory.hybrid import EntityLink, normalize_name, rank_hybrid
 from agentdesk.memory.knowledge_gap import junk_reason
 from agentdesk.memory.resolve import (
@@ -100,7 +114,10 @@ CREATE TABLE IF NOT EXISTS facts (
   created_ts REAL NOT NULL,
   kind TEXT NOT NULL DEFAULT 'world' CHECK (kind IN ('world','experience')),
   occurrence_ts REAL,
-  source_id INTEGER REFERENCES sources(id)
+  source_id INTEGER REFERENCES sources(id),
+  embedding BLOB,
+  embedding_model TEXT,
+  embedding_dim INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -158,11 +175,12 @@ _COLUMNS = "id, text, source, created_ts, kind, occurrence_ts, source_id"
 _KINDS = ("world", "experience")
 
 # What a v1 facts table lacks. The fresh-install DDL above already has
-# all three; these ALTERs are for opening an old file. SQLite accepts a
-# CHECK on an added column when the column has a DEFAULT (kind does), so
-# the migrated table enforces the vocabulary exactly like a fresh one;
-# source_id's default is NULL, which is what an added REFERENCES column
-# requires while foreign keys are on.
+# all of these; these ALTERs are for opening an old file. SQLite accepts
+# a CHECK on an added column when the column has a DEFAULT (kind does),
+# so the migrated table enforces the vocabulary exactly like a fresh
+# one; source_id's default is NULL, which is what an added REFERENCES
+# column requires while foreign keys are on. The embedding trio (ticket
+# #95, the donor's migration) rides the same idempotent scan.
 _FACT_UPGRADE_COLUMNS = (
     (
         "kind",
@@ -171,6 +189,9 @@ _FACT_UPGRADE_COLUMNS = (
     ),
     ("occurrence_ts", "ALTER TABLE facts ADD COLUMN occurrence_ts REAL"),
     ("source_id", "ALTER TABLE facts ADD COLUMN source_id INTEGER REFERENCES sources(id)"),
+    ("embedding", "ALTER TABLE facts ADD COLUMN embedding BLOB"),
+    ("embedding_model", "ALTER TABLE facts ADD COLUMN embedding_model TEXT"),
+    ("embedding_dim", "ALTER TABLE facts ADD COLUMN embedding_dim INTEGER"),
 )
 
 # What encryption adds to each table (ticket #94): a ciphertext column
@@ -373,6 +394,11 @@ def _plain_field_counts(conn: sqlite3.Connection) -> dict[str, int]:
     every row's primary text counts regardless."""
     counts = {"facts": 0, "sources": 0, "entities": 0, "observations": 0}
     counts["facts"] = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
+    # Ticket #95: a stored embedding vector is a field the conversion
+    # seals too (the donor's countPlainFields counts it the same way).
+    counts["facts"] += conn.execute(
+        "SELECT COUNT(*) FROM facts WHERE embedding IS NOT NULL"
+    ).fetchone()[0]
     for text, speaker, context in conn.execute(
         "SELECT text, speaker, context FROM sources"
     ):
@@ -459,6 +485,17 @@ def _locked(method):
     return wrapper
 
 
+@dataclass(frozen=True)
+class StoredVector:
+    """One fact text's embedding, ready to store (the donor's
+    StoredVector): the model that produced it, its dimension, and the
+    little-endian float32 blob encode_embedding packed."""
+
+    model: str
+    dim: int
+    bytes: bytes
+
+
 class MemoryStore:
     """Facts in, recall out; the ranking lives in the pure service.
 
@@ -469,6 +506,15 @@ class MemoryStore:
     plain-language cause in locked_cause and refuses every operation
     with that cause, surfacing it on the memory page instead of silently
     reading or writing plaintext.
+
+    With `embedder` and `embeddings_active` (ticket #95) the store's
+    semantic half switches on: writes embed the fact text, recall adds
+    the vector leg, and backfill embeds the rows that miss a vector.
+    The flag is the gate (the server derives it from the semantic_memory
+    toggle and the embeddings probe's cached result); both are plain
+    attributes, so a caller can re-derive them per action. Every
+    embedding failure degrades to the donor's vectorFor: the fact
+    stores without a vector, recall keeps its deterministic legs.
     """
 
     def __init__(
@@ -477,6 +523,8 @@ class MemoryStore:
         clock: Callable[[], float],
         key: bytes | None = None,
         key_path=None,
+        embedder=None,
+        embeddings_active: bool = False,
     ) -> None:
         self.conn = conn
         self.clock = clock
@@ -486,6 +534,12 @@ class MemoryStore:
         self.key_path = Path(key_path) if key_path is not None else None
         self.locked_cause: str | None = None
         self._box: CryptoBox | None = None
+        # The semantic seam (ticket #95): an embedder object with a
+        # `model` name and an `embed(text)` callable (memory/embed's
+        # contract), plus the probe-and-toggle gate. None/inactive is
+        # the deterministic-only store every earlier ticket shipped.
+        self.embedder = embedder
+        self.embeddings_active = bool(embeddings_active)
         ensure_schema(conn)
         if key is not None:
             key = load_key(key)
@@ -545,27 +599,36 @@ class MemoryStore:
         """Insert one fact, unless a normalized duplicate already exists
         (ticket #92, the donor's saveFact): then no row is inserted, the
         incoming occurrence backfills the survivor's only if that is
-        null (embedding backfill arrives with ticket #95), and the
-        surviving Fact is returned, so a caller that resolves mentions
-        afterwards links them onto the existing row with INSERT OR
-        IGNORE edges. The kind vocabulary and the numeric occurrence are
-        checked here so the caller hears ValueError before the database
-        would refuse the row. Sealed: the plaintext column is blanked
-        and the ciphertext plus blind index land in the same
-        transaction, bound to the row id the insert returns."""
+        null, and the surviving Fact is returned, so a caller that
+        resolves mentions afterwards links them onto the existing row
+        with INSERT OR IGNORE edges. The kind vocabulary and the numeric
+        occurrence are checked here so the caller hears ValueError
+        before the database would refuse the row. Sealed: the plaintext
+        column is blanked and the ciphertext plus blind index land in
+        the same transaction, bound to the row id the insert returns.
+        Embeddings (ticket #95, the donor's saveFact vector): when the
+        semantic half is active the text embeds before the write and the
+        vector lands on the row it ends up on, backfilling the
+        survivor's NULL only; ANY embed failure stores the fact without
+        a vector (the donor's vectorFor) and recall keeps the
+        deterministic legs."""
         self._guard()
         if kind not in _KINDS:
             raise ValueError(f"kind must be one of {_KINDS}, not {kind!r}")
         if occurrence_ts is not None and not isinstance(occurrence_ts, (int, float)):
             raise ValueError("occurrence_ts must be a number or None")
         text = text.strip()
+        # The donor embeds before opening its write transaction.
+        vector = self._vector_for(text)
         with self.conn:
             existing_id = self._find_identical_fact(text)
             if existing_id is not None:
                 # Ticket #92, the donor's write-path reuse: the row is
-                # reused, the new occurrence fills only a null, and the
-                # embedding backfill into a null arrives with #95.
+                # reused and the new occurrence fills only a null; the
+                # donor's saveFact likewise backfills its vector into a
+                # NULL only, never overwriting a stored one.
                 self._backfill_occurrence(existing_id, occurrence_ts)
+                self._backfill_fact_vector(existing_id, vector)
                 fact_id = existing_id
             else:
                 cursor = self.conn.execute(
@@ -575,6 +638,7 @@ class MemoryStore:
                 )
                 fact_id = int(cursor.lastrowid)
                 self._seal_fact_text(fact_id, text)
+                self._store_fact_vector(fact_id, vector)
         return self.get(fact_id)
 
     def _find_identical_fact(
@@ -626,6 +690,195 @@ class MemoryStore:
             (occurrence_ts, fact_id),
         )
 
+    # -- the semantic half (ticket #95) -----------------------------------
+
+    def _embeddings_on(self) -> bool:
+        """The semantic half's gate: an embedder injected and the
+        caller's probe-and-toggle flag set."""
+        return self.embeddings_active and self.embedder is not None
+
+    def _prepare_vector(self, raw) -> StoredVector:
+        """One embedder answer into a StoredVector (the donor's
+        prepareText): an empty or unusable answer raises
+        EmbedderUnavailable so the callers can degrade on one class."""
+        try:
+            blob = encode_embedding(raw)
+        except ValueError as exc:
+            raise EmbedderUnavailable(
+                "the embedder returned an empty or unusable vector"
+            ) from exc
+        dim = len(raw)
+        if decode_embedding(blob, dim) is None:
+            raise EmbedderUnavailable(
+                "the embedder returned an empty or unusable vector"
+            )
+        return StoredVector(model=self.embedder.model, dim=dim, bytes=blob)
+
+    def _vector_for(self, text: str) -> StoredVector | None:
+        """The donor's vectorFor: null when the semantic half is off or
+        the embedder cannot answer, whatever the cause. The fact is
+        still stored; recall keeps the deterministic legs."""
+        if not self._embeddings_on():
+            return None
+        try:
+            raw = self.embedder.embed(text)
+            return self._prepare_vector(raw)
+        except Exception:  # noqa: BLE001 - the donor catches everything here
+            return None
+
+    def _vector_blob(self, vector: StoredVector, fact_id: int) -> bytes:
+        """The bytes to store: the raw blob on a plaintext bank, the
+        byte envelope bound to facts|embedding|row id on a sealed one
+        (the donor's sealBytes)."""
+        if self._box is None:
+            return vector.bytes
+        return self._box.seal_bytes(vector.bytes, "facts", "embedding", fact_id)
+
+    def _store_fact_vector(self, fact_id: int, vector: StoredVector | None) -> None:
+        """Land a new row's vector (a fresh row has NULLs to fill)."""
+        if vector is None:
+            return
+        self.conn.execute(
+            "UPDATE facts SET embedding = ?, embedding_model = ?,"
+            " embedding_dim = ? WHERE id = ?",
+            (self._vector_blob(vector, fact_id), vector.model, vector.dim, fact_id),
+        )
+
+    def _backfill_fact_vector(self, fact_id: int, vector: StoredVector | None) -> int:
+        """The donor's saveFact duplicate branch: fill a NULL only, never
+        overwrite a stored vector. Returns how many rows changed."""
+        if vector is None:
+            return 0
+        cursor = self.conn.execute(
+            "UPDATE facts SET embedding = ?, embedding_model = ?,"
+            " embedding_dim = ? WHERE id = ? AND embedding IS NULL",
+            (self._vector_blob(vector, fact_id), vector.model, vector.dim, fact_id),
+        )
+        return int(cursor.rowcount or 0)
+
+    def _refresh_fact_vector(self, fact_id: int, vector: StoredVector | None) -> None:
+        """The donor's updateFact non-merge write: the new text's vector
+        lands on the row, or the vector columns go NULL when the embed
+        failed (a stale vector under changed text is worse than none).
+        Only called while the semantic half is active."""
+        blob = None
+        model = None
+        dim = None
+        if vector is not None:
+            blob = self._vector_blob(vector, fact_id)
+            model = vector.model
+            dim = vector.dim
+        self.conn.execute(
+            "UPDATE facts SET embedding = ?, embedding_model = ?,"
+            " embedding_dim = ? WHERE id = ?",
+            (blob, model, dim, fact_id),
+        )
+
+    def _open_fact_embedding(self, fact_id: int, blob):
+        """The stored blob back as raw bytes: unchanged on a plaintext
+        bank, opened from the byte envelope on a sealed one."""
+        if self._box is None:
+            return blob
+        if blob is None:
+            raise MemoryEncryptedError("Missing ciphertext for facts.embedding.")
+        return self._box.open_bytes(blob, "facts", "embedding", fact_id)
+
+    def _vector_scores(self, query: str) -> dict[int, float]:
+        """The semantic leg's scores (the donor's vectorScores): the
+        query embeds once, then every row whose model and dimension
+        match the query's compares by cosine, positives kept. Any
+        embedder failure means no leg, never an error; rows under
+        another model or dimension never compare."""
+        if not self._embeddings_on() or not query.strip():
+            return {}
+        try:
+            raw = self.embedder.embed(query)
+            query_vector = [float(value) for value in raw]
+            model = self.embedder.model
+        except Exception:  # noqa: BLE001 - no leg on any failure
+            return {}
+        if not query_vector or not model:
+            return {}
+        points: list[tuple[int, list[float]]] = []
+        rows = self.conn.execute(
+            "SELECT id, embedding, embedding_model, embedding_dim FROM facts"
+            " WHERE embedding IS NOT NULL"
+        ).fetchall()
+        for fact_id, blob, stored_model, stored_dim in rows:
+            if stored_model != model or stored_dim != len(query_vector):
+                continue
+            vector = decode_embedding(
+                self._open_fact_embedding(int(fact_id), blob), stored_dim
+            )
+            if vector is None:
+                continue
+            points.append((int(fact_id), vector))
+        return dict(rank(query_vector, points))
+
+    def backfill_embeddings(self) -> dict:
+        """The donor's backfillEmbeddings (ticket #95): every fact whose
+        embedding is NULL embeds oldest-first (created_ts, then id), one
+        committed UPDATE per row, so a mid-run failure leaves the prior
+        rows embedded and a retry finishes the job. Returns the donor's
+        result shape plus the cause that stopped the run: embedded
+        count, remaining count, cause None on a clean pass. Refuses
+        without an active embeddings client, like the donor refuses
+        without an embedder. The write lock is held per row, never
+        across the run (the review's finding 2): the embed call is
+        network time spent outside the lock, so a long backfill never
+        blocks other writers, and the embedding IS NULL predicate makes
+        each row's UPDATE safe to interleave."""
+        self._guard()
+        if not self._embeddings_on():
+            raise ValueError(
+                "backfill needs an active embeddings client: pass the"
+                " embeddings probe on the capabilities page and keep"
+                " semantic memory on in settings"
+            )
+        rows = self.conn.execute(
+            "SELECT id FROM facts WHERE embedding IS NULL"
+            " ORDER BY created_ts ASC, id ASC"
+        ).fetchall()
+        embedded = 0
+        cause: str | None = None
+        for (row_id,) in rows:
+            fact_id = int(row_id)
+            try:
+                text = self.get(fact_id).text
+            except UnknownFact:
+                continue  # the row vanished mid-run; nothing to embed
+            try:
+                raw = self.embedder.embed(text)
+                vector = self._prepare_vector(raw)
+            except Exception as exc:  # noqa: BLE001 - one attempt, then stop
+                cause = str(exc) or "the embeddings endpoint did not answer"
+                break
+            with self._lock:
+                with self.conn:  # one committed UPDATE per row (retryable)
+                    embedded += self._backfill_fact_vector(fact_id, vector)
+        remaining = int(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM facts WHERE embedding IS NULL"
+            ).fetchone()[0]
+        )
+        return {"embedded": embedded, "remaining": remaining, "cause": cause}
+
+    def embedding_counts(self) -> dict:
+        """The memory page's live counts: how many facts carry a vector
+        and how many still miss one."""
+        self._guard()
+        embedded = int(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM facts WHERE embedding IS NOT NULL"
+            ).fetchone()[0]
+        )
+        remaining = int(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM facts WHERE embedding IS NULL"
+            ).fetchone()[0]
+        )
+        return {"embedded": embedded, "remaining": remaining}
+
     @_locked
     def edit(self, fact_id: int, text: str) -> EditResult:
         """Replace the text, merging into an existing duplicate when the
@@ -638,10 +891,17 @@ class MemoryStore:
         the oldest other fact, like the donor's ordering. An edit to a
         unique text behaves exactly as before and reports no merge.
         Sealed: the same row id rebinds the new ciphertext on the
-        non-merge path; the merge path only moves and deletes rows."""
+        non-merge path; the merge path only moves and deletes rows.
+        Embeddings (ticket #95, the donor's updateFact): an active edit
+        embeds the new text, refreshing the edited row's vector on the
+        non-merge path and backfilling the survivor's NULL on the merge
+        path; an embed failure there clears the vector, exactly the
+        donor's vector-or-null write. An inactive edit leaves whatever
+        vectors exist alone."""
         self._guard()
         self.get(fact_id)
         text = text.strip()
+        vector = self._vector_for(text)
         survivor_id = fact_id
         merged = False
         with self.conn:
@@ -660,6 +920,7 @@ class MemoryStore:
                 ).fetchone()
                 if row is not None and row[0] is not None:
                     self._backfill_occurrence(duplicate_id, row[0])
+                self._backfill_fact_vector(duplicate_id, vector)
                 self.conn.execute("DELETE FROM edges WHERE fact_id = ?", (fact_id,))
                 self.conn.execute(
                     "DELETE FROM observation_sources WHERE fact_id = ?", (fact_id,)
@@ -673,6 +934,8 @@ class MemoryStore:
                     (self._plain(text), fact_id),
                 )
                 self._seal_fact_text(fact_id, text)
+                if self._embeddings_on():
+                    self._refresh_fact_vector(fact_id, vector)
         return EditResult(
             fact=self.get(survivor_id),
             merged_into=merged,
@@ -1195,14 +1458,22 @@ class MemoryStore:
             self._sync_name_index(box, row_id, canonical_name, aliases)
 
     def _encrypt_facts(self, box: CryptoBox) -> None:
-        rows = self.conn.execute("SELECT id, text FROM facts").fetchall()
-        for row_id, text in rows:
+        # Ticket #95: an existing plain embedding blob re-seals under the
+        # facts|embedding aad in the same conversion, like the donor's
+        # encrypt-bank does.
+        rows = self.conn.execute("SELECT id, text, embedding FROM facts").fetchall()
+        for row_id, text, embedding in rows:
             self.conn.execute(
-                "UPDATE facts SET text = '', text_enc = ?, text_idx = ?"
-                " WHERE id = ?",
+                "UPDATE facts SET text = '', text_enc = ?, text_idx = ?,"
+                " embedding = ? WHERE id = ?",
                 (
                     box.seal(text, "facts", "text", row_id),
                     box.blind(normalize_fact_text(text)),
+                    (
+                        box.seal_bytes(embedding, "facts", "embedding", row_id)
+                        if embedding is not None
+                        else None
+                    ),
                     row_id,
                 ),
             )
@@ -1288,6 +1559,114 @@ class MemoryStore:
         ).fetchall()
         return [self._fact_from_row(row) for row in rows]
 
+    def graph_snapshot(
+        self,
+        now: float | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        limit: int = DEFAULT_GRAPH_LIMIT,
+        min_similarity: float = DEFAULT_MIN_SIMILARITY,
+    ):
+        """The memory graph page's snapshot (ticket #96, the donor's
+        buildGraphSnapshot with the I/O filled in): the facts load with
+        their stored vectors, the observations with their citations and
+        the entity links exactly as recall loads them, and the pure
+        builder (memory/graph) does all the arithmetic. `now` defaults
+        to the store's clock; the bounds are epoch seconds, the since
+        bound inclusive and the until bound exclusive. Node ids are
+        table-qualified (`fact:<id>`, `observation:<id>`) because the
+        donor's per-row UUIDs were globally unique and these integer
+        sequences are not; the graph's undirected keys then stay
+        honest. Sealed banks decrypt through the same helpers every
+        other read uses, so a sealed bank's snapshot equals the
+        plaintext one's."""
+        self._guard()
+        if now is None:
+            now = self.clock()
+        facts = self._facts_with_embeddings()
+        observations = [
+            GraphObservation(
+                id=f"observation:{row.id}",
+                text=row.text,
+                updated_ts=row.updated_ts,
+                fact_ids=tuple(_qualified_fact_id(fid) for fid in row.fact_ids),
+            )
+            for row in self.observations()
+        ]
+        links = {
+            _qualified_fact_id(fact_id): entity_links
+            for fact_id, entity_links in self._entity_links().items()
+        }
+        return build_graph(
+            facts,
+            observations,
+            links,
+            now,
+            since=since,
+            until=until,
+            limit=limit,
+            min_similarity=min_similarity,
+        )
+
+    def _facts_with_embeddings(self) -> list[GraphFact]:
+        """Every fact as the builder reads it: identity, dates and the
+        decoded vector (None whenever the stored triple is incomplete,
+        the donor's vectorOf). Sealed banks require and open the text
+        and embedding ciphertext like every read; the embedding's blind
+        envelope opens only when a blob is present, because a fact
+        stored while the semantic half was off keeps a NULL vector."""
+        facts: list[GraphFact] = []
+        if self._box is not None:
+            rows = self.conn.execute(
+                "SELECT id, text_enc, kind, created_ts, occurrence_ts,"
+                " embedding, embedding_model, embedding_dim FROM facts"
+                " ORDER BY created_ts ASC, id ASC"
+            ).fetchall()
+            for row in rows:
+                (row_id, text_enc, kind, created_ts, occurrence_ts,
+                 blob, model, dim) = row
+                if text_enc is None:
+                    raise MemoryEncryptedError("Missing ciphertext for facts.text.")
+                text = self._box.open(text_enc, "facts", "text", row_id)
+                facts.append(GraphFact(
+                    id=_qualified_fact_id(row_id),
+                    text=text,
+                    created_ts=float(created_ts),
+                    kind=kind,
+                    occurrence_ts=occurrence_ts,
+                    embedding=self._stored_vector(int(row_id), blob, dim),
+                    embedding_model=model,
+                    embedding_dim=dim,
+                ))
+            return facts
+        rows = self.conn.execute(
+            "SELECT id, text, kind, created_ts, occurrence_ts,"
+            " embedding, embedding_model, embedding_dim FROM facts"
+            " ORDER BY created_ts ASC, id ASC"
+        ).fetchall()
+        for row_id, text, kind, created_ts, occurrence_ts, blob, model, dim in rows:
+            facts.append(GraphFact(
+                id=_qualified_fact_id(row_id),
+                text=text,
+                created_ts=float(created_ts),
+                kind=kind,
+                occurrence_ts=occurrence_ts,
+                embedding=self._stored_vector(int(row_id), blob, dim),
+                embedding_model=model,
+                embedding_dim=dim,
+            ))
+        return facts
+
+    def _stored_vector(self, fact_id: int, blob, dim):
+        """The decoded vector behind one stored blob, or None: absent
+        whenever the blob or the dimension is missing (the donor's
+        vectorOf), decoded through the sealed envelope when the bank is
+        sealed and through decode_embedding either way."""
+        if blob is None or dim is None:
+            return None
+        raw = self._open_fact_embedding(fact_id, blob)
+        return decode_embedding(raw, dim)
+
     def _fact_from_row(self, row) -> Fact:
         text = row[1]
         if self._box is not None:
@@ -1310,9 +1689,18 @@ class MemoryStore:
         first, the score the fused rank contribution. The old overlap
         rank stays in memory/service as the fallback scorer. Over a
         sealed bank the rows decrypt in memory (a known donor limit at
-        personal scale)."""
+        personal scale). Ticket #95: when the semantic half is active,
+        the query embeds once and the matching rows' cosine scores join
+        the fusion as the vector leg at unit weight; any embed failure
+        or a mismatched model or dimension simply leaves the leg out,
+        so recall is never an error because of it."""
         self._guard()
-        return rank_hybrid(query, self.all(), self._entity_links(), now=self.clock())
+        facts = self.all()
+        links = self._entity_links()
+        vector_scores = self._vector_scores(query)
+        return rank_hybrid(
+            query, facts, links, now=self.clock(), vector_scores=vector_scores
+        )
 
     def _entity_links(self) -> dict[int, list[EntityLink]]:
         """The fact-to-entity graph the graph leg expands: one entry per
@@ -1357,6 +1745,13 @@ def _normalize_name(name: str) -> str:
     """The hybrid ranker's normalize_name, the one normalizer that
     serves recall and resolution alike."""
     return normalize_name(name)
+
+
+def _qualified_fact_id(row_id) -> str:
+    """The graph node id for a fact row (ticket #96): the table-
+    qualified string that keeps fact and observation nodes distinct,
+    the donor's globally unique ids reduced to a rule."""
+    return f"fact:{int(row_id)}"
 
 
 class _EntityRepo(EntityRepo):

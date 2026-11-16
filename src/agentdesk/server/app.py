@@ -47,6 +47,7 @@ from agentdesk.calendar.watcher import (
     default_read_calendar,
 )
 from agentdesk.capabilities import GATES, CapabilitiesCache, GateRunners, default_gate_runners
+from agentdesk.probe.core import PASS as GATE_PASS
 from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
@@ -87,8 +88,14 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
-from agentdesk.memory.core import UnknownEntity, UnknownFact
+from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.memory.crypto import MemoryEncryptedError
+from agentdesk.memory.embed import (
+    EmbedderUnavailable,
+    EndpointEmbedder,
+    effective_embeddings_model,
+    settings_embedder,
+)
 from agentdesk.memory.extract import (
     EndpointExtractor,
     ExtractionFailed,
@@ -133,6 +140,7 @@ from agentdesk.server.commitments import (
     render_commitments_unavailable,
     render_commitments_widget,
 )
+from agentdesk.server.graph_view import parse_graph_query, render_graph_page
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
 from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
@@ -520,6 +528,55 @@ def _memory_entity_id(value) -> int | None:
     return value
 
 
+class _AuditedEmbedder:
+    """The audit wrapper around the embeddings client (ticket #95): one
+    ``llm.embeddings`` row per endpoint call, the same fields the
+    assistant loop writes for every outbound model call (endpoint,
+    model, input size, status), never the text itself. The store calls
+    this object exactly like the raw client; injecting a raw client (a
+    test does) stays silent by design, the caller's audit, not the
+    port's."""
+
+    def __init__(self, inner, base_url: str, audit_conn) -> None:
+        self._inner = inner
+        self._base_url = base_url
+        self._audit_conn = audit_conn
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    @property
+    def last_request_bytes(self) -> int:
+        return int(getattr(self._inner, "last_request_bytes", 0) or 0)
+
+    def embed(self, text: str):
+        request_bytes = len(text.encode("utf-8"))
+        try:
+            vector = self._inner.embed(text)
+        except EmbedderUnavailable as exc:
+            self._record("error", request_bytes, str(exc)[:200])
+            raise
+        except Exception as exc:  # noqa: BLE001 - classified, then raised
+            self._record("error", request_bytes, f"{type(exc).__name__}: {exc}"[:200])
+            raise
+        self._record("ok", request_bytes)
+        return vector
+
+    def _record(self, status: str, request_bytes: int, detail: str = "") -> None:
+        if self._audit_conn is None:
+            return
+        audit_store.record(
+            self._audit_conn,
+            "llm.embeddings",
+            target=self._base_url,
+            status=status,
+            model=self.model,
+            request_bytes=request_bytes,
+            detail=detail,
+        )
+
+
 _PEER_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -664,7 +721,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         # the runner set defaults to the real probe bundle. Building that
         # set probes nothing: gates run only when a re-test POST calls one.
         self.capabilities_cache = capabilities_cache
-        self.gate_runners = gate_runners if gate_runners is not None else _default_gate_runners()
+        self.gate_runners = (
+            gate_runners if gate_runners is not None
+            else _default_gate_runners(settings_store)
+        )
         # Process-lifetime consent allows: (plugin, scope) pairs accepted
         # "for this plugin". A fresh set unless injected; restart forgets.
         self.consents = consents if consents is not None else ConsentStore()
@@ -1059,6 +1119,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/memory/graph":
+            self._memory_graph_page()
         elif path == "/memory/sweep":
             self._memory_sweep_page()
         elif path == "/memory/encrypt":
@@ -1321,6 +1383,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_retain()
         elif path == "/memory/reflect":
             self._memory_reflect()
+        elif path == "/memory/embeddings/backfill":
+            self._memory_embeddings_backfill()
         elif path.startswith("/capabilities/") and path.endswith("/retest"):
             self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
@@ -1476,10 +1540,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         ranked against the user's question. Recall only: this path never
         creates a fact; the bounds live in memory/service. A locked
         memory store (ticket #94) contributes no block: the assistant
-        keeps answering, the bank is never read in plaintext."""
+        keeps answering, the bank is never read in plaintext. The
+        semantic half is derived per turn like every memory action (the
+        review's finding 5): the assistant's recall gains the vector
+        leg on the same terms as the memory page's, not only after some
+        memory route happens to run first."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return ""
+        self._configure_memory_embeddings()
         try:
             return build_facts_block(memory.recall(question))
         except MemoryEncryptedError:
@@ -1802,7 +1871,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data"):
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -1810,6 +1879,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # The demo switch is not a data source: no watcher stops or
             # starts, so it never joins _apply_source_toggles.
             self._apply_sample_data(value)
+        elif key == "semantic_memory":
+            # The semantic switch (ticket #95) owns no watcher either:
+            # the next memory action re-derives the store's semantic
+            # half from this value and the probe's cached answer.
+            pass
         else:
             self._apply_source_toggles(key, value)
         # The one form poster is the inbox empty state's offer, so a
@@ -2157,6 +2231,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     # -- memory: the page and its actions (tickets #42, #94) --------------
 
+    def _configure_memory_embeddings(self) -> None:
+        """Derive the memory store's semantic half for this action
+        (ticket #95): the semantic_memory toggle (default on), the
+        embeddings probe's cached answer (a PASS only; the page's
+        re-test is what produced it), and a saved endpoint to ask. Any
+        miss leaves the store inert, so recall is the deterministic
+        hybrid exactly as before this ticket. The embedder is wrapped
+        in the audit rows every outbound call owes; the store is a
+        long-lived object, so the derived pair is written back onto it
+        per action rather than per boot."""
+        server = self.server  # type: ignore[attr-defined]
+        memory = server.memory
+        if memory is None or memory.locked_cause is not None:
+            return
+        settings = server.settings
+        active = True if settings is None else bool(settings.get("semantic_memory"))
+        cache = server.capabilities_cache
+        cached = cache.cached("embeddings") if cache is not None else None
+        passed = cached is not None and cached.result.status == GATE_PASS
+        base, key, _model = effective_llm_config(settings)
+        embedder = None
+        if active and passed and base:
+            embedder = _AuditedEmbedder(
+                EndpointEmbedder(base, key, effective_embeddings_model(settings)),
+                base_url=base,
+                audit_conn=server.audit_conn,
+            )
+        memory.embedder = embedder
+        memory.embeddings_active = embedder is not None
+
     def _memory_available(self):
         """The store check every memory route rides: None means the
         response is already sent. A locked store (a marker without its
@@ -2200,16 +2304,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 memory.all(), agentdesk.__version__, recall=recall, query=query,
                 encrypt=encrypt, entities=memory.entities(), sweep=sweep,
                 notice=notice, observations=memory.observations(),
+                embeddings=memory.embedding_counts(),
                 inbox_count=self._inbox_waiting_count(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_add(self) -> None:
         """The page's one explicit creation path. The assistant and
-        research paths may recall, never create."""
+        research paths may recall, never create. Ticket #95: the
+        semantic half is derived per action, so an active fact embeds
+        at write and a failure stores the fact without a vector."""
         memory = self._memory_available()
         if memory is None:
             return
+        self._configure_memory_embeddings()
         body = self._read_json_body() or {}
         text = body.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -2225,6 +2333,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         memory = self._memory_available()
         if memory is None:
             return
+        self._configure_memory_embeddings()
         body = self._read_json_body() or {}
         text = body.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -2271,6 +2380,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_memory_page()
             return
         self._send_memory_page(sweep=memory.sweep_candidates())
+
+    def _memory_graph_page(self) -> None:
+        """The memory graph page (ticket #96): the snapshot's static
+        SVG in this app's page style. A locked store renders the
+        memory page's banner, like the sweep's dry run does; the query
+        string parses defensively (memory dates, a clamped limit), so
+        the page renders whatever arrives."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_memory_page()
+            return
+        _path, _sep, query = self.path.partition("?")
+        since, until, limit = parse_graph_query(query)
+        snapshot = memory.graph_snapshot(since=since, until=until, limit=limit)
+        page = render_graph_page(
+            snapshot,
+            agentdesk.__version__,
+            since=since,
+            until=until,
+            inbox_count=self._inbox_waiting_count(),
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_sweep(self) -> None:
         """Delete the checked candidates through the donor's removeFacts
@@ -2395,10 +2529,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _memory_recall(self) -> None:
         """The preview: render the page with the ranked answers, best
-        first, so the manager sees exactly what the assistant would ride."""
+        first, so the manager sees exactly what the assistant would
+        ride. Ticket #95: the query embeds once when the semantic half
+        is active; a failure simply leaves the deterministic legs."""
         memory = self._memory_available()
         if memory is None:
             return
+        self._configure_memory_embeddings()
         body = self._read_json_body() or {}
         query = body.get("query")
         if not isinstance(query, str) or not query.strip():
@@ -2488,6 +2625,76 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_redirect("/memory")
             return
         self._send_json(status, payload)
+
+    # -- embeddings backfill (ticket #95) ----------------------------------
+
+    def _memory_embeddings_backfill(self) -> None:
+        """The memory page's backfill action (ticket #95, the donor's
+        backfillEmbeddings): every fact missing a vector embeds
+        oldest-first, one committed UPDATE per row, so a mid-run
+        failure leaves the prior rows embedded and a retry finishes
+        the job. The answer carries the counts either way (embedded N,
+        remaining M) and, when the run stopped early, the endpoint's
+        plain-language cause. The action's audit row names the counts,
+        never a fact text; the individual endpoint calls ride the
+        llm.embeddings rows the audited embedder writes."""
+        server = self.server  # type: ignore[attr-defined]
+        memory = self._memory_available()
+        if memory is None:
+            return
+        self._configure_memory_embeddings()
+        if not (memory.embeddings_active and memory.embedder is not None):
+            self._memory_embeddings_error_response(
+                409,
+                "Semantic memory is not active: pass the embeddings probe"
+                " on the capabilities page, keep semantic memory on in"
+                " settings, and save an endpoint first.",
+            )
+            return
+        try:
+            result = memory.backfill_embeddings()
+        except MemoryEncryptedError as exc:
+            self._memory_embeddings_error_response(503, str(exc))
+            return
+        counts = f"{result['embedded']} embedded, {result['remaining']} remaining"
+        cause = result.get("cause")
+        if server.audit_conn is not None:
+            audit_store.record(
+                server.audit_conn, "memory.embeddings",
+                target=counts,
+                status="ok" if cause is None else "error",
+                detail=cause or "",
+            )
+        notice = f"Embeddings backfill: {counts}."
+        if cause is not None:
+            notice = f"Embeddings backfill stopped early: {cause} Counts: {counts}"
+            if self._is_form_submit():
+                self._send_memory_page(notice=notice)
+                return
+            self._send_json(200, {
+                "status": "error",
+                "embedded": result["embedded"],
+                "remaining": result["remaining"],
+                "cause": cause,
+            })
+            return
+        if self._is_form_submit():
+            self._send_memory_page(notice=notice)
+            return
+        self._send_json(200, {
+            "status": "ok",
+            "embedded": result["embedded"],
+            "remaining": result["remaining"],
+            "cause": None,
+        })
+
+    def _memory_embeddings_error_response(self, status: int, cause: str) -> None:
+        """A refused embeddings action: the error page for a form post,
+        the JSON cause for an API call."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Embeddings", cause)
+            return
+        self._send_json(status, {"error": cause})
 
     # -- retain: the chat surface's save-to-memory action (ticket #91) ----
 
@@ -2624,12 +2831,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         endpoint gate and the llm.reflect audit match every other
         model call. With no reflector injected at construction, an
         EndpointReflector is built from the effective llm client per
-        call, exactly like the retain route's extractor.
+        call, exactly like the retain route's extractor. Ticket #95:
+        when the semantic half is active, every draft also embeds (one
+        audited call each, failures degrade) so the near-duplicate
+        rule's cosine leg can join.
         """
         server = self.server  # type: ignore[attr-defined]
         memory = self._memory_available()
         if memory is None:
             return
+        self._configure_memory_embeddings()
         if server.inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
             return
@@ -2678,7 +2889,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             survivors = accept_observations(
                 list(drafts), {fact.id for fact in gathered},
-                single_entity=bool(entity),
+                single_entity=bool(entity), vectors=self._draft_vectors(memory, drafts),
             )
         except ReflectFailed as exc:
             # The call itself succeeded and is already audited; the
@@ -2699,6 +2910,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
             "rejected": len(drafts) - len(survivors),
         })
+
+    def _draft_vectors(self, memory, drafts) -> dict[str, list[float]]:
+        """Each reflector draft's embedding, keyed by its normalized
+        text (ticket #95, the donor's reflect: every draft embeds
+        through the bank's one embedder, so the map is same-model by
+        construction). A failed embed leaves that draft out, which the
+        near-duplicate cosine leg reads as no vector, never an error.
+        The calls ride the audited wrapper like every other endpoint
+        call."""
+        vectors: dict[str, list[float]] = {}
+        if not (memory.embeddings_active and memory.embedder is not None):
+            return vectors
+        for draft in drafts:
+            key = normalize_fact_text(draft.text)
+            if not key or key in vectors:
+                continue
+            try:
+                vectors[key] = list(memory.embedder.embed(draft.text))
+            except Exception:  # noqa: BLE001 - the donor's vectorFor
+                continue
+        return vectors
 
     def _reflection_card(self, draft, title: str, scope: str,
                          gathered_by_id: dict):
@@ -2829,10 +3061,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         ticket #91), and the legacy string meta ("fact": "..."), which
         behaves exactly as before. The only non-page creation path. The
         fact's source names the card, and the audit row names that
-        source, never the text."""
+        source, never the text. Ticket #95: the semantic half derives
+        per action, so an accepted fact embeds at write when active."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return
+        self._configure_memory_embeddings()
         memory_fact = card.meta.get("memoryFact")
         if isinstance(memory_fact, dict):
             self._carry_memory_fact(card, memory_fact)
@@ -4657,7 +4891,7 @@ def create_server(
     if capabilities_cache is None:
         capabilities_cache = _default_capabilities_cache()
     if gate_runners is None:
-        gate_runners = _default_gate_runners()
+        gate_runners = _default_gate_runners(settings_store)
     if mail_store is None:
         mail_store = _default_mail_store()
     if mail is None and inbox_store is not None and mail_store is not None \
@@ -4910,13 +5144,19 @@ def _default_capabilities_cache() -> CapabilitiesCache | None:
         return None
 
 
-def _default_gate_runners() -> GateRunners:
-    """The real probe bundle over a workdir beside the other data.
+def _default_gate_runners(settings_store=None) -> GateRunners:
+    """The real probe bundle over a workdir beside the other data,
+    plus the embeddings gate over the settings-backed client (#95).
 
-    Building the set probes nothing (plain closures over the adapters),
-    so carrying it from startup costs nothing and page renders stay
-    side-effect free; the gates run only when a re-test POST calls one."""
-    return default_gate_runners(default_data_dir() / "probe-run")
+    Building the set probes nothing (plain closures over the adapters
+    and the settings rows), so carrying it from startup costs nothing
+    and page renders stay side-effect free; the gates run only when a
+    re-test POST calls one, and the embeddings gate makes exactly one
+    request when it does."""
+    return default_gate_runners(
+        default_data_dir() / "probe-run",
+        embeddings=lambda: settings_embedder(settings_store),
+    )
 
 
 def _default_plugins(calendar: CalendarBridge | None = None,

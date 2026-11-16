@@ -19,6 +19,11 @@ GATE_UV = "uv-tls-bootstrap"
 GATE_FLOW = "power-automate-flows"
 GATE_ONEDRIVE = "onedrive-sync"
 GATE_EDR = "edr-identity"
+# The embeddings gate (ticket #95) rides the capabilities cache and the
+# re-test surface with the five above, but it probes the configured LLM
+# endpoint, not this machine, so it stays OUT of GATE_KEYS: the
+# environment verdict and the CLI probe keep their five-gate contract.
+GATE_EMBEDDINGS = "embeddings"
 
 GATE_KEYS = (GATE_EXEC, GATE_UV, GATE_FLOW, GATE_ONEDRIVE, GATE_EDR)
 

@@ -556,6 +556,7 @@ def rank_hybrid(
     links: dict[int, list[EntityLink]] | None,
     now: float,
     *,
+    vector_scores: dict[int, float] | None = None,
     rrf_k: int = RRF_K,
     half_life_days: float = HALF_LIFE_DAYS,
 ) -> list[tuple[float, Fact]]:
@@ -566,9 +567,12 @@ def rank_hybrid(
     a signal never recall (silence is the designed empty); when a
     window is present, in-window facts recall on the prior alone.
 
-    The vector leg is a later ticket's work (embeddings): fuse_parts
-    already accepts its (ids, weight) pair at unit weight, exactly like
-    the donor's fusion accepts the third list.
+    `vector_scores` is the semantic leg (ticket #95): fact id to cosine
+    score, computed by the store from the query vector and the rows
+    whose model and dimension match, exactly the donor's vectorScores.
+    None or empty means no vector leg, and the output is then identical
+    to the deterministic fusion in order and in score. The leg joins
+    the fusion at unit weight.
     """
     if not query.strip() or not facts:
         return []
@@ -577,7 +581,7 @@ def rank_hybrid(
 
     keyword_ids = rank_ids(keyword_scores(facts, tokens))
     graph_ids = rank_ids(graph_scores(facts, links or {}, query, tokens))
-    vector_ids: list[int] = []  # the semantic leg joins here at unit weight
+    vector_ids = rank_ids(vector_scores or {})
     fused = fuse_parts(
         [
             (keyword_ids, KEYWORD_WEIGHT),
