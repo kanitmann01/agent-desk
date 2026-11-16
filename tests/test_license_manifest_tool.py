@@ -161,3 +161,36 @@ def test_load_toml_prefers_tomllib_when_available(monkeypatch, tmp_path):
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(PYPROJECT_SAMPLE, encoding="utf-8")
     assert license_manifest._load_toml(pyproject) == {"parsed": "by tomllib"}
+
+
+# -- the dependency list is no longer empty (ticket #94) ---------------------
+
+
+def test_dual_license_annotation_is_admitted_when_every_part_is_allowed():
+    violations = license_manifest.check_dependencies(
+        {"cryptography": "Apache-2.0 OR BSD-3-Clause"}
+    )
+    assert violations == []
+
+
+def test_dual_license_with_a_disallowed_part_fails():
+    violations = license_manifest.check_dependencies(
+        {"cryptography": "Apache-2.0 OR GPL-3.0"}
+    )
+    assert violations and "GPL-3.0" in violations[0]
+
+
+def test_manifest_with_a_dependency_names_it_and_drops_the_zero_claim():
+    rendered = license_manifest.render_manifest(
+        {"cryptography": "Apache-2.0 OR BSD-3-Clause"}, "0.1.0"
+    )
+    assert "cryptography" in rendered
+    assert "Apache-2.0 OR BSD-3-Clause" in rendered
+    assert "no third-party" not in rendered
+    assert "memory encryption at rest" in rendered
+
+
+def test_manifest_without_dependencies_keeps_the_zero_claim():
+    rendered = license_manifest.render_manifest({}, "0.1.0")
+    assert "no third-party" in rendered
+    assert "cryptography" not in rendered

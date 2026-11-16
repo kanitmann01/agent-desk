@@ -3,8 +3,10 @@
 Reads the dependency list from pyproject and the per-dependency license
 annotations from [tool.agent-desk-licenses]. Fail-closed by design: a
 dependency without an annotation is a failure, and so is any license
-outside MIT, Apache-2.0, BSD, or ISC. Zero dependencies is the clean
-path, and the one this repo is on.
+outside MIT, Apache-2.0, BSD, or ISC. An "A OR B" dual-license
+annotation is admitted when every alternative is in the allowlist (the
+form cryptography itself uses). Zero dependencies is still supported
+and renders the zero-dependency record.
 
 Run: python tools/license_manifest.py  (exit 0 clean, 1 violation)
 Writes THIRD-PARTY-LICENSES.md next to pyproject.
@@ -22,17 +24,27 @@ except ModuleNotFoundError:  # Python 3.10, the declared floor
 ALLOWED = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"}
 MANIFEST_NAME = "THIRD-PARTY-LICENSES.md"
 
+# Why each dependency exists, so the manifest stays a reviewable record
+# rather than a bare table (one line per component, ticket #94).
+PURPOSES = {
+    "cryptography": "memory encryption at rest (AES-256-GCM field "
+                    "encryption, HKDF key derivation and HMAC blind "
+                    "indexes)",
+}
+
 
 def check_dependencies(annotations: dict[str, str]) -> list[str]:
     """Return the violations; empty means the manifest may be written.
 
-    Every annotation must name a license in the allowlist. The check
+    Every annotation must name a license in the allowlist, possibly as
+    an "A OR B" dual license with every alternative allowed. The check
     that every declared dependency carries an annotation at all lives
     in main().
     """
     violations: list[str] = []
     for name, license in annotations.items():
-        if license not in ALLOWED:
+        alternatives = [part.strip() for part in license.split(" OR ")]
+        if not all(part in ALLOWED for part in alternatives):
             violations.append(f"{name}: license {license!r} is not in {sorted(ALLOWED)}")
     return violations
 
@@ -41,34 +53,51 @@ def render_manifest(annotations: dict[str, str], version: str) -> str:
     lines = [
         "# Third-party license manifest",
         "",
-        f"The Agent Desk {version} **Python runtime has no third-party",
-        "dependencies**: the app is pure Python standard library. The",
-        "runtime itself is CPython, Python Software Foundation license, a",
-        "permissive license reviewed separately from bundled components.",
-        "",
+    ]
+    if annotations:
+        lines += [
+            f"The Agent Desk {version} **Python runtime ships one"
+            f" third-party dependency** (the first; it arrived with"
+            " memory encryption at rest, ticket #94):",
+            "",
+            "| Component | Version scoped in pyproject | Used for | License |",
+            "|---|---|---|---|",
+        ]
+        for name, license in sorted(annotations.items()):
+            purpose = PURPOSES.get(name, "")
+            lines.append(f"| {name} | pinned in pyproject | {purpose} | {license} |")
+        lines += [
+            "",
+            "The runtime itself is CPython, Python Software Foundation",
+            "license, a permissive license reviewed separately from bundled",
+            "components.",
+            "",
+        ]
+    else:
+        lines += [
+            f"The Agent Desk {version} **Python runtime has no third-party",
+            "dependencies**: the app is pure Python standard library. The",
+            "runtime itself is CPython, Python Software Foundation license, a",
+            "permissive license reviewed separately from bundled components.",
+            "",
+        ]
+    lines += [
         "The **dashboard SPA bundle does ship third-party work**: React",
         "compiled into its JavaScript, and the Plus Jakarta Sans and IBM Plex",
         "Mono font files. Every item is listed with its license in the",
         "Dashboard SPA section below.",
         "",
-        "The allowlist for any future Python dependency is MIT, Apache-2.0,",
+        "The allowlist for any Python dependency is MIT, Apache-2.0,",
         "BSD-2-Clause, BSD-3-Clause, and ISC; anything outside it fails",
         "the build.",
         "",
     ]
-    if annotations:
-        lines.append("If components are ever added, each lands here with its license:")
-        lines.append("")
-        lines.append("| Component | Version scoped in pyproject | License |")
-        lines.append("|---|---|---|")
-        for name, license in sorted(annotations.items()):
-            lines.append(f"| {name} | pinned in pyproject | {license} |")
-        lines.append("")
     lines.append(
         "Upstream LICENSE (and NOTICE, where Apache-2.0) files ship inside"
-        " the install folder for any listed Python dependency. With zero"
-        " Python dependencies there is nothing to ship on that side; this"
-        " file is the record that the check ran and passed."
+        " the install folder for any listed Python dependency."
+        + ("" if annotations else
+           " With zero Python dependencies there is nothing to ship on that"
+           " side; this file is the record that the check ran and passed.")
     )
     lines.append(SPA_TOOLCHAIN_SECTION)
     # One final newline exactly: the section string carries its own

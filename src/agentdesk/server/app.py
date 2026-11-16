@@ -87,6 +87,7 @@ from agentdesk.llm import (
     settings_chat,
 )
 from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.extract import (
     EndpointExtractor,
     ExtractionFailed,
@@ -96,7 +97,7 @@ from agentdesk.memory.extract import (
     occurrence_from_source,
 )
 from agentdesk.memory.service import build_facts_block
-from agentdesk.memory.store import MemoryStore
+from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
@@ -1003,6 +1004,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/memory/encrypt":
+            self._memory_encrypt_page()
         elif path == "/mail":
             self._send_mail_page()
         elif path == "/capabilities":
@@ -1237,6 +1240,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_delete(_memory_id_from_path(path, "/delete"))
         elif path == "/memory/recall":
             self._memory_recall()
+        elif path == "/memory/encrypt":
+            self._memory_encrypt()
         elif path == "/memory/retain":
             self._memory_retain()
         elif path.startswith("/capabilities/") and path.endswith("/retest"):
@@ -1389,11 +1394,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _facts_block(self, question: str) -> str:
         """The bounded recalled-facts block for the assistant prompt,
         ranked against the user's question. Recall only: this path never
-        creates a fact; the bounds live in memory/service."""
+        creates a fact; the bounds live in memory/service. A locked
+        memory store (ticket #94) contributes no block: the assistant
+        keeps answering, the bank is never read in plaintext."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return ""
-        return build_facts_block(memory.recall(question))
+        try:
+            return build_facts_block(memory.recall(question))
+        except MemoryEncryptedError:
+            return ""
 
     def _effective_llm(self) -> tuple:
         """The client this request uses, resolved per call: saved settings
@@ -2065,30 +2075,55 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                     inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
-    # -- memory: the page and its actions (ticket #42) --------------------
+    # -- memory: the page and its actions (tickets #42, #94) --------------
+
+    def _memory_available(self):
+        """The store check every memory route rides: None means the
+        response is already sent. A locked store (a marker without its
+        key, a wrong key, a key on a populated plaintext bank) refuses
+        with its specific plain-language cause, never silently reading
+        or writing plaintext."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return None
+        if memory.locked_cause is not None:
+            self._send_json(503, {"error": memory.locked_cause})
+            return None
+        return memory
 
     def _send_memory_page(
         self,
         recall: list | None = None,
         query: str = "",
+        encrypt: dict | None = None,
     ) -> None:
-        """The memory page; with a recall preview when a query came in."""
+        """The memory page; with a recall preview when a query came in,
+        the encryption state alongside the facts, and the locked banner
+        alone when the store is locked."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             self._send_json(503, {"error": "the memory store is not available"})
             return
-        page = render_memory_page(
-            memory.all(), agentdesk.__version__, recall=recall, query=query,
-            inbox_count=self._inbox_waiting_count(),
-        )
+        if memory.locked_cause is not None:
+            page = render_memory_page(
+                [], agentdesk.__version__, locked=memory.locked_cause,
+                inbox_count=self._inbox_waiting_count(),
+            )
+        else:
+            if encrypt is None:
+                encrypt = {"already": True} if memory.is_sealed else {"link": True}
+            page = render_memory_page(
+                memory.all(), agentdesk.__version__, recall=recall, query=query,
+                encrypt=encrypt, inbox_count=self._inbox_waiting_count(),
+            )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_add(self) -> None:
         """The page's one explicit creation path. The assistant and
         research paths may recall, never create."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         body = self._read_json_body() or {}
         text = body.get("text")
@@ -2102,9 +2137,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if fact_id is None:
             self._send_error_page(404, "Nothing here", "No fact lives at this address.")
             return
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         body = self._read_json_body() or {}
         text = body.get("text")
@@ -2122,9 +2156,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if fact_id is None:
             self._send_error_page(404, "Nothing here", "No fact lives at this address.")
             return
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         try:
             memory.delete(fact_id)
@@ -2136,9 +2169,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _memory_recall(self) -> None:
         """The preview: render the page with the ranked answers, best
         first, so the manager sees exactly what the assistant would ride."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         body = self._read_json_body() or {}
         query = body.get("query")
@@ -2147,6 +2179,81 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         query = query.strip()
         self._send_memory_page(recall=memory.recall(query), query=query)
+
+    def _memory_encrypt_page(self) -> None:
+        """The dry run: the memory page with the conversion form and the
+        per-table counts of what would be sealed. An already-encrypted
+        bank says so; a locked one renders the banner."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_memory_page()
+            return
+        if memory.is_sealed:
+            self._send_memory_page(encrypt={"already": True})
+            return
+        self._send_memory_page(encrypt={"counts": memory.plain_field_counts()})
+
+    def _memory_encrypt(self) -> None:
+        """The one-action conversion, confirm-gated (ticket #94).
+
+        The checkbox is the settings confirmation the spec asks for: no
+        confirm field, no conversion. The key file is ensured before the
+        transaction, the conversion is one transaction, and the audit
+        row names the field count, never a key byte or a fact text."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._memory_error_response(503, memory.locked_cause)
+            return
+        if memory.is_sealed:
+            self._memory_error_response(
+                409, "The memory database is already encrypted."
+            )
+            return
+        body = self._read_json_body() or {}
+        if not body.get("confirm"):
+            self._memory_error_response(
+                400,
+                "Tick the confirm checkbox: the conversion rewrites every "
+                "stored text and cannot be undone without the key.",
+            )
+            return
+        if memory.key_path is None:
+            self._memory_error_response(
+                503, "No key file location is configured for this memory store."
+            )
+            return
+        try:
+            result = memory.encrypt_all()
+        except MemoryEncryptedError as exc:
+            self._memory_error_response(409, str(exc))
+            return
+        except (OSError, ValueError) as exc:
+            self._memory_error_response(
+                503, f"The key file could not be written or read: {exc}"
+            )
+            return
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "memory.encrypt",
+                target=f"{result['fields']} fields",
+                detail=("memory.sqlite3 encrypted at rest; the key stays"
+                        " in memory.key"),
+            )
+        self._memory_response({"status": "ok", "fields": result["fields"]})
+
+    def _memory_error_response(self, status: int, cause: str) -> None:
+        """A refused memory action: the error page for a form post, the
+        JSON cause for an API call."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Memory encryption", cause)
+            return
+        self._send_json(status, {"error": cause})
 
     def _memory_response(self, payload: dict, status: int = 200) -> None:
         """A no-JS form post lands back on the memory page; JSON gets JSON."""
@@ -2171,9 +2278,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         built from the effective llm client per call.
         """
         server = self.server  # type: ignore[attr-defined]
-        memory = server.memory
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if server.inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
@@ -4279,12 +4385,23 @@ def _default_wizard_store() -> WizardStore | None:
 
 def _default_memory_store() -> MemoryStore | None:
     """Facts over the persistent store (they outlive a restart by
-    design), or None when it cannot open."""
+    design), or None when it cannot open. The key file rides along when
+    it exists: a marker without it locks the store, and the memory page
+    says exactly that (ticket #94). A corrupt key file is not a crash:
+    the log carries the detail and the store locks with the cause that
+    names the path."""
     try:
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(data_dir / "memory.sqlite3", check_same_thread=False)
-        return MemoryStore(conn, time.time)
+        key_path = key_file_path(data_dir)
+        key = None
+        if key_path.exists():
+            try:
+                key = read_key_file(key_path)
+            except ValueError:
+                LOG.exception("memory.key exists but is not a valid key")
+        return MemoryStore(conn, time.time, key=key, key_path=key_path)
     except (OSError, sqlite3.Error):
         LOG.exception("memory store unavailable")
         return None

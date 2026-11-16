@@ -22,8 +22,10 @@ canonical and demotes the old canonical to an alias.
 The module is pure-ish: every function here works on loaded rows and
 returns decisions; reads and writes go through the small repo seam
 below (the store implements it over its connection; the unit tests
-fake it). The donor's sealed-mode blind-index fast path is an
-encryption-phase concern and is not ported; resolution scans, which is
+fake it). Names load through the repo, so an encrypted bank resolves
+over decrypted rows; the donor's exact-index fast path is ported for
+the create-entity guard alone (ticket #94: the sealed store answers
+from entity_name_index), while the rest of resolution scans, which is
 acceptable at personal-bank scale (spec decision 12).
 """
 
@@ -186,7 +188,11 @@ class EntityRepo:
     aliases, type): overwrite one entity's names and type. create(name,
     type) -> id: insert one entity. linked_fact_ids(ids): a map from
     each id to the set of fact ids that entity is mentioned in, the
-    read the co-occurrence winner needs.
+    read the co-occurrence winner needs. exact_ids(name): the ids whose
+    indexed names equal this one, or None when the repo keeps no index
+    (a plaintext bank): None means every entity is a candidate. The
+    sealed store answers from entity_name_index (ticket #94); the
+    create-entity guard narrows to the indexed ids when one answers.
     """
 
     def load(self) -> list[StoredEntity]:
@@ -200,6 +206,9 @@ class EntityRepo:
 
     def linked_fact_ids(self, entity_ids) -> dict[int, set[int]]:
         raise NotImplementedError
+
+    def exact_ids(self, name: str) -> list[int] | None:
+        return None
 
 
 # -- the algorithm (src/resolve.ts) -------------------------------------------
@@ -380,8 +389,15 @@ def apply_match(
 def create_entity(repo: EntityRepo, mention: Mention) -> EntityRef:
     """Create the mention's entity, unless an entity already carries
     this exact canonical name (compatible type): the donor's guard that
-    keeps cancelled-out exact pools from minting duplicates."""
+    keeps cancelled-out exact pools from minting duplicates. When the
+    repo answers with an exact index (the sealed bank's blind indexes,
+    ticket #94), only the indexed entities are candidates; without one,
+    every loaded entity is."""
+    indexed = repo.exact_ids(mention.name)
+    ids = None if indexed is None else {int(entity_id) for entity_id in indexed}
     for entity in repo.load():
+        if ids is not None and entity.id not in ids:
+            continue
         if types_compatible(mention.type, entity.type) and normalize_name(
             entity.canonical_name
         ) == normalize_name(mention.name):

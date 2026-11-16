@@ -1,20 +1,25 @@
 # Third-party license manifest
 
-The Agent Desk 0.1.0 **Python runtime has no third-party
-dependencies**: the app is pure Python standard library. The
-runtime itself is CPython, Python Software Foundation license, a
-permissive license reviewed separately from bundled components.
+The Agent Desk 0.1.0 **Python runtime ships one third-party dependency** (the first; it arrived with memory encryption at rest, ticket #94):
+
+| Component | Version scoped in pyproject | Used for | License |
+|---|---|---|---|
+| cryptography | pinned in pyproject | memory encryption at rest (AES-256-GCM field encryption, HKDF key derivation and HMAC blind indexes) | Apache-2.0 OR BSD-3-Clause |
+
+The runtime itself is CPython, Python Software Foundation
+license, a permissive license reviewed separately from bundled
+components.
 
 The **dashboard SPA bundle does ship third-party work**: React
 compiled into its JavaScript, and the Plus Jakarta Sans and IBM Plex
 Mono font files. Every item is listed with its license in the
 Dashboard SPA section below.
 
-The allowlist for any future Python dependency is MIT, Apache-2.0,
+The allowlist for any Python dependency is MIT, Apache-2.0,
 BSD-2-Clause, BSD-3-Clause, and ISC; anything outside it fails
 the build.
 
-Upstream LICENSE (and NOTICE, where Apache-2.0) files ship inside the install folder for any listed Python dependency. With zero Python dependencies there is nothing to ship on that side; this file is the record that the check ran and passed.
+Upstream LICENSE (and NOTICE, where Apache-2.0) files ship inside the install folder for any listed Python dependency.
 
 ## Dashboard SPA (what the bundle ships, and the toolchain that builds it)
 

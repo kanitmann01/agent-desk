@@ -73,8 +73,10 @@ def test_display_name_folds_unicode_space_and_collapse():
 
 
 class FakeRepo:
-    """The seam the store implements: load, save, create, and the
-    fact-adjacency read the co-occurrence winner needs."""
+    """The seam the store implements: load, save, create, the
+    fact-adjacency read the co-occurrence winner needs, and the exact
+    index lookup (None here: no index, every entity is a candidate,
+    which is the plaintext behavior)."""
 
     def __init__(self, entities=(), linked=None) -> None:
         self._rows = {
@@ -82,6 +84,7 @@ class FakeRepo:
         }
         self._next_id = max((e.id for e in entities), default=0) + 1
         self.linked = {k: set(v) for k, v in (linked or {}).items()}
+        self.exact_index: dict[str, list[int]] | None = None
 
     def load(self) -> list[StoredEntity]:
         return [
@@ -100,6 +103,12 @@ class FakeRepo:
 
     def linked_fact_ids(self, entity_ids) -> dict[int, set[int]]:
         return {i: set(self.linked.get(i, ())) for i in entity_ids}
+
+    def exact_ids(self, name: str) -> list[int] | None:
+        if self.exact_index is None:
+            return None
+        from agentdesk.memory.hybrid import normalize_name
+        return self.exact_index.get(normalize_name(name), [])
 
     def entity(self, entity_id: int) -> StoredEntity:
         row = self._rows[entity_id]
@@ -268,3 +277,30 @@ def test_repeat_weak_mentions_do_not_duplicate_the_alias():
     repo = FakeRepo([StoredEntity(1, "Aria Patel", (), "person")])
     resolve_mentions(repo, [Mention("Aria", "person"), Mention("Aria", "person")])
     assert repo.entity(1).aliases == ("Aria",)
+
+
+# -- the exact index seam (ticket #94: the encrypted bank's fast path) --------
+
+
+def test_create_entity_guard_uses_the_whole_pool_without_an_index():
+    # No index: the guard considers every entity (plaintext behavior).
+    repo = FakeRepo(
+        [StoredEntity(1, "Acme", (), "org"), StoredEntity(2, "Acme", (), "person")]
+    )
+    resolve_mentions(repo, [Mention("Acme", "other")])
+    # The exact pool cancels; the guard adopts the first canonical match
+    # it loads, entity 1 (its type only upgrades, never to "other").
+    assert repo.entity(1).type == "org"
+    assert 3 not in repo._rows
+
+
+def test_create_entity_guard_narrows_to_the_index_when_it_answers():
+    repo = FakeRepo(
+        [StoredEntity(1, "Acme", (), "org"), StoredEntity(2, "Acme", (), "person")]
+    )
+    repo.exact_index = {"acme": [2]}
+    resolve_mentions(repo, [Mention("Acme", "other")])
+    # The index says only entity 2 carries the exact name, so the guard
+    # adopts entity 2, not the first-loaded entity 1.
+    assert repo.entity(2).type == "person"
+    assert 3 not in repo._rows
