@@ -48,6 +48,7 @@ sealed bank with a decrypt-verify second.
 """
 
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -58,10 +59,13 @@ from agentdesk.memory.core import (
     EditResult,
     EntitySummary,
     Fact,
+    Observation,
     RemovedFacts,
+    SavedObservation,
     SweepCandidate,
     UnknownEntity,
     UnknownFact,
+    normalize_fact_text,
 )
 from agentdesk.memory.crypto import (
     KEY_FILE_NAME,
@@ -254,13 +258,6 @@ def _add_missing_encryption_columns(conn: sqlite3.Connection) -> None:
                 conn.execute(ddl)
 
 
-def _normalize_fact_text(text: str) -> str:
-    """The donor's normalizeFactText: trim, collapse internal whitespace
-    runs to single spaces, lowercase. Punctuation stays, so this is an
-    exact-text match, not a semantic comparison."""
-    return " ".join(text.split()).lower()
-
-
 def _parse_aliases(value: str) -> tuple[str, ...]:
     """The donor's parseAliases: a JSON array of strings, and anything
     else (corrupt, wrong shape, non-string entries) reads as none."""
@@ -288,7 +285,7 @@ def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
     rows = conn.execute("SELECT id, text, created_ts FROM facts").fetchall()
     groups: dict[str, list[tuple[float, int]]] = {}
     for fact_id, text, created_ts in rows:
-        key = _normalize_fact_text(text)
+        key = normalize_fact_text(text)
         if not key:
             continue
         groups.setdefault(key, []).append((created_ts, fact_id))
@@ -551,7 +548,7 @@ class MemoryStore:
         do; sealed banks take the text_idx blind lookup first and
         decrypt-verify each candidate's normalized text second (the
         seam ticket #94 maintains), so no plaintext is compared."""
-        target = _normalize_fact_text(text)
+        target = normalize_fact_text(text)
         if not target:
             return None
         if self._box is not None:
@@ -566,7 +563,7 @@ class MemoryStore:
                 if text_enc is None:
                     raise MemoryEncryptedError("Missing ciphertext for facts.text.")
                 stored = self._box.open(text_enc, "facts", "text", fact_id)
-                if _normalize_fact_text(stored) == target:
+                if normalize_fact_text(stored) == target:
                     return int(fact_id)
             return None
         rows = self.conn.execute(
@@ -575,7 +572,7 @@ class MemoryStore:
         for fact_id, stored in rows:
             if exclude_id is not None and fact_id == exclude_id:
                 continue
-            if _normalize_fact_text(stored) == target:
+            if normalize_fact_text(stored) == target:
                 return int(fact_id)
         return None
 
@@ -645,7 +642,13 @@ class MemoryStore:
         self._guard()
         self.get(fact_id)
         with self.conn:
+            # Spec decision 24: pruning follows every fact deletion, the
+            # page's single delete included (ticket #93).
+            self.conn.execute(
+                "DELETE FROM observation_sources WHERE fact_id = ?", (fact_id,)
+            )
             self.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+            _prune_orphan_statements(self.conn)
 
     def add_source(self, text: str, speaker: str = "", context: str = "") -> int:
         """Record one retained excerpt and return its id: the provenance
@@ -696,6 +699,214 @@ class MemoryStore:
                     (fact_id, ref.id),
                 )
         return resolved
+
+    # -- observations (ticket #93) ------------------------------------------
+
+    def save_observation(
+        self,
+        scope_key: str,
+        text: str,
+        confidence: float,
+        fact_ids,
+        now: float,
+        run_ts: float | None = None,
+    ) -> SavedObservation:
+        """The donor's saveObservations, reduced to the one-observation
+        shape the approval cards need: upsert by normalized text within
+        the scope (the blind index carries the match over a sealed
+        bank), reinsert the citations, then drop the scope rows this
+        save no longer keeps and report their ids.
+
+        The donor prunes the unkept rows inside its one reflect write;
+        here the write rides the card's acceptance, so `run_ts` carries
+        the reflecting run's moment (the accepted card's created_ts):
+        scope rows last written before the run are the ones the run did
+        not re-derive (the donor's unkept set), except the row this
+        call upserts, which a text match keeps. Rows written after the
+        run started are its already-accepted siblings and stand. A call
+        without a run reference is a pure upsert that prunes nothing.
+        Stale citations to facts that no longer exist are dropped, and
+        a draft whose citations all vanished is refused: an observation
+        always cites at least one standing fact. Sealed: the plaintext
+        columns blank and the ciphertext plus blind indexes (text and
+        scope) land in the same transaction, bound to the row id, like
+        every other write."""
+        self._guard()
+        text = text.strip()
+        if not normalize_fact_text(text):
+            raise ValueError("an observation needs text")
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not math.isfinite(confidence)
+            or confidence < 0
+            or confidence > 1
+        ):
+            raise ValueError("confidence must be a number from 0 to 1")
+        wanted = list(dict.fromkeys(int(f) for f in fact_ids))
+        stored_scope = (
+            self._box.blind(scope_key) if self._box is not None else scope_key
+        )
+        normalized = normalize_fact_text(text)
+        with self.conn:
+            cited: list[int] = []
+            if wanted:
+                marks = ",".join("?" for _ in wanted)
+                standing = {
+                    int(row[0])
+                    for row in self.conn.execute(
+                        f"SELECT id FROM facts WHERE id IN ({marks})", wanted
+                    ).fetchall()
+                }
+                cited = [fact_id for fact_id in wanted if fact_id in standing]
+            if not cited:
+                raise ValueError(
+                    "an observation needs at least one cited fact that exists"
+                )
+            prior_id = self._find_same_observation(stored_scope, normalized)
+            if prior_id is not None:
+                row = self.conn.execute(
+                    "SELECT created_ts FROM observations WHERE id = ?", (prior_id,)
+                ).fetchone()
+                self.conn.execute(
+                    "UPDATE observations SET text = ?, confidence = ?,"
+                    " updated_ts = ? WHERE id = ?",
+                    (self._plain(text), float(confidence), now, prior_id),
+                )
+                self._seal_observation_text(prior_id, text, normalized)
+                observation_id = prior_id
+                created_ts = float(row[0])
+            else:
+                cursor = self.conn.execute(
+                    "INSERT INTO observations (scope_key, text, confidence,"
+                    " created_ts, updated_ts) VALUES (?, ?, ?, ?, ?)",
+                    (stored_scope, self._plain(text), float(confidence), now, now),
+                )
+                observation_id = int(cursor.lastrowid)
+                self._seal_observation_text(observation_id, text, normalized)
+                created_ts = now
+            self.conn.execute(
+                "DELETE FROM observation_sources WHERE observation_id = ?",
+                (observation_id,),
+            )
+            for fact_id in cited:
+                self.conn.execute(
+                    "INSERT INTO observation_sources (observation_id, fact_id)"
+                    " VALUES (?, ?)",
+                    (observation_id, fact_id),
+                )
+            removed: list[int] = []
+            if run_ts is not None:
+                rows = self.conn.execute(
+                    "SELECT id, updated_ts FROM observations WHERE scope_key = ?",
+                    (stored_scope,),
+                ).fetchall()
+                for row_id, updated_ts in rows:
+                    row_id = int(row_id)
+                    if row_id == observation_id or updated_ts >= run_ts:
+                        continue
+                    self.conn.execute(
+                        "DELETE FROM observation_sources WHERE observation_id = ?",
+                        (row_id,),
+                    )
+                    self.conn.execute(
+                        "DELETE FROM observations WHERE id = ?", (row_id,)
+                    )
+                    removed.append(row_id)
+        observation = Observation(
+            id=observation_id,
+            text=text,
+            confidence=float(confidence),
+            fact_ids=tuple(cited),
+            created_ts=created_ts,
+            updated_ts=now,
+        )
+        return SavedObservation(observation=observation, removed_ids=tuple(removed))
+
+    def _find_same_observation(self, stored_scope: str, normalized: str) -> int | None:
+        """The donor's observationKey match: the row in this scope whose
+        normalized text equals this one. Sealed banks compare the
+        text_idx blind index (the donor's exact seam); plaintext banks
+        scan the scope's texts."""
+        if self._box is not None:
+            row = self.conn.execute(
+                "SELECT id FROM observations WHERE scope_key = ? AND text_idx = ?"
+                " ORDER BY id ASC LIMIT 1",
+                (stored_scope, self._box.blind(normalized)),
+            ).fetchone()
+            return None if row is None else int(row[0])
+        rows = self.conn.execute(
+            "SELECT id, text FROM observations WHERE scope_key = ? ORDER BY id ASC",
+            (stored_scope,),
+        ).fetchall()
+        for row_id, stored in rows:
+            if normalize_fact_text(stored) == normalized:
+                return int(row_id)
+        return None
+
+    def _seal_observation_text(self, observation_id: int, text: str,
+                               normalized: str) -> None:
+        if self._box is None:
+            return
+        self.conn.execute(
+            "UPDATE observations SET text_enc = ?, text_idx = ? WHERE id = ?",
+            (
+                self._box.seal(text, "observations", "text", observation_id),
+                self._box.blind(normalized),
+                observation_id,
+            ),
+        )
+
+    def observations(self) -> list[Observation]:
+        """Every stored observation, most recently updated first, each
+        with its citations in fact-id order. Sealed banks decrypt,
+        requiring ciphertext like every read."""
+        self._guard()
+        if self._box is not None:
+            rows = self.conn.execute(
+                "SELECT id, text_enc, confidence, created_ts, updated_ts"
+                " FROM observations ORDER BY updated_ts DESC, id DESC"
+            ).fetchall()
+            observations = []
+            for row_id, text_enc, confidence, created_ts, updated_ts in rows:
+                if text_enc is None:
+                    raise MemoryEncryptedError(
+                        "Missing ciphertext for observations.text."
+                    )
+                observations.append(Observation(
+                    id=int(row_id),
+                    text=self._box.open(
+                        text_enc, "observations", "text", int(row_id)
+                    ),
+                    confidence=float(confidence),
+                    fact_ids=self._citation_ids(row_id),
+                    created_ts=float(created_ts),
+                    updated_ts=float(updated_ts),
+                ))
+            return observations
+        rows = self.conn.execute(
+            "SELECT id, text, confidence, created_ts, updated_ts"
+            " FROM observations ORDER BY updated_ts DESC, id DESC"
+        ).fetchall()
+        return [
+            Observation(
+                id=int(row_id),
+                text=text,
+                confidence=float(confidence),
+                fact_ids=self._citation_ids(row_id),
+                created_ts=float(created_ts),
+                updated_ts=float(updated_ts),
+            )
+            for row_id, text, confidence, created_ts, updated_ts in rows
+        ]
+
+    def _citation_ids(self, observation_id) -> tuple[int, ...]:
+        rows = self.conn.execute(
+            "SELECT fact_id FROM observation_sources WHERE observation_id = ?"
+            " ORDER BY fact_id ASC",
+            (observation_id,),
+        ).fetchall()
+        return tuple(int(row[0]) for row in rows)
 
     # -- hygiene actions (ticket #92) ---------------------------------------
 
@@ -945,7 +1156,7 @@ class MemoryStore:
                 " WHERE id = ?",
                 (
                     box.seal(text, "facts", "text", row_id),
-                    box.blind(_normalize_fact_text(text)),
+                    box.blind(normalize_fact_text(text)),
                     row_id,
                 ),
             )
@@ -961,7 +1172,7 @@ class MemoryStore:
                 (
                     box.blind(scope_key),
                     box.seal(text, "observations", "text", row_id),
-                    box.blind(_normalize_fact_text(text)),
+                    box.blind(normalize_fact_text(text)),
                     row_id,
                 ),
             )
@@ -986,7 +1197,7 @@ class MemoryStore:
             "UPDATE facts SET text_enc = ?, text_idx = ? WHERE id = ?",
             (
                 self._box.seal(text, "facts", "text", fact_id),
-                self._box.blind(_normalize_fact_text(text)),
+                self._box.blind(normalize_fact_text(text)),
                 fact_id,
             ),
         )

@@ -25,7 +25,12 @@ import html
 from agentdesk.server.pages import page_shell
 from datetime import datetime
 
-from agentdesk.memory.core import EntitySummary, Fact, SweepCandidate
+from agentdesk.memory.core import (
+    EntitySummary,
+    Fact,
+    Observation,
+    SweepCandidate,
+)
 
 # The ranked recall preview keeps the server's honest score display:
 # deterministic, explainable, no pretense of intelligence.
@@ -228,6 +233,57 @@ def _sweep_section(candidates: list[SweepCandidate]) -> str:
     )
 
 
+def _observations_section(
+    observations: list[Observation], facts: list[Fact]
+) -> str:
+    """The observations section (ticket #93): the reflect form, then
+    one row per stored observation, most recently updated first, each
+    with its confidence and its citations linked to their facts. The
+    cards that stage a new observation land in the inbox; the section
+    only ever shows what acceptance wrote."""
+    form = (
+        '<form method="post" action="/memory/reflect" class="cardform">'
+        '<label class="empty" for="reflect-topic">Reflect: derive '
+        "observations from the saved facts. Optional topic or entity "
+        "name; the cards land in your inbox to accept.</label>"
+        '<input id="reflect-topic" type="text" name="topic" '
+        'placeholder="Optional topic"> '
+        '<input id="reflect-entity" type="text" name="entity" '
+        'placeholder="Optional entity name">'
+        '<button class="btn btn-primary" type="submit">Reflect</button>'
+        "</form>"
+    )
+    by_id = {fact.id: fact for fact in facts}
+    rows = []
+    for observation in observations:
+        citations = []
+        for fact_id in observation.fact_ids:
+            fact = by_id.get(fact_id)
+            if fact is None:
+                continue
+            citations.append(
+                f'<a href="#fact-{fact.id}">{html.escape(fact.text)}</a>'
+            )
+        cited = ", ".join(citations) if citations else "nothing citable left"
+        rows.append(
+            f"<li id='observation-{observation.id}'>"
+            f"<b>{html.escape(observation.text)}</b> "
+            f"<span class='empty mono'>confidence "
+            f"{observation.confidence:.2f}, cites {cited}</span></li>"
+        )
+    if not rows:
+        empty = (
+            "<p class='empty' id='observations-empty'>No observations yet:"
+            " reflect derives them from the facts above, and one card per"
+            " observation waits in your inbox.</p>"
+        )
+        return f"<h2>Observations</h2>{form}{empty}"
+    return (
+        "<h2>Observations</h2>"
+        f"{form}<ul id='observations-list'>{''.join(rows)}</ul>"
+    )
+
+
 def render_memory_page(
     facts: list[Fact],
     version: str,
@@ -239,10 +295,12 @@ def render_memory_page(
     entities: list[EntitySummary] | None = None,
     sweep: list[SweepCandidate] | None = None,
     notice: str | None = None,
+    observations: list[Observation] | None = None,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview,
     the entities with their merge form, the optional junk-sweep preview,
-    and the encryption surfaces. Locked: the banner alone."""
+    the observations with their reflect form (ticket #93), and the
+    encryption surfaces. Locked: the banner alone."""
     if locked is not None:
         content = f"""<h1>Memory</h1>
 {_locked_banner(locked)}
@@ -251,6 +309,10 @@ def render_memory_page(
     notice_row = f'<p id="memory-notice">{html.escape(notice)}</p>\n' if notice else ""
     sweep_row = _sweep_section(sweep) if sweep is not None else ""
     entities_row = _entities_section(entities) if entities is not None else ""
+    observations_row = (
+        _observations_section(observations, facts)
+        if observations is not None else ""
+    )
     content = f"""<h1>Memory</h1>
 {notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
 them, 500 characters in total, as derived abstractions it may read;
@@ -266,6 +328,7 @@ an inbox card you accept.</p>
 </form>
 <h2>Saved facts</h2>
 {_fact_rows(facts)}
+{observations_row}
 {entities_row}
 {sweep_row}
 """

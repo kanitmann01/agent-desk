@@ -126,27 +126,42 @@ def strip_think_blocks(text: str) -> str:
     return re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE).strip()
 
 
-def parse_model_payload(content) -> list:
-    """The facts array from one endpoint reply, or ExtractionFailed.
-
-    Think blocks first, then the slice from the first brace to the last
-    brace, then a strict shape check: an object with a facts array."""
+def model_json_object(content, error, subject: str) -> dict:
+    """The parsed JSON object from one model reply, or `error` (the
+    caller's failure class; `subject` names the caller in both
+    messages). The shared tolerant parse behind the extractor and the
+    reflector (tickets #91 and #93): think blocks strip first, then the
+    slice from the first brace to the last brace is parsed, and a
+    non-object payload refuses here."""
     if not isinstance(content, str):
-        raise ExtractionFailed("The extractor reply was not text. Nothing was written.")
+        raise error(f"The {subject.lower()} reply was not text. Nothing was written.")
     stripped = strip_think_blocks(content)
     start = stripped.find("{")
     end = stripped.rfind("}")
     if start == -1 or end < start:
-        raise ExtractionFailed(
-            "Extractor did not return a JSON object. Nothing was written."
+        raise error(
+            f"{subject} did not return a JSON object. Nothing was written."
         )
     try:
         parsed = json.loads(stripped[start:end + 1])
     except ValueError:
-        raise ExtractionFailed(
-            "Extractor returned invalid JSON. Nothing was written."
+        raise error(
+            f"{subject} returned invalid JSON. Nothing was written."
         ) from None
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("facts"), list):
+    if not isinstance(parsed, dict):
+        raise error(
+            f"{subject} did not return a JSON object. Nothing was written."
+        )
+    return parsed
+
+
+def parse_model_payload(content) -> list:
+    """The facts array from one endpoint reply, or ExtractionFailed.
+
+    The shared tolerant parse (model_json_object), then a strict shape
+    check: an object with a facts array."""
+    parsed = model_json_object(content, ExtractionFailed, "Extractor")
+    if not isinstance(parsed.get("facts"), list):
         raise ExtractionFailed(
             "Extractor JSON must contain a facts array. Nothing was written."
         )

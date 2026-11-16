@@ -843,3 +843,227 @@ def test_remove_facts_refuses_an_empty_id_list():
     store = _store()
     with pytest.raises(ValueError):
         store.remove_facts([])
+
+
+
+
+# -- observations (ticket #93): the reflect write path ------------------------
+
+
+def test_save_observation_inserts_with_its_citations():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    saved = store.save_observation(
+        "scope-a", "Maya moved on from Acme", 0.9, (left.id, right.id), now=500.0
+    )
+    observation = saved.observation
+    assert observation.id >= 1
+    assert observation.text == "Maya moved on from Acme"
+    assert observation.confidence == 0.9
+    assert observation.fact_ids == (left.id, right.id)
+    assert observation.created_ts == 500.0
+    assert observation.updated_ts == 500.0
+    assert saved.removed_ids == ()
+    assert store.observations() == [observation]
+
+
+def test_save_observation_upserts_by_normalized_text_within_the_scope():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    other = store.add("The office moved")
+    first = store.save_observation(
+        "scope-a", "Maya moved on from Acme", 0.9, (left.id, right.id), now=500.0
+    )
+    second = store.save_observation(
+        "scope-a",
+        "  maya   moved on from Acme ",
+        0.95,
+        (left.id, other.id),
+        now=600.0,
+    )
+    assert second.observation.id == first.observation.id
+    # The stored text is the trimmed original, never the normalized form.
+    assert second.observation.text == "maya   moved on from Acme"
+    assert second.observation.confidence == 0.95
+    assert second.observation.created_ts == 500.0, "creation time stands"
+    assert second.observation.updated_ts == 600.0
+    assert second.observation.fact_ids == (left.id, other.id)
+    assert second.removed_ids == ()
+    rows = store.conn.execute(
+        "SELECT fact_id FROM observation_sources WHERE observation_id = ?"
+        " ORDER BY fact_id",
+        (first.observation.id,),
+    ).fetchall()
+    assert [row[0] for row in rows] == sorted((left.id, other.id))
+
+
+def test_the_same_text_in_another_scope_is_a_separate_observation():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    store.save_observation("scope-a", "Maya left", 0.9, (left.id,), now=500.0)
+    store.save_observation("scope-b", "Maya left", 0.9, (right.id,), now=500.0)
+    assert len(store.observations()) == 2
+
+
+def test_scope_rows_written_before_the_run_go_when_not_kept():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    first = store.save_observation("scope", "First pattern", 0.8, (left.id,), now=100.0)
+    second = store.save_observation(
+        "scope", "Second pattern", 0.8, (right.id,), now=200.0
+    )
+    third = store.save_observation(
+        "scope", "Third pattern", 0.9, (left.id, right.id), now=300.0, run_ts=250.0
+    )
+    assert third.removed_ids == (first.observation.id, second.observation.id)
+    assert [observation.text for observation in store.observations()] == [
+        "Third pattern"
+    ]
+
+
+def test_a_re_derived_row_updates_even_when_it_predates_the_run():
+    store = _store()
+    left = store.add("Maya left Acme")
+    first = store.save_observation(
+        "scope", "Maya moved on", 0.8, (left.id,), now=100.0
+    )
+    again = store.save_observation(
+        "scope", "  maya moved on ", 0.95, (left.id,), now=300.0, run_ts=250.0
+    )
+    assert again.observation.id == first.observation.id
+    assert again.removed_ids == ()
+    assert [observation.text for observation in store.observations()] == [
+        "maya moved on"
+    ]
+
+
+def test_rows_written_after_the_run_started_survive_a_sibling_acceptance():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    # The sibling was accepted after this run started (its updated_ts
+    # is past run_ts), so a later card of the same run must not drop it.
+    sibling = store.save_observation(
+        "scope", "Sibling pattern", 0.8, (left.id,), now=300.0, run_ts=250.0
+    )
+    saved = store.save_observation(
+        "scope", "This pattern", 0.9, (right.id,), now=400.0, run_ts=250.0
+    )
+    assert saved.removed_ids == ()
+    assert sorted(o.text for o in store.observations()) == [
+        "Sibling pattern",
+        "This pattern",
+    ]
+    assert sibling.removed_ids == ()
+
+
+def test_a_missing_run_reference_never_prunes():
+    store = _store()
+    left = store.add("Maya left Acme")
+    store.save_observation("scope", "First pattern", 0.8, (left.id,), now=100.0)
+    saved = store.save_observation(
+        "scope", "Second pattern", 0.9, (left.id,), now=200.0
+    )
+    assert saved.removed_ids == ()
+    assert len(store.observations()) == 2
+
+
+def test_stale_citations_to_deleted_facts_are_dropped():
+    store = _store()
+    left = store.add("Maya left Acme")
+    gone = store.add("Acme ships widgets")
+    store.delete(gone.id)
+    saved = store.save_observation(
+        "scope", "Maya moved on", 0.9, (left.id, gone.id), now=500.0
+    )
+    assert saved.observation.fact_ids == (left.id,)
+
+
+def test_an_observation_whose_citations_all_vanished_is_refused():
+    store = _store()
+    left = store.add("Maya left Acme")
+    store.delete(left.id)
+    with pytest.raises(ValueError):
+        store.save_observation("scope", "Maya moved on", 0.9, (left.id,), now=500.0)
+    assert store.observations() == []
+
+
+def test_invalid_confidence_text_or_citations_are_value_errors():
+    store = _store()
+    left = store.add("Maya left Acme")
+    for confidence in (float("nan"), -0.1, 1.1, True):
+        with pytest.raises(ValueError):
+            store.save_observation(
+                "scope", "An observation", confidence, (left.id,), now=500.0
+            )
+    with pytest.raises(ValueError):
+        store.save_observation("scope", "   ", 0.9, (left.id,), now=500.0)
+    with pytest.raises(ValueError):
+        store.save_observation("scope", "An observation", 0.9, (), now=500.0)
+    assert store.observations() == []
+
+
+def test_observations_list_newest_updated_first():
+    store = _store()
+    left = store.add("Maya left Acme")
+    first = store.save_observation(
+        "scope", "First pattern", 0.5, (left.id,), now=100.0
+    )
+    second = store.save_observation(
+        "scope", "Second pattern", 0.6, (left.id,), now=200.0
+    )
+    third = store.save_observation(
+        "scope", "Third pattern", 0.7, (left.id,), now=300.0
+    )
+    assert [o.id for o in store.observations()] == [
+        third.observation.id, second.observation.id, first.observation.id,
+    ]
+    refreshed = store.save_observation(
+        "scope", "Third pattern, restated", 0.8, (left.id,), now=400.0, run_ts=350.0
+    )
+    # A distinct normalized text is a new row; the run reference prunes
+    # every scope row written before the run, since the run kept only
+    # the one it re-derived.
+    assert refreshed.observation.id != third.observation.id
+    assert refreshed.removed_ids == (
+        first.observation.id, second.observation.id, third.observation.id,
+    )
+    assert [o.id for o in store.observations()] == [refreshed.observation.id]
+
+
+def test_deleting_a_cited_fact_prunes_the_citation_then_the_observation():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    store.save_observation(
+        "scope", "Maya moved on from Acme", 0.9, (left.id, right.id), now=500.0
+    )
+    store.delete(left.id)
+    assert [o.fact_ids for o in store.observations()] == [(right.id,)]
+    store.delete(right.id)
+    assert store.observations() == []
+
+
+def test_remove_facts_reports_the_observations_it_pruned():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    other = store.add("The office moved")
+    saved = store.save_observation(
+        "scope", "Maya moved on from Acme", 0.9, (left.id, right.id), now=500.0
+    )
+    survivor = store.save_observation(
+        "scope", "The office relocated", 0.8, (other.id,), now=500.0
+    )
+    removed = store.remove_facts([left.id])
+    assert removed.observation_ids == ()
+    assert sorted(o.fact_ids for o in store.observations()) == [
+        (right.id,), survivor.observation.fact_ids,
+    ]
+    removed = store.remove_facts([right.id])
+    assert removed.observation_ids == (saved.observation.id,)
+    assert [o.id for o in store.observations()] == [survivor.observation.id]

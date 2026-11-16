@@ -665,3 +665,116 @@ def test_encrypt_all_without_a_key_or_a_key_path_is_a_value_error():
     with pytest.raises(ValueError, match=r"key"):
         store.encrypt_all()
     _close(store)
+
+
+# -- observations over a sealed bank (ticket #93) ------------------------------
+
+
+def test_sealed_save_observation_blanks_the_plaintext_and_keeps_the_blinds():
+    store = _open(":memory:", key=KEY)
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    saved = store.save_observation(
+        "topic: acme", "Maya moved on from Acme", 0.9, (left.id, right.id),
+        now=500.0,
+    )
+    store.conn.row_factory = sqlite3.Row
+    row = store.conn.execute(
+        "SELECT * FROM observations WHERE id = ?", (saved.observation.id,)
+    ).fetchone()
+    store.conn.row_factory = None
+    assert row["text"] == "", "the plaintext column is blanked"
+    assert row["text_enc"] is not None
+    assert row["text_idx"] == CryptoBox(KEY).blind("maya moved on from acme")
+    assert row["scope_key"] == CryptoBox(KEY).blind("topic: acme")
+    assert row["confidence"] == 0.9, "confidence stays plaintext"
+    assert saved.observation.text == "Maya moved on from Acme"
+    assert saved.observation.fact_ids == (left.id, right.id)
+    _close(store)
+
+
+def test_sealed_save_observation_upserts_through_the_blind_index():
+    store = _open(":memory:", key=KEY)
+    left = store.add("Maya left Acme")
+    first = store.save_observation(
+        "scope", "Maya moved on", 0.8, (left.id,), now=500.0
+    )
+    again = store.save_observation(
+        "scope", "  MAYA   moved on ", 0.95, (left.id,), now=600.0
+    )
+    assert again.observation.id == first.observation.id
+    assert again.observation.confidence == 0.95
+    assert again.observation.created_ts == 500.0
+    assert [o.text for o in store.observations()] == ["MAYA   moved on"]
+    _close(store)
+
+
+def test_sealed_observations_read_back_across_a_reopen(tmp_path):
+    db = tmp_path / "memory.sqlite3"
+    first = _open(db, key=KEY)
+    left = first.add("Maya left Acme")
+    saved = first.save_observation("scope", "Maya moved on", 0.9, (left.id,), now=5.0)
+    _close(first)
+    reopened = _open(db, key=KEY)
+    assert [o.text for o in reopened.observations()] == ["Maya moved on"]
+    assert reopened.observations()[0].fact_ids == (left.id,)
+    assert reopened.observations()[0].id == saved.observation.id
+    _close(reopened)
+
+
+def test_sealed_observations_demand_ciphertext_never_a_fallback():
+    store = _open(":memory:", key=KEY)
+    left = store.add("Maya left Acme")
+    store.save_observation("scope", "Maya moved on", 0.9, (left.id,), now=5.0)
+    store.conn.execute("UPDATE observations SET text = 'plain again', text_enc = NULL")
+    store.conn.commit()
+    with pytest.raises(
+        MemoryEncryptedError, match=r"Missing ciphertext for observations\.text"
+    ):
+        store.observations()
+    _close(store)
+
+
+def test_a_conversion_seals_existing_observations_and_post_conversion_writes_seal_too(
+    tmp_path,
+):
+    db = tmp_path / "memory.sqlite3"
+    key_path = tmp_path / "memory.key"
+    first = _open(db, key_path=key_path)
+    left = first.add("Maya left Acme")
+    first.save_observation("scope", "Written while plaintext", 0.9, (left.id,), now=5.0)
+    assert first.encrypt_all() == {"fields": 2}
+    assert first.is_sealed
+    # A row written AFTER the conversion seals exactly like the rest.
+    right = first.add("Acme ships widgets")
+    saved = first.save_observation(
+        "scope", "Written while sealed", 0.8, (right.id,), now=6.0
+    )
+    first.conn.row_factory = sqlite3.Row
+    rows = first.conn.execute("SELECT * FROM observations ORDER BY id").fetchall()
+    first.conn.row_factory = None
+    assert len(rows) == 2
+    for row in rows:
+        assert row["text"] == ""
+        assert row["text_enc"] is not None
+        assert row["text_idx"] is not None
+    assert saved.observation.text == "Written while sealed"
+    _close(first)
+    reopened = _open(db, key=load_key(key_path.read_bytes()))
+    assert sorted(o.text for o in reopened.observations()) == [
+        "Written while plaintext",
+        "Written while sealed",
+    ]
+    _close(reopened)
+
+
+def test_sealed_observation_pruning_follows_fact_deletion():
+    store = _open(":memory:", key=KEY)
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    store.save_observation("scope", "Maya moved on", 0.9, (left.id, right.id), now=5.0)
+    store.delete(left.id)
+    assert [o.fact_ids for o in store.observations()] == [(right.id,)]
+    store.delete(right.id)
+    assert store.observations() == []
+    _close(store)

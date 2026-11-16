@@ -73,3 +73,39 @@ class RemovedFacts:
     fact_ids: tuple[int, ...]
     observation_ids: tuple[int, ...] = ()
     entity_ids: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class Observation:
+    """One derived observation (ticket #93, the donor's
+    ObservationRecord): what the model concluded, how confident it was,
+    and which facts it cites. `fact_ids` is the citation list; the
+    scope key that grouped the reflect run stays a store concern and
+    never rides this row out."""
+
+    id: int
+    text: str
+    confidence: float
+    fact_ids: tuple[int, ...]
+    created_ts: float = 0.0
+    updated_ts: float = 0.0
+
+
+@dataclass(frozen=True)
+class SavedObservation:
+    """What one save wrote (the donor's saveObservations result, reduced
+    to the single-observation shape the approval cards need): the
+    observation as stored, and the ids of the same-scope rows this save
+    dropped as no longer kept."""
+
+    observation: Observation
+    removed_ids: tuple[int, ...] = ()
+
+
+def normalize_fact_text(text: str) -> str:
+    """The donor's normalizeFactText: trim, collapse internal whitespace
+    runs to single spaces, lowercase. Punctuation stays, so this is an
+    exact-text match, not a semantic comparison. Shared vocabulary:
+    write-time dedupe, observation upserts and the reflect filters all
+    compare through it."""
+    return " ".join(text.split()).lower()

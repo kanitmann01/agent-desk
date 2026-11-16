@@ -53,6 +53,7 @@ from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import (
     KIND_MAIL_FOLLOW_UP,
     KIND_MEMORY_DRAFT,
+    KIND_MEMORY_REFLECTION,
     KIND_UPDATE_CONSENT,
     STATUS_WAITING,
     UnknownCard,
@@ -95,6 +96,16 @@ from agentdesk.memory.extract import (
     FACT_KINDS,
     facts_to_retain,
     occurrence_from_source,
+)
+from agentdesk.memory.reflect import (
+    EndpointReflector,
+    ReflectEmpty,
+    ReflectFailed,
+    ReflectorUnavailable,
+    accept_observations,
+    gather_facts,
+    parse_scope_date,
+    scope_key,
 )
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
@@ -453,6 +464,14 @@ def _flag(body: dict, *names: str) -> bool:
     return False
 
 
+def _scope_text(value) -> str:
+    """An optional reflect scope field (ticket #93): anything that is
+    not a string, or is blank once trimmed, reads as absent."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _memory_id_from_path(path: str, suffix: str) -> int | None:
     """The fact id in /memory/<id>/edit (or /delete), or None when the
     address names no fact."""
@@ -581,6 +600,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         registry_root=None,
         peer_store: PeerStore | None = None,
         extractor=None,
+        reflector=None,
         announce_port: int | None = None,
     ) -> None:
         self.sessions = sessions
@@ -609,6 +629,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         # builds an EndpointExtractor from the effective llm client per
         # call; a test (or a future caller) injects its own.
         self.extractor = extractor
+        # The reflector port (ticket #93): the same seam one port over.
+        # None means the reflect route builds an EndpointReflector from
+        # the effective llm client per call; a test injects its own.
+        self.reflector = reflector
         # The dashboard card arrangement (order, hidden, titles); None
         # when its store could not open, in which case reads resolve the
         # canonical default and saves refuse.
@@ -1258,6 +1282,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_encrypt()
         elif path == "/memory/retain":
             self._memory_retain()
+        elif path == "/memory/reflect":
+            self._memory_reflect()
         elif path.startswith("/capabilities/") and path.endswith("/retest"):
             self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
@@ -2133,7 +2159,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             page = render_memory_page(
                 memory.all(), agentdesk.__version__, recall=recall, query=query,
                 encrypt=encrypt, entities=memory.entities(), sweep=sweep,
-                notice=notice, inbox_count=self._inbox_waiting_count(),
+                notice=notice, observations=memory.observations(),
+                inbox_count=self._inbox_waiting_count(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2464,11 +2491,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             candidates = extractor.extract(excerpt)
         except (ExtractorUnavailable, ExtractionFailed) as exc:
-            self._retain_audit(endpoint, model, self._extractor_bytes(extractor),
-                               status="error", detail=str(exc)[:200])
+            self._model_audit("llm.retain", endpoint, model,
+                              self._port_bytes(extractor),
+                              status="error", detail=str(exc)[:200])
             self._retain_error_response(502, str(exc))
             return
-        self._retain_audit(endpoint, model, self._extractor_bytes(extractor))
+        self._model_audit("llm.retain", endpoint, model,
+                          self._port_bytes(extractor))
         kept = [
             replace(candidate, occurrence_ts=occurrence_from_source(excerpt, candidate.occurrence_ts))
             for candidate in facts_to_retain(candidates)
@@ -2487,17 +2516,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "sourceId": source_id,
         })
 
-    def _extractor_bytes(self, extractor) -> int:
-        """The bytes of the prompt that went out, when the extractor
-        can say (the built-in one records it; an injected one may not)."""
-        return int(getattr(extractor, "last_request_bytes", 0) or 0)
+    def _port_bytes(self, port) -> int:
+        """The bytes of the prompt that went out, when the port can say
+        (the built-in ones record it; an injected one may not)."""
+        return int(getattr(port, "last_request_bytes", 0) or 0)
 
-    def _retain_audit(self, endpoint: str, model: str, request_bytes: int,
-                      status: str = "ok", detail: str = "") -> None:
-        """The llm.retain row, the _ask pattern's fields."""
+    def _model_audit(self, action: str, endpoint: str, model: str,
+                     request_bytes: int, status: str = "ok",
+                     detail: str = "") -> None:
+        """A model call's audit row (llm.retain, llm.reflect), the _ask
+        pattern's fields."""
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             audit_store.record(
-                self.server.audit_conn, "llm.retain", target=endpoint,
+                self.server.audit_conn, action, target=endpoint,
                 status=status, model=model, request_bytes=request_bytes, detail=detail,
             )
 
@@ -2537,6 +2568,132 @@ class DashboardHandler(BaseHTTPRequestHandler):
         the error page for a form post, the degraded turn shape for JSON."""
         if self._is_form_submit():
             self._send_error_page(status, "Save to memory", cause)
+            return
+        self._send_json(200, {"status": "degraded", "cause": cause})
+
+    # -- reflect: the memory page's derive-observations action (ticket #93)
+
+    def _memory_reflect(self) -> None:
+        """Gather the bank's facts, ask the reflector for observations,
+        and stage one approval card per survivor. Nothing lands in the
+        memory bank here (spec decision 24): acceptance writes the
+        observation, with its citations, through the card's meta. The
+        donor writes its accepted observations directly; here both
+        reflector failure classes and every filtered-out draft leave
+        the bank untouched with a plain-language notice, and the
+        endpoint gate and the llm.reflect audit match every other
+        model call. With no reflector injected at construction, an
+        EndpointReflector is built from the effective llm client per
+        call, exactly like the retain route's extractor.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        memory = self._memory_available()
+        if memory is None:
+            return
+        if server.inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        topic = _scope_text(body.get("topic"))
+        entity = _scope_text(body.get("entity"))
+        try:
+            since = parse_scope_date(body.get("since"))
+            until = parse_scope_date(body.get("until"))
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        if not self._source_allowed("endpoint_enabled"):
+            self._reflect_error_response(
+                409,
+                "Company endpoint calls are turned off in settings, so "
+                "this surface is paused. Everything else keeps working.",
+            )
+            return
+        query = " ".join(part for part in (topic, entity) if part)
+        try:
+            gathered = gather_facts(
+                query, memory.recall(query), memory.all(),
+                since=since, until=until,
+            )
+        except ReflectEmpty as exc:
+            # Refused before any model call, so nothing to audit.
+            self._reflect_error_response(502, str(exc))
+            return
+        _llm, endpoint, model = self._effective_llm()
+        reflector = server.reflector
+        if reflector is None:
+            reflector = EndpointReflector(_llm)
+        try:
+            drafts = reflector.reflect(topic or entity, gathered)
+        except (ReflectFailed, ReflectorUnavailable) as exc:
+            self._model_audit(
+                "llm.reflect", endpoint, model, self._port_bytes(reflector),
+                status="error", detail=str(exc)[:200],
+            )
+            self._reflect_error_response(502, str(exc))
+            return
+        self._model_audit(
+            "llm.reflect", endpoint, model, self._port_bytes(reflector)
+        )
+        try:
+            survivors = accept_observations(
+                list(drafts), {fact.id for fact in gathered},
+                single_entity=bool(entity),
+            )
+        except ReflectFailed as exc:
+            # The call itself succeeded and is already audited; the
+            # model's answers just did not survive the donor's filters.
+            self._reflect_error_response(502, str(exc))
+            return
+        scope = scope_key(entity=entity, topic=topic, since=since, until=until)
+        gathered_by_id = {fact.id: fact for fact in gathered}
+        subject = topic or entity
+        title = f"Observation: {subject}" if subject else "Observation"
+        cards = [
+            self._reflection_card(draft, title, scope, gathered_by_id)
+            for draft in survivors
+        ]
+        self._evaluate_inbox(server.inbox)
+        self._retain_response({
+            "status": "ok",
+            "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
+            "rejected": len(drafts) - len(survivors),
+        })
+
+    def _reflection_card(self, draft, title: str, scope: str,
+                         gathered_by_id: dict):
+        """One approval card per surviving observation: the editable
+        draft is the observation text, the body names the cited facts,
+        and the meta carries what acceptance writes (the scope the run
+        ran in, the confidence to store, the citations)."""
+        cited = [
+            fact for fact in
+            (gathered_by_id.get(fact_id) for fact_id in draft.fact_ids)
+            if fact is not None
+        ]
+        listing = " | ".join(plain_preview(fact.text) for fact in cited)
+        return self.server.inbox.add(  # type: ignore[attr-defined]
+            kind=KIND_MEMORY_REFLECTION,
+            origin=("Derived from the facts on your memory page. "
+                    "Accepting writes this observation with its "
+                    "citations; dismissing leaves nothing behind."),
+            title=title,
+            body=f"Derived from {len(cited)} gathered facts: {listing}",
+            action_label="Save observation",
+            draft=draft.text,
+            meta={"memoryObservation": {
+                "scope_key": scope,
+                "confidence": draft.confidence,
+                "source_fact_ids": list(draft.fact_ids),
+            }},
+        )
+
+    def _reflect_error_response(self, status: int, cause: str) -> None:
+        """A failed reflect says so in plain language and writes
+        nothing: the error page for a form post, the degraded turn
+        shape for JSON, like retain's."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Reflect", cause)
             return
         self._send_json(200, {"status": "degraded", "cause": cause})
 
@@ -2640,6 +2797,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if isinstance(memory_fact, dict):
             self._carry_memory_fact(card, memory_fact)
             return
+        memory_observation = card.meta.get("memoryObservation")
+        if isinstance(memory_observation, dict):
+            self._carry_memory_observation(card, memory_observation)
+            return
         text = card.meta.get("fact")
         if not isinstance(text, str) or not text.strip():
             return
@@ -2686,6 +2847,57 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError:
             LOG.warning("memory card %s carried an invalid entity type; the fact stays unlinked", card.id)
         self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+
+    def _carry_memory_observation(self, card, observation_meta: dict) -> None:
+        """Write the accepted reflection (ticket #93): one observation
+        from the edited draft text with its confidence, its citations
+        and the scope the run ran in. The store prunes the scope rows
+        the run did not keep, using the card's creation moment as the
+        run reference (see MemoryStore.save_observation), so a re-
+        reflect's acceptance updates the matching observation and
+        drops the unkept ones exactly like the donor. Anything
+        malformed in the meta (it can arrive through the generic cards
+        route too) drops the piece rather than failing the
+        acceptance, like the fact shape beside it. Dismissal never
+        reaches here and writes nothing."""
+        text = card.draft.strip()
+        if not text:
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return
+        scope = observation_meta.get("scope_key")
+        confidence = observation_meta.get("confidence")
+        fact_ids = [
+            value
+            for value in observation_meta.get("source_fact_ids") or []
+            if isinstance(value, int) and not isinstance(value, bool)
+        ]
+        if (
+            not isinstance(scope, str)
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+        ):
+            LOG.warning(
+                "memory card %s carried an unusable observation meta;"
+                " nothing was written", card.id,
+            )
+            return
+        try:
+            saved = memory.save_observation(
+                scope, text, float(confidence), fact_ids,
+                now=memory.clock(), run_ts=card.created_ts,
+            )
+        except ValueError as exc:
+            LOG.warning(
+                "memory card %s carried an observation that cannot be"
+                " stored (%s); nothing was written", card.id, exc,
+            )
+            return
+        self._audit(
+            "memory.observation", target=str(saved.observation.id),
+            detail=f"inbox card {card.id}",
+        )
 
     # -- mail: the page, the watcher controls, the reply drafts -----------
 
@@ -4327,6 +4539,7 @@ def create_server(
     registry_root=None,
     peer_store: PeerStore | None = None,
     extractor=None,
+    reflector=None,
     announce_port: int | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
@@ -4428,6 +4641,7 @@ def create_server(
             registry_root=registry_root,
             peer_store=peer_store,
             extractor=extractor,
+            reflector=reflector,
             announce_port=announce_port,
         )
 

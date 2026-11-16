@@ -23,6 +23,7 @@ _KIND_LABEL = {
     "mail_digest": "Mail digest",
     "mail_follow_up": "Needs a reply",
     "memory_draft": "Save to memory",
+    "memory_reflection": "Save observation",
 }
 
 
