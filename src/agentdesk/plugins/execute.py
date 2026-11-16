@@ -258,7 +258,22 @@ class PluginWidgetRunner:
         self._manifests[plugin_id] = manifest
         self._dirs[plugin_id] = Path(version_dir)
         self._data_dirs[plugin_id] = Path(data_dir)
+        plugin_config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
         widgets = manifest.get("contributes", {}).get("widgets", [])
+        if plugin_config.get("kinds"):
+            source = {}
+            if widgets and isinstance(widgets[0], dict):
+                source = widgets[0].get("dataSource") or {}
+            if not (isinstance(source, dict) and source.get("file")):
+                # The file is chosen per instance. Attaching records the
+                # plugin and reads nothing until a config is confirmed.
+                self._sources[plugin_id] = source if isinstance(source, dict) else {}
+                return {
+                    "status": "setup",
+                    "cause": "",
+                    "checked_at": _iso(None),
+                    "state": "setup",
+                }
         if not widgets:
             return self._attention("plugin contributes no widget")
         source = widgets[0].get("dataSource", {}) if isinstance(widgets[0], dict) else {}

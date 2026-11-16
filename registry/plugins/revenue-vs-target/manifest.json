@@ -17,18 +17,16 @@
     "quarter"
   ],
   "icon": "chart",
-  "summary": "Booked revenue for the quarter against the 1,000,000 USD target.",
-  "description": "Revenue vs Target sums the Booked column by Region across the newest workbook under ${workspace}/finance/, then compares the total with the quarter target and shows the 24-hour change. The blank state names the workbook glob and the columns it needs instead of showing zero.",
+  "summary": "A Workbook tracker instance named Revenue.",
+  "description": "Revenue vs Target is a Workbook tracker instance named Revenue. You open the workbook and confirm the columns. No path, column, or target is assumed.",
   "highlights": [
-    "Sums Booked by Region across the quarter's revenue workbooks.",
-    "Progress bar against the 1,000,000 USD quarter target.",
-    "Shows the 24-hour direction so a late push is visible."
+    "Installs as the Revenue instance of Workbook tracker.",
+    "You open the file. Nothing is read until you confirm.",
+    "The columns and any goal are yours, not a default."
   ],
   "permissions": {
     "filesystem": {
-      "read": [
-        "${workspace}/finance/revenue*.xlsx"
-      ],
+      "read": [],
       "write": []
     },
     "network": {
@@ -49,12 +47,7 @@
         "id": "revenue-vs-target",
         "size": "2x1",
         "dataSource": {
-          "type": "excel-watch",
-          "file": "${workspace}/finance/revenue*.xlsx",
-          "keyColumn": "Region",
-          "valueColumn": "Booked",
-          "window": "90d",
-          "aggregate": "sum"
+          "type": "excel-watch"
         },
         "render": {
           "type": "ui-schema",
@@ -63,5 +56,13 @@
       }
     ]
   },
-  "sample": "sample.json"
+  "sample": "sample.json",
+  "config": {
+    "kinds": [
+      "workbook"
+    ],
+    "aliasOf": "excel-report",
+    "instanceName": "Revenue",
+    "good": "up"
+  }
 }

@@ -68,6 +68,8 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         # carries the spec's documented default.
         "semantic_memory": True,
         "embeddings_model": "text-embedding-3-small",
+        "suggest_headers_only": False,
+        "plugin_instance_cap": 6,
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

@@ -1,35 +1,7 @@
 {
   "bindings": {
-    "delta24h": "18 new, 4 removed rows.",
-    "rowsSeen": 1284,
-    "rows": [
-      {
-        "primary": "Acme Corp renewal",
-        "secondary": "+12,400",
-        "meta": "Owner: Priya"
-      },
-      {
-        "primary": "Northwind upsell",
-        "secondary": "+8,900",
-        "meta": "Owner: Sam"
-      },
-      {
-        "primary": "Bluebird pilot",
-        "secondary": "+5,200",
-        "meta": "Owner: Ana"
-      },
-      {
-        "primary": "Contoso expansion",
-        "secondary": "+3,750",
-        "meta": "Owner: Priya"
-      },
-      {
-        "primary": "Tailspin renewal",
-        "secondary": "-1,800",
-        "meta": "Owner: Sam"
-      }
-    ]
+    "windowNote": "Opens a Workbook tracker instance."
   },
   "state": "ok",
-  "checkedAt": "2026-11-15T09:00:00"
+  "checkedAt": "2026-11-16T09:00:00"
 }

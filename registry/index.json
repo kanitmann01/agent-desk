@@ -56,7 +56,7 @@
       "releases": [
         {
           "version": "0.2.0",
-          "sha256": "b887ff373b387c76a6928ed315e5ce7c57c4c12f03b6d5ba855791ca914dcff9",
+          "sha256": "c173b27d1577fb38560c97ad2d13742e1483d61991520af0051d1fce80de8338",
           "source": "local",
           "yanked": false
         }
@@ -154,7 +154,7 @@
       "releases": [
         {
           "version": "0.1.0",
-          "sha256": "31ee5eee95dcb63e2afd96740b0ac9a622de14fd7dc46ce67ce8fd8d62e72453",
+          "sha256": "97486020f1ce1e551db4765982159a2118054de994625889d013cb0c51af7770",
           "source": "local",
           "yanked": false
         }
@@ -426,7 +426,7 @@
       "releases": [
         {
           "version": "0.2.0",
-          "sha256": "7a0e1f0a486b77dcdd3328376031bdf3c2ccc16046a2164e802bd525799de791",
+          "sha256": "bb129a5886d21980df435cede0464e7422389f56821e0b5e8c27d51ece83d62c",
           "source": "local",
           "yanked": false
         }
@@ -454,7 +454,7 @@
         },
         {
           "version": "0.2.0",
-          "sha256": "473edf4374ea9005657433a0b7a0e42afe7de8622e3015acc0e6c47fd1eae5a0",
+          "sha256": "cb1716f3c096da160f8107842d67b87bf3a3d14322cc6075e94fd8b3ba9eb2f8",
           "source": "local",
           "yanked": false
         }

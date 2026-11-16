@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { postJson } from '../api';
 import type { PluginCard, PluginElement } from '../types';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
+import TrackerSetup from './TrackerSetup';
 
 interface PluginCardViewProps {
   card: PluginCard;
@@ -25,13 +26,37 @@ function ElementView({ element }: { element: PluginElement }) {
       </>
     );
   }
-  return <p className="w-note">{element.text ?? ''}</p>;
+  if (element.kind === 'delta') {
+    return (
+      <p className="w-note">
+        {element.label ? `${element.label}: ` : ''}{element.value ?? ''} {element.direction ?? ''}
+      </p>
+    );
+  }
+  if (element.kind === 'sparkline' && element.points && element.points.length > 1) {
+    const min = Math.min(...element.points);
+    const max = Math.max(...element.points);
+    const span = max - min || 1;
+    const coords = element.points.map((point, index) => {
+      const x = (index / (element.points!.length - 1)) * 100;
+      const y = 28 - ((point - min) / span) * 24;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return (
+      <svg viewBox="0 0 100 30" role="img" aria-label={element.label || 'History'}>
+        <polyline points={coords} fill="none" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    );
+  }
+  return <p className="w-note">{element.text ?? element.value ?? ''}</p>;
 }
 
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
   const fresh = card.freshness === 'fresh';
+  const settingUp = Boolean(card.payload?.setup);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const setup = card.payload?.setup;
   const elements = fresh ? (card.payload?.elements ?? []) : [];
 
   async function retest() {
@@ -61,12 +86,20 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
       title={card.title}
       span="span-4"
       badge={card.pilot ? 'PILOT' : undefined}
-      stamp={fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' }}
-      amber={!fresh}
+      stamp={settingUp ? { fresh: true, text: 'setup' } : fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' }}
+      amber={!fresh && !settingUp}
       menuItems={menuItems}
       foot={`plugin v${card.version}`}
     >
-      {fresh && elements.length > 0 ? (
+      {setup ? (
+        <TrackerSetup
+          pluginId={setup.pluginId}
+          instanceId={setup.instanceId}
+          name={setup.name}
+          onDone={onRefetch}
+          onExpired={onExpired}
+        />
+      ) : fresh && elements.length > 0 ? (
         elements.map((element, i) => <ElementView key={i} element={element} />)
       ) : fresh ? (
         <>

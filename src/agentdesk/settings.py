@@ -35,9 +35,12 @@ TOGGLES = {
     # embeddings probe passes on the capabilities page, so this default
     # on changes nothing until the endpoint answers the probe.
     "semantic_memory": True,
+    # Suggestion sends column names only when this is on. Off sends up to 5 rows.
+    "suggest_headers_only": False,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
+    "plugin_instance_cap": [6, 5, 4, 3, 2, 1],
 }
 # The embeddings model default below is the spec's Further Notes
 # default (decision: text-embedding-3-small); agentdesk.memory.embed
@@ -52,7 +55,7 @@ TEXT_KEYS = {
     "registry_path": "",  # the local registry checkout the plugins page browses; empty means auto
     "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated
 }
-DEFAULTS = {**TOGGLES, "daily_cap": 3, **TEXT_KEYS}
+DEFAULTS = {**TOGGLES, "daily_cap": 3, "plugin_instance_cap": 6, **TEXT_KEYS}
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:

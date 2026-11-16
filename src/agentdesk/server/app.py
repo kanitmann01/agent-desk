@@ -849,6 +849,8 @@ def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
     plugins = server.plugins
     if plugins is None:
         return []
+    if hasattr(plugins, "layout_keys"):
+        return plugins.layout_keys()
     return [
         entry["id"] for entry in plugins.list_records()
         if entry.get("state") == "enabled"
@@ -1172,6 +1174,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self.server.layout,  # type: ignore[attr-defined]
                     enabled_plugin_ids(self.server)),
             })
+        elif path.startswith("/api/plugins/") and "/instances" in path:
+            self._plugin_setup_get(path)
         elif path.startswith("/api/plugins/"):
             self._send_json(200, self._plugin_record_or_404(path[len("/api/plugins/"):]))
         elif path == "/audit/export.csv":
@@ -1871,7 +1875,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory"):
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "suggest_headers_only", "plugin_instance_cap"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -1883,6 +1887,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # The semantic switch (ticket #95) owns no watcher either:
             # the next memory action re-derives the store's semantic
             # half from this value and the probe's cached answer.
+            pass
+        elif key in ("suggest_headers_only", "plugin_instance_cap"):
             pass
         else:
             self._apply_source_toggles(key, value)
@@ -3403,10 +3409,136 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._audit("inbox.restored", target=card.id, detail=card.title)
         self._send_json(200, card.to_json(inbox.now_ts()))
 
+    def _plugin_setup_get(self, path: str) -> None:
+        plugins = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            self._send_json(503, {"error": "plugins are not available"})
+            return
+        try:
+            from ..plugins.setup_flow import preview
+            parts = [part for part in path.split("/") if part]
+            # api plugins <id> instances <iid> preview
+            if len(parts) >= 6 and parts[5] == "preview":
+                query = self.path.partition("?")[2]
+                params = {}
+                if query:
+                    from urllib.parse import parse_qs
+                    params = {key: values[0] for key, values in parse_qs(query).items()}
+                result = preview(
+                    plugins, self._instance_cap(), parts[4],
+                    sheet=params.get("sheet"),
+                    header_row=int(params.get("headerRow") or 1),
+                    range_text=params.get("range"),
+                )
+                self._send_json(200, result)
+                return
+        except Exception as exc:  # noqa: BLE001 - the setup envelope names the cause
+            self._setup_error(exc)
+            return
+        self._send_json(404, {"error": "not-found", "message": path})
+
+    def _plugin_setup_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
+        from ..plugins.config import ConfigError
+        from ..plugins.setup_flow import (
+            accept_outside, confirm, ensure_instance, pick, stage, store_for, suggest,
+        )
+        parts = [part for part in path.split("/") if part]
+        # api plugins excel-report instances [iid] [action]
+        if len(parts) < 4 or parts[3] != "instances":
+            self._send_json(404, {"error": "not-found", "message": path})
+            return
+        cap = self._instance_cap()
+        try:
+            if len(parts) == 4:
+                name = str(body.get("name") or "").strip()
+                if not name:
+                    self._send_json(400, {"error": "Name the instance."})
+                    return
+                instance_id = "".join(ch.lower() if ch.isalnum() else "-" for ch in name).strip("-") or "instance"
+                saved = ensure_instance(
+                    store_for(plugins, cap), instance_id, name,
+                    good="down" if body.get("good") == "down" else "up",
+                )
+                self._send_json(200, {"instance": saved})
+                return
+            instance_id = parts[4]
+            action = parts[5] if len(parts) > 5 else ""
+            name = str(body.get("name") or instance_id)
+            if action == "pick":
+                self._send_json(200, pick(
+                    plugins, cap, instance_id, name, self.server.pick_workbook))  # type: ignore[attr-defined]
+                return
+            if action == "stage":
+                self._send_json(200, stage(plugins, cap, instance_id, name, str(body.get("path") or "")))
+                return
+            if action == "suggest":
+                headers_only = self._headers_only()
+                if "headersOnly" in body:
+                    headers_only = bool(body.get("headersOnly"))
+                complete = self._suggestion_complete()
+                self._send_json(200, suggest(
+                    plugins, cap, instance_id, headers_only=headers_only, complete=complete))
+                return
+            if action == "confirm":
+                tracking = body.get("tracking") if isinstance(body.get("tracking"), dict) else body
+                self._send_json(200, confirm(
+                    plugins, cap, instance_id, tracking,
+                    suggested=bool(body.get("suggested")),
+                    header_row=body.get("headerRow"),
+                    range_text=body.get("range")))
+                return
+            if action == "outside":
+                self._send_json(200, accept_outside(plugins, cap, instance_id))
+                return
+        except ConfigError as exc:
+            self._send_json(400, {"error": exc.code, "message": exc.message})
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._setup_error(exc)
+            return
+        self._send_json(404, {"error": "not-found", "message": path})
+
+    def _instance_cap(self) -> int:
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            return 6
+        try:
+            return int(settings.get("plugin_instance_cap"))
+        except (KeyError, TypeError, ValueError):
+            return 6
+
+    def _headers_only(self) -> bool:
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None:
+            return False
+        try:
+            return bool(settings.get("suggest_headers_only"))
+        except KeyError:
+            return False
+
+    def _suggestion_complete(self):
+        server = self.server  # type: ignore[attr-defined]
+        if server.llm is None or not server.llm_endpoint:
+            return None
+
+        def complete(prompt: str) -> str:
+            return server.llm(prompt)
+        return complete
+
+    def _setup_error(self, exc: Exception) -> None:
+        from ..plugins.config import ConfigError
+        if isinstance(exc, ConfigError):
+            self._send_json(400, {"error": exc.code, "message": exc.message})
+            return
+        self._send_json(400, {"error": "config:failed", "message": str(exc)})
+
     def _dispatch_plugin_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
         """Deprecated: /api/plugins mutations stay for one release; new clients
         use /api/marketplace/* (see marketplace/api.py)."""
         parts = [part for part in path.split("/") if part]
+        if "/instances" in path:
+            self._plugin_setup_post(plugins, path, body)
+            return
         if path == "/api/plugins/install":
             if not isinstance(body.get("zip_path"), str):
                 self._send_json(400, {"error": "bad-request",

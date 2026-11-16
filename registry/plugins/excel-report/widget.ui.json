@@ -1,11 +1,9 @@
 {
   "type": "card",
-  "title": "Report workbook (24h)",
   "elements": [
-    { "type": "metric", "binding": "rowsSeen", "label": "Rows seen" },
-    { "type": "metric", "binding": "addedCount", "label": "Added (24h)" },
-    { "type": "metric", "binding": "removedCount", "label": "Removed (24h)" },
-    { "type": "metric", "binding": "file", "label": "Workbook" },
-    { "type": "text", "binding": "windowNote" }
+    {"type": "metric", "binding": "value", "label": "Value"},
+    {"type": "delta", "binding": "delta24h", "label": "Change", "directionBinding": "direction"},
+    {"type": "text", "binding": "file", "label": "Workbook"},
+    {"type": "text", "binding": "windowNote", "label": "Pace"}
   ]
 }

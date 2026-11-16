@@ -49,10 +49,19 @@ export interface CommitmentsStatus {
 // metric (a value with a label) or text (a note line). Anything the
 // host could not bind is dropped server-side, never invented here.
 export interface PluginElement {
-  kind: 'metric' | 'text';
+  kind: 'metric' | 'text' | 'delta' | 'sparkline';
   label?: string;
   value?: string;
   text?: string;
+  direction?: string;
+  points?: number[];
+}
+
+export interface PluginSetup {
+  pluginId: string;
+  instanceId: string;
+  name: string;
+  step: string;
 }
 
 export interface PluginCard {
@@ -64,7 +73,7 @@ export interface PluginCard {
   freshness: string; // fresh | attention
   cause: string;
   checkedAt?: string;
-  payload?: { elements: PluginElement[] } | null;
+  payload?: { elements: PluginElement[]; setup?: PluginSetup } | null;
 }
 
 // One card in the dashboard's layout as the payload lists it: visible
