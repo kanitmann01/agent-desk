@@ -10,6 +10,7 @@ import contextlib
 import json
 import sqlite3
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1067,3 +1068,28 @@ def test_remove_facts_reports_the_observations_it_pruned():
     removed = store.remove_facts([right.id])
     assert removed.observation_ids == (saved.observation.id,)
     assert [o.id for o in store.observations()] == [survivor.observation.id]
+
+
+def test_concurrent_adds_on_the_shared_connection_lose_nothing():
+    # The connection is check_same_thread=False across request threads;
+    # the store's write lock (the settings.py rule) serializes the
+    # writes so four racing threads of adds all land (review finding 2).
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    store = MemoryStore(conn, FakeClock())
+    errors: list = []
+
+    def add_many(seed):
+        try:
+            for i in range(10):
+                store.add(f"fact {seed}-{i} is recorded", source="threads")
+        except Exception as exc:  # noqa: BLE001 - the barrier asserts emptiness
+            errors.append(exc)
+
+    threads = [threading.Thread(target=add_many, args=(seed,)) for seed in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert len(store.all()) == 40
+    conn.close()

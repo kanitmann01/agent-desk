@@ -47,11 +47,13 @@ normalized duplicate matches, riding the text_idx blind index on a
 sealed bank with a decrypt-verify second.
 """
 
+import functools
 import json
 import math
 import os
 import secrets
 import sqlite3
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -274,13 +276,16 @@ def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
     """Merge pre-existing facts whose normalized texts are identical.
 
     The keeper is the oldest row (lowest created_ts, lowest id on a
-    tie); the copies are deleted. A v1 database has no edges and no
-    occurrence or embedding backfill to move onto the keeper (edges
-    arrive with v2 and no v1 fact ever gained the rest), so a plain
-    DELETE is the whole merge, unlike the donor's mention-moving dance.
-    Groups whose normalized text is empty are skipped: blank rows are
-    not duplicates of each other. Only ever runs on a plaintext bank:
-    the migration and the conversion both happen before any sealing.
+    tie); the copies are deleted. A v1 database has no edges or
+    citations to move, but a v2 bank can still hold duplicates that
+    predate ticket #92's write-time dedup (an older build or a foreign
+    writer), so each copy's mention edges and observation citations
+    move onto the keeper first (the donor's moveMentions, the same
+    dance edit() merges with): the foreign keys would otherwise refuse
+    the delete. Groups whose normalized text is empty are skipped:
+    blank rows are not duplicates of each other. Only ever runs on a
+    plaintext bank: the migration and the conversion both happen before
+    any sealing.
     """
     rows = conn.execute("SELECT id, text, created_ts FROM facts").fetchall()
     groups: dict[str, list[tuple[float, int]]] = {}
@@ -293,7 +298,20 @@ def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
         if len(members) < 2:
             continue
         members.sort()
+        keeper_id = members[0][1]
         for _created_ts, extra_id in members[1:]:
+            conn.execute(
+                "INSERT OR IGNORE INTO edges (fact_id, entity_id) "
+                "SELECT ?, entity_id FROM edges WHERE fact_id = ?",
+                (keeper_id, extra_id),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO observation_sources "
+                "(observation_id, fact_id) "
+                "SELECT observation_id, ? FROM observation_sources "
+                "WHERE fact_id = ?",
+                (keeper_id, extra_id),
+            )
             conn.execute("DELETE FROM facts WHERE id = ?", (extra_id,))
 
 
@@ -424,6 +442,23 @@ def read_key_file(path) -> bytes:
     return load_key(Path(path).read_bytes())
 
 
+def _locked(method):
+    """One lock around every write, the settings.py rule: the store's
+    connection is shared across the server's request threads with
+    check_same_thread=False, so mutating methods serialize on one RLock.
+    Without it two threads can interleave commits on the connection's
+    single transaction and half-apply each other's writes (a double-
+    clicked Encrypt button is the worst case: both conversions would run
+    over the same rows and the second blanking pass can seal an emptied
+    plaintext over the only ciphertext). Reads stay unlocked: SQLite
+    serializes them safely against one writer."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class MemoryStore:
     """Facts in, recall out; the ranking lives in the pure service.
 
@@ -445,6 +480,9 @@ class MemoryStore:
     ) -> None:
         self.conn = conn
         self.clock = clock
+        # One lock around every write (see _locked): the connection is
+        # shared across request threads.
+        self._lock = threading.RLock()
         self.key_path = Path(key_path) if key_path is not None else None
         self.locked_cause: str | None = None
         self._box: CryptoBox | None = None
@@ -495,6 +533,7 @@ class MemoryStore:
 
     # -- writes -----------------------------------------------------------
 
+    @_locked
     def add(
         self,
         text: str,
@@ -587,6 +626,7 @@ class MemoryStore:
             (occurrence_ts, fact_id),
         )
 
+    @_locked
     def edit(self, fact_id: int, text: str) -> EditResult:
         """Replace the text, merging into an existing duplicate when the
         new normalized text matches another fact's (ticket #92, the
@@ -638,6 +678,7 @@ class MemoryStore:
             merged_into=merged,
         )
 
+    @_locked
     def delete(self, fact_id: int) -> None:
         self._guard()
         self.get(fact_id)
@@ -650,6 +691,7 @@ class MemoryStore:
             self.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
             _prune_orphan_statements(self.conn)
 
+    @_locked
     def add_source(self, text: str, speaker: str = "", context: str = "") -> int:
         """Record one retained excerpt and return its id: the provenance
         every candidate fact from that retain shares. Sealed: all three
@@ -673,6 +715,7 @@ class MemoryStore:
                     )
         return row_id
 
+    @_locked
     def resolve_and_link(self, fact_id: int, mentions) -> list[EntityRef]:
         """Resolve a fact's (name, type) mentions against the loaded
         entities and write the entities and mention edges in one
@@ -702,6 +745,7 @@ class MemoryStore:
 
     # -- observations (ticket #93) ------------------------------------------
 
+    @_locked
     def save_observation(
         self,
         scope_key: str,
@@ -934,6 +978,7 @@ class MemoryStore:
         summaries.sort(key=lambda summary: (summary.canonical_name, summary.id))
         return summaries
 
+    @_locked
     def merge_entities(self, survivor_id: int, removed_id: int) -> StoredEntity:
         """The page's manual entity merge (ticket #92): the removed
         entity's aliases and canonical name union into the survivor's
@@ -998,6 +1043,7 @@ class MemoryStore:
                 candidates.append(SweepCandidate(fact=fact, reason=reason))
         return candidates
 
+    @_locked
     def remove_facts(self, fact_ids) -> RemovedFacts:
         """The donor's removeFacts (ticket #92): all-or-nothing by id
         (one missing id refuses the whole call before anything is
@@ -1067,7 +1113,8 @@ class MemoryStore:
             raise MemoryEncryptedError("The memory database is already encrypted.")
         return _plain_field_counts(self.conn)
 
-    def encrypt_all(self, key: bytes | None = None, dry_run: bool = False) -> dict:
+    @_locked
+    def encrypt_all(self, dry_run: bool = False) -> dict:
         """The one-action conversion (the donor's encryptBank).
 
         Dedupes identical facts and prunes orphan citations and
@@ -1078,7 +1125,9 @@ class MemoryStore:
         commit is followed by wal_checkpoint(TRUNCATE) and VACUUM. A
         dry run only counts. An already-sealed bank refuses (the page
         says so). Any failure inside the transaction rolls back to a
-        valid plaintext bank.
+        valid plaintext bank. The key comes from the store's key_path
+        only: a conversion whose key exists nowhere on disk would brick
+        the bank on the next open, so raw key bytes are not accepted.
         """
         self._guard()
         if self._box is not None:
@@ -1086,15 +1135,12 @@ class MemoryStore:
         if dry_run:
             fields = sum(_plain_field_counts(self.conn).values())
             return {"dry_run": True, "fields": fields}
-        if key is None and self.key_path is None:
+        if self.key_path is None:
             raise ValueError(
-                "memory encryption needs a key: key bytes or a key file path"
+                "memory encryption needs the key file path (memory.key)"
             )
-        if key is None:
-            # Created before the transaction (see ensure_key_file).
-            key = ensure_key_file(self.key_path)
-        else:
-            key = load_key(key)
+        # Created before the transaction (see ensure_key_file).
+        key = ensure_key_file(self.key_path)
         _prune_orphan_observations(self.conn)
         _dedupe_identical_facts(self.conn)
         fields = sum(_plain_field_counts(self.conn).values())

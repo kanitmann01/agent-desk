@@ -29,7 +29,8 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc  # datetime.UTC needs 3.11; the declared floor is 3.10
 
 from agentdesk.memory.core import Fact
 

@@ -30,7 +30,8 @@ donor the filters live inside the retain write).
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc  # datetime.UTC needs 3.11; the declared floor is 3.10
 
 from agentdesk.llm import LlmUnavailable
 from agentdesk.memory.knowledge_gap import is_assistant_knowledge_gap

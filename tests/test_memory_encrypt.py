@@ -15,6 +15,7 @@ of other tables (ids, kinds, timestamps, confidence) stay plaintext.
 import json
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -523,9 +524,11 @@ def test_dry_run_counts_fields_per_table():
 
 def test_encrypt_all_seals_the_bank_and_a_reopen_reads_identically(tmp_path):
     db = tmp_path / "memory.sqlite3"
-    store = _plaintext_bank(db)
+    key_path = tmp_path / "memory.key"
+    key_path.write_bytes(KEY)
+    store = _plaintext_bank(db, key_path=key_path)
     before_texts = [f.text for f in store.all()]
-    result = store.encrypt_all(KEY)
+    result = store.encrypt_all()
     # The conversion counts after its dedupe and prune: the uncited
     # observation is gone, so one field fewer than the dry run saw.
     assert result["fields"] == 8
@@ -561,12 +564,14 @@ def test_encrypt_all_seals_the_bank_and_a_reopen_reads_identically(tmp_path):
 
 def test_encrypt_all_twice_reports_already_encrypted_and_changes_nothing(tmp_path):
     db = tmp_path / "memory.sqlite3"
-    store = _plaintext_bank(db)
-    store.encrypt_all(KEY)
+    key_path = tmp_path / "memory.key"
+    key_path.write_bytes(KEY)
+    store = _plaintext_bank(db, key_path=key_path)
+    store.encrypt_all()
     facts_before = store.all()
     marker_before = _marker(store.conn)
     with pytest.raises(MemoryEncryptedError, match=r"already encrypted"):
-        store.encrypt_all(KEY)
+        store.encrypt_all()
     assert store.all() == facts_before
     assert _marker(store.conn) == marker_before
     _close(store)
@@ -575,9 +580,48 @@ def test_encrypt_all_twice_reports_already_encrypted_and_changes_nothing(tmp_pat
     _close(reopened)
 
 
+def test_two_threads_racing_the_conversion_cannot_interleave(tmp_path):
+    # A double-clicked Encrypt button is the worst case the store's
+    # write lock exists for: one conversion seals the bank, the other
+    # refuses with already-encrypted, and the bank reads back intact.
+    # Without the lock both conversions run over the same rows and the
+    # second blanking pass can seal emptied plaintext over the only
+    # ciphertext (the review's finding 2).
+    db = tmp_path / "memory.sqlite3"
+    key_path = tmp_path / "memory.key"
+    key_path.write_bytes(KEY)
+    store = _plaintext_bank(db, key_path=key_path)
+    before_texts = [f.text for f in store.all()]
+    results: list = []
+    errors: list = []
+
+    def convert():
+        try:
+            results.append(store.encrypt_all())
+        except MemoryEncryptedError as exc:
+            errors.append(str(exc))
+
+    threads = [threading.Thread(target=convert) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(results) == 1 and results[0]["fields"] > 0
+    assert len(errors) == 1 and "already encrypted" in errors[0]
+    assert store.is_sealed is True
+    assert [f.text for f in store.all()] == before_texts
+    _close(store)
+    reopened = _open(db, key=KEY)
+    assert [f.text for f in reopened.all()] == before_texts
+    assert reopened.recall("revenue")[0][1].text == "Revenue is 220"
+    _close(reopened)
+
+
 def test_encrypt_all_dedupes_and_prunes_before_sealing(tmp_path):
     db = tmp_path / "memory.sqlite3"
-    store = _plaintext_bank(db)
+    key_path = tmp_path / "memory.key"
+    key_path.write_bytes(KEY)
+    store = _plaintext_bank(db, key_path=key_path)
     # A duplicate of fact 1 that predates ticket #92 (a row an older
     # build or a foreign writer left behind): write-time dedup would
     # refuse it at add() today, and the conversion's own pre-step still
@@ -588,7 +632,7 @@ def test_encrypt_all_dedupes_and_prunes_before_sealing(tmp_path):
         " VALUES ('revenue is 220', 'page', 110.0)"
     )
     store.conn.commit()
-    store.encrypt_all(KEY)
+    store.encrypt_all()
     reopened = _open(db, key=KEY)
     texts = [f.text for f in reopened.all()]
     assert texts.count("Revenue is 220") == 1, texts
@@ -605,7 +649,9 @@ def test_encrypt_all_dedupes_and_prunes_before_sealing(tmp_path):
 
 def test_a_seal_failure_partway_rolls_back_to_a_valid_plaintext_bank(tmp_path):
     db = tmp_path / "memory.sqlite3"
-    store = _plaintext_bank(db)
+    key_path = tmp_path / "memory.key"
+    key_path.write_bytes(KEY)
+    store = _plaintext_bank(db, key_path=key_path)
     real_seal = CryptoBox.seal
 
     def failing_seal(self, value, table, column, row_id):
@@ -618,7 +664,7 @@ def test_a_seal_failure_partway_rolls_back_to_a_valid_plaintext_bank(tmp_path):
     memory_store_module.CryptoBox = monkey_box
     try:
         with pytest.raises(RuntimeError, match=r"injected seal failure"):
-            store.encrypt_all(KEY)
+            store.encrypt_all()
     finally:
         memory_store_module.CryptoBox = original
     # The rollback left a valid plaintext bank: no marker, every text

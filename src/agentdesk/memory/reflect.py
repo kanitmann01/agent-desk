@@ -38,7 +38,8 @@ UTC ISO-8601 for the prompt, matching the port's UTC posture.
 import math
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc  # datetime.UTC needs 3.11; the declared floor is 3.10
 
 from agentdesk.llm import LlmUnavailable
 from agentdesk.memory.core import Fact, normalize_fact_text
