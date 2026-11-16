@@ -420,7 +420,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     <div className="app">
       <a className="skip-link" href="#dashboard-main">Skip to main content</a>
       <Rail inboxWaiting={data.inbox.waiting} />
-      <main id="dashboard-main">
+      <main id="dashboard-main" tabIndex={-1}>
         <header className="hero">
           <div>
             <h1 className="hero-title">{greeting}</h1>

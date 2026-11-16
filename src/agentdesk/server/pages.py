@@ -313,6 +313,13 @@ table.rows td.neg{color:var(--bad)}
      instead of clipping, matching the dashboard SPA's behavior. */
   .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 14px;gap:8px}
   .rail .brand{padding:0 12px 0 0}
+  /* Words hide; every link already carries its aria-label. The strip
+     stays wrapping (it must not scroll sideways) and drops to icon
+     height, matching the dashboard SPA. */
+  .rail .rail-label,.rail .brand b,.rail .brand-name{display:none}
+  .rail a{position:relative;justify-content:center;min-height:44px;min-width:44px}
+  .rail .count{position:absolute;top:2px;right:2px;margin-left:0}
+  html{scroll-padding-top:112px}
   .rail .user{display:none}
   .grid{grid-template-columns:1fr}
   .col-7,.col-5,.col-8,.col-4{grid-column:auto}
