@@ -201,8 +201,9 @@ donor module.
 ### Recall (deterministic hybrid)
 
 15. Tokenization replicates the donor: NFKC, lowercase, split on
-    non-alphanumerics; meaningful tokens drop single characters and a fixed
-    63-word stopword list, deduped order-preserving. Token cost is estimated as
+    non-alphanumerics; meaningful tokens drop single characters and the donor's
+    fixed stopword list (61 words, authoritative from the donor source), deduped
+    order-preserving. Token cost is estimated as
     one per four characters.
 16. The keyword leg scores plus one per meaningful query token present in the
     fact's raw tokens. The graph leg scores entity names in three tiers (full
