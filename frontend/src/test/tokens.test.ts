@@ -13,6 +13,8 @@ const frontend = resolve(here, '..', '..');
 const repo = resolve(frontend, '..');
 
 const css = readFileSync(resolve(frontend, 'src/index.css'), 'utf8');
+const marketCss = readFileSync(resolve(frontend, 'src/marketplace/marketplace.css'), 'utf8');
+const adminCss = readFileSync(resolve(frontend, 'src/marketplace/admin-trust.css'), 'utf8');
 const html = readFileSync(resolve(frontend, 'index.html'), 'utf8');
 const pkg = JSON.parse(readFileSync(resolve(frontend, 'package.json'), 'utf8')) as {
   dependencies: Record<string, string>;
@@ -254,6 +256,11 @@ describe('the rail stays on screen at every width', () => {
     expect(railRule, 'narrow rail entries must wrap, not clip').toContain('flex-wrap:wrap');
     expect(railRule, 'narrow rail must not scroll sideways').not.toContain('overflow-x');
     expect(railRule, 'sticky strip must paint above the content').toContain('z-index');
+    expect(narrow, 'narrow rail drops words and keeps the accessible name').toContain(
+      '.rail .rail-label,.rail .brand b,.rail .brand-name{display:none}',
+    );
+    expect(narrow, 'narrow rail targets are 44px').toContain('min-height:44px');
+    expect(narrow, 'focused content clears the sticky strip').toContain('scroll-padding-top:112px');
     // Sticky inside its own auto-sized grid row has no travel: the
     // single-column shell must become a block for the pin to work.
     expect(narrow, 'single-column shell must become a block').toContain('.app{display:block}');
@@ -399,6 +406,26 @@ describe('the committed bundle honors the contract', () => {
     expect(bundleCss).toContain('.rail-toggle{');
     expect(bundleJs).toContain('agentdesk.railCollapsed');
     expect(bundleJs).toContain('rail-toggle');
+  });
+});
+
+describe('marketplace type stays inside the design language', () => {
+  it('keeps page titles on the 28px ceiling at every width', () => {
+    expect(marketCss).toContain('font-size: 28px');
+    expect(marketCss).not.toContain('font-size: 30px');
+    expect(marketCss).not.toContain('font-size: 25px');
+  });
+
+  it('uses sentence case for labels', () => {
+    expect(css).not.toContain('text-transform:uppercase');
+    expect(marketCss).not.toContain('text-transform: uppercase');
+    expect(adminCss).not.toContain('text-transform: uppercase');
+  });
+
+  it('shows a keyboard ring on the marketplace main and keeps the search well ring', () => {
+    expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--primary)');
+    expect(marketCss).toContain('.mkt-search-field:focus-within');
+    expect(marketCss).toContain('.mkt-search-field input:focus { outline: none; }');
   });
 });
 

@@ -262,7 +262,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
    command comes from that, not from size. Green when healthy;
    terracotta speaks through the delta chips and the table rows. */
 .kpi{display:flex;flex-direction:column;gap:6px;padding:6px 0 2px}
-.kpi .label{font-size:12px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.09em}
+.kpi .label{font-size:12px;font-weight:600;color:var(--ink-3)}
 .kpi .value{
   font-family:var(--font-mono);font-size:28px;font-weight:600;line-height:1.1;
   letter-spacing:-.01em;color:var(--good);
@@ -298,7 +298,7 @@ table.rows td.neg{color:var(--bad)}
 .event small{color:var(--ink-2)}
 .w-big{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12.5px;color:var(--ink-3)}
-.subhead{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.09em}
+.subhead{font-size:12px;font-weight:600;color:var(--ink-3)}
 .subhead-tight{margin-bottom:4px}
 
 .check{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13.5px;cursor:pointer}
@@ -402,6 +402,13 @@ table.rows td.neg{color:var(--bad)}
   .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
   .rail .brand{padding:0 12px 0 0;flex:none}
   .rail a,.rail .nav-off{flex:none}
+  /* Words hide; every link already carries its aria-label. The strip
+     stays wrapping (it must not scroll sideways) and drops to icon
+     height so the greeting starts higher. */
+  .rail .rail-label,.rail .brand b,.rail .brand-name{display:none}
+  .rail a{position:relative;justify-content:center;min-height:44px;min-width:44px}
+  .rail .count{position:absolute;top:2px;right:2px;margin-left:0}
+  html{scroll-padding-top:112px}
   .rail .user{display:none}
   /* The strip already carries every entry; collapse is a tall-rail
      control and does nothing on the wrapping strip. */
