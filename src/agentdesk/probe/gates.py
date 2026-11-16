@@ -13,6 +13,7 @@ from pathlib import Path
 
 from agentdesk.probe.core import (
     FAIL,
+    GATE_EMBEDDINGS,
     GATE_EXEC,
     GATE_FLOW,
     GATE_EDR,
@@ -403,4 +404,65 @@ def gate_edr_identity(list_processes) -> GateResult:
         status=UNKNOWN,
         evidence=tuple(evidence),
         note=f"no EDR or AV is visible to a standard user via {scan}; kernel-level agents may still be present",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gate 6: embeddings (ticket #95, probe-gated semantic recall)
+# ---------------------------------------------------------------------------
+
+# The fixed short string every embeddings probe embeds: one tiny ask, the
+# configured model, nothing else.
+PROBE_EMBED_TEXT = "The memory probe embeds this one sentence."
+
+
+def gate_embeddings(embedder) -> GateResult:
+    """Gate 6: does the configured endpoint answer an embeddings request.
+
+    Exactly one request, with PROBE_EMBED_TEXT and the configured model,
+    made only when the capabilities page's re-test POST calls this gate
+    (building the runner set probes nothing, like every gate). PASS
+    names the model and the dimension the endpoint answered with; FAIL
+    carries the plain-language cause the embeddings client raised; an
+    empty vector is a FAIL; no configured client is UNKNOWN, the honest
+    never-asked state. This gate probes the endpoint, not this machine,
+    so it never joins the CLI environment verdict (see GATE_EMBEDDINGS
+    in probe/core).
+    """
+    if embedder is None:
+        return GateResult(
+            key=GATE_EMBEDDINGS,
+            number=6,
+            title="Endpoint embeddings",
+            status=UNKNOWN,
+            evidence=("no embeddings client is configured for this gate",),
+            note="save the endpoint in settings, then re-test",
+        )
+    try:
+        vector = embedder.embed(PROBE_EMBED_TEXT)
+    except Exception as exc:  # noqa: BLE001 - one attempt, classified failure
+        return GateResult(
+            key=GATE_EMBEDDINGS,
+            number=6,
+            title="Endpoint embeddings",
+            status=FAIL,
+            evidence=(f"the embeddings endpoint did not answer: {exc}",),
+        )
+    if not vector:
+        return GateResult(
+            key=GATE_EMBEDDINGS,
+            number=6,
+            title="Endpoint embeddings",
+            status=FAIL,
+            evidence=("the endpoint answered an empty embedding",),
+        )
+    return GateResult(
+        key=GATE_EMBEDDINGS,
+        number=6,
+        title="Endpoint embeddings",
+        status=PASS,
+        evidence=(
+            f"model {getattr(embedder, 'model', '')} answered a"
+            f" {len(vector)}-dimension vector",
+        ),
     )

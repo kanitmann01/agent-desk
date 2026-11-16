@@ -30,6 +30,7 @@ from agentdesk.excel import core as excel_core
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.excel.xlsx import parse_workbook_bytes
+from agentdesk.capabilities import GATES
 from agentdesk.probe.core import FAIL, GATE_KEYS, PASS, UNKNOWN, GateResult
 from agentdesk.server import capabilities_view
 from agentdesk.server.core import (
@@ -81,8 +82,10 @@ class CountingRunners:
     """
 
     def __init__(self, workdir: Path) -> None:
-        self.calls = {key: 0 for key in GATE_KEYS}
         self._real = default_gate_runners(workdir)
+        # Keyed off the real runner set, so the table's gate count is
+        # never hand-copied here.
+        self.calls = {key: 0 for key in self._real}
         self.runners = {key: self._wrap(key, run) for key, run in self._real.items()}
 
     def _wrap(self, key, run):
@@ -156,14 +159,17 @@ def test_capabilities_requires_a_session(env):
 
 
 def test_a_fresh_page_shows_never_tested_cards_and_a_retest_action(env, auth):
+    # The card table is the capabilities GATES table (the five
+    # environment gates plus the endpoint embeddings gate, #95), so the
+    # counts ride the table, never a hand-written number.
     status, _h, body = env.request("GET", "/capabilities", auth)
     assert status == 200
     page = body.decode("utf-8")
     assert "Capabilities" in page
-    for key in GATE_KEYS:
+    for key, _number, _title in GATES:
         assert f'gate-{key}' in page
         assert f"/capabilities/{key}/retest" in page
-    assert page.count("Not tested") == len(GATE_KEYS)
+    assert page.count("Not tested") == len(GATES)
 
 
 def test_get_never_probes_even_with_the_real_runners_wired(tmp_path):

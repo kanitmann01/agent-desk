@@ -104,15 +104,31 @@ class CryptoBox:
     def seal(self, value: str, table: str, column: str, row_id) -> bytes:
         """One envelope: version byte, IV, ciphertext with its tag, all
         bound to the destination by the associated data."""
+        return self._seal_raw(value.encode("utf-8"), table, column, row_id)
+
+    def seal_bytes(self, value: bytes, table: str, column: str, row_id) -> bytes:
+        """The same envelope over raw bytes: the facts.embedding blob's
+        form (ticket #95, the donor's sealBytes)."""
+        return self._seal_raw(bytes(value), table, column, row_id)
+
+    def _seal_raw(self, data: bytes, table: str, column: str, row_id) -> bytes:
         iv = _random_iv()
         ciphertext = self._aead.encrypt(
-            iv, value.encode("utf-8"), aad(table, column, row_id).encode("utf-8")
+            iv, data, aad(table, column, row_id).encode("utf-8")
         )
         return bytes([VERSION]) + iv + ciphertext
 
     def open(self, envelope: bytes, table: str, column: str, row_id) -> str:
         """Open an envelope; any failure (truncated, wrong version, tag
         or aad mismatch) raises the donor's authentication wording."""
+        return self._open_raw(envelope, table, column, row_id).decode("utf-8")
+
+    def open_bytes(self, envelope: bytes, table: str, column: str, row_id) -> bytes:
+        """Open an envelope over raw bytes (the donor's openBytes), the
+        same authentication, no text decoding."""
+        return self._open_raw(envelope, table, column, row_id)
+
+    def _open_raw(self, envelope: bytes, table: str, column: str, row_id) -> bytes:
         envelope = bytes(envelope)
         header = 1 + IV_BYTES + TAG_BYTES
         if len(envelope) < header or envelope[0] != VERSION:
@@ -122,13 +138,12 @@ class CryptoBox:
         # appended, exactly the tail the seal produced.
         ciphertext = envelope[1 + IV_BYTES:]
         try:
-            plaintext = self._aead.decrypt(
+            return self._aead.decrypt(
                 iv, ciphertext,
                 aad(table, column, row_id).encode("utf-8"),
             )
         except InvalidTag as exc:
             raise AuthenticationFailed("Ciphertext failed authentication.") from exc
-        return plaintext.decode("utf-8")
 
     def blind(self, normalized: str) -> str:
         """The keyed blind index of a normalized string, hex-encoded so

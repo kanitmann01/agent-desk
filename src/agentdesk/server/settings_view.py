@@ -23,6 +23,7 @@ _LABELS = {
     "daily_cap": "Notifications per day",
     "mail_enabled": "Mail digest (headers only)",
     "sample_data": "Sample data",
+    "semantic_memory": "Semantic memory (embeddings)",
 }
 
 ENDPOINT_HINT = (

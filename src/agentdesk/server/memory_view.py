@@ -18,6 +18,10 @@ name, aliases, type, fact count) with the two-entity merge form, the
 junk-sweep preview (GET /memory/sweep lists the candidates with their
 reasons and a checkbox each), and the plain notice an edit that merged
 into an existing duplicate renders.
+
+Ticket #95 adds the embeddings section: the live embedded and
+remaining counts and the backfill action, a plain no-JS POST like
+every other button here.
 """
 
 import html
@@ -58,6 +62,27 @@ def _locked_banner(cause: str) -> str:
         f"{html.escape(cause)} Memory actions are paused until the key "
         "is back in place; nothing is read or written in plaintext in "
         "the meantime.</p>"
+    )
+
+
+def _embeddings_section(state: dict | None) -> str:
+    """The semantic half's surface (ticket #95): the live counts and
+    the backfill action, styled like the sweep and encrypt forms. The
+    counts are data, not a promise: the button refuses in plain
+    language when the probe has not passed or the toggle is off."""
+    if state is None:
+        return ""
+    return (
+        "<h2 id='embeddings'>Embeddings</h2>"
+        f"<p class='empty mono' id='embeddings-counts'>"
+        f"{state['embedded']} embedded, {state['remaining']} remaining</p>"
+        "<form method='post' action='/memory/embeddings/backfill' class='cardform'>"
+        "<label class='empty' for='backfill-embeddings'>Backfill embeddings: "
+        "the facts above without a vector embed oldest-first, one committed "
+        "row at a time, so a failed run leaves the earlier rows done.</label>"
+        "<button class='btn btn-secondary' type='submit' id='backfill-embeddings'>"
+        "Backfill embeddings</button>"
+        "</form>"
     )
 
 
@@ -296,10 +321,12 @@ def render_memory_page(
     sweep: list[SweepCandidate] | None = None,
     notice: str | None = None,
     observations: list[Observation] | None = None,
+    embeddings: dict | None = None,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview,
     the entities with their merge form, the optional junk-sweep preview,
-    the observations with their reflect form (ticket #93), and the
+    the observations with their reflect form (ticket #93), the
+    embeddings counts with their backfill action (ticket #95), and the
     encryption surfaces. Locked: the banner alone."""
     if locked is not None:
         content = f"""<h1>Memory</h1>
@@ -313,6 +340,7 @@ def render_memory_page(
         _observations_section(observations, facts)
         if observations is not None else ""
     )
+    embeddings_row = _embeddings_section(embeddings)
     content = f"""<h1>Memory</h1>
 {notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
 them, 500 characters in total, as derived abstractions it may read;
@@ -330,6 +358,7 @@ an inbox card you accept.</p>
 {_fact_rows(facts)}
 {observations_row}
 {entities_row}
+{embeddings_row}
 {sweep_row}
 """
     return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)

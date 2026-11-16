@@ -28,11 +28,12 @@ so the two ride as one prompt, system first (how the extractor, its
 sibling port, composes its prompt). Fact ids are the chassis's integer
 row ids, so the draft's sourceFactIds parse as integers, tolerant of
 digit strings the way the donor was of strings. The donor's
-near-duplicate cosine leg (embedding cosine at least 0.85) needs
-vectors, which arrive with ticket #95: the threshold constant and the
-hook where it joins are in place, the arithmetic is not. The donor's
-fact rows carry an ISO mentionedAt; this chassis renders created_ts as
-UTC ISO-8601 for the prompt, matching the port's UTC posture.
+near-duplicate cosine leg (embedding cosine at least 0.85) joined with
+ticket #95: the caller embeds each surviving draft through the store's
+embedder when the semantic half is active and passes the vectors map
+in; the caller-side seam keeps this module pure. The donor's fact rows
+carry an ISO mentionedAt; this chassis renders created_ts as UTC
+ISO-8601 for the prompt, matching the port's UTC posture.
 """
 
 import math
@@ -43,6 +44,7 @@ UTC = timezone.utc  # datetime.UTC needs 3.11; the declared floor is 3.10
 
 from agentdesk.llm import LlmUnavailable
 from agentdesk.memory.core import Fact, normalize_fact_text
+from agentdesk.memory.embed import cosine
 from agentdesk.memory.extract import model_json_object
 from agentdesk.memory.hybrid import meaningful_tokens
 from agentdesk.memory.knowledge_gap import is_assistant_knowledge_gap
@@ -203,9 +205,8 @@ MAX_OBSERVATIONS = 5
 TEXT_SIMILARITY = 0.55
 
 # The embedding cosine at or above which two drafts are the same
-# observation. Unused until #95 ships the vectors; kept so the port's
-# threshold reads in one place. (Ticket #95: the cosine leg joins in
-# _same_observation, keyed by each draft's normalized text.)
+# observation (ticket #95): the cosine leg joins in _same_observation,
+# keyed by each draft's normalized text.
 VECTOR_SIMILARITY = 0.85
 
 
@@ -219,6 +220,7 @@ def accept_observations(
     allowed_ids: set[int],
     max_observations: int = MAX_OBSERVATIONS,
     single_entity: bool = False,
+    vectors: dict[str, list[float]] | None = None,
 ) -> list[ObservationDraft]:
     """The donor's acceptObservations: drop drafts that cite nothing,
     cite a fact outside the gather, fail the junk or low-value filter,
@@ -226,7 +228,14 @@ def accept_observations(
     confidence; refuse when nothing survived so the caller writes
     nothing; cap the rest at max_observations, highest confidence
     first. Two citations are required except in a single-entity scope,
-    and never demanded when only one fact was gathered."""
+    and never demanded when only one fact was gathered.
+
+    `vectors` (ticket #95) keys each draft's normalized text to the
+    embedding the caller asked for it (the donor's reflect embeds every
+    draft with the bank's one embedder, so every entry is same-model by
+    construction; a failed embed simply leaves that draft out). The
+    cosine leg joins the near-duplicate rule at VECTOR_SIMILARITY; with
+    no vectors the rule degrades to exactly the pre-#95 behavior."""
     require_two = not single_entity and len(allowed_ids) >= 2
     accepted: list[ObservationDraft] = []
     for draft in drafts:
@@ -249,7 +258,7 @@ def accept_observations(
                 text=text, confidence=draft.confidence, fact_ids=tuple(fact_ids)
             )
         )
-    unique = _drop_near_duplicates(accepted)
+    unique = _drop_near_duplicates(accepted, vectors)
     if not unique:
         raise ReflectFailed(NOTHING_ACCEPTED_CAUSE)
     return unique[:max_observations]
@@ -257,25 +266,40 @@ def accept_observations(
 
 def _drop_near_duplicates(
     drafts: list[ObservationDraft],
+    vectors: dict[str, list[float]] | None = None,
 ) -> list[ObservationDraft]:
     """Highest confidence first, then keep the first of every
     near-duplicate group (the donor's dropNearDuplicates order)."""
     ranked = sorted(drafts, key=lambda draft: -draft.confidence)
     kept: list[ObservationDraft] = []
     for draft in ranked:
-        if not any(_same_observation(prior, draft) for prior in kept):
+        if not any(_same_observation(prior, draft, vectors) for prior in kept):
             kept.append(draft)
     return kept
 
 
-def _same_observation(left: ObservationDraft, right: ObservationDraft) -> bool:
+def _same_observation(
+    left: ObservationDraft,
+    right: ObservationDraft,
+    vectors: dict[str, list[float]] | None = None,
+) -> bool:
     """Two drafts are the same observation when their normalized texts
-    are equal or their meaningful tokens overlap enough. (Ticket #95:
-    the embedding cosine leg joins here, VECTOR_SIMILARITY over the
-    drafts' vectors, once vectors exist.)"""
+    are equal, their meaningful tokens overlap enough, or (ticket #95)
+    their embeddings' cosine reaches VECTOR_SIMILARITY. The cosine leg
+    needs a vector for BOTH drafts from the same embedder batch; a
+    missing entry never compares, so an embed failure degrades the rule
+    to exactly the deterministic legs."""
     if normalize_fact_text(left.text) == normalize_fact_text(right.text):
         return True
-    return _token_similarity(left.text, right.text) >= TEXT_SIMILARITY
+    if _token_similarity(left.text, right.text) >= TEXT_SIMILARITY:
+        return True
+    if vectors is None:
+        return False
+    left_vector = vectors.get(normalize_fact_text(left.text))
+    right_vector = vectors.get(normalize_fact_text(right.text))
+    if not left_vector or not right_vector:
+        return False
+    return cosine(left_vector, right_vector) >= VECTOR_SIMILARITY
 
 
 def _token_similarity(left: str, right: str) -> float:

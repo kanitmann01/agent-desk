@@ -26,7 +26,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from agentdesk.llm import LlmUnavailable
-from agentdesk.memory.core import Fact
+from agentdesk.memory.core import Fact, normalize_fact_text
 from agentdesk.memory.reflect import (
     MAX_OBSERVATIONS,
     EndpointReflector,
@@ -507,3 +507,77 @@ def test_blank_and_missing_dates_parse_as_none():
 def test_an_unreadable_date_is_a_value_error():
     with pytest.raises(ValueError):
         parse_scope_date("sometime soon")
+
+
+# -- the embedding cosine leg of the near-duplicate rule (ticket #95) ---------
+
+# Two texts with meaningful tokens that barely overlap: the Jaccard leg
+# stays well under 0.55 and the normalized texts differ, so only the
+# cosine leg can join them.
+_LOW_JACCARD_LEFT = "the quarterly revenue total is 220 thousand"
+_LOW_JACCARD_RIGHT = "how much money did we make this quarter"
+
+
+def test_the_cosine_leg_joins_two_paraphrase_drafts_keeping_higher_confidence():
+    # The vectors point the same way (cosine 1.0 at or above 0.85).
+    vectors = {
+        normalize_fact_text(_LOW_JACCARD_LEFT): [1.0, 0.1],
+        normalize_fact_text(_LOW_JACCARD_RIGHT): [2.0, 0.2],
+    }
+    kept = accept_observations(
+        [
+            _draft(_LOW_JACCARD_LEFT, confidence=0.5),
+            _draft(_LOW_JACCARD_RIGHT, confidence=0.9),
+        ],
+        {1, 2},
+        vectors=vectors,
+    )
+    assert [draft.text for draft in kept] == [_LOW_JACCARD_RIGHT]
+
+
+def test_without_vectors_the_paraphrase_pair_survives_exactly_as_today():
+    kept = accept_observations(
+        [
+            _draft(_LOW_JACCARD_LEFT, confidence=0.5),
+            _draft(_LOW_JACCARD_RIGHT, confidence=0.9),
+        ],
+        {1, 2},
+    )
+    assert [draft.text for draft in kept] == [
+        _LOW_JACCARD_RIGHT,
+        _LOW_JACCARD_LEFT,
+    ]
+
+
+def test_a_cosine_below_the_threshold_keeps_both():
+    vectors = {
+        normalize_fact_text(_LOW_JACCARD_LEFT): [1.0, 0.0],
+        normalize_fact_text(_LOW_JACCARD_RIGHT): [0.2, 1.0],
+    }
+    kept = accept_observations(
+        [
+            _draft(_LOW_JACCARD_LEFT, confidence=0.5),
+            _draft(_LOW_JACCARD_RIGHT, confidence=0.9),
+        ],
+        {1, 2},
+        vectors=vectors,
+    )
+    assert [draft.text for draft in kept] == [
+        _LOW_JACCARD_RIGHT,
+        _LOW_JACCARD_LEFT,
+    ]
+
+
+def test_a_draft_without_a_vector_never_cosine_compares():
+    # Only the left draft has a vector: the leg needs both, so the pair
+    # survives even though the right text embeds identically in spirit.
+    vectors = {normalize_fact_text(_LOW_JACCARD_LEFT): [1.0, 0.1]}
+    kept = accept_observations(
+        [
+            _draft(_LOW_JACCARD_LEFT, confidence=0.5),
+            _draft(_LOW_JACCARD_RIGHT, confidence=0.9),
+        ],
+        {1, 2},
+        vectors=vectors,
+    )
+    assert len(kept) == 2

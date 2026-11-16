@@ -26,9 +26,12 @@ from probe_fakes import (
     SequenceRunner,
 )
 
-from agentdesk.probe.core import FAIL, PASS, UNKNOWN, RunResult
+from agentdesk.memory.embed import EmbedderUnavailable
+from agentdesk.probe.core import FAIL, GATE_EMBEDDINGS, PASS, UNKNOWN, RunResult
 from agentdesk.probe.gates import (
+    PROBE_EMBED_TEXT,
     gate_edr_identity,
+    gate_embeddings,
     gate_exec_user_space,
     gate_onedrive,
     gate_power_automate,
@@ -440,3 +443,74 @@ class TestGateEdrIdentityMacos:
         assert result.status == UNKNOWN
         assert any("ps -axo pid,comm" in line for line in result.evidence)
         assert any("permission denied" in line for line in result.evidence)
+
+
+# ---------------------------------------------------------------------------
+# Gate 6: embeddings (ticket #95, probe-gated semantic recall)
+# ---------------------------------------------------------------------------
+
+
+class ScriptedEmbedder:
+    """The embedder seam the gate asks once: a fixed short string in,
+    one vector (or one failure) out, calls counted and recorded."""
+
+    def __init__(self, vector=None, error=None, model="embed-model") -> None:
+        self.model = model
+        self._vector = vector
+        self._error = error
+        self.calls: list[str] = []
+
+    def embed(self, text: str):
+        self.calls.append(text)
+        if self._error is not None:
+            raise self._error
+        return self._vector
+
+
+class TestGateEmbeddings:
+    def test_pass_reports_the_model_and_dimension_after_one_tiny_ask(self):
+        embedder = ScriptedEmbedder(vector=[0.1, 0.2, 0.3])
+        result = gate_embeddings(embedder)
+
+        assert result.status == PASS
+        assert result.key == GATE_EMBEDDINGS
+        assert result.number == 6
+        assert result.title == "Endpoint embeddings"
+        # Exactly one request, with the fixed short probe string.
+        assert len(embedder.calls) == 1
+        assert embedder.calls[0] == PROBE_EMBED_TEXT
+        assert any("embed-model" in line for line in result.evidence)
+        assert any("3" in line for line in result.evidence)
+
+    def test_fail_carries_the_plain_cause_when_the_endpoint_refuses(self):
+        embedder = ScriptedEmbedder(
+            error=EmbedderUnavailable("the endpoint did not answer within 10 seconds (timeout)")
+        )
+        result = gate_embeddings(embedder)
+
+        assert result.status == FAIL
+        assert any("did not answer" in line for line in result.evidence)
+
+    def test_fail_on_an_empty_vector(self):
+        result = gate_embeddings(ScriptedEmbedder(vector=[]))
+
+        assert result.status == FAIL
+        assert any("empty" in line.lower() for line in result.evidence)
+
+    def test_fail_on_any_other_embedder_failure(self):
+        class Broken:
+            model = "m"
+
+            def embed(self, text):
+                raise RuntimeError("boom")
+
+        result = gate_embeddings(Broken())
+
+        assert result.status == FAIL
+        assert result.evidence  # the cause is named, never a silent UNKNOWN
+
+    def test_unknown_when_no_embeddings_client_is_configured(self):
+        result = gate_embeddings(None)
+
+        assert result.status == UNKNOWN
+        assert result.evidence

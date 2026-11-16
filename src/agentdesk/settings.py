@@ -31,14 +31,23 @@ TOGGLES = {
     "quiet_hours": True,
     "mail_enabled": False,  # mail digest: off until the user turns it on
     "sample_data": False,  # demo seed (#68): off until the user asks for it
+    # Semantic recall (ticket #95): embeddings stay inactive until the
+    # embeddings probe passes on the capabilities page, so this default
+    # on changes nothing until the endpoint answers the probe.
+    "semantic_memory": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
 }
+# The embeddings model default below is the spec's Further Notes
+# default (decision: text-embedding-3-small); agentdesk.memory.embed
+# holds the same constant, and a test pins the two together.
+EMBEDDINGS_MODEL_DEFAULT = "text-embedding-3-small"
 TEXT_KEYS = {
     "llm_base": "",  # OpenAI-compatible base URL
     "llm_key": "",   # API key; secret, rendered only in masked form
     "llm_model": "",  # empty means the adapter's default model
+    "embeddings_model": EMBEDDINGS_MODEL_DEFAULT,  # the semantic recall model (#95)
     "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
     "registry_path": "",  # the local registry checkout the plugins page browses; empty means auto
     "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated

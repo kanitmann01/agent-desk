@@ -63,6 +63,11 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "sample_data": False,
         # Guard (#61): no extra hosts sanctioned, so loopback only.
         "extra_allowed_hosts": "",
+        # Semantic recall (#95): the toggle defaults on, but embeddings
+        # stay inert until the embeddings probe passes; the model row
+        # carries the spec's documented default.
+        "semantic_memory": True,
+        "embeddings_model": "text-embedding-3-small",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

@@ -23,6 +23,7 @@ from agentdesk.probe import gates
 from agentdesk.probe.adapters import Adapters, real_adapters
 from agentdesk.probe.core import (
     GATE_EDR,
+    GATE_EMBEDDINGS,
     GATE_EXEC,
     GATE_FLOW,
     GATE_ONEDRIVE,
@@ -38,15 +39,19 @@ CREATE TABLE IF NOT EXISTS gate_cache (
 );
 """
 
-# The five P0 gates in report order: the page's card order and the
-# never-tested cards' titles and numbers. A store test pins this table
-# to what the gate functions themselves return, so it cannot drift.
+# The five P0 gates in report order, then the endpoint embeddings gate
+# (ticket #95): the page's card order and the never-tested cards'
+# titles and numbers. A store test pins this table to what the gate
+# functions themselves return, so it cannot drift. The embeddings gate
+# probes the configured LLM endpoint, not this machine, so it is not
+# part of the CLI environment verdict (it stays out of GATE_KEYS).
 GATES: tuple[tuple[str, int, str], ...] = (
     (GATE_EXEC, 1, "User-space execution"),
     (GATE_UV, 2, "uv bootstrap under corporate TLS"),
     (GATE_FLOW, 3, "Power Automate personal cloud flows"),
     (GATE_ONEDRIVE, 4, "OneDrive sync root"),
     (GATE_EDR, 5, "EDR / AV identity"),
+    (GATE_EMBEDDINGS, 6, "Endpoint embeddings"),
 )
 
 
@@ -123,9 +128,19 @@ class CapabilitiesCache:
         return CachedGate(result.key, result, float(row[1]))
 
 
-def default_gate_runners(workdir: Path, adapters: Adapters | None = None) -> GateRunners:
+def default_gate_runners(
+    workdir: Path,
+    adapters: Adapters | None = None,
+    embeddings: Callable[[], object] | None = None,
+) -> GateRunners:
     """The production runner set: each gate bound to the real adapters
     over the given workdir (the app passes one beside its data dir).
+
+    `embeddings` (ticket #95) is a zero-argument factory returning the
+    embeddings client for gate 6; it is called only when the re-test
+    POST runs that gate, and building the factory's product (the
+    settings-backed embedder) touches nothing. Without the factory the
+    gate reads UNKNOWN, the honest never-asked state.
 
     Building the set probes nothing: every entry is a plain closure, so
     no subprocess, network call, file write or process listing happens
@@ -145,4 +160,7 @@ def default_gate_runners(workdir: Path, adapters: Adapters | None = None) -> Gat
             bundle.discover_onedrive, workdir, bundle.write_text, bundle.copy_file
         ),
         GATE_EDR: lambda: gates.gate_edr_identity(bundle.list_processes),
+        GATE_EMBEDDINGS: lambda: gates.gate_embeddings(
+            embeddings() if embeddings is not None else None
+        ),
     }

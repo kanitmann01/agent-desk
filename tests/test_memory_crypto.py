@@ -122,3 +122,24 @@ def test_load_key_demands_exactly_32_bytes_and_names_the_key_file():
         load_key(b"")
     with pytest.raises(ValueError, match=r"memory\.key"):
         load_key(KEY + b"x")
+
+
+# -- byte envelopes (ticket #95: the facts.embedding blob) --------------------
+
+
+def test_byte_envelope_round_trips_and_matches_the_text_layout():
+    box = CryptoBox(KEY)
+    blob = bytes(range(12))
+    envelope = box.seal_bytes(blob, "facts", "embedding", 3)
+    assert envelope[0] == 1
+    assert len(envelope) == 1 + 12 + len(blob) + 16
+    assert box.open_bytes(envelope, "facts", "embedding", 3) == blob
+
+
+def test_byte_envelope_binds_the_destination_like_the_text_one():
+    box = CryptoBox(KEY)
+    envelope = box.seal_bytes(b"\x01\x02", "facts", "embedding", 3)
+    with pytest.raises(MemoryEncryptedError):
+        box.open_bytes(envelope, "facts", "embedding", 4)
+    with pytest.raises(MemoryEncryptedError):
+        box.open_bytes(envelope, "facts", "text", 3)

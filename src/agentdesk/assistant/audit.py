@@ -76,6 +76,11 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("memory.merge", "decision", "You merged two duplicate entities on the memory page: their aliases were unioned and every fact mention relinked to the survivor. The row names the two ids, never a name."),
     ("llm.reflect", "endpoint", "Facts you already accepted were sent to the company LLM endpoint to draft observations; only those facts and the topic you typed reach the endpoint, and the drafts wait as inbox cards until you accept them."),
     ("memory.observation", "decision", "An accepted card carried an observation: it was saved to the memory store with its citations. The row counts the citations, never their text."),
+    # The semantic recall vocabulary (ticket #95): every outbound
+    # embeddings call is one row (the model and input size, never the
+    # text), and the backfill action is one row of counts.
+    ("llm.embeddings", "endpoint", "Fact and query texts are sent to the company LLM endpoint to be turned into embedding vectors for semantic recall. Each row names the endpoint, the model and the input's size in bytes, never the text itself."),
+    ("memory.embeddings", "decision", "You ran the embeddings backfill on the memory page: facts stored without a vector were embedded oldest-first, one committed row at a time. The row counts how many were embedded and how many remain, never their text."),
     ("plugin.install", "plugin", "A plugin zip you chose, or a registry release you picked, is validated and installed under the app's own data folder, in pilot mode."),
     ("plugin.update", "plugin", "A plugin update is validated; identical or narrower permissions apply, wider ones hold for your OK."),
     ("plugin.consent", "plugin", "A held plugin update is applied after you approved its added permissions."),
