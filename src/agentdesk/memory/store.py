@@ -85,6 +85,13 @@ from agentdesk.memory.embed import (
     rank,
 )
 from agentdesk.memory.extract import ENTITY_TYPES
+from agentdesk.memory.graph import (
+    DEFAULT_GRAPH_LIMIT,
+    DEFAULT_MIN_SIMILARITY,
+    GraphFact,
+    GraphObservation,
+    build_graph,
+)
 from agentdesk.memory.hybrid import EntityLink, normalize_name, rank_hybrid
 from agentdesk.memory.knowledge_gap import junk_reason
 from agentdesk.memory.resolve import (
@@ -1548,6 +1555,114 @@ class MemoryStore:
         ).fetchall()
         return [self._fact_from_row(row) for row in rows]
 
+    def graph_snapshot(
+        self,
+        now: float | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        limit: int = DEFAULT_GRAPH_LIMIT,
+        min_similarity: float = DEFAULT_MIN_SIMILARITY,
+    ):
+        """The memory graph page's snapshot (ticket #96, the donor's
+        buildGraphSnapshot with the I/O filled in): the facts load with
+        their stored vectors, the observations with their citations and
+        the entity links exactly as recall loads them, and the pure
+        builder (memory/graph) does all the arithmetic. `now` defaults
+        to the store's clock; the bounds are epoch seconds, the since
+        bound inclusive and the until bound exclusive. Node ids are
+        table-qualified (`fact:<id>`, `observation:<id>`) because the
+        donor's per-row UUIDs were globally unique and these integer
+        sequences are not; the graph's undirected keys then stay
+        honest. Sealed banks decrypt through the same helpers every
+        other read uses, so a sealed bank's snapshot equals the
+        plaintext one's."""
+        self._guard()
+        if now is None:
+            now = self.clock()
+        facts = self._facts_with_embeddings()
+        observations = [
+            GraphObservation(
+                id=f"observation:{row.id}",
+                text=row.text,
+                updated_ts=row.updated_ts,
+                fact_ids=tuple(_qualified_fact_id(fid) for fid in row.fact_ids),
+            )
+            for row in self.observations()
+        ]
+        links = {
+            _qualified_fact_id(fact_id): entity_links
+            for fact_id, entity_links in self._entity_links().items()
+        }
+        return build_graph(
+            facts,
+            observations,
+            links,
+            now,
+            since=since,
+            until=until,
+            limit=limit,
+            min_similarity=min_similarity,
+        )
+
+    def _facts_with_embeddings(self) -> list[GraphFact]:
+        """Every fact as the builder reads it: identity, dates and the
+        decoded vector (None whenever the stored triple is incomplete,
+        the donor's vectorOf). Sealed banks require and open the text
+        and embedding ciphertext like every read; the embedding's blind
+        envelope opens only when a blob is present, because a fact
+        stored while the semantic half was off keeps a NULL vector."""
+        facts: list[GraphFact] = []
+        if self._box is not None:
+            rows = self.conn.execute(
+                "SELECT id, text_enc, kind, created_ts, occurrence_ts,"
+                " embedding, embedding_model, embedding_dim FROM facts"
+                " ORDER BY created_ts ASC, id ASC"
+            ).fetchall()
+            for row in rows:
+                (row_id, text_enc, kind, created_ts, occurrence_ts,
+                 blob, model, dim) = row
+                if text_enc is None:
+                    raise MemoryEncryptedError("Missing ciphertext for facts.text.")
+                text = self._box.open(text_enc, "facts", "text", row_id)
+                facts.append(GraphFact(
+                    id=_qualified_fact_id(row_id),
+                    text=text,
+                    created_ts=float(created_ts),
+                    kind=kind,
+                    occurrence_ts=occurrence_ts,
+                    embedding=self._stored_vector(int(row_id), blob, dim),
+                    embedding_model=model,
+                    embedding_dim=dim,
+                ))
+            return facts
+        rows = self.conn.execute(
+            "SELECT id, text, kind, created_ts, occurrence_ts,"
+            " embedding, embedding_model, embedding_dim FROM facts"
+            " ORDER BY created_ts ASC, id ASC"
+        ).fetchall()
+        for row_id, text, kind, created_ts, occurrence_ts, blob, model, dim in rows:
+            facts.append(GraphFact(
+                id=_qualified_fact_id(row_id),
+                text=text,
+                created_ts=float(created_ts),
+                kind=kind,
+                occurrence_ts=occurrence_ts,
+                embedding=self._stored_vector(int(row_id), blob, dim),
+                embedding_model=model,
+                embedding_dim=dim,
+            ))
+        return facts
+
+    def _stored_vector(self, fact_id: int, blob, dim):
+        """The decoded vector behind one stored blob, or None: absent
+        whenever the blob or the dimension is missing (the donor's
+        vectorOf), decoded through the sealed envelope when the bank is
+        sealed and through decode_embedding either way."""
+        if blob is None or dim is None:
+            return None
+        raw = self._open_fact_embedding(fact_id, blob)
+        return decode_embedding(raw, dim)
+
     def _fact_from_row(self, row) -> Fact:
         text = row[1]
         if self._box is not None:
@@ -1626,6 +1741,13 @@ def _normalize_name(name: str) -> str:
     """The hybrid ranker's normalize_name, the one normalizer that
     serves recall and resolution alike."""
     return normalize_name(name)
+
+
+def _qualified_fact_id(row_id) -> str:
+    """The graph node id for a fact row (ticket #96): the table-
+    qualified string that keeps fact and observation nodes distinct,
+    the donor's globally unique ids reduced to a rule."""
+    return f"fact:{int(row_id)}"
 
 
 class _EntityRepo(EntityRepo):

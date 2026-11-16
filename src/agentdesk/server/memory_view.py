@@ -22,6 +22,9 @@ into an existing duplicate renders.
 Ticket #95 adds the embeddings section: the live embedded and
 remaining counts and the backfill action, a plain no-JS POST like
 every other button here.
+
+Ticket #96 adds the Graph action beside the entities section: the
+link to the server-rendered memory graph page.
 """
 
 import html
@@ -52,6 +55,14 @@ EDIT_MERGE_NOTICE = (
 def _count(value: int, noun: str) -> str:
     """One counted noun, singular handled honestly."""
     return f"{value} {noun}" + ("" if value == 1 else "s")
+
+
+# The Graph action (ticket #96), rendered beside the entities section.
+GRAPH_LINK = (
+    '<p id="graph-link"><a href="/memory/graph">Graph</a>: the facts '
+    "and observations as one static picture, with their entity, "
+    "temporal, citation and semantic links.</p>"
+)
 
 
 def _locked_banner(cause: str) -> str:
@@ -192,6 +203,7 @@ def _entities_section(entities: list[EntitySummary]) -> str:
             "<h2>Entities</h2>"
             "<p class='empty' id='entities-empty'>No entities yet: they "
             "appear when a retained fact names someone or something.</p>"
+            f"{GRAPH_LINK}"
         )
     rows = []
     for entity in entities:
@@ -224,6 +236,7 @@ def _entities_section(entities: list[EntitySummary]) -> str:
     return (
         "<h2>Entities</h2>"
         f"<ul id='entities-list'>{''.join(rows)}</ul>{merge_form}"
+        f"{GRAPH_LINK}"
     )
 
 

@@ -140,6 +140,7 @@ from agentdesk.server.commitments import (
     render_commitments_unavailable,
     render_commitments_widget,
 )
+from agentdesk.server.graph_view import parse_graph_query, render_graph_page
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
 from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
@@ -1118,6 +1119,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/memory/graph":
+            self._memory_graph_page()
         elif path == "/memory/sweep":
             self._memory_sweep_page()
         elif path == "/memory/encrypt":
@@ -2372,6 +2375,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_memory_page()
             return
         self._send_memory_page(sweep=memory.sweep_candidates())
+
+    def _memory_graph_page(self) -> None:
+        """The memory graph page (ticket #96): the snapshot's static
+        SVG in this app's page style. A locked store renders the
+        memory page's banner, like the sweep's dry run does; the query
+        string parses defensively (memory dates, a clamped limit), so
+        the page renders whatever arrives."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_memory_page()
+            return
+        _path, _sep, query = self.path.partition("?")
+        since, until, limit = parse_graph_query(query)
+        snapshot = memory.graph_snapshot(since=since, until=until, limit=limit)
+        page = render_graph_page(
+            snapshot,
+            agentdesk.__version__,
+            since=since,
+            until=until,
+            inbox_count=self._inbox_waiting_count(),
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_sweep(self) -> None:
         """Delete the checked candidates through the donor's removeFacts
