@@ -815,7 +815,6 @@ class MemoryStore:
             points.append((int(fact_id), vector))
         return dict(rank(query_vector, points))
 
-    @_locked
     def backfill_embeddings(self) -> dict:
         """The donor's backfillEmbeddings (ticket #95): every fact whose
         embedding is NULL embeds oldest-first (created_ts, then id), one
@@ -824,7 +823,11 @@ class MemoryStore:
         result shape plus the cause that stopped the run: embedded
         count, remaining count, cause None on a clean pass. Refuses
         without an active embeddings client, like the donor refuses
-        without an embedder."""
+        without an embedder. The write lock is held per row, never
+        across the run (the review's finding 2): the embed call is
+        network time spent outside the lock, so a long backfill never
+        blocks other writers, and the embedding IS NULL predicate makes
+        each row's UPDATE safe to interleave."""
         self._guard()
         if not self._embeddings_on():
             raise ValueError(
@@ -850,8 +853,9 @@ class MemoryStore:
             except Exception as exc:  # noqa: BLE001 - one attempt, then stop
                 cause = str(exc) or "the embeddings endpoint did not answer"
                 break
-            with self.conn:  # one committed UPDATE per row (retryable)
-                embedded += self._backfill_fact_vector(fact_id, vector)
+            with self._lock:
+                with self.conn:  # one committed UPDATE per row (retryable)
+                    embedded += self._backfill_fact_vector(fact_id, vector)
         remaining = int(
             self.conn.execute(
                 "SELECT COUNT(*) FROM facts WHERE embedding IS NULL"

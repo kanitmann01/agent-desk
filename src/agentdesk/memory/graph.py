@@ -36,13 +36,13 @@ order where the donor iterates unspecified row order, so the edge list
 is deterministic on both banks (the edge set is identical either way).
 
 Reusable helpers are reused, never re-spelled: the instant and recency
-arithmetic come from memory/hybrid, the cosine from memory/embed.
+arithmetic come from memory/hybrid; the unit-vector dot that scores
+semantic pairs lives here (memory/embed's cosine is the same math with
+both magnitudes folded back in).
 """
 
 import math
 from dataclasses import dataclass
-
-from agentdesk.memory.embed import cosine
 from agentdesk.memory.hybrid import (
     DAY_SECONDS,
     HALF_LIFE_DAYS,
@@ -278,8 +278,13 @@ def _push_semantic(selected: list[_Raw], min_similarity: float,
                    edges: list[GraphEdge]) -> None:
     """The donor's pushSemantic: every vector-bearing origin keeps its
     top three same-model same-dimension neighbours above the cutoff,
-    deduped by the undirected key so a mutual pair is one edge."""
-    indexed = []
+    deduped by the undirected key so a mutual pair is one edge. Each
+    vector normalizes exactly once and pairs score by the dot product
+    of the unit vectors (the review's finding 1): pairwise cosine is
+    the page's hot path once a real bank carries 1536-dimension
+    vectors, and recomputing both magnitudes per pair made it
+    quadratic in float work on top of quadratic in pairs."""
+    units: dict[str, tuple[float, ...]] = {}
     for node in selected:
         vector = node.vector
         if not vector:
@@ -287,18 +292,22 @@ def _push_semantic(selected: list[_Raw], min_similarity: float,
         norm = math.sqrt(sum(value * value for value in vector))
         if norm <= 0:
             continue
-        indexed.append((node, norm))
+        units[node.id] = tuple(value / norm for value in vector)
+    indexed = [node for node in selected if node.id in units]
     seen: set[tuple[int, int]] = set()
-    for origin, _origin_norm in indexed:
+    for origin in indexed:
+        origin_unit = units[origin.id]
         scored: list[tuple[int, float]] = []
-        for other, _other_norm in indexed:
+        for other in indexed:
             if other.id == origin.id:
                 continue
             if other.model != origin.model or other.dim != origin.dim:
                 continue
             if len(other.vector) != len(origin.vector):
                 continue
-            weight = cosine(origin.vector, other.vector)
+            weight = sum(
+                a * b for a, b in zip(origin_unit, units[other.id])
+            )
             if weight >= min_similarity:
                 scored.append((other.id, weight))
         scored.sort(key=lambda item: (-item[1], item[0]))

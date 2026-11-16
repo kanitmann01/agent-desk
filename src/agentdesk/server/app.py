@@ -1540,10 +1540,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         ranked against the user's question. Recall only: this path never
         creates a fact; the bounds live in memory/service. A locked
         memory store (ticket #94) contributes no block: the assistant
-        keeps answering, the bank is never read in plaintext."""
+        keeps answering, the bank is never read in plaintext. The
+        semantic half is derived per turn like every memory action (the
+        review's finding 5): the assistant's recall gains the vector
+        leg on the same terms as the memory page's, not only after some
+        memory route happens to run first."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return ""
+        self._configure_memory_embeddings()
         try:
             return build_facts_block(memory.recall(question))
         except MemoryEncryptedError:

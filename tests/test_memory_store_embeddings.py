@@ -14,6 +14,7 @@ the byte envelopes (ticket #94's box extended with seal_bytes).
 """
 
 import sqlite3
+import threading
 import sys
 from pathlib import Path
 
@@ -449,3 +450,52 @@ def test_the_encryption_conversion_seals_existing_vectors_and_counts_them(tmp_pa
     raw = _embedding_row(plain, fact.id)[0]
     assert raw[0] == 1, "the sealed vector rides the byte envelope"
     assert _fact_vector(plain, fact.id) == [1.0, 0.0, 3.0]
+
+
+def test_backfill_spends_its_embed_time_outside_the_write_lock():
+    # The review's finding 2: a slow backfill (network waits inside
+    # embed) must not block other writers, so the lock is held per row,
+    # never across the run. The two vector-less rows are seeded by SQL
+    # (a live add would embed at write time), and only the backfill's
+    # FIRST embed parks; while it parks, another thread's add() has to
+    # complete.
+    arrived = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    class ParkingEmbedder:
+        model = "test-model"
+
+        def embed(self, text):
+            calls.append(text)
+            if len(calls) == 1:
+                arrived.set()
+                release.wait(timeout=10)
+            return [1.0, 0.0]
+
+    store = _store(embedder=ParkingEmbedder(), active=True)
+    store.conn.executemany(
+        "INSERT INTO facts (text, source, created_ts)"
+        " VALUES (?, 'page', ?)",
+        [("fact 0 awaits its vector", 100.0),
+         ("fact 1 awaits its vector", 101.0)],
+    )
+    store.conn.commit()
+    result: dict = {}
+
+    def run_backfill():
+        result.update(store.backfill_embeddings())
+
+    thread = threading.Thread(target=run_backfill)
+    thread.start()
+    assert arrived.wait(timeout=5), "the backfill never reached its embed"
+    # The first embed is parked: with the lock held across the run this
+    # add would block on the store lock until the park timed out.
+    store.add("written while the backfill waits", source="page")
+    release.set()
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert result["embedded"] == 2
+    assert result["remaining"] == 0
+    # The concurrent add embedded too (its embed call returned at once).
+    assert store.embedding_counts()["embedded"] == 3
