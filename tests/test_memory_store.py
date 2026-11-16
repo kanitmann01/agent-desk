@@ -9,6 +9,7 @@ closed properly, the way the app runs it.
 import contextlib
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.hybrid import TIME_PRIOR
 from agentdesk.memory.store import MemoryStore
 
 
@@ -91,13 +93,112 @@ def test_delete_removes_exactly_one_fact():
         store.delete(999)
 
 
-def test_recall_ranks_through_the_pure_service():
+def test_recall_ranks_through_the_hybrid_ranker():
+    # Ticket #90 deliberately changes the score's meaning: the store's
+    # recall is the hybrid ranker, so the score is the fused RRF
+    # contribution (keyword rank 0 here: 1/61), not the overlap
+    # fraction the old service.rank returned.
     store = _store()
     store.add("the meeting room is booked", source="page")
     store.add("revenue is 220", source="page")
     ranked = store.recall("revenue")
     assert [f.id for _s, f in ranked] == [2]
-    assert ranked[0][0] == 1.0
+    assert ranked[0][0] == pytest.approx(1 / 61)
+
+
+# -- hybrid recall through the store (ticket #90) --------------------------
+
+
+def _ts(year, month, day, hour=0, minute=0):
+    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc).timestamp()
+
+
+# A fixed now for window tests: Sunday 2026-11-15 at noon UTC, so
+# "this week" is [Nov 9, Nov 16) with Monday starts.
+NOW = _ts(2026, 11, 15, 12)
+
+
+def _seed_entity(conn, name, aliases="[]"):
+    cursor = conn.execute(
+        "INSERT INTO entities (canonical_name, aliases_json, type, created_ts)"
+        " VALUES (?, ?, 'org', 100.0)",
+        (name, aliases),
+    )
+    return int(cursor.lastrowid)
+
+
+def _seed_edge(conn, fact_id, entity_id):
+    conn.execute("INSERT INTO edges (fact_id, entity_id) VALUES (?, ?)", (fact_id, entity_id))
+
+
+def test_recall_reaches_a_linked_fact_through_a_paraphrase():
+    store = _store()
+    fact = store.add("the board approved the budget", source="page")
+    entity_id = _seed_entity(store.conn, "Acme")
+    _seed_edge(store.conn, fact.id, entity_id)
+    # The query shares no token with the fact text; the entity carries it.
+    ranked = store.recall("acme")
+    assert [f.id for _s, f in ranked] == [fact.id]
+    assert ranked[0][0] == pytest.approx(1 / 61)
+
+
+def test_recall_matches_an_entity_alias():
+    store = _store()
+    fact = store.add("quarterly review moved to tuesday", source="page")
+    entity_id = _seed_entity(store.conn, "Acme", aliases='["Acme Industries"]')
+    _seed_edge(store.conn, fact.id, entity_id)
+    ranked = store.recall("acme industries")
+    assert [f.id for _s, f in ranked] == [fact.id]
+
+
+def test_recall_one_hop_seeds_the_neighbor_fact():
+    store = _store()
+    first = store.add("the board approved the budget", source="page")
+    second = store.add("the offsite is planned", source="page")
+    acme = _seed_entity(store.conn, "Acme")
+    globex = _seed_entity(store.conn, "Globex")
+    _seed_edge(store.conn, first.id, acme)
+    _seed_edge(store.conn, first.id, globex)
+    _seed_edge(store.conn, second.id, globex)
+    ranked = store.recall("acme")
+    # Globex was never named, but it links to the scored fact, so its
+    # other fact seeds below the direct one.
+    assert [f.id for _s, f in ranked] == [first.id, second.id]
+    assert ranked[0][0] == pytest.approx(1 / 61)
+    assert ranked[1][0] == pytest.approx(1 / 62)
+
+
+def test_recall_is_deterministic_across_repeated_calls():
+    store = _store()
+    first = store.add("revenue lives in the sales workbook", source="page")
+    second = store.add("revenue is checked every monday", source="page")
+    entity_id = _seed_entity(store.conn, "Acme")
+    store.clock.advance(10.0)  # the entity-linked fact is also the newest
+    third = store.add("the offsite is planned", source="page")
+    _seed_edge(store.conn, third.id, entity_id)
+    first_ranked = store.recall("revenue acme")
+    for _ in range(5):
+        assert store.recall("revenue acme") == first_ranked
+    assert [f.id for _s, f in first_ranked] == [third.id, first.id, second.id]
+
+
+def test_recall_window_restricts_results_and_orders_newer_first():
+    store = _store()
+    clock = store.clock
+    clock.now = _ts(2026, 11, 8)
+    inside_older = store.add("sprint review happened", occurrence_ts=_ts(2026, 11, 10))
+    clock.now = _ts(2026, 11, 14)
+    inside_newer = store.add("standup notes written", occurrence_ts=_ts(2026, 11, 14))
+    clock.now = _ts(2026, 11, 1)
+    outside = store.add("revenue archive", occurrence_ts=_ts(2026, 11, 1))
+    clock.now = NOW
+    ranked = store.recall("this week revenue")
+    # The window [Nov 9, Nov 16) drops the keyword-matching fact outside
+    # it; the in-window facts recall on the prior alone and recency puts
+    # the newer first.
+    assert [f.id for _s, f in ranked] == [inside_newer.id, inside_older.id]
+    assert ranked[0][0] == pytest.approx(TIME_PRIOR * 0.5 ** (1.5 / 30))
+    assert ranked[1][0] == pytest.approx(TIME_PRIOR * 0.5 ** (5.5 / 30))
 
 
 def test_facts_persist_across_a_close_and_reopen(tmp_path):

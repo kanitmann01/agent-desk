@@ -13,14 +13,17 @@ the donor's sources, entities, edges and observations tables exist for
 the later tickets that populate them (enforcing their constraints is
 SQLite's job, not this module's). Opening a v1 database (no stamp)
 upgrades it in place and runs the donor's startup dedupe exactly once;
-a stamped database reopens untouched.
+a stamped database reopens untouched. Recall ranks through the hybrid
+ranker (memory/hybrid.py, ticket #90): facts, entities and edges load
+here, the arithmetic stays in the pure module.
 """
 
+import json
 import sqlite3
 from collections.abc import Callable
 
 from agentdesk.memory.core import Fact, UnknownFact
-from agentdesk.memory.service import rank
+from agentdesk.memory.hybrid import EntityLink, rank_hybrid
 
 SCHEMA_VERSION = "2"
 
@@ -156,6 +159,18 @@ def _normalize_fact_text(text: str) -> str:
     return " ".join(text.split()).lower()
 
 
+def _parse_aliases(value: str) -> tuple[str, ...]:
+    """The donor's parseAliases: a JSON array of strings, and anything
+    else (corrupt, wrong shape, non-string entries) reads as none."""
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return ()
+    if not isinstance(parsed, list):
+        return ()
+    return tuple(alias for alias in parsed if isinstance(alias, str))
+
+
 def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
     """Merge pre-existing facts whose normalized texts are identical.
 
@@ -268,5 +283,23 @@ class MemoryStore:
         ]
 
     def recall(self, query: str) -> list[tuple[float, Fact]]:
-        """The ranked recall: deterministic, best first (memory/service)."""
-        return rank(query, self.all())
+        """The hybrid ranked recall (memory/hybrid): keyword, entity
+        graph, recency and time windows fused deterministically, best
+        first, the score the fused rank contribution. The old overlap
+        rank stays in memory/service as the fallback scorer."""
+        return rank_hybrid(query, self.all(), self._entity_links(), now=self.clock())
+
+    def _entity_links(self) -> dict[int, list[EntityLink]]:
+        """The fact-to-entity graph the graph leg expands: one entry per
+        linked fact, entities in canonical-name then id order."""
+        rows = self.conn.execute(
+            "SELECT g.fact_id, e.id, e.canonical_name, e.aliases_json"
+            " FROM edges g JOIN entities e ON e.id = g.entity_id"
+            " ORDER BY e.canonical_name, e.id"
+        ).fetchall()
+        links: dict[int, list[EntityLink]] = {}
+        for fact_id, entity_id, name, aliases_json in rows:
+            links.setdefault(fact_id, []).append(
+                EntityLink(id=entity_id, name=name, aliases=_parse_aliases(aliases_json))
+            )
+        return links

@@ -171,6 +171,33 @@ def test_recall_preview_escapes_fact_text(env, auth):
     assert "&lt;script&gt;" in page
 
 
+def test_recall_preview_recalls_a_linked_fact_by_entity_name(env, auth):
+    # The hybrid ranker's graph leg (ticket #90): a query naming the
+    # entity recalls the fact even though it shares no keyword with it.
+    _add_fact(env, auth, "the board approved the budget")
+    conn = env.server.memory.conn
+    cursor = conn.execute(
+        "INSERT INTO entities (canonical_name, aliases_json, type, created_ts)"
+        " VALUES ('Acme', '[]', 'org', ?)",
+        (_facts(env)[0].created_ts,),
+    )
+    conn.execute(
+        "INSERT INTO edges (fact_id, entity_id) VALUES (?, ?)",
+        (_facts(env)[0].id, int(cursor.lastrowid)),
+    )
+    body = "query=acme".encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+        **auth,
+    }
+    status, _h, raw = env.request("POST", "/memory/recall", headers, body)
+    page = raw.decode("utf-8")
+    assert status == 200
+    assert "the board approved the budget" in page
+    assert "Recall preview" in page
+
+
 # -- the settings source rail --------------------------------------------
 
 
