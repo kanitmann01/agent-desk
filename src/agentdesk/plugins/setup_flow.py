@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from agentdesk.plugins.config import ConfigError, InstanceStore
 from agentdesk.plugins.preview import preview_table
-from agentdesk.plugins.suggest import build_suggestion_request, propose_columns
+from agentdesk.plugins.suggest import build_suggestion_request, heuristic, propose_columns
 
 TRACKER_ID = "excel-report"
 JOB = "Track one series from this workbook: a label column and a value column."
@@ -77,17 +77,17 @@ def suggest(runtime, cap: int, instance_id: str, *, headers_only: bool, complete
         rows=table["rows"], headers_only=headers_only, path=source["path"],
     )
     if complete is None:
-        return {"disclosure": note, "proposal": None,
-                "error": "An endpoint is required before a suggestion can run. You can still pick the columns."}
+        proposal = heuristic(table["headers"], table["rows"])
+        return {"disclosure": note, "proposal": proposal, "error": ""}
     try:
         proposal = propose_columns(request, complete)
-    except ConfigError as exc:
-        return {"disclosure": note, "proposal": None, "error": exc.message}
+    except ConfigError:
+        proposal = heuristic(table["headers"], table["rows"])
     return {"disclosure": note, "proposal": proposal, "error": ""}
 
 
 def confirm(runtime, cap: int, instance_id: str, tracking: dict, *, suggested: bool,
-            header_row=None, range_text=None) -> dict:
+            header_row=None, range_text=None, name: str | None = None) -> dict:
     store = store_for(runtime, cap)
     document = store.read(TRACKER_ID, instance_id)
     source = dict(document.get("source") or {})
@@ -95,6 +95,8 @@ def confirm(runtime, cap: int, instance_id: str, tracking: dict, *, suggested: b
         source["headerRow"] = int(header_row)
     if range_text is not None:
         source["range"] = range_text or None
+    if name and str(name).strip():
+        document["name"] = str(name).strip()
     document["source"] = source
     store._write(store._config_path(TRACKER_ID, instance_id), document)
     saved = store.confirm(TRACKER_ID, instance_id, tracking, suggested=suggested)

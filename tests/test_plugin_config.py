@@ -122,6 +122,76 @@ def test_dismiss_does_not_write_and_confirm_records_the_suggestion(tmp_path):
     assert saved["tracking"]["valueColumn"] == "Booked"
 
 
+def test_the_heuristic_picks_the_numeric_column_and_the_grouping_label():
+    from agentdesk.plugins.suggest import heuristic
+    choice = heuristic(
+        ["Region", "Booked"],
+        [["East", "10"], ["East", "40"], ["West", "4"]],
+    )
+    assert choice["valueColumn"] == "Booked"
+    assert choice["labelColumn"] == "Region"
+    assert choice["rows"] == [0, 1, 2]
+    assert choice["source"] == "heuristic"
+    assert choice["reason"] == "Booked looks like the amount; Region groups rows."
+
+
+def test_a_row_selection_totals_only_the_ticked_rows(tmp_path):
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "Q4 bookings")
+    store.stage_file("excel-report", "main", book)
+    store.confirm("excel-report", "main", {
+        "labelColumn": "Region",
+        "valueColumn": "Booked",
+        "aggregate": "sum",
+        "rows": [0],
+    })
+    assert read_tracker(store, "excel-report", "main")["value"] == 10
+
+
+def test_a_second_reading_is_a_signed_delta_and_a_sparkline(tmp_path):
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "Q4 bookings")
+    store.stage_file("excel-report", "main", book)
+    store.confirm("excel-report", "main", {
+        "labelColumn": "Region",
+        "valueColumn": "Booked",
+        "aggregate": "sum",
+        "unit": "USD",
+    })
+    first = read_tracker(store, "excel-report", "main")
+    assert first["delta"] == "First reading"
+    assert first["points"] == [15]
+    assert first["unit"] == "USD"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 18],
+        ["West", 7],
+    ]))
+    second = read_tracker(store, "excel-report", "main")
+    assert second["value"] == 25
+    assert second["delta"] == "+10"
+    assert second["direction"] == "up"
+    assert second["points"] == [15, 25]
+
+
 def test_propose_columns_uses_the_model_reply_and_ignores_a_failure(tmp_path):
     captured = {}
 

@@ -64,6 +64,18 @@ export interface PluginSetup {
   step: string;
 }
 
+export interface TrackerView {
+  name: string;
+  value: string;
+  unit: string;
+  delta: string;
+  direction: string;
+  points: number[];
+  file: string;
+  paceNote?: string;
+  goal?: { value: string; unit: string } | null;
+}
+
 export interface PluginCard {
   id: string;
   title: string;
@@ -73,7 +85,9 @@ export interface PluginCard {
   freshness: string; // fresh | attention
   cause: string;
   checkedAt?: string;
-  payload?: { elements: PluginElement[]; setup?: PluginSetup } | null;
+  pluginId?: string;
+  instanceId?: string;
+  payload?: { elements: PluginElement[]; setup?: PluginSetup; tracker?: TrackerView } | null;
 }
 
 // One card in the dashboard's layout as the payload lists it: visible

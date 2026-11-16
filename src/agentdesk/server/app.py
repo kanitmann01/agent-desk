@@ -959,6 +959,8 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
                     "freshness": c["freshness"],
                     "cause": c["cause"],
                     "checkedAt": c.get("checked_at", ""),
+                    "pluginId": c.get("pluginId", ""),
+                    "instanceId": c.get("instanceId", ""),
                     "payload": c.get("payload"),
                 }
                 for c in plugin_cards
@@ -3485,7 +3487,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     plugins, cap, instance_id, tracking,
                     suggested=bool(body.get("suggested")),
                     header_row=body.get("headerRow"),
-                    range_text=body.get("range")))
+                    range_text=body.get("range"),
+                    name=body.get("name")))
                 return
             if action == "outside":
                 self._send_json(200, accept_outside(plugins, cap, instance_id))

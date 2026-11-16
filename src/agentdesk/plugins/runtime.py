@@ -630,11 +630,32 @@ class PluginRuntime:
             ]
             if reading.get("paceNote"):
                 elements.append({"kind": "text", "label": "Pace", "text": reading["paceNote"]})
-            if len(reading.get("points") or []) >= 2:
-                elements.append({"kind": "sparkline", "label": "History", "points": reading["points"]})
+            points = reading.get("points") or []
+            if len(points) >= 2:
+                elements.append({"kind": "sparkline", "label": "History", "points": points})
+            goal = reading.get("goal") if isinstance(reading.get("goal"), dict) else None
+            card["title"] = title
             card["freshness"] = "fresh"
             card["cause"] = ""
-            card["payload"] = {"elements": elements, "status": "fresh"}
+            card["pilot"] = False
+            card["payload"] = {
+                "elements": elements,
+                "status": "fresh",
+                "tracker": {
+                    "name": title,
+                    "value": _format_number(reading["value"]),
+                    "unit": reading.get("unit") or "",
+                    "delta": reading["delta"],
+                    "direction": reading["direction"],
+                    "points": points,
+                    "file": reading["file"],
+                    "paceNote": reading.get("paceNote") or "",
+                    "goal": None if not goal else {
+                        "value": _format_number(goal.get("value")),
+                        "unit": goal.get("unit") or "",
+                    },
+                },
+            }
             cards.append(card)
         return cards
 
@@ -647,7 +668,7 @@ class PluginRuntime:
             "id": card_id,
             "title": title,
             "version": version,
-            "pilot": pilot,
+            "pilot": False,
             "state": "enabled",
             "freshness": "setup",
             "cause": "",

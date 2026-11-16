@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { postJson } from '../api';
 import type { PluginCard, PluginElement } from '../types';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
-import TrackerSetup from './TrackerSetup';
+import TrackerCard from './TrackerCard';
 
 interface PluginCardViewProps {
   card: PluginCard;
@@ -52,11 +52,12 @@ function ElementView({ element }: { element: PluginElement }) {
 }
 
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
-  const fresh = card.freshness === 'fresh';
-  const settingUp = Boolean(card.payload?.setup);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
-  const setup = card.payload?.setup;
+  if (card.payload?.setup || card.payload?.tracker || card.id === 'excel-report' || card.id.startsWith('excel-report~')) {
+    return <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />;
+  }
+  const fresh = card.freshness === 'fresh';
   const elements = fresh ? (card.payload?.elements ?? []) : [];
 
   async function retest() {
@@ -86,20 +87,12 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
       title={card.title}
       span="span-4"
       badge={card.pilot ? 'PILOT' : undefined}
-      stamp={settingUp ? { fresh: true, text: 'setup' } : fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' }}
-      amber={!fresh && !settingUp}
+      stamp={fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' }}
+      amber={!fresh}
       menuItems={menuItems}
       foot={`plugin v${card.version}`}
     >
-      {setup ? (
-        <TrackerSetup
-          pluginId={setup.pluginId}
-          instanceId={setup.instanceId}
-          name={setup.name}
-          onDone={onRefetch}
-          onExpired={onExpired}
-        />
-      ) : fresh && elements.length > 0 ? (
+      {fresh && elements.length > 0 ? (
         elements.map((element, i) => <ElementView key={i} element={element} />)
       ) : fresh ? (
         <>

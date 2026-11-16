@@ -407,6 +407,41 @@ table.rows td.neg{color:var(--bad)}
 .decisions ul{list-style:none;margin:0;padding:0}
 .decisions li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--ink-1);font-size:16px}
 .brief-answer{margin-top:28px}
+.tracker-stack{display:flex;flex-direction:column;gap:20px}
+.tracker-live{border:2px solid var(--ink-1);background:var(--surface);box-shadow:6px 6px 0 var(--ink-1);padding:16px 20px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.tracker-live h2{font-family:var(--font-display);font-size:32px;font-weight:560;letter-spacing:-.02em;margin:0}
+.tracker-head{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}
+.tracker-unit{font-size:20px;margin-left:8px;color:var(--ink-2)}
+.tracker-delta{margin:0;font-family:var(--font-mono);font-size:16px}
+.tracker-delta.up{color:var(--good)}
+.tracker-delta.down{color:var(--bad)}
+.tracker-spark{width:180px;height:36px;color:var(--ink-1)}
+.tracker-file{margin:0;color:var(--ink-3);font-size:14px}
+.setup-scrim{position:fixed;inset:0;z-index:40;background:var(--scrim);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto}
+.setup-sheet{width:min(880px,100%);background:var(--surface);border:2px solid var(--ink-1);box-shadow:8px 8px 0 var(--ink-1);padding:20px 24px 24px;display:flex;flex-direction:column;gap:16px}
+.setup-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.setup-head h2{font-family:var(--font-display);font-size:32px;font-weight:560;margin:0}
+.setup-steps{display:flex;flex-wrap:wrap;gap:12px 20px;list-style:none;margin:0;padding:0;font-size:14px}
+.setup-steps .is-current{font-weight:700;border-bottom:2px solid var(--ink-1)}
+.setup-role{border:0;padding:0;display:flex;flex-wrap:wrap;gap:12px 20px}
+.setup-role legend{font-weight:700;width:100%;margin-bottom:4px}
+.setup-assignment{margin:0}
+.setup-table-wrap{overflow:auto;max-width:100%;border-top:2px solid var(--ink-1)}
+.preview-grid{width:100%;border-collapse:collapse;font-size:14px}
+.preview-grid caption{text-align:left;padding:8px 0;color:var(--ink-2)}
+.preview-grid th,.preview-grid td{border-bottom:1px solid var(--ink-1);padding:8px 10px;text-align:left;vertical-align:middle}
+.preview-grid th button{font-weight:700;padding:4px 0}
+.preview-grid .is-value{background:var(--primary-soft)}
+.preview-grid .is-label{box-shadow:inset 0 -3px 0 var(--good)}
+.preview-grid tr.is-picked td{background:var(--hover-wash)}
+.preview-grid tr.is-picked td.is-value{background:var(--primary-soft)}
+.setup-suggest{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.setup-suggest p{margin:0;max-width:46ch;color:var(--ink-2)}
+.setup-proposal{border:2px solid var(--ink-1);padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+.setup-reason{margin:0;font-family:var(--font-display);font-size:20px}
+.setup-actions,.setup-name{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.setup-field{display:flex;flex-direction:column;gap:6px;font-weight:700;min-width:220px}
+.setup-field input{border:2px solid var(--ink-1);background:var(--surface);min-height:40px;padding:6px 10px;font:inherit;font-weight:400}
 .brief-answer h2{font-family:var(--font-display);font-size:20px;font-weight:560}
 @media (max-width:980px){
   .app{display:block}
@@ -421,6 +456,9 @@ table.rows td.neg{color:var(--bad)}
   .rail a{min-height:44px}
   html{scroll-padding-top:64px}
   .hero-title{font-size:32px}
+  .setup-scrim{padding:0}
+  .setup-sheet{min-height:100vh;box-shadow:none}
+  .tracker-live h2,.setup-head h2{font-size:24px}
   .brief,.brief-empty{grid-template-columns:1fr}
   /* The strip already carries every entry; collapse is a tall-rail
      control and does nothing on the wrapping strip. */

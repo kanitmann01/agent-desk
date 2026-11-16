@@ -28,8 +28,12 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
     headers = [cell.strip().lower() for cell in preview["headers"]]
     label_at = _index(headers, tracking.get("labelColumn"))
     value_at = _index(headers, tracking.get("valueColumn"))
+    body = list(preview["rows"])
+    selected = tracking.get("rows")
+    if isinstance(selected, list):
+        body = [body[index] for index in selected if isinstance(index, int) and 0 <= index < len(body)]
     numbers = []
-    for row in preview["rows"]:
+    for row in body:
         if value_at is None or value_at >= len(row):
             continue
         number = _number(row[value_at])
@@ -42,16 +46,19 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
     pace_note = ""
     if isinstance(pace, dict):
         pace_note = pace_line(value, pace["elapsedDays"], pace["plan"], pace["periodDays"])
+    goal = tracking.get("goal") if isinstance(tracking.get("goal"), dict) else None
     return {
         "value": value,
         "delta": delta,
         "direction": direction,
         "points": history[-30:],
         "file": path.name,
+        "unit": str(tracking.get("unit") or ""),
         "paceNote": pace_note,
+        "goal": goal,
         "labelColumn": tracking.get("labelColumn"),
         "valueColumn": tracking.get("valueColumn"),
-        "rowsSeen": len(preview["rows"]),
+        "rowsSeen": len(body),
     }
 
 
@@ -100,12 +107,19 @@ def _remember(store: InstanceStore, plugin_id: str, instance_id: str, value: flo
     return history
 
 
+def _signed(change: float) -> str:
+    number = abs(change)
+    text = str(int(number)) if float(number).is_integer() else f"{number:.2f}"
+    if change > 0:
+        return f"+{text}"
+    if change < 0:
+        return f"−{text}"
+    return "0"
+
+
 def _delta(history: list) -> tuple[str, str]:
     if len(history) < 2:
-        return "First reading.", "flat"
-    change = history[-1] - history[-2]
-    if change > 0:
-        return f"{change:.2f}", "up"
-    if change < 0:
-        return f"{change:.2f}", "down"
-    return "0", "flat"
+        return "First reading", "flat"
+    return _signed(history[-1] - history[-2]), (
+        "up" if history[-1] > history[-2] else "down" if history[-1] < history[-2] else "flat"
+    )

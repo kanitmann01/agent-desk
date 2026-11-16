@@ -201,13 +201,21 @@ def _tracking(incoming: dict, previous: dict) -> dict:
     if aggregate not in ("sum", "count", "latest", "min", "max"):
         raise ConfigError("config:bad-tracking", "Aggregate must be sum, count, latest, min, or max.")
     good = incoming.get("good") or previous.get("good") or "up"
+    rows = incoming.get("rows")
+    if rows is not None and not (
+            isinstance(rows, list) and all(isinstance(item, int) and item >= 0 for item in rows)):
+        raise ConfigError("config:bad-tracking", "Row selection must be a list of row numbers.")
+    goal = _goal(incoming.get("goal"))
+    unit = str(incoming.get("unit") or (goal or {}).get("unit") or "")
     result = {
         "labelColumn": label,
         "valueColumn": value,
         "dateColumn": incoming.get("dateColumn") or None,
         "aggregate": aggregate,
         "good": "down" if good == "down" else "up",
-        "goal": _goal(incoming.get("goal")),
+        "unit": unit,
+        "rows": rows,
+        "goal": goal,
         "pace": _pace(incoming.get("pace")),
     }
     return result
