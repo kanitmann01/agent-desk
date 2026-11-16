@@ -130,6 +130,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
         </p>
       </header>
 
+      <div className="mkt-toolbar">
       <form className="mkt-search" role="search" onSubmit={submit}>
         <label className="mkt-sr-only" htmlFor="mkt-q">Search plugins</label>
         <div className="mkt-search-field">
@@ -193,6 +194,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
             <span>Only available plugins</span>
           </label>
         </div>
+      </div>
       </div>
 
       {load.kind === 'loading' && (

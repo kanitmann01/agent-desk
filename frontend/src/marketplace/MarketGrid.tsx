@@ -125,7 +125,7 @@ function Row({ card, featured = false }: { card: MarketCard; featured?: boolean 
       >
         <span className="mkt-row-name">{card.name}</span>
         <span className="mkt-row-summary">{card.summary}</span>
-        <span className="mkt-row-cat">{categoryLabel(card.category)}</span>
+        {featured ? <span className="mkt-row-cat">{categoryLabel(card.category)}</span> : null}
         <span className="mkt-version">v{card.version}</span>
         {showMeta && !QUIET_RISK.has(card.riskTier.toLowerCase())
           ? <span className="mkt-row-extra">{riskLabel(card.riskTier)}</span> : null}
@@ -158,9 +158,12 @@ export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
         <p className="mkt-default-note">Publisher, verification and risk show only when a plugin is not the bundled default.</p>
       )}
       {featured.length > 0 ? (
-        <ul className="mkt-rows mkt-featured">
-          {featured.map((card) => <Row key={card.id} card={card} featured />)}
-        </ul>
+        <section className="mkt-group" aria-label="Featured">
+          <h2>Featured</h2>
+          <ul className="mkt-rows mkt-featured">
+            {featured.map((card) => <Row key={card.id} card={card} featured />)}
+          </ul>
+        </section>
       ) : null}
       {[...groups.entries()].map(([category, group]) => (
         <section key={category} className="mkt-group" aria-label={categoryLabel(category)}>

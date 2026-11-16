@@ -261,6 +261,8 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   letter-spacing:-.01em;color:var(--good);
   font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
 }
+.kpi .value.down{color:var(--bad)}
+.kpi .value.flat{color:var(--ink-1)}
 .kpi .sub{font-size:12px;color:var(--ink-3)}
 .kpi-split{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .kpi-chip{
@@ -386,15 +388,20 @@ table.rows td.neg{color:var(--bad)}
   .span-8{grid-column:span 12}
 }
 .brief{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.8fr);gap:28px;align-items:start}
-.brief-empty{grid-template-columns:minmax(0,560px)}
+.brief-empty{grid-template-columns:minmax(0,560px);justify-content:center;align-content:start;gap:16px}
+.brief-lead{margin:0;color:var(--ink-2);font-size:16px}
 .brief-figure{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;align-items:end}
-.brief-figure .movers{grid-column:1 / -1}
+.brief-figure .movers,.brief-figure .brief-more{grid-column:1 / -1}
 .brief-label{font-size:16px;font-weight:600;margin:0}
-.brief-quiet{margin:4px 0 0;color:var(--ink-2);font-size:14px}
+.brief-quiet{display:flex;flex-wrap:wrap;gap:4px 12px;margin:4px 0 0;color:var(--ink-2);font-size:14px}
 .movers{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
-.movers li{display:flex;justify-content:space-between;gap:16px;font-size:16px;border-bottom:1px solid var(--ink-1);padding-bottom:8px}
+.movers li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 16px;align-items:baseline;font-size:16px;border-bottom:1px solid var(--ink-1);padding-bottom:8px}
+.mover-name{font-weight:600}
+.mover-meta,.mover-path{color:var(--ink-3);font-size:14px}
+.mover-path{text-align:right;font-family:var(--font-mono)}
 .mover.up{color:var(--good);font-family:var(--font-mono)}
 .mover.down{color:var(--bad);font-family:var(--font-mono)}
+.brief-more{justify-self:start;margin-top:10px;padding:0;font-weight:600;font-size:14px;color:var(--ink-1);text-decoration:underline;text-underline-offset:3px}
 .decisions{border:2px solid var(--ink-1);box-shadow:6px 6px 0 var(--ink-1);background:var(--surface);padding:16px 16px 8px}
 .decisions h2{font-family:var(--font-display);font-size:20px;font-weight:560;margin:0 0 12px}
 .decisions ul{list-style:none;margin:0;padding:0}

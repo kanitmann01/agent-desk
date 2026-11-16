@@ -3,9 +3,18 @@
 // mode still uses the cards, because reordering needs one object per card.
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
-import { rowLine } from '../fmt';
-import type { DashboardData, DeltaPayload } from '../types';
+import type { DashboardData } from '../types';
 import Button from '../components/Button';
+import {
+  MOVER_CAP,
+  dealMeta,
+  dealName,
+  formatAmount,
+  formatSigned,
+  moversFromDelta,
+  netPipeline,
+  type Mover,
+} from './briefModel';
 
 const WALKTHROUGH = '/walkthrough/calendar';
 
@@ -15,38 +24,45 @@ interface BriefProps {
   onExpired: () => void;
 }
 
-function moverName(row: unknown[]): string {
-  const line = rowLine(row);
-  return line || 'Row';
+function moverTitle(mover: Mover): string {
+  if (mover.previousName) return `${mover.previousName} → ${mover.name}`;
+  return mover.name;
 }
 
-function signedChange(row: unknown[], sign: '+' | '−'): string {
-  const amount = row[3];
-  if (typeof amount === 'number') return `${sign}${amount.toLocaleString('en-US')}`;
-  return sign;
+function moverPath(mover: Mover): string {
+  if (mover.kind === 'changed' && mover.oldAmount != null && mover.newAmount != null) {
+    return `${formatAmount(mover.oldAmount)} → ${formatAmount(mover.newAmount)}`;
+  }
+  if (mover.kind === 'added') return 'Added';
+  if (mover.kind === 'removed') return 'Removed';
+  return '';
 }
 
-function Movers({ delta }: { delta: DeltaPayload }) {
-  const ups = (delta.added ?? []).slice(0, 6);
-  const downs = (delta.removed ?? []).slice(0, 6);
-  if (ups.length + downs.length === 0) {
+function Movers({ movers }: { movers: Mover[] }) {
+  const [open, setOpen] = useState(false);
+  if (movers.length === 0) {
     return <p className="brief-quiet">No rows changed in the last 24 hours.</p>;
   }
+  const shown = open ? movers : movers.slice(0, MOVER_CAP);
+  const hidden = movers.length - MOVER_CAP;
   return (
-    <ul className="movers">
-      {ups.map((row, i) => (
-        <li key={`u${i}`}>
-          <span>{moverName(row)}</span>
-          <span className="mover up">{signedChange(row, '+')}</span>
-        </li>
-      ))}
-      {downs.map((row, i) => (
-        <li key={`d${i}`}>
-          <span>{moverName(row)}</span>
-          <span className="mover down">{signedChange(row, '−')}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="movers">
+        {shown.map((mover, index) => (
+          <li key={`${mover.kind}-${index}-${mover.name}`}>
+            <span className="mover-name">{moverTitle(mover)}</span>
+            <span className={mover.delta < 0 ? 'mover down' : 'mover up'}>{formatSigned(mover.delta)}</span>
+            {mover.meta ? <span className="mover-meta">{mover.meta}</span> : <span />}
+            <span className="mover-path">{moverPath(mover)}</span>
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 ? (
+        <button type="button" className="brief-more" onClick={() => setOpen((value) => !value)}>
+          {open ? 'Show top 5' : 'See all'}
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -60,9 +76,11 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const status = sales.status;
   const configured = sales.mode === 'live' && Boolean(status?.configured);
   const delta = status?.delta ?? null;
-  const added = delta?.added?.length ?? 0;
-  const removed = delta?.removed?.length ?? 0;
-  const changed = added + removed;
+  const movers = delta ? moversFromDelta(delta) : [];
+  const net = delta ? netPipeline(delta) : 0;
+  const changedCount = movers.filter((mover) => mover.kind === 'changed').length;
+  const addedCount = movers.filter((mover) => mover.kind === 'added').length;
+  const removedCount = movers.filter((mover) => mover.kind === 'removed').length;
   const salesNeedsConnect = sales.mode !== 'disabled'
     && (sales.mode === 'unconfigured' || status === null || !status.configured);
   const calendarNeedsConnect = data.commitments.mode !== 'live'
@@ -132,34 +150,44 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       {configured ? (
         <div className="brief-figure">
           <div className="kpi">
-            <div className="value">{(delta ? changed : (status?.rowsSeen ?? 0)).toLocaleString('en-US')}</div>
+            <div className={`value${delta && net < 0 ? ' down' : ''}${delta && net === 0 ? ' flat' : ''}`}>
+              {delta ? formatSigned(net) : (status?.rowsSeen ?? 0).toLocaleString('en-US')}
+            </div>
           </div>
           <div className="brief-figure-copy">
-            <p className="brief-label">{delta ? 'Sales, last 24 hours' : 'Rows in the workbook'}</p>
+            <p className="brief-label">{delta ? 'Net pipeline, last 24 hours' : 'Rows in the workbook'}</p>
             <p className="brief-quiet">
               {delta ? (
                 <>
-                  <span className="mover up">+{added} added</span>
-                  {' '}
-                  <span className="mover down">−{removed} removed</span>
+                  {changedCount > 0 ? <span>{changedCount} changed</span> : null}
+                  {addedCount > 0 ? <span className="mover up">+{addedCount} added</span> : null}
+                  {removedCount > 0 ? <span className="mover down">−{removedCount} removed</span> : null}
                 </>
               ) : (
                 'First snapshot. The 24-hour diff starts at the next read.'
               )}
             </p>
           </div>
-          {delta ? <Movers delta={delta} /> : (
+          {delta ? <Movers movers={movers} /> : (
             <ul className="movers">
-              {(status?.examples ?? []).slice(1, 7).map((row, i) => (
-                <li key={i}>
-                  <span>{moverName(row)}</span>
-                  <span className="mono">{typeof row[3] === 'number' ? row[3].toLocaleString('en-US') : ''}</span>
-                </li>
-              ))}
+              {(status?.examples ?? []).slice(1, 1 + MOVER_CAP).map((row, i) => {
+                const cells = row as unknown[];
+                const amount = cells[3];
+                return (
+                  <li key={i}>
+                    <span className="mover-name">{dealName(cells)}</span>
+                    <span className="mono">{typeof amount === 'number' ? formatAmount(amount) : ''}</span>
+                    {dealMeta(cells) ? <span className="mover-meta">{dealMeta(cells)}</span> : <span />}
+                    <span />
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
-      ) : null}
+      ) : (
+        <p className="brief-lead">Connect a workbook and this desk shows the pipeline change and the deals that moved.</p>
+      )}
       {decisions.length > 0 ? (
         <section className="decisions" aria-label="Needs a decision">
           <h2>Needs a decision</h2>
