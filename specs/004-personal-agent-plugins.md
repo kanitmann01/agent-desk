@@ -10,7 +10,7 @@ The built-in sales card already does the interaction this spec generalizes: a co
 
 ## Decision
 
-Ship 18 jobs. Seven of today's ids become instances or sections of a survivor. A job that is "a number from a workbook" is one plugin, the Workbook tracker, installed once and configured many times. Aging, a scorecard, and a two-file reconciliation stay, because their cards are different.
+Ship 15 jobs. Twelve of today's ids become instances, sections, or cadence of a survivor. A job that is "a number from a workbook" is one plugin, the Workbook tracker, installed once and configured many times. Aging, a scorecard, and a two-file reconciliation stay, because their cards are different. A morning brief and a weekly review are one brief at two cadences. Audit, compliance, and plugin health are one desk-health card with three sections.
 
 The signed manifest declares the job, the source kinds it may use, and the permission ceiling. It does not declare the user's path, columns, target, or threshold. Those live in a host-owned config, written only after the user confirms them.
 
@@ -38,15 +38,14 @@ Each line is one job. Two of them must not do the same thing.
 | `waiting-on-you` | Waiting on you | Inbound threads older than a threshold the user sets | Watcher | — |
 | `research-brief` | Research brief | The latest stored answer and the sources it named | Briefing | `source-ledger` |
 | `competitor-watch` | Page watch | Whether a page the user named has changed | Watcher | — |
-| `audit-digest` | Audit digest | What the desk recorded | Watcher | — |
-| `compliance-posture` | Compliance | The policy checks and the mode | Status | — |
-| `plugin-health` | Plugin health | What is failing, and which installed plugins have a newer release | Status | `update-radar` |
-| `morning-brief` | Morning brief | A short document for this morning, from the instances the user pins | Briefing | — |
-| `weekly-review` | Weekly review | The same kind of document for the week | Briefing | — |
+| `desk-health` | Desk health | Failing plugins and available updates, policy checks, and recent audit events | Status | `audit-digest`, `compliance-posture`, `plugin-health`, `update-radar` |
+| `brief` | Brief | A short document from the instances the user pins, on a daily cadence, a weekly cadence, or both | Briefing | `morning-brief`, `weekly-review` |
 
 `excel-report` keeps its id so an existing install updates in place. Its catalog copy stops calling it a reference example. The Class D fixture for authors moves to `registry/examples/class-d/` and is not a catalog entry. See the migration section.
 
-Instances: the Workbook tracker and Deadlines can be configured more than once on the same desk (a revenue instance and a budget instance; a renewals instance and a promises instance). Every other plugin has one config. The instance has a name the user types, a config, and its own card. The plugin id does not change.
+Instances: the Workbook tracker and Deadlines can be configured more than once on the same desk (a revenue instance and a budget instance; a renewals instance and a promises instance). Every other plugin has one config. The instance has a name the user types, a config, and its own card. The plugin id does not change. A desk holds at most 6 instances of one plugin. The cap is a setting, `plugin_instance_cap`, cycling from 6 down to 1, default 6. A seventh instance is refused and the card says the cap.
+
+The old ids `audit-digest`, `compliance-posture`, `plugin-health`, `update-radar`, `morning-brief`, and `weekly-review` stay resolvable as aliases of `desk-health` and `brief`. They are not separate jobs.
 
 ## Configuration model
 
@@ -90,8 +89,8 @@ Source kinds, and which plugins may use them:
 | `mailbox` | The mail folder control in Settings. One folder for the desk. | Mail digest, Waiting on you |
 | `research` | No path. The card reads the local research store. | Research brief |
 | `page` | A URL field. The host is extracted and shown before consent. | Page watch |
-| `desk` | No path. Selectors `audit`, `policy`, `runtime`. | Audit, Compliance, Plugin health |
-| `compose` | A list of instance ids the user checks. | Morning brief, Weekly review |
+| `desk` | No path. One card reads the runtime, policy, and audit callbacks. | Desk health |
+| `compose` | A list of instance ids the user checks, plus a cadence of daily, weekly, or both. | Brief |
 
 A plugin manifest names the kinds it accepts. The runtime rejects a config whose kind is not in that list.
 
@@ -114,10 +113,12 @@ The request contains:
 - the plugin's one-sentence job
 - the sheet name
 - the header row
-- up to five data rows from the chosen range
 - the column names
+- up to five data rows from the chosen range, unless the setting `suggest_headers_only` is on
 
 It does not contain the rest of the workbook, other sheets, or the file path. The cap is five rows and 8 KB of text. A larger selection is truncated and the proposal says so.
+
+Before the request is sent, the picker shows one sentence that names exactly what will leave the machine. With rows included: "This sends the column names and up to 5 rows to the company endpoint. The file path stays on this machine." With headers only: "This sends the column names to the company endpoint. No cell values and no file path leave this machine." The user presses Suggest to send. The headers-only choice is a setting, off by default, and the picker shows which mode is about to run.
 
 The reply is a proposed config: which columns, which aggregate, and a goal if the job has one. The user sees the proposal in the same column step, with the columns highlighted. Nothing is written until they confirm. Dismiss writes nothing. A failed call leaves the picker where it was and says the endpoint failed, with no partial config.
 
@@ -154,12 +155,12 @@ Manifest `size` is honored: a tracker and a briefing span 8 columns, a digest an
 | Tracker | One mono figure. A sparkline of 12 to 30 points. The delta in fir or oxide, in the tracked unit. The file name in the footer. An optional goal as a thin bar under the figure. | Workbook tracker, Week load |
 | Digest | A ranked or dated list, at most 8 rows. A small mono count, not a hero figure. | Mail digest, Deadlines |
 | Agenda | Times down the left, titles to the right. The next event is the first row, not a separate metric. | Today |
-| Briefing | Serif prose, a few sentences, then the supporting list (sources, or the instances that were cited). No metric grid. | Research brief, Meeting prep, Morning brief, Weekly review |
+| Briefing | Serif prose, a few sentences, then the supporting list (sources, or the instances that were cited). No metric grid. | Research brief, Meeting prep, Brief |
 | Watcher | A timeline: time, what happened, a one-word outcome. Oxide only on a row that needs the user. | Page watch, Waiting on you, Audit digest |
 | Scorecard | A table. A row that missed its target is oxide. Aging uses the same table, one row per bucket, plus the oldest balances under it. | Scorecard, Aging |
 | Compare | Two labels (the file names the user gave). The figure is the unmatched count. The list is unmatched keys only. | Reconciliation |
 | Checklist | The open items. Done items are struck and follow the open ones. The next due date is a line, not a second card. | Notes |
-| Status | One status sentence and the list that explains it. Health has two lists, failures and updates. | Plugin health, Compliance |
+| Status | One status sentence and the sections under it: failures and updates, policy checks, recent audit events. | Desk health |
 
 Color is fir, oxide, or the ink. A status tone maps to those: ok is ink, attention is oxide, alarm is oxide plus the status sentence. No third hue, and no filled icon well behind the plug glyph. Discover tiles use the manifest icon at 16px, in ink, with no shared green chip behind it. The tile shows the summary. That requires the catalog pin to carry `icon` and `summary`, or to stop replacing the manifest.
 
@@ -182,11 +183,8 @@ The empty state is the card. It names the one action and does not show a number.
 | Waiting on you | The same mail cause. When the folder is connected and no thread is waiting: "Nothing is waiting on you." That sentence is allowed. It is not a zero. | Choose a mail folder |
 | Research brief | "No research answer is stored yet. Ask from the research field." | Focus the research field |
 | Page watch | "No page is being watched." | Add a page |
-| Audit digest | "No audit events in this window." Allowed, because an empty log is a real state. A missing callback is "Audit state is not available." and is not the empty-log sentence. | None |
-| Compliance | "Policy state is not available." until the callback exists. Then the checklist, including an all-clear sentence. | None |
-| Plugin health | "Runtime state is not available." until the callback exists. | None |
-| Morning brief | "Choose what this brief includes." until at least one instance is pinned. | Choose cards |
-| Weekly review | The same, for the week. | Choose cards |
+| Desk health | "Desk health is not available." until the host callbacks exist. An empty audit log is a section sentence, "No audit events in this window.", and is not the missing-callback sentence. | None. The card reads the host. |
+| Brief | "Choose what this brief includes." until at least one instance is pinned. | Choose cards |
 
 A missing column after a file is connected is not the empty state. The card names the column and offers "Change columns". It does not show zero.
 
@@ -199,6 +197,8 @@ Marketplace samples stay labeled "Sample data" and are generated from a fixture 
 The user opens one workbook, picks a sheet, a label column, and a value column. Aggregate is sum, count, latest, min, or max. Optional date column and window. Optional goal: a number, a unit, and good direction `up` or `down`. The figure is the aggregate in the unit. The sparkline is the stored snapshots, 12 to 30 points, one per successful read, not invented history. The delta is the change in the aggregate since the previous snapshot, in the unit. The footer is the file name and the sheet.
 
 Revenue, budget, and a pipeline delta are three instances. Budget is the instance whose good direction is `down`. The old 250,000 and 1,000,000 literals are not defaults. A new instance has no goal until the user sets one.
+
+Pace is optional on any tracker instance, including Budget. When the user turns it on they set a plan amount, the number of days in the period, and the days elapsed (or a start date the host counts from). The card shows spent divided by days elapsed beside plan divided by days in the period. The host does not invent a plan amount or a period length.
 
 The changed-row list from Sales 24h Delta is the optional detail under the sparkline: rows whose key appeared or disappeared since the previous snapshot, capped at 8. It requires the label column. Without one, the list is omitted, not shown empty.
 
@@ -252,23 +252,23 @@ The stored summary, the answered time, and the source strings. A title is shown 
 
 One URL. The card is a timeline of fetches: time, "changed" or "unchanged", and the HTTP status. A change row can include the first 200 characters of the new body as a disclosure, not a parsed price list. Line-level HTML diff is out of scope. The policy allowlist remains the operator control. The sample is a timeline with "unchanged", not a fictional price change.
 
-### Audit digest (`audit-digest`)
+### Desk health (`desk-health`)
 
-The host passes an audit callback that returns the recent audit events: time, action, plugin id, outcome. The card is a timeline, capped at 8, plus a footer with the window and the total count. The callback reads the desk audit log. It does not read a user file. A missing callback uses the empty-state sentence in the table above, not a sample.
+One status card with three sections. The host passes the runtime, policy, and audit callbacks that used to be three plugins.
 
-### Compliance (`compliance-posture`)
+- Failing plugins and available updates, from the runtime callback. Update radar's seven-day delta is dropped.
+- Policy checks and the mode sentence, from the policy callback. No handwritten checklist ships in the plugin.
+- Recent audit events, capped at 8, from the audit callback. An empty log says "No audit events in this window." A missing callback says "Desk health is not available." and shows no sample number.
 
-The host passes a policy callback: the mode sentence, and the checks the policy engine already evaluates, as checklist items. The card does not ship a handwritten checklist. A missing callback uses the empty-state sentence.
+`audit-digest`, `compliance-posture`, `plugin-health`, and `update-radar` are aliases. An update opens Desk health. They do not render a second card.
 
-### Plugin health (`plugin-health`)
+### Brief (`brief`)
 
-The host passes a runtime callback with two lists: plugins whose last read failed or is stale, and plugins whose installed version is older than the catalog version. The card is the status pattern with both lists. Update radar's seven-day delta is dropped. The status sentence is computed from the two lists.
+One briefing. The user sets the cadence to daily, weekly, or both, and checks the instance ids that feed it. The text is a local template over those cards' latest payloads: the next event, the waiting count, the tracker delta, deadlines inside the window, week-load hours, and the desk-health failure count. A model call would put the user's numbers on the endpoint for a card that can be read without one. If a member is missing or blank, that sentence is omitted. The card is blank only when every member is blank, and then it names the first missing connection. The text does not contain a plugin id.
 
-### Morning brief and Weekly review
+Daily cadence uses the day sentences (next event, waiting threads, tracker movement since yesterday). Weekly cadence uses the week sentences (tracker movement across the stored snapshots, deadlines that passed, week-load hours, desk-health failures). Both renders the two blocks on one card.
 
-Each stores the instance ids the user checked. The briefing is assembled locally from those cards' latest payloads: the next event, the waiting count, the tracker delta, deadlines inside the window, week-load hours, health's failure count. The prose is a template over those values, not a model call. A model call would put the user's numbers on the endpoint for a card that can be read without one. If a member is missing or blank, that sentence is omitted. The card is blank only when every member is blank, and then it names the first missing connection.
-
-Morning brief's template is the day: next event, waiting threads, tracker movement since yesterday. Weekly review's template is the week: tracker movement across the stored snapshots, deadlines that passed, week-load hours, health failures. They do not mention plugin ids.
+`morning-brief` and `weekly-review` are aliases. An update opens Brief with the cadence set to daily or weekly. They do not render a second card.
 
 ## Security
 
@@ -297,14 +297,19 @@ One release. Old ids keep resolving so an installed copy does not disappear on u
 | `follow-up-watch` | Redirects to a Deadlines instance named "Promises". |
 | `vip-watch` | Redirects to Mail digest. A VIP list is not invented. |
 | `source-ledger` | Redirects to Research brief. |
-| `update-radar` | Redirects to Plugin health. |
+| `update-radar` | Alias of Desk health. |
+| `audit-digest` | Alias of Desk health. |
+| `compliance-posture` | Alias of Desk health. |
+| `plugin-health` | Alias of Desk health. |
+| `morning-brief` | Alias of Brief, cadence daily. |
+| `weekly-review` | Alias of Brief, cadence weekly. |
 | The other ids | Stay. First launch with no config opens the picker or the existing connect screen. The old glob is not used as a silent default. |
 
 Packs are rewritten to the survivors.
 
-- Manager: Today, Week load, Meeting prep, Deadlines, Workbook tracker, Mail digest, Research brief, Morning brief.
-- CFO: Workbook tracker, Aging, Scorecard, Reconciliation, Deadlines, Audit digest, Weekly review. The pack installs one tracker. The user adds a second instance from the card. The pack does not install three copies.
-- Ops: Deadlines, Waiting on you, Notes, Plugin health, Compliance, Weekly review.
+- Manager: Today, Week load, Meeting prep, Deadlines, Workbook tracker, Mail digest, Research brief, Brief.
+- CFO: Workbook tracker, Aging, Scorecard, Reconciliation, Deadlines, Desk health, Brief. The pack installs one tracker. The user adds a second instance from the card. The pack does not install three copies.
+- Ops: Deadlines, Waiting on you, Notes, Desk health, Brief.
 
 Competitor Watch stays out of every pack.
 
@@ -319,12 +324,13 @@ Authoring: `docs/design/plugin-authoring-v2.md` gains the `config.kinds` field a
 - A tracker with no config renders the empty state and reads no file.
 - A confirmed workbook path is read. A sibling that the old glob would have matched is not read.
 - A path outside the workspace is refused until the consent sheet is accepted, and is then read.
-- Suggest sends at most five rows and 8 KB, writes nothing on dismiss, and writes the confirmed columns on accept. With no endpoint, the button explains and the picker still saves a hand-chosen config.
+- Suggest sends headers and at most five rows and 8 KB, and only after the user presses Suggest. The disclosure sentence matches the headers-only setting. Dismiss writes nothing. Confirm writes the columns. With no endpoint, the button explains and the picker still saves a hand-chosen config.
 - Reconciliation's figure equals the unmatched count, including amount mismatches when amount columns are set.
 - Deadlines exclude past dates from the count and include a date 31 days out only when the window is at least 31.
 - Meeting prep does not contain the text "Confirm with".
-- Morning brief omits a missing member and does not render a plugin id.
-- Audit, compliance, and health render their real callbacks. With the callback unset, the copy is the "not available" sentence, not a number from `sample.json`.
+- Brief omits a missing member and does not render a plugin id. Daily and weekly are one plugin.
+- Desk health renders the three sections from the host callbacks. With a callback unset, the copy is "Desk health is not available.", not a number from `sample.json`.
+- A seventh tracker instance is refused when the cap is 6. Lowering `plugin_instance_cap` to 2 refuses a third.
 - Page watch does not fetch a host the policy allowlist rejects.
 - The marketplace sample for a table fixture shows the fixture cells.
 - Discover shows each manifest icon and the summary.
@@ -340,11 +346,33 @@ Authoring: `docs/design/plugin-authoring-v2.md` gains the `config.kinds` field a
 - Multiple calendars or multiple mailboxes.
 - Auto-installing a pack's tracker more than once.
 
+## First-run steps
+
+Every plugin's first run is at most three steps: open a source, confirm what to track, and the card is live. Suggest is a button on the confirm step, not a fourth step.
+
+| Plugin | Step 1 | Step 2 | Step 3 |
+|---|---|---|---|
+| Workbook tracker | Open a workbook | Pick the sheet, the columns, and an optional goal or pace. Suggest can fill this step. | Confirm. The card shows the figure. |
+| Aging | Open a workbook | Pick the amount column, the date column, and the bucket edges. Suggest can fill this step. | Confirm. |
+| Scorecard | Open a workbook | Pick the name, actual, and target columns. Suggest can fill this step. | Confirm. |
+| Reconciliation | Open the first file | Open the second file and pick the key column on each. | Confirm. |
+| Deadlines | Open a workbook or CSV | Pick the label column, the date column, and the window. | Confirm. |
+| Notes | Open a markdown file | Pick the heading. | Confirm. |
+| Today | Connect the calendar (the existing walkthrough). | The agenda is the card. | — |
+| Meeting prep | Connect the calendar. | The next event is the card. | — |
+| Week load | Connect the calendar. | The sparkline is the card. | — |
+| Mail digest | Choose the mail folder (the existing setting). | The digest is the card. | — |
+| Waiting on you | Choose the mail folder. | Confirm the number of days. | The waiting list is the card. |
+| Research brief | Ask in the research field, if nothing is stored yet. | The stored answer is the card. | — |
+| Page watch | Type the page URL. | Accept the consent sheet for that host. | The timeline is the card. |
+| Desk health | The host callbacks are the source. There is no file step. | — | — |
+| Brief | Choose daily, weekly, or both. | Check the instances that feed it. | The briefing is the card. |
+
 ## Open questions
 
-1. Budget as its own plugin. This spec makes it a tracker instance with good direction `down`. If "pace versus plan" needs a burn rate (spent divided by days elapsed) rather than a total against a cap, it should stay a separate plugin. The audit recommends the instance.
-2. How many tracker instances are enough. This spec allows more than one. A cap of four instances per plugin would match the old pack size. No cap is specified yet.
-3. Page watch and the policy allowlist. A personal desk may want a page the operator has not pre-approved. This spec keeps the allowlist as the block. If the owner should be able to approve a host without an operator, the consent sheet would need to record that, and the default policy would need a personal exception. Not assumed here.
-4. Suggest and row contents. Five rows leave the machine through the company endpoint. Headers only would avoid that and would make column choice worse. This spec sends five rows, capped, and only when the user presses the button.
+1. Closed. Budget is a Workbook tracker instance with good direction down, plus the optional pace mode. It is not its own plugin.
+2. Closed. A plugin holds at most 6 instances. The setting `plugin_instance_cap` can lower that, down to 1.
+3. Page watch and the policy allowlist. A personal desk may want a page the operator has not pre-approved. This spec keeps the allowlist as the block. If the owner should be able to approve a host without an operator, the consent sheet would need to record that, and the default policy would need a personal exception. Not assumed here. Left open for the owner.
+4. Closed. Suggest sends the column names and up to 5 rows, only when the user presses Suggest, and the picker states that sentence before the call. Settings has a headers-only toggle. The default sends the rows.
 5. Meeting prep and notes. This spec reuses the Notes grant and matches attendee names. A broader read of the notes file is a wider grant and is not included.
 6. PR #117 is still a draft. Patterns here assume its tokens land. If that pull request changes the type scale or the rule weight before merge, the patterns follow the merged tokens. The jobs and the config model do not depend on it.
