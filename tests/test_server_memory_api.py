@@ -121,6 +121,211 @@ def test_edit_of_an_unknown_fact_is_a_404(env, auth):
     assert status == 404
 
 
+# -- hygiene over HTTP (ticket #92) ------------------------------------------
+
+
+def test_edit_onto_another_facts_text_reports_the_merge(env, auth):
+    first = _add_fact(env, auth, "revenue is 220")
+    second = _add_fact(env, auth, "meeting room booked")
+    status, _h, body = env.post_json(
+        f"/memory/{second['id']}/edit", {"text": "Revenue is 220"}, auth
+    )
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["mergedIntoExisting"] is True
+    assert payload["id"] == first["id"], "the oldest fact survives"
+    facts = _facts(env)
+    assert [f.id for f in facts] == [first["id"]]
+    assert facts[0].text == "revenue is 220"
+
+
+def test_edit_to_a_unique_text_reports_no_merge(env, auth):
+    fact = _add_fact(env, auth, "revenue is 220")
+    status, _h, body = env.post_json(
+        f"/memory/{fact['id']}/edit", {"text": "revenue is 480"}, auth
+    )
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["mergedIntoExisting"] is False
+    assert payload["id"] == fact["id"]
+    assert payload["text"] == "revenue is 480"
+
+
+def test_edit_merge_notice_renders_on_a_form_post(env, auth):
+    _add_fact(env, auth, "revenue is 220")
+    second = _add_fact(env, auth, "meeting room booked")
+    body = "text=revenue+is+220".encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+        **auth,
+    }
+    status, headers_out, raw = env.request(
+        "POST", f"/memory/{second['id']}/edit", headers, body
+    )
+    page = raw.decode("utf-8")
+    assert status == 200
+    assert headers_out.get("Location") is None, "the merge renders, no redirect"
+    assert 'id="memory-notice"' in page
+    assert "merged" in page
+    assert len(_facts(env)) == 1
+
+
+def _link_entities(env, fact_id, names):
+    env.server.memory.resolve_and_link(fact_id, names)
+
+
+def test_memory_page_lists_entities_with_a_merge_form(env, auth):
+    first = _add_fact(env, auth, "Maya joined Acme")
+    second = _add_fact(env, auth, "Acme shipped the widget")
+    third = _add_fact(env, auth, "the offsite is planned")
+    _link_entities(env, first["id"], [("Maya Rahman", "person"), ("Acme", "org")])
+    _link_entities(env, second["id"], [("Acme", "org")])
+    _link_entities(env, third["id"], [("Offsite Club", "other")])
+    status, _h, body = env.request("GET", "/memory", auth)
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "Entities" in page
+    assert "/memory/entities/merge" in page
+    # Compact rows: canonical name, aliases, type and the fact count.
+    assert "Acme" in page
+    assert "2 facts" in page
+    assert "Maya Rahman" in page
+    assert "org" in page
+
+
+def test_entity_merge_route_unions_aliases_and_relinks_facts(env, auth):
+    first = _add_fact(env, auth, "the acme merger closed")
+    second = _add_fact(env, auth, "the bonus pool grew")
+    _link_entities(env, first["id"], [("Acme", "org")])
+    _link_entities(env, second["id"], [("Globex", "org")])
+    status, _h, body = env.post_json(
+        "/memory/entities/merge", {"survivor": 1, "removed": 2}, auth
+    )
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["survivor"] == 1
+    store = env.server.memory
+    summaries = store.entities()
+    assert len(summaries) == 1
+    assert summaries[0].id == 1
+    assert summaries[0].aliases == ("Globex",)
+    edges = store.conn.execute("SELECT fact_id, entity_id FROM edges").fetchall()
+    assert sorted(edges) == [(first["id"], 1), (second["id"], 1)]
+    row = next(e for e in audit_store.entries(env.server.audit_conn)
+               if e["action"] == "memory.merge")
+    assert row["target"] == "1"
+    assert "2" in row["detail"]
+
+
+def test_entity_merge_route_refuses_self_and_unknown(env, auth):
+    fact = _add_fact(env, auth, "Maya joined Acme")
+    _link_entities(env, fact["id"], [("Acme", "org")])
+    status, _h, body = env.post_json(
+        "/memory/entities/merge", {"survivor": 1, "removed": 1}, auth
+    )
+    assert status == 400
+    status, _h, body = env.post_json(
+        "/memory/entities/merge", {"survivor": 1, "removed": 99}, auth
+    )
+    assert status == 404
+    status, _h, body = env.post_json(
+        "/memory/entities/merge", {"survivor": "x", "removed": 2}, auth
+    )
+    assert status == 400
+    assert len(env.server.memory.entities()) == 1
+
+
+def test_get_memory_sweep_lists_candidates_with_reasons(env, auth):
+    _add_fact(env, auth, "I do not have any information about that.")
+    real = _add_fact(env, auth, "revenue is 220")
+    status, _h, body = env.request("GET", "/memory/sweep", auth)
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "/memory/sweep" in page
+    assert "knowledge-gap" in page
+    assert 'name="sweep_1"' in page, "the junk candidate gets a checkbox"
+    assert 'name="sweep_2"' not in page, "the real fact is not a candidate"
+    assert "revenue is 220" in page, "the page still lists the facts"
+
+
+def test_post_memory_sweep_deletes_candidates_and_their_orphans(env, auth):
+    junk = _add_fact(env, auth, "I do not have any information about that.")
+    real = _add_fact(env, auth, "revenue is 220")
+    store = env.server.memory
+    store.resolve_and_link(junk["id"], [("Nothing Inc", "org")])
+    store.resolve_and_link(real["id"], [("Acme", "org")])
+    store.conn.execute(
+        "INSERT INTO observations (scope_key, text, confidence, created_ts, updated_ts)"
+        " VALUES ('all', 'Doomed pattern.', 0.9, 100.0, 100.0)"
+    )
+    store.conn.execute(
+        "INSERT INTO observation_sources (observation_id, fact_id) VALUES (1, ?)",
+        (junk["id"],),
+    )
+    store.conn.commit()
+    status, _h, body = env.post_json("/memory/sweep", {"ids": [junk["id"]]}, auth)
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["deleted"] == 1
+    assert payload["removedObservationIds"] == [1]
+    assert payload["removedEntityIds"] == [1]
+    assert [f.id for f in _facts(env)] == [real["id"]]
+    assert store.conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+    row = next(e for e in audit_store.entries(env.server.audit_conn)
+               if e["action"] == "memory.sweep")
+    assert "revenue" not in row["detail"], "the audit never carries fact text"
+
+
+def test_post_memory_sweep_form_checkboxes_delete_the_checked_ones(env, auth):
+    junk_one = _add_fact(env, auth, "I do not have any information about that.")
+    junk_two = _add_fact(env, auth, "unknown")
+    real = _add_fact(env, auth, "revenue is 220")
+    body = f"sweep_{junk_one['id']}=on".encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+        **auth,
+    }
+    status, headers_out, _b = env.request("POST", "/memory/sweep", headers, body)
+    assert status == 303
+    assert headers_out["Location"] == "/memory"
+    texts = [f.id for f in _facts(env)]
+    assert junk_one["id"] not in texts
+    assert junk_two["id"] in texts
+    assert real["id"] in texts
+
+
+def test_post_memory_sweep_is_all_or_nothing(env, auth):
+    junk = _add_fact(env, auth, "I do not have any information about that.")
+    status, _h, _b = env.post_json("/memory/sweep", {"ids": [junk["id"], 999]}, auth)
+    assert status == 404
+    assert [f.id for f in _facts(env)] == [junk["id"]], "nothing was deleted"
+
+
+def test_post_memory_sweep_refuses_a_fact_that_is_not_junk(env, auth):
+    real = _add_fact(env, auth, "revenue is 220")
+    status, _h, _b = env.post_json("/memory/sweep", {"ids": [real["id"]]}, auth)
+    assert status == 400
+    assert [f.id for f in _facts(env)] == [real["id"]]
+
+
+def test_post_memory_sweep_without_ids_is_refused(env, auth):
+    status, _h, _b = env.post_json("/memory/sweep", {}, auth)
+    assert status == 400
+
+
+def test_sweep_and_merge_endpoints_require_a_session(env):
+    status, _h, _b = env.request("GET", "/memory/sweep", env.host_header())
+    assert status == 401
+    status, _h, _b = env.post_json("/memory/sweep", {"ids": [1]}, env.host_header())
+    assert status == 401
+    status, _h, _b = env.post_json(
+        "/memory/entities/merge", {"survivor": 1, "removed": 2}, env.host_header()
+    )
+    assert status == 401
+
+
 def test_delete_removes_the_fact_from_the_page(env, auth):
     fact = _add_fact(env, auth, "revenue is 220")
     status, _h, _b = env.post_json(f"/memory/{fact['id']}/delete", {}, auth)
@@ -171,6 +376,33 @@ def test_recall_preview_escapes_fact_text(env, auth):
     assert "&lt;script&gt;" in page
 
 
+def test_recall_preview_recalls_a_linked_fact_by_entity_name(env, auth):
+    # The hybrid ranker's graph leg (ticket #90): a query naming the
+    # entity recalls the fact even though it shares no keyword with it.
+    _add_fact(env, auth, "the board approved the budget")
+    conn = env.server.memory.conn
+    cursor = conn.execute(
+        "INSERT INTO entities (canonical_name, aliases_json, type, created_ts)"
+        " VALUES ('Acme', '[]', 'org', ?)",
+        (_facts(env)[0].created_ts,),
+    )
+    conn.execute(
+        "INSERT INTO edges (fact_id, entity_id) VALUES (?, ?)",
+        (_facts(env)[0].id, int(cursor.lastrowid)),
+    )
+    body = "query=acme".encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+        **auth,
+    }
+    status, _h, raw = env.request("POST", "/memory/recall", headers, body)
+    page = raw.decode("utf-8")
+    assert status == 200
+    assert "the board approved the budget" in page
+    assert "Recall preview" in page
+
+
 # -- the settings source rail --------------------------------------------
 
 
@@ -208,9 +440,12 @@ def test_assistant_prompt_without_facts_gains_no_block(env, auth):
 
 
 def test_assistant_prompt_facts_stay_bounded_to_five_facts_and_500_chars(env, auth):
+    # Ticket #92: write-time dedup reuses the row for identical text, so
+    # the four long facts carry a marker each and stay distinct; the
+    # bound is genuinely exercised over five facts.
     long_fact = "revenue " * 40  # 320 characters with its trailing space
-    for _ in range(4):
-        _add_fact(env, auth, long_fact)
+    for index in range(4):
+        _add_fact(env, auth, f"{long_fact}mark {index}")
     _add_fact(env, auth, "revenue is 220")
     _add_fact(env, auth, "revenue is checked every monday")
     status, _h, _b = env.post_json(

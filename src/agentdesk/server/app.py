@@ -21,6 +21,7 @@ import threading
 import time
 import webbrowser
 import zipfile
+from dataclasses import replace
 from io import BytesIO
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -51,6 +52,8 @@ from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import (
     KIND_MAIL_FOLLOW_UP,
+    KIND_MEMORY_DRAFT,
+    KIND_MEMORY_REFLECTION,
     KIND_UPDATE_CONSENT,
     STATUS_WAITING,
     UnknownCard,
@@ -84,9 +87,28 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
-from agentdesk.memory.core import UnknownFact
+from agentdesk.memory.core import UnknownEntity, UnknownFact
+from agentdesk.memory.crypto import MemoryEncryptedError
+from agentdesk.memory.extract import (
+    EndpointExtractor,
+    ExtractionFailed,
+    ExtractorUnavailable,
+    FACT_KINDS,
+    facts_to_retain,
+    occurrence_from_source,
+)
+from agentdesk.memory.reflect import (
+    EndpointReflector,
+    ReflectEmpty,
+    ReflectFailed,
+    ReflectorUnavailable,
+    accept_observations,
+    gather_facts,
+    parse_scope_date,
+    scope_key,
+)
 from agentdesk.memory.service import build_facts_block
-from agentdesk.memory.store import MemoryStore
+from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
@@ -113,10 +135,14 @@ from agentdesk.server.commitments import (
 )
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
-from agentdesk.server.memory_view import render_memory_page
+from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
 from agentdesk.server.plugins_view import render_plugins_page
 from agentdesk.server.peers_view import render_peers_page
-from agentdesk.server.research import render_assistant_page, render_research_widget
+from agentdesk.server.research import (
+    RETAIN_EXCERPT_MAX_CHARS,
+    render_assistant_page,
+    render_research_widget,
+)
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
 from agentdesk.server.wizard_view import (
     approval_summary,
@@ -461,6 +487,14 @@ def _flag(body: dict, *names: str) -> bool:
     return False
 
 
+def _scope_text(value) -> str:
+    """An optional reflect scope field (ticket #93): anything that is
+    not a string, or is blank once trimmed, reads as absent."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _memory_id_from_path(path: str, suffix: str) -> int | None:
     """The fact id in /memory/<id>/edit (or /delete), or None when the
     address names no fact."""
@@ -476,6 +510,14 @@ def _fact_json(fact) -> dict:
         "source": fact.source,
         "createdTs": fact.created_ts,
     }
+
+
+def _memory_entity_id(value) -> int | None:
+    """A body's entity id, or None when it is not one (ticket #92's
+    merge form posts ids)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 _PEER_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -580,6 +622,8 @@ class AgentDeskServer(ThreadingHTTPServer):
         outbox_dir=None,
         registry_root=None,
         peer_store: PeerStore | None = None,
+        extractor=None,
+        reflector=None,
         announce_port: int | None = None,
     ) -> None:
         self.sessions = sessions
@@ -604,6 +648,14 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.plugins = plugins
         self.wizard_store = wizard_store
         self.memory = memory_store
+        # The extractor port (ticket #91): None means the retain route
+        # builds an EndpointExtractor from the effective llm client per
+        # call; a test (or a future caller) injects its own.
+        self.extractor = extractor
+        # The reflector port (ticket #93): the same seam one port over.
+        # None means the reflect route builds an EndpointReflector from
+        # the effective llm client per call; a test injects its own.
+        self.reflector = reflector
         # The dashboard card arrangement (order, hidden, titles); None
         # when its store could not open, in which case reads resolve the
         # canonical default and saves refuse.
@@ -1007,6 +1059,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_activity_page()
         elif path == "/memory":
             self._send_memory_page()
+        elif path == "/memory/sweep":
+            self._memory_sweep_page()
+        elif path == "/memory/encrypt":
+            self._memory_encrypt_page()
         elif path == "/mail":
             self._send_mail_page()
         elif path == "/capabilities":
@@ -1255,6 +1311,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_delete(_memory_id_from_path(path, "/delete"))
         elif path == "/memory/recall":
             self._memory_recall()
+        elif path == "/memory/entities/merge":
+            self._memory_entities_merge()
+        elif path == "/memory/sweep":
+            self._memory_sweep()
+        elif path == "/memory/encrypt":
+            self._memory_encrypt()
+        elif path == "/memory/retain":
+            self._memory_retain()
+        elif path == "/memory/reflect":
+            self._memory_reflect()
         elif path.startswith("/capabilities/") and path.endswith("/retest"):
             self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
@@ -1408,11 +1474,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _facts_block(self, question: str) -> str:
         """The bounded recalled-facts block for the assistant prompt,
         ranked against the user's question. Recall only: this path never
-        creates a fact; the bounds live in memory/service."""
+        creates a fact; the bounds live in memory/service. A locked
+        memory store (ticket #94) contributes no block: the assistant
+        keeps answering, the bank is never read in plaintext."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return ""
-        return build_facts_block(memory.recall(question))
+        try:
+            return build_facts_block(memory.recall(question))
+        except MemoryEncryptedError:
+            return ""
 
     def _effective_llm(self) -> tuple:
         """The client this request uses, resolved per call: saved settings
@@ -2084,30 +2155,60 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                     inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
-    # -- memory: the page and its actions (ticket #42) --------------------
+    # -- memory: the page and its actions (tickets #42, #94) --------------
+
+    def _memory_available(self):
+        """The store check every memory route rides: None means the
+        response is already sent. A locked store (a marker without its
+        key, a wrong key, a key on a populated plaintext bank) refuses
+        with its specific plain-language cause, never silently reading
+        or writing plaintext."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return None
+        if memory.locked_cause is not None:
+            self._send_json(503, {"error": memory.locked_cause})
+            return None
+        return memory
 
     def _send_memory_page(
         self,
         recall: list | None = None,
         query: str = "",
+        encrypt: dict | None = None,
+        sweep: list | None = None,
+        notice: str | None = None,
     ) -> None:
-        """The memory page; with a recall preview when a query came in."""
+        """The memory page; with a recall preview when a query came in,
+        the encryption state alongside the facts, the entities with
+        their merge form (ticket #92), the junk-sweep preview when
+        asked, and the locked banner alone when the store is locked."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             self._send_json(503, {"error": "the memory store is not available"})
             return
-        page = render_memory_page(
-            memory.all(), agentdesk.__version__, recall=recall, query=query,
-            inbox_count=self._inbox_waiting_count(),
-        )
+        if memory.locked_cause is not None:
+            page = render_memory_page(
+                [], agentdesk.__version__, locked=memory.locked_cause,
+                inbox_count=self._inbox_waiting_count(),
+            )
+        else:
+            if encrypt is None:
+                encrypt = {"already": True} if memory.is_sealed else {"link": True}
+            page = render_memory_page(
+                memory.all(), agentdesk.__version__, recall=recall, query=query,
+                encrypt=encrypt, entities=memory.entities(), sweep=sweep,
+                notice=notice, observations=memory.observations(),
+                inbox_count=self._inbox_waiting_count(),
+            )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_add(self) -> None:
         """The page's one explicit creation path. The assistant and
         research paths may recall, never create."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         body = self._read_json_body() or {}
         text = body.get("text")
@@ -2121,9 +2222,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if fact_id is None:
             self._send_error_page(404, "Nothing here", "No fact lives at this address.")
             return
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         body = self._read_json_body() or {}
         text = body.get("text")
@@ -2131,19 +2231,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": 'expected {"text": "..."}'})
             return
         try:
-            fact = memory.edit(fact_id, text.strip())
+            result = memory.edit(fact_id, text.strip())
         except UnknownFact as exc:
             self._send_json(404, {"error": str(exc)})
             return
-        self._memory_response(_fact_json(fact))
+        # Ticket #92: an edit that landed on another fact's text merged
+        # into it; a form post renders the page with the plain notice,
+        # JSON carries the flag alongside the surviving fact.
+        if result.merged_into and self._is_form_submit():
+            self._send_memory_page(notice=EDIT_MERGE_NOTICE)
+            return
+        payload = _fact_json(result.fact)
+        payload["mergedIntoExisting"] = result.merged_into
+        self._memory_response(payload)
 
     def _memory_delete(self, fact_id: int | None) -> None:
         if fact_id is None:
             self._send_error_page(404, "Nothing here", "No fact lives at this address.")
             return
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._memory_available()
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         try:
             memory.delete(fact_id)
@@ -2152,12 +2259,145 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._memory_response({"deleted": fact_id})
 
-    def _memory_recall(self) -> None:
-        """The preview: render the page with the ranked answers, best
-        first, so the manager sees exactly what the assistant would ride."""
+    def _memory_sweep_page(self) -> None:
+        """The sweep's dry run (ticket #92): the memory page with the
+        candidates, each carrying its reason and a checkbox. A locked
+        store renders the banner, like the main page does."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_memory_page()
+            return
+        self._send_memory_page(sweep=memory.sweep_candidates())
+
+    def _memory_sweep(self) -> None:
+        """Delete the checked candidates through the donor's removeFacts
+        semantics (ticket #92): every id must be a current junk
+        candidate and must exist, or the whole call is refused before
+        anything is written. The audit row names counts, never fact
+        text."""
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        ids = self._sweep_ids_from_body(body)
+        if not ids:
+            self._memory_hygiene_error_response(
+                400, 'expected {"ids": [...]} or the preview checkboxes'
+            )
+            return
+        candidates = {c.fact.id: c.reason for c in memory.sweep_candidates()}
+        for fact_id in ids:
+            if fact_id in candidates:
+                continue
+            try:
+                memory.get(fact_id)
+            except UnknownFact:
+                self._memory_hygiene_error_response(404, f"no fact {fact_id}")
+                return
+            self._memory_hygiene_error_response(
+                400,
+                "That fact is not a junk candidate; delete it from the "
+                "fact list instead.",
+            )
+            return
+        try:
+            removed = memory.remove_facts(ids)
+        except UnknownFact as exc:
+            # A candidate vanished between the preview and this post.
+            self._memory_hygiene_error_response(404, str(exc))
+            return
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "memory.sweep",
+                target=f"{len(removed.fact_ids)} facts",
+                detail=(f"swept {len(removed.observation_ids)} orphaned"
+                        f" observations and {len(removed.entity_ids)} orphaned"
+                        " entities"),
+            )
+        self._memory_response({
+            "status": "ok",
+            "deleted": len(removed.fact_ids),
+            "removedFactIds": list(removed.fact_ids),
+            "removedObservationIds": list(removed.observation_ids),
+            "removedEntityIds": list(removed.entity_ids),
+        })
+
+    def _sweep_ids_from_body(self, body: dict) -> list[int]:
+        """The checked candidate ids: a JSON id list, or one checkbox
+        per candidate (the no-JS form's unique names). Anything that is
+        not a fact id is a refused call, never a partial delete."""
+        raw = body.get("ids")
+        if isinstance(raw, list):
+            ids: list[int] = []
+            for value in raw:
+                if isinstance(value, bool) or not isinstance(value, int):
+                    return []
+                ids.append(value)
+            return sorted(set(ids))
+        checked: set[int] = set()
+        for name, value in body.items():
+            if not name.startswith("sweep_") or not value:
+                continue
+            suffix = name[len("sweep_"):]
+            if not suffix.isdigit():
+                return []
+            checked.add(int(suffix))
+        return sorted(checked)
+
+    def _memory_entities_merge(self) -> None:
+        """The page's entity merge (ticket #92): union the aliases,
+        relink every fact, one entity remains. The audit row names ids,
+        never entity names."""
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        survivor = _memory_entity_id(body.get("survivor"))
+        removed = _memory_entity_id(body.get("removed"))
+        if survivor is None or removed is None:
+            self._memory_hygiene_error_response(
+                400, 'expected {"survivor": <id>, "removed": <id>}'
+            )
+            return
+        try:
+            merged = memory.merge_entities(survivor, removed)
+        except ValueError as exc:
+            self._memory_hygiene_error_response(400, str(exc))
+            return
+        except UnknownEntity as exc:
+            self._memory_hygiene_error_response(404, str(exc))
+            return
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "memory.merge",
+                target=str(survivor),
+                detail=f"merged entity {removed} into entity {survivor}",
+            )
+        self._memory_response({
+            "status": "ok",
+            "survivor": merged.id,
+            "survivorName": merged.canonical_name,
+            "aliases": list(merged.aliases),
+            "type": merged.type,
+            "merged": removed,
+        })
+
+    def _memory_hygiene_error_response(self, status: int, cause: str) -> None:
+        """A refused hygiene action: the error page for a form post, the
+        JSON cause for an API call."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Memory hygiene", cause)
+            return
+        self._send_json(status, {"error": cause})
+
+    def _memory_recall(self) -> None:
+        """The preview: render the page with the ranked answers, best
+        first, so the manager sees exactly what the assistant would ride."""
+        memory = self._memory_available()
+        if memory is None:
             return
         body = self._read_json_body() or {}
         query = body.get("query")
@@ -2167,12 +2407,335 @@ class DashboardHandler(BaseHTTPRequestHandler):
         query = query.strip()
         self._send_memory_page(recall=memory.recall(query), query=query)
 
+    def _memory_encrypt_page(self) -> None:
+        """The dry run: the memory page with the conversion form and the
+        per-table counts of what would be sealed. An already-encrypted
+        bank says so; a locked one renders the banner."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_memory_page()
+            return
+        if memory.is_sealed:
+            self._send_memory_page(encrypt={"already": True})
+            return
+        self._send_memory_page(encrypt={"counts": memory.plain_field_counts()})
+
+    def _memory_encrypt(self) -> None:
+        """The one-action conversion, confirm-gated (ticket #94).
+
+        The checkbox is the settings confirmation the spec asks for: no
+        confirm field, no conversion. The key file is ensured before the
+        transaction, the conversion is one transaction, and the audit
+        row names the field count, never a key byte or a fact text."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._memory_error_response(503, memory.locked_cause)
+            return
+        if memory.is_sealed:
+            self._memory_error_response(
+                409, "The memory database is already encrypted."
+            )
+            return
+        body = self._read_json_body() or {}
+        if not body.get("confirm"):
+            self._memory_error_response(
+                400,
+                "Tick the confirm checkbox: the conversion rewrites every "
+                "stored text and cannot be undone without the key.",
+            )
+            return
+        if memory.key_path is None:
+            self._memory_error_response(
+                503, "No key file location is configured for this memory store."
+            )
+            return
+        try:
+            result = memory.encrypt_all()
+        except MemoryEncryptedError as exc:
+            self._memory_error_response(409, str(exc))
+            return
+        except (OSError, ValueError) as exc:
+            self._memory_error_response(
+                503, f"The key file could not be written or read: {exc}"
+            )
+            return
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, "memory.encrypt",
+                target=f"{result['fields']} fields",
+                detail=("memory.sqlite3 encrypted at rest; the key stays"
+                        " in memory.key"),
+            )
+        self._memory_response({"status": "ok", "fields": result["fields"]})
+
+    def _memory_error_response(self, status: int, cause: str) -> None:
+        """A refused memory action: the error page for a form post, the
+        JSON cause for an API call."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Memory encryption", cause)
+            return
+        self._send_json(status, {"error": cause})
+
     def _memory_response(self, payload: dict, status: int = 200) -> None:
         """A no-JS form post lands back on the memory page; JSON gets JSON."""
         if self._is_form_submit():
             self._send_redirect("/memory")
             return
         self._send_json(status, payload)
+
+    # -- retain: the chat surface's save-to-memory action (ticket #91) ----
+
+    def _memory_retain(self) -> None:
+        """Turn a conversation excerpt into inbox cards, one per
+        surviving candidate fact, all sharing one source id.
+
+        The donor writes extracted facts directly; here nothing is
+        written until a card is accepted (spec decision 9), and both
+        extractor failure classes leave the bank untouched with a
+        plain-language error: JSON answers degraded like every LLM
+        turn, a form post gets the error page. The endpoint gate and
+        the llm.retain audit match every other model call. With no
+        extractor injected at construction, an EndpointExtractor is
+        built from the effective llm client per call.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        memory = self._memory_available()
+        if memory is None:
+            return
+        if server.inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        excerpt = body.get("excerpt")
+        if not isinstance(excerpt, str) or not excerpt.strip():
+            self._send_json(400, {"error": 'expected {"excerpt": "..."}: the conversation you want to save'})
+            return
+        excerpt = excerpt.strip()[:RETAIN_EXCERPT_MAX_CHARS]
+        if not self._source_allowed("endpoint_enabled"):
+            self._retain_error_response(
+                409,
+                "Company endpoint calls are turned off in settings, so "
+                "this surface is paused. Everything else keeps working.",
+            )
+            return
+        _llm, endpoint, model = self._effective_llm()
+        extractor = server.extractor
+        if extractor is None:
+            extractor = EndpointExtractor(_llm)
+        try:
+            candidates = extractor.extract(excerpt)
+        except (ExtractorUnavailable, ExtractionFailed) as exc:
+            self._model_audit("llm.retain", endpoint, model,
+                              self._port_bytes(extractor),
+                              status="error", detail=str(exc)[:200])
+            self._retain_error_response(502, str(exc))
+            return
+        self._model_audit("llm.retain", endpoint, model,
+                          self._port_bytes(extractor))
+        kept = [
+            replace(candidate, occurrence_ts=occurrence_from_source(excerpt, candidate.occurrence_ts))
+            for candidate in facts_to_retain(candidates)
+        ]
+        if not kept:
+            # Nothing survived the donor's filters: no source row, no
+            # cards, no writes at all.
+            self._retain_response({"status": "ok", "cards": [], "sourceId": None})
+            return
+        source_id = memory.add_source(excerpt)
+        cards = [self._memory_draft_card(candidate, source_id) for candidate in kept]
+        self._evaluate_inbox(server.inbox)
+        self._retain_response({
+            "status": "ok",
+            "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
+            "sourceId": source_id,
+        })
+
+    def _port_bytes(self, port) -> int:
+        """The bytes of the prompt that went out, when the port can say
+        (the built-in ones record it; an injected one may not)."""
+        return int(getattr(port, "last_request_bytes", 0) or 0)
+
+    def _model_audit(self, action: str, endpoint: str, model: str,
+                     request_bytes: int, status: str = "ok",
+                     detail: str = "") -> None:
+        """A model call's audit row (llm.retain, llm.reflect), the _ask
+        pattern's fields."""
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            audit_store.record(
+                self.server.audit_conn, action, target=endpoint,
+                status=status, model=model, request_bytes=request_bytes, detail=detail,
+            )
+
+    def _memory_draft_card(self, candidate, source_id: int):
+        """One approval card per candidate: the editable draft is the
+        fact text, the meta carries what acceptance writes."""
+        names = ", ".join(name for name, _type in candidate.entities)
+        mentioned = names if names else "nothing named"
+        kind_word = "Experience" if candidate.kind == "experience" else "World"
+        return self.server.inbox.add(  # type: ignore[attr-defined]
+            kind=KIND_MEMORY_DRAFT,
+            origin=("Extracted from a conversation you chose to save. "
+                    "Accepting writes this fact to memory; dismissing "
+                    "leaves nothing behind."),
+            title=f"{kind_word} fact: {mentioned}",
+            body=f"From the conversation you saved. Mentions {mentioned}.",
+            action_label="Save to memory",
+            draft=candidate.text,
+            meta={"memoryFact": {
+                "kind": candidate.kind,
+                "occurrence_ts": candidate.occurrence_ts,
+                "entities": [[name, entity_type] for name, entity_type in candidate.entities],
+                "source_id": source_id,
+            }},
+        )
+
+    def _retain_response(self, payload: dict) -> None:
+        """A form post from the chat surface lands in the inbox, where
+        the new cards wait; JSON gets JSON."""
+        if self._is_form_submit():
+            self._send_redirect("/inbox")
+            return
+        self._send_json(200, payload)
+
+    def _retain_error_response(self, status: int, cause: str) -> None:
+        """A failed retain says so in plain language and writes nothing:
+        the error page for a form post, the degraded turn shape for JSON."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Save to memory", cause)
+            return
+        self._send_json(200, {"status": "degraded", "cause": cause})
+
+    # -- reflect: the memory page's derive-observations action (ticket #93)
+
+    def _memory_reflect(self) -> None:
+        """Gather the bank's facts, ask the reflector for observations,
+        and stage one approval card per survivor. Nothing lands in the
+        memory bank here (spec decision 24): acceptance writes the
+        observation, with its citations, through the card's meta. The
+        donor writes its accepted observations directly; here both
+        reflector failure classes and every filtered-out draft leave
+        the bank untouched with a plain-language notice, and the
+        endpoint gate and the llm.reflect audit match every other
+        model call. With no reflector injected at construction, an
+        EndpointReflector is built from the effective llm client per
+        call, exactly like the retain route's extractor.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        memory = self._memory_available()
+        if memory is None:
+            return
+        if server.inbox is None:
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        topic = _scope_text(body.get("topic"))
+        entity = _scope_text(body.get("entity"))
+        try:
+            since = parse_scope_date(body.get("since"))
+            until = parse_scope_date(body.get("until"))
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        if not self._source_allowed("endpoint_enabled"):
+            self._reflect_error_response(
+                409,
+                "Company endpoint calls are turned off in settings, so "
+                "this surface is paused. Everything else keeps working.",
+            )
+            return
+        query = " ".join(part for part in (topic, entity) if part)
+        try:
+            gathered = gather_facts(
+                query, memory.recall(query), memory.all(),
+                since=since, until=until,
+            )
+        except ReflectEmpty as exc:
+            # Refused before any model call, so nothing to audit.
+            self._reflect_error_response(502, str(exc))
+            return
+        _llm, endpoint, model = self._effective_llm()
+        reflector = server.reflector
+        if reflector is None:
+            reflector = EndpointReflector(_llm)
+        try:
+            drafts = reflector.reflect(topic or entity, gathered)
+        except (ReflectFailed, ReflectorUnavailable) as exc:
+            self._model_audit(
+                "llm.reflect", endpoint, model, self._port_bytes(reflector),
+                status="error", detail=str(exc)[:200],
+            )
+            self._reflect_error_response(502, str(exc))
+            return
+        self._model_audit(
+            "llm.reflect", endpoint, model, self._port_bytes(reflector)
+        )
+        try:
+            survivors = accept_observations(
+                list(drafts), {fact.id for fact in gathered},
+                single_entity=bool(entity),
+            )
+        except ReflectFailed as exc:
+            # The call itself succeeded and is already audited; the
+            # model's answers just did not survive the donor's filters.
+            self._reflect_error_response(502, str(exc))
+            return
+        scope = scope_key(entity=entity, topic=topic, since=since, until=until)
+        gathered_by_id = {fact.id: fact for fact in gathered}
+        subject = topic or entity
+        title = f"Observation: {subject}" if subject else "Observation"
+        cards = [
+            self._reflection_card(draft, title, scope, gathered_by_id)
+            for draft in survivors
+        ]
+        self._evaluate_inbox(server.inbox)
+        self._retain_response({
+            "status": "ok",
+            "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
+            "rejected": len(drafts) - len(survivors),
+        })
+
+    def _reflection_card(self, draft, title: str, scope: str,
+                         gathered_by_id: dict):
+        """One approval card per surviving observation: the editable
+        draft is the observation text, the body names the cited facts,
+        and the meta carries what acceptance writes (the scope the run
+        ran in, the confidence to store, the citations)."""
+        cited = [
+            fact for fact in
+            (gathered_by_id.get(fact_id) for fact_id in draft.fact_ids)
+            if fact is not None
+        ]
+        listing = " | ".join(plain_preview(fact.text) for fact in cited)
+        return self.server.inbox.add(  # type: ignore[attr-defined]
+            kind=KIND_MEMORY_REFLECTION,
+            origin=("Derived from the facts on your memory page. "
+                    "Accepting writes this observation with its "
+                    "citations; dismissing leaves nothing behind."),
+            title=title,
+            body=f"Derived from {len(cited)} gathered facts: {listing}",
+            action_label="Save observation",
+            draft=draft.text,
+            meta={"memoryObservation": {
+                "scope_key": scope,
+                "confidence": draft.confidence,
+                "source_fact_ids": list(draft.fact_ids),
+            }},
+        )
+
+    def _reflect_error_response(self, status: int, cause: str) -> None:
+        """A failed reflect says so in plain language and writes
+        nothing: the error page for a form post, the degraded turn
+        shape for JSON, like retain's."""
+        if self._is_form_submit():
+            self._send_error_page(status, "Reflect", cause)
+            return
+        self._send_json(200, {"status": "degraded", "cause": cause})
 
     # -- capabilities: the cached page and the one probing path (ticket #43)
 
@@ -2260,17 +2823,121 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, cached.to_json())
 
     def _on_fact_carried(self, card) -> None:
-        """An accepted card may carry a fact in its meta ("fact": "...").
-        The only non-page creation path. The fact's source names the
-        card, and the audit row names that source, never the text."""
+        """An accepted card may carry a fact. Two shapes: the memory
+        draft cards' structured meta ("memoryFact": the edited draft is
+        the text, with its kind, gated occurrence, source and entities,
+        ticket #91), and the legacy string meta ("fact": "..."), which
+        behaves exactly as before. The only non-page creation path. The
+        fact's source names the card, and the audit row names that
+        source, never the text."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
+            return
+        memory_fact = card.meta.get("memoryFact")
+        if isinstance(memory_fact, dict):
+            self._carry_memory_fact(card, memory_fact)
+            return
+        memory_observation = card.meta.get("memoryObservation")
+        if isinstance(memory_observation, dict):
+            self._carry_memory_observation(card, memory_observation)
             return
         text = card.meta.get("fact")
         if not isinstance(text, str) or not text.strip():
             return
         fact = memory.add(text.strip(), source=f"inbox card {card.id}")
         self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+
+    def _carry_memory_fact(self, card, memory_fact: dict) -> None:
+        """Write the accepted memory draft: one fact from the edited
+        draft text with its kind, occurrence and source, then the
+        mention edges. Anything malformed in the meta (it can arrive
+        through the generic cards route too) drops that piece rather
+        than failing the acceptance."""
+        text = card.draft.strip()
+        if not text:
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        kind = memory_fact.get("kind")
+        if kind not in FACT_KINDS:
+            return
+        occurrence_ts = memory_fact.get("occurrence_ts")
+        if occurrence_ts is not None and not isinstance(occurrence_ts, (int, float)):
+            occurrence_ts = None
+        source_id = memory_fact.get("source_id")
+        if not isinstance(source_id, int) or isinstance(source_id, bool):
+            source_id = None
+        entities = []
+        for pair in memory_fact.get("entities") or []:
+            if (
+                isinstance(pair, (list, tuple))
+                and len(pair) == 2
+                and isinstance(pair[0], str)
+                and isinstance(pair[1], str)
+            ):
+                entities.append((pair[0], pair[1]))
+        fact = memory.add(
+            text,
+            source=f"inbox card {card.id}",
+            kind=kind,
+            occurrence_ts=occurrence_ts,
+            source_id=source_id,
+        )
+        try:
+            memory.resolve_and_link(fact.id, entities)
+        except ValueError:
+            LOG.warning("memory card %s carried an invalid entity type; the fact stays unlinked", card.id)
+        self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+
+    def _carry_memory_observation(self, card, observation_meta: dict) -> None:
+        """Write the accepted reflection (ticket #93): one observation
+        from the edited draft text with its confidence, its citations
+        and the scope the run ran in. The store prunes the scope rows
+        the run did not keep, using the card's creation moment as the
+        run reference (see MemoryStore.save_observation), so a re-
+        reflect's acceptance updates the matching observation and
+        drops the unkept ones exactly like the donor. Anything
+        malformed in the meta (it can arrive through the generic cards
+        route too) drops the piece rather than failing the
+        acceptance, like the fact shape beside it. Dismissal never
+        reaches here and writes nothing."""
+        text = card.draft.strip()
+        if not text:
+            return
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return
+        scope = observation_meta.get("scope_key")
+        confidence = observation_meta.get("confidence")
+        fact_ids = [
+            value
+            for value in observation_meta.get("source_fact_ids") or []
+            if isinstance(value, int) and not isinstance(value, bool)
+        ]
+        if (
+            not isinstance(scope, str)
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+        ):
+            LOG.warning(
+                "memory card %s carried an unusable observation meta;"
+                " nothing was written", card.id,
+            )
+            return
+        try:
+            saved = memory.save_observation(
+                scope, text, float(confidence), fact_ids,
+                now=memory.clock(), run_ts=card.created_ts,
+            )
+        except ValueError as exc:
+            LOG.warning(
+                "memory card %s carried an observation that cannot be"
+                " stored (%s); nothing was written", card.id, exc,
+            )
+            return
+        self._audit(
+            "memory.observation", target=str(saved.observation.id),
+            detail=f"inbox card {card.id}",
+        )
 
     # -- mail: the page, the watcher controls, the reply drafts -----------
 
@@ -3940,6 +4607,8 @@ def create_server(
     outbox_dir=None,
     registry_root=None,
     peer_store: PeerStore | None = None,
+    extractor=None,
+    reflector=None,
     announce_port: int | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
@@ -4040,6 +4709,8 @@ def create_server(
             outbox_dir=outbox_dir,
             registry_root=registry_root,
             peer_store=peer_store,
+            extractor=extractor,
+            reflector=reflector,
             announce_port=announce_port,
         )
 
@@ -4157,12 +4828,23 @@ def _default_wizard_store() -> WizardStore | None:
 
 def _default_memory_store() -> MemoryStore | None:
     """Facts over the persistent store (they outlive a restart by
-    design), or None when it cannot open."""
+    design), or None when it cannot open. The key file rides along when
+    it exists: a marker without it locks the store, and the memory page
+    says exactly that (ticket #94). A corrupt key file is not a crash:
+    the log carries the detail and the store locks with the cause that
+    names the path."""
     try:
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(data_dir / "memory.sqlite3", check_same_thread=False)
-        return MemoryStore(conn, time.time)
+        key_path = key_file_path(data_dir)
+        key = None
+        if key_path.exists():
+            try:
+                key = read_key_file(key_path)
+            except ValueError:
+                LOG.exception("memory.key exists but is not a valid key")
+        return MemoryStore(conn, time.time, key=key, key_path=key_path)
     except (OSError, sqlite3.Error):
         LOG.exception("memory store unavailable")
         return None

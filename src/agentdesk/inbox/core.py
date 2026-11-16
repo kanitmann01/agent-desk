@@ -16,6 +16,8 @@ KIND_BRIEF = "brief"
 KIND_FEATURE_REQUEST = "feature_request"
 KIND_MAIL_DIGEST = "mail_digest"      # threads active in the last 24 hours, headers only
 KIND_MAIL_FOLLOW_UP = "mail_follow_up"  # a thread with no action from the user past the threshold
+KIND_MEMORY_DRAFT = "memory_draft"    # one candidate fact from a retained conversation
+KIND_MEMORY_REFLECTION = "memory_reflection"  # one derived observation from a reflect run
 CARD_KINDS = (
     KIND_SUGGESTION,
     KIND_SKILL_PROPOSAL,
@@ -24,6 +26,8 @@ CARD_KINDS = (
     KIND_FEATURE_REQUEST,
     KIND_MAIL_DIGEST,
     KIND_MAIL_FOLLOW_UP,
+    KIND_MEMORY_DRAFT,
+    KIND_MEMORY_REFLECTION,
 )
 
 STATUS_WAITING = "waiting"

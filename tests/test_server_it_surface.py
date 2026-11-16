@@ -121,9 +121,11 @@ def test_touches_page_is_generated_from_the_vocabulary(env, auth):
     assert "Processes started:" in page and "none" in page
     assert "Persistence:" in page and "No Run key" in page
     assert "delete the folder" in page
-    # The claim matches THIRD-PARTY-LICENSES.md: the Python runtime is
-    # clean, the bundle carries the documented, licensed set.
-    assert "Python runtime has no third-party dependencies" in page
+    # The claim matches THIRD-PARTY-LICENSES.md: the Python runtime
+    # carries exactly one dependency (ticket #94), the bundle carries
+    # the documented, licensed set.
+    assert "cryptography" in page
+    assert "Apache-2.0 OR BSD-3-Clause" in page
     assert "No third-party components" not in page
 
 
@@ -138,8 +140,10 @@ def test_license_manifest_gate():
 def test_manifest_file_exists_and_states_the_allowlist():
     manifest = (Path(__file__).resolve().parents[1] / "THIRD-PARTY-LICENSES.md").read_text(encoding="utf-8")
     # The claim is split where the truth is: the Python runtime carries
-    # nothing third-party, the SPA bundle carries a documented set.
-    assert "Python runtime has no third-party" in manifest
+    # one dependency (cryptography, ticket #94), the SPA bundle carries
+    # a documented set.
+    assert "cryptography" in manifest
+    assert "Apache-2.0 OR BSD-3-Clause" in manifest
     assert "dashboard SPA bundle does ship third-party work" in manifest
     assert "no third-party components" not in manifest
     # The bundle ships React and the warm-paper system fonts (the

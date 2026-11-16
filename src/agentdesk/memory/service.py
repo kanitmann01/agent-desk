@@ -11,6 +11,12 @@ and recorded here: only the overlap fraction is kept, because the vector
 term adds ranking noise no fact collection of this size needs, and the
 score stays explainable as "how much of the query the fact answers".
 
+Since ticket #90 the store's recall ranks through memory/hybrid.py
+(donor hybrid recall: entity graph, RRF fusion, recency, time windows);
+this module's rank remains exported and tested as the fallback scorer
+and migration baseline, and the bounded block below still rides on
+whatever ranking the store returns.
+
 Determinism is explicit everywhere: rank sorts by score descending, then
 by created_ts ascending, then by id ascending, so the same facts and the
 same query always produce the same order (Python's sort is stable, and

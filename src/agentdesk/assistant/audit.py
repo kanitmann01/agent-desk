@@ -64,6 +64,18 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # The memory vocabulary (ticket #42): the one non-page creation path.
     # The row names the fact's source, never the fact's text.
     ("memory.fact", "decision", "An accepted inbox card carried a fact, and it was saved to the memory store. The row names where the fact came from, never the fact itself."),
+    ("llm.retain", "endpoint", "A conversation excerpt you chose to save was sent to the company LLM endpoint to be turned into candidate facts; the excerpt is all the endpoint sees, and the candidates wait as inbox cards until you accept them."),
+    # The encryption action (ticket #94): a local rewrite of the memory
+    # database, no network anywhere in it. The row names the field count,
+    # never a stored text, and never any part of the key.
+    ("memory.encrypt", "decision", "You chose to encrypt the memory database: every stored fact, source, entity and observation text was rewritten as AES-256-GCM ciphertext under the local memory.key file. The row names how many fields were sealed, never their text."),
+    # The rest of the memory-bank port's actions (#92, #93): local
+    # decisions and one more endpoint call; counts and ids only, never
+    # stored text.
+    ("memory.sweep", "decision", "You ran the junk sweep after its preview: the listed knowledge-gap facts were deleted together with their orphaned citations, observations and entities. The row counts what went, never what it said."),
+    ("memory.merge", "decision", "You merged two duplicate entities on the memory page: their aliases were unioned and every fact mention relinked to the survivor. The row names the two ids, never a name."),
+    ("llm.reflect", "endpoint", "Facts you already accepted were sent to the company LLM endpoint to draft observations; only those facts and the topic you typed reach the endpoint, and the drafts wait as inbox cards until you accept them."),
+    ("memory.observation", "decision", "An accepted card carried an observation: it was saved to the memory store with its citations. The row counts the citations, never their text."),
     ("plugin.install", "plugin", "A plugin zip you chose, or a registry release you picked, is validated and installed under the app's own data folder, in pilot mode."),
     ("plugin.update", "plugin", "A plugin update is validated; identical or narrower permissions apply, wider ones hold for your OK."),
     ("plugin.consent", "plugin", "A held plugin update is applied after you approved its added permissions."),
