@@ -41,6 +41,27 @@ STATE_UNREADABLE = "unreadable"  # file exists but is broken
 
 FIRST_DETECTED_FLAG = "calendar_first_detected"
 
+# The day view is a render payload, so every list it carries is bounded:
+# a card shows a day, a fortnight and a week of load, not the whole file.
+MAX_TODAY_ROWS = 20
+MAX_UPCOMING = 10
+WEEK_DAYS = 14
+WORK_WEEK_DAYS = 7
+MAX_PREP_ITEMS = 6
+
+
+def _event_title(event) -> str:
+    """A real event with an empty subject is a busy slot."""
+    return str(event.subject or "Busy")
+
+
+def _event_meta(event) -> str:
+    """Attendees when the file names a count, otherwise the location."""
+    if event.attendees:
+        plural = "s" if event.attendees != 1 else ""
+        return f"{event.attendees} attendee{plural}"
+    return str(event.location or "")
+
 
 @dataclass
 class Adapters:
@@ -266,16 +287,71 @@ class CalendarBridge:
         """Today's calendar facts for surfaces that must not spend a
         model call: the same read as status() (state, cause, the key
         event, the file's own generatedAt) minus the breakdown, plus the
-        count of today's events. Plugin bindings read this, so no plugin
-        card can ever trigger a breakdown request; the commitments card
-        keeps status(), breakdown and checkboxes included."""
+        day's rows, the next fortnight, the week's load and a prep
+        checklist for the next event. Plugin bindings read this, so no
+        plugin card can ever trigger a breakdown request; the
+        commitments card keeps status(), breakdown and checkboxes
+        included."""
         with self._lock:
             now_dt = _now_from_clock(self.adapters.clock)
             view = self._status_locked(breakdown=False)
             for key in ("configured", "path", "firstDetected",
                         "breakdown", "checks"):
                 view.pop(key, None)
-            view["eventsToday"] = len(self._todays_locked(now_dt))
+            events = (list(self._document.events)
+                      if self._document is not None else [])
+            today = sorted((event for event in events
+                            if event.start.date() == now_dt.date()),
+                           key=lambda event: event.start)
+            view["eventsToday"] = len(today)
+            view["todayRows"] = [
+                {
+                    "primary": _event_title(event),
+                    "secondary": event.start.strftime("%H:%M"),
+                    "meta": str(event.location or ""),
+                }
+                for event in today[:MAX_TODAY_ROWS]
+            ]
+            horizon = now_dt + timedelta(days=WEEK_DAYS)
+            upcoming = sorted(
+                (event for event in events
+                 if event.end >= now_dt and event.start < horizon),
+                key=lambda event: event.start,
+            )[:MAX_UPCOMING]
+            view["upcoming"] = [
+                {
+                    "time": event.start.isoformat(),
+                    "title": _event_title(event),
+                    "meta": _event_meta(event),
+                }
+                for event in upcoming
+            ]
+            week_points = []
+            for offset in range(WEEK_DAYS):
+                day = (now_dt + timedelta(days=offset)).date()
+                week_points.append(sum(
+                    1 for event in events if event.start.date() == day))
+            view["weekPoints"] = week_points
+            week_end = (now_dt + timedelta(days=WORK_WEEK_DAYS)).date()
+            seconds = 0.0
+            for event in events:
+                if now_dt.date() <= event.start.date() < week_end:
+                    seconds += max(
+                        (event.end - event.start).total_seconds(), 0.0)
+            view["weekHours"] = round(seconds / 3600.0, 1)
+            nxt = next((event for event in sorted(events,
+                                                  key=lambda event: event.start)
+                        if event.start >= now_dt), None)
+            names = ([str(name) for name in nxt.attendee_names
+                      if str(name).strip()] if nxt is not None else [])
+            view["items"] = [
+                {
+                    "text": f"Confirm with {name}",
+                    "done": False,
+                    "due": nxt.start.isoformat(),
+                }
+                for name in names[:MAX_PREP_ITEMS]
+            ]
             return view
 
     def _todays_locked(self, now_dt: datetime) -> list:

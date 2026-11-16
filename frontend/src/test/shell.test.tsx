@@ -60,10 +60,11 @@ describe('the rail', () => {
     expect(nav).toHaveTextContent('Inbox');
     expect(nav).toHaveTextContent('Assistant');
     expect(nav).toHaveTextContent('Settings');
-    // Plugins is a real link to the plugins page now.
-    expect(screen.getByText('Plugins').closest('a')).toHaveAttribute(
+    // The marketplace replaced the legacy Plugins tab: it is one SPA
+    // surface with a deep-linkable route, not a server page.
+    expect(screen.getByText('Marketplace').closest('a')).toHaveAttribute(
       'href',
-      '/plugins',
+      '/marketplace',
     );
     // So is Peers (ticket #67): the peer-sharing page.
     expect(screen.getByText('Peers').closest('a')).toHaveAttribute(

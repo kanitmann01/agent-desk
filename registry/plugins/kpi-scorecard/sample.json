@@ -1,0 +1,40 @@
+{
+  "bindings": {
+    "rows": [
+      {
+        "primary": "Net revenue",
+        "secondary": "742k of 1.0M",
+        "meta": "on track"
+      },
+      {
+        "primary": "Gross margin",
+        "secondary": "61% of 65%",
+        "meta": "off track"
+      },
+      {
+        "primary": "Pipeline coverage",
+        "secondary": "3.1x of 3.0x",
+        "meta": "on track"
+      },
+      {
+        "primary": "Net retention",
+        "secondary": "104% of 110%",
+        "meta": "off track"
+      },
+      {
+        "primary": "CAC payback",
+        "secondary": "14 mo of 12 mo",
+        "meta": "off track"
+      },
+      {
+        "primary": "Win rate",
+        "secondary": "27% of 25%",
+        "meta": "on track"
+      }
+    ],
+    "status": "3 of 6 metrics off target",
+    "tone": "attention"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T07:00:00"
+}

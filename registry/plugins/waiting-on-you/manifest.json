@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "id": "waiting-on-you",
+  "name": "Waiting on you",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "communication",
+  "tags": [
+    "mail",
+    "threads",
+    "follow-up"
+  ],
+  "icon": "mail",
+  "summary": "Which threads did I leave hanging?",
+  "description": "Flags threads whose last message is inbound and older than the waiting threshold, so the card shows the follow-ups you owe rather than the mail you already handled. Thread state and ages come from the metadata bridge, never from message bodies. Reads message metadata only: counts, senders, ages and thread state. It never opens a message body, never reads attachments, and never sends mail.",
+  "highlights": [
+    "Threads whose last message is inbound and unanswered",
+    "Each thread with the age of that last inbound message",
+    "A 24-hour message delta so the thread count has context"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:waiting-on-you",
+    "onSchedule:0 8 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "waiting-on-you",
+        "size": "2x2",
+        "dataSource": {
+          "type": "mail-digest"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

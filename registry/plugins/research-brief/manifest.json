@@ -1,28 +1,63 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "research-brief",
   "name": "Research Brief",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "agent-desk",
   "class": "declarative",
-  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
   "license": "MIT",
+  "category": "research",
+  "tags": [
+    "research",
+    "brief",
+    "sources"
+  ],
+  "icon": "book",
+  "summary": "What did the last research question answer, and from how many sources?",
+  "description": "Reads the latest stored research answer and shows its summary, the number of sources behind it, and when it was answered. A pure read of the local research store: no endpoint call, no model call, and no network.",
+  "highlights": [
+    "The latest stored answer in one line",
+    "Source count and the time it was answered",
+    "Reads the local research store only; never calls a model"
+  ],
   "permissions": {
-    "filesystem": { "read": [], "write": [] },
-    "network": { "allow": [] },
-    "llm": { "allow": false },
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
     "shell": "none"
   },
-  "activationEvents": ["onWidget:research-brief", "onSchedule:0 * * * *"],
+  "activationEvents": [
+    "onWidget:research-brief",
+    "onSchedule:0 * * * *"
+  ],
   "contributes": {
     "widgets": [
       {
         "id": "research-brief",
         "size": "2x1",
-        "dataSource": { "type": "research-brief" },
-        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+        "dataSource": {
+          "type": "research-brief"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
       }
     ],
-    "skills": ["skills/research-recap/SKILL.md"]
-  }
+    "skills": [
+      "skills/research-recap/SKILL.md"
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
 }

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "id": "weekly-review",
+  "name": "Weekly Review",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "command",
+  "tags": [
+    "weekly",
+    "review",
+    "aggregate"
+  ],
+  "icon": "clock",
+  "summary": "Weekly command card that aggregates sales, promises, week load and plugin health into one review.",
+  "description": "Weekly Review is a command card for the end of the week. It declares four dependencies and reads them through the host aggregate source with the count operation, because the host cannot merge four unlike cards into one value. Count reports how many members supplied a numeric value and the list holds one row per contributor. A missing dependency is a named missing-dependency state, and a member that is installed but blank fails the whole card with blank-dependency; the card never fills the gap with an invented number. All four members must be installed and readable before the card shows anything. The shipped sample is a fixture that fills every declared slot; the README states exactly which slots the live host cannot fill.",
+  "highlights": [
+    "Names the exact missing dependency instead of showing an empty week.",
+    "Counts numeric contributors only; no invented totals across unlike cards.",
+    "Requires sales-delta-widget, follow-up-watch, week-load and plugin-health."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:weekly-review",
+    "onSchedule:0 16 * * 5"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "weekly-review",
+        "size": "2x2",
+        "dataSource": {
+          "type": "aggregate",
+          "over": [
+            "sales-delta-widget",
+            "follow-up-watch",
+            "week-load",
+            "plugin-health"
+          ],
+          "aggregate": "count"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "requires": [
+    "sales-delta-widget",
+    "follow-up-watch",
+    "week-load",
+    "plugin-health"
+  ],
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

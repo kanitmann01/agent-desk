@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 
 interface RailProps {
   inboxWaiting: number;
+  active?: string;
 }
 
 const RAIL_KEY = 'agentdesk.railCollapsed';
@@ -109,7 +110,7 @@ const ICON_PEERS = (
   </svg>
 );
 
-export default function Rail({ inboxWaiting }: RailProps) {
+export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   const [collapsed, setCollapsed] = useState(storedCollapsed);
   // The accessible name survives collapse: the visible label hides with
@@ -148,14 +149,14 @@ export default function Rail({ inboxWaiting }: RailProps) {
         </span>
         <span className="brand-name">Agent Desk</span>
       </div>
-      <a href="/" aria-current="page" aria-label="Dashboard">{ICON_DASHBOARD}<span className="rail-label">Dashboard</span></a>
+      <a href="/" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard">{ICON_DASHBOARD}<span className="rail-label">Dashboard</span></a>
       <a href="/inbox" aria-label={inboxName}>{ICON_INBOX}<span className="rail-label">Inbox</span>{badge}</a>
       <a href="/assistant" aria-label="Assistant">{ICON_ASSISTANT}<span className="rail-label">Assistant</span></a>
       <a href="/activity" aria-label="Activity">{ICON_ACTIVITY}<span className="rail-label">Activity</span></a>
       <a href="/memory" aria-label="Memory">{ICON_MEMORY}<span className="rail-label">Memory</span></a>
       <a href="/mail" aria-label="Mail">{ICON_MAIL}<span className="rail-label">Mail</span></a>
       <a href="/capabilities" aria-label="Capabilities">{ICON_CAPABILITIES}<span className="rail-label">Capabilities</span></a>
-      <a href="/plugins" aria-label="Plugins">{ICON_PLUGINS}<span className="rail-label">Plugins</span></a>
+      <a href="/marketplace" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Marketplace">{ICON_PLUGINS}<span className="rail-label">Marketplace</span></a>
       <a href="/peers" aria-label="Peers">{ICON_PEERS}<span className="rail-label">Peers</span></a>
       <a href="/settings" aria-label="Settings">{ICON_SETTINGS}<span className="rail-label">Settings</span></a>
       <button

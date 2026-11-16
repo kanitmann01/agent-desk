@@ -1,28 +1,63 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "outlook-digest",
   "name": "Outlook Digest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "agent-desk",
   "class": "declarative",
-  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
   "license": "MIT",
+  "category": "communication",
+  "tags": [
+    "mail",
+    "digest",
+    "senders"
+  ],
+  "icon": "mail",
+  "summary": "How much mail, and from whom?",
+  "description": "Reads the last 24 hours of message headers from the mail metadata bridge: how many messages arrived, how many threads saw activity, and which senders wrote most. One metric, one sender list and one scope line answer the question without opening anything. Reads message metadata only: counts, senders, ages and thread state. It never opens a message body, never reads attachments, and never sends mail.",
+  "highlights": [
+    "Messages and threads in the last 24 hours, from headers only",
+    "The three busiest senders in that window",
+    "States the window and that message bodies are never read"
+  ],
   "permissions": {
-    "filesystem": { "read": [], "write": [] },
-    "network": { "allow": [] },
-    "llm": { "allow": false },
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
     "shell": "none"
   },
-  "activationEvents": ["onWidget:outlook-digest", "onSchedule:0 * * * *"],
+  "activationEvents": [
+    "onWidget:outlook-digest",
+    "onSchedule:0 * * * *"
+  ],
   "contributes": {
     "widgets": [
       {
         "id": "outlook-digest",
         "size": "2x1",
-        "dataSource": { "type": "mail-digest" },
-        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+        "dataSource": {
+          "type": "mail-digest"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
       }
     ],
-    "skills": ["skills/mail-overview/SKILL.md"]
-  }
+    "skills": [
+      "skills/mail-overview/SKILL.md"
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
 }

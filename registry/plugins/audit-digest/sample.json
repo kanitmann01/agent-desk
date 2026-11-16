@@ -1,0 +1,40 @@
+{
+  "bindings": {
+    "value": 148,
+    "auditRows": [
+      [
+        "Mon 09:12",
+        "File read",
+        "excel-report",
+        "allowed"
+      ],
+      [
+        "Mon 09:12",
+        "File read",
+        "outlook-digest",
+        "allowed"
+      ],
+      [
+        "Tue 11:40",
+        "Network request",
+        "competitor-watch",
+        "denied"
+      ],
+      [
+        "Wed 16:05",
+        "Shell command",
+        "board-pack-export",
+        "denied"
+      ],
+      [
+        "Thu 08:30",
+        "Plugin install",
+        "plugin-health",
+        "allowed"
+      ]
+    ],
+    "windowNote": "Mon 00:00 to now, 5 of 148 events shown"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

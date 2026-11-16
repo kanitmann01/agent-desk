@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 2,
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "finance",
+  "minHost": ">=0.1.0",
+  "id": "kpi-scorecard",
+  "name": "KPI Scorecard",
+  "version": "0.2.0",
+  "tags": [
+    "kpis",
+    "targets",
+    "scorecard"
+  ],
+  "icon": "checklist",
+  "summary": "Which KPIs are off target this month?",
+  "description": "KPI Scorecard reads ${workspace}/finance/kpi*.xlsx, matches each Metric's Actual against its target, and lists the scorecard rows with an on-track or off-track marker plus an overall status. Missing workbooks name the glob and columns the card needs.",
+  "highlights": [
+    "One row per KPI with actual against target.",
+    "Off-track marker per row and an overall status tone.",
+    "Reads ${workspace}/finance/kpi*.xlsx only; no network."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/finance/kpi*.xlsx"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:kpi-scorecard",
+    "onSchedule:0 7 * * 1"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "kpi-scorecard",
+        "size": "2x2",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/finance/kpi*.xlsx",
+          "keyColumn": "Metric",
+          "valueColumn": "Actual",
+          "window": "30d"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

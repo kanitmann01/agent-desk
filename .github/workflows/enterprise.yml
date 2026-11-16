@@ -1,0 +1,184 @@
+name: enterprise
+
+# Supply-chain, frontend, and packaging gates for the enterprise
+# distribution. See docs/ops/distribution.md and docs/licensing.md.
+
+on:
+  push:
+    branches: [main, feat/plugin-marketplace]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enterprise-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    name: Generate CycloneDX 1.6 SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Pin reproducible timestamp
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: Generate SBOM
+        run: python scripts/sbom.py
+      - name: Check deterministic output
+        run: |
+          cp build/sbom.cdx.json build/sbom.first.json
+          python scripts/sbom.py
+          cmp build/sbom.first.json build/sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: build/sbom.cdx.json
+          if-no-files-found: error
+
+  license-gate:
+    name: License gate
+    needs: sbom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: build
+      - name: Gate every component
+        run: python scripts/license_gate.py build/sbom.cdx.json --report build/license-report.txt
+      - name: Check generated third-party notices are current
+        run: python scripts/third_party_notices.py --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: license-report
+          path: build/license-report.txt
+          if-no-files-found: warn
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build dashboard
+        working-directory: frontend
+        run: npm run build
+      - name: Committed dashboard bundle must match source
+        run: git diff --exit-code -- src/agentdesk/server/static/spa
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: npm test
+
+  python-tests:
+    name: Python tests (packaging subset)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: Reject vendored Commons Clause or react-bits source
+        # tokens.test.ts is excluded because it is the negative regression
+        # guard: it asserts the vendored drawer and src/vendor are gone.
+        run: |
+          if grep -RInE --exclude=tokens.test.ts \
+              '(commons[ -]?clause|react[-_ ]?bits)' \
+              src frontend/src registry; then
+            echo "::error::Vendored Commons Clause or react-bits source found"
+            exit 1
+          fi
+          echo "No vendored Commons Clause or react-bits source."
+      - name: Run gate and surface tests
+        # Subset: the new gate tests, the local-CI contract, and the
+        # IT-facing surface that pins LICENSE/NOTICE behaviour.
+        run: >-
+          python -m pytest -q
+          tests/test_license_gate.py
+          tests/test_ci_local_tool.py
+          tests/test_server_it_surface.py
+
+  nuitka-probe:
+    name: Probe Nuitka availability
+    runs-on: windows-latest
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Probe Nuitka install
+        id: probe
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check nuitka
+          if ($LASTEXITCODE -eq 0) {
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "available=true"
+          } else {
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "available=false"
+          }
+
+  nuitka-build-smoke:
+    name: Nuitka build + smoke
+    runs-on: windows-latest
+    needs: nuitka-probe
+    # Non-blocking ONLY when the probe could not install Nuitka (for example
+    # because the runner has no compiler toolchain). If Nuitka is available,
+    # a build, verify, or smoke failure fails this job. Remove the expression
+    # once the toolchain is pinned and guaranteed in CI.
+    continue-on-error: ${{ needs.nuitka-probe.outputs.available != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Nuitka
+        id: nuitka-install
+        continue-on-error: ${{ needs.nuitka-probe.outputs.available != 'true' }}
+        run: python -m pip install nuitka
+      - name: Generate SBOM and notices
+        if: steps.nuitka-install.outcome == 'success'
+        run: |
+          python scripts/sbom.py
+          python scripts/license_gate.py build/sbom.cdx.json
+          python scripts/third_party_notices.py
+      - name: Build one-folder bundle
+        if: steps.nuitka-install.outcome == 'success'
+        run: python scripts/build_bundle.py build --allow-downloads
+      - name: Verify manifest hashes
+        if: steps.nuitka-install.outcome == 'success'
+        run: python scripts/build_bundle.py verify
+      - name: Smoke test /health
+        if: steps.nuitka-install.outcome == 'success'
+        run: python scripts/build_bundle.py smoke
+      - name: Record skip
+        if: steps.nuitka-install.outcome != 'success'
+        run: echo "Nuitka install unavailable; build and smoke were skipped, not faked."
+      - uses: actions/upload-artifact@v4
+        if: steps.nuitka-install.outcome == 'success'
+        with:
+          name: agent-desk-bundle
+          path: dist/agent-desk
+          if-no-files-found: warn

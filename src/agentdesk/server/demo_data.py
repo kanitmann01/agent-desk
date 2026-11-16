@@ -16,7 +16,7 @@ import io
 import json
 import shutil
 import zipfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from agentdesk.inbox.core import KIND_BRIEF, KIND_FEATURE_REQUEST, KIND_SUGGESTION, KIND_UPDATE_CONSENT, Card
@@ -69,12 +69,40 @@ _XLSX_WORKBOOK_RELS = (
     "</Relationships>"
 )
 
-_SAMPLE_ROWS = [
-    ["Product line", "Units", "Revenue"],
-    ["Atlas ERP modules", 41.0, 164000.0],
-    ["Field services", 12.0, 58000.0],
-    ["Care plans", 7.0, 22500.0],
-]
+_CRM_HEADER = ["Deal", "Region", "Stage", "Amount", "Close date", "Owner"]
+_REGIONS = ("AMER", "EMEA", "APAC")
+_STAGES = ("Prospect", "Qualify", "Propose", "Negotiate", "Closed Won")
+_OWNERS = (
+    "Sample: Avery Kim",
+    "Sample: Jordan Lee",
+    "Sample: Riley Chen",
+    "Sample: Sam Ortiz",
+)
+_DEAL_BASES = (
+    "Atlas renewal",
+    "Field services expansion",
+    "Care plan uplift",
+    "ERP modules add-on",
+    "Support retainer",
+)
+
+
+def _sample_sales_rows() -> list[list]:
+    """Header + 100 deterministic CRM deals for the Sample workbook."""
+    rows: list[list] = [_CRM_HEADER[:]]
+    base = date(2026, 1, 15)
+    for i in range(1, 101):
+        idx = i - 1
+        rows.append([
+            f"Sample: {_DEAL_BASES[idx % len(_DEAL_BASES)]} — {i}",
+            _REGIONS[idx % len(_REGIONS)],
+            _STAGES[idx % len(_STAGES)],
+            float(12_000 + (i * 1_370) % 240_000),
+            (base + timedelta(days=idx * 3)).isoformat(),
+            _OWNERS[idx % len(_OWNERS)],
+        ])
+    return rows
+
 
 # Header-only .eml fixtures: the seven headers the mail path reads, no
 # blank line, no body, ever. Subjects say Sample. The Date headers are
@@ -147,15 +175,16 @@ def sample_workbook_bytes() -> bytes:
     """A minimal but genuine .xlsx, the tests' fixture shape with the
     sheet named Sample. The stdlib parser reads it exactly as it reads
     a real workbook."""
+    rows = _sample_sales_rows()
     shared: list[str] = []
     shared_index: dict[str, int] = {}
-    for row in _SAMPLE_ROWS:
+    for row in rows:
         for value in row:
             if isinstance(value, str) and value not in shared_index:
                 shared_index[value] = len(shared)
                 shared.append(value)
     body_rows = []
-    for r, row in enumerate(_SAMPLE_ROWS, start=1):
+    for r, row in enumerate(rows, start=1):
         cells = []
         for c, value in enumerate(row):
             ref = f"{_column_letters(c)}{r}"

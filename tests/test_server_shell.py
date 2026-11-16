@@ -26,7 +26,6 @@ SHELL_PAGES = [
     ("/memory", "Memory", "/memory"),
     ("/mail", "Mail", "/mail"),
     ("/capabilities", "Capabilities", "/capabilities"),
-    ("/plugins", "Plugins", "/plugins"),
     ("/settings", "Settings", "/settings"),
     ("/walkthrough/calendar", "Walkthrough", ""),
     ("/what-this-touches", "What this app touches", ""),

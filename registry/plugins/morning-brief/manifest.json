@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "id": "morning-brief",
+  "name": "Morning Brief",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "command",
+  "tags": [
+    "morning",
+    "brief",
+    "aggregate"
+  ],
+  "icon": "checklist",
+  "summary": "One command card that aggregates the installed sales, calendar, mail and research cards into a single today list.",
+  "description": "Morning Brief is a command card for the start of the day. It declares four dependencies and reads them through the host aggregate source. The only operation the host implements that fits four unlike cards is count, so the card reports how many members supplied a numeric value, with one row per contributor. It never invents a number for a member that is missing, uninstalled, or blank: a missing member yields the named missing-dependency state and an installed-but-blank member yields blank-dependency. All four members must be installed and readable before the card shows anything. The shipped sample is a fixture that fills every declared slot; the README states exactly which slots the live host cannot fill.",
+  "highlights": [
+    "Fails closed: a missing member is a named missing-dependency, never a zero.",
+    "Counts only members that bind a numeric value, so the total is real.",
+    "Requires sales-delta-widget, calendar-today, outlook-digest and research-brief."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:morning-brief",
+    "onSchedule:0 7 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "morning-brief",
+        "size": "2x2",
+        "dataSource": {
+          "type": "aggregate",
+          "over": [
+            "sales-delta-widget",
+            "calendar-today",
+            "outlook-digest",
+            "research-brief"
+          ],
+          "aggregate": "count"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "requires": [
+    "sales-delta-widget",
+    "calendar-today",
+    "outlook-digest",
+    "research-brief"
+  ],
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

@@ -245,6 +245,29 @@ def body_drain_plan(length: int) -> str:
 # dashboard; tests re-point this path to simulate either case.
 SPA_DIR = Path(__file__).resolve().parent / "static" / "spa"
 
+_MARKETPLACE_SINGLE = {"search", "installed", "publishers", "studio", "admin",
+                      "trust"}
+_MARKETPLACE_SECOND = {"category", "plugin", "pack", "publisher", "manage"}
+
+
+def _known_marketplace_path(path: str) -> bool:
+    """Mirror the SPA parser so a typo gets an honest 404, not a 200."""
+    clean = path.split("?", 1)[0].rstrip("/") or "/"
+    if clean == "/marketplace":
+        return True
+    if not clean.startswith("/marketplace/"):
+        return False
+    rest = [part for part in clean[len("/marketplace/"):].split("/") if part]
+    if len(rest) == 1:
+        return rest[0] in _MARKETPLACE_SINGLE
+    if len(rest) == 2:
+        head, second = rest
+        if head in _MARKETPLACE_SECOND:
+            return bool(second)
+        return False
+    return len(rest) == 3 and rest[0] == "plugin" and bool(rest[1]) \
+        and rest[2] == "manage"
+
 _SPA_MIME = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
@@ -1045,9 +1068,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/capabilities":
             self._send_capabilities_page()
         elif path == "/plugins":
-            _, _sep, query = self.path.partition("?")
-            notice = parse_qs(query).get("notice", [""])[0] if query else ""
-            self._send_plugins_page(notice=notice)
+            # One release of continuity: the legacy address names the new
+            # installed surface with a permanent-enough 302. The SPA route
+            # owns everything past this point.
+            self._send_redirect_302("/marketplace/installed")
         elif path == "/peers":
             _, _sep, query = self.path.partition("?")
             notice = parse_qs(query).get("notice", [""])[0] if query else ""
@@ -1065,6 +1089,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/wizard"):
             self._route_wizard(method, path)
             return
+        elif path.startswith("/api/marketplace/"):
+            # The marketplace router performs its own error envelopes; the
+            # session and Origin gates above have already run.
+            from ..marketplace.api import handle_get
+            handle_get(self)
         elif path == "/api/plugins":
             self._send_json(200, {"plugins": self.server_plugins_widget_records()})
         elif path == "/api/registry":
@@ -1093,6 +1122,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(200, pages.APP_JS.encode("utf-8"), "text/javascript; charset=utf-8")
         elif path.startswith("/static/spa/"):
             self._send_spa_asset(path[len("/static/spa/"):])
+        elif path == "/marketplace" or path.startswith("/marketplace/"):
+            # Deep links are the SPA's routes, so the server hands the
+            # shell to every known marketplace GET after the session gate.
+            # An unknown marketplace path gets the same shell with a 404
+            # status, so a typo is honest to clients and crawlers; /api
+            # paths still answer 404 above and never the shell.
+            self._send_marketplace_shell(
+                200 if _known_marketplace_path(path) else 404)
         else:
             self._send_error_page(404, "Nothing here", "No page lives at this address.")
 
@@ -1335,6 +1372,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/wizard"):
             self._route_wizard(method, path)
             return
+        elif path.startswith("/api/marketplace/"):
+            from ..marketplace.api import handle_post
+            handle_post(self)
         elif path.startswith("/api/plugins"):
             plugins = self.server.plugins  # type: ignore[attr-defined]
             if plugins is None:
@@ -3130,6 +3170,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, card.to_json(inbox.now_ts()))
 
     def _dispatch_plugin_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
+        """Deprecated: /api/plugins mutations stay for one release; new clients
+        use /api/marketplace/* (see marketplace/api.py)."""
         parts = [part for part in path.split("/") if part]
         if path == "/api/plugins/install":
             if not isinstance(body.get("zip_path"), str):
@@ -3274,6 +3316,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _plugin_record_or_404(self, plugin_id: str) -> dict:
+        """Deprecated: /api/plugins/<id> stays for one release; the new detail
+        route is /api/marketplace/plugin/<id>."""
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             return {"error": "plugins:unavailable"}
@@ -3295,6 +3339,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         out = []
         for record in plugins.list_records():
             record = dict(record)
+            if record.get("state") == "uninstalled":
+                continue  # no active version, so there is no widget to render
             if record.get("pending_update"):
                 record["pending_diff"] = {
                     "version": record["pending_update"]["version"],
@@ -3330,6 +3376,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return registry_source.resolve_registry_root(self.server.settings)  # type: ignore[attr-defined]
 
     def _registry_listing_for_request(self) -> dict:
+        """Deprecated: /api/registry stays for one release; new clients read
+        /api/marketplace/catalog."""
         root, origin = self._registry_root_for_request()
         listing = registry_source.registry_listing(root)
         listing["origin"] = origin
@@ -4457,6 +4505,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "in Settings for questions tailored to your ask."
         )
 
+    def _send_marketplace_shell(self, status: int = 200) -> None:
+        """The SPA shell for a marketplace deep link, when the build exists."""
+        index = spa_index_path()
+        if index.is_file():
+            self._send_bytes(status, index.read_bytes(), "text/html; charset=utf-8")
+        else:
+            self._send_error_page(
+                404, "Marketplace unavailable",
+                "The marketplace interface is not built in this checkout.")
+
+    def _send_redirect_302(self, location: str) -> None:
+        self._responded = True
+        self.send_response(302)
+        self.send_header("Location", location)
+        self._common_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _send_redirect(self, location: str) -> None:
         self.send_response(303)
         self.send_header("Location", location)
@@ -4490,10 +4556,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "text/html; charset=utf-8",
         )
 
-    def _send_bytes(self, status: int, body: bytes, content_type: str) -> None:
+    def _send_bytes(self, status: int, body: bytes, content_type: str,
+                    headers: dict | None = None) -> None:
         self._responded = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self._common_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

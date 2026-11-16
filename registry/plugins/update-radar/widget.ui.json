@@ -1,0 +1,18 @@
+{
+  "type": "card",
+  "title": "Update radar",
+  "elements": [
+    {
+      "type": "list",
+      "title": "Updates",
+      "rowsBinding": "updateRows"
+    },
+    {
+      "type": "delta",
+      "label": "Pending",
+      "binding": "value",
+      "directionBinding": "direction",
+      "window": "7d"
+    }
+  ]
+}

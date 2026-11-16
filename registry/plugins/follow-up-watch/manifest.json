@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "id": "follow-up-watch",
+  "name": "Follow-up Watch",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "minHost": ">=0.1.0",
+  "license": "MIT",
+  "category": "time",
+  "tags": [
+    "commitments",
+    "follow-ups",
+    "aging"
+  ],
+  "icon": "clock",
+  "summary": "Which promises are aging? Open commitments past their promised date.",
+  "description": "Watches commitments/*.csv in the workspace for open promises with an owner and a due date. Shows how many are open and lists the aging ones with their age, most overdue first, flagging anything past its promised date. Read-only: the CSV is never edited, and the card cannot read anything outside the commitments folder.",
+  "highlights": [
+    "Every open promise with owner and due date",
+    "Age in days, past-due first",
+    "Read-only view of commitments/*.csv"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/commitments/*.csv"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:follow-up-watch",
+    "onSchedule:0 7 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "follow-up-watch",
+        "size": "2x1",
+        "dataSource": {
+          "type": "csv-watch",
+          "file": "${workspace}/commitments/*.csv",
+          "keyColumn": "Owner",
+          "valueColumn": "Due",
+          "window": "30d",
+          "aggregate": "count"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

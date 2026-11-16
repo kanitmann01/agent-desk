@@ -27,8 +27,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
-from glob import glob
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from agentdesk.assistant.research_store import ResearchStore
@@ -40,23 +39,45 @@ from agentdesk.calendar.watcher import (
 )
 from agentdesk.excel.watcher import Adapters, ExcelWatch
 from agentdesk.mail.watcher import STATE_ERROR, STATE_UNCONFIGURED, MailWatch
+from agentdesk.plugins.render import render_elements
+from agentdesk.plugins.sources import (
+    SOURCE_TYPES,
+    SourceContext,
+    cell_date,
+    first_permitted_match,
+    read_source,
+    window_seconds,
+)
 
 # The binding vocabulary, by data source type: the values the host
 # computes for a widget render. A ui-schema element whose binding is
 # not in its own source's set renders as nothing rather than an
 # invented number.
 #   excel-watch:   delta24h, addedCount, removedCount, unchangedCount,
-#                  rowsSeen, file, windowNote
-#   calendar-read: nextEventTitle, nextEventTime, eventsToday, windowNote
-#   mail-digest:   messages, threads, topSenders, windowNote
+#                  direction, rowsSeen, file, windowNote, value,
+#                  columns, rows, table, bucketTable, bucketRows,
+#                  target, status, tone
+#   calendar-read: nextEventTitle, nextEventTime, eventsToday, windowNote,
+#                  rows, todayRows, upcoming, weekPoints, weekHours, items
+#   mail-digest:   messages, threads, topSenders, windowNote,
+#                  sendersRows, vipRows, waitingRows
 #                  (header counts only; the mail Message record has no
-#                  body field by construction)
-#   research-brief: summary, sourcesCount, answeredAt, windowNote
+#                  body field and no read flag by construction)
+#   research-brief: summary, sourcesCount, answeredAt, windowNote,
+#                  sources, sourceRows, sourceTable
 BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
-            "rowsSeen", "windowNote", "file",
+            "direction", "rowsSeen", "windowNote", "file",
+            "value", "target", "status", "tone",
+            "columns", "rows", "table", "bucketTable", "bucketRows",
             "nextEventTitle", "nextEventTime", "eventsToday",
-            "messages", "threads", "topSenders",
-            "summary", "sourcesCount", "answeredAt")
+            "todayRows", "upcoming", "weekPoints", "weekHours", "items",
+            "messages", "threads", "topSenders", "sendersRows",
+            "vipRows", "waitingRows",
+            "summary", "sourcesCount", "answeredAt",
+            "sources", "sourceRows", "sourceTable")
+
+EXCEL_ROWS_CAP = 8
+EXCEL_TABLE_CAP = 20
 
 # Sources whose data lives in a shared built-in pipeline rather than a
 # workspace glob: the runner reads the pipeline the dashboard's own
@@ -107,6 +128,73 @@ def _iso(ts: float | None) -> str:
     return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
 
 
+def _as_number(value):
+    """One cell as a number, or None. Currency marks and commas are fine."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    for mark in ("$", "\u20ac", "\u00a3", ","):
+        text = text.replace(mark, "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _fmt_cell(value) -> str:
+    """One cell as display text: thousands grouped, no fake precision."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if number.is_integer():
+            return f"{int(number):,}"
+        return f"{number:,.2f}".rstrip("0").rstrip(".")
+    return str(value).strip()
+
+
+def _column_index(columns, name: str):
+    """The index of a header by name, case- and space-insensitive."""
+    wanted = str(name or "").strip().lower()
+    if not wanted:
+        return None
+    for index, column in enumerate(columns):
+        if str(column).strip().lower() == wanted:
+            return index
+    return None
+
+
+def _cell(row, index):
+    if index is None or index < 0 or index >= len(row):
+        return None
+    return row[index]
+
+
+def _bucket_labels(bounds):
+    """Aging labels from the declared bounds: [30, 60, 90] -> 0-30 ... 90+."""
+    labels = []
+    previous = None
+    for bound in bounds:
+        labels.append(f"0-{bound}" if previous is None
+                      else f"{previous + 1}-{bound}")
+        previous = bound
+    labels.append(f"{previous}+")
+    return labels
+
+
+def _bucket_index(days, bounds):
+    for index, bound in enumerate(bounds):
+        if days <= bound:
+            return index
+    return len(bounds) - 1
+
+
 class PluginWidgetRunner:
     """Runs installed plugins' widget data sources; one watch per plugin.
 
@@ -123,13 +211,20 @@ class PluginWidgetRunner:
                  interval_s: float | None = None, *,
                  calendar: CalendarBridge | None = None,
                  mail: MailWatch | None = None,
-                 research: ResearchStore | None = None) -> None:
+                 research: ResearchStore | None = None,
+                 http_transport=None,
+                 desk_state=None,
+                 dependencies=None) -> None:
         self.workspace_dir = Path(workspace_dir)
         self._adapters = adapters
         self._interval_s = interval_s
         self._watches: dict[str, ExcelWatch] = {}
         self._manifests: dict[str, dict] = {}
         self._dirs: dict[str, Path] = {}
+        self._data_dirs: dict[str, Path] = {}
+        # Sources without a watch (everything except excel-watch) keep
+        # their declaration here and are read through sources.read_source.
+        self._sources: dict[str, dict] = {}
         # The shared pipelines the binding types read, the same objects
         # the dashboard's built-in cards use. None is honest: the card
         # goes amber naming what is missing rather than inventing data.
@@ -140,6 +235,12 @@ class PluginWidgetRunner:
         self.mail = mail
         self.research = research
         self._pipelines: dict[str, str] = {}
+        # Injectable seams for sources that must not touch the network
+        # or the user's files in tests: a transport, the desk-state
+        # callbacks, and a provider of installed manifests for aggregate.
+        self._http_transport = http_transport
+        self._desk_state = desk_state
+        self._dependency_provider = dependencies
 
     # ---- attachment ----
 
@@ -156,6 +257,7 @@ class PluginWidgetRunner:
         self.detach(plugin_id)
         self._manifests[plugin_id] = manifest
         self._dirs[plugin_id] = Path(version_dir)
+        self._data_dirs[plugin_id] = Path(data_dir)
         widgets = manifest.get("contributes", {}).get("widgets", [])
         if not widgets:
             return self._attention("plugin contributes no widget")
@@ -165,23 +267,30 @@ class PluginWidgetRunner:
             # Pipeline-backed sources have no glob of their own: their
             # truth is the shared pipeline's state, read live.
             self._pipelines[plugin_id] = source_type
-            return self._pipeline_status(plugin_id)[0]
-        pattern = str(source.get("file", "")).replace(
-            "${workspace}", str(self.workspace_dir))
-        if not pattern:
-            return self._attention("data source has no file")
-        matches = sorted(glob(pattern))
-        if not matches:
-            return self._attention(f"no file matches {source.get('file')}")
-        if source_type not in EXECUTABLE_TYPES:
-            # Probe parity: the file is there, but the host runs only
-            # excel-watch today. Fresh file presence, no bound payload.
-            return {"status": "fresh", "cause": "",
-                    "checked_at": _iso(None), "file": Path(matches[0]).name}
-        watch = self._new_watch(plugin_id, data_dir)
-        self._watches[plugin_id] = watch
-        watch.register(matches[0])
-        return self._watch_status(plugin_id)
+            self._sources[plugin_id] = source
+            return self._status_dict(self._read_pair(plugin_id)[0])
+        if source_type == "excel-watch":
+            match = first_permitted_match(
+                source.get("file", ""), self._source_context(plugin_id))
+            if match is not None:
+                watch = self._new_watch(plugin_id, data_dir)
+                self._watches[plugin_id] = watch
+                self._sources[plugin_id] = source
+                watch.register(str(match))
+                return self._status_dict(self._read_pair(plugin_id)[0])
+            # No workbook: the reader reports the blank (or a declared
+            # CSV fallback in its coarse state) without a watch.
+            result = self._read_source_for(plugin_id, source)
+            if result.state != "blank":
+                self._sources[plugin_id] = source
+            return self._status_dict(result)
+        if source_type not in SOURCE_TYPES:
+            return self._attention(f"unknown data source type: {source_type}")
+        # Every other source type executes and attaches, including a
+        # blank one: its card must say which file or connection is
+        # missing rather than falling back to probe silence.
+        self._sources[plugin_id] = source
+        return self._status_dict(self._read_pair(plugin_id)[0])
 
     def detach(self, plugin_id: str) -> None:
         watch = self._watches.pop(plugin_id, None)
@@ -192,8 +301,10 @@ class PluginWidgetRunner:
             except Exception:  # noqa: BLE001 - closing must never raise
                 pass
         self._pipelines.pop(plugin_id, None)
+        self._sources.pop(plugin_id, None)
         self._manifests.pop(plugin_id, None)
         self._dirs.pop(plugin_id, None)
+        self._data_dirs.pop(plugin_id, None)
 
     def _new_watch(self, plugin_id: str, data_dir: Path) -> ExcelWatch:
         """One excel pipeline per plugin, over the plugin's own data dir."""
@@ -208,22 +319,20 @@ class PluginWidgetRunner:
     # ---- observation ----
 
     def attached(self, plugin_id: str) -> bool:
-        return plugin_id in self._watches or plugin_id in self._pipelines
+        return (plugin_id in self._watches or plugin_id in self._pipelines
+                or plugin_id in self._sources)
 
     def status(self, plugin_id: str) -> dict:
-        """The plugin's source status: file presence and poll state, honest."""
-        if plugin_id in self._watches:
-            return self._watch_status(plugin_id)
-        if plugin_id in self._pipelines:
-            return self._pipeline_status(plugin_id)[0]
-        return self._attention("data source has not run")
+        """The plugin's source status, in the runtime's probe shape."""
+        if not self.attached(plugin_id):
+            return self._attention("data source has not run")
+        return self._status_dict(self._read_pair(plugin_id)[0])
 
     def retest(self, plugin_id: str) -> dict:
         """One poll right now; the amber card's button lands here."""
         watch = self._watches.get(plugin_id)
         if watch is not None:
             watch.retest()
-            return self._watch_status(plugin_id)
         source_type = self._pipelines.get(plugin_id)
         if source_type == "calendar-read" and self.calendar is not None:
             # One poll of the shared bridge, breakdown-free: a plugin
@@ -238,19 +347,16 @@ class PluginWidgetRunner:
 
         Only whitelisted element kinds and known bindings survive: a
         plugin cannot smuggle markup in, and an unbindable ui-schema
-        renders as nothing rather than an invented number.
+        renders as nothing rather than an invented number. Every
+        payload carries the source's honest state beside its elements.
         """
         if not self.attached(plugin_id):
             return None
         schema = self._schema_for(plugin_id)
         if schema is None:
             return None
-        if plugin_id in self._watches:
-            status = self._watch_status(plugin_id)
-            bindings = self._bindings(status)
-        else:
-            status, bindings = self._pipeline_status(plugin_id)
-        return self._render(schema, status, bindings)
+        result, bindings = self._read_pair(plugin_id)
+        return self._render(plugin_id, schema, result, bindings)
 
     def card(self, plugin_id: str) -> dict:
         """One source read for both halves of a dashboard card: its
@@ -258,17 +364,299 @@ class PluginWidgetRunner:
         (status, bindings) pass (#75 review). Reading them separately
         would read and parse a pipeline twice per view, the mail folder
         included."""
-        if plugin_id in self._watches:
-            status = self._watch_status(plugin_id)
-            bindings = self._bindings(status)
-        elif plugin_id in self._pipelines:
-            status, bindings = self._pipeline_status(plugin_id)
-        else:
+        if not self.attached(plugin_id):
             return {"status": self._attention("data source has not run"),
                     "payload": None}
+        result, bindings = self._read_pair(plugin_id)
         schema = self._schema_for(plugin_id)
-        payload = self._render(schema, status, bindings) if schema else None
-        return {"status": status, "payload": payload}
+        payload = (self._render(plugin_id, schema, result, bindings)
+                   if schema else None)
+        return {"status": self._status_dict(result), "payload": payload}
+
+    # ---- source reads ----
+
+    def _read_pair(self, plugin_id: str) -> "tuple":
+        source = self._sources.get(plugin_id) or {}
+        result = self._read_source_for(plugin_id, source)
+        return result, dict(result.bindings)
+
+    def _source_context(self, plugin_id: str) -> SourceContext:
+        """The one context every read for this plugin uses.
+
+        read_globs is the installed manifest's own filesystem.read list,
+        so the reader can refuse a path no declared glob covers even
+        though the manifest was validated elsewhere.
+        """
+        return SourceContext(
+            plugin_id=plugin_id,
+            workspace_dir=self.workspace_dir,
+            data_dir=self._data_dirs.get(plugin_id, self.workspace_dir),
+            now=datetime.now(),
+            transport=self._http_transport,
+            dependencies=self._dependency_map(),
+            desk_state=self._desk_state,
+            excel_bindings=self._excel_pair(plugin_id),
+            pipeline_status=self._pipeline_pair(plugin_id),
+            network_allow=self._network_allow(plugin_id),
+            read_globs=self._read_globs(plugin_id),
+        )
+
+    def _read_globs(self, plugin_id: str) -> tuple:
+        manifest = self._manifests.get(plugin_id) or {}
+        permissions = manifest.get("permissions")
+        filesystem = (permissions.get("filesystem")
+                      if isinstance(permissions, dict) else None)
+        read_globs = (filesystem.get("read")
+                      if isinstance(filesystem, dict) else None)
+        if not isinstance(read_globs, list):
+            return ()
+        return tuple(item for item in read_globs if isinstance(item, str))
+
+    def _read_source_for(self, plugin_id: str, source: dict):
+        source_type = str(source.get("type", ""))
+        result = read_source(source, self._source_context(plugin_id))
+        result.detail.setdefault("type", source_type)
+        return result
+
+    def _now(self) -> datetime:
+        if self._adapters is not None:
+            return datetime.fromtimestamp(self._adapters.clock())
+        return datetime.now()
+
+    def _excel_pair(self, plugin_id: str):
+        if plugin_id not in self._watches:
+            return None
+
+        def pair(source):
+            raw = self._watches[plugin_id].status()
+            status = self._status_from_raw(raw)
+            if status["status"] != "fresh":
+                return status, {}
+            return self._excel_bindings(
+                source if isinstance(source, dict) else {}, raw, status)
+
+        return pair
+
+    def _excel_attention(self, reason: str, cause: str, raw: dict) -> dict:
+        return {
+            "status": "attention",
+            "cause": cause,
+            "checked_at": _iso(raw.get("last_ok_ts")),
+            "state": reason,
+            "reason": reason,
+        }
+
+    def _excel_bindings(self, source: dict, raw: dict, status: dict):
+        """Map the workbook's bounded grid by header name.
+
+        The manifest names the columns (keyColumn, valueColumn,
+        dateColumn); the reader's grid carries the header row, so the
+        mapping is by name, case- and space-insensitive, never by
+        position. A column the workbook does not have is a blank status
+        naming it, never an empty card full of zeros.
+        """
+        grid = raw.get("grid") or {}
+        columns = [str(cell) for cell in (grid.get("columns") or [])]
+        grid_rows = [row for row in (grid.get("rows") or [])
+                     if isinstance(row, (list, tuple))]
+        base = self._bindings(status)
+        base["columns"] = columns
+        key_name = str(source.get("keyColumn", "") or "").strip()
+        value_name = str(source.get("valueColumn", "") or "").strip()
+        date_name = str(source.get("dateColumn", "") or "").strip()
+        if not key_name and not value_name:
+            # The legacy contract declares no columns: the card gets the
+            # row count and the delta summary, nothing header-mapped.
+            return status, base
+        if not columns:
+            return self._excel_attention(
+                "missing-header",
+                "The workbook has no header row yet, so the card cannot map "
+                "columns by name.", raw), {}
+        missing = [name for name in (key_name, value_name, date_name)
+                   if name and _column_index(columns, name) is None]
+        if missing:
+            return self._excel_attention(
+                "missing-column",
+                f"The workbook has no column named {', '.join(missing)}. "
+                f"Add it, or change the column name the widget asks for.",
+                raw), {}
+        key_at = _column_index(columns, key_name)
+        value_at = _column_index(columns, value_name)
+        date_at = _column_index(columns, date_name)
+        now = self._now()
+        window = source.get("window")
+        cutoff_date = None
+        if date_at is not None and window:
+            cutoff_date = (now
+                           - timedelta(seconds=window_seconds(window))).date()
+        mapped = []
+        for row in grid_rows:
+            when = cell_date(_cell(row, date_at)) if date_at is not None else None
+            if (cutoff_date is not None and when is not None
+                    and when.date() < cutoff_date):
+                continue
+            mapped.append((row, when))
+        mode = str(source.get("aggregate", "") or "").lower()
+        if mode not in ("sum", "count", "avg", "latest", "min", "max"):
+            mode = "count" if value_at is None else "sum"
+        numbers = []
+        if value_at is not None:
+            for row, _ in mapped:
+                number = _as_number(_cell(row, value_at))
+                if number is not None:
+                    numbers.append(number)
+        if value_at is None:
+            # No value column declared: the legacy row count, as before.
+            value = int(status.get("rowsSeen", 0) or 0)
+        elif mode == "count":
+            value = len(mapped)
+        elif not numbers:
+            return self._excel_attention(
+                "no-values",
+                f"The workbook has no numeric values in the {value_name} "
+                f"column, so there is nothing to total.", raw), {}
+        elif mode == "sum":
+            value = sum(numbers)
+        elif mode == "avg":
+            value = sum(numbers) / len(numbers)
+        elif mode == "latest":
+            value = numbers[-1]
+        elif mode == "min":
+            value = min(numbers)
+        else:
+            value = max(numbers)
+        if isinstance(value, float):
+            value = round(value, 2)
+            if value.is_integer():
+                value = int(value)
+        rows = [
+            {
+                "primary": (_fmt_cell(_cell(row, key_at))
+                            if key_at is not None else ""),
+                "secondary": (_fmt_cell(_cell(row, value_at))
+                              if value_at is not None else ""),
+                "meta": when.strftime("%Y-%m-%d") if when is not None else "",
+            }
+            for row, when in mapped[:EXCEL_ROWS_CAP]
+        ]
+        table_columns = [name for name in (key_name, value_name, date_name)
+                         if name]
+        table_rows = []
+        for row, when in mapped[:EXCEL_TABLE_CAP]:
+            cells = []
+            if key_at is not None:
+                cells.append(_fmt_cell(_cell(row, key_at)))
+            if value_at is not None:
+                cells.append(_fmt_cell(_cell(row, value_at)))
+            if date_at is not None:
+                cells.append(when.strftime("%Y-%m-%d") if when else "")
+            table_rows.append(cells)
+        base["value"] = value
+        target = _as_number(source.get("target"))
+        if source.get("target") is not None and target is not None:
+            good = str(source.get("targetGood", "down") or "down").lower()
+            if good == "up":
+                on_track = value >= target
+                off_text = "below target"
+            else:
+                on_track = value <= target
+                off_text = "over target"
+            base["target"] = (int(target) if float(target).is_integer()
+                              else target)
+            base["status"] = "on track" if on_track else off_text
+            base["tone"] = "ok" if on_track else "attention"
+        else:
+            base["status"] = f"Read {now.strftime('%H:%M')}"
+            base["tone"] = "ok"
+        bucket_table = []
+        bucket_rows = []
+        buckets = source.get("buckets")
+        if isinstance(buckets, (list, tuple)) and date_at is not None:
+            bounds = sorted({
+                int(number) for number in (_as_number(item) for item in buckets)
+                if number is not None
+            })
+            if bounds:
+                labels = _bucket_labels(bounds)
+                sums = [0.0] * len(labels)
+                counts = [0] * len(labels)
+                seen = [False] * len(labels)
+                for row, when in mapped:
+                    if when is None:
+                        continue
+                    days = max((now.date() - when.date()).days, 0)
+                    index = _bucket_index(days, bounds)
+                    counts[index] += 1
+                    number = (_as_number(_cell(row, value_at))
+                              if value_at is not None else None)
+                    if number is not None:
+                        sums[index] += number
+                        seen[index] = True
+                for index, label in enumerate(labels):
+                    amount = _fmt_cell(round(sums[index], 2)) if seen[index] else ""
+                    bucket_table.append([label, amount, str(counts[index])])
+                    bucket_rows.append({
+                        "primary": label,
+                        "secondary": amount,
+                        "meta": f"{counts[index]} invoices",
+                    })
+        base["rows"] = rows
+        base["table"] = {"columns": table_columns, "rows": table_rows}
+        base["bucketTable"] = bucket_table
+        base["bucketRows"] = bucket_rows
+        return status, base
+
+    def _pipeline_pair(self, plugin_id: str):
+        if plugin_id not in self._pipelines:
+            return None
+        return lambda source_type: self._pipeline_status(plugin_id)
+
+    def _dependency_map(self) -> dict:
+        provider = self._dependency_provider
+        if callable(provider):
+            try:
+                loaded = provider()
+            except Exception:  # noqa: BLE001 - a bad provider reads as none
+                return {}
+            return loaded if isinstance(loaded, dict) else {}
+        return provider if isinstance(provider, dict) else {}
+
+    def _network_allow(self, plugin_id: str) -> "tuple":
+        manifest = self._manifests.get(plugin_id) or {}
+        optional = manifest.get("optionalPermissions")
+        network = optional.get("network") if isinstance(optional, dict) else None
+        allow = network.get("allow") if isinstance(network, dict) else None
+        return tuple(str(item) for item in (allow or [])
+                     if isinstance(item, str))
+
+    def _status_dict(self, result) -> dict:
+        status = "attention" if result.state == "blank" else "fresh"
+        out = {
+            "status": status,
+            "cause": result.human if status == "attention" else "",
+            "checked_at": result.as_of or _iso(None),
+            "state": result.state,
+            "reason": result.reason,
+            "type": result.detail.get("type", ""),
+            "files": list(result.files),
+        }
+        if result.files:
+            out["file"] = Path(result.files[0]).name
+        return out
+
+    def _source_envelope(self, plugin_id: str, result) -> dict:
+        source = self._sources.get(plugin_id) or {}
+        return {
+            "type": str(source.get("type", result.detail.get("type", ""))),
+            "value": result.bindings.get("value"),
+            "asOf": result.as_of,
+            "source": result.source,
+            "state": result.state,
+            "reason": result.reason,
+            "human": result.human,
+            "files": list(result.files),
+        }
 
     def start_polling(self, plugin_id: str) -> None:
         watch = self._watches.get(plugin_id)
@@ -299,32 +687,33 @@ class PluginWidgetRunner:
             return None
         return self._load_ui_schema(base, render)
 
-    def _render(self, schema: dict, status: dict, bindings: dict) -> dict:
-        """Bind values into the whitelisted element kinds. A binding
-        outside the source's own set renders as nothing rather than an
-        invented number."""
-        elements = []
-        for element in schema.get("elements", []):
-            if not isinstance(element, dict):
-                continue
-            kind = str(element.get("type", ""))
-            if kind == "metric":
-                value = bindings.get(str(element.get("binding", "")))
-                if value is None:
-                    continue
-                elements.append({"kind": "metric",
-                                 "label": str(element.get("label", "")),
-                                 "value": str(value)})
-            elif kind == "text":
-                if "binding" in element:
-                    text = bindings.get(str(element.get("binding", "")))
-                    if text is None:
-                        continue
-                else:
-                    text = element.get("text", "")
-                elements.append({"kind": "text", "text": str(text)})
+    def _render(self, plugin_id: str, schema: dict, result,
+                bindings: dict) -> dict:
+        """Bind values into the ten whitelisted element kinds.
+
+        A binding outside the source's own set renders as a blank element
+        naming the missing binding, never an invented number. The legacy
+        payload shape is unchanged for bound elements: the ok state is
+        omitted so existing cards keep their exact element dicts. When the
+        source itself is blank the whole card stays an honest empty list.
+        The source envelope carries the honest state for every other case,
+        stale/coarse/partial included.
+        """
+        status = self._status_dict(result)
+        elements = render_elements(schema, bindings)
+        if status["status"] != "fresh":
+            elements = []
+        else:
+            elements = [
+                {key: value for key, value in element.items()
+                 if key not in ("state", "reason")}
+                if element.get("state") == "ok"
+                else element
+                for element in elements
+            ]
         return {"elements": elements, "status": status["status"],
-                "cause": status["cause"], "checked_at": status["checked_at"]}
+                "cause": status["cause"], "checked_at": status["checked_at"],
+                "source": self._source_envelope(plugin_id, result)}
 
     def _load_ui_schema(self, base: Path, render: dict) -> dict | None:
         name = str(render.get("file", ""))
@@ -339,14 +728,26 @@ class PluginWidgetRunner:
     def _bindings(self, status: dict) -> dict:
         delta = status.get("delta")
         file_name = status.get("file", "")
+        added = len(delta.get("added", [])) if delta else 0
+        removed = len(delta.get("removed", [])) if delta else 0
+        if added > removed:
+            direction = "up"
+        elif added < removed:
+            direction = "down"
+        else:
+            direction = "flat"
         return {
             "delta24h": _delta_summary(delta),
-            "addedCount": len(delta.get("added", [])) if delta else 0,
-            "removedCount": len(delta.get("removed", [])) if delta else 0,
+            "addedCount": added,
+            "removedCount": removed,
             "unchangedCount": delta.get("unchanged", 0) if delta else 0,
+            "direction": direction,
             "rowsSeen": status.get("rowsSeen", 0),
             "windowNote": _window_note(delta),
             "file": file_name,
+            "value": status.get("rowsSeen", 0),
+            "rows": [],
+            "table": [],
         }
 
     # ---- the pipeline bindings ----
@@ -359,9 +760,9 @@ class PluginWidgetRunner:
         """
         source_type = self._pipelines.get(plugin_id, "")
         if source_type == "calendar-read":
-            return self._calendar_status()
+            return self._calendar_status(plugin_id)
         if source_type == "mail-digest":
-            return self._mail_status()
+            return self._mail_status(plugin_id)
         if source_type == "research-brief":
             return self._research_status()
         return self._attention("data source has not run"), {}
@@ -387,21 +788,33 @@ class PluginWidgetRunner:
                 float(latest.get("answeredTs", 0.0))).strftime("%Y-%m-%d %H:%M")
         except (OSError, OverflowError, ValueError):
             pass  # an undatable answer renders without the time, not wrongly
+        # The store persists bare source strings, so the title column is
+        # honestly empty; "used" is true by construction (these are the
+        # answer's sources).
+        source_rows = [
+            {"primary": str(source), "secondary": "", "meta": "used"}
+            for source in (latest.get("sources") or [])
+        ]
         values = {
             "summary": str(latest.get("summary", "")),
-            "sourcesCount": len(latest.get("sources") or []),
+            "sourcesCount": len(source_rows),
             "windowNote": RESEARCH_WINDOW_NOTE,
+            "sources": source_rows,
+            "sourceRows": source_rows,
+            "sourceTable": [[row["primary"], "", "yes"] for row in source_rows],
+            "rows": source_rows,
         }
         if answered_at:
             values["answeredAt"] = answered_at
         return {"status": "fresh", "cause": "",
                 "checked_at": _iso(None)}, values
 
-    def _mail_status(self) -> "tuple[dict, dict]":
+    def _mail_status(self, plugin_id: str = "") -> "tuple[dict, dict]":
         """mail-digest: header-only counts from the mail pipeline's own
         read-only view, the same read the mail page makes (issue #64).
-        The Message record has no body field by construction, so no
-        binding here could carry one even by mistake."""
+        The Message record has no body field and no read flag by
+        construction, so no binding here could carry either even by
+        mistake; the VIP list filters senders the manifest declared."""
         watch = self.mail
         if watch is None:
             return self._attention(
@@ -424,20 +837,52 @@ class PluginWidgetRunner:
         for message in window:
             senders[message.sender] = senders.get(message.sender, 0) + 1
         top = sorted(senders.items(), key=lambda item: (-item[1], item[0]))[:3]
+        sender_rows = [
+            {"primary": sender, "secondary": str(count), "meta": ""}
+            for sender, count in sorted(senders.items(),
+                                          key=lambda item: (-item[1], item[0]))
+        ]
+        waiting_rows = [
+            {"primary": str(item.get("thread", "")),
+             "secondary": str(item.get("from", "")),
+             "meta": f"{item.get('days', '')}d"}
+            for item in (view.get("followUps") or []) if isinstance(item, dict)
+        ]
+        source = self._sources.get(plugin_id) or {}
+        declared = source.get("vips")
+        vips = [str(item).strip().lower()
+                for item in (declared if isinstance(declared, (list, tuple))
+                             else [])
+                if str(item).strip()]
+        if vips:
+            # Substring match, case-insensitive: a manifest may name a
+            # person ("Bhavya") or an address fragment ("@bank.com").
+            vip_rows = [row for row in sender_rows
+                        if any(vip in row["primary"].lower() for vip in vips)]
+        else:
+            vip_rows = []
         values = {
             "messages": len(window),
             "threads": len(view.get("digest") or []),
             "topSenders": ", ".join(
                 f"{sender} ({count})" for sender, count in top) or "None",
             "windowNote": MAIL_WINDOW_NOTE,
+            "sendersRows": sender_rows,
+            # No read flag exists on the Message record, so no "unread"
+            # binding is offered at all; VIPs are a declared filter over
+            # the same header counts, empty until a manifest names any.
+            "vipRows": vip_rows,
+            "waitingRows": waiting_rows,
         }
         return {"status": "fresh", "cause": "",
                 "checked_at": _iso(None)}, values
 
-    def _calendar_status(self) -> "tuple[dict, dict]":
+    def _calendar_status(self, plugin_id: str = "") -> "tuple[dict, dict]":
         """calendar-read: today's facts from the bridge's day view, the
         same state machine the commitments card reads, without any
-        model call (issue #64)."""
+        model call (issue #64). plugin_id is part of the pipeline
+        signature so both pipeline types read alike; the calendar
+        bridge is shared and needs no per-plugin source."""
         bridge = self.calendar
         if bridge is None:
             return self._attention(
@@ -464,10 +909,23 @@ class PluginWidgetRunner:
             title = str(key.get("subject") or "Busy")
         else:
             title = "Nothing left today"
+        today_rows = [row for row in (view.get("todayRows") or [])
+                      if isinstance(row, dict)]
+        upcoming_rows = [row for row in (view.get("upcoming") or [])
+                         if isinstance(row, dict)]
+        items = [item for item in (view.get("items") or [])
+                 if isinstance(item, dict)]
         values = {
             "nextEventTitle": title,
             "eventsToday": int(view.get("eventsToday", 0)),
             "windowNote": CALENDAR_WINDOW_NOTE,
+            "todayRows": today_rows,
+            # The calendar-today card's "What is left" list reads rows.
+            "rows": today_rows,
+            "upcoming": upcoming_rows,
+            "weekPoints": [int(point) for point in (view.get("weekPoints") or [])],
+            "weekHours": float(view.get("weekHours", 0.0)),
+            "items": items,
         }
         start = str(key.get("start", ""))
         if start:
@@ -478,9 +936,7 @@ class PluginWidgetRunner:
         return {"status": "fresh", "cause": "",
                 "checked_at": _iso(None)}, values
 
-    def _watch_status(self, plugin_id: str) -> dict:
-        watch = self._watches[plugin_id]
-        raw = watch.status()
+    def _status_from_raw(self, raw: dict) -> dict:
         state = str(raw.get("state", ""))
         fresh = state in ("healthy", "first")
         cause = ""
@@ -499,6 +955,9 @@ class PluginWidgetRunner:
             out["delta"] = raw["delta"]
         out["rowsSeen"] = raw.get("rowsSeen", 0)
         return out
+
+    def _watch_status(self, plugin_id: str) -> dict:
+        return self._status_from_raw(self._watches[plugin_id].status())
 
     def _attention(self, cause: str) -> dict:
         return {"status": "attention", "cause": cause, "checked_at": _iso(None)}

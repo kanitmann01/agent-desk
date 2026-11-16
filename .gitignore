@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 dist/
+# Packaging outputs: SBOM, reports, Nuitka work tree (regenerated in CI).
+build/
 .pytest_cache/
 .worktrees/
 

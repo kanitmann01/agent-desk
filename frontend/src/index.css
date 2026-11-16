@@ -34,6 +34,7 @@
   --attention-bg:#FBF3E2;
   --attention-ink:#8A5A14;
   --hover-wash:#EFEDE5;
+  --scrim:rgba(31,42,39,.36);
   --r-card:12px;
   --r-control:8px;
   --r-inner:6px;
@@ -62,6 +63,8 @@ button:disabled{opacity:.55;cursor:default}
 a{color:var(--primary);text-decoration:none}
 code{font-family:var(--font-mono);font-size:.92em;background:var(--surface-2);border-radius:5px;padding:1px 5px}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+.skip-link{position:fixed;top:-60px;left:8px;z-index:200;background:var(--primary);color:var(--primary-ink);padding:8px 12px;border-radius:var(--r-control);font-size:13px;font-weight:600}
+.skip-link:focus{top:8px}
 svg{display:block;flex:none}
 ::selection{background:rgba(20,89,78,.16);color:var(--ink-1)}
 *{scrollbar-width:thin;scrollbar-color:var(--ink-4) transparent}

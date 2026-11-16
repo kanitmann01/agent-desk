@@ -110,6 +110,18 @@ def scope_diff(old_permissions: dict, new_permissions: dict) -> list[str]:
     return sorted(scope_items(new_permissions) - scope_items(old_permissions))
 
 
+def _scope_block(manifest: dict) -> dict:
+    """Both permission blocks; base leaves keep their historical labels."""
+    block: dict = {}
+    base = manifest.get("permissions")
+    if isinstance(base, dict):
+        block.update(base)
+    optional = manifest.get("optionalPermissions")
+    if isinstance(optional, dict):
+        block["optionalPermissions"] = optional
+    return block
+
+
 class PluginRuntime:
     """Owns the installed plugin set: the lockfile is its source of truth."""
 
@@ -152,6 +164,31 @@ class PluginRuntime:
             if version["version"] == active:
                 return Path(version["dir"])
         return Path(entry["versions"][-1]["dir"])
+
+    def _verify_installed(self, entry: dict) -> None:
+        """Fail closed when installed files no longer match their pin.
+
+        The lockfile records the digest computed at install time; anything
+        that edits the active version directory afterwards must not render,
+        re-test, or report source status. A missing directory hashes to the
+        empty tree and therefore also fails this check.
+        """
+        version_dir = self._active_version_dir(entry)
+        expected = ""
+        active = entry.get("active_version")
+        for version in entry.get("versions", []):
+            if version.get("version") == active:
+                expected = version.get("sha256", "")
+                break
+        else:
+            if entry.get("versions"):
+                expected = entry["versions"][-1].get("sha256", "")
+        if not expected or _tree_digest(version_dir) != expected:
+            raise PluginError(
+                "plugin:tampered",
+                f"installed files changed after install: {entry.get('id', '')}",
+                409,
+            )
 
     def _attach_runner(self, plugin_id: str, entry: dict) -> dict:
         """Run the plugin's declared data source through the widget runner.
@@ -268,8 +305,11 @@ class PluginRuntime:
             manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
             version = str(manifest["version"])
             digest = _tree_digest(staged)
-            added = scope_diff(current_manifest.get("permissions", {}),
-                               manifest.get("permissions", {}))
+            # Optional permissions are capability reach too: a release that
+            # adds a network host or a new optional file scope must be held for
+            # re-consent exactly like a base permission widening.
+            added = scope_diff(_scope_block(current_manifest),
+                               _scope_block(manifest))
             if added:
                 pending_dir = self._staging / f"{plugin_id}-{version}"
                 if pending_dir.exists():
@@ -329,18 +369,50 @@ class PluginRuntime:
         return {"version": pending["version"],
                 "added_scopes": pending["added_scopes"]}
 
-    def rollback(self, plugin_id: str) -> dict:
+    def decline_pending(self, plugin_id: str) -> dict:
+        """Drop a held update and its staged tree, a public operation."""
+        state = self._read()
+        entry = self._entry(state, plugin_id)
+        pending = entry.get("pending_update")
+        if not pending:
+            raise PluginError("consent:nothing-pending",
+                              f"{plugin_id} has no update held for consent", 404)
+        staged = Path(pending.get("dir") or "")
+        try:
+            if staged.is_dir():
+                shutil.rmtree(staged)
+        except OSError:
+            pass
+        entry["pending_update"] = None
+        self._write(state)
+        return {"id": plugin_id, "version": pending.get("version", ""),
+                "status": "rejected"}
+
+    def rollback(self, plugin_id: str, to_version: str | None = None) -> dict:
         state = self._read()
         entry = self._entry(state, plugin_id)
         versions = entry["versions"]
-        if entry["active_version"] not in [v["version"] for v in versions]:
+        names = [v["version"] for v in versions]
+        if entry["active_version"] not in names:
             raise PluginError("rollback:unknown-active",
                               f"{plugin_id} active version is not recorded", 409)
-        index = [v["version"] for v in versions].index(entry["active_version"])
-        if index == 0:
-            raise PluginError("rollback:no-prior",
-                              f"{plugin_id} has no prior version", 409)
-        previous = versions[index - 1]
+        index = names.index(entry["active_version"])
+        if to_version:
+            if to_version not in names:
+                raise PluginError("rollback:unknown-version",
+                                  f"{plugin_id} has no recorded version {to_version}",
+                                  409)
+            target = names.index(to_version)
+            if target >= index:
+                raise PluginError(
+                    "rollback:not-prior",
+                    f"{to_version} is not older than the active version", 409)
+            previous = versions[target]
+        else:
+            if index == 0:
+                raise PluginError("rollback:no-prior",
+                                  f"{plugin_id} has no prior version", 409)
+            previous = versions[index - 1]
         entry["active_version"] = previous["version"]
         entry["sha256"] = previous["sha256"]
         entry["data_source"] = self._attach_runner(plugin_id, entry)
@@ -430,6 +502,7 @@ class PluginRuntime:
     def retest(self, plugin_id: str) -> dict:
         state = self._read()
         entry = self._entry(state, plugin_id)
+        self._verify_installed(entry)
         if self.runner.attached(plugin_id):
             entry["data_source"] = self.runner.retest(plugin_id)
         elif entry.get("state") == "enabled":
@@ -450,6 +523,7 @@ class PluginRuntime:
     def source_status(self, plugin_id: str) -> dict:
         state = self._read()
         entry = self._entry(state, plugin_id)
+        self._verify_installed(entry)
         return dict(entry.get("data_source") or self.probe(plugin_id))
 
     def _manifest(self, plugin_id: str) -> dict:
@@ -523,7 +597,8 @@ class PluginRuntime:
 
     def widget_payload(self, plugin_id: str) -> dict | None:
         """The bound ui-schema render model for one plugin, or None."""
-        self._entry(self._read(), plugin_id)
+        entry = self._entry(self._read(), plugin_id)
+        self._verify_installed(entry)
         return self.runner.payload(plugin_id) if self.runner.attached(plugin_id) else None
 
     def start_widget_polls(self) -> None:

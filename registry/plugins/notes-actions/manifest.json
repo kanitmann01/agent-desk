@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 2,
+  "id": "notes-actions",
+  "name": "Notes Actions",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "research",
+  "tags": [
+    "notes",
+    "actions",
+    "markdown"
+  ],
+  "icon": "checklist",
+  "summary": "Which action items are still open under the Actions heading in my notes?",
+  "description": "Reads checkbox lines under the Actions heading in the markdown notes you point it at, and shows them as a checklist with the open count and the next due date. Read-only over one glob; it never edits a note.",
+  "highlights": [
+    "Open and done actions from your notes",
+    "Next due date across the open items",
+    "One read-only glob; your notes are never edited"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/notes/*.md"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:notes-actions",
+    "onSchedule:0 * * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "notes-actions",
+        "size": "2x1",
+        "dataSource": {
+          "type": "markdown-watch",
+          "file": "${workspace}/notes/*.md",
+          "heading": "Actions"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

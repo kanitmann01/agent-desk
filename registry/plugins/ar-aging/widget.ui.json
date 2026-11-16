@@ -1,0 +1,26 @@
+{
+  "type": "card",
+  "title": "A/R aging",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Cash stuck"
+    },
+    {
+      "type": "table",
+      "title": "Aging buckets",
+      "rowsBinding": "bucketTable",
+      "columns": [
+        "Bucket",
+        "Amount",
+        "Invoices"
+      ]
+    },
+    {
+      "type": "list",
+      "title": "Oldest balances",
+      "rowsBinding": "rows"
+    }
+  ]
+}

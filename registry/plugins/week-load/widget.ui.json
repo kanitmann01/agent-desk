@@ -1,0 +1,21 @@
+{
+  "type": "card",
+  "title": "Next week",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "weekHours",
+      "label": "Hours next week"
+    },
+    {
+      "type": "sparkline",
+      "pointsBinding": "weekPoints",
+      "label": "Meetings by day"
+    },
+    {
+      "type": "list",
+      "rowsBinding": "rows",
+      "title": "Today"
+    }
+  ]
+}

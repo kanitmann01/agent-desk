@@ -1,0 +1,56 @@
+{
+  "bindings": {
+    "value": 184500,
+    "bucketTable": [
+      [
+        "0-30 days",
+        "62,400",
+        14
+      ],
+      [
+        "31-60 days",
+        "48,900",
+        9
+      ],
+      [
+        "61-90 days",
+        "41,200",
+        6
+      ],
+      [
+        "90+ days",
+        "32,000",
+        4
+      ]
+    ],
+    "rows": [
+      {
+        "primary": "Northwind Ltd",
+        "secondary": "28,400",
+        "meta": "96 days"
+      },
+      {
+        "primary": "Bluebird Foods",
+        "secondary": "22,150",
+        "meta": "88 days"
+      },
+      {
+        "primary": "Contoso Retail",
+        "secondary": "17,600",
+        "meta": "72 days"
+      },
+      {
+        "primary": "Tailspin Toys",
+        "secondary": "14,900",
+        "meta": "61 days"
+      },
+      {
+        "primary": "Acme Corp",
+        "secondary": "12,300",
+        "meta": "48 days"
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T08:00:00"
+}

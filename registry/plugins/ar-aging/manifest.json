@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 2,
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "finance",
+  "minHost": ">=0.1.0",
+  "id": "ar-aging",
+  "name": "A/R Aging",
+  "version": "0.2.0",
+  "tags": [
+    "receivables",
+    "cash",
+    "aging"
+  ],
+  "icon": "alert",
+  "summary": "How much cash is stuck in receivables, and how old it is.",
+  "description": "A/R Aging reads customer balances from ${workspace}/finance/ar*.xlsx, totals the cash stuck, buckets the balances into 0-30, 31-60, 61-90, and 90+ day bands, and lists the oldest balances. Missing workbooks show the setting the card needs, never a zero.",
+  "highlights": [
+    "Total cash stuck plus 0-30, 31-60, 61-90, and 90+ day buckets.",
+    "Oldest balances list with customer, amount, and days outstanding.",
+    "Reads only ${workspace}/finance/ar*.xlsx; no plugin code, no network."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/finance/ar*.xlsx"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:ar-aging",
+    "onSchedule:0 8 * * 1"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "ar-aging",
+        "size": "2x2",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/finance/ar*.xlsx",
+          "keyColumn": "Customer",
+          "valueColumn": "Balance",
+          "dateColumn": "DueDate",
+          "buckets": [
+            30,
+            60,
+            90
+          ]
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

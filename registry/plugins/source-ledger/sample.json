@@ -1,0 +1,29 @@
+{
+  "bindings": {
+    "sourceTable": [
+      [
+        "gartner.com",
+        "2026 forward-deployed engineering market guide",
+        "yes"
+      ],
+      [
+        "forrester.com",
+        "Staff augmentation vs embedded teams",
+        "yes"
+      ],
+      [
+        "coforge.com",
+        "Forward Deployed Engineer programme",
+        "yes"
+      ],
+      [
+        "linkedin.com",
+        "FDE hiring posts, October 2026",
+        "no"
+      ]
+    ],
+    "sourcesCount": 4
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

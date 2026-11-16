@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "id": "vip-watch",
+  "name": "Sender Watch",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "communication",
+  "tags": [
+    "mail",
+    "senders",
+    "volume"
+  ],
+  "icon": "mail",
+  "summary": "Who is filling your inbox this window?",
+  "description": "Reads the mail metadata bridge for the last 24 hours and lists who sent the most, with a message count per sender. Metadata only: sender, count and time. It never opens a message body, never reads attachments, and never sends mail.",
+  "highlights": [
+    "Top senders in the last 24 hours",
+    "Message count per sender",
+    "Headers only, bodies never read"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:vip-watch",
+    "onSchedule:0 8 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "vip-watch",
+        "size": "2x1",
+        "dataSource": {
+          "type": "mail-digest"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

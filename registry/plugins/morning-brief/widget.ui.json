@@ -1,0 +1,16 @@
+{
+  "type": "card",
+  "title": "Morning brief",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Live metrics"
+    },
+    {
+      "type": "list",
+      "title": "Today",
+      "rowsBinding": "rows"
+    }
+  ]
+}

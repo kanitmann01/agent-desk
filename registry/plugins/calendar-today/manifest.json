@@ -1,28 +1,63 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "calendar-today",
   "name": "Calendar Today",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "agent-desk",
   "class": "declarative",
-  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "minHost": ">=0.1.0",
   "license": "MIT",
+  "category": "time",
+  "tags": [
+    "calendar",
+    "today",
+    "agenda"
+  ],
+  "icon": "calendar",
+  "summary": "What is left today: the next event and how many meetings are still on the calendar.",
+  "description": "Reads the calendar bridge and shows today as it stands: how many events are still on the calendar, what is left to come, and the next event's title. The bridge is the same calendar file the rest of the dashboard uses; the card never asks the model, never invents events and never writes to the calendar. When the bridge has no data the card renders blank with the bridge's cause instead of a zero.",
+  "highlights": [
+    "The next event and how many are still today",
+    "What is left, in start-time order",
+    "Blank with a cause when the bridge is empty"
+  ],
   "permissions": {
-    "filesystem": { "read": [], "write": [] },
-    "network": { "allow": [] },
-    "llm": { "allow": false },
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
     "shell": "none"
   },
-  "activationEvents": ["onWidget:calendar-today", "onSchedule:0 * * * *"],
+  "activationEvents": [
+    "onWidget:calendar-today",
+    "onSchedule:0 * * * *"
+  ],
   "contributes": {
     "widgets": [
       {
         "id": "calendar-today",
         "size": "2x1",
-        "dataSource": { "type": "calendar-read" },
-        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+        "dataSource": {
+          "type": "calendar-read"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
       }
     ],
-    "skills": ["skills/day-briefing/SKILL.md"]
-  }
+    "skills": [
+      "skills/day-briefing/SKILL.md"
+    ]
+  },
+  "sample": "sample.json"
 }

@@ -1,19 +1,49 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "excel-report",
   "name": "Excel Report Watch",
   "version": "0.1.0",
   "publisher": "agent-desk",
   "class": "declarative",
-  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
   "license": "MIT",
+  "category": "reference",
+  "tags": [
+    "excel",
+    "reference",
+    "example"
+  ],
+  "icon": "folder",
+  "summary": "Reference example: watches an Excel workbook for row changes and reports the last 24-hour delta.",
+  "description": "Excel Report Watch is the shipped reference/example plugin: a small, complete, read-only declarative card that authors can copy. It watches matching workbooks under the declared reports glob, compares the current row set with its previous read, and reports rows seen plus added and removed counts for the 24-hour window. It is installable on its own, writes nothing outside its plugin data directory, uses no network, no model and no shell, and exists to show the manifest, ui-schema and sample shapes rather than to be a production report. The id and version stay excel-report 0.1.0; only the marketplace category changes, to reference.",
+  "highlights": [
+    "The shipped reference/example for a declarative plugin: one widget, one ui-schema.",
+    "Reads only workbooks under the declared reports glob and writes nothing outside plugin data.",
+    "Stays installable at id excel-report, version 0.1.0, and is not a member of any pack."
+  ],
   "permissions": {
-    "filesystem": { "read": ["${workspace}/reports/*.xlsx"], "write": ["${pluginData}"] },
-    "network": { "allow": [] },
-    "llm": { "allow": false },
+    "filesystem": {
+      "read": [
+        "${workspace}/reports/*.xlsx"
+      ],
+      "write": [
+        "${pluginData}"
+      ]
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
     "shell": "none"
   },
-  "activationEvents": ["onWidget:excel-report", "onSchedule:0 * * * *"],
+  "activationEvents": [
+    "onWidget:excel-report",
+    "onSchedule:0 * * * *"
+  ],
   "contributes": {
     "widgets": [
       {
@@ -24,9 +54,16 @@
           "file": "${workspace}/reports/*.xlsx",
           "deltaWindow": "24h"
         },
-        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
       }
     ],
-    "skills": ["skills/workbook-report/SKILL.md"]
-  }
+    "skills": [
+      "skills/workbook-report/SKILL.md"
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
 }

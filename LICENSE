@@ -1,21 +1,124 @@
-MIT License
+AGENT DESK PROPRIETARY LICENSE
+Packaging draft, version 0.1, 2026-11-16
 
-Copyright (c) 2026 Kanit Mann
+Copyright (c) 2026 Kanit Mann. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+READ THIS FIRST
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This document is a working draft prepared for product packaging. It is not
+legal advice, and it has not been reviewed by counsel. Bracketed
+[COUNSEL: ...] items are unresolved commercial terms. They must be completed
+and reviewed by qualified legal counsel before Agent Desk is distributed
+commercially. Do not treat this draft as a final EULA.
+
+1. Definitions
+
+"Software" means the Agent Desk application, including its executable,
+runtime files, dashboard assets, and documentation, but excluding the Plugin
+SDK materials identified in LICENSE-SDK and third-party components.
+
+"Plugin" means a declarative plugin package that conforms to the Agent Desk
+plugin manifest schema and is distributed through the Agent Desk marketplace
+or loaded by the Software.
+
+"Licensor" means the copyright holder named above.
+
+2. Evaluation license
+
+Subject to this License, Licensor grants you a limited, non-exclusive,
+non-transferable, revocable license to install and run the Software for your
+internal evaluation of its suitability, for up to [COUNSEL: evaluation
+period, for example 30 days] from first launch, on up to [COUNSEL: number]
+seats. Evaluation use is limited to non-production data.
+
+No other rights are granted, whether by implication, estoppel, or otherwise.
+
+3. Enterprise and commercial use
+
+Production, enterprise, or revenue-generating use requires a separate
+written agreement with Licensor. [COUNSEL: insert pricing, support and SLA,
+security and data-processing terms, permitted subsidiaries and affiliates,
+usage metrics, audit rights, and renewal and termination terms.]
+
+Until that agreement is signed, any production use is outside the scope of
+this License.
+
+4. Restrictions
+
+You must not:
+  a. copy, distribute, publish, sublicense, sell, rent, lease, or otherwise
+     make the Software available to any third party, except as expressly
+     permitted in a written agreement;
+  b. modify, translate, reverse engineer, decompile, or disassemble the
+     Software, except to the extent a mandatory law permits and cannot be
+     waived;
+  c. remove, obscure, or alter any copyright, trademark, licence, or
+     proprietary notice in the Software;
+  d. use the Software to build a competing product or to train a competing
+     model on its non-public output, except as permitted by a written
+     agreement;
+  e. use the Software in violation of law, or to process data you are not
+     authorised to process.
+
+5. Plugins and plugin authors
+
+Plugins are separate works. Nothing in this License transfers ownership of a
+Plugin to Licensor, and nothing in this License restricts a plugin author's
+right to license that author's Plugin on other terms.
+
+By submitting a Plugin to the Agent Desk marketplace, the plugin author
+grants Licensor a worldwide, non-exclusive, royalty-free, sublicensable
+(through multiple tiers) license to reproduce, host, store, distribute,
+publicly display, and make the Plugin available through the marketplace, and
+to modify the Plugin only as technically necessary to package, validate,
+render, or display it. The plugin author represents that the author has the
+rights needed to grant this license. [COUNSEL: confirm the scope, term,
+termination, patent, moral-rights, and takedown terms, and whether a
+separate contributor agreement is required.]
+
+6. Plugin SDK
+
+The Plugin SDK is licensed separately under Apache License 2.0 in
+LICENSE-SDK. That licence does not extend to the Software.
+
+7. Third-party components
+
+The Software includes third-party components licensed under their own terms.
+Those terms are listed in THIRD-PARTY-NOTICES.md and the upstream texts in
+the licenses/ directory of the distribution. Nothing in this License limits
+your rights under those third-party licences, and nothing in those licences
+grants rights to the Software beyond what they state.
+
+8. No warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. LICENSOR DOES
+NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE.
+[COUNSEL: confirm whether any statutory warranties cannot be excluded in the
+target jurisdictions.]
+
+9. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR WILL NOT BE LIABLE FOR ANY
+INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR
+LOST PROFITS, REVENUE, DATA, OR BUSINESS OPPORTUNITY, ARISING OUT OF OR
+RELATED TO THE SOFTWARE OR THIS LICENSE. [COUNSEL: insert the aggregate
+liability cap and carve-outs, and confirm enforceability by jurisdiction.]
+
+10. Term and termination
+
+This License starts when you first install or use the Software and ends when
+it expires or is terminated. Licensor may terminate it immediately if you
+breach it. On termination you must stop using the Software and delete all
+copies you control, except copies you must retain by law. Sections 4, 7, 8,
+9, and 11 survive termination.
+
+11. Governing law and disputes
+
+[COUNSEL: insert governing law, venue, arbitration or courts, language, and
+notice provisions. Do not ship this section as a blank placeholder.]
+
+12. Contact
+
+[COUNSEL: insert the licensing contact, legal entity name, and address.]

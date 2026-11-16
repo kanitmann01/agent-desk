@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 2,
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "finance",
+  "minHost": ">=0.1.0",
+  "id": "budget-burn",
+  "name": "Budget Burn",
+  "version": "0.2.0",
+  "tags": [
+    "budget",
+    "spend",
+    "burn"
+  ],
+  "icon": "clock",
+  "summary": "Are we burning budget faster than plan this month?",
+  "description": "Budget Burn sums the Spent column by Line from ${workspace}/finance/budget*.xlsx, shows progress against the 250,000 USD budget, and carries the source state and window note. A missing workbook renders the blank state naming the setting, not a fake zero.",
+  "highlights": [
+    "Budget-used progress against a 250,000 USD cap.",
+    "Status line and tone carry the source state at a glance.",
+    "Window note states the 30-day comparison period."
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "${workspace}/finance/budget*.xlsx"
+      ],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:budget-burn",
+    "onSchedule:0 7 * * *"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "budget-burn",
+        "size": "2x1",
+        "dataSource": {
+          "type": "excel-watch",
+          "file": "${workspace}/finance/budget*.xlsx",
+          "keyColumn": "Line",
+          "valueColumn": "Spent",
+          "window": "30d",
+          "target": 250000,
+          "targetGood": "down",
+          "aggregate": "sum"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

@@ -1,0 +1,21 @@
+{
+  "type": "card",
+  "title": "Sources",
+  "elements": [
+    {
+      "type": "table",
+      "title": "Sources",
+      "rowsBinding": "sourceTable",
+      "columns": [
+        "Source",
+        "Title",
+        "Used"
+      ]
+    },
+    {
+      "type": "metric",
+      "binding": "sourcesCount",
+      "label": "Entries"
+    }
+  ]
+}

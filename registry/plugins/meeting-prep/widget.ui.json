@@ -1,0 +1,26 @@
+{
+  "type": "card",
+  "title": "Meeting prep",
+  "elements": [
+    {
+      "type": "timeline",
+      "itemsBinding": "upcoming",
+      "title": "Upcoming"
+    },
+    {
+      "type": "text",
+      "binding": "nextEventTitle",
+      "label": "Next"
+    },
+    {
+      "type": "list",
+      "rowsBinding": "rows",
+      "title": "Today"
+    },
+    {
+      "type": "checklist",
+      "itemsBinding": "items",
+      "title": "Prep"
+    }
+  ]
+}

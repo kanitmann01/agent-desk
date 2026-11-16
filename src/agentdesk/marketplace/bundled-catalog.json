@@ -1,0 +1,460 @@
+{
+  "generatedAt": "2026-11-16T06:52:25.501718+00:00",
+  "plugins": [
+    {
+      "category": "finance",
+      "changelog": "",
+      "digest": "4ed1c756583534d14961a0e9125b707b31393e7972ddfd964167ad3122ac5093",
+      "id": "ar-aging",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "A/R Aging",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "receivables",
+        "cash",
+        "aging"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "operations",
+      "changelog": "",
+      "digest": "6324330724abba90cbe41a9bc0f687cccba1e55dade901df985ede65f74a2d33",
+      "id": "audit-digest",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Audit digest",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "audit",
+        "activity",
+        "governance",
+        "log"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "finance",
+      "changelog": "",
+      "digest": "b887ff373b387c76a6928ed315e5ce7c57c4c12f03b6d5ba855791ca914dcff9",
+      "id": "budget-burn",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Budget Burn",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "budget",
+        "spend",
+        "burn"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "time",
+      "changelog": "",
+      "digest": "302e98e69b49d3c375abda5148bfe720cdbc8aa0c2e42f4c81c7a2c5c82095e0",
+      "id": "calendar-today",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Calendar Today",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "calendar",
+        "today",
+        "agenda"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "research",
+      "changelog": "",
+      "digest": "806de249257251efebf4186ced1283eef0f5d31a26ab44c9ec4c2f7a7c633faf",
+      "id": "competitor-watch",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Competitor Watch",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "competitor",
+        "pricing",
+        "change"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "operations",
+      "changelog": "",
+      "digest": "2c5654fd566e384f4119f0b586eb7193cbd9dbe77b2047080b62e3e39d4aff73",
+      "id": "compliance-posture",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Compliance posture",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "compliance",
+        "policy",
+        "governance",
+        "checks"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "reference",
+      "changelog": "",
+      "digest": "31ee5eee95dcb63e2afd96740b0ac9a622de14fd7dc46ce67ce8fd8d62e72453",
+      "id": "excel-report",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Excel Report Watch",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "excel",
+        "reference",
+        "example"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "time",
+      "changelog": "",
+      "digest": "1c5e3e461017d265aaa1bbe3204996d8abc11a6b787a1ed77280ca5eca447c3b",
+      "id": "follow-up-watch",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Follow-up Watch",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "commitments",
+        "follow-ups",
+        "aging"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "finance",
+      "changelog": "",
+      "digest": "086879ca32990ff91c320fd3dd9167cadf4f4b2bea7673bef1c44927f3024cf7",
+      "id": "kpi-scorecard",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "KPI Scorecard",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "kpis",
+        "targets",
+        "scorecard"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "time",
+      "changelog": "",
+      "digest": "a7e270216e1ecf11ada865ef0e841dae78b67303db570668777f251b6b7d0c01",
+      "id": "meeting-prep",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Meeting Prep",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "meetings",
+        "prep",
+        "calendar"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "command",
+      "changelog": "",
+      "digest": "2f1565ca60918046800f8468bcc29c497ca58ccacbe083cbdea39ccb7192a1d3",
+      "id": "morning-brief",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Morning Brief",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "morning",
+        "brief",
+        "aggregate"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "research",
+      "changelog": "",
+      "digest": "7ebcfb70c97deda65b9d65fc08684e046c869d78e0315352b76e9e64e5d36550",
+      "id": "notes-actions",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Notes Actions",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "notes",
+        "actions",
+        "markdown"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "communication",
+      "changelog": "",
+      "digest": "558e489d233d572ef6b94839823eed14ac09f6e4d030a6c17fadb5046fcbcbf4",
+      "id": "outlook-digest",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Outlook Digest",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "mail",
+        "digest",
+        "senders"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "operations",
+      "changelog": "",
+      "digest": "4ec6124c929286db2a958aed45872ca06df3b5ad2963a8db831a3928fd58943f",
+      "id": "plugin-health",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Plugin health",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "plugins",
+        "health",
+        "runtime",
+        "status"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "finance",
+      "changelog": "",
+      "digest": "5de734605542f8d197010cab001b5be4cf15fa63b69bc7939c0f49b508379f26",
+      "id": "reconciliation-watch",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Reconciliation Watch",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "reconciliation",
+        "ledger",
+        "bank"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "time",
+      "changelog": "",
+      "digest": "0aaae50d8db9643bf1f1529d9ed86ab57290e84596b11dc590cc4b55875a5fad",
+      "id": "renewal-radar",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Renewal Radar",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "renewals",
+        "contracts",
+        "deadlines"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "research",
+      "changelog": "",
+      "digest": "e53efb1fb99a326b82e74476b3efc46dd14829cb652e7a055c1650d6ed1ff3cb",
+      "id": "research-brief",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Research Brief",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "research",
+        "brief",
+        "sources"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "finance",
+      "changelog": "",
+      "digest": "7a0e1f0a486b77dcdd3328376031bdf3c2ccc16046a2164e802bd525799de791",
+      "id": "revenue-vs-target",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Revenue vs Target",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "revenue",
+        "target",
+        "quarter"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "finance",
+      "changelog": "",
+      "digest": "473edf4374ea9005657433a0b7a0e42afe7de8622e3015acc0e6c47fd1eae5a0",
+      "id": "sales-delta-widget",
+      "latest": "0.2.0",
+      "minHost": "",
+      "name": "Sales 24h Delta",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "sales",
+        "pipeline",
+        "daily-delta"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "research",
+      "changelog": "",
+      "digest": "76c2fcbaeaa2e7b58b1698a925d92fee7da2c52388a88963677bc6ac54395096",
+      "id": "source-ledger",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Source Ledger",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "research",
+        "sources",
+        "ledger"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "operations",
+      "changelog": "",
+      "digest": "a1adf272ca2b6ec01a321471493eae6d8064937b6424c3f00d6e35715153c0ca",
+      "id": "update-radar",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Update radar",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "updates",
+        "versions",
+        "plugins",
+        "runtime"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "communication",
+      "changelog": "",
+      "digest": "ae35c57c07c5e62a4a8bb62a24760630034753bd26958dcb8b645bac19d05d7f",
+      "id": "vip-watch",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Sender Watch",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "mail",
+        "senders",
+        "volume"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "communication",
+      "changelog": "",
+      "digest": "0dbd80716d27babb5f9010406860e99bb2b2c9a4bfdf774549eb29838b6c9c3c",
+      "id": "waiting-on-you",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Waiting on you",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "mail",
+        "threads",
+        "follow-up"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "time",
+      "changelog": "",
+      "digest": "51461f696aad5fcca21a954d9fe81ef0d49b30f0825c63c01b624ede080f8689",
+      "id": "week-load",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Week Load",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "calendar",
+        "capacity",
+        "planning"
+      ],
+      "yanked": false
+    },
+    {
+      "category": "command",
+      "changelog": "",
+      "digest": "05e4faa7b708f0f9e683bc72c7d9f7e0a4ffe5f7faa9911b6f18d757a76b6c8e",
+      "id": "weekly-review",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Weekly Review",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "weekly",
+        "review",
+        "aggregate"
+      ],
+      "yanked": false
+    }
+  ],
+  "schemaVersion": 2
+}
