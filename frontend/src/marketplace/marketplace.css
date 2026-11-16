@@ -169,13 +169,7 @@
 .mkt-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .mkt-card-blocked { background: var(--surface-2); border-style: dashed; }
 .mkt-card-top { display: flex; align-items: flex-start; gap: 10px; }
-.mkt-card-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px; flex: none;
-  border-radius: var(--r-control);
-  background: var(--primary-soft);
-  color: var(--primary);
-}
+.mkt-card-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--primary);background:none}
 .mkt-glyph { display: block; }
 .mkt-card-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .mkt-card-name { font-weight: 700; font-size: 14.5px; color: var(--ink-1); }
@@ -289,13 +283,7 @@
 
 .mkt-detail-head { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-start; }
 .mkt-detail-title { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
-.mkt-detail-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 52px; height: 52px; flex: none;
-  border-radius: var(--r-card);
-  background: var(--primary-soft);
-  color: var(--primary);
-}
+.mkt-detail-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--primary);background:none}
 .mkt-detail-title h1 { margin: 2px 0 4px; font-family: var(--font-display); font-size: 28px; line-height: 1.15; letter-spacing: -.015em; }
 .mkt-detail-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; color: var(--ink-2); font-size: 12.5px; }
 .mkt-sep { color: var(--ink-4); }
@@ -451,7 +439,7 @@
 .mkt-sheet-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--hairline); background: var(--surface-2); }
 
 .mkt-pack-head { flex-direction: row; align-items: flex-start; gap: 14px; }
-.mkt-pack-icon { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; flex: none; border-radius: var(--r-card); background: var(--primary-soft); color: var(--primary); }
+.mkt-pack-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--primary);background:none}
 .mkt-pack-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .mkt-pack-members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: var(--r-inner); overflow: hidden; }
 .mkt-pack-members li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 12px; background: var(--surface); font-size: 13px; }

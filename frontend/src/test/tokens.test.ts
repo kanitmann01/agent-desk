@@ -437,6 +437,13 @@ describe('marketplace type stays inside the design language', () => {
     expect(adminCss).not.toContain('text-transform: uppercase');
   });
 
+  it('draws catalog icons as strokes without a filled chip', () => {
+    for (const selector of ['.mkt-card-icon', '.mkt-detail-icon', '.mkt-pack-icon']) {
+      expect(decl(marketCss, selector, 'background'), selector).toBe('none');
+      expect(decl(marketCss, selector, 'color'), selector).toBe('var(--primary)');
+    }
+  });
+
   it('shows a keyboard ring on the marketplace main and keeps the search well ring', () => {
     expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--primary)');
     expect(marketCss).toContain('.mkt-search-field:focus-within');
