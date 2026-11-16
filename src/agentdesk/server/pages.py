@@ -124,6 +124,7 @@ svg{display:block;flex:none}
 .brand .mark{display:none}
 .brand b,.brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em}
 .rail-mark{display:none;font-family:var(--font-mono);font-weight:600}
+.phone-bar{display:none}
 .rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 0;border-radius:0;color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
 .rail a:hover{background:transparent;color:var(--ink-1);text-decoration:underline}
 .rail a[aria-current="page"]{background:transparent;color:var(--ink-1);box-shadow:inset 0 -2px 0 var(--ink-1)}
@@ -314,14 +315,15 @@ table.rows td.neg{color:var(--bad)}
   .app{display:block}
   /* The strip stays pinned while the page scrolls and its entries wrap
      instead of clipping, matching the dashboard SPA's behavior. */
-  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 14px;gap:8px}
-  .rail .brand{padding:0 12px 0 0}
-  /* Words hide; every link already carries its aria-label. The strip
-     stays wrapping (it must not scroll sideways) and drops to icon
-     height, matching the dashboard SPA. */
+  .phone-bar{display:flex;align-items:center;gap:12px;width:100%}
+  .phone-menu{margin-left:auto;border:2px solid var(--ink-1);background:var(--surface);min-height:44px;padding:0 12px;font-weight:700}
+  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:2px solid var(--ink-1);padding:8px 12px}
+  .rail > a,.rail .brand,.rail .user{display:none}
+  .rail.rail-open{position:fixed;inset:0;height:100vh;flex-direction:column;align-items:stretch;background:var(--bg);padding:16px;overflow:auto}
+  .rail.rail-open > a,.rail.rail-open .brand{display:flex}
   .rail a{min-height:44px}
-  html{scroll-padding-top:72px}
-  .rail .user{display:none}
+  html{scroll-padding-top:64px}
+  .topbar h1{font-size:32px}
   .grid{grid-template-columns:1fr}
   .col-7,.col-5,.col-8,.col-4{grid-column:auto}
   main{padding:20px 16px 40px}
@@ -657,6 +659,16 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     apply(next);
   });
 })();
+(function () {
+  var rail = document.querySelector('.rail');
+  var menu = document.querySelector('.phone-menu');
+  if (!rail || !menu) return;
+  menu.addEventListener('click', function () {
+    var open = rail.classList.toggle('rail-open');
+    menu.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menu.textContent = open ? 'Close' : 'Menu';
+  });
+})();
 """
 
 _DOT_CLASS = {FRESH: "dot", ATTENTION: "dot amber", SAMPLE: "dot sample"}
@@ -718,8 +730,22 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
             f'<span class="rail-label">{label}</span>{extra}</a>'
         )
 
+    current_label = {
+        "/": "Dashboard",
+        "/inbox": "Inbox",
+        "/assistant": "Assistant",
+        "/settings": "Settings",
+        "/marketplace": "Marketplace",
+    }.get(active, "Agent Desk")
+    phone = (
+        '<div class="phone-bar">'
+        '<b class="brand-name">Agent Desk</b>'
+        f'<span class="phone-current">{current_label}</span>'
+        '<button type="button" class="phone-menu" aria-expanded="false" '
+        'aria-controls="main-rail">Menu</button></div>'
+    )
     return (
-        '<nav class="rail" aria-label="Main">'
+        f'<nav class="rail" id="main-rail" aria-label="Main">{phone}'
         '<div class="brand"><b class="brand-name">Agent Desk</b></div>'
         f'{entry("/", _ICON_DASHBOARD, "Dashboard")}'
         # The count rides inside the link: one row on the rail, and

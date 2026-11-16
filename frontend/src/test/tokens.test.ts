@@ -257,9 +257,9 @@ describe('the rail stays on screen at every width', () => {
     expect(railRule, 'narrow rail entries must wrap, not clip').toContain('flex-wrap:wrap');
     expect(railRule, 'narrow rail must not scroll sideways').not.toContain('overflow-x');
     expect(railRule, 'sticky strip must paint above the content').toContain('z-index');
-    expect(narrow, 'narrow rail keeps the words').not.toContain('.rail-label{display:none}');
+    expect(narrow, 'narrow rail opens from a menu bar').toContain('.phone-bar{display:flex');
     expect(narrow, 'narrow rail targets are 44px').toContain('min-height:44px');
-    expect(narrow, 'focused content clears the sticky strip').toContain('scroll-padding-top:72px');
+    expect(narrow, 'focused content clears the sticky strip').toContain('scroll-padding-top:64px');
     // Sticky inside its own auto-sized grid row has no travel: the
     // single-column shell must become a block for the pin to work.
     expect(narrow, 'single-column shell must become a block').toContain('.app{display:block}');

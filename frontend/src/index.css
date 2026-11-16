@@ -55,7 +55,8 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit;tou
 button:disabled{opacity:.55;cursor:default}
 a{color:var(--primary);text-decoration:none;touch-action:manipulation}
 code{font-family:var(--font-mono);font-size:.92em;background:var(--surface-2);border-radius:5px;padding:1px 5px}
-:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+:focus-visible{outline:2px solid var(--ink-1);outline-offset:2px;border-radius:0}
+h1:focus,h1:focus-visible,h2:focus,h2:focus-visible{outline:none}
 .skip-link{position:fixed;top:-60px;left:8px;z-index:200;background:var(--primary);color:var(--primary-ink);padding:8px 12px;border-radius:var(--r-control);font-size:13px;font-weight:600}
 .skip-link:focus{top:8px}
 svg{display:block;flex:none}
@@ -77,6 +78,7 @@ svg{display:block;flex:none}
 .brand .mark{display:none}
 .brand .brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em;white-space:nowrap}
 .rail-mark{display:none;font-family:var(--font-mono);font-weight:600;font-size:14px}
+.phone-bar{display:none}
 .rail a,.rail .nav-off{
   display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);
   color:var(--ink-2);font-weight:600;font-size:13.5px;text-decoration:none;
@@ -384,23 +386,36 @@ table.rows td.neg{color:var(--bad)}
   .span-4,.span-5,.span-7{grid-column:span 6}
   .span-8{grid-column:span 12}
 }
+.brief{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,.8fr);gap:28px;align-items:start}
+.brief-empty{grid-template-columns:minmax(0,560px)}
+.brief-figure{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;align-items:end}
+.brief-figure .movers{grid-column:1 / -1}
+.brief-label{font-size:16px;font-weight:600;margin:0}
+.brief-quiet{margin:4px 0 0;color:var(--ink-2);font-size:14px}
+.movers{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.movers li{display:flex;justify-content:space-between;gap:16px;font-size:16px;border-bottom:1px solid var(--ink-1);padding-bottom:8px}
+.mover.up{color:var(--good);font-family:var(--font-mono)}
+.mover.down{color:var(--bad);font-family:var(--font-mono)}
+.decisions{border:2px solid var(--ink-1);box-shadow:6px 6px 0 var(--ink-1);background:var(--surface);padding:16px 16px 8px}
+.decisions h2{font-family:var(--font-display);font-size:20px;font-weight:560;margin:0 0 12px}
+.decisions ul{list-style:none;margin:0;padding:0}
+.decisions li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--ink-1);font-size:16px}
+.brief-answer{margin-top:28px}
+.brief-answer h2{font-family:var(--font-display);font-size:20px;font-weight:560}
 @media (max-width:980px){
-  /* The single-column shell becomes a block: a sticky grid item inside
-     its own auto-sized row has no travel, so the strip would still
-     scroll away. As a block child the rail sticks to the viewport for
-     the whole scroll. */
   .app{display:block}
-  /* The strip stays pinned while the page scrolls and its entries wrap
-     instead of clipping, so no nav entry is ever out of reach. */
-  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:10px 12px;gap:6px}
-  .rail .brand{padding:0 12px 0 0;flex:none}
-  .rail a,.rail .nav-off{flex:none}
-  /* Words hide; every link already carries its aria-label. The strip
-     stays wrapping (it must not scroll sideways) and drops to icon
-     height so the greeting starts higher. */
+  .app{margin:0;border:none;box-shadow:none;min-height:100vh}
+  .phone-bar{display:flex;align-items:center;gap:12px;width:100%}
+  .phone-current{font-weight:600}
+  .phone-menu{margin-left:auto;border:2px solid var(--ink-1);background:var(--surface);min-height:44px;padding:0 12px;font-weight:700}
+  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;border-right:none;border-bottom:2px solid var(--ink-1);padding:8px 12px}
+  .rail > a,.rail .brand,.rail .user,.rail-toggle{display:none}
+  .rail.rail-open{position:fixed;inset:0;height:100vh;flex-direction:column;align-items:stretch;background:var(--bg);padding:16px;overflow:auto}
+  .rail.rail-open > a,.rail.rail-open .brand{display:flex}
   .rail a{min-height:44px}
-  html{scroll-padding-top:72px}
-  .rail .user{display:none}
+  html{scroll-padding-top:64px}
+  .hero-title{font-size:32px}
+  .brief,.brief-empty{grid-template-columns:1fr}
   /* The strip already carries every entry; collapse is a tall-rail
      control and does nothing on the wrapping strip. */
   .rail-toggle{display:none}

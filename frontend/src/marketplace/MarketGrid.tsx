@@ -98,6 +98,82 @@ export function MarketCardView({ card }: { card: MarketCard }) {
   );
 }
 
+const QUIET_RISK = new Set(['low', 'internal', 't1']);
+
+function isHouseDefault(card: MarketCard): boolean {
+  return card.publisher === 'agent-desk'
+    && card.publisherVerified
+    && card.source === 'bundled'
+    && QUIET_RISK.has(card.riskTier.toLowerCase());
+}
+
+function Row({ card, featured = false }: { card: MarketCard; featured?: boolean }) {
+  const showMeta = !isHouseDefault(card);
+  const extras: string[] = [];
+  if (showMeta && card.publisher !== 'agent-desk') extras.push(card.publisher);
+  if (showMeta && !card.publisherVerified) extras.push('Unverified publisher');
+  if (showMeta && card.source !== 'bundled') extras.push(sourceLabel(card.source));
+  if (card.deprecated) extras.push('Deprecated');
+  if (card.yanked) extras.push('Yanked');
+  const reason = card.ineligibleReasons[0];
+  return (
+    <li>
+      <MarketLink
+        to={`/marketplace/plugin/${encodeURIComponent(card.id)}`}
+        className={`mkt-row${featured ? ' mkt-row-featured' : ''}${card.eligible ? '' : ' mkt-card-blocked'}`}
+        aria-label={`${card.name}, version ${card.version}, ${card.publisher}. View plugin details`}
+      >
+        <span className="mkt-row-name">{card.name}</span>
+        <span className="mkt-row-summary">{card.summary}</span>
+        <span className="mkt-row-cat">{categoryLabel(card.category)}</span>
+        <span className="mkt-version">v{card.version}</span>
+        {showMeta && !QUIET_RISK.has(card.riskTier.toLowerCase())
+          ? <span className="mkt-row-extra">{riskLabel(card.riskTier)}</span> : null}
+        {extras.map((extra) => <span key={extra} className="mkt-row-extra">{extra}</span>)}
+        {!card.eligible && reason ? (
+          <p className="mkt-ineligible"><span className="mkt-ineligible-label">Not available:</span> {reason.message}</p>
+        ) : null}
+      </MarketLink>
+    </li>
+  );
+}
+
+/** Discover list: a few featured rows, then one section per category. */
+export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
+  const featured = cards.filter((card) => card.eligible).slice(0, 3);
+  const featuredIds = new Set(featured.map((card) => card.id));
+  const rest = cards.filter((card) => !featuredIds.has(card.id));
+  const house = cards.length > 0 && cards.every(isHouseDefault);
+  const groups = new Map<string, MarketCard[]>();
+  for (const card of rest) {
+    const list = groups.get(card.category) ?? [];
+    list.push(card);
+    groups.set(card.category, list);
+  }
+  return (
+    <div className="mkt-catalog">
+      {house ? (
+        <p className="mkt-default-note">All bundled plugins are verified, T1.</p>
+      ) : (
+        <p className="mkt-default-note">Publisher, verification and risk show only when a plugin is not the bundled default.</p>
+      )}
+      {featured.length > 0 ? (
+        <ul className="mkt-rows mkt-featured">
+          {featured.map((card) => <Row key={card.id} card={card} featured />)}
+        </ul>
+      ) : null}
+      {[...groups.entries()].map(([category, group]) => (
+        <section key={category} className="mkt-group" aria-label={categoryLabel(category)}>
+          <h2>{categoryLabel(category)}</h2>
+          <ul className="mkt-rows">
+            {group.map((card) => <Row key={card.id} card={card} />)}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function SkeletonGrid({ count = 6 }: { count?: number }) {
   return (
     <div className="mkt-grid mkt-grid-skeleton" aria-hidden="true">

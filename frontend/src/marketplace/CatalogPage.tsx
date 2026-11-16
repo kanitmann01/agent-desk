@@ -6,7 +6,7 @@ import EmptyState, { ICON_SEARCH } from '../components/EmptyState';
 import Button from '../components/Button';
 import { getMarket, marketErrorText } from './client';
 import { useMarketplaceNav } from './context';
-import { MarketGrid, SkeletonGrid, CATEGORIES, categoryLabel } from './MarketGrid';
+import { MarketCatalog, SkeletonGrid, CATEGORIES, categoryLabel } from './MarketGrid';
 import type { CatalogResponse } from './types';
 
 type Load =
@@ -122,9 +122,12 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
   return (
     <div className="mkt-page">
       <header className="mkt-page-head">
-        <span className="mkt-eyebrow">Marketplace</span>
         <h1>{heading}</h1>
-        <p className="mkt-lede">{lede}</p>
+        <p className="mkt-lede">
+          {category || onSearch
+            ? lede
+            : 'Install work plugins that read only what they declare.'}
+        </p>
       </header>
 
       <form className="mkt-search" role="search" onSubmit={submit}>
@@ -237,7 +240,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
               <span className="w-note mkt-empty-line">Try a category, a shorter search, or allow every source.</span>
             </EmptyState>
           ) : (
-            <MarketGrid cards={load.data.entries} />
+            <MarketCatalog cards={load.data.entries} />
           )}
         </div>
       )}

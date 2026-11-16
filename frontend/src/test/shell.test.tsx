@@ -164,13 +164,10 @@ describe('the hero band', () => {
       sources: { connected: 0, total: 3, items: [] },
     };
     render(<Dashboard data={cold} onRefetch={async () => {}} onExpired={() => {}} />);
-    expect(
-      screen.getByText('Not connected yet: each card below has its own'),
-    ).toBeInTheDocument();
-    // "one-step" cannot break across the line: the phrase rides in a
-    // nowrap span so a narrow greeting band never splits it.
-    const nowrap = document.querySelector<HTMLElement>('.hero-live .nowrap');
-    expect(nowrap).toHaveTextContent('one-step connect.');
+    expect(screen.getByRole('region', { name: 'Needs a decision' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', '/walkthrough/calendar');
+    expect(screen.queryByText(/Not connected yet/)).toBeNull();
   });
 });
 

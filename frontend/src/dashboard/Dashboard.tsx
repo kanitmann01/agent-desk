@@ -24,6 +24,7 @@ import ResearchCard, { RESEARCH_BUSY, UNREACHABLE_SEND, type ResearchAnswer } fr
 import PluginCardView from './PluginCardView';
 import SkillsCard from './SkillsCard';
 import CustomizeCell from './CustomizeCell';
+import Brief from './Brief';
 import CommandBar from '../components/CommandBar';
 import Button from '../components/Button';
 
@@ -88,19 +89,6 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const sourceLine = connected > 0
     ? `Live: ${connected} of ${data.sources.total} sources connected.`
     : '';
-  // The pill's flex children are the dot and one text span: a bare text
-  // node beside the nowrap span would become a second flex item and let
-  // the flex gap read as a double space. Inside that span, "one-step"
-  // never breaks across the line, so a narrow band wraps at the spaces
-  // around it.
-  const sourceLineBody = connected > 0
-    ? sourceLine
-    : (
-      <span>
-        Not connected yet: each card below has its own{' '}
-        <span className="nowrap">one-step connect.</span>
-      </span>
-    );
 
   // The layout the payload carries: visible cards only, in render
   // order, custom titles riding along.
@@ -426,10 +414,12 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             <h1 className="hero-title">{greeting}</h1>
             <div className="hero-meta">
               <span>{dateLine}</span>
-              <span className="hero-live">
-                <span className={connected > 0 ? 'dot' : 'dot sample'} aria-hidden="true" />
-                {sourceLineBody}
-              </span>
+              {connected > 0 ? (
+                <span className="hero-live">
+                  <span className="dot" aria-hidden="true" />
+                  {sourceLine}
+                </span>
+              ) : null}
             </div>
           </div>
           <div className="hero-actions">
@@ -462,6 +452,18 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
           </section>
         ) : null}
         <CommandBar busy={researchBusy} onAsk={ask} />
+        {!customizing ? (
+          <>
+            <Brief data={data} onRefetch={onRefetch} onExpired={onExpired} />
+            {answer ? (
+              <section className="brief-answer" aria-label="Research answer">
+                <h2>Research</h2>
+                <p>{answer.summary}</p>
+              </section>
+            ) : null}
+          </>
+        ) : null}
+        {customizing ? (
         <section className="bento" aria-label="Dashboard">
           {renderedEntries.map((entry, index) => {
             const node = cardNode(entry.key);
@@ -491,6 +493,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             );
           })}
         </section>
+        ) : null}
         {customizing && hiddenEntries.length > 0 ? (
           <section className="cust-hidden" aria-label="Hidden cards">
             <div className="subhead">Hidden cards</div>
@@ -514,7 +517,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
         ) : null}
         <footer className="page-foot">
           <span>Agent Desk <span className="mono">{data.version}</span>.</span>
-          <span>Cards show only what their connected sources report.</span>
+          <span>Workbooks are copied before they are read. Calendar setup stays in the browser. Research calls are logged; file contents stay here.</span>
           <a href="/what-this-touches">What this app touches</a>
         </footer>
       </main>

@@ -28,6 +28,12 @@ function storedCollapsed(): boolean {
 export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   const [collapsed, setCollapsed] = useState(storedCollapsed);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const sectionName = active.startsWith('/marketplace') ? 'Marketplace'
+    : active === '/inbox' ? 'Inbox'
+    : active === '/assistant' ? 'Assistant'
+    : active === '/settings' ? 'Settings'
+    : 'Dashboard';
   // The accessible name survives collapse: the visible label hides with
   // the wide rail, so every link carries its own aria-label, and the
   // Inbox link names its waiting count.
@@ -54,7 +60,20 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   }
 
   return (
-    <nav className="rail" aria-label="Main">
+    <nav id="main-rail" className={menuOpen ? 'rail rail-open' : 'rail'} aria-label="Main">
+      <div className="phone-bar">
+        <span className="brand-name">Agent Desk</span>
+        <span className="phone-current">{sectionName}</span>
+        <button
+          type="button"
+          className="phone-menu"
+          aria-expanded={menuOpen}
+          aria-controls="main-rail"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? 'Close' : 'Menu'}
+        </button>
+      </div>
       <div className="brand">
         <span className="brand-name">Agent Desk</span>
       </div>
