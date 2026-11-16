@@ -31,6 +31,26 @@ LOG = logging.getLogger("agentdesk.excel")
 
 DEFAULT_INTERVAL_S = 3600.0  # hourly, matching the widget's own footnote
 
+# The status payload carries a bounded preview of the sheet so cards can
+# map columns by header name without shipping the whole workbook to the
+# browser. 50 rows x 12 columns is enough for a header row plus a month of
+# rows, and small enough to cross a status endpoint on every view.
+GRID_MAX_ROWS = 50
+GRID_MAX_COLUMNS = 12
+
+
+def _grid_cell(value):
+    """One grid cell: a plain string or number, never a Python object."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+    return str(value).strip()
+
 
 @dataclass
 class Adapters:
@@ -162,6 +182,17 @@ class ExcelWatch:
         with self._lock:
             return self._status_locked()
 
+    def _grid_locked(self) -> dict:
+        """A bounded header + rows preview, columns mapped by name later."""
+        if not self._last_rows:
+            return {"columns": [], "rows": []}
+        columns = [_grid_cell(cell) for cell in self._last_rows[0][:GRID_MAX_COLUMNS]]
+        rows = [
+            [_grid_cell(cell) for cell in row[:GRID_MAX_COLUMNS]]
+            for row in self._last_rows[1:GRID_MAX_ROWS + 1]
+        ]
+        return {"columns": columns, "rows": rows}
+
     def _status_locked(self) -> dict:
         now = self.adapters.clock()
         result = self._last_result
@@ -186,6 +217,7 @@ class ExcelWatch:
             "delta": result.delta.to_json() if result.delta is not None else None,
             "rowsSeen": result.rows_seen,
             "examples": [list(r[:4]) for r in self._last_rows[:3]],
+            "grid": self._grid_locked(),
             "last_ok_ts": self._last_ok_ts,
         }
 

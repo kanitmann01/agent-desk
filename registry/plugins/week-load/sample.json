@@ -1,0 +1,40 @@
+{
+  "bindings": {
+    "weekHours": 21,
+    "weekPoints": [
+      3,
+      4,
+      2,
+      5,
+      4,
+      1,
+      0,
+      2,
+      2,
+      4,
+      3,
+      2,
+      1,
+      0
+    ],
+    "rows": [
+      {
+        "primary": "Standup",
+        "secondary": "09:00",
+        "meta": "Team"
+      },
+      {
+        "primary": "Pipeline review",
+        "secondary": "11:00",
+        "meta": "Revenue"
+      },
+      {
+        "primary": "1:1 with Dana",
+        "secondary": "14:30",
+        "meta": "Dana Whitfield"
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

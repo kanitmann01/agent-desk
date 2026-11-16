@@ -1,0 +1,111 @@
+[
+  {
+    "n": 1,
+    "title": "Manifest v2, ten render elements, and sample render",
+    "blockers": []
+  },
+  {
+    "n": 2,
+    "title": "Data sources v2: real executors and honest states",
+    "blockers": [
+      1
+    ]
+  },
+  {
+    "n": 3,
+    "title": "Catalog, signing, and trust foundation",
+    "blockers": [
+      1
+    ]
+  },
+  {
+    "n": 4,
+    "title": "Marketplace API and policy eligibility",
+    "blockers": [
+      2,
+      3
+    ]
+  },
+  {
+    "n": 5,
+    "title": "Discover, Search, Detail, and Pack screens",
+    "blockers": [
+      4
+    ]
+  },
+  {
+    "n": 6,
+    "title": "Installed, Publisher Studio, publisher list, and /plugins redirect",
+    "blockers": [
+      4
+    ]
+  },
+  {
+    "n": 7,
+    "title": "Finance plugins (6)",
+    "blockers": [
+      2
+    ]
+  },
+  {
+    "n": 8,
+    "title": "Time and commitment plugins (5)",
+    "blockers": [
+      2
+    ]
+  },
+  {
+    "n": 9,
+    "title": "Communication plugins (3)",
+    "blockers": [
+      2
+    ]
+  },
+  {
+    "n": 10,
+    "title": "Research and knowledge plugins (4)",
+    "blockers": [
+      2
+    ]
+  },
+  {
+    "n": 11,
+    "title": "Operations and governance plugins (4)",
+    "blockers": [
+      2,
+      3
+    ]
+  },
+  {
+    "n": 12,
+    "title": "Command plugins, role packs, and first-run",
+    "blockers": [
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "n": 13,
+    "title": "Signed policy, admin, and trust center",
+    "blockers": [
+      3
+    ]
+  },
+  {
+    "n": 14,
+    "title": "Packaging, SBOM, and license gates",
+    "blockers": [
+      6
+    ]
+  },
+  {
+    "n": 15,
+    "title": "Hardening, accessibility, theme pull-back, and e2e walkthrough",
+    "blockers": [
+      12,
+      13,
+      14
+    ]
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "type": "card",
+  "title": "Revenue vs target",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Booked"
+    },
+    {
+      "type": "progress",
+      "binding": "value",
+      "label": "Quarter target",
+      "target": 1000000,
+      "unit": "USD"
+    },
+    {
+      "type": "delta",
+      "binding": "delta24h",
+      "label": "Change vs yesterday",
+      "directionBinding": "direction"
+    }
+  ]
+}

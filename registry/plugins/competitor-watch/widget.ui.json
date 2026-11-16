@@ -1,0 +1,23 @@
+{
+  "type": "card",
+  "title": "Competitor watch",
+  "elements": [
+    {
+      "type": "delta",
+      "binding": "changed",
+      "label": "Pricing page",
+      "window": "24h",
+      "directionBinding": "direction"
+    },
+    {
+      "type": "list",
+      "title": "What changed",
+      "rowsBinding": "rows"
+    },
+    {
+      "type": "text",
+      "binding": "fetchedAt",
+      "label": "Fetched"
+    }
+  ]
+}

@@ -203,8 +203,9 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
 
   const stamp = salesStamp(status.state, status.last_ok_ts);
   const amber = status.state === 'stale' || status.state === 'locked' || status.state === 'unreadable';
-  const added = status.delta?.added?.length ?? 0;
-  const removed = status.delta?.removed?.length ?? 0;
+  const delta = status.delta;
+  const added = delta?.added?.length ?? 0;
+  const removed = delta?.removed?.length ?? 0;
   const changed = added + removed;
 
   let body;
@@ -213,17 +214,26 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
       <div className="sales-hero">
         <div className="kpi">
           <div className="label">Rows changed, 24 h</div>
-          <div className="value">{changed.toLocaleString('en-US')}</div>
-          <div className="sub">Row-hash diff against the snapshot from 24 hours ago</div>
-          {changed > 0 ? (
-            <div className="kpi-split">
-              <span className="kpi-chip up">+{added} added</span>
-              <span className="kpi-chip down">-{removed} removed</span>
-            </div>
-          ) : null}
+          {delta ? (
+            <>
+              <div className="value">{changed.toLocaleString('en-US')}</div>
+              <div className="sub">Row-hash diff against the snapshot from 24 hours ago</div>
+              {changed > 0 ? (
+                <div className="kpi-split">
+                  <span className="kpi-chip up">+{added} added</span>
+                  <span className="kpi-chip down">-{removed} removed</span>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="value">Not reported</div>
+              <div className="sub">The server sent no row-hash diff for this snapshot, so no change count is shown.</div>
+            </>
+          )}
         </div>
         <div className="sales-delta">
-          {status.delta ? <DeltaRows delta={status.delta} /> : null}
+          {delta ? <DeltaRows delta={delta} /> : null}
         </div>
       </div>
     );

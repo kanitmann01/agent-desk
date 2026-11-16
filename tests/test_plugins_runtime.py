@@ -164,3 +164,40 @@ def test_amber_data_source_with_cause_and_retest(runtime, tmp_path):
         make_xlsx([["Region", "Sales"], ["North", 10]]))
     status = runtime.retest("sales-delta-widget")
     assert status["status"] == "fresh"
+
+def test_widget_payload_detects_in_place_tampering(tmp_path):
+    from agentdesk.plugins.runtime import PluginError, PluginRuntime
+
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "data",
+        workspace_dir=tmp_path / "workspace",
+        now=NOW,
+    )
+    runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+    version_dir = Path(runtime.record("sales-delta-widget")["versions"][0]["dir"])
+    target = version_dir / "manifest.json"
+    target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(PluginError) as excinfo:
+        runtime.widget_payload("sales-delta-widget")
+    assert excinfo.value.code == "plugin:tampered"
+    assert excinfo.value.status == 409
+
+    with pytest.raises(PluginError) as excinfo:
+        runtime.source_status("sales-delta-widget")
+    assert excinfo.value.code == "plugin:tampered"
+
+    with pytest.raises(PluginError) as excinfo:
+        runtime.retest("sales-delta-widget")
+    assert excinfo.value.code == "plugin:tampered"
+
+    fresh = PluginRuntime(
+        plugins_dir=tmp_path / "fresh-plugins",
+        data_dir=tmp_path / "fresh-data",
+        workspace_dir=tmp_path / "workspace",
+        now=NOW,
+    )
+    fresh.install(zip_file(tmp_path / "fresh.zip"), source="zip")
+    assert fresh.widget_payload("sales-delta-widget") is None
+

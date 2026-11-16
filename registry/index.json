@@ -1,9 +1,79 @@
 {
   "plugins": [
     {
+      "id": "ar-aging",
+      "publisher": "agent-desk",
+      "latest": "0.2.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sha256": "4ed1c756583534d14961a0e9125b707b31393e7972ddfd964167ad3122ac5093",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "A/R Aging",
+      "category": "finance",
+      "tags": [
+        "receivables",
+        "cash",
+        "aging"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "audit-digest",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "6324330724abba90cbe41a9bc0f687cccba1e55dade901df985ede65f74a2d33",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Audit digest",
+      "category": "operations",
+      "tags": [
+        "audit",
+        "activity",
+        "governance",
+        "log"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "budget-burn",
+      "publisher": "agent-desk",
+      "latest": "0.2.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sha256": "b887ff373b387c76a6928ed315e5ce7c57c4c12f03b6d5ba855791ca914dcff9",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Budget Burn",
+      "category": "finance",
+      "tags": [
+        "budget",
+        "spend",
+        "burn"
+      ],
+      "dependencies": {}
+    },
+    {
       "class": "declarative",
       "id": "calendar-today",
-      "latest": "0.1.0",
+      "latest": "0.2.0",
       "publisher": "agent-desk",
       "releases": [
         {
@@ -11,9 +81,70 @@
           "tag": "calendar-today-0.1.0",
           "version": "0.1.0",
           "yanked": false
+        },
+        {
+          "version": "0.2.0",
+          "sha256": "302e98e69b49d3c375abda5148bfe720cdbc8aa0c2e42f4c81c7a2c5c82095e0",
+          "source": "local",
+          "yanked": false
         }
       ],
-      "risk": "low"
+      "risk": "low",
+      "name": "Calendar Today",
+      "category": "time",
+      "tags": [
+        "calendar",
+        "today",
+        "agenda"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "competitor-watch",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "806de249257251efebf4186ced1283eef0f5d31a26ab44c9ec4c2f7a7c633faf",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Competitor Watch",
+      "category": "research",
+      "tags": [
+        "competitor",
+        "pricing",
+        "change"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "compliance-posture",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "2c5654fd566e384f4119f0b586eb7193cbd9dbe77b2047080b62e3e39d4aff73",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Compliance posture",
+      "category": "operations",
+      "tags": [
+        "compliance",
+        "policy",
+        "governance",
+        "checks"
+      ],
+      "dependencies": {}
     },
     {
       "class": "declarative",
@@ -22,18 +153,146 @@
       "publisher": "agent-desk",
       "releases": [
         {
-          "sha256": "c11616e1a8bd35f0af6c4781f613ed3a62ca91f6e89df209131b5aad47f24e2d",
-          "tag": "excel-report-0.1.0",
           "version": "0.1.0",
+          "sha256": "31ee5eee95dcb63e2afd96740b0ac9a622de14fd7dc46ce67ce8fd8d62e72453",
+          "source": "local",
           "yanked": false
         }
       ],
-      "risk": "low"
+      "risk": "low",
+      "name": "Excel Report Watch",
+      "category": "reference",
+      "tags": [
+        "excel",
+        "reference",
+        "example"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "follow-up-watch",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "1c5e3e461017d265aaa1bbe3204996d8abc11a6b787a1ed77280ca5eca447c3b",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Follow-up Watch",
+      "category": "time",
+      "tags": [
+        "commitments",
+        "follow-ups",
+        "aging"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "kpi-scorecard",
+      "publisher": "agent-desk",
+      "latest": "0.2.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sha256": "086879ca32990ff91c320fd3dd9167cadf4f4b2bea7673bef1c44927f3024cf7",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "KPI Scorecard",
+      "category": "finance",
+      "tags": [
+        "kpis",
+        "targets",
+        "scorecard"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "meeting-prep",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "a7e270216e1ecf11ada865ef0e841dae78b67303db570668777f251b6b7d0c01",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Meeting Prep",
+      "category": "time",
+      "tags": [
+        "meetings",
+        "prep",
+        "calendar"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "morning-brief",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "2f1565ca60918046800f8468bcc29c497ca58ccacbe083cbdea39ccb7192a1d3",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Morning Brief",
+      "category": "command",
+      "tags": [
+        "morning",
+        "brief",
+        "aggregate"
+      ],
+      "dependencies": [
+        "sales-delta-widget",
+        "calendar-today",
+        "outlook-digest",
+        "research-brief"
+      ]
+    },
+    {
+      "id": "notes-actions",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "7ebcfb70c97deda65b9d65fc08684e046c869d78e0315352b76e9e64e5d36550",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Notes Actions",
+      "category": "research",
+      "tags": [
+        "notes",
+        "actions",
+        "markdown"
+      ],
+      "dependencies": {}
     },
     {
       "class": "declarative",
       "id": "outlook-digest",
-      "latest": "0.1.0",
+      "latest": "0.2.0",
       "publisher": "agent-desk",
       "releases": [
         {
@@ -41,14 +300,98 @@
           "tag": "outlook-digest-0.1.0",
           "version": "0.1.0",
           "yanked": false
+        },
+        {
+          "version": "0.2.0",
+          "sha256": "558e489d233d572ef6b94839823eed14ac09f6e4d030a6c17fadb5046fcbcbf4",
+          "source": "local",
+          "yanked": false
         }
       ],
-      "risk": "low"
+      "risk": "low",
+      "name": "Outlook Digest",
+      "category": "communication",
+      "tags": [
+        "mail",
+        "digest",
+        "senders"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "plugin-health",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "4ec6124c929286db2a958aed45872ca06df3b5ad2963a8db831a3928fd58943f",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Plugin health",
+      "category": "operations",
+      "tags": [
+        "plugins",
+        "health",
+        "runtime",
+        "status"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "reconciliation-watch",
+      "publisher": "agent-desk",
+      "latest": "0.2.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sha256": "5de734605542f8d197010cab001b5be4cf15fa63b69bc7939c0f49b508379f26",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Reconciliation Watch",
+      "category": "finance",
+      "tags": [
+        "reconciliation",
+        "ledger",
+        "bank"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "renewal-radar",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "0aaae50d8db9643bf1f1529d9ed86ab57290e84596b11dc590cc4b55875a5fad",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Renewal Radar",
+      "category": "time",
+      "tags": [
+        "renewals",
+        "contracts",
+        "deadlines"
+      ],
+      "dependencies": {}
     },
     {
       "class": "declarative",
       "id": "research-brief",
-      "latest": "0.1.0",
+      "latest": "0.2.0",
       "publisher": "agent-desk",
       "releases": [
         {
@@ -56,14 +399,51 @@
           "tag": "research-brief-0.1.0",
           "version": "0.1.0",
           "yanked": false
+        },
+        {
+          "version": "0.2.0",
+          "sha256": "e53efb1fb99a326b82e74476b3efc46dd14829cb652e7a055c1650d6ed1ff3cb",
+          "source": "local",
+          "yanked": false
         }
       ],
-      "risk": "low"
+      "risk": "low",
+      "name": "Research Brief",
+      "category": "research",
+      "tags": [
+        "research",
+        "brief",
+        "sources"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "revenue-vs-target",
+      "publisher": "agent-desk",
+      "latest": "0.2.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sha256": "7a0e1f0a486b77dcdd3328376031bdf3c2ccc16046a2164e802bd525799de791",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Revenue vs Target",
+      "category": "finance",
+      "tags": [
+        "revenue",
+        "target",
+        "quarter"
+      ],
+      "dependencies": {}
     },
     {
       "class": "declarative",
       "id": "sales-delta-widget",
-      "latest": "0.1.0",
+      "latest": "0.2.0",
       "publisher": "agent-desk",
       "releases": [
         {
@@ -71,9 +451,167 @@
           "tag": "sales-delta-widget-0.1.0",
           "version": "0.1.0",
           "yanked": false
+        },
+        {
+          "version": "0.2.0",
+          "sha256": "473edf4374ea9005657433a0b7a0e42afe7de8622e3015acc0e6c47fd1eae5a0",
+          "source": "local",
+          "yanked": false
         }
       ],
-      "risk": "low"
+      "risk": "low",
+      "name": "Sales 24h Delta",
+      "category": "finance",
+      "tags": [
+        "sales",
+        "pipeline",
+        "daily-delta"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "source-ledger",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "76c2fcbaeaa2e7b58b1698a925d92fee7da2c52388a88963677bc6ac54395096",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Source Ledger",
+      "category": "research",
+      "tags": [
+        "research",
+        "sources",
+        "ledger"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "update-radar",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "a1adf272ca2b6ec01a321471493eae6d8064937b6424c3f00d6e35715153c0ca",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Update radar",
+      "category": "operations",
+      "tags": [
+        "updates",
+        "versions",
+        "plugins",
+        "runtime"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "vip-watch",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "ae35c57c07c5e62a4a8bb62a24760630034753bd26958dcb8b645bac19d05d7f",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Sender Watch",
+      "category": "communication",
+      "tags": [
+        "mail",
+        "senders",
+        "volume"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "waiting-on-you",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "0dbd80716d27babb5f9010406860e99bb2b2c9a4bfdf774549eb29838b6c9c3c",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Waiting on you",
+      "category": "communication",
+      "tags": [
+        "mail",
+        "threads",
+        "follow-up"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "week-load",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "51461f696aad5fcca21a954d9fe81ef0d49b30f0825c63c01b624ede080f8689",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Week Load",
+      "category": "time",
+      "tags": [
+        "calendar",
+        "capacity",
+        "planning"
+      ],
+      "dependencies": {}
+    },
+    {
+      "id": "weekly-review",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "05e4faa7b708f0f9e683bc72c7d9f7e0a4ffe5f7faa9911b6f18d757a76b6c8e",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Weekly Review",
+      "category": "command",
+      "tags": [
+        "weekly",
+        "review",
+        "aggregate"
+      ],
+      "dependencies": [
+        "sales-delta-widget",
+        "follow-up-watch",
+        "week-load",
+        "plugin-health"
+      ]
     }
   ],
   "schemaVersion": 1

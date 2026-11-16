@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "id": "week-load",
+  "name": "Week Load",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "minHost": ">=0.1.0",
+  "license": "MIT",
+  "category": "time",
+  "tags": [
+    "calendar",
+    "capacity",
+    "planning"
+  ],
+  "icon": "calendar",
+  "summary": "Is next week over-committed? Hours booked and the day-by-day load.",
+  "description": "Answers whether next week is over-committed before it fills up. Sums the booked hours the calendar bridge reports for the next seven days, draws the day-by-day load as a sparkline and lists the busiest days. The bridge currently reports only the day view, so the hours and load bindings can render blank until it exposes per-day load; the card never guesses hours.",
+  "highlights": [
+    "Hours booked next week from the calendar bridge",
+    "A 14-day load sparkline, never more than 30 points",
+    "Busiest days first, with back-to-back counts"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:week-load",
+    "onSchedule:0 18 * * 5"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "week-load",
+        "size": "2x1",
+        "dataSource": {
+          "type": "calendar-read"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json"
+}

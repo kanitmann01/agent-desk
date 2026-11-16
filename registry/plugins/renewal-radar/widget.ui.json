@@ -1,0 +1,16 @@
+{
+  "type": "card",
+  "title": "Renewals",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Due in 30 days"
+    },
+    {
+      "type": "list",
+      "rowsBinding": "rows",
+      "title": "Notice deadlines"
+    }
+  ]
+}

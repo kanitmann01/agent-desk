@@ -1,0 +1,41 @@
+{
+  "bindings": {
+    "status": "2 of 6 checks need a decision",
+    "tone": "attention",
+    "postureItems": [
+      {
+        "text": "Network access stays in optionalPermissions",
+        "done": true,
+        "due": ""
+      },
+      {
+        "text": "Every read glob is scoped to the workspace",
+        "done": true,
+        "due": ""
+      },
+      {
+        "text": "No installed plugin holds shell permission",
+        "done": true,
+        "due": ""
+      },
+      {
+        "text": "Sample fixtures for the two community plugins",
+        "done": false,
+        "due": "2026-11-20"
+      },
+      {
+        "text": "Audit retention set to 90 days",
+        "done": false,
+        "due": "2026-11-22"
+      },
+      {
+        "text": "Policy mode review with IT",
+        "done": false,
+        "due": "2026-11-28"
+      }
+    ],
+    "policyMode": "Advisory: violations are logged, never blocked"
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

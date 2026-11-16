@@ -74,8 +74,14 @@ const pathConstants = [
   ),
 ];
 
-// The route the dev server serves itself: the SPA shell at /.
-const SPA_ROUTES = ['/'];
+// The routes the dev server serves itself: the dashboard shell at / and
+// every marketplace deep link, which the Python server also hands to the
+// SPA shell so a refresh on a deep link works.
+const SPA_ROUTES = ['/', '/marketplace'];
+
+function isSpaRoute(target: string): boolean {
+  return SPA_ROUTES.includes(target) || target.startsWith('/marketplace/');
+}
 
 function isProxied(target: string): boolean {
   return backendPaths.some((p) => target === p || target.startsWith(`${p}/`));
@@ -93,6 +99,7 @@ describe('the dev proxy covers every server page the SPA links to', () => {
   it('collects a non-empty set of rail and footer hrefs to check', () => {
     expect(linkedHrefs.length).toBeGreaterThan(0);
     expect(linkedHrefs).toContain('/settings');
+    expect(linkedHrefs).toContain('/marketplace');
   });
 
   it('collects the dashboard form actions to check', () => {
@@ -112,7 +119,7 @@ describe('the dev proxy covers every server page the SPA links to', () => {
 
   it.each(linkedHrefs)('rail or footer href %s is served in dev mode', (href) => {
     expect(
-      SPA_ROUTES.includes(href) || isProxied(href),
+      isSpaRoute(href) || isProxied(href),
       `${href} is neither an SPA route nor listed in backendPaths; add it to vite.config.ts`,
     ).toBe(true);
   });
@@ -127,12 +134,25 @@ describe('the dev proxy covers every server page the SPA links to', () => {
 
   it.each(pathConstants)('path constant %s is served in dev mode', (target) => {
     expect(
-      SPA_ROUTES.includes(target) || isProxied(target),
+      isSpaRoute(target) || isProxied(target),
       `${target} is neither an SPA route nor listed in backendPaths; add it to vite.config.ts`,
     ).toBe(true);
   });
 
-  it('lists the five pages whose rail tabs were dead in dev mode', () => {
+  it('serves every marketplace deep link from the SPA in dev mode', () => {
+    for (const path of [
+      '/marketplace',
+      '/marketplace/plugin/ar-aging',
+      '/marketplace/pack/manager',
+      '/marketplace/installed',
+      '/marketplace/publishers',
+      '/marketplace/studio',
+    ]) {
+      expect(isSpaRoute(path), `${path} is not treated as an SPA route`).toBe(true);
+    }
+  });
+
+  it('keeps the legacy plugin page and the rail surfaces proxied one release', () => {
     for (const path of ['/plugins', '/activity', '/memory', '/mail', '/capabilities']) {
       expect(backendPaths, `${path} missing from backendPaths`).toContain(path);
     }

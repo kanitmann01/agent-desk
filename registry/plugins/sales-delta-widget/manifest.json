@@ -1,19 +1,50 @@
 {
-  "schemaVersion": 1,
-  "id": "sales-delta-widget",
-  "name": "Sales 24h Delta",
-  "version": "0.1.0",
+  "schemaVersion": 2,
   "publisher": "agent-desk",
   "class": "declarative",
-  "engines": { "dashboardHost": ">=0.1.0 <2.0.0" },
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
   "license": "MIT",
+  "category": "finance",
+  "minHost": ">=0.1.0",
+  "id": "sales-delta-widget",
+  "name": "Sales 24h Delta",
+  "version": "0.2.0",
+  "tags": [
+    "sales",
+    "pipeline",
+    "daily-delta"
+  ],
+  "icon": "chart",
+  "summary": "What changed in the sales workbook in the last 24 hours.",
+  "description": "Sales 24h Delta watches the newest workbook under ${workspace}/reports/, diffs its rows against the snapshot taken about 24 hours ago, and shows the delta plus the rows that changed. Every card carries the as-of time and the source state; when the workbook is missing the card names the setting it needs instead of showing a zero.",
+  "highlights": [
+    "Delta plus new, removed, and seen row counts for the last 24 hours.",
+    "Changed-row list links the delta to the deals that actually moved.",
+    "Watches ${workspace}/reports/*.xlsx with no plugin code or network."
+  ],
   "permissions": {
-    "filesystem": { "read": ["${workspace}/reports/*.xlsx"], "write": ["${pluginData}"] },
-    "network": { "allow": [] },
-    "llm": { "allow": false },
+    "filesystem": {
+      "read": [
+        "${workspace}/reports/*.xlsx"
+      ],
+      "write": [
+        "${pluginData}"
+      ]
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
     "shell": "none"
   },
-  "activationEvents": ["onWidget:sales-delta", "onSchedule:0 * * * *"],
+  "activationEvents": [
+    "onWidget:sales-delta",
+    "onSchedule:0 * * * *"
+  ],
   "contributes": {
     "widgets": [
       {
@@ -22,12 +53,17 @@
         "dataSource": {
           "type": "excel-watch",
           "file": "${workspace}/reports/*.xlsx",
-          "deltaWindow": "24h"
+          "window": "24h"
         },
-        "render": { "type": "ui-schema", "file": "widget.ui.json" }
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
       }
     ],
-    "skills": ["skills/sales-summary/SKILL.md"],
+    "skills": [
+      "skills/sales-summary/SKILL.md"
+    ],
     "preferences": [
       {
         "name": "thresholdPct",
@@ -36,5 +72,6 @@
         "title": "Alert threshold (%)"
       }
     ]
-  }
+  },
+  "sample": "sample.json"
 }

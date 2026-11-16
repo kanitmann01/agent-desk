@@ -23,9 +23,12 @@ FAILURE_CODES = (
     "plugin-html",
     "over-permission",
     "unknown-datasource",
+    "unknown-element",
     "missing-file",
     "bad-json",
+    "bad-sample",
     "hash-mismatch",
+    "unsafe-network-filesystem",
 )
 """Every failure code the validator can emit, in verdict sort order."""
 

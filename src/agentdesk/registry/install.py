@@ -10,6 +10,7 @@ refusal carries a named code, validator style.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 import tarfile
@@ -101,17 +102,41 @@ def _archive_plugin(registry_root: Path, tag: str, plugin_prefix: str,
         shutil.copytree(source, destination)
 
 
+def local_release_source(registry_root: Path, plugin_id: str,
+                         version: str) -> Path | None:
+    """The working-tree directory that holds one local release.
+
+    Published releases live in plugins/<id>/<version>. A registry built
+    from a single checkout keeps its newest local release flat at
+    plugins/<id>; that tree is accepted only when its manifest names the
+    same version, so an older pin can never silently resolve to a newer
+    tree (the digest check would reject it anyway).
+    """
+    versioned = registry_root / "plugins" / plugin_id / version
+    if versioned.is_dir():
+        return versioned
+    flat = registry_root / "plugins" / plugin_id
+    manifest = flat / "manifest.json"
+    if manifest.is_file():
+        try:
+            declared = json.loads(manifest.read_text(encoding="utf-8")).get("version")
+        except (OSError, ValueError):
+            return None
+        if declared == version:
+            return flat
+    return None
+
+
 def _stage_local_plugin(registry_root: Path, plugin_id: str, version: str,
                         destination: Path) -> None:
-    """Copy plugins/<id>/<version> out of the registry's working tree.
+    """Copy a local release out of the registry's working tree.
 
-    A local release is pinned by digest to its own versioned directory
-    (the one publish wrote); there is no tag to extract, so git is never
-    invoked. The digest check right after this copy is the whole
-    verification story.
+    A local release is pinned by digest to its own directory; there is no
+    tag to extract, so git is never invoked. The digest check right after
+    this copy is the whole verification story.
     """
-    source = registry_root / "plugins" / plugin_id / version
-    if not source.is_dir():
+    source = local_release_source(registry_root, plugin_id, version)
+    if source is None:
         raise RegistryError(
             "install:local-plugin-missing",
             f"{plugin_id} {version} is not present in the registry "
@@ -119,9 +144,62 @@ def _stage_local_plugin(registry_root: Path, plugin_id: str, version: str,
     shutil.copytree(source, destination)
 
 
+def _verify_against_trust(index: RegistryIndex, entry: PluginEntry,
+                           release: Release, trust, now) -> None:
+    """Fail closed when a trust store is supplied.
+
+    v2 index entries carry the publisher key id and a detached release
+    signature over {pluginId, version, digest}; v1 entries carry neither,
+    so with a trust store the signed release statement is still required
+    and its digest must equal the published sha256. TrustError is
+    intentionally not wrapped in RegistryError: the trust vocabulary is
+    the contract callers switch on.
+    """
+    from agentdesk.trust import TrustError
+
+    publisher = entry.publisher
+    publisher_info = index.publishers.get(publisher)
+    if not index.legacy and publisher_info is None:
+        raise TrustError(
+            "trust:unknown-publisher",
+            f"index has no publisher key for {publisher}",
+        )
+    key_id = publisher_info.key_id if publisher_info is not None else None
+    cert = trust.cert_for(publisher, key_id, now=now)
+
+    if not index.legacy:
+        if not release.signature:
+            raise TrustError(
+                "trust:unsigned",
+                f"release {entry.id}@{release.version} has no signature",
+            )
+        if not release.digest:
+            raise TrustError(
+                "trust:bad-signature",
+                f"release {entry.id}@{release.version} has no digest",
+            )
+        if release.digest != release.sha256:
+            raise TrustError(
+                "trust:bad-signature",
+                f"release digest {release.digest[:12]} does not match "
+                f"sha256 {release.sha256[:12]}",
+            )
+        trust.verify_pin(entry.id, release.version, release.digest,
+                         release.signature, cert, now=now)
+
+    statement = trust.verify_release(entry.id, release.version, cert, now=now)
+    if statement.digest != release.sha256:
+        raise TrustError(
+            "trust:bad-signature",
+            f"release statement digest {statement.digest[:12]} does not "
+            f"match the published sha256 {release.sha256[:12]}",
+        )
+
+
 def install_from_registry(registry_root: Path | str, plugin_id: str, *,
                           version: str, sha256: str | None = None,
-                          destination: Path | str) -> dict:
+                          destination: Path | str, trust=None,
+                          now=None) -> dict:
     """Install one pinned release. Returns the install record."""
     _require_safe_name(plugin_id, "plugin id")
     _require_safe_name(version, "version")
@@ -149,6 +227,8 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
                 "install:hash-mismatch",
                 f"content sha256 {actual[:12]} does not match the pinned "
                 f"{release.sha256[:12]}")
+        if trust is not None:
+            _verify_against_trust(index, entry, release, trust, now)
         from agentdesk.validator.core import validate_plugin
         verdict = validate_plugin(staged)
         if not verdict.ok:
@@ -158,7 +238,8 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
         if installed.exists():
             shutil.rmtree(installed)
         shutil.copytree(staged, installed)
-    _write_lock(destination, plugin_id, version, release.sha256)
+    _write_lock(destination, plugin_id, version, release.sha256,
+                publisher=entry.publisher, category=entry.category)
     return {
         "ok": True,
         "plugin": plugin_id,
@@ -173,7 +254,9 @@ def install_from_registry(registry_root: Path | str, plugin_id: str, *,
 LOCK_NAME = "lock.json"
 
 
-def _write_lock(destination: Path, plugin_id: str, version: str, sha256: str) -> dict:
+def _write_lock(destination: Path, plugin_id: str, version: str, sha256: str,
+                *, publisher: str | None = None,
+                category: str | None = None) -> dict:
     """Record the installed release in the client's lockfile.
 
     The lock is the pointer: ``version`` is what the client uses, and the
@@ -192,6 +275,10 @@ def _write_lock(destination: Path, plugin_id: str, version: str, sha256: str) ->
     entry = lock.setdefault("plugins", {}).setdefault(plugin_id, {"history": {}})
     entry["version"] = version
     entry["sha256"] = sha256
+    if publisher is not None:
+        entry["publisher"] = publisher
+    if category is not None:
+        entry["category"] = category
     entry["history"][version] = sha256
     lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n",
                          encoding="utf-8")

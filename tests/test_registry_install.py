@@ -109,6 +109,24 @@ def test_yanked_release_resolves_only_with_exact_pin(tmp_path):
     assert out["version"] == "1.2.0"
 
 
+def test_local_release_resolves_versioned_then_flat_tree(tmp_path):
+    """A checkout with one local release can install it from plugins/<id>."""
+    from agentdesk.registry.install import local_release_source
+
+    flat = tmp_path / "plugins" / "local-only"
+    flat.mkdir(parents=True)
+    (flat / "manifest.json").write_text(
+        json.dumps({"version": "1.0.0"}), encoding="utf-8")
+    assert local_release_source(tmp_path, "local-only", "1.0.0") == flat
+    assert local_release_source(tmp_path, "local-only", "0.9.0") is None
+
+    versioned = tmp_path / "plugins" / "local-only" / "1.0.0"
+    versioned.mkdir()
+    (versioned / "manifest.json").write_text(
+        json.dumps({"version": "1.0.0"}), encoding="utf-8")
+    assert local_release_source(tmp_path, "local-only", "1.0.0") == versioned
+
+
 def test_cli_install_happy_and_refusal(tmp_path):
     import os
     import subprocess

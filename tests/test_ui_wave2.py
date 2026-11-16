@@ -39,7 +39,6 @@ SHELL_PAGES = [
     ("/memory", "Memory"),
     ("/mail", "Mail"),
     ("/capabilities", "Capabilities"),
-    ("/plugins", "Plugins"),
     ("/settings", "Settings"),
     ("/walkthrough/calendar", "Connect your calendar"),
     ("/what-this-touches", "What this app touches"),
@@ -358,21 +357,13 @@ def test_the_registry_origin_line_reads_quiet(booted):
     assert "font-size:12px" in rule.group(0) and "color:var(--ink-3)" in rule.group(0)
 
 
-def test_the_plugins_page_marks_its_origin_line():
-    # The suite boots an inert registry root by default; this page's
-    # contract needs a real listing, so this boot points at the repo's
-    # own checkout the way the live app discovers it.
-    server = server_harness.Booted(registry_root=str(ROOT / "registry"))
-    try:
-        headers = server.exchange()
-        status, _headers, resp = server.request("GET", "/plugins", headers)
-        page = resp.decode("utf-8")
-        assert status == 200, status
-        assert "class='reg-origin'" in page, "the registry origin line carries no quiet class"
-        # The entries themselves ride the card chrome.
-        assert "<article class='card'>" in page
-    finally:
-        server.close()
+def test_the_legacy_plugins_view_still_renders_its_origin_line():
+    # /plugins redirects to the marketplace now; the compatibility view
+    # is still rendered by peers/wizard code, so its chrome contract is
+    # pinned directly rather than through a route that no longer answers.
+    page = render_plugins_page([], _registry_listing(), "checkout", "0.0.0-test")
+    assert "class='reg-origin'" in page, "the registry origin line carries no quiet class"
+    assert "<article class='card'>" in page
 
 
 def test_widget_paragraphs_do_not_double_the_card_gap(booted):

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 2,
+  "id": "plugin-health",
+  "name": "Plugin health",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "operations",
+  "tags": [
+    "plugins",
+    "health",
+    "runtime",
+    "status"
+  ],
+  "icon": "alert",
+  "summary": "Which installed plugins are failing or drifting right now?",
+  "description": "Reads the desk runtime state for the installed plugin set and shows one status line, the plugins that need attention, and how many plugins are installed. Each attention row carries the reason, so the fix is obvious from the card.",
+  "highlights": [
+    "Status line and tone for the whole installed set",
+    "A needs-attention list with a reason per plugin",
+    "Installed count beside the state so drift is visible"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:plugin-health"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "plugin-health",
+        "size": "2x1",
+        "dataSource": {
+          "type": "desk-state",
+          "selector": "runtime"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

@@ -1,0 +1,26 @@
+{
+  "bindings": {
+    "status": "12 installed, 3 need attention",
+    "tone": "attention",
+    "healthRows": [
+      {
+        "primary": "excel-report",
+        "secondary": "Workbook read failed: file is open in Excel",
+        "meta": "error"
+      },
+      {
+        "primary": "outlook-digest",
+        "secondary": "Mailbox token expires in 2 days",
+        "meta": "renew"
+      },
+      {
+        "primary": "calendar-today",
+        "secondary": "Last successful read 3 hours ago",
+        "meta": "stale"
+      }
+    ],
+    "value": 12
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

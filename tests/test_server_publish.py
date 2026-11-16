@@ -143,19 +143,18 @@ def test_publish_loop_end_to_end(tmp_path):
         booted.close()
 
 
-def test_publish_from_the_plugins_page_form(tmp_path):
+def test_publish_from_the_legacy_plugins_form_still_works(tmp_path):
     registry = make_registry(tmp_path)
     booted = server_harness.Booted(registry_root=str(registry))
     try:
         auth = booted.exchange()
         _install_local_plugin(booted, auth, tmp_path)
 
-        status, _h, page = booted.request("GET", "/plugins", auth)
-        text = page.decode("utf-8")
-        assert status == 200
-        # One h1, page_shell conventions.
-        assert text.count("<h1>") == 1
-        assert f"action='/plugins/{PLUGIN_ID}/publish'" in text
+        # The page itself now points at the marketplace; the one-release
+        # compatibility window still accepts the old POST form.
+        status, headers, _page = booted.request("GET", "/plugins", auth)
+        assert status == 302
+        assert headers["Location"] == "/marketplace/installed"
 
         status, headers, _b = _post_form(
             booted, f"/plugins/{PLUGIN_ID}/publish", {}, auth)

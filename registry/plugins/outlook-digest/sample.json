@@ -1,0 +1,26 @@
+{
+  "bindings": {
+    "messages": 24,
+    "topSenders": "Priya Raman (7), Marcus Lee (5), Dana Whitfield (3)",
+    "windowNote": "Counts cover the last 24 hours of message headers; bodies are never read.",
+    "sendersRows": [
+      {
+        "primary": "Priya Raman",
+        "secondary": "7 messages",
+        "meta": ""
+      },
+      {
+        "primary": "Marcus Lee",
+        "secondary": "5 messages",
+        "meta": ""
+      },
+      {
+        "primary": "Dana Whitfield",
+        "secondary": "3 messages",
+        "meta": ""
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

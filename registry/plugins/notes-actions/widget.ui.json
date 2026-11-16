@@ -1,0 +1,21 @@
+{
+  "type": "card",
+  "title": "Notes actions",
+  "elements": [
+    {
+      "type": "checklist",
+      "title": "Actions",
+      "itemsBinding": "items"
+    },
+    {
+      "type": "metric",
+      "binding": "openCount",
+      "label": "Open"
+    },
+    {
+      "type": "status",
+      "toneBinding": "tone",
+      "binding": "nextDue"
+    }
+  ]
+}

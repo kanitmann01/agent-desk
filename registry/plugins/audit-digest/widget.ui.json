@@ -1,0 +1,27 @@
+{
+  "type": "card",
+  "title": "Audit digest",
+  "elements": [
+    {
+      "type": "metric",
+      "label": "Events this week",
+      "binding": "value"
+    },
+    {
+      "type": "table",
+      "title": "What left the machine",
+      "rowsBinding": "auditRows",
+      "columns": [
+        "When",
+        "Action",
+        "Plugin",
+        "Outcome"
+      ]
+    },
+    {
+      "type": "text",
+      "label": "Window",
+      "binding": "windowNote"
+    }
+  ]
+}

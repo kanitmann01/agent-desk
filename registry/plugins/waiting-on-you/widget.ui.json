@@ -1,0 +1,22 @@
+{
+  "type": "card",
+  "title": "Waiting on you",
+  "elements": [
+    {
+      "type": "list",
+      "title": "Threads waiting on you",
+      "rowsBinding": "waitingRows"
+    },
+    {
+      "type": "metric",
+      "binding": "threads",
+      "label": "Open threads"
+    },
+    {
+      "type": "delta",
+      "binding": "messages",
+      "window": "24h",
+      "label": "Messages"
+    }
+  ]
+}

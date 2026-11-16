@@ -1,0 +1,16 @@
+{
+  "type": "card",
+  "title": "Follow-ups",
+  "elements": [
+    {
+      "type": "metric",
+      "binding": "value",
+      "label": "Open"
+    },
+    {
+      "type": "list",
+      "rowsBinding": "rows",
+      "title": "Aging promises"
+    }
+  ]
+}

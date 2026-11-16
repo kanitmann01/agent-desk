@@ -1,0 +1,21 @@
+{
+  "type": "card",
+  "title": "Plugin health",
+  "elements": [
+    {
+      "type": "status",
+      "binding": "status",
+      "toneBinding": "tone"
+    },
+    {
+      "type": "list",
+      "title": "Needs attention",
+      "rowsBinding": "healthRows"
+    },
+    {
+      "type": "metric",
+      "label": "Installed",
+      "binding": "value"
+    }
+  ]
+}

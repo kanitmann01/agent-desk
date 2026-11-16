@@ -1,0 +1,16 @@
+{
+  "type": "card",
+  "title": "KPI scorecard",
+  "elements": [
+    {
+      "type": "list",
+      "title": "Scorecard",
+      "rowsBinding": "rows"
+    },
+    {
+      "type": "status",
+      "binding": "status",
+      "toneBinding": "tone"
+    }
+  ]
+}

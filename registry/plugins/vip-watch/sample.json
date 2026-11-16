@@ -1,0 +1,25 @@
+{
+  "bindings": {
+    "sendersRows": [
+      {
+        "primary": "Priya Raman",
+        "secondary": "3 messages",
+        "meta": "latest 08:42"
+      },
+      {
+        "primary": "Marcus Lee",
+        "secondary": "2 messages",
+        "meta": "latest 07:15"
+      },
+      {
+        "primary": "Dana Whitfield",
+        "secondary": "1 message",
+        "meta": "latest 06:58"
+      }
+    ],
+    "messages": 24,
+    "windowNote": "Last 24 hours, header metadata only; bodies are never read."
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

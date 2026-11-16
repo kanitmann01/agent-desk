@@ -1,0 +1,53 @@
+{
+  "bindings": {
+    "upcoming": [
+      {
+        "time": "09:30",
+        "title": "Lumen pricing sync",
+        "meta": "30 min, Teams"
+      },
+      {
+        "time": "11:00",
+        "title": "Contoso renewal check-in",
+        "meta": "45 min"
+      },
+      {
+        "time": "15:30",
+        "title": "Weekly pipeline review",
+        "meta": "60 min"
+      }
+    ],
+    "nextEventTitle": "Lumen pricing sync",
+    "rows": [
+      {
+        "primary": "Pipeline review",
+        "secondary": "11:00",
+        "meta": "Revenue"
+      },
+      {
+        "primary": "Renewal call",
+        "secondary": "15:00",
+        "meta": "Contoso"
+      }
+    ],
+    "items": [
+      {
+        "text": "Read the Lumen pricing deck",
+        "done": true,
+        "due": "09:00"
+      },
+      {
+        "text": "Confirm the Contoso notice date",
+        "done": true,
+        "due": "09:15"
+      },
+      {
+        "text": "Refresh the Q4 pipeline numbers",
+        "done": false,
+        "due": "15:00"
+      }
+    ]
+  },
+  "state": "ok",
+  "checkedAt": "2026-11-15T09:00:00"
+}

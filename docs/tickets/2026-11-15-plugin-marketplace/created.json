@@ -1,0 +1,126 @@
+{
+  "1": {
+    "number": 98,
+    "title": "T1: Manifest v2, ten render elements, and sample render",
+    "blockers": [],
+    "id": 6414075867
+  },
+  "2": {
+    "number": 99,
+    "title": "T2: Data sources v2: real executors and honest states",
+    "blockers": [
+      1
+    ],
+    "id": 6414076286
+  },
+  "3": {
+    "number": 100,
+    "title": "T3: Catalog, signing, and trust foundation",
+    "blockers": [
+      1
+    ],
+    "id": 6414076682
+  },
+  "4": {
+    "number": 101,
+    "title": "T4: Marketplace API and policy eligibility",
+    "blockers": [
+      2,
+      3
+    ],
+    "id": 6414077038
+  },
+  "5": {
+    "number": 102,
+    "title": "T5: Discover, Search, Detail, and Pack screens",
+    "blockers": [
+      4
+    ],
+    "id": 6414077475
+  },
+  "6": {
+    "number": 103,
+    "title": "T6: Installed, Publisher Studio, publisher list, and /plugins redirect",
+    "blockers": [
+      4
+    ],
+    "id": 6414078063
+  },
+  "7": {
+    "number": 104,
+    "title": "T7: Finance plugins (6)",
+    "blockers": [
+      2
+    ],
+    "id": 6414078552
+  },
+  "8": {
+    "number": 105,
+    "title": "T8: Time and commitment plugins (5)",
+    "blockers": [
+      2
+    ],
+    "id": 6414078884
+  },
+  "9": {
+    "number": 106,
+    "title": "T9: Communication plugins (3)",
+    "blockers": [
+      2
+    ],
+    "id": 6414079316
+  },
+  "10": {
+    "number": 107,
+    "title": "T10: Research and knowledge plugins (4)",
+    "blockers": [
+      2
+    ],
+    "id": 6414079712
+  },
+  "11": {
+    "number": 108,
+    "title": "T11: Operations and governance plugins (4)",
+    "blockers": [
+      2,
+      3
+    ],
+    "id": 6414080138
+  },
+  "12": {
+    "number": 109,
+    "title": "T12: Command plugins, role packs, and first-run",
+    "blockers": [
+      5,
+      6,
+      7
+    ],
+    "id": 6414080586
+  },
+  "13": {
+    "number": 110,
+    "title": "T13: Signed policy, admin, and trust center",
+    "blockers": [
+      3
+    ],
+    "id": 6414080993
+  },
+  "14": {
+    "number": 111,
+    "title": "T14: Packaging, SBOM, and license gates",
+    "blockers": [
+      6
+    ],
+    "id": 6414081378
+  },
+  "15": {
+    "number": 112,
+    "title": "T15: Hardening, accessibility, theme pull-back, and e2e walkthrough",
+    "blockers": [
+      12,
+      13,
+      14
+    ],
+    "id": 6414081855
+  }
+}
