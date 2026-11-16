@@ -218,7 +218,9 @@ describe('the centered app states', () => {
       vi.fn(() => new Promise<Response>(() => {})),
     );
     render(<App />);
-    expect(await screen.findByText('Reading the dashboard.')).toBeInTheDocument();
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Reading the dashboard…');
+    expect(status).toHaveAttribute('aria-busy', 'true');
   });
 
   it('shows the session-expired view on a 401', async () => {
@@ -227,7 +229,10 @@ describe('the centered app states', () => {
       vi.fn(async () => new Response(null, { status: 401 })),
     );
     render(<App />);
-    expect(await screen.findByText('Session required')).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Session required');
+    expect(screen.getByRole('heading', { name: 'Session required' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });
 
   it('shows the load-failed view when the server is unreachable', async () => {
@@ -236,7 +241,10 @@ describe('the centered app states', () => {
       vi.fn(async () => new Response(null, { status: 503, statusText: 'unavailable' })),
     );
     render(<App />);
-    expect(await screen.findByText('The dashboard did not load')).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('The dashboard did not load');
+    expect(screen.getByRole('heading', { name: 'The dashboard did not load' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });
 
   it('renders the dashboard once the payload is in', async () => {

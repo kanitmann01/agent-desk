@@ -243,7 +243,7 @@ export default function AdminPage() {
 
       {loading && !snapshot && (
         <section className="mkt-panel">
-          <p role="status">Loading the governance snapshot...</p>
+          <p role="status">Loading the governance snapshot…</p>
         </section>
       )}
 
@@ -356,7 +356,7 @@ export default function AdminPage() {
                 )}
                 <div className="mkt-actions">
                   <Button tone="primary" onClick={() => void confirmImport()} disabled={applying}>
-                    {applying ? 'Applying...' : 'Apply signed policy'}
+                    {applying ? 'Applying…' : 'Apply signed policy'}
                   </Button>
                 </div>
               </div>
