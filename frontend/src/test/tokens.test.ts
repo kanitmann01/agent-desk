@@ -409,6 +409,17 @@ describe('the committed bundle honors the contract', () => {
   });
 });
 
+describe('pressed controls stay inside color', () => {
+  it('darkens primary and send controls on press without moving them', () => {
+    expect(css).toContain('.btn-primary:active:not(:disabled){filter:brightness(.92)}');
+    expect(css).toContain('.cmd-send:active:not(:disabled){filter:brightness(.92)}');
+    expect(css).not.toContain('transition:all');
+    expect(css).toContain('transition:background-color var(--dur) ease,border-color var(--dur) ease,color var(--dur) ease');
+    expect(css).toContain('touch-action:manipulation');
+    expect(css).toContain('@media (prefers-reduced-motion:reduce)');
+  });
+});
+
 describe('marketplace type stays inside the design language', () => {
   it('keeps page titles on the 28px ceiling at every width', () => {
     expect(marketCss).toContain('font-size: 28px');
