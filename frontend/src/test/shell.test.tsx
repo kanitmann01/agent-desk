@@ -203,6 +203,16 @@ describe('the research command bar', () => {
     expect(onAsk).not.toHaveBeenCalled();
   });
 
+  it('names the research field and uses the search mark', () => {
+    render(<CommandBar busy={false} onAsk={vi.fn().mockResolvedValue(true)} />);
+    const field = screen.getByLabelText('Research question');
+    expect(field).toHaveAttribute('name', 'question');
+    expect(field).toHaveAttribute('autocomplete', 'off');
+    const mark = document.querySelector('.cmd-icon');
+    expect(mark?.querySelector('circle')).not.toBeNull();
+    expect(mark?.innerHTML ?? '').not.toContain('M12 3');
+  });
+
   it('renders a real disabled send button and no effect canvases', () => {
     const onAsk = vi.fn().mockResolvedValue(true);
     render(<CommandBar busy onAsk={onAsk} />);
@@ -258,6 +268,7 @@ describe('the centered app states', () => {
     // The rail and the greeting exist only in the dashboard tree, never
     // in a centered state.
     expect(await screen.findByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+    expect(document.getElementById('dashboard-main')).toHaveAttribute('tabindex', '-1');
     expect(document.querySelector('.hero-title')).toHaveTextContent(
       greetingFor(new Date()),
     );

@@ -208,6 +208,10 @@ describe('component sources speak the system inks', () => {
 });
 
 describe('the authored sheet keeps its interaction promises', () => {
+  it('sets the command bar field at body size', () => {
+    expect(decl(css, '.cmd-field', 'font')).toContain('14px');
+  });
+
   it('gives the command bar field a visible focus ring', () => {
     expect(css).toContain('.cmd-field:focus{outline:2px solid var(--primary)');
   });
