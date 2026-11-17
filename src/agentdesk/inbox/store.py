@@ -5,8 +5,10 @@ for thirty days, expired cards stay visible as expired. The notification
 ledger is the budget's memory: how many were spent today.
 """
 
+import functools
 import json
 import sqlite3
+import threading
 from collections.abc import Callable
 
 from agentdesk.inbox.budget import new_card_id
@@ -67,13 +69,31 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _serialized(method):
+    """Every read and write holds the store's one lock. The connection is
+    shared (check_same_thread=False) by the server's request threads and
+    the background memory-capture thread; Python's sqlite3 connection
+    keeps one implicit transaction, so two threads interleaving on it
+    can commit each other's half-done writes or read a row mid-write.
+    An RLock, because some methods call others (dismiss reads the card
+    back through get)."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class InboxStore:
-    """Cards in, decisions out; the budget reads the ledger."""
+    """Cards in, decisions out; the budget reads the ledger. Thread-safe:
+    every method serializes on one lock (see _serialized)."""
 
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float]) -> None:
         self.conn = conn
         self.clock = clock
-        ensure_schema(conn)
+        self._lock = threading.RLock()
+        with self._lock:
+            ensure_schema(conn)
 
     def now_ts(self) -> float:
         """The store's own clock: every payload is judged by it, so cards
@@ -82,6 +102,7 @@ class InboxStore:
 
     # -- writes -----------------------------------------------------------
 
+    @_serialized
     def add(
         self,
         kind: str,
@@ -118,6 +139,7 @@ class InboxStore:
             )
         return card
 
+    @_serialized
     def dismiss(self, card_id: str) -> Card:
         card = self.get(card_id)
         with self.conn:
@@ -127,6 +149,7 @@ class InboxStore:
             )
         return self.get(card_id)
 
+    @_serialized
     def accept(self, card_id: str) -> Card:
         card = self.get(card_id)
         with self.conn:
@@ -136,6 +159,7 @@ class InboxStore:
             )
         return self.get(card_id)
 
+    @_serialized
     def edit_draft(self, card_id: str, draft: str) -> Card:
         """Update the card's editable draft. The card keeps waiting; only
         what accepting would apply has changed."""
@@ -146,6 +170,7 @@ class InboxStore:
             )
         return self.get(card_id)
 
+    @_serialized
     def snooze(self, card_id: str, until_ts: float) -> Card:
         """Hide a waiting card until `until_ts` passes. Not a status: the
         card stays waiting, merely out of sight; evaluation returns it
@@ -158,6 +183,7 @@ class InboxStore:
             )
         return self.get(card_id)
 
+    @_serialized
     def more_info(self, card_id: str, instruction: str) -> Card:
         """Attach the user's instruction and bring the card back to the
         visible waiting set (a running snooze ends early)."""
@@ -171,6 +197,7 @@ class InboxStore:
             )
         return self.get(card_id)
 
+    @_serialized
     def return_due_snoozes(self) -> list[Card]:
         """The donor's tick(): every waiting card whose snooze time has
         passed returns to the visible waiting set. Returns the returned
@@ -195,6 +222,7 @@ class InboxStore:
                 returned.append(card)
         return returned
 
+    @_serialized
     def restore(self, card_id: str) -> Card:
         """Bring a dismissed card back. After 30 days it is gone: the row
         is pruned and the error says so, because nothing expires silently,
@@ -213,12 +241,14 @@ class InboxStore:
             )
         return self.get(card_id)
 
+    @_serialized
     def mark_notified(self, card_id: str) -> None:
         with self.conn:
             self.conn.execute(
                 "UPDATE cards SET notified_ts = ? WHERE id = ?", (self.clock(), card_id)
             )
 
+    @_serialized
     def delete(self, card_id: str) -> None:
         """Remove a card outright, whatever its status.
 
@@ -231,6 +261,7 @@ class InboxStore:
         with self.conn:
             self.conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
 
+    @_serialized
     def record_notification(self, kind: str, card_count: int = 1) -> None:
         with self.conn:
             self.conn.execute(
@@ -240,6 +271,7 @@ class InboxStore:
 
     # -- reads ------------------------------------------------------------
 
+    @_serialized
     def get(self, card_id: str) -> Card:
         row = self.conn.execute(
             f"SELECT {_COLUMNS} FROM cards WHERE id = ?",
@@ -255,6 +287,7 @@ class InboxStore:
             meta=json.loads(row[14]),
         )
 
+    @_serialized
     def waiting(self, include_snoozed: bool = False) -> list[Card]:
         """The visible waiting set: a card snoozed into the future is
         still waiting, but it is not shown until its snooze passes.
@@ -268,9 +301,11 @@ class InboxStore:
             if not card.is_snoozed(now)
         ]
 
+    @_serialized
     def dismissed(self) -> list[Card]:
         return self._by_status(STATUS_DISMISSED)
 
+    @_serialized
     def all_cards(self) -> list[Card]:
         """Every card regardless of status, oldest first: the demo clear
         path walks this to find exactly what it seeded."""
@@ -279,6 +314,7 @@ class InboxStore:
         ).fetchall()
         return [self.get(r[0]) for r in rows]
 
+    @_serialized
     def _by_status(self, status: str) -> list[Card]:
         rows = self.conn.execute(
             "SELECT id FROM cards WHERE status = ? ORDER BY created_ts ASC",
@@ -286,6 +322,7 @@ class InboxStore:
         ).fetchall()
         return [self.get(r[0]) for r in rows]
 
+    @_serialized
     def notified_today(self, now) -> int:
         """Notifications spent on today's local calendar day."""
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
