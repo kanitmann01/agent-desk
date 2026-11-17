@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "excel-report",
-  "name": "Excel Report Watch",
+  "name": "Workbook tracker",
   "version": "0.1.0",
   "publisher": "agent-desk",
   "class": "declarative",
@@ -10,59 +10,31 @@
   },
   "license": "MIT",
   "category": "reference",
-  "tags": [
-    "excel",
-    "reference",
-    "example"
-  ],
-  "icon": "folder",
-  "summary": "Reference example: watches an Excel workbook for row changes and reports the last 24-hour delta.",
-  "description": "Excel Report Watch is the shipped reference/example plugin: a small, complete, read-only declarative card that authors can copy. It watches matching workbooks under the declared reports glob, compares the current row set with its previous read, and reports rows seen plus added and removed counts for the 24-hour window. It is installable on its own, writes nothing outside its plugin data directory, uses no network, no model and no shell, and exists to show the manifest, ui-schema and sample shapes rather than to be a production report. The id and version stay excel-report 0.1.0; only the marketplace category changes, to reference.",
+  "tags": ["excel", "tracker", "workbook"],
+  "icon": "chart",
+  "summary": "One series from a workbook you open, with the change since the last read.",
+  "description": "Workbook tracker opens a workbook you choose, then the columns you confirm. It shows the current total, how that total moved, and an optional pace against a plan you set. It does not assume a path, a column name, or a target. It writes nothing, uses no network, and does not call a model on its own.",
   "highlights": [
-    "The shipped reference/example for a declarative plugin: one widget, one ui-schema.",
-    "Reads only workbooks under the declared reports glob and writes nothing outside plugin data.",
-    "Stays installable at id excel-report, version 0.1.0, and is not a member of any pack."
+    "You open the workbook. The card does not guess a folder.",
+    "You pick the columns, or confirm a suggestion.",
+    "An optional pace compares spend per day with the plan per day."
   ],
   "permissions": {
-    "filesystem": {
-      "read": [
-        "${workspace}/reports/*.xlsx"
-      ],
-      "write": [
-        "${pluginData}"
-      ]
-    },
-    "network": {
-      "allow": []
-    },
-    "llm": {
-      "allow": false
-    },
+    "filesystem": {"read": [], "write": []},
+    "network": {"allow": []},
+    "llm": {"allow": false},
     "shell": "none"
   },
-  "activationEvents": [
-    "onWidget:excel-report",
-    "onSchedule:0 * * * *"
-  ],
+  "config": {"kinds": ["workbook"]},
+  "activationEvents": ["onWidget:excel-report"],
   "contributes": {
-    "widgets": [
-      {
-        "id": "excel-report",
-        "size": "2x1",
-        "dataSource": {
-          "type": "excel-watch",
-          "file": "${workspace}/reports/*.xlsx",
-          "deltaWindow": "24h"
-        },
-        "render": {
-          "type": "ui-schema",
-          "file": "widget.ui.json"
-        }
-      }
-    ],
-    "skills": [
-      "skills/workbook-report/SKILL.md"
-    ]
+    "widgets": [{
+      "id": "excel-report",
+      "size": "2x1",
+      "dataSource": {"type": "excel-watch"},
+      "render": {"type": "ui-schema", "file": "widget.ui.json"}
+    }],
+    "skills": ["skills/workbook-report/SKILL.md"]
   },
   "sample": "sample.json",
   "minHost": ">=0.1.0"

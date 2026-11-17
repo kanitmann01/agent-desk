@@ -5,6 +5,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import type { DashboardData } from '../types';
 import Button from '../components/Button';
+import TrackerCard from './TrackerCard';
 import {
   MOVER_CAP,
   dealMeta,
@@ -81,7 +82,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const changedCount = movers.filter((mover) => mover.kind === 'changed').length;
   const addedCount = movers.filter((mover) => mover.kind === 'added').length;
   const removedCount = movers.filter((mover) => mover.kind === 'removed').length;
-  const salesNeedsConnect = sales.mode !== 'disabled'
+  const trackers = data.plugins.cards.filter((card) => (
+    card.id === 'excel-report' || card.id.startsWith('excel-report~')
+  ));
+  const salesNeedsConnect = trackers.length === 0 && sales.mode !== 'disabled'
     && (sales.mode === 'unconfigured' || status === null || !status.configured);
   const calendarNeedsConnect = data.commitments.mode !== 'live'
     || data.commitments.status?.state === 'empty'
@@ -147,7 +151,13 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
 
   return (
     <div className={configured ? 'brief' : 'brief brief-empty'}>
-      {configured ? (
+      {trackers.length > 0 ? (
+        <div className="tracker-stack">
+          {trackers.map((card) => (
+            <TrackerCard key={card.id} card={card} onRefetch={onRefetch} onExpired={onExpired} />
+          ))}
+        </div>
+      ) : configured ? (
         <div className="brief-figure">
           <div className="kpi">
             <div className={`value${delta && net < 0 ? ' down' : ''}${delta && net === 0 ? ' flat' : ''}`}>

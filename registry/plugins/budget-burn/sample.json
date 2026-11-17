@@ -1,10 +1,7 @@
 {
   "bindings": {
-    "value": 187500,
-    "status": "75% of budget used; on pace for the quarter.",
-    "tone": "attention",
-    "windowNote": "Spent in the last 30 days against a 250,000 USD budget."
+    "windowNote": "Opens a Workbook tracker instance."
   },
   "state": "ok",
-  "checkedAt": "2026-11-15T07:00:00"
+  "checkedAt": "2026-11-16T09:00:00"
 }

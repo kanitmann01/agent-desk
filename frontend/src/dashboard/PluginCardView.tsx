@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { postJson } from '../api';
 import type { PluginCard, PluginElement } from '../types';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
+import TrackerCard from './TrackerCard';
 
 interface PluginCardViewProps {
   card: PluginCard;
@@ -25,13 +26,38 @@ function ElementView({ element }: { element: PluginElement }) {
       </>
     );
   }
-  return <p className="w-note">{element.text ?? ''}</p>;
+  if (element.kind === 'delta') {
+    return (
+      <p className="w-note">
+        {element.label ? `${element.label}: ` : ''}{element.value ?? ''} {element.direction ?? ''}
+      </p>
+    );
+  }
+  if (element.kind === 'sparkline' && element.points && element.points.length > 1) {
+    const min = Math.min(...element.points);
+    const max = Math.max(...element.points);
+    const span = max - min || 1;
+    const coords = element.points.map((point, index) => {
+      const x = (index / (element.points!.length - 1)) * 100;
+      const y = 28 - ((point - min) / span) * 24;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return (
+      <svg viewBox="0 0 100 30" role="img" aria-label={element.label || 'History'}>
+        <polyline points={coords} fill="none" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    );
+  }
+  return <p className="w-note">{element.text ?? element.value ?? ''}</p>;
 }
 
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
-  const fresh = card.freshness === 'fresh';
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  if (card.payload?.setup || card.payload?.tracker || card.id === 'excel-report' || card.id.startsWith('excel-report~')) {
+    return <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />;
+  }
+  const fresh = card.freshness === 'fresh';
   const elements = fresh ? (card.payload?.elements ?? []) : [];
 
   async function retest() {

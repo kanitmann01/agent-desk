@@ -1,23 +1,10 @@
 {
   "type": "card",
-  "title": "Budget burn",
   "elements": [
-    {
-      "type": "progress",
-      "binding": "value",
-      "label": "Budget used",
-      "target": 250000,
-      "unit": "USD"
-    },
-    {
-      "type": "status",
-      "binding": "status",
-      "toneBinding": "tone"
-    },
     {
       "type": "text",
       "binding": "windowNote",
-      "label": "Window"
+      "label": "Instance"
     }
   ]
 }

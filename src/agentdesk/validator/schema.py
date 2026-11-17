@@ -33,6 +33,7 @@ REQUIRED_KEY_TYPES = {
 
 OPTIONAL_KEY_TYPES = {
     "optionalPermissions": dict,
+    "config": dict,
 }
 
 # The keys v2 adds on top of the v1 set. They are required for v2 and

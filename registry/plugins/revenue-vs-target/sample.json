@@ -1,9 +1,7 @@
 {
   "bindings": {
-    "value": 742350,
-    "delta24h": "3 new, 0 removed rows.",
-    "direction": "up"
+    "windowNote": "Opens a Workbook tracker instance."
   },
   "state": "ok",
-  "checkedAt": "2026-11-15T07:00:00"
+  "checkedAt": "2026-11-16T09:00:00"
 }

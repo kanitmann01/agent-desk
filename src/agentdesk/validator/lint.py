@@ -99,6 +99,7 @@ def validate_permission_lint(manifest, reader) -> list[Failure]:
             if isinstance(widget, dict):
                 failures.extend(_validate_data_source_type(widget))
 
+    failures.extend(_validate_config(manifest, permissions if isinstance(permissions, dict) else {}))
     failures.extend(_validate_network_filesystem(manifest))
     failures.extend(_validate_over_permission(manifest))
     failures.extend(_validate_data_source_permissions(manifest))
@@ -370,6 +371,49 @@ def _data_source_files(data_source) -> set:
         if isinstance(nested, dict):
             files.update(_data_source_files(nested))
     return files
+
+
+_CONFIG_KINDS = (
+    "workbook", "markdown", "calendar", "mailbox",
+    "research", "page", "desk", "compose",
+)
+
+
+def _validate_config(manifest, permissions) -> list[Failure]:
+    config = manifest.get("config")
+    if config is None:
+        return []
+    if not isinstance(config, dict):
+        return [Failure("bad-schema", "config must be an object")]
+    kinds = config.get("kinds")
+    if not isinstance(kinds, list) or not kinds or not all(
+            isinstance(item, str) and item in _CONFIG_KINDS for item in kinds):
+        return [Failure(
+            "bad-schema",
+            "config.kinds must list workbook, markdown, calendar, mailbox, "
+            "research, page, desk, or compose",
+        )]
+    failures: list[Failure] = []
+    llm = permissions.get("llm") if isinstance(permissions, dict) else None
+    if not isinstance(llm, dict) or llm.get("allow") is not False:
+        failures.append(Failure(
+            "over-permission",
+            "permissions.llm.allow must be false; a suggestion is a host call",
+        ))
+    alias = config.get("aliasOf")
+    if alias is not None and (not isinstance(alias, str) or not _SAFE_ID.match(alias)):
+        failures.append(Failure("bad-schema", "config.aliasOf must be a plugin id"))
+    contributes = manifest.get("contributes")
+    widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
+    if isinstance(widgets, list):
+        for widget in widgets:
+            source = widget.get("dataSource") if isinstance(widget, dict) else None
+            if isinstance(source, dict) and source.get("file"):
+                failures.append(Failure(
+                    "over-permission",
+                    "a config-backed plugin must not also declare a dataSource file",
+                ))
+    return failures
 
 
 def _validate_shell(permissions) -> list[Failure]:

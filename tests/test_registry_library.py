@@ -341,57 +341,37 @@ def _excel_runner(workspace: Path, tmp_path: Path, clock: list[float]):
 # ---- excel-report ------------------------------------------------------
 
 
-def test_excel_report_installs_and_binds_real_rows(tmp_path, library_registry):
+def test_excel_report_installs_and_waits_for_a_confirmed_file(tmp_path):
     workspace = tmp_path / "workspace" / "reports"
     workspace.mkdir(parents=True)
     (workspace / "report.xlsx").write_bytes(
         excel_fixtures.make_xlsx(excel_fixtures.BASE_ROWS))
     clock = [1_000_000.0]
     runner = _excel_runner(workspace.parent, tmp_path, clock)
-    runtime = _install(tmp_path, library_registry, "excel-report",
-                       workspace.parent, runner)
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins", data_dir=tmp_path / "plugin-data",
+        workspace_dir=workspace.parent, runner=runner)
+    runtime.install(PLUGINS / "excel-report", source="dir")
     card = _one_card(runtime)
     assert card["id"] == "excel-report"
-    assert card["freshness"] == "fresh"
-    payload = card["payload"]
-    assert payload["status"] == "fresh"
-    assert payload["elements"] == [
-        {"kind": "metric", "label": "Rows seen", "value": "4"},
-        {"kind": "metric", "label": "Added (24h)", "value": "0"},
-        {"kind": "metric", "label": "Removed (24h)", "value": "0"},
-        {"kind": "metric", "label": "Workbook", "value": "report.xlsx"},
-        {"kind": "text", "text": EXCEL_BASELINE_NOTE},
-    ]
-
-    # A real edit one window later binds through the same card.
-    rows = excel_fixtures.BASE_ROWS + [["Support add-ons", 3.0, 9000.0]]
-    (workspace / "report.xlsx").write_bytes(excel_fixtures.make_xlsx(rows))
-    clock[0] += DAY + 60
-    runtime.retest("excel-report")
-    card = _one_card(runtime)
-    metrics = {e["label"]: e["value"] for e in card["payload"]["elements"]
-               if e["kind"] == "metric"}
-    assert metrics["Rows seen"] == "5"
-    assert metrics["Added (24h)"] == "1"
-    assert metrics["Removed (24h)"] == "0"
-    notes = [e["text"] for e in card["payload"]["elements"]
-             if e["kind"] == "text"]
-    assert notes == ["Compared with the snapshot from about 24 hours ago."]
+    assert card["freshness"] == "setup"
+    assert card["payload"]["setup"]["step"] == "source"
+    # A workbook sitting in the old reports folder is not read on install.
+    assert card["payload"]["elements"] == []
 
 
-def test_excel_report_with_no_workbook_is_amber_with_cause(
-        tmp_path, library_registry):
+def test_excel_report_with_no_workbook_asks_for_one(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     runner = _excel_runner(workspace, tmp_path, [1_000_000.0])
-    runtime = _install(tmp_path, library_registry, "excel-report",
-                       workspace, runner)
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins", data_dir=tmp_path / "plugin-data",
+        workspace_dir=workspace, runner=runner)
+    runtime.install(PLUGINS / "excel-report", source="dir")
     card = _one_card(runtime)
-    assert card["freshness"] == "attention"
-    assert "no file matches" in card["cause"]
-    # Amber binds nothing: with no workbook the watch never attaches, so
-    # there is no bound payload at all (probe parity), never a false one.
-    assert card["payload"] is None
+    assert card["freshness"] == "setup"
+    assert card["cause"] == ""
+    assert card["payload"]["setup"]["step"] == "source"
 
 
 # ---- calendar-today ----------------------------------------------------

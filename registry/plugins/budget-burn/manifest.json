@@ -17,18 +17,16 @@
     "burn"
   ],
   "icon": "clock",
-  "summary": "Are we burning budget faster than plan this month?",
-  "description": "Budget Burn sums the Spent column by Line from ${workspace}/finance/budget*.xlsx, shows progress against the 250,000 USD budget, and carries the source state and window note. A missing workbook renders the blank state naming the setting, not a fake zero.",
+  "summary": "A Workbook tracker instance named Budget.",
+  "description": "Budget Burn is a Workbook tracker instance named Budget. You open the workbook and confirm the columns. No path, column, or target is assumed.",
   "highlights": [
-    "Budget-used progress against a 250,000 USD cap.",
-    "Status line and tone carry the source state at a glance.",
-    "Window note states the 30-day comparison period."
+    "Installs as the Budget instance of Workbook tracker.",
+    "You open the file. Nothing is read until you confirm.",
+    "The columns and any goal are yours, not a default."
   ],
   "permissions": {
     "filesystem": {
-      "read": [
-        "${workspace}/finance/budget*.xlsx"
-      ],
+      "read": [],
       "write": []
     },
     "network": {
@@ -49,14 +47,7 @@
         "id": "budget-burn",
         "size": "2x1",
         "dataSource": {
-          "type": "excel-watch",
-          "file": "${workspace}/finance/budget*.xlsx",
-          "keyColumn": "Line",
-          "valueColumn": "Spent",
-          "window": "30d",
-          "target": 250000,
-          "targetGood": "down",
-          "aggregate": "sum"
+          "type": "excel-watch"
         },
         "render": {
           "type": "ui-schema",
@@ -65,5 +56,13 @@
       }
     ]
   },
-  "sample": "sample.json"
+  "sample": "sample.json",
+  "config": {
+    "kinds": [
+      "workbook"
+    ],
+    "aliasOf": "excel-report",
+    "instanceName": "Budget",
+    "good": "down"
+  }
 }

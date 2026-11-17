@@ -17,21 +17,17 @@
     "daily-delta"
   ],
   "icon": "chart",
-  "summary": "What changed in the sales workbook in the last 24 hours.",
-  "description": "Sales 24h Delta watches the newest workbook under ${workspace}/reports/, diffs its rows against the snapshot taken about 24 hours ago, and shows the delta plus the rows that changed. Every card carries the as-of time and the source state; when the workbook is missing the card names the setting it needs instead of showing a zero.",
+  "summary": "A Workbook tracker instance named Sales.",
+  "description": "Sales 24h Delta is a Workbook tracker instance named Sales. You open the workbook and confirm the columns. No path, column, or target is assumed.",
   "highlights": [
-    "Delta plus new, removed, and seen row counts for the last 24 hours.",
-    "Changed-row list links the delta to the deals that actually moved.",
-    "Watches ${workspace}/reports/*.xlsx with no plugin code or network."
+    "Installs as the Sales instance of Workbook tracker.",
+    "You open the file. Nothing is read until you confirm.",
+    "The columns and any goal are yours, not a default."
   ],
   "permissions": {
     "filesystem": {
-      "read": [
-        "${workspace}/reports/*.xlsx"
-      ],
-      "write": [
-        "${pluginData}"
-      ]
+      "read": [],
+      "write": []
     },
     "network": {
       "allow": []
@@ -51,9 +47,7 @@
         "id": "sales-delta",
         "size": "2x1",
         "dataSource": {
-          "type": "excel-watch",
-          "file": "${workspace}/reports/*.xlsx",
-          "window": "24h"
+          "type": "excel-watch"
         },
         "render": {
           "type": "ui-schema",
@@ -73,5 +67,13 @@
       }
     ]
   },
-  "sample": "sample.json"
+  "sample": "sample.json",
+  "config": {
+    "kinds": [
+      "workbook"
+    ],
+    "aliasOf": "excel-report",
+    "instanceName": "Sales",
+    "good": "up"
+  }
 }

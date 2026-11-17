@@ -319,7 +319,8 @@ def test_excel_report_is_reference_and_unpacked():
     assert manifest["category"] == "reference"
     assert manifest["id"] == "excel-report"
     assert manifest["version"] == "0.1.0"
-    assert "reference" in manifest["summary"].lower()
+    assert manifest["config"]["kinds"] == ["workbook"]
+    assert "file" not in manifest["contributes"]["widgets"][0]["dataSource"]
     assert validate_plugin(PLUGINS_DIR / "excel-report").ok
     packed = {plugin_id for pack in _packs() for plugin_id in pack["plugins"]}
     assert "excel-report" not in packed

@@ -1,22 +1,10 @@
 {
   "type": "card",
-  "title": "Sales delta (24h)",
   "elements": [
     {
-      "type": "delta",
-      "binding": "delta24h",
-      "label": "Changed rows (24h)",
-      "window": "24h"
-    },
-    {
-      "type": "metric",
-      "binding": "rowsSeen",
-      "label": "Rows seen"
-    },
-    {
-      "type": "list",
-      "title": "Changed rows",
-      "rowsBinding": "rows"
+      "type": "text",
+      "binding": "windowNote",
+      "label": "Instance"
     }
   ]
 }

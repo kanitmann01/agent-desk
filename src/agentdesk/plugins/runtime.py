@@ -30,6 +30,18 @@ PILOT_VIEWS = 3
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
+def _alias_id(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-")
+    return cleaned or "instance"
+
+
+def _format_number(value) -> str:
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.2f}"
+
+
 def _require_safe_name(value: str, what: str) -> None:
     if (not value or "/" in value or "\\" in value or value.startswith("-")
             or ".." in value or not _SAFE_NAME.match(value)):
@@ -272,6 +284,7 @@ class PluginRuntime:
         entry["data_source"] = self._attach_runner(plugin_id, entry)
         state["plugins"][plugin_id] = entry
         self._write(state)
+        self._materialize_alias(manifest)
         return {"ok": True, "id": plugin_id, "version": version,
                 "sha256": digest, "pilot": True}
 
@@ -548,6 +561,148 @@ class PluginRuntime:
     def list_records(self) -> list[dict]:
         return [dict(entry) for entry in self._read()["plugins"].values()]
 
+    def layout_keys(self) -> list[str]:
+        """Card keys for the dashboard layout.
+
+        A workbook plugin with instances contributes one key per instance.
+        An alias contributes none: its instance is a card of the target.
+        """
+        keys = []
+        tracker_done = False
+        for entry in self.list_records():
+            if entry.get("state") != "enabled" or not entry.get("versions"):
+                continue
+            manifest = self._manifest(entry["id"])
+            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+            if config.get("aliasOf") or self._is_tracker(manifest):
+                if not tracker_done:
+                    keys.extend(self._tracker_keys())
+                    tracker_done = True
+                continue
+            keys.append(entry["id"])
+        return keys
+
+    def _is_tracker(self, manifest: dict) -> bool:
+        config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        return "workbook" in (config.get("kinds") or []) and not config.get("aliasOf")
+
+    def _tracker_keys(self) -> list[str]:
+        from agentdesk.plugins.config import InstanceStore
+        instances = InstanceStore(self.data_dir, self.workspace_dir).list("excel-report")
+        if not instances:
+            return ["excel-report"]
+        return [f"excel-report~{item['instanceId']}" for item in instances]
+
+    def _tracker_entry(self, state: dict):
+        return state["plugins"].get("excel-report")
+
+    def _tracker_cards(self, entry) -> list[dict]:
+        from agentdesk.plugins.config import ConfigError, InstanceStore
+        from agentdesk.plugins.tracker import read_tracker
+        store = InstanceStore(self.data_dir, self.workspace_dir)
+        instances = store.list("excel-report")
+        version = "" if not entry else str(entry.get("active_version") or "")
+        pilot = bool(entry and entry.get("pilot_views_left", 0) > 0)
+        if not instances:
+            return [self._tracker_setup_card("main", "Workbook tracker", version, pilot, "source")]
+        cards = []
+        for item in instances:
+            instance_id = item["instanceId"]
+            title = str(item.get("name") or instance_id)
+            if not item.get("confirmedAt"):
+                step = "columns" if (item.get("source") or {}).get("path") else "source"
+                cards.append(self._tracker_setup_card(instance_id, title, version, pilot, step))
+                continue
+            card = self._tracker_setup_card(instance_id, title, version, pilot, "done")
+            try:
+                reading = read_tracker(store, "excel-report", instance_id)
+            except ConfigError as exc:
+                card["freshness"] = "attention"
+                card["cause"] = exc.message
+                card["payload"] = None
+                cards.append(card)
+                continue
+            elements = [
+                {"kind": "metric", "label": "Value", "value": _format_number(reading["value"])},
+                {"kind": "delta", "label": "Change", "value": reading["delta"],
+                 "direction": reading["direction"]},
+                {"kind": "text", "label": "Workbook", "text": reading["file"]},
+            ]
+            if reading.get("paceNote"):
+                elements.append({"kind": "text", "label": "Pace", "text": reading["paceNote"]})
+            points = reading.get("points") or []
+            if len(points) >= 2:
+                elements.append({"kind": "sparkline", "label": "History", "points": points})
+            goal = reading.get("goal") if isinstance(reading.get("goal"), dict) else None
+            card["title"] = title
+            card["freshness"] = "fresh"
+            card["cause"] = ""
+            card["pilot"] = False
+            card["payload"] = {
+                "elements": elements,
+                "status": "fresh",
+                "tracker": {
+                    "name": title,
+                    "value": _format_number(reading["value"]),
+                    "unit": reading.get("unit") or "",
+                    "delta": reading["delta"],
+                    "direction": reading["direction"],
+                    "points": points,
+                    "file": reading["file"],
+                    "paceNote": reading.get("paceNote") or "",
+                    "goal": None if not goal else {
+                        "value": _format_number(goal.get("value")),
+                        "unit": goal.get("unit") or "",
+                    },
+                },
+            }
+            cards.append(card)
+        return cards
+
+    def _tracker_setup_card(self, instance_id: str, title: str, version: str,
+                            pilot: bool, step: str) -> dict:
+        card_id = "excel-report" if instance_id == "main" and step != "done" else f"excel-report~{instance_id}"
+        if instance_id == "main" and step == "source":
+            card_id = "excel-report"
+        return {
+            "id": card_id,
+            "title": title,
+            "version": version,
+            "pilot": False,
+            "state": "enabled",
+            "freshness": "setup",
+            "cause": "",
+            "checked_at": "",
+            "pluginId": "excel-report",
+            "instanceId": instance_id,
+            "payload": {
+                "elements": [],
+                "setup": {
+                    "pluginId": "excel-report",
+                    "instanceId": instance_id,
+                    "name": title,
+                    "step": step,
+                },
+            },
+        }
+
+    def _materialize_alias(self, manifest: dict) -> None:
+        config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        target = config.get("aliasOf")
+        if not isinstance(target, str) or not target:
+            return
+        from agentdesk.plugins.config import ConfigError, InstanceStore
+        instance_id = _alias_id(str(config.get("instanceName") or manifest.get("id") or "instance"))
+        store = InstanceStore(self.data_dir, self.workspace_dir)
+        try:
+            store.create(
+                target, instance_id, str(config.get("instanceName") or instance_id),
+                good="down" if config.get("good") == "down" else "up",
+            )
+        except ConfigError as exc:
+            if exc.code != "config:exists":
+                raise
+
     def widget_cards(self) -> list[dict]:
         """Widget card data for enabled, installed plugins, pilot and amber
         included. One dashboard view spends one pilot view per plugin.
@@ -559,6 +714,7 @@ class PluginRuntime:
         state = self._read()
         cards = []
         dirty = False
+        tracker_emitted = False
         for entry in state["plugins"].values():
             if entry["state"] != "enabled" or not entry["versions"]:
                 continue
@@ -566,6 +722,15 @@ class PluginRuntime:
             manifest_path = self._active_version_dir(entry) / "manifest.json"
             if manifest_path.exists():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+            if config.get("aliasOf") or self._is_tracker(manifest):
+                if not tracker_emitted:
+                    cards.extend(self._tracker_cards(entry if self._is_tracker(manifest) else self._tracker_entry(state)))
+                    tracker_emitted = True
+                if entry["pilot_views_left"] > 0:
+                    entry["pilot_views_left"] -= 1
+                    dirty = True
+                continue
             if self.runner.attached(entry["id"]):
                 # One source read for both halves of the card (#75
                 # review): status and payload come from a single

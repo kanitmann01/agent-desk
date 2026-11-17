@@ -49,10 +49,31 @@ export interface CommitmentsStatus {
 // metric (a value with a label) or text (a note line). Anything the
 // host could not bind is dropped server-side, never invented here.
 export interface PluginElement {
-  kind: 'metric' | 'text';
+  kind: 'metric' | 'text' | 'delta' | 'sparkline';
   label?: string;
   value?: string;
   text?: string;
+  direction?: string;
+  points?: number[];
+}
+
+export interface PluginSetup {
+  pluginId: string;
+  instanceId: string;
+  name: string;
+  step: string;
+}
+
+export interface TrackerView {
+  name: string;
+  value: string;
+  unit: string;
+  delta: string;
+  direction: string;
+  points: number[];
+  file: string;
+  paceNote?: string;
+  goal?: { value: string; unit: string } | null;
 }
 
 export interface PluginCard {
@@ -64,7 +85,9 @@ export interface PluginCard {
   freshness: string; // fresh | attention
   cause: string;
   checkedAt?: string;
-  payload?: { elements: PluginElement[] } | null;
+  pluginId?: string;
+  instanceId?: string;
+  payload?: { elements: PluginElement[]; setup?: PluginSetup; tracker?: TrackerView } | null;
 }
 
 // One card in the dashboard's layout as the payload lists it: visible

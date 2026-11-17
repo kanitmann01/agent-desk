@@ -24,6 +24,8 @@ _LABELS = {
     "mail_enabled": "Mail digest (headers only)",
     "sample_data": "Sample data",
     "semantic_memory": "Semantic memory (embeddings)",
+    "suggest_headers_only": "Suggest columns from headers only",
+    "plugin_instance_cap": "Plugin instances per plugin",
 }
 
 ENDPOINT_HINT = (
@@ -124,6 +126,8 @@ def _toggle_button(key: str, value) -> str:
     if key == "daily_cap":
         shown = {3: "3 (normal)", 1: "1 (quiet)", 0: "0 (inbox only)"}[value]
         state = shown
+    elif key == "plugin_instance_cap":
+        state = str(value)
     else:
         state = "On" if value else "Off"
     return (
