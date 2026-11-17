@@ -120,6 +120,38 @@ export interface InstalledResponse {
   policy: MarketPolicy;
 }
 
+// -- per-instance setup (T5) ----------------------------------------------
+
+// The instance document the plugin runtime stores per configured instance
+// (agentdesk.plugins.config). The manage view reads it through
+// GET /api/plugins/<id>/instances.
+export interface InstanceDocument {
+  schemaVersion?: number;
+  instanceId: string;
+  name: string;
+  source: {
+    kind?: string;
+    path?: string | null;
+    sheet?: string | null;
+    headerRow?: number | null;
+    range?: string | null;
+  } | null;
+  tracking?: Record<string, unknown>;
+  confirmedAt: string | null;
+  suggested?: boolean;
+}
+
+export interface InstancesResponse {
+  pluginId: string;
+  configBacked: boolean;
+  aliasOf: string | null;
+  // The plugin id whose setup endpoints this surface drives: an alias
+  // answers its target, so the alias never opens a second config surface.
+  setupPluginId: string;
+  setupPluginName: string;
+  instances: InstanceDocument[];
+}
+
 export interface PublisherResponse {
   publisher: string;
   verified: boolean;

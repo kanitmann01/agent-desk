@@ -604,6 +604,14 @@ def _active_version_dir(record: dict) -> Path:
     return Path(record["versions"][-1]["dir"])
 
 
+def _alias_instance_id(name: str) -> str:
+    """The instance id an alias's named instance resolves to. Mirrors the
+    runtime's derivation, so the manage view lists exactly the instance
+    the install materialized."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-")
+    return cleaned or "instance"
+
+
 def _normalize_peer_address(address: str) -> str | None:
     """host:port with an optional http:// scheme stripped; None when the
     shape is wrong (a hostname without a port is refused: the peer
@@ -3421,9 +3429,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if plugins is None:
             self._send_json(503, {"error": "plugins are not available"})
             return
+        parts = [part for part in path.split("/") if part]
         try:
+            # api plugins <id> instances   (the manage view's instance list)
+            if len(parts) == 4 and parts[3] == "instances":
+                self._send_json(200, self._instance_listing(plugins, parts[2]))
+                return
             from ..plugins.setup_flow import preview
-            parts = [part for part in path.split("/") if part]
             # api plugins <id> instances <iid> preview
             if len(parts) >= 6 and parts[5] == "preview":
                 query = self.path.partition("?")[2]
@@ -3440,10 +3452,58 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(200, result)
                 return
+        except PluginError as exc:
+            self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+            return
         except Exception as exc:  # noqa: BLE001 - the setup envelope names the cause
             self._setup_error(exc)
             return
         self._send_json(404, {"error": "not-found", "message": path})
+
+    def _instance_listing(self, plugins: PluginRuntime, plugin_id: str) -> dict:
+        """The manage view's instance list for one plugin id.
+
+        A config-backed plugin answers its own instance documents. An
+        alias answers the one named instance of its target, and names the
+        target as the setup plugin, so the SPA drives the target's
+        endpoints instead of opening a second config surface for the
+        alias. A plain plugin answers configBacked false and no instances.
+        """
+        from ..plugins.setup_flow import store_for
+        record = plugins.record(plugin_id)  # PluginError(404) when unknown
+        manifest = {}
+        if record.get("versions"):
+            manifest_path = _active_version_dir(record) / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        alias_of = str(config.get("aliasOf")) if config.get("aliasOf") else None
+        config_backed = alias_of is not None or "workbook" in (config.get("kinds") or [])
+        store = store_for(plugins, self._instance_cap())
+        if alias_of:
+            target_record = plugins.record(alias_of)
+            instance_id = _alias_instance_id(
+                str(config.get("instanceName") or plugin_id or "instance"))
+            documents = [item for item in store.list(alias_of)
+                         if item.get("instanceId") == instance_id]
+            setup_id = alias_of
+            setup_name = str(target_record.get("name") or alias_of)
+        elif config_backed:
+            documents = store.list(plugin_id)
+            setup_id = plugin_id
+            setup_name = str(record.get("name") or plugin_id)
+        else:
+            documents = []
+            setup_id = plugin_id
+            setup_name = str(record.get("name") or plugin_id)
+        return {
+            "pluginId": plugin_id,
+            "configBacked": config_backed,
+            "aliasOf": alias_of,
+            "setupPluginId": setup_id,
+            "setupPluginName": setup_name,
+            "instances": documents,
+        }
 
     def _plugin_setup_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
         from ..plugins.config import ConfigError
