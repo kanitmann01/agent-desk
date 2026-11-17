@@ -96,18 +96,19 @@ _ICON_PEERS = (
 # OS fallbacks. Nothing is fetched from the network.
 STYLES = """
 :root{
-  --bg:#F6F3EC; --surface:#FFFDF8; --surface-2:#F6F3EC;
-  --ink-1:#141414; --ink-2:#3A3A3A; --ink-3:#5C5C5C; --ink-4:#8A8A8A;
-  --hairline:#141414;
-  --shadow-card:6px 6px 0 #141414;
-  --shadow-card-hover:6px 6px 0 #141414;
-  --primary:#8C2F2F; --primary-ink:#FFFDF8; --primary-soft:#F3E4E1;
-  --good:#1B6B3A; --bad:#8C2F2F;
-  --attention-bg:#F6F3EC; --attention-ink:#8C2F2F;
-  --r-card:0px; --r-control:0px; --r-inner:0px; --dur:120ms;
-  --font-display:"Source Serif 4","Iowan Old Style",Palatino,serif;
-  --font-ui:"Source Sans 3","Segoe UI",sans-serif;
-  --font-mono:"IBM Plex Mono","Consolas",monospace;
+  --bg:#060609; --surface:#101014; --surface-2:#16161A;
+  --ink-1:#FBFBFB; --ink-2:#C8C8CC; --ink-3:#8E8E93; --ink-4:#5C5C61;
+  --hairline:#26272A;
+  --shadow-card:none;
+  --shadow-card-hover:none;
+  --primary:#FBFBFB; --primary-ink:#060609; --primary-soft:#1C1C20;
+  --accent:#E1F56A;
+  --good:#E1F56A; --bad:#C8C8CC;
+  --attention-bg:#16161A; --attention-ink:#E1F56A;
+  --r-card:8px; --r-control:6px; --r-inner:4px; --dur:120ms;
+  --font-display:"Geist","Segoe UI",sans-serif;
+  --font-ui:"Geist","Segoe UI",sans-serif;
+  --font-mono:"Geist Mono","Consolas",monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}

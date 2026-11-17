@@ -11,11 +11,10 @@ describe('the morning brief movers', () => {
 
   it('pairs an edited deal into one row with the signed delta', () => {
     const movers = moversFromDelta({
-      added: [atlas(15120), ['Sample: Harbor rollout — 4', 'AMER', 'Negotiate', 22010]],
-      removed: [atlas(13370), ['Sample: ERP modules add-on — 4', 'AMER', 'Negotiate', 17480]],
+      added: [atlas(15120), ['Sample: Harbor rollout — 4', 'AMER', 'Negotiate', 22010, '2026-02-01']],
+      removed: [atlas(13370), ['Sample: ERP modules add-on — 4', 'AMER', 'Negotiate', 17480, '2026-02-01']],
     });
-    expect(movers).toHaveLength(2);
-    const changed = movers.find((mover) => mover.name === 'Sample: Atlas renewal');
+    const changed = movers.find((mover) => mover.name.startsWith('Sample: Atlas renewal'));
     expect(changed).toMatchObject({
       kind: 'changed',
       previousName: null,
@@ -24,12 +23,8 @@ describe('the morning brief movers', () => {
       newAmount: 15120,
       delta: 1750,
     });
-    const renamed = movers.find((mover) => mover.name === 'Sample: Harbor rollout');
-    expect(renamed).toMatchObject({
-      kind: 'changed',
-      previousName: 'Sample: ERP modules add-on',
-      delta: 4530,
-    });
+    expect(movers.find((mover) => mover.previousName)).toBeUndefined();
+    expect(movers.filter((mover) => mover.kind !== 'changed').map((mover) => mover.kind).sort()).toEqual(['added', 'removed']);
   });
 
   it('keeps a deal that only arrived or only left', () => {

@@ -6,10 +6,10 @@ import { postJson } from '../api';
 import type { DashboardData } from '../types';
 import Button from '../components/Button';
 import TrackerCard from './TrackerCard';
+import PluginCardView from './PluginCardView';
+import { kindTag, pluginKind } from './pluginKind';
 import {
   MOVER_CAP,
-  dealMeta,
-  dealName,
   formatAmount,
   formatSigned,
   moversFromDelta,
@@ -30,40 +30,21 @@ function moverTitle(mover: Mover): string {
   return mover.name;
 }
 
-function moverPath(mover: Mover): string {
-  if (mover.kind === 'changed' && mover.oldAmount != null && mover.newAmount != null) {
-    return `${formatAmount(mover.oldAmount)} → ${formatAmount(mover.newAmount)}`;
-  }
-  if (mover.kind === 'added') return 'Added';
-  if (mover.kind === 'removed') return 'Removed';
-  return '';
-}
-
-function Movers({ movers }: { movers: Mover[] }) {
-  const [open, setOpen] = useState(false);
-  if (movers.length === 0) {
-    return <p className="brief-quiet">No rows changed in the last 24 hours.</p>;
-  }
-  const shown = open ? movers : movers.slice(0, MOVER_CAP);
-  const hidden = movers.length - MOVER_CAP;
+function Bars({ movers }: { movers: Mover[] }) {
+  const rows = movers.slice(0, 6);
+  const max = Math.max(...rows.map((mover) => Math.abs(mover.delta)), 1);
+  if (rows.length === 0) return null;
   return (
-    <>
-      <ul className="movers">
-        {shown.map((mover, index) => (
-          <li key={`${mover.kind}-${index}-${mover.name}`}>
-            <span className="mover-name">{moverTitle(mover)}</span>
-            <span className={mover.delta < 0 ? 'mover down' : 'mover up'}>{formatSigned(mover.delta)}</span>
-            {mover.meta ? <span className="mover-meta">{mover.meta}</span> : <span />}
-            <span className="mover-path">{moverPath(mover)}</span>
-          </li>
-        ))}
-      </ul>
-      {hidden > 0 ? (
-        <button type="button" className="brief-more" onClick={() => setOpen((value) => !value)}>
-          {open ? 'Show top 5' : 'See all'}
-        </button>
-      ) : null}
-    </>
+    <div className="bars" role="img" aria-label="Largest deal changes">
+      {rows.map((mover, index) => (
+        <div className="bar-row" key={`${mover.name}-${index}`}>
+          <span>{mover.name}</span>
+          <span className="bar-track">
+            <span className="bar-fill" style={{ width: `${(Math.abs(mover.delta) / max) * 100}%` }} />
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -72,6 +53,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const [manualOpen, setManualOpen] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [movesOpen, setMovesOpen] = useState(false);
 
   const sales = data.sales;
   const status = sales.status;
@@ -149,22 +131,36 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     document.querySelector<HTMLTextAreaElement>('.cmd-field')?.focus();
   }
 
+  const event = data.commitments.status?.keyEvent;
+  const healthLabels: Record<string, string> = {
+    'excel-watch': 'Workbook',
+    'calendar-bridge': 'Calendar',
+    'research-endpoint': 'Research',
+  };
+  const health = data.sources.items.length > 0
+    ? data.sources.items.map((item) => ({
+        id: healthLabels[item.id] ?? item.id,
+        status: item.status.replaceAll('_', ' '),
+        detail: item.detail,
+      }))
+    : [
+        { id: 'Workbook', status: configured ? 'live' : 'not connected', detail: '' },
+        { id: 'Calendar', status: calendarNeedsConnect ? 'not connected' : 'live', detail: '' },
+        { id: 'Research', status: researchNeedsAsk ? 'waiting' : 'asked', detail: '' },
+      ];
+  const others = data.plugins.cards.filter((card) => !trackers.some((tracker) => tracker.id === card.id));
+
   return (
-    <div className={configured ? 'brief' : 'brief brief-empty'}>
-      {trackers.length > 0 ? (
-        <div className="tracker-stack">
-          {trackers.map((card) => (
-            <TrackerCard key={card.id} card={card} onRefetch={onRefetch} onExpired={onExpired} />
-          ))}
-        </div>
-      ) : configured ? (
-        <div className="brief-figure">
-          <div className="kpi">
-            <div className={`value${delta && net < 0 ? ' down' : ''}${delta && net === 0 ? ' flat' : ''}`}>
-              {delta ? formatSigned(net) : (status?.rowsSeen ?? 0).toLocaleString('en-US')}
+    <div className="brief">
+      <article className="cell cell-hero span-8">
+        <p className="tag">BRIEF</p>
+        {configured ? (
+          <>
+            <div className="kpi">
+              <div className={`value${delta && net < 0 ? ' down' : ''}${delta && net === 0 ? ' flat' : ''}`}>
+                {delta ? formatSigned(net) : (status?.rowsSeen ?? 0).toLocaleString('en-US')}
+              </div>
             </div>
-          </div>
-          <div className="brief-figure-copy">
             <p className="brief-label">{delta ? 'Net pipeline, last 24 hours' : 'Rows in the workbook'}</p>
             <p className="brief-quiet">
               {delta ? (
@@ -173,33 +169,19 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
                   {addedCount > 0 ? <span className="mover up">+{addedCount} added</span> : null}
                   {removedCount > 0 ? <span className="mover down">−{removedCount} removed</span> : null}
                 </>
-              ) : (
-                'First snapshot. The 24-hour diff starts at the next read.'
-              )}
+              ) : 'First snapshot. The 24-hour diff starts at the next read.'}
             </p>
+            {delta ? <Bars movers={movers} /> : null}
+          </>
+        ) : (
+          <div className="wire">
+            <p>No workbook is connected, so there is no pipeline figure yet.</p>
           </div>
-          {delta ? <Movers movers={movers} /> : (
-            <ul className="movers">
-              {(status?.examples ?? []).slice(1, 1 + MOVER_CAP).map((row, i) => {
-                const cells = row as unknown[];
-                const amount = cells[3];
-                return (
-                  <li key={i}>
-                    <span className="mover-name">{dealName(cells)}</span>
-                    <span className="mono">{typeof amount === 'number' ? formatAmount(amount) : ''}</span>
-                    {dealMeta(cells) ? <span className="mover-meta">{dealMeta(cells)}</span> : <span />}
-                    <span />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      ) : (
-        <p className="brief-lead">Connect a workbook and this desk shows the pipeline change and the deals that moved.</p>
-      )}
+        )}
+      </article>
       {decisions.length > 0 ? (
-        <section className="decisions" aria-label="Needs a decision">
+        <section className="cell cell-decisions span-4" aria-label="Needs a decision">
+          <p className="tag">DECISIONS</p>
           <h2>Needs a decision</h2>
           <ul>
             {salesNeedsConnect ? (
@@ -242,6 +224,81 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
           ) : null}
         </section>
       ) : null}
+      <article className="cell cell-watch span-8">
+        <p className="tag">TRACKING</p>
+        {delta && movers.length > 0 ? (
+          <>
+            <table className="moves">
+              <thead>
+                <tr><th>Deal</th><th>Where</th><th>Change</th></tr>
+              </thead>
+              <tbody>
+                {(movesOpen ? movers : movers.slice(0, MOVER_CAP)).map((mover, index) => (
+                  <tr key={`${mover.name}-${index}`}>
+                    <td>{moverTitle(mover)}</td>
+                    <td className="mover-meta">{mover.meta}</td>
+                    <td className={mover.delta < 0 ? 'mover down' : 'mover up'}>
+                      {mover.kind === 'changed' && mover.oldAmount != null && mover.newAmount != null
+                        ? `${formatAmount(mover.oldAmount)} → ${formatAmount(mover.newAmount)} `
+                        : ''}
+                      {formatSigned(mover.delta)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {movers.length > MOVER_CAP ? (
+              <button type="button" className="brief-more" onClick={() => setMovesOpen((open) => !open)}>
+                {movesOpen ? 'Show top 5' : 'See all'}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <div className="wire"><p>No rows have moved in the last 24 hours.</p></div>
+        )}
+      </article>
+      <article className="cell cell-digest span-4">
+        <p className="tag">DIGEST</p>
+        {event ? (
+          <ul className="digest-list">
+            <li>
+              <span>{event.subject}</span>
+              <time dateTime={event.start}>{event.start}</time>
+            </li>
+          </ul>
+        ) : (
+          <div className="wire">
+            <p>Nothing is on the calendar yet.</p>
+            <Button tone="secondary" href={WALKTHROUGH}>Set up</Button>
+          </div>
+        )}
+      </article>
+      <article className="cell cell-health span-4">
+        <p className="tag">DESK</p>
+        <ul className="matrix">
+          {health.map((item) => (
+            <li key={item.id}>
+              <span>{item.id}</span>
+              <span className="mono">{item.status}</span>
+            </li>
+          ))}
+        </ul>
+      </article>
+      {trackers.map((card) => (
+        <article className="cell cell-tracker span-5" key={card.id}>
+          <p className="tag">TRACKING</p>
+          <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />
+        </article>
+      ))}
+      {others.map((card) => {
+        const kind = pluginKind(card.id);
+        return (
+          <article className={`cell cell-${kind} span-4`} key={card.id}>
+            <p className="tag">{kindTag(kind)}</p>
+            <PluginCardView card={card} onRefetch={onRefetch} onExpired={onExpired} />
+          </article>
+        );
+      })}
     </div>
   );
 }

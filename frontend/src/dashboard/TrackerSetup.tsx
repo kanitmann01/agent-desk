@@ -174,6 +174,7 @@ export default function TrackerSetup({
                 <caption>{preview.sheet}, first {preview.rows.length} rows</caption>
                 <thead>
                   <tr>
+                    <th scope="col" className="row-num">#</th>
                     <th scope="col">Track</th>
                     {preview.headers.map((header) => (
                       <th
@@ -189,6 +190,7 @@ export default function TrackerSetup({
                 <tbody>
                   {preview.rows.map((row, index) => (
                     <tr key={index} className={picked.includes(index) ? 'is-picked' : ''}>
+                      <td className="row-num">{index + 1}</td>
                       <td>
                         <input
                           type="checkbox"

@@ -20,9 +20,20 @@ export interface Mover {
 
 export const MOVER_CAP = 5;
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function shortDate(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return '';
+  const month = MONTHS[Number(match[2]) - 1];
+  return month ? `${Number(match[3])} ${month}` : '';
+}
+
 export function dealName(row: unknown[]): string {
-  const raw = String(row[0] ?? '').replace(ROW_INDEX, '').trim();
-  return raw || 'Row';
+  const base = String(row[0] ?? '').replace(ROW_INDEX, '').trim() || 'Row';
+  const when = shortDate(row[4]);
+  return when ? `${base}, ${when}` : base;
 }
 
 export function dealMeta(row: unknown[]): string {
@@ -39,11 +50,6 @@ function amountOf(row: unknown[]): number | null {
 
 function rawName(row: unknown[]): string {
   return String(row[0] ?? '').trim();
-}
-
-function indexKey(row: unknown[]): string | null {
-  const match = rawName(row).match(/(?:—|-)\s*(\d+)$/);
-  return match ? match[1] : null;
 }
 
 function pair(next: unknown[], prev: unknown[]): Mover {
@@ -75,13 +81,9 @@ export function moversFromDelta(delta: DeltaPayload): Mover[] {
   }
 
   for (const row of delta.added ?? []) {
-    let index = rawName(row)
+    const index = rawName(row)
       ? take((other) => rawName(other) === rawName(row))
       : -1;
-    if (index < 0) {
-      const key = indexKey(row);
-      if (key) index = take((other) => indexKey(other) === key);
-    }
     if (index >= 0) {
       movers.push(pair(row, removed[index]));
       continue;

@@ -1,0 +1,87 @@
+- generic [ref=f4e3]:
+  - link "Skip to main content" [ref=f4e4] [cursor=pointer]:
+    - /url: "#marketplace-main"
+  - navigation "Main" [ref=f4e5]:
+    - generic [ref=f4e6]: Agent Desk
+    - link "Dashboard" [ref=f4e8] [cursor=pointer]:
+      - /url: /
+    - link "Inbox" [ref=f4e10] [cursor=pointer]:
+      - /url: /inbox
+    - link "Assistant" [ref=f4e12] [cursor=pointer]:
+      - /url: /assistant
+    - link "Activity" [ref=f4e14] [cursor=pointer]:
+      - /url: /activity
+    - link "Memory" [ref=f4e16] [cursor=pointer]:
+      - /url: /memory
+    - link "Mail" [ref=f4e18] [cursor=pointer]:
+      - /url: /mail
+    - link "Capabilities" [ref=f4e20] [cursor=pointer]:
+      - /url: /capabilities
+    - link "Marketplace" [ref=f4e22] [cursor=pointer]:
+      - /url: /marketplace
+    - link "Peers" [ref=f4e24] [cursor=pointer]:
+      - /url: /peers
+    - link "Settings" [ref=f4e26] [cursor=pointer]:
+      - /url: /settings
+    - button "Collapse navigation" [expanded] [ref=f4e28] [cursor=pointer]:
+      - generic [ref=f4e31]: Collapse
+    - generic [ref=f4e32]:
+      - generic [aria-hidden] [ref=f4e33]: AD
+      - generic [ref=f4e34]:
+        - text: Agent Desk
+        - generic [ref=f4e35]: local only
+  - main [ref=f4e36]:
+    - generic [ref=f4e37]: Marketplace
+    - navigation "Marketplace sections" [ref=f4e38]:
+      - link "Discover" [ref=f4e39] [cursor=pointer]:
+        - /url: /marketplace
+      - link "Installed" [ref=f4e40] [cursor=pointer]:
+        - /url: /marketplace/installed
+      - link "Publishers" [ref=f4e41] [cursor=pointer]:
+        - /url: /marketplace/publishers
+      - link "Studio" [ref=f4e42] [cursor=pointer]:
+        - /url: /marketplace/studio
+    - generic [ref=f4e43]:
+      - generic [ref=f4e44]:
+        - heading "Discover plugins" [level=1] [ref=f4e45]
+        - paragraph [ref=f4e46]: Install work plugins that read only what they declare.
+      - search [ref=f4e47]:
+        - generic [ref=f4e48]: Search plugins
+        - searchbox "Search plugins" [ref=f4e53]
+        - button "Search" [ref=f4e54] [cursor=pointer]
+      - generic [ref=f4e55]:
+        - group "Category" [ref=f4e56]:
+          - generic [ref=f4e58]:
+            - button "All" [pressed] [ref=f4e59] [cursor=pointer]
+            - button "Finance" [ref=f4e60] [cursor=pointer]
+            - button "Time" [ref=f4e61] [cursor=pointer]
+            - button "Communication" [ref=f4e62] [cursor=pointer]
+            - button "Research" [ref=f4e63] [cursor=pointer]
+            - button "Operations" [ref=f4e64] [cursor=pointer]
+            - button "Command" [ref=f4e65] [cursor=pointer]
+            - button "Reference" [ref=f4e66] [cursor=pointer]
+        - generic [ref=f4e67]:
+          - generic [ref=f4e68]:
+            - generic [ref=f4e69]: Source
+            - combobox "Source" [ref=f4e70]:
+              - option "Any source" [selected]
+              - option "bundled"
+              - option "org"
+              - option "peer"
+              - option "installed"
+          - generic [ref=f4e71]:
+            - generic [ref=f4e72]: Risk
+            - combobox "Risk" [ref=f4e73]:
+              - option "Any risk" [selected]
+              - option "low"
+              - option "medium"
+              - option "high"
+          - generic [ref=f4e74]:
+            - checkbox "Only available plugins" [ref=f4e75]
+            - generic [ref=f4e76]: Only available plugins
+      - paragraph [ref=f4e78]: Loading plugins…
+    - navigation "Marketplace administration" [ref=f4e110]:
+      - link "Admin" [ref=f4e111] [cursor=pointer]:
+        - /url: /marketplace/admin
+      - link "Trust center" [ref=f4e112] [cursor=pointer]:
+        - /url: /marketplace/trust

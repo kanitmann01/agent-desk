@@ -227,7 +227,7 @@ def test_design_tokens_are_served_locally(booted):
     status, _h, body = booted.request("GET", "/static/app.css", headers)
     assert status == 200
     css = body.decode("utf-8")
-    assert "--primary:#8C2F2F" in css
+    assert "--primary:#FBFBFB" in css
     assert "--font-ui" in css and "--font-mono" in css
     status, _h, body = booted.request("GET", "/static/app.js", headers)
     assert status == 200

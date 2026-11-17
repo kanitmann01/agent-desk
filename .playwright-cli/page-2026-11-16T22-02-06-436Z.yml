@@ -1,0 +1,66 @@
+- generic [ref=f15e3]:
+  - link "Skip to main content" [ref=f15e4] [cursor=pointer]:
+    - /url: "#dashboard-main"
+  - navigation "Main" [ref=f15e5]:
+    - generic [ref=f15e6]: Agent Desk
+    - link "Dashboard" [ref=f15e8] [cursor=pointer]:
+      - /url: /
+    - link "Inbox" [ref=f15e10] [cursor=pointer]:
+      - /url: /inbox
+    - link "Assistant" [ref=f15e12] [cursor=pointer]:
+      - /url: /assistant
+    - link "Activity" [ref=f15e14] [cursor=pointer]:
+      - /url: /activity
+    - link "Memory" [ref=f15e16] [cursor=pointer]:
+      - /url: /memory
+    - link "Mail" [ref=f15e18] [cursor=pointer]:
+      - /url: /mail
+    - link "Capabilities" [ref=f15e20] [cursor=pointer]:
+      - /url: /capabilities
+    - link "Marketplace" [ref=f15e22] [cursor=pointer]:
+      - /url: /marketplace
+    - link "Peers" [ref=f15e24] [cursor=pointer]:
+      - /url: /peers
+    - link "Settings" [ref=f15e26] [cursor=pointer]:
+      - /url: /settings
+    - button "Collapse navigation" [expanded] [ref=f15e28] [cursor=pointer]:
+      - generic [ref=f15e31]: Collapse
+    - generic [ref=f15e32]:
+      - generic [aria-hidden] [ref=f15e33]: AD
+      - generic [ref=f15e34]:
+        - text: Agent Desk
+        - generic [ref=f15e35]: local only
+  - main [ref=f15e36]:
+    - generic [ref=f15e37]:
+      - generic [ref=f15e38]:
+        - heading "Good evening" [level=1] [ref=f15e39]
+        - generic [ref=f15e40]: Monday, 16 November, 22:02.
+      - generic [ref=f15e42]:
+        - button "Add plugin" [ref=f15e44] [cursor=pointer]
+        - button "Customize" [ref=f15e45] [cursor=pointer]
+    - region "Ask the company endpoint" [ref=f15e46]:
+      - generic [ref=f15e47]:
+        - textbox "Research question" [ref=f15e52]:
+          - /placeholder: Ask anything, or paste what you did and ask what to look for.
+        - generic [aria-hidden] [ref=f15e53]: Enter to ask
+        - button "Research" [ref=f15e55] [cursor=pointer]
+    - generic [ref=f15e58]:
+      - paragraph [ref=f15e59]: Connect a workbook and this desk shows the pipeline change and the deals that moved.
+      - region "Needs a decision" [ref=f15e60]:
+        - heading "Needs a decision" [level=2] [ref=f15e61]
+        - list [ref=f15e62]:
+          - listitem [ref=f15e63]:
+            - generic [ref=f15e64]: Connect a workbook
+            - button "Connect" [ref=f15e65] [cursor=pointer]
+          - listitem [ref=f15e66]:
+            - generic [ref=f15e67]: Connect your calendar
+            - link "Connect" [ref=f15e68] [cursor=pointer]:
+              - /url: /walkthrough/calendar
+          - listitem [ref=f15e69]:
+            - generic [ref=f15e70]: Ask your first question
+            - button "Ask" [ref=f15e71] [cursor=pointer]
+    - generic [ref=f15e72]:
+      - generic [ref=f15e73]: Agent Desk 0.1.0.
+      - generic [ref=f15e74]: Workbooks are copied before they are read. Calendar setup stays in the browser. Research calls are logged; file contents stay here.
+      - link "What this app touches" [ref=f15e75] [cursor=pointer]:
+        - /url: /what-this-touches

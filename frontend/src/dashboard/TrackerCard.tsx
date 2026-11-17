@@ -35,7 +35,7 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
   const live = Boolean(tracker) && card.freshness === 'fresh';
 
   return (
-    <article className="tracker-live">
+    <article className={live ? 'tracker-live' : 'tracker-live tracker-empty'}>
       {live && tracker ? (
         <>
           <header className="tracker-head">
