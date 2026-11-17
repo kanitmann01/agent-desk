@@ -252,6 +252,158 @@ def test_preview_reads_only_the_staged_workbook(tmp_path):
     assert preview["rows"][0] == ["East", "10"]
 
 
+def test_the_fixture_plugin_is_a_valid_config_backed_plugin():
+    """The qbr-pack fixture stays honest: the shared validator accepts it,
+    it declares the workbook kind, and it is not the historical tracker."""
+    from agentdesk.validator.core import validate_plugin
+
+    root = Path(__file__).resolve().parents[1]
+    fixture = root / "tests" / "fixtures" / "plugins" / "qbr-pack"
+    verdict = validate_plugin(fixture)
+    assert verdict.ok, [failure.message for failure in verdict.failures]
+    manifest = json.loads((fixture / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["id"] != "excel-report"
+    assert manifest["config"]["kinds"] == ["workbook"]
+
+
+def test_the_setup_flow_serves_a_plugin_that_is_not_the_tracker(tmp_path):
+    """The pick/stage/preview/confirm flow is not pinned to one plugin id:
+    the fixture plugin's config lands under its own namespace and never
+    under the historical tracker's."""
+    from agentdesk.plugins import setup_flow
+    from agentdesk.plugins.runtime import PluginRuntime
+    from tests import excel_fixtures
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "data",
+        workspace_dir=workspace,
+    )
+    staged = setup_flow.stage(runtime, 6, "pipeline", "Pipeline", str(book),
+                              plugin_id="qbr-pack")
+    assert Path(staged["instance"]["source"]["path"]).name == "q4.xlsx"
+    shown = setup_flow.preview(runtime, 6, "pipeline", plugin_id="qbr-pack")
+    assert shown["preview"]["headers"] == ["Region", "Booked"]
+    saved = setup_flow.confirm(
+        runtime, 6, "pipeline",
+        {"labelColumn": "Region", "valueColumn": "Booked", "aggregate": "sum"},
+        suggested=False, plugin_id="qbr-pack")
+    assert saved["instance"]["confirmedAt"]
+    assert (tmp_path / "data" / "qbr-pack" / "instances" / "pipeline" / "config.json").is_file()
+    assert not (tmp_path / "data" / "excel-report" / "instances").exists()
+
+
+def test_a_grant_for_one_plugin_never_authorizes_another_plugin(tmp_path):
+    """Two plugin ids on one desk, one instance name each: neither config,
+    grant, nor confirmed state is visible across the plugin boundary."""
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("pipeline-pack", "main", "Pipeline")
+    store.stage_file("pipeline-pack", "main", book)
+    store.confirm("pipeline-pack", "main", {
+        "labelColumn": "Region", "valueColumn": "Booked", "aggregate": "sum",
+    })
+
+    # The other plugin has no instance of its own: nothing to read with.
+    with pytest.raises(ConfigError) as missing:
+        store.assert_can_read("desk-pack", "main", book)
+    assert missing.value.code == "config:missing"
+
+    # Even after staging the same file, the second plugin's instance is
+    # unconfirmed, so its grant alone authorizes nothing.
+    store.create("desk-pack", "main", "Desk")
+    store.stage_file("desk-pack", "main", book)
+    with pytest.raises(ConfigError) as unconfirmed:
+        store.assert_can_read("desk-pack", "main", book)
+    assert unconfirmed.value.code == "config:not-confirmed"
+
+    # Once each has confirmed its own instance, both read the same file
+    # through their own grants and neither owes the other anything.
+    store.confirm("desk-pack", "main", {
+        "labelColumn": "Region", "valueColumn": "Booked", "aggregate": "sum",
+    })
+    assert read_tracker(store, "pipeline-pack", "main")["value"] == 15
+    assert read_tracker(store, "desk-pack", "main")["value"] == 15
+
+
+def test_the_cap_is_per_plugin_and_uniform_for_every_config_backed_plugin(tmp_path):
+    """Six instances cap one plugin; the next plugin on the same desk
+    still gets its own full cap from the same store."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    store = InstanceStore(tmp_path / "data", workspace, cap=MAX_INSTANCE_CAP)
+    for index in range(MAX_INSTANCE_CAP):
+        store.create("qbr-pack", f"n{index}", f"Instance {index}")
+    with pytest.raises(ConfigError) as refused:
+        store.create("qbr-pack", "extra", "Extra")
+    assert refused.value.code == "config:cap"
+    store.create("desk-pack", "main", "Desk")
+    assert len(store.list("desk-pack")) == 1
+
+
+def test_a_second_config_backed_plugin_gets_its_own_instance_cards(tmp_path):
+    """The runtime expands every workbook-kind plugin into per-instance
+    card keys, one setup wireframe before any confirm, and a fresh card
+    bound to that plugin's own confirmed file."""
+    from agentdesk.plugins.runtime import PluginRuntime
+    from tests import excel_fixtures
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "data",
+        workspace_dir=workspace,
+    )
+    root = Path(__file__).resolve().parents[1]
+    runtime.install(root / "registry" / "plugins" / "excel-report", source="dir")
+    runtime.install(root / "tests" / "fixtures" / "plugins" / "qbr-pack", source="dir")
+
+    keys = runtime.layout_keys()
+    assert keys == ["excel-report", "qbr-pack"]
+    cards = runtime.widget_cards()
+    setup_card = next(card for card in cards if card["id"] == "qbr-pack")
+    assert setup_card["freshness"] == "setup"
+    assert setup_card["payload"]["setup"]["pluginId"] == "qbr-pack"
+    assert setup_card["payload"]["setup"]["step"] == "source"
+
+    store = InstanceStore(runtime.data_dir, workspace)
+    store.create("qbr-pack", "pipeline", "Pipeline")
+    store.stage_file("qbr-pack", "pipeline", book)
+    store.confirm("qbr-pack", "pipeline", {
+        "labelColumn": "Region", "valueColumn": "Booked", "aggregate": "sum",
+    })
+    assert runtime.layout_keys() == ["excel-report", "qbr-pack~pipeline"]
+    cards = runtime.widget_cards()
+    card = next(item for item in cards if item["id"] == "qbr-pack~pipeline")
+    assert card["freshness"] == "fresh"
+    metrics = {element["label"]: element["value"]
+               for element in card["payload"]["elements"] if element["kind"] == "metric"}
+    assert metrics["Value"] == "15"
+
+
 def test_tracker_reads_the_granted_file_and_pace_uses_only_the_users_numbers(tmp_path):
     from tests import excel_fixtures
     workspace = tmp_path / "workspace"

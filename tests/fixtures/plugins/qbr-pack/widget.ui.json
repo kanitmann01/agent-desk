@@ -1,0 +1,8 @@
+{
+  "type": "card",
+  "elements": [
+    {"type": "metric", "binding": "value", "label": "Value"},
+    {"type": "delta", "binding": "delta24h", "label": "Change", "directionBinding": "direction"},
+    {"type": "text", "binding": "file", "label": "Workbook"}
+  ]
+}
