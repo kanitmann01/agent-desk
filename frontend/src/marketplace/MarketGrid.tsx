@@ -107,6 +107,45 @@ function isHouseDefault(card: MarketCard): boolean {
     && QUIET_RISK.has(card.riskTier.toLowerCase());
 }
 
+// What a featured plugin draws on the desk, in miniature. Shapes, not
+// numbers: the catalog previews the cell, it does not report data.
+function Miniature({ id }: { id: string }) {
+  const base = id.split('~')[0];
+  if (base === 'ar-aging' || base === 'renewal-radar') {
+    const buckets: Array<[string, number]> = [['0–30', 92], ['31–60', 58], ['61–90', 30], ['90+', 16]];
+    return (
+      <div className="mini mini-aging" aria-hidden="true">
+        {buckets.map(([label, h]) => (
+          <span key={label} className="mini-col"><span className="mini-bar" style={{ height: `${h}%` }} /><span className="mini-x">{label}</span></span>
+        ))}
+      </div>
+    );
+  }
+  if (base === 'budget-burn' || base === 'revenue-vs-target' || base === 'kpi-scorecard' || base === 'excel-report') {
+    return (
+      <div className="mini mini-pace" aria-hidden="true">
+        <div className="mini-pace-row"><span className="mini-pace-fig">68%</span><span className="mini-x">of month spent · day 17 of 30</span></div>
+        <div className="mini-pace-track"><span style={{ width: '68%' }} /><i style={{ left: '57%' }} /></div>
+      </div>
+    );
+  }
+  if (base === 'competitor-watch' || base === 'source-ledger' || base === 'reconciliation-watch') {
+    return (
+      <div className="mini mini-diff" aria-hidden="true">
+        <span className="del">− old line</span>
+        <span className="ins">+ new line</span>
+      </div>
+    );
+  }
+  return (
+    <ol className="mini mini-events" aria-hidden="true">
+      <li><span className="mini-t">09:12</span><span className="mini-line" style={{ width: '70%' }} /></li>
+      <li><span className="mini-t">11:40</span><span className="mini-line" style={{ width: '52%' }} /></li>
+      <li><span className="mini-t">14:05</span><span className="mini-line" style={{ width: '84%' }} /></li>
+    </ol>
+  );
+}
+
 function Row({ card, featured = false }: { card: MarketCard; featured?: boolean }) {
   const showMeta = !isHouseDefault(card);
   const extras: string[] = [];
@@ -123,10 +162,12 @@ function Row({ card, featured = false }: { card: MarketCard; featured?: boolean 
         className={`mkt-row${featured ? ' mkt-row-featured' : ''}${card.eligible ? '' : ' mkt-card-blocked'}`}
         aria-label={`${card.name}, version ${card.version}, ${card.publisher}. View plugin details`}
       >
+        {featured ? <Miniature id={card.id} /> : null}
         <span className="mkt-row-name">{card.name}</span>
         <span className="mkt-row-summary">{card.summary}</span>
-        {featured ? <span className="mkt-row-cat">{categoryLabel(card.category)}</span> : null}
-        <span className="mkt-version">v{card.version}</span>
+        {featured ? (
+          <span className="mkt-row-cat">{categoryLabel(card.category)} <span className="mkt-version">v{card.version}</span></span>
+        ) : <span className="mkt-version">v{card.version}</span>}
         {showMeta && !QUIET_RISK.has(card.riskTier.toLowerCase())
           ? <span className="mkt-row-extra">{riskLabel(card.riskTier)}</span> : null}
         {extras.map((extra) => <span key={extra} className="mkt-row-extra">{extra}</span>)}
@@ -152,9 +193,7 @@ export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
   }
   return (
     <div className="mkt-catalog">
-      {house ? (
-        <p className="mkt-default-note">All bundled plugins are verified, T1.</p>
-      ) : (
+      {house ? null : (
         <p className="mkt-default-note">Publisher, verification and risk show only when a plugin is not the bundled default.</p>
       )}
       {featured.length > 0 ? (

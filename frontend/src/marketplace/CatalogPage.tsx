@@ -189,7 +189,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
             </select>
           </label>
           <label className="mkt-toggle">
-            <input type="checkbox" checked={eligibleOnly}
+            <input type="checkbox" className="check-box" checked={eligibleOnly}
                    onChange={(event) => setEligibleOnly(event.target.checked)} />
             <span>Only available plugins</span>
           </label>
