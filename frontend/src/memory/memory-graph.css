@@ -39,7 +39,7 @@
 #memory-graph-root .mg-step-text{font-size:12px;line-height:1.45;color:var(--ink-3)}
 
 /* Body: the picture and the provenance panel, 8 and 4. */
-#memory-graph-root .mg-body{display:grid;grid-template-columns:minmax(0,2.3fr) minmax(300px,1fr);gap:12px;align-items:start}
+#memory-graph-root .mg-body{display:grid;grid-template-columns:minmax(0,2.6fr) minmax(280px,1fr);gap:12px;align-items:start}
 #memory-graph-root .mg-canvas,#memory-graph-root .mg-detail,#memory-graph-root .mg-empty{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-card)}
 #memory-graph-root .mg-canvas{padding:14px 14px 10px;min-width:0}
 #memory-graph-root .mg-picture{position:relative}
@@ -66,9 +66,11 @@
 #memory-graph-root .mg-node{cursor:pointer;outline:none}
 #memory-graph-root .mg-pill{fill:var(--surface-2);stroke:var(--hairline);stroke-width:1;transition:stroke var(--dur) ease,fill var(--dur) ease}
 #memory-graph-root .mg-node-origin .mg-pill,#memory-graph-root .mg-node-source .mg-pill{fill:var(--surface)}
-#memory-graph-root .mg-label{font-family:var(--font-ui);font-size:12px;fill:var(--ink-1)}
-#memory-graph-root .mg-node-origin .mg-label{fill:var(--ink-2);font-weight:600}
-#memory-graph-root .mg-node-source .mg-label{fill:var(--ink-2)}
+#memory-graph-root .mg-label{font-family:var(--font-ui);font-size:12px;line-height:16px;padding:4px 0;color:var(--ink-1);pointer-events:none;margin:0}
+#memory-graph-root .mg-label-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;max-height:32px;overflow:hidden;overflow-wrap:anywhere}
+#memory-graph-root .mg-node-entity .mg-label-text{display:block;white-space:nowrap;text-overflow:ellipsis;max-height:16px}
+#memory-graph-root .mg-node-origin .mg-label{color:var(--ink-2);font-weight:600}
+#memory-graph-root .mg-node-source .mg-label{color:var(--ink-2)}
 #memory-graph-root .mg-node:hover .mg-pill{stroke:var(--ink-4)}
 #memory-graph-root .mg-node.is-selected .mg-pill{stroke:var(--accent);stroke-width:1.5}
 #memory-graph-root .mg-node:focus-visible .mg-pill{stroke:var(--focus);stroke-width:2}

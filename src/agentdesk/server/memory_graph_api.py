@@ -112,7 +112,7 @@ def _origin_for(source: str, card) -> _Origin:
                        "Accepted inbox cards that are no longer in the inbox.")
     if not source:
         return _Origin("origin:unknown", "Unrecorded",
-                       "Facts saved before the desk recorded who wrote them.")
+                       "Facts saved before their writer was recorded.")
     return _Origin(f"origin:other:{source}", _bounded(source, 40),
                    f"Facts written by {source}.")
 

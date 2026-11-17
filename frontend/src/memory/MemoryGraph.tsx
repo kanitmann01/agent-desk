@@ -1,4 +1,4 @@
-// The Memory page graph: how each knowledge point got into the desk.
+// The Memory page graph: how each knowledge point got into memory.
 //
 // Reads GET /api/memory/graph (the store's real rows) and draws them in
 // the order agent-desk makes a point: where it came from, the fact, the
@@ -11,7 +11,7 @@
 // Keyboard: the picture is one tab stop. Arrow keys move between points
 // (up and down a column, left and right across columns), Enter or Space
 // selects, Escape clears. Below 560px the picture becomes a list.
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { getJson } from '../api';
 import { Glyph, GlyphShape } from './Glyph';
 import { STEP_GLYPH, STEP_LABEL, glyphFor, kindWord, relation, stepUnit, when } from './copy';
@@ -43,7 +43,7 @@ export default function MemoryGraph({ endpoint = '/api/memory/graph', mode = 'pa
       .then((res) => {
         if (!live) return;
         if (res.ok) setLoad({ state: 'ready', data: res.data as MemoryGraphData });
-        else if (res.status === 401) setLoad({ state: 'failed', message: 'Your session ended. Open the desk from its shortcut to get a fresh link.' });
+        else if (res.status === 401) setLoad({ state: 'failed', message: 'Your session ended. Open the app from its shortcut to get a fresh link.' });
         else {
           const error = (res.data as { error?: string }).error;
           setLoad({ state: 'failed', message: error ? `The graph could not be read: ${error}` : 'The graph could not be read.' });
@@ -227,6 +227,51 @@ function edgePath(a: Placed, b: Placed, edge: GraphEdge): string {
   return `M${x1} ${left.y}C${x1 + mid} ${left.y} ${x2 - mid} ${right.y} ${x2} ${right.y}`;
 }
 
+// Labels wrap to two lines (CSS line-clamp), so a pill's height is
+// whatever its label renders at. Measure after paint and lay out again:
+// heights feed the rows, and the widest entity name sizes its column so
+// names show whole. The effect runs after every render and only sets
+// state when a measure moved, so it settles in two passes (column
+// widths, then heights); a late font load re-renders and measures again.
+const LABEL_X = 25;
+
+function useLabelMeasure() {
+  const boxes = useRef(new Map<string, { el: HTMLDivElement; kind: GraphNode['kind'] }>());
+  const [options, setOptions] = useState<{ heights: Map<string, number>; entityText?: number }>(() => ({ heights: new Map() }));
+  const [, setFontsTick] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    document.fonts?.ready.then(() => live && setFontsTick((n) => n + 1)).catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  useLayoutEffect(() => {
+    const heights = new Map<string, number>();
+    let entityText: number | undefined;
+    for (const [id, { el, kind }] of boxes.current) {
+      const h = el.offsetHeight;
+      if (h > 0) heights.set(id, h);
+      if (kind === 'entity') {
+        const text = el.querySelector('span')?.getBoundingClientRect().width ?? 0;
+        if (text > 0) entityText = Math.max(entityText ?? 0, Math.ceil(text));
+      }
+    }
+    setOptions((prev) => {
+      const same = prev.entityText === entityText
+        && prev.heights.size === heights.size
+        && [...heights].every(([id, h]) => Math.abs((prev.heights.get(id) ?? -1) - h) < 0.5);
+      return same ? prev : { heights, entityText };
+    });
+  });
+
+  const ref = useCallback((node: GraphNode) => (el: HTMLDivElement | null) => {
+    if (el) boxes.current.set(node.id, { el, kind: node.kind });
+    else boxes.current.delete(node.id);
+  }, []);
+  return { options, ref };
+}
+
 function GraphPicture({
   data,
   width,
@@ -240,7 +285,11 @@ function GraphPicture({
   onSelect: (id: string | null) => void;
   mode: 'page' | 'full';
 }) {
-  const layout: Layout = useMemo(() => layoutGraph(data.nodes, data.edges, width), [data, width]);
+  const measured = useLabelMeasure();
+  const layout: Layout = useMemo(
+    () => layoutGraph(data.nodes, data.edges, width, measured.options),
+    [data, width, measured.options],
+  );
   const lit = useMemo(() => (selected ? lineage(selected, data.edges) : null), [selected, data.edges]);
   const [focusId, setFocusId] = useState<string | null>(null);
   const nodeRefs = useRef(new Map<string, SVGGElement>());
@@ -315,7 +364,7 @@ function GraphPicture({
                     else nodeRefs.current.delete(node.id);
                   }}
                   className={`mg-node mg-node-${node.kind}${isSelected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}`}
-                  transform={`translate(${place.x} ${place.y - PILL / 2})`}
+                  transform={`translate(${place.x} ${place.y - place.height / 2})`}
                   role="button"
                   tabIndex={node.id === tabStop ? 0 : -1}
                   aria-pressed={isSelected}
@@ -329,13 +378,15 @@ function GraphPicture({
                   onKeyDown={(event) => onKey(event, node.id)}
                 >
                   <title>{node.text}</title>
-                  <rect className="mg-pill" width={place.width} height={PILL} rx={6} />
+                  <rect className="mg-pill" width={place.width} height={place.height} rx={6} />
                   <g transform={`translate(13 ${PILL / 2})`}>
                     <GlyphShape kind={glyphFor(node)} />
                   </g>
-                  <text className="mg-label" x={25} y={PILL / 2 + 4}>
-                    {fitLabel(node.label, place.width)}
-                  </text>
+                  <foreignObject x={LABEL_X} y={0} width={Math.max(place.width - LABEL_X - 10, 0)} height={place.height}>
+                    <div className="mg-label" ref={measured.ref(node)}>
+                      <div className="mg-label-text"><span>{node.label}</span></div>
+                    </div>
+                  </foreignObject>
                 </g>
               );
             })}

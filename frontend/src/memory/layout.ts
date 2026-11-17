@@ -18,16 +18,27 @@ export interface Column {
 }
 
 export const COLUMNS: Column[] = [
-  { id: 'from', title: 'Came from', kinds: ['origin', 'source'], weight: 1.5 },
-  { id: 'fact', title: 'Facts', kinds: ['fact'], weight: 2.4 },
-  { id: 'observation', title: 'Observations', kinds: ['observation'], weight: 1.05 },
-  { id: 'entity', title: 'Entities', kinds: ['entity'], weight: 1.1 },
+  { id: 'from', title: 'Came from', kinds: ['origin', 'source'], weight: 1.05 },
+  { id: 'fact', title: 'Facts', kinds: ['fact'], weight: 2.1 },
+  { id: 'observation', title: 'Observations', kinds: ['observation'], weight: 1.4 },
+  { id: 'entity', title: 'Entities', kinds: ['entity'], weight: 1 },
 ];
 
-export const ROW = 32;
-export const PILL = 24;
-export const GAP = 40;
+// A pill is one or two 16px lines plus 4px above and below; the label
+// clamps at two lines. Rows keep an 8px gutter whatever their height.
+export const LINE = 16;
+export const PILL = LINE + 8;
+export const PILL_MAX = LINE * 2 + 8;
+export const SPACE = 8;
+export const ROW = PILL + SPACE;
+export const GAP = 28;
 export const TOP = 8;
+// Entities are names: their column is as wide as the longest one needs
+// (glyph, padding and text), within these bounds, and the other columns
+// share what is left by weight.
+export const ENTITY_MIN = 96;
+export const ENTITY_MAX = 200;
+export const LABEL_INSET = 25 + 10;
 
 export interface Placed {
   node: GraphNode;
@@ -35,6 +46,7 @@ export interface Placed {
   x: number;
   y: number; // pill center
   width: number;
+  height: number; // pill height
 }
 
 export interface Layout {
@@ -48,13 +60,26 @@ function factTime(node: GraphNode): number {
   return node.occurredTs ?? node.createdTs ?? 0;
 }
 
-export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: number): Layout {
+export interface LayoutOptions {
+  // Measured pill heights by node id; a node not measured yet is one line.
+  heights?: ReadonlyMap<string, number>;
+  // The widest entity label in px, so names fit whole.
+  entityText?: number;
+}
+
+export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: number, options: LayoutOptions = {}): Layout {
+  const heightOf = (id: string) => Math.min(Math.max(options.heights?.get(id) ?? PILL, PILL), PILL_MAX);
   const present = COLUMNS.filter((column) => nodes.some((node) => column.kinds.includes(node.kind)));
-  const units = present.reduce((sum, column) => sum + column.weight, 0) || 1;
   const usable = Math.max(width - GAP * Math.max(present.length - 1, 0), 120);
+  const entityWidth = options.entityText === undefined
+    ? null
+    : Math.min(Math.max(options.entityText + LABEL_INSET, ENTITY_MIN), ENTITY_MAX, usable / 4);
+  const shared = present.filter((column) => !(column.id === 'entity' && entityWidth !== null));
+  const units = shared.reduce((sum, column) => sum + column.weight, 0) || 1;
+  const rest = usable - (present.some((c) => c.id === 'entity') && entityWidth !== null ? entityWidth : 0);
   let cursor = 0;
   const columns = present.map((column) => {
-    const columnWidth = (usable * column.weight) / units;
+    const columnWidth = column.id === 'entity' && entityWidth !== null ? entityWidth : (rest * column.weight) / units;
     const entry = { column, x: cursor, width: columnWidth };
     cursor += columnWidth + GAP;
     return entry;
@@ -72,12 +97,15 @@ export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: numbe
   const facts = nodes
     .filter((node) => node.kind === 'fact')
     .sort((a, b) => factTime(a) - factTime(b) || a.id.localeCompare(b.id));
-  facts.forEach((node, index) => {
+  let top = TOP;
+  for (const node of facts) {
     const entry = columns[factIndex];
-    placed.set(node.id, { node, column: factIndex, x: entry.x, width: entry.width, y: TOP + ROW * index + ROW / 2 });
-  });
+    const h = heightOf(node.id);
+    placed.set(node.id, { node, column: factIndex, x: entry.x, width: entry.width, height: h, y: top + h / 2 });
+    top += h + SPACE;
+  }
 
-  let height = TOP + ROW * facts.length;
+  let height = top - SPACE + TOP;
   columns.forEach((entry, columnIndex) => {
     if (entry.column.id === 'fact') return;
     const members = nodes.filter((node) => entry.column.kinds.includes(node.kind));
@@ -91,13 +119,14 @@ export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: numbe
       return { node, target, rank };
     });
     want.sort((a, b) => a.target - b.target || a.rank - b.rank || a.node.id.localeCompare(b.node.id));
-    let floor = TOP + ROW / 2;
+    let floor = TOP; // the top edge the next pill may start at
     for (const item of want) {
-      const y = Math.max(Number.isFinite(item.target) ? item.target : floor, floor);
-      placed.set(item.node.id, { node: item.node, column: columnIndex, x: entry.x, width: entry.width, y });
-      floor = y + ROW;
+      const h = heightOf(item.node.id);
+      const y = Math.max(Number.isFinite(item.target) ? item.target : floor + h / 2, floor + h / 2);
+      placed.set(item.node.id, { node: item.node, column: columnIndex, x: entry.x, width: entry.width, height: h, y });
+      floor = y + h / 2 + SPACE;
     }
-    height = Math.max(height, floor - ROW / 2 + TOP);
+    height = Math.max(height, floor - SPACE + TOP);
   });
 
   return { columns, placed, height: Math.max(height, ROW * 2), width };
@@ -166,9 +195,9 @@ export function neighbourFor(
   return null;
 }
 
-// The label that fits a pill: about 6.2px a character at 12px Geist,
-// less the glyph and padding. The full text rides the node's <title>
-// and the provenance panel.
+// A one-line label for the provenance panel's chips: about 6.2px a
+// character at 12px Geist, less the glyph and padding. Graph pills wrap
+// instead (see MemoryGraph's label measure).
 export function fitLabel(label: string, width: number): string {
   const room = Math.max(Math.floor((width - 32) / 6.2), 4);
   return label.length <= room ? label : `${label.slice(0, room - 1).trimEnd()}\u2026`;

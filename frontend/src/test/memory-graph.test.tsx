@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MemoryGraph from '../memory/MemoryGraph';
-import { fitLabel, layoutGraph, lineage, neighbourFor } from '../memory/layout';
+import { ENTITY_MAX, LABEL_INSET, PILL, PILL_MAX, SPACE, fitLabel, layoutGraph, lineage, neighbourFor } from '../memory/layout';
 import type { MemoryGraphData } from '../memory/types';
 
 const DAY = 86_400;
@@ -168,6 +168,29 @@ describe('graph layout', () => {
     expect(col('source:1')).toBeLessThan(col('fact:1'));
     expect(col('fact:1')).toBeLessThan(col('observation:1'));
     expect(col('observation:1')).toBeLessThan(col('entity:1'));
+  });
+
+  it('stacks taller two-line pills and keeps edges on their centres', () => {
+    const one = layoutGraph(bank.nodes, bank.edges, 1000);
+    const two = layoutGraph(bank.nodes, bank.edges, 1000, { heights: new Map([['fact:1', PILL_MAX]]) });
+    const first = two.placed.get('fact:1')!;
+    const second = two.placed.get('fact:2')!;
+    expect(first.height).toBe(PILL_MAX);
+    expect(second.y - second.height / 2).toBe(first.y + first.height / 2 + SPACE);
+    expect(second.y - one.placed.get('fact:2')!.y).toBe(PILL_MAX - PILL);
+    // Clamped at two lines, whatever is measured.
+    const tall = layoutGraph(bank.nodes, bank.edges, 1000, { heights: new Map([['fact:1', 90]]) });
+    expect(tall.placed.get('fact:1')!.height).toBe(PILL_MAX);
+  });
+
+  it('sizes the entity column to its widest name, within bounds', () => {
+    const fit = layoutGraph(bank.nodes, bank.edges, 1000, { entityText: 110 });
+    expect(fit.placed.get('entity:1')!.width).toBe(110 + LABEL_INSET);
+    const capped = layoutGraph(bank.nodes, bank.edges, 1000, { entityText: 900 });
+    expect(capped.placed.get('entity:1')!.width).toBe(ENTITY_MAX);
+    // The other columns share what is left and still meet the right edge.
+    const last = [...fit.columns].pop()!;
+    expect(last.x + last.width).toBeCloseTo(1000);
   });
 
   it('traces a fact back to its writer and excerpt but not to its siblings', () => {

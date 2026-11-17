@@ -98,7 +98,7 @@ def _studio_payload(plugin_id="team-notes"):
         "summary": summary,
         "description": summary,
         "highlights": [summary, "It reads only the scopes you approve.",
-                       "It runs only while Agent Desk is open."],
+                       "It runs only while the app is open."],
         "permissions": {
             "filesystem": {"read": [], "write": []},
             "network": {"allow": []},
