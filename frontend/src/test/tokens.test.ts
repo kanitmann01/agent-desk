@@ -13,6 +13,8 @@ const frontend = resolve(here, '..', '..');
 const repo = resolve(frontend, '..');
 
 const css = readFileSync(resolve(frontend, 'src/index.css'), 'utf8');
+const marketCss = readFileSync(resolve(frontend, 'src/marketplace/marketplace.css'), 'utf8');
+const adminCss = readFileSync(resolve(frontend, 'src/marketplace/admin-trust.css'), 'utf8');
 const html = readFileSync(resolve(frontend, 'index.html'), 'utf8');
 const pkg = JSON.parse(readFileSync(resolve(frontend, 'package.json'), 'utf8')) as {
   dependencies: Record<string, string>;
@@ -58,20 +60,13 @@ const componentSources = walkSources(resolve(frontend, 'src', 'components'))
 // The fourteen DESIGN.md frontmatter colors, each asserted as the exact
 // hex so a near-miss (a re-darkened green, a colder paper) fails.
 const SYSTEM_COLORS: Array<[string, string]> = [
-  ['warm ledger paper', '#F6F4EF'],
-  ['card white', '#FFFFFF'],
-  ['input well', '#FBFAF7'],
-  ['hairline', '#E5E1D6'],
-  ['ink primary', '#1F2A27'],
-  ['ink secondary', '#4C5A55'],
-  ['ink muted', '#77847E'],
-  ['ink faint', '#A9B1AC'],
-  ['ink bottle green', '#14594E'],
-  ['green on', '#F6FBF9'],
-  ['green soft', '#E4EEE9'],
-  ['terracotta alarm', '#B3402A'],
-  ['manila flag', '#FBF3E2'],
-  ['manila ink', '#8A5A14'],
+  ['stone paper', '#F6F3EC'],
+  ['brief white', '#FFFDF8'],
+  ['ink', '#141414'],
+  ['ink secondary', '#3A3A3A'],
+  ['ink muted', '#5C5C5C'],
+  ['oxide', '#8C2F2F'],
+  ['fir', '#1B6B3A'],
 ];
 
 // The recorded dark-glass drift palette: none of it may survive.
@@ -88,9 +83,8 @@ const DRIFT_COLORS = [
   '#F8FAFC',
 ];
 
-const CARD_AT_REST =
-  '0 0 0 1px rgba(31,42,39,.05), 0 1px 2px -1px rgba(31,42,39,.06), 0 2px 4px 0 rgba(31,42,39,.04)';
-const CARD_LIFTED = '0 0 0 1px rgba(31,42,39,.07)';
+const CARD_AT_REST = '6px 6px 0 #141414';
+const CARD_LIFTED = '4px 4px 0 var(--ink-1)';
 
 describe('index.css speaks the warm-paper system', () => {
   it('carries every DESIGN.md color token', () => {
@@ -129,35 +123,40 @@ describe('index.css speaks the warm-paper system', () => {
     }
   });
 
-  it('sets numerals in IBM Plex Mono tabular and text in Plus Jakarta Sans', () => {
+  it('sets numerals in IBM Plex Mono and words in Source Serif and Source Sans', () => {
     expect(css).toContain('"IBM Plex Mono"');
     expect(css).toContain('tabular-nums');
-    expect(css).toContain('"Plus Jakarta Sans"');
+    expect(css).toContain('"Source Serif 4"');
+    expect(css).toContain('"Source Sans 3"');
+    expect(css).not.toContain('Plus Jakarta Sans');
   });
 
   it('imports only the system fonts, self-hosted', () => {
-    expect(css).toContain('@fontsource-variable/plus-jakarta-sans');
+    expect(css).toContain('@fontsource-variable/source-serif-4');
+    expect(css).toContain('@fontsource-variable/source-sans-3');
     expect(css).toContain('@fontsource/ibm-plex-mono');
+    expect(css).not.toContain('@fontsource-variable/plus-jakarta-sans');
     expect(css).not.toContain('@fontsource-variable/inter');
     expect(css).not.toContain('@fontsource-variable/space-grotesk');
   });
 
   it('uses the concentric radii and the full-round pill', () => {
-    expect(css).toContain('--r-card:12px');
-    expect(css).toContain('--r-control:8px');
-    expect(css).toContain('--r-inner:6px');
-    expect(css).toContain('999px');
+    expect(css).toContain('--r-card:0px');
+    expect(css).toContain('--r-control:0px');
+    expect(css).toContain('--r-inner:0px');
+    expect(css).not.toContain('999px');
   });
 
-  it('uses the 224px rail beside a 1200px content column', () => {
-    expect(css).toContain('grid-template-columns:224px');
+  it('uses the 200px rail beside a 1200px content column', () => {
+    expect(css).toContain('grid-template-columns:200px');
     expect(css).toContain('max-width:1200px');
     expect(css).toContain('28px 36px 60px');
   });
 
-  it('keeps the display and KPI at the 28px ceiling', () => {
+  it('sets the greeting at 56px and the one figure at 64px', () => {
     expect(css).not.toContain('clamp(');
-    expect(css).toContain('font-size:28px');
+    expect(css).toContain('font-size:56px');
+    expect(css).toContain('font-size:64px');
   });
 
   it('still freezes animation under prefers-reduced-motion', () => {
@@ -168,7 +167,7 @@ describe('index.css speaks the warm-paper system', () => {
 describe('the SPA shell declares the light paper world', () => {
   it('declares color-scheme light and the paper theme color', () => {
     expect(html).toContain('content="light"');
-    expect(html).toContain('#F6F4EF');
+    expect(html).toContain('#F6F3EC');
     expect(html).not.toContain('#020617');
     expect(html).not.toContain('content="dark"');
   });
@@ -206,8 +205,13 @@ describe('component sources speak the system inks', () => {
 });
 
 describe('the authored sheet keeps its interaction promises', () => {
+  it('sets the command bar field at body size', () => {
+    expect(decl(css, '.cmd-field', 'font')).toContain('14px');
+  });
+
   it('gives the command bar field a visible focus ring', () => {
-    expect(css).toContain('.cmd-field:focus{outline:2px solid var(--primary)');
+    expect(css).toContain(':focus-visible{outline:2px solid var(--ink-1)');
+    expect(css).not.toContain('.cmd-field:focus{outline:none');
   });
 
   it('stacks the command bar through its wrapper on small screens', () => {
@@ -254,6 +258,9 @@ describe('the rail stays on screen at every width', () => {
     expect(railRule, 'narrow rail entries must wrap, not clip').toContain('flex-wrap:wrap');
     expect(railRule, 'narrow rail must not scroll sideways').not.toContain('overflow-x');
     expect(railRule, 'sticky strip must paint above the content').toContain('z-index');
+    expect(narrow, 'narrow rail opens from a menu bar').toContain('.phone-bar{display:flex');
+    expect(narrow, 'narrow rail targets are 44px').toContain('min-height:44px');
+    expect(narrow, 'focused content clears the sticky strip').toContain('scroll-padding-top:64px');
     // Sticky inside its own auto-sized grid row has no travel: the
     // single-column shell must become a block for the pin to work.
     expect(narrow, 'single-column shell must become a block').toContain('.app{display:block}');
@@ -402,9 +409,49 @@ describe('the committed bundle honors the contract', () => {
   });
 });
 
+describe('pressed controls stay inside color', () => {
+  it('darkens primary and send controls on press without moving them', () => {
+    expect(css).toContain('.btn-primary:active:not(:disabled){box-shadow:none}');
+    expect(css).toContain('.cmd-send:active:not(:disabled){filter:brightness(.92)}');
+    expect(css).not.toContain('transition:all');
+    expect(css).toContain('transition:background-color var(--dur) ease,border-color var(--dur) ease,color var(--dur) ease');
+    expect(css).toContain('touch-action:manipulation');
+    expect(css).toContain('@media (prefers-reduced-motion:reduce)');
+  });
+});
+
+describe('marketplace type stays inside the design language', () => {
+  it('keeps page titles on the 28px ceiling at every width', () => {
+    expect(marketCss).toContain('font-size: 40px');
+    expect(marketCss).not.toContain('font-size: 30px');
+    expect(marketCss).not.toContain('font-size: 28px');
+  });
+
+  it('uses sentence case for labels', () => {
+    expect(css).not.toContain('text-transform:uppercase');
+    expect(marketCss).not.toContain('text-transform: uppercase');
+    expect(adminCss).not.toContain('text-transform: uppercase');
+  });
+
+  it('draws catalog icons as strokes without a filled chip', () => {
+    for (const selector of ['.mkt-card-icon', '.mkt-detail-icon', '.mkt-pack-icon']) {
+      expect(decl(marketCss, selector, 'background'), selector).toBe('none');
+      expect(decl(marketCss, selector, 'color'), selector).toBe('var(--primary)');
+    }
+  });
+
+  it('shows a keyboard ring on the marketplace main and keeps the search well ring', () => {
+    expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--ink-1)');
+    expect(marketCss).toContain('.mkt-search-field:focus-within');
+    expect(marketCss).toContain('.mkt-search-field input:focus-visible { outline: 2px solid var(--ink-1)');
+  });
+});
+
 describe('the toolchain matches the system', () => {
   it('depends on the system fonts and not the drift fonts', () => {
-    expect(pkg.dependencies['@fontsource-variable/plus-jakarta-sans']).toBeTruthy();
+    expect(pkg.dependencies['@fontsource-variable/source-serif-4']).toBeTruthy();
+    expect(pkg.dependencies['@fontsource-variable/source-sans-3']).toBeTruthy();
+    expect(pkg.dependencies['@fontsource-variable/plus-jakarta-sans']).toBeUndefined();
     expect(pkg.dependencies['@fontsource/ibm-plex-mono']).toBeTruthy();
     expect(pkg.dependencies['@fontsource-variable/inter']).toBeUndefined();
     expect(pkg.dependencies['@fontsource-variable/space-grotesk']).toBeUndefined();
@@ -430,7 +477,9 @@ describe('the toolchain matches the system', () => {
   });
 
   it('records the system fonts in the license manifest', () => {
-    expect(manifest).toContain('Plus Jakarta Sans');
+    expect(manifest).toContain('Source Serif 4');
+    expect(manifest).toContain('Source Sans 3');
+    expect(manifest).not.toContain('Plus Jakarta Sans');
     expect(manifest).toContain('IBM Plex Mono');
     expect(manifest).not.toContain('Space Grotesk');
     expect(manifest).not.toContain('Inter Variable');

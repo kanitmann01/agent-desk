@@ -248,9 +248,9 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
           icon={ICON_CALENDAR}
           action={<Button tone="primary" href={WALKTHROUGH_PATH}>Connect your calendar</Button>}
         >
-          No calendar data yet. Agent Desk watches
-          <code> agent-desk/calendar_sync.json </code>
-          in your OneDrive. A 3-step browser walkthrough creates the flow
+          No calendar data yet. Agent Desk watches{' '}
+          <code className="nowrap">agent-desk/calendar_sync.json</code>
+          {' '}in your OneDrive. A 3-step browser walkthrough creates the flow
           that writes it.
         </EmptyState>
       </WidgetCard>

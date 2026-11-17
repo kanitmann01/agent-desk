@@ -4,8 +4,9 @@
 // exactly; the sweep, the magnet pull, the click burst and the entrance
 // motion are gone.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { ICON_SEARCH } from './EmptyState';
 
-// Five rows of the 15.5px field before it scrolls.
+// Five rows of the 14px field before it scrolls.
 const MAX_FIELD_HEIGHT = 152;
 
 interface CommandBarProps {
@@ -13,16 +14,6 @@ interface CommandBarProps {
   // True when the question was answered and the field should clear.
   onAsk: (question: string) => Promise<boolean>;
 }
-
-const ICON_SPARK = (
-  <span className="cmd-icon" aria-hidden="true">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
-      <path d="M19 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" />
-    </svg>
-  </span>
-);
 
 const ICON_SEND = (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -60,13 +51,15 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
   return (
     <section className="cmd" aria-label="Ask the company endpoint">
       <div className="cmd-inner">
-        {ICON_SPARK}
+        <span className="cmd-icon" aria-hidden="true">{ICON_SEARCH}</span>
         <textarea
           ref={fieldRef}
           className="cmd-field"
+          name="question"
           rows={1}
           placeholder="Ask anything, or paste what you did and ask what to look for."
           aria-label="Research question"
+          autoComplete="off"
           value={question}
           disabled={busy}
           onChange={(e) => setQuestion(e.target.value)}

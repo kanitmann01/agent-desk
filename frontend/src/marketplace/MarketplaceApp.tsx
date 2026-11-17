@@ -1,7 +1,7 @@
 // The marketplace shell. One rail, one main landmark, one polite route
 // announcement. The route parser is pure; this component only chooses a
 // page and moves focus to that page's heading.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Rail from '../dashboard/Rail';
 import AdminPage from './Admin';
 import { CatalogPage } from './CatalogPage';
@@ -75,34 +75,10 @@ function Page({ route }: { route: MarketRoute }) {
 
 export default function MarketplaceApp() {
   const { path, route, navigate } = useMarketplaceRouter();
-  const mainRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
-    let done = false;
-    const main = mainRef.current;
-    if (!main) return undefined;
-    const focusHeading = () => {
-      if (done) return;
-      const heading = main.querySelector('h1');
-      if (heading instanceof HTMLElement) {
-        done = true;
-        heading.tabIndex = -1;
-        heading.focus();
-        setAnnouncement(heading.textContent || routeTitle(route));
-        observer.disconnect();
-      }
-    };
-    const observer = new MutationObserver(focusHeading);
-    observer.observe(main, { childList: true, subtree: true });
-    focusHeading();
-    const timer = window.setTimeout(() => {
-      if (done) return;
-      main.focus();
-      setAnnouncement(routeTitle(route));
-      observer.disconnect();
-    }, 800);
-    return () => { observer.disconnect(); window.clearTimeout(timer); };
+    setAnnouncement(routeTitle(route));
   }, [path, route]);
 
   return (
@@ -110,7 +86,7 @@ export default function MarketplaceApp() {
       <div className="app">
         <a className="skip-link" href="#marketplace-main">Skip to main content</a>
         <Rail inboxWaiting={0} active="/marketplace" />
-        <main className="mkt-main" id="marketplace-main" ref={mainRef} tabIndex={-1}>
+        <main className="mkt-main" id="marketplace-main" tabIndex={-1}>
           <div className="mkt-sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
           <Tabs route={route} />
           <Page route={route} />

@@ -83,7 +83,8 @@ def render_manifest(annotations: dict[str, str], version: str) -> str:
         ]
     lines += [
         "The **dashboard SPA bundle does ship third-party work**: React",
-        "compiled into its JavaScript, and the Plus Jakarta Sans and IBM Plex",
+        "compiled into its JavaScript, and the Source Serif 4, Source Sans 3,",
+        "and IBM Plex",
         "Mono font files. Every item is listed with its license in the",
         "Dashboard SPA section below.",
         "",
@@ -123,7 +124,8 @@ and which only run at development time.
 |---|---|---|---|
 | react 19.3.1 | UI library | MIT | yes, compiled into the JavaScript |
 | react-dom 19.3.1 | DOM renderer | MIT | yes, compiled into the JavaScript |
-| @fontsource-variable/plus-jakarta-sans | Plus Jakarta Sans Variable, the display and UI typeface | OFL-1.1 | yes, the .woff2 files unchanged |
+| @fontsource-variable/source-serif-4 | Source Serif 4, the greeting face | OFL-1.1 | yes, the .woff2 files unchanged |
+| @fontsource-variable/source-sans-3 | Source Sans 3, the UI face | OFL-1.1 | yes, the .woff2 files unchanged |
 | @fontsource/ibm-plex-mono | IBM Plex Mono, the numeric typeface | OFL-1.1 | yes, the .woff2 files unchanged |
 | vite | build tool | MIT | no, development only |
 | @vitejs/plugin-react | build plugin | MIT | no, development only |

@@ -58,8 +58,8 @@ describe('the marketplace catalog surface', () => {
     expect(within(link).getByText('v1.2.0')).toBeInTheDocument();
     expect(within(link).getByText('Finance')).toBeInTheDocument();
     expect(within(link).getByText('Medium risk')).toBeInTheDocument();
-    expect(within(link).getByText('Bundled')).toBeInTheDocument();
-    expect(within(link).getByText('Sample')).toBeInTheDocument();
+    expect(within(link).queryByText('Bundled')).toBeNull();
+    expect(within(link).queryByText('Verified')).toBeNull();
 
     const reason = screen.getByText(/This plugin is not signed, and the current policy requires a signature./);
     expect(reason.closest('p')).toHaveClass('mkt-ineligible');

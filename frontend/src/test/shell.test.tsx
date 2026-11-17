@@ -164,13 +164,10 @@ describe('the hero band', () => {
       sources: { connected: 0, total: 3, items: [] },
     };
     render(<Dashboard data={cold} onRefetch={async () => {}} onExpired={() => {}} />);
-    expect(
-      screen.getByText('Not connected yet: each card below has its own'),
-    ).toBeInTheDocument();
-    // "one-step" cannot break across the line: the phrase rides in a
-    // nowrap span so a narrow greeting band never splits it.
-    const nowrap = document.querySelector<HTMLElement>('.hero-live .nowrap');
-    expect(nowrap).toHaveTextContent('one-step connect.');
+    expect(screen.getByRole('region', { name: 'Needs a decision' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', '/walkthrough/calendar');
+    expect(screen.queryByText(/Not connected yet/)).toBeNull();
   });
 });
 
@@ -203,6 +200,16 @@ describe('the research command bar', () => {
     expect(onAsk).not.toHaveBeenCalled();
   });
 
+  it('names the research field and uses the search mark', () => {
+    render(<CommandBar busy={false} onAsk={vi.fn().mockResolvedValue(true)} />);
+    const field = screen.getByLabelText('Research question');
+    expect(field).toHaveAttribute('name', 'question');
+    expect(field).toHaveAttribute('autocomplete', 'off');
+    const mark = document.querySelector('.cmd-icon');
+    expect(mark?.querySelector('circle')).not.toBeNull();
+    expect(mark?.innerHTML ?? '').not.toContain('M12 3');
+  });
+
   it('renders a real disabled send button and no effect canvases', () => {
     const onAsk = vi.fn().mockResolvedValue(true);
     render(<CommandBar busy onAsk={onAsk} />);
@@ -218,7 +225,9 @@ describe('the centered app states', () => {
       vi.fn(() => new Promise<Response>(() => {})),
     );
     render(<App />);
-    expect(await screen.findByText('Reading the dashboard.')).toBeInTheDocument();
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Reading the dashboard…');
+    expect(status).toHaveAttribute('aria-busy', 'true');
   });
 
   it('shows the session-expired view on a 401', async () => {
@@ -227,7 +236,10 @@ describe('the centered app states', () => {
       vi.fn(async () => new Response(null, { status: 401 })),
     );
     render(<App />);
-    expect(await screen.findByText('Session required')).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Session required');
+    expect(screen.getByRole('heading', { name: 'Session required' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });
 
   it('shows the load-failed view when the server is unreachable', async () => {
@@ -236,7 +248,10 @@ describe('the centered app states', () => {
       vi.fn(async () => new Response(null, { status: 503, statusText: 'unavailable' })),
     );
     render(<App />);
-    expect(await screen.findByText('The dashboard did not load')).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('The dashboard did not load');
+    expect(screen.getByRole('heading', { name: 'The dashboard did not load' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });
 
   it('renders the dashboard once the payload is in', async () => {
@@ -250,6 +265,7 @@ describe('the centered app states', () => {
     // The rail and the greeting exist only in the dashboard tree, never
     // in a centered state.
     expect(await screen.findByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+    expect(document.getElementById('dashboard-main')).toHaveAttribute('tabindex', '-1');
     expect(document.querySelector('.hero-title')).toHaveTextContent(
       greetingFor(new Date()),
     );

@@ -9,11 +9,27 @@ import Dashboard from './dashboard/Dashboard';
 import MarketplaceApp from './marketplace/MarketplaceApp';
 import Button from './components/Button';
 
-// The centered card every non-dashboard state shares.
-function Centered({ children }: { children: ReactNode }) {
+// The centered card every non-dashboard state shares. Loading is a polite
+// status; a failure is an alert so the recovery is announced.
+function Centered({
+  children,
+  role,
+  busy = false,
+}: {
+  children: ReactNode;
+  role?: 'status' | 'alert';
+  busy?: boolean;
+}) {
   return (
     <div className="center-wrap">
-      <div className="center-card">{children}</div>
+      <div
+        className="center-card"
+        role={role}
+        aria-busy={busy ? 'true' : undefined}
+        aria-live={role === 'status' ? 'polite' : undefined}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -26,6 +42,13 @@ function DashboardApp() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [expired, setExpired] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+
+  // Focus the failure heading as it mounts (it stays out of the tab
+  // order) so Try again is the following keypress. A callback ref runs
+  // in the same commit as the heading, which is what the shell tests wait on.
+  const focusFailure = useCallback((node: HTMLHeadingElement | null) => {
+    node?.focus();
+  }, []);
 
   const refetch = useCallback(async () => {
     const res = await getJson('/api/dashboard');
@@ -46,8 +69,8 @@ function DashboardApp() {
 
   if (expired) {
     return (
-      <Centered>
-        <h1>{SESSION_EXPIRED_TITLE}</h1>
+      <Centered role="alert">
+        <h1 ref={focusFailure} tabIndex={-1}>{SESSION_EXPIRED_TITLE}</h1>
         <p>{SESSION_EXPIRED_MESSAGE}</p>
         <Button onClick={() => window.location.reload()}>Try again</Button>
       </Centered>
@@ -57,17 +80,17 @@ function DashboardApp() {
   if (!data) {
     if (loadFailed) {
       return (
-        <Centered>
-          <h1>The dashboard did not load</h1>
+        <Centered role="alert">
+          <h1 ref={focusFailure} tabIndex={-1}>The dashboard did not load</h1>
           <p>The dashboard could not reach its own server. Try again; if it repeats, restart the app.</p>
           <Button onClick={() => void refetch()}>Try again</Button>
         </Centered>
       );
     }
     return (
-      <Centered>
+      <Centered role="status" busy>
         <h1>Loading</h1>
-        <p className="center-loader">Reading the dashboard.</p>
+        <p className="center-loader">Reading the dashboard…</p>
       </Centered>
     );
   }

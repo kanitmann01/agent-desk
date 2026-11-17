@@ -39,7 +39,7 @@ export default function TrustPage() {
 
       {loading && !snapshot && (
         <section className="mkt-panel">
-          <p role="status">Loading the trust snapshot...</p>
+          <p role="status">Loading the trust snapshot…</p>
         </section>
       )}
 
