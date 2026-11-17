@@ -132,12 +132,28 @@ STYLES = """
   --shadow-card:none;
   --shadow-card-hover:none;
   --r-card:8px; --r-control:6px; --r-inner:4px; --dur:120ms;
+  /* The memory graph's kind roles, derived from each theme's ink ramp
+     and its one accent: writers and excerpts quiet, facts full ink,
+     entities a step down, observations (the learned layer) the accent. */
+  --kind-origin:var(--ink-3); --kind-source:var(--ink-3); --kind-fact:var(--ink-1);
+  --kind-entity:var(--ink-2); --kind-observation:var(--accent-text);
   --font-display:"Geist","Segoe UI",sans-serif;
   --font-ui:"Geist","Segoe UI",sans-serif;
   --font-mono:"Geist Mono","Consolas",monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* The static memory graph (/memory/graph without JavaScript). */
+.graph-static{overflow-x:auto;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);padding:8px}
+.graph-edge{stroke:var(--ink-4)}
+.graph-edge.edge-entity{stroke:var(--kind-entity)}
+.graph-edge.edge-temporal{stroke:var(--ink-3)}
+.graph-edge.edge-derived{stroke:var(--kind-observation)}
+.graph-edge.edge-semantic{stroke:var(--ink-2)}
+.graph-arrow{fill:var(--kind-observation)}
+.graph-dot-fact{fill:var(--kind-fact)}
+.graph-dot-observation{fill:var(--kind-observation)}
+.graph-text{fill:var(--ink-3)}
 /* Text fields scroll without a visible bar (the SPA does the same). */
 textarea{scrollbar-width:none}
 textarea::-webkit-scrollbar{display:none}
