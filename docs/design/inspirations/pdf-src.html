@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Desk Design Inspirations</title>
+<style>
+  @font-face {
+    font-family: 'Plus Jakarta Sans';
+    src: url('file:///D:/20-projects/Personal%20Agents/agent-desk/frontend/node_modules/@fontsource-variable/plus-jakarta-sans/files/plus-jakarta-sans-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 200 800;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('file:///D:/20-projects/Personal%20Agents/agent-desk/frontend/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+    font-weight: 400;
+  }
+  @font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('file:///D:/20-projects/Personal%20Agents/agent-desk/frontend/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2') format('woff2');
+    font-weight: 600;
+  }
+
+  @page { size: A4; margin: 0; }
+
+  :root {
+    --paper: #F6F4EF;
+    --card: #FFFFFF;
+    --well: #FBFAF7;
+    --hairline: #E5E1D6;
+    --ink: #1F2A27;
+    --ink2: #4C5A55;
+    --muted: #77847E;
+    --green: #14594E;
+    --green-soft: #E4EEE9;
+    --terra: #B3402A;
+    --manila: #FBF3E2;
+    --manila-ink: #8A5A14;
+  }
+
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    font-size: 9.5pt;
+    line-height: 1.5;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', 'Consolas', monospace; }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 17mm 16mm 20mm 16mm;
+    background: var(--paper);
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* running footer */
+  .footer {
+    position: absolute;
+    left: 16mm; right: 16mm; bottom: 9mm;
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-top: 0.4pt solid var(--hairline);
+    padding-top: 2.5mm;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 6.5pt;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .kicker {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 7pt;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+
+  /* ---------- cover ---------- */
+  .cover-rule { height: 2.5mm; background: var(--green); margin-bottom: 14mm; }
+  .cover-title {
+    font-size: 46pt; font-weight: 800; line-height: 1.04;
+    letter-spacing: -0.02em; margin: 6mm 0 6mm 0;
+  }
+  .cover-sub { font-size: 12.5pt; font-weight: 600; color: var(--ink2); max-width: 150mm; }
+  .cover-meta {
+    margin-top: 5mm;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 7.5pt; color: var(--muted); line-height: 1.7;
+  }
+  .toc { margin-top: 12mm; border-top: 0.4pt solid var(--hairline); }
+  .toc-row {
+    display: flex; align-items: baseline; gap: 6mm;
+    padding: 4.6mm 1mm 4.2mm 1mm;
+    border-bottom: 0.4pt solid var(--hairline);
+  }
+  .toc-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13pt; font-weight: 600; color: var(--green);
+    width: 12mm; flex: none;
+  }
+  .toc-name { font-size: 14pt; font-weight: 700; width: 62mm; flex: none; }
+  .toc-desc { font-size: 9pt; color: var(--ink2); }
+  .swatch-strip { display: flex; gap: 2.5mm; margin-top: 10mm; }
+  .swatch-strip .chip { flex: 1; height: 9mm; border: 0.4pt solid var(--hairline); }
+
+  /* ---------- direction pages ---------- */
+  .dir-head { display: flex; align-items: flex-start; gap: 7mm; border-bottom: 1.1pt solid var(--ink); padding-bottom: 4mm; }
+  .dir-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 30pt; font-weight: 600; color: var(--green); line-height: 1;
+    flex: none; width: 24mm;
+  }
+  .dir-titleblock { flex: 1; }
+  .dir-surface {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 7pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 1.6mm;
+  }
+  .dir-title { font-size: 24pt; font-weight: 800; letter-spacing: -0.015em; line-height: 1.08; }
+  .dir-oneliner {
+    margin: 5mm 0 6mm 0;
+    font-size: 12pt; font-weight: 600; color: var(--green); line-height: 1.4;
+  }
+
+  .cols { display: flex; gap: 8mm; }
+  .col-moves { flex: 1.25; }
+  .col-specs { flex: 1; }
+  .h-mini {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 7pt; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink2); margin-bottom: 2.6mm;
+    border-bottom: 0.4pt solid var(--hairline); padding-bottom: 1.6mm;
+  }
+  .moves li { margin: 0 0 2.4mm 4.5mm; padding-left: 1mm; }
+  .moves li::marker { color: var(--green); }
+  .moves b { font-weight: 700; }
+
+  .palette { display: flex; gap: 2mm; margin-bottom: 4mm; }
+  .pchip { flex: 1; text-align: center; }
+  .pchip .sw { height: 11mm; border: 0.4pt solid var(--hairline); }
+  .pchip .hex {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 5.8pt; color: var(--ink2); margin-top: 1.2mm; letter-spacing: 0.02em;
+  }
+
+  .specs p { margin-bottom: 3.4mm; color: var(--ink2); }
+  .specs p b { color: var(--ink); font-weight: 700; }
+
+  .moodboard { margin-top: 6mm; }
+  .shots { display: flex; gap: 3mm; overflow: hidden; }
+  .shots img {
+    flex: 1 1 0; min-width: 0; display: block;
+    border: 0.4pt solid var(--hairline); background: var(--card);
+    object-fit: cover; object-position: top center;
+  }
+  .shots.one img { height: 58mm; }
+  .shots.two img { height: 46mm; }
+  .shots.three img { height: 40mm; }
+  .shots-caption {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 6pt; color: var(--muted); margin-top: 1.6mm; letter-spacing: 0.04em;
+  }
+
+  .refs { margin-top: 5mm; font-size: 8pt; color: var(--ink2); }
+  .refs b { color: var(--ink); font-weight: 700; }
+
+  .verdicts { margin-top: auto; display: flex; gap: 3mm; }
+  .callout { flex: 1; padding: 3.2mm 4mm; border-left: 1.6pt solid var(--green); background: var(--green-soft); }
+  .callout.risk { border-left-color: var(--terra); background: var(--manila); }
+  .callout h4 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 6.5pt; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 1.4mm;
+  }
+  .callout.risk h4 { color: var(--terra); }
+  .callout p { font-size: 8.3pt; line-height: 1.45; color: var(--ink2); }
+
+  /* ---------- matrix page ---------- */
+  .matrix-title { font-size: 22pt; font-weight: 800; letter-spacing: -0.015em; margin: 4mm 0 6mm 0; }
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 8.4pt; }
+  table.matrix th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 6.8pt; letter-spacing: 0.12em; text-transform: uppercase;
+    text-align: left; color: var(--green);
+    background: var(--green-soft);
+    padding: 2.6mm 3mm; border: 0.4pt solid var(--hairline);
+  }
+  table.matrix td { padding: 2.8mm 3mm; border: 0.4pt solid var(--hairline); vertical-align: top; color: var(--ink2); }
+  table.matrix td:first-child { font-weight: 700; color: var(--ink); white-space: nowrap; }
+  .pairing { margin-top: 7mm; padding: 4.5mm 5mm; background: var(--card); border: 0.4pt solid var(--hairline); }
+  .pairing h3 { font-size: 11pt; font-weight: 800; margin-bottom: 2mm; color: var(--ink); }
+  .pairing p { font-size: 9pt; color: var(--ink2); }
+  .pairing .num { color: var(--green); font-weight: 700; }
+  .sources { margin-top: 6mm; font-size: 7.2pt; color: var(--muted); line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="page">
+  <div class="cover-rule"></div>
+  <div class="kicker">Agent Desk &middot; Design Research &middot; 2026-11-17</div>
+  <h1 class="cover-title">Design<br>Inspirations</h1>
+  <p class="cover-sub">Five researched directions for the Agent Desk surface, judged against the warm-paper system in DESIGN.md.</p>
+  <p class="cover-meta">
+    Researched from Dribbble, Pinterest, Mobbin, Muzli, SaaSUI, SaaSFrame, Refero Styles and live products.<br>
+    Anchor: warm-ledger paper #F6F4EF &middot; ink #1F2A27 &middot; bottle green #14594E &middot; instrument-grade numerals.
+  </p>
+  <div class="toc">
+    <div class="toc-row"><span class="toc-num">01</span><span class="toc-name">Calm Operator Console</span><span class="toc-desc">The dashboard as a well-set financial statement: quiet chrome, one hero number, color only where it means something.</span></div>
+    <div class="toc-row"><span class="toc-num">02</span><span class="toc-name">Bento Grid with Intent</span><span class="toc-desc">Tiles of deliberate, asymmetric size: the layout itself tells you where to look first.</span></div>
+    <div class="toc-row"><span class="toc-num">03</span><span class="toc-name">Neo-Brutalism, Disciplined</span><span class="toc-desc">Thick borders, hard shadows, flat color. Loud on marketing, calm in the app.</span></div>
+    <div class="toc-row"><span class="toc-num">04</span><span class="toc-name">Dark Mission Control</span><span class="toc-desc">Console discipline: monospace data, one chromatic voice, motion reserved for signals.</span></div>
+    <div class="toc-row"><span class="toc-num">05</span><span class="toc-name">Swiss Editorial</span><span class="toc-desc">The grid as the brand: oversized grotesque type, flush-left, one structural accent.</span></div>
+  </div>
+  <div class="swatch-strip">
+    <div class="chip" style="background:#14594E"></div>
+    <div class="chip" style="background:#FBFAF7"></div>
+    <div class="chip" style="background:#1F2A27"></div>
+    <div class="chip" style="background:#04070A"></div>
+    <div class="chip" style="background:#B3402A"></div>
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations</span><span>Cover</span></div>
+</div>
+
+<!-- ============ 01 CALM OPERATOR CONSOLE ============ -->
+<div class="page">
+  <div class="dir-head">
+    <div class="dir-num">01</div>
+    <div class="dir-titleblock">
+      <div class="dir-surface">Light &middot; warm &middot; editorial &middot; daily-use dashboard</div>
+      <h2 class="dir-title">Calm Operator Console</h2>
+    </div>
+  </div>
+  <p class="dir-oneliner">The dashboard as a well-set financial statement: quiet chrome, one hero number, color only where it means something.</p>
+  <div class="cols">
+    <div class="col-moves">
+      <div class="h-mini">Signature moves</div>
+      <ul class="moves">
+        <li><b>Single-metric focus.</b> The whole layout defers to one north-star number (Baremetrics builds around MRR, Vercel Analytics around uptime). Everything else is subordinate context.</li>
+        <li><b>Progressive disclosure.</b> Show the minimum needed for the next decision, reveal on demand. Linear, Notion and Intercom treat this as product philosophy.</li>
+        <li><b>Color communicates status, not decoration.</b> Red means broken, not "look here". Vercel runs nearly monochrome so status colors carry all the semantic weight.</li>
+        <li><b>Tables as a first-class interface</b> (Stripe) and editorial typography on financial data (Mercury).</li>
+        <li><b>Comparison context by default.</b> Every number carries period-over-period framing so users never ask "is this good?".</li>
+      </ul>
+    </div>
+    <div class="col-specs">
+      <div class="h-mini">Palette seeds</div>
+      <div class="palette">
+        <div class="pchip"><div class="sw" style="background:#F6F4EF"></div><div class="hex">#F6F4EF</div></div>
+        <div class="pchip"><div class="sw" style="background:#FFFFFF"></div><div class="hex">#FFFFFF</div></div>
+        <div class="pchip"><div class="sw" style="background:#E5E1D6"></div><div class="hex">#E5E1D6</div></div>
+        <div class="pchip"><div class="sw" style="background:#1F2A27"></div><div class="hex">#1F2A27</div></div>
+        <div class="pchip"><div class="sw" style="background:#14594E"></div><div class="hex">#14594E</div></div>
+      </div>
+      <div class="h-mini">Type seeds</div>
+      <div class="specs">
+        <p><b>One humanist sans for everything</b> (Plus Jakarta Sans fits), tabular numerals for data, display sizes capped at 28&ndash;32px.</p>
+        <p><b>Hierarchy from weight and space,</b> not size jumps. Hairlines instead of shadows.</p>
+      </div>
+    </div>
+  </div>
+  <div class="moodboard">
+    <div class="h-mini">Moodboard</div>
+    <div class="shots one"><img src="assets/calm-payrix-dashboard.webp" alt="Payrix finance dashboard"></div>
+    <div class="shots-caption">Payrix finance dashboard: one account-value hero, quiet supporting cards. Reference for study, not for copying.</div>
+  </div>
+  <div class="refs"><b>Study:</b> Linear (quiet chrome) &middot; Mercury (editorial fintech) &middot; Stripe (tables) &middot; Vercel (status-only color) &middot; Plausible (one-page simplicity). Roundups: SaaSUI 422 real screens, Muzli 50 dashboards 2026, Dribbble tags minimal-dashboard and calm-dashboard.</div>
+  <div class="verdicts">
+    <div class="callout"><h4>Agent Desk fit</h4><p>Incumbent DESIGN.md direction: refine, do not replace. Push single-metric focus harder, keep color for status only, steal Mercury's editorial table typography.</p></div>
+    <div class="callout risk"><h4>How it turns into slop</h4><p>Uniform equal-sized cards, purple-default accents, gradient buttons on a light theme, or six competing "hero" KPIs. The discipline is subtraction.</p></div>
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations &middot; 2026-11-17</span><span>01 / Calm Operator Console</span></div>
+</div>
+
+<!-- ============ 02 BENTO GRID ============ -->
+<div class="page">
+  <div class="dir-head">
+    <div class="dir-num">02</div>
+    <div class="dir-titleblock">
+      <div class="dir-surface">Dashboard overviews &middot; marketplaces &middot; feature sections</div>
+      <h2 class="dir-title">Bento Grid with Intent</h2>
+    </div>
+  </div>
+  <p class="dir-oneliner">Rectangular tiles of deliberate, asymmetric size: the layout itself tells you where to look first.</p>
+  <div class="cols">
+    <div class="col-moves">
+      <div class="h-mini">Signature moves</div>
+      <ul class="moves">
+        <li><b>Strict CSS Grid, not masonry.</b> Tiles span defined columns and rows; a hero KPI tile might span 6 columns while four status tiles sit beside it in a 2x2 cluster.</li>
+        <li><b>Bigger tile equals more important data.</b> Spatial weight does the talking before any label is read.</li>
+        <li><b>One job per tile:</b> a KPI, a chart, a status or an action. Never two jobs.</li>
+        <li><b>Defined collapse rules.</b> 4&ndash;6 column tiles drop to full width on mobile; guard against truncation at narrow viewports.</li>
+        <li><b>The story test.</b> Decide what story the grid tells first; if the only idea is that cards fit neatly, it looks polished while saying nothing.</li>
+      </ul>
+    </div>
+    <div class="col-specs">
+      <div class="h-mini">Palette seeds</div>
+      <div class="palette">
+        <div class="pchip"><div class="sw" style="background:#FFFFFF"></div><div class="hex">#FFFFFF</div></div>
+        <div class="pchip"><div class="sw" style="background:#F6F4EF"></div><div class="hex">#F6F4EF</div></div>
+        <div class="pchip"><div class="sw" style="background:#E5E1D6"></div><div class="hex">#E5E1D6</div></div>
+        <div class="pchip"><div class="sw" style="background:#4C5A55"></div><div class="hex">#4C5A55</div></div>
+        <div class="pchip"><div class="sw" style="background:#14594E"></div><div class="hex">#14594E</div></div>
+      </div>
+      <div class="h-mini">Type seeds</div>
+      <div class="specs">
+        <p><b>Flat tiles on paper or dark ground,</b> depth from hairlines, not shadow stacks.</p>
+        <p><b>Small-caps tile labels,</b> one accent per tile maximum, values in tabular numerals.</p>
+      </div>
+    </div>
+  </div>
+  <div class="moodboard">
+    <div class="h-mini">Moodboard</div>
+    <div class="shots one"><img src="assets/bento-unkey-dark.jpeg" alt="Unkey dark bento landing"></div>
+    <div class="shots-caption">Unkey: bento tiles each demonstrating one product behaviour. SaaSFrame library holds 52 more examples (Nov 2026).</div>
+  </div>
+  <div class="refs"><b>Study:</b> Orbix bento grid guide (anatomy, collapse rules) &middot; SaaSFrame pattern library &middot; Dribbble bento-grids tag (Elina Sabitova Graph Dashboard light/dark, Hitesh Tapaniya productivity bento, CyberPulse) &middot; Pinterest bento grid dashboard boards.</div>
+  <div class="verdicts">
+    <div class="callout"><h4>Agent Desk fit</h4><p>Strong for the overview and plugin marketplace grid: a wide hero tile (one agent status number), a 2x2 status cluster, a wide activity-feed tile, all on warm paper.</p></div>
+    <div class="callout risk"><h4>How it turns into slop</h4><p>Cards inside cards inside cards, identical tiles pretending to be bento, decorative illustration tiles carrying no data, a hierarchy that flattens under tile count.</p></div>
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations &middot; 2026-11-17</span><span>02 / Bento Grid with Intent</span></div>
+</div>
+
+<!-- ============ 03 NEO-BRUTALISM ============ -->
+<div class="page">
+  <div class="dir-head">
+    <div class="dir-num">03</div>
+    <div class="dir-titleblock">
+      <div class="dir-surface">Marketing &middot; storefronts &middot; brand moments (not the daily dashboard)</div>
+      <h2 class="dir-title">Neo-Brutalism, Disciplined</h2>
+    </div>
+  </div>
+  <p class="dir-oneliner">Thick ink borders, hard zero-blur offset shadows, flat saturated color. The 2026 rule: loud on marketing, calm in the app.</p>
+  <div class="cols">
+    <div class="col-moves">
+      <div class="h-mini">Signature moves</div>
+      <ul class="moves">
+        <li><b>The grammar:</b> 2&ndash;4px solid ink borders, box-shadow 5px 5px 0 0 (zero blur), border-radius 0, flat fills, no gradients.</li>
+        <li><b>Hierarchy through the style itself.</b> Gumroad's primary button carries the thickest border and the only hard shadow in the hero: importance is encoded, not announced.</li>
+        <li><b>Expression versus interaction.</b> Brutalism aggressively on heroes and marketing blocks; dialed down inside dashboards, forms and transactional flows.</li>
+        <li><b>Tokenize the aesthetic.</b> Stroke width, shadow offset and accent color as explicit tokens so intensity is a variable, not a rewrite.</li>
+        <li><b>Body text stays boring on purpose.</b> A 2026 usability study: disciplined brutalist layouts score reasonably, chaotic ones collapse to 8&ndash;10% task success on dense pages.</li>
+      </ul>
+    </div>
+    <div class="col-specs">
+      <div class="h-mini">Palette seeds</div>
+      <div class="palette">
+        <div class="pchip"><div class="sw" style="background:#FFD23F"></div><div class="hex">#FFD23F</div></div>
+        <div class="pchip"><div class="sw" style="background:#FF6B9D"></div><div class="hex">#FF6B9D</div></div>
+        <div class="pchip"><div class="sw" style="background:#00D4FF"></div><div class="hex">#00D4FF</div></div>
+        <div class="pchip"><div class="sw" style="background:#FBF3E2"></div><div class="hex">#FBF3E2</div></div>
+        <div class="pchip"><div class="sw" style="background:#1F2A27"></div><div class="hex">#1F2A27</div></div>
+      </div>
+      <div class="h-mini">Type seeds</div>
+      <div class="specs">
+        <p><b>Headings:</b> Space Grotesk 700, Archivo Black or Lexend Mega.</p>
+        <p><b>Body:</b> Inter 400, predictable spacing. <b>Mono accents:</b> Space Mono.</p>
+        <p><b>Warm-paper variant:</b> manila and terracotta fills with the same ink grammar.</p>
+      </div>
+    </div>
+  </div>
+  <div class="moodboard">
+    <div class="h-mini">Moodboard</div>
+    <div class="shots three">
+      <img src="assets/brutal-gumroad-home.png" alt="Gumroad home">
+      <img src="assets/brutal-neobrutalism-poster.jpg" alt="Neobrutalism poster">
+      <img src="assets/brutal-portfolio-growth.jpg" alt="Brutalist portfolio">
+    </div>
+    <div class="shots-caption">Gumroad (the benchmark) &middot; neobrutalism poster &middot; a disciplined portfolio page: bold headline, calm body.</div>
+  </div>
+  <div class="refs"><b>Study:</b> neubrutalism.com definitive guide &middot; neubrutalism.dev (64 React + Tailwind v4 components) &middot; NN/g best practices &middot; Mobbin neo-brutalism gallery &middot; benchmarks Gumroad, Dodonut, Tony's Chocolonely, MOUTHWASH Studio, UGLYCASH.</div>
+  <div class="verdicts">
+    <div class="callout"><h4>Agent Desk fit</h4><p>Marketing page or marketplace storefront only. Inside the dashboard, at most the ink-outline grammar on the single primary action: 2px border, offset shadow, small radius.</p></div>
+    <div class="callout risk"><h4>How it turns into slop</h4><p>Everything loud at once, decoration the style does not need, hard shadows stacked on rounded glass, WCAG contrast failures hidden inside playful palettes.</p></div>
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations &middot; 2026-11-17</span><span>03 / Neo-Brutalism, Disciplined</span></div>
+</div>
+
+<!-- ============ 04 DARK MISSION CONTROL ============ -->
+<div class="page">
+  <div class="dir-head">
+    <div class="dir-num">04</div>
+    <div class="dir-titleblock">
+      <div class="dir-surface">Night theme &middot; live tails &middot; observability &middot; agent runs</div>
+      <h2 class="dir-title">Dark Mission Control</h2>
+    </div>
+  </div>
+  <p class="dir-oneliner">NASA-console information design: near-black ground, panel grid, monospace data, one chromatic voice, motion reserved for signals.</p>
+  <div class="cols">
+    <div class="col-moves">
+      <div class="h-mini">Signature moves</div>
+      <ul class="moves">
+        <li><b>Data in monospace, exclusively.</b> Labels can be sans; telemetry values never. No proportional fonts for numbers.</li>
+        <li><b>Radius ceiling 4px,</b> flat panels a step lighter than ground, hairline borders at 10&ndash;25% alpha. Depth from layering, never glow.</li>
+        <li><b>Every hue conveys operational meaning.</b> Decorative color in a data display is an anti-pattern.</li>
+        <li><b>Motion is an alert channel:</b> if it moves, it means something. Nothing else animates.</li>
+        <li><b>Dark contrast craft:</b> never pure black grounds (dark navy instead), never pure white text, charts mostly gray with one or two strongly colored series.</li>
+      </ul>
+    </div>
+    <div class="col-specs">
+      <div class="h-mini">Palette seeds</div>
+      <div class="palette">
+        <div class="pchip"><div class="sw" style="background:#04070A"></div><div class="hex">#04070A</div></div>
+        <div class="pchip"><div class="sw" style="background:#070C10"></div><div class="hex">#070C10</div></div>
+        <div class="pchip"><div class="sw" style="background:#080D11"></div><div class="hex">#080D11</div></div>
+        <div class="pchip"><div class="sw" style="background:#DFECE9"></div><div class="hex">#DFECE9</div></div>
+        <div class="pchip"><div class="sw" style="background:#88C0D0"></div><div class="hex">#88C0D0</div></div>
+      </div>
+      <div class="h-mini">Type seeds</div>
+      <div class="specs">
+        <p><b>Data and logs:</b> JetBrains Mono or Azeret Mono.</p>
+        <p><b>Panel headers:</b> condensed display face (Antonio, Inter condensed).</p>
+        <p><b>Zero border radius throughout.</b> One chromatic voice: amber telemetry or Nord blue, plus the green/amber/red status trio.</p>
+      </div>
+    </div>
+  </div>
+  <div class="moodboard">
+    <div class="h-mini">Moodboard</div>
+    <div class="shots three">
+      <img src="assets/missioncontrol-clawdash-overview.png" alt="Clawdash mission control overview">
+      <img src="assets/missioncontrol-clawdash-agents.png" alt="Clawdash agents table">
+      <img src="assets/missioncontrol-factory-hero.jpg" alt="Factory dark hero">
+    </div>
+    <div class="shots-caption">Clawdash agent mission-control screens (stats, tokens, activity) &middot; Factory dark hero. Closest existing analogues to Agent Desk.</div>
+  </div>
+  <div class="refs"><b>Study:</b> OpenDesign Mission Control Design System (copy its anti-pattern list) &middot; UXMagic Kittiwake single-screen console &middot; smui terminal-aesthetic theme &middot; Refero LaunchDarkly analysis &middot; wendyzhou.se dark dashboard craft &middot; Dribbble terminal-dashboard search.</div>
+  <div class="verdicts">
+    <div class="callout"><h4>Agent Desk fit</h4><p>A disciplined "night ops" theme for live tails and agent runs; warm-paper stays the default. Monospace numerals already in the type system make the bridge cheap.</p></div>
+    <div class="callout risk"><h4>How it turns into slop</h4><p>This is exactly where the old OLED dark-glass drift came from: aurora backgrounds, glass blur stacks, neon glow, gradient type. Keep the console rules, delete glass, glow and gradient on sight.</p></div>
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations &middot; 2026-11-17</span><span>04 / Dark Mission Control</span></div>
+</div>
+
+<!-- ============ 05 SWISS EDITORIAL ============ -->
+<div class="page">
+  <div class="dir-head">
+    <div class="dir-num">05</div>
+    <div class="dir-titleblock">
+      <div class="dir-surface">Marketing site &middot; docs &middot; changelog &middot; release notes</div>
+      <h2 class="dir-title">Swiss Editorial</h2>
+    </div>
+  </div>
+  <p class="dir-oneliner">International Typographic Style on the web: a visible mathematical grid, oversized grotesque type, flush-left ragged-right, one structural accent.</p>
+  <div class="cols">
+    <div class="col-moves">
+      <div class="h-mini">Signature moves</div>
+      <ul class="moves">
+        <li><b>The grid is the system:</b> a 12-column modular grid from typographic measurement, with the confidence to show it (a "Show Grid" toggle works when the structure is the idea).</li>
+        <li><b>Typography carries the hierarchy.</b> Scale and weight do the work of color and ornament; huge display against small, quiet body text.</li>
+        <li><b>Flush-left, ragged-right.</b> Preserved word spacing, no justified rivers.</li>
+        <li><b>Reduction with purpose, asymmetry within order,</b> generous white space as a deliberate tool.</li>
+        <li><b>One distinctive color or interaction is often enough.</b> Photography treated as data: tightly cropped, grid-integrated, documentary rather than emotive.</li>
+      </ul>
+    </div>
+    <div class="col-specs">
+      <div class="h-mini">Palette seeds</div>
+      <div class="palette">
+        <div class="pchip"><div class="sw" style="background:#F6F4EF"></div><div class="hex">#F6F4EF</div></div>
+        <div class="pchip"><div class="sw" style="background:#FFFFFF"></div><div class="hex">#FFFFFF</div></div>
+        <div class="pchip"><div class="sw" style="background:#1F2A27"></div><div class="hex">#1F2A27</div></div>
+        <div class="pchip"><div class="sw" style="background:#14594E"></div><div class="hex">#14594E</div></div>
+        <div class="pchip"><div class="sw" style="background:#B3402A"></div><div class="hex">#B3402A</div></div>
+      </div>
+      <div class="h-mini">Type seeds</div>
+      <div class="specs">
+        <p><b>Heritage:</b> Neue Haas Grotesk, Suisse Int'l. <b>Web stand-ins:</b> Inter, Instrument Sans, Archivo for display.</p>
+        <p><b>Indices and labels:</b> Fragment Mono or IBM Plex Mono.</p>
+        <p><b>Agent Desk's bottle green on warm paper</b> is already a legitimate Swiss accent pairing.</p>
+      </div>
+    </div>
+  </div>
+  <div class="moodboard">
+    <div class="h-mini">Moodboard</div>
+    <div class="shots three">
+      <img src="assets/swiss-hofmann-poster.png" alt="Armin Hofmann poster homage">
+      <img src="assets/swiss-muller-brockmann-grid.jpg" alt="Muller-Brockmann grid diagram">
+      <img src="assets/swiss-its-poster.jpg" alt="International Typographic Style poster">
+    </div>
+    <div class="shots-caption">Hofmann homage &middot; M&uuml;ller-Brockmann grid system diagram (Raster Systeme) &middot; International Typographic Style poster.</div>
+  </div>
+  <div class="refs"><b>Study:</b> swissthemes.design (8 examples + principles) &middot; PRINT Magazine Swiss style primer &middot; Poster House: The Swiss Grid &middot; A1 Gallery 172 big-type landings &middot; Dribbble swiss-website (HOLOGRAPHIK, Obys, Luminalom) &middot; One Page Love Swiss tag.</div>
+  <div class="verdicts">
+    <div class="callout"><h4>Agent Desk fit</h4><p>Strongest marketing/docs upgrade: oversized grotesque display type, index-numbered feature sections, hairline-ruled tables. The 224px rail plus 1200px column is already a grid.</p></div>
+    <div class="callout risk"><h4>How it turns into slop</h4><p>Decorative "Swiss-flavored" layouts with no real grid, three accent colors, centered everything, oversized type that collapses on mobile. The style dies the moment the grid is ignored.</p></div>
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations &middot; 2026-11-17</span><span>05 / Swiss Editorial</span></div>
+</div>
+
+<!-- ============ MATRIX ============ -->
+<div class="page">
+  <div class="kicker">Decision</div>
+  <h2 class="matrix-title">Matrix and recommended pairing</h2>
+  <table class="matrix">
+    <tr><th>Direction</th><th>Best surface</th><th>Effort</th><th>Risk</th><th>Agent Desk fit</th></tr>
+    <tr><td>01 Calm Operator Console</td><td>Product dashboard</td><td>Low (incremental)</td><td>Feels generic without a point of view</td><td>Current system: refine, do not replace</td></tr>
+    <tr><td>02 Bento Grid with Intent</td><td>Overview, marketplace grid</td><td>Medium</td><td>Card soup, flattened hierarchy</td><td>High for overview and plugins</td></tr>
+    <tr><td>03 Neo-Brutalism, Disciplined</td><td>Marketing, storefront</td><td>Medium</td><td>Usability collapse if it leaks into the app</td><td>Landing and marketplace only</td></tr>
+    <tr><td>04 Dark Mission Control</td><td>Night theme, live tails</td><td>High (new theme)</td><td>Reopens the glass and glow drift</td><td>Second theme under console rules</td></tr>
+    <tr><td>05 Swiss Editorial</td><td>Marketing, docs</td><td>Medium</td><td>Grid ignored, type uncontrolled</td><td>Strongest marketing/docs upgrade</td></tr>
+  </table>
+  <div class="pairing">
+    <h3>Recommended pairing</h3>
+    <p><span class="num">01 Calm Operator Console</span> stays the product core (already encoded in DESIGN.md). <span class="num">02 Bento with Intent</span> structures the overview and marketplace. <span class="num">05 Swiss Editorial</span> carries marketing and docs. <span class="num">04 Dark Mission Control</span> exists as the disciplined night-ops escape hatch; <span class="num">03 Neo-Brutalism</span> stays on the shelf for a future brand moment.</p>
+  </div>
+  <div class="pairing">
+    <h3>Workflow with the installed toolchain</h3>
+    <p>Feed the chosen direction through the five tools installed on 2026-11-17: <b>taste-skill</b> for build direction and the finish gate, <b>awesome-design</b> for a real brand system to borrow structure from, <b>image-to-code</b> for reference-first implementation, <b>web-design-guidelines</b> to audit the result, and <b>playwright-cli</b> to verify it in a real browser.</p>
+  </div>
+  <div class="sources">
+    <b class="mono" style="font-size:6.5pt;letter-spacing:0.18em;text-transform:uppercase;color:#77847E">Sources</b><br>
+    Research performed 2026-11-17 via Tavily search and image search across Dribbble, Pinterest, Mobbin, Muzli, SaaSUI, SaaSFrame, Refero Styles, AdminLTE, Radiant, 925studios, Orbix Studio, Gleam Studio, Setproduct, NN/g, neubrutalism.com, neubrutalism.dev, OpenDesign, UXMagic, smui, wendyzhou.se, Swiss Themes, PRINT Magazine, Poster House, A1 Gallery, One Page Love and the live products named on each page. Moodboard images are downloaded references for internal use; original sources are linked in the companion DESIGN-INSPIRATIONS.md.
+  </div>
+  <div class="footer"><span>Agent Desk &middot; Design Inspirations &middot; 2026-11-17</span><span>Decision Matrix</span></div>
+</div>
+
+</body>
+</html>
