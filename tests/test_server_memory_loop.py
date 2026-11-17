@@ -27,6 +27,12 @@ class ReplyLlm:
         self.prompts.append(prompt)
         if "durable memory facts" in prompt and self.facts is not None:
             return json.dumps({"facts": self.facts})
+        if "You keep one short observation about" in prompt:
+            name = prompt.split("observation about ", 1)[1].split(" in a work", 1)[0]
+            ids = [int(line.split(" |", 1)[0]) for line in
+                   prompt.split("Facts (id | date | text):\n", 1)[1].splitlines()]
+            return json.dumps({"text": f"{name} stands on {len(ids)} facts.",
+                               "sourceFactIds": ids[:1]})
         return "Noted."
 
 
@@ -203,8 +209,12 @@ def test_the_memory_page_mounts_the_loop_island_over_the_server_forms(env, auth,
     # The no-JavaScript page lives inside the root and still posts.
     root = page.split('id="memory-loop-root"', 1)[1].split("</div><link", 1)[0]
     assert 'action="/memory/add"' in root
-    # Maintenance stays on the server page, below the island.
-    assert 'id="memory-maintenance"' in page
+    # Maintenance stays on the server page, below the island: one tile,
+    # folded away, a plain line per action.
+    tile = page.split("id='memory-maintenance'", 1)[1].split("</details>", 1)[0]
+    assert "<details class='ml-maint'" in page and " open" not in tile.split(">", 1)[0]
+    assert "Check what the assistant would recall" in tile
+    assert "action='/memory/recall'" in tile and "href='/memory/sweep'" in tile
     # A recall query renders the server page, which shows its answer.
     status, _h, body = env.post_json("/memory/recall", {"query": "revenue"}, auth)
     assert status == 200 and 'id="memory-loop-root"' not in body.decode()
@@ -217,3 +227,69 @@ def test_without_the_build_the_memory_page_stays_server_rendered(env, auth, monk
     page = body.decode()
     assert 'id="memory-loop-root"' not in page
     assert 'class="doc"' in page
+
+
+def test_with_an_endpoint_the_model_writes_each_entity_observation(env, auth):
+    first = _add(env, auth, "Priya Shah owns the Acme Corp renewal.")
+    second = _add(env, auth, "Acme Corp signed for three years.")
+    state = _loop(env, auth)
+    [obs] = state["observations"]
+    assert obs["text"] == "Acme Corp stands on 2 facts."
+    assert obs["method"] == "model" and obs["entityName"] == "Acme Corp"
+    assert obs["factIds"] == [second]
+    rows = [r for r in audit_store.entries(env.server.audit_conn) if r["action"] == "llm.observe"]
+    assert rows and "1 observation written" in rows[0]["detail"]
+    assert "Priya Shah owns" not in rows[0]["detail"]
+
+    # The preview shows what the observation will read after the removal;
+    # the removal writes that text.
+    third = _add(env, auth, "Acme Corp is based in Pune.")
+    status, _h, body = env.post_json("/api/memory/remove/preview",
+                                     {"target": {"type": "fact", "id": first}}, auth)
+    [row] = json.loads(body)["plan"]["observationsUpdated"]
+    assert row["text"] == "Acme Corp stands on 3 facts."
+    assert row["after"] == "Acme Corp stands on 2 facts." and row["afterMethod"] == "model"
+    env.post_json("/api/memory/remove", {"target": {"type": "fact", "id": first}}, auth)
+    [obs] = _loop(env, auth)["observations"]
+    assert obs["text"] == "Acme Corp stands on 2 facts." and obs["factIds"] == [third]
+
+
+def test_without_endpoint_calls_the_rules_write_a_compact_summary(env, auth):
+    env.post_json("/settings/toggle", {"key": "endpoint_enabled"}, auth)  # off
+    _add(env, auth, "Priya Shah owns the Acme Corp renewal.")
+    _add(env, auth, "Acme Corp signed for three years.")
+    [obs] = _loop(env, auth)["observations"]
+    assert obs["method"] == "rules" and obs["text"].startswith("2 facts about Acme Corp. Latest")
+    assert not any("You keep one short observation" in p for p in env.server.llm.prompts)
+
+
+def test_the_graph_names_the_entity_first_on_its_observation(env, auth):
+    _add(env, auth, "Jordan Lee moved the Halvorsen Freight renewal to legal.")
+    _add(env, auth, "Jordan Lee closed the Halvorsen Freight renewal.")
+    _add(env, auth, "Halvorsen Freight is based in Oslo.")
+    status, _h, body = env.request("GET", "/api/memory/graph", auth)
+    assert status == 200
+    labels = sorted(n["label"] for n in json.loads(body)["nodes"] if n["kind"] == "observation")
+    assert len(labels) == 2 and labels[0].startswith("Halvorsen Freight: ")
+    assert labels[1].startswith("Jordan Lee: ")
+
+
+def test_a_changed_workbook_row_is_captured_for_review(env, auth):
+    from agentdesk.excel.core import Delta
+    hook = env.server.excel.change_hook
+    hook("tracker.xlsx", ["Deal", "Stage", "Owner"],
+         Delta(added=[["Halvorsen Freight", "Legal", "Jordan Lee"]],
+               removed=[["Halvorsen Freight", "Proposal", "Jordan Lee"]]))
+    state = _loop(env, auth)
+    [card] = state["candidates"]
+    assert card["text"] == "Halvorsen Freight: Stage changed from Proposal to Legal."
+    assert card["channel"] == "workbook"
+    assert "tracker.xlsx" in card["excerpt"]["text"]
+    channels = {c["id"]: c for c in state["capture"]["channels"]}
+    assert channels["workbook"]["on"] and channels["workbook"]["label"] == "Workbook tracker"
+
+    # Its own switch under Read from turns it off.
+    status, _h, _b = env.post_json("/settings/toggle", {"key": "memory_capture_workbook"}, auth)
+    assert status in (200, 303)
+    hook("tracker.xlsx", ["Deal", "Stage"], Delta(added=[["Brightwater", "Intro"]], removed=[]))
+    assert len(_loop(env, auth)["candidates"]) == 1

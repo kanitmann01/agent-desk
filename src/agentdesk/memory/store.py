@@ -231,6 +231,12 @@ _LOOP_COLUMNS = {
     ),
     "observations": (
         ("stale_ts", "ALTER TABLE observations ADD COLUMN stale_ts REAL"),
+        # Who wrote a consolidated observation ("model" or "rules") and the
+        # standing facts it was built from (comma-separated ids): the loop
+        # rebuilds it only when that basis changes, or to let the model
+        # rewrite what the rules wrote. Ids and a method name, never text.
+        ("method", "ALTER TABLE observations ADD COLUMN method TEXT"),
+        ("basis", "ALTER TABLE observations ADD COLUMN basis TEXT"),
     ),
 }
 
@@ -1899,6 +1905,35 @@ class MemoryStore:
                 "SELECT id, stale_ts FROM observations WHERE stale_ts IS NOT NULL"
             ).fetchall()
         }
+
+    def exclusive(self):
+        """The store's write lock, for a caller that must read and write
+        as one step (the memory loop's observation pass). Re-entrant, so
+        the locked methods inside it still work."""
+        return self._lock
+
+    @_locked
+    def mark_observation(self, observation_id: int, method: str, basis) -> None:
+        """Record how a consolidated observation was written and from
+        which standing facts (see _LOOP_COLUMNS)."""
+        self._guard()
+        ids = ",".join(str(int(value)) for value in sorted(set(basis)))
+        with self.conn:
+            self.conn.execute(
+                "UPDATE observations SET method = ?, basis = ? WHERE id = ?",
+                (str(method), ids, int(observation_id)),
+            )
+
+    def observation_marks(self) -> dict[int, tuple[str | None, frozenset[int]]]:
+        """Observation id to (method, basis fact ids) for every row."""
+        self._guard()
+        marks: dict[int, tuple[str | None, frozenset[int]]] = {}
+        for row_id, method, basis in self.conn.execute(
+            "SELECT id, method, basis FROM observations"
+        ).fetchall():
+            ids = frozenset(int(part) for part in (basis or "").split(",") if part.strip())
+            marks[int(row_id)] = (method, ids)
+        return marks
 
     def observation_ids_in_scope(self, scope_key: str) -> list[int]:
         """The observation rows one scope holds (blinded on a sealed bank)."""

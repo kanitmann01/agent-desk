@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 from agentdesk.inbox.core import KIND_MEMORY_DRAFT, STATUS_WAITING, UnknownCard
 from agentdesk.memory.graph import DEFAULT_GRAPH_LIMIT
+from agentdesk.memory.loop import CHANNEL_LABELS, ENTITY_SCOPE_PREFIX, METHOD_MODEL, entity_scope
 
 SAMPLE_SOURCE = "sample seed"
 LABEL_CHARS = 80
@@ -93,7 +94,7 @@ def _origin_for(source: str, card) -> _Origin:
                        "Facts typed into the Add a fact form and saved as written.")
     if source.startswith("auto: "):
         channel = source[len("auto: "):]
-        label = channel.capitalize()
+        label = CHANNEL_LABELS.get(channel, channel.capitalize())
         return _Origin(f"origin:auto:{channel}", f"Captured from {label}",
                        f"Facts captured from your {label} activity and saved "
                        "automatically (review was off).")
@@ -109,7 +110,7 @@ def _origin_for(source: str, card) -> _Origin:
                                f"Cards from the {plugin} plugin that you accepted.")
             channel = str((card.meta.get("memoryFact") or {}).get("channel") or "")
             if card.kind == KIND_MEMORY_DRAFT and channel:
-                label = channel.capitalize()
+                label = CHANNEL_LABELS.get(channel, channel.capitalize())
                 return _Origin(f"origin:capture:{channel}", f"Captured from {label}",
                                f"Facts captured from your {label} activity "
                                "that you approved.")
@@ -202,6 +203,8 @@ def build_memory_graph(
     facts = {fact.id: fact for fact in memory.all()}
     observations = {obs.id: obs for obs in memory.observations()}
     entities = {entity.id: entity for entity in memory.entities()}
+    obs_scopes = memory.scope_of_observations(entity_scope(eid) for eid in entities)
+    obs_marks = memory.observation_marks()
     excerpts = {excerpt.id: excerpt for excerpt in memory.sources()}
     mentions = memory.fact_entity_ids()
     vectors = memory.fact_ids_with_vectors()
@@ -293,7 +296,22 @@ def build_memory_graph(
             # cited fact came from the sample seed was seeded alongside them.
             sample = bool(cited) and all(facts[fid].source == SAMPLE_SOURCE for fid in cited)
             reflect = (f"{_plural(len(cited), 'fact')}, confidence {obs.confidence:.2f}.")
-            if sample:
+            scope = obs_scopes.get(obs.id, "")
+            entity = (entities.get(int(scope[len(ENTITY_SCOPE_PREFIX):]))
+                      if scope.startswith(ENTITY_SCOPE_PREFIX) else None)
+            # An entity's observation leads with the entity's name, so two
+            # that open on the same words stay distinguishable.
+            label_text = f"{entity.canonical_name}: {obs.text}" if entity is not None else obs.text
+            if entity is not None:
+                method = (obs_marks.get(obs.id) or (None, frozenset()))[0]
+                writer = ("written by the endpoint" if method == METHOD_MODEL
+                          else "written by the built-in summary")
+                steps = [{"step": STEP_REFLECT, "ts": obs.updated_ts,
+                          "text": f"Rebuilt from the standing facts about "
+                                  f"{entity.canonical_name}, {writer}; cites "
+                                  f"{_plural(len(cited), 'fact')}. It is rewritten "
+                                  "whenever those facts change."}]
+            elif sample:
                 steps = [{"step": STEP_REFLECT, "ts": obs.created_ts,
                           "text": "Written by the sample seed as a reflect run would: "
                                   f"concluded from {reflect}"}]
@@ -308,7 +326,7 @@ def build_memory_graph(
             push({
                 "id": f"observation:{obs.id}",
                 "kind": "observation",
-                "label": _bounded(obs.text, LABEL_CHARS),
+                "label": _bounded(label_text, LABEL_CHARS),
                 "text": _bounded(obs.text, TEXT_CHARS),
                 "createdTs": obs.created_ts,
                 "updatedTs": obs.updated_ts,

@@ -172,6 +172,8 @@ def build_loop_state(memory, inbox, capture: dict, extractor: dict,
             "factIds": fact_ids,
         })
 
+    marks = memory.observation_marks()
+    entity_names = {e.id: e.canonical_name for e in entities}
     observation_rows = []
     for obs in observations:
         scope = scopes.get(obs.id, "")
@@ -185,7 +187,9 @@ def build_loop_state(memory, inbox, capture: dict, extractor: dict,
             "updatedTs": obs.updated_ts,
             "staleTs": stale.get(obs.id),
             "entityId": entity_id,
+            "entityName": entity_names.get(entity_id) if entity_id is not None else None,
             "derived": "consolidated" if entity_id is not None else "reflected",
+            "method": (marks.get(obs.id) or (None, frozenset()))[0],
         })
 
     entity_rows = [

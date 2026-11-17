@@ -44,6 +44,7 @@ TOGGLES = {
     "memory_auto_approve": False,
     "memory_capture_assistant": True,
     "memory_capture_research": True,
+    "memory_capture_workbook": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only

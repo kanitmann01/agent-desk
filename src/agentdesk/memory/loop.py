@@ -41,11 +41,13 @@ import secrets
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from agentdesk.memory.core import Fact, UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.memory.extract import (
     CandidateFact,
     facts_to_retain,
+    model_json_object,
 )
 
 # -- capture settings -------------------------------------------------------
@@ -54,6 +56,10 @@ from agentdesk.memory.extract import (
 CHANNELS: tuple[tuple[str, str, str], ...] = (
     ("assistant", "Assistant", "memory_capture_assistant"),
     ("research", "Research", "memory_capture_research"),
+    # Rows that change in the watched sales workbook (the excel watch's
+    # poll delta): structured, so the facts are written from the cells
+    # directly, no extraction call.
+    ("workbook", "Workbook tracker", "memory_capture_workbook"),
 )
 CHANNEL_LABELS = {channel: label for channel, label, _key in CHANNELS}
 METHOD_MODEL = "model"
@@ -62,7 +68,6 @@ AUTO_SOURCE_PREFIX = "auto: "
 ENTITY_SCOPE_PREFIX = "entity:"
 UNDO_WINDOW_S = 30.0
 MAX_CONSOLIDATED_FACTS = 6
-MAX_CONSOLIDATED_CHARS = 420
 
 
 @dataclass(frozen=True)
@@ -260,27 +265,191 @@ def counted(n: int, noun: str, plural: str | None = None) -> str:
     return f"{n} {noun if n == 1 else (plural or noun + 's')}"
 
 
-def consolidation_text(name: str, facts: list[Fact]) -> str:
-    """One readable line per entity: its name, then what the standing
-    facts say about it, newest first, bounded."""
-    parts: list[str] = []
-    used = len(name) + 2
-    for fact in facts[:MAX_CONSOLIDATED_FACTS]:
-        clause = fact.text.strip().rstrip(".")
-        if used + len(clause) + 2 > MAX_CONSOLIDATED_CHARS and parts:
-            break
-        parts.append(clause)
-        used += len(clause) + 2
-    body = "; ".join(parts) + "."
-    # The name leads once: no "Acme: Acme signed ..." when the newest
-    # fact already names it.
-    if parts and name.lower() in parts[0].lower():
-        return body
-    return f"{name}: " + body
+# -- processing: one observation per entity ---------------------------------
+
+MAX_SUMMARY_CHARS = 300
+MAX_SUMMARY_INPUT_FACTS = 12
+# How many entities one model pass rewrites; the rest wait for the next.
+MAX_MODEL_SUMMARIES_PER_PASS = 8
+
+
+@dataclass(frozen=True)
+class Summary:
+    """One entity's observation: the text, the facts it cites, who wrote
+    it (METHOD_MODEL or METHOD_RULES) and the standing facts it was built
+    from (the basis a rebuild compares against)."""
+    text: str
+    fact_ids: tuple[int, ...]
+    method: str
+    basis: frozenset[int] = frozenset()
+
+
+class SummaryFailed(Exception):
+    """The endpoint gave no usable observation; the rules write it."""
+
+
+def _when(fact: Fact) -> float:
+    return fact.occurrence_ts if fact.occurrence_ts is not None else fact.created_ts
+
+
+def newest_first(facts: Iterable[Fact]) -> list[Fact]:
+    return sorted(facts, key=lambda fact: (_when(fact), fact.created_ts, fact.id), reverse=True)
+
+
+def _day(fact: Fact) -> str:
+    moment = datetime.fromtimestamp(_when(fact))
+    return f"{moment:%b} {moment.day}"
+
+
+def _sentence(text: str) -> str:
+    text = " ".join(text.split()).rstrip(";,: ")
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def rule_summary(name: str, facts: list[Fact]) -> Summary:
+    """The deterministic observation: how much is known, then the newest
+    state and the one before it. Never a list of every fact."""
+    ordered = newest_first(facts)
+    basis = ordered[:MAX_CONSOLIDATED_FACTS]
+    text = f"{counted(len(ordered), 'fact')} about {name}. Latest, {_day(ordered[0])}: {_sentence(ordered[0].text)}"
+    if len(ordered) > 1:
+        same_day = _day(ordered[1]) == _day(ordered[0])
+        when = "Before that" if same_day else f"Before that, {_day(ordered[1])}"
+        before = f" {when}: {_sentence(ordered[1].text)}"
+        if len(text) + len(before) <= MAX_SUMMARY_CHARS:
+            text += before
+    return Summary(
+        text=text[:MAX_SUMMARY_CHARS],
+        fact_ids=tuple(fact.id for fact in basis),
+        method=METHOD_RULES,
+        basis=frozenset(fact.id for fact in basis),
+    )
+
+
+SUMMARY_PROMPT = """You keep one short observation about {name} in a work assistant's memory.
+Read the facts below, newest first, and say what they add up to right now.
+Rules:
+- One or two plain sentences, at most 240 characters in total.
+- Where facts disagree, the newest one wins: state the current position, not the history.
+- Do not list the facts back. No hedging, no preamble, no quotation marks.
+Reply with JSON only: {{"text":"...","sourceFactIds":[the ids you relied on]}}
+
+Facts (id | date | text):
+{lines}"""
+
+
+class EndpointSummarizer:
+    """The model-written observation, through the app's llm callable (the
+    reflector's sibling). One call per entity; any failure raises
+    SummaryFailed and the rules write the observation instead.
+    `last_request_bytes` and `calls` feed the audit row."""
+
+    def __init__(self, llm) -> None:
+        self._llm = llm
+        self.last_request_bytes = 0
+        self.calls = 0
+
+    def prompt(self, name: str, facts: list[Fact]) -> str:
+        lines = "\n".join(
+            f"{fact.id} | {_day(fact)} | {' '.join(fact.text.split())}"
+            for fact in facts
+        )
+        return SUMMARY_PROMPT.format(name=name, lines=lines)
+
+    def __call__(self, name: str, facts: list[Fact]) -> Summary:
+        ordered = newest_first(facts)
+        basis = ordered[:MAX_CONSOLIDATED_FACTS]
+        shown = ordered[:MAX_SUMMARY_INPUT_FACTS]
+        prompt = self.prompt(name, shown)
+        self.last_request_bytes += len(prompt.encode("utf-8"))
+        self.calls += 1
+        try:
+            reply = self._llm(prompt)
+        except Exception as exc:  # noqa: BLE001 - any endpoint failure falls back to the rules
+            raise SummaryFailed(str(exc)[:200] or "The endpoint did not answer.") from exc
+        parsed = model_json_object(reply, SummaryFailed, "Summarizer")
+        text = " ".join(str(parsed.get("text") or "").split()).strip('"')
+        if not normalize_fact_text(text):
+            raise SummaryFailed("The endpoint returned no observation text.")
+        if len(text) > MAX_SUMMARY_CHARS:
+            raise SummaryFailed("The endpoint's observation was longer than the limit.")
+        allowed = {fact.id for fact in shown}
+        cited: list[int] = []
+        for value in parsed.get("sourceFactIds") or []:
+            try:
+                fact_id = int(str(value).strip())
+            except ValueError:
+                continue
+            if fact_id in allowed and fact_id not in cited:
+                cited.append(fact_id)
+        return Summary(
+            text=text,
+            fact_ids=tuple(cited) if cited else tuple(fact.id for fact in basis),
+            method=METHOD_MODEL,
+            basis=frozenset(fact.id for fact in basis),
+        )
+
+
+Summarize = Callable[[str, list[Fact]], Summary]
 
 
 def entity_scope(entity_id: int) -> str:
     return f"{ENTITY_SCOPE_PREFIX}{int(entity_id)}"
+
+
+@dataclass(frozen=True)
+class EntityBasis:
+    entity_id: int
+    name: str
+    facts: tuple[Fact, ...]  # standing facts, newest first, at most MAX_CONSOLIDATED_FACTS
+
+    @property
+    def scope(self) -> str:
+        return entity_scope(self.entity_id)
+
+    @property
+    def basis(self) -> frozenset[int]:
+        return frozenset(fact.id for fact in self.facts)
+
+
+def entity_bases(memory, without: Iterable[int] = ()) -> tuple[list[EntityBasis], list[int]]:
+    """(the entities that earn an observation, every entity id). An entity
+    earns one when two or more standing (not replaced) facts mention it.
+    Two entities whose standing facts are the same set share one
+    observation: the entity with more facts (then the lower id) keeps it,
+    so the graph never shows the same observation twice. `without`
+    simulates a removal: those facts are gone, and the facts they
+    replaced stand again."""
+    gone = {int(f) for f in without}
+    names = {entity.id: entity.canonical_name for entity in memory.entities()}
+    replaced = {
+        old: new for old, new in memory.superseded_map().items()
+        if new not in gone
+    }
+    facts = {fact.id: fact for fact in memory.all() if fact.id not in gone}
+    by_entity: dict[int, list[Fact]] = {}
+    for fact_id, entity_ids in memory.fact_entity_ids().items():
+        if fact_id not in facts or fact_id in replaced:
+            continue
+        for entity_id in entity_ids:
+            by_entity.setdefault(entity_id, []).append(facts[fact_id])
+    candidates = sorted(
+        (
+            (entity_id, standing) for entity_id, standing in by_entity.items()
+            if entity_id in names and len(standing) >= 2
+        ),
+        key=lambda item: (-len(item[1]), item[0]),
+    )
+    kept: list[EntityBasis] = []
+    claimed: set[frozenset[int]] = set()
+    for entity_id, standing in candidates:
+        ordered = tuple(newest_first(standing)[:MAX_CONSOLIDATED_FACTS])
+        key = frozenset(fact.id for fact in standing)
+        if key in claimed:
+            continue
+        claimed.add(key)
+        kept.append(EntityBasis(entity_id=entity_id, name=names[entity_id], facts=ordered))
+    return kept, sorted(names)
 
 
 @dataclass(frozen=True)
@@ -291,55 +460,116 @@ class ProcessOutcome:
     # Old ids a rewrite replaced (the new id is in observations_saved):
     # the same observation to the user, not a removal.
     observations_rewritten: tuple[int, ...] = ()
+    model_written: int = 0
+    model_failure: str = ""
 
 
-def consolidate_entities(memory, entity_ids: Iterable[int]) -> ProcessOutcome:
-    """Rewrite the consolidated observation of each entity: kept when two
-    or more standing (not replaced) facts mention it, removed otherwise."""
-    entity_ids = list(dict.fromkeys(int(e) for e in entity_ids))
-    if not entity_ids:
-        return ProcessOutcome()
-    names = {entity.id: entity.canonical_name for entity in memory.entities()}
-    replaced = memory.superseded_map()
-    by_id = {fact.id: fact for fact in memory.all()}
+def _observation_state(memory, kept: list[EntityBasis], all_ids: list[int]):
+    """(scope -> observation ids, marks, stale ids) for the entity scopes."""
+    scope_of = memory.scope_of_observations(entity_scope(eid) for eid in all_ids)
+    by_scope: dict[str, list[int]] = {}
+    for observation_id, scope in sorted(scope_of.items()):
+        by_scope.setdefault(scope, []).append(observation_id)
+    return by_scope, memory.observation_marks(), set(memory.stale_observations())
+
+
+def _is_fresh(entry: EntityBasis, by_scope, marks, stale) -> tuple[bool, str | None]:
+    existing = by_scope.get(entry.scope, [])
+    if len(existing) != 1 or existing[0] in stale:
+        return False, None
+    method, basis = marks.get(existing[0], (None, frozenset()))
+    return basis == entry.basis, method
+
+
+def model_summaries(memory, summarize: Summarize,
+                    limit: int = MAX_MODEL_SUMMARIES_PER_PASS) -> tuple[dict[str, Summary], int, str]:
+    """Ask the endpoint for the observations that need it: built from
+    changed facts, or written by the rules. Nothing is written here, so
+    the store is never locked across a model call. Returns (scope ->
+    summary, how many were asked, the first failure); asking stops at the
+    first failure or after `limit`."""
+    kept, all_ids = entity_bases(memory)
+    by_scope, marks, stale = _observation_state(memory, kept, all_ids)
+    out: dict[str, Summary] = {}
+    asked = 0
+    for entry in kept:
+        fresh, method = _is_fresh(entry, by_scope, marks, stale)
+        if fresh and method == METHOD_MODEL:
+            continue
+        if asked >= limit:
+            break
+        asked += 1
+        try:
+            out[entry.scope] = summarize(entry.name, list(entry.facts))
+        except SummaryFailed as exc:
+            return out, asked, str(exc) or "The endpoint did not answer."
+    return out, asked, ""
+
+
+def reconcile_observations(
+    memory,
+    summarize: Summarize | None = None,
+    planned: dict[str, Summary] | None = None,
+) -> ProcessOutcome:
+    """Bring every entity's observation in line with its standing facts.
+
+    With `summarize` (the endpoint), the observations that need it are
+    written by the model first (model_summaries, outside any lock). The
+    write itself holds the store's lock end to end, so two passes never
+    interleave: an observation whose basis is unchanged stays (unless a
+    model summary for that same basis is offered and the rules wrote
+    it); a changed one is written from the offered summary when it was
+    built from the same facts (`planned`: the removal preview's text, or
+    the model's), else by the rules. Entities that no longer earn one
+    lose theirs. Idempotent."""
+    offered = dict(planned or {})
+    model_written, failure = 0, ""
+    if summarize is not None:
+        asked, _count, failure = model_summaries(memory, summarize)
+        model_written = len(asked)
+        offered = {**asked, **offered}
     saved: list[int] = []
     removed: list[int] = []
     rewritten: list[int] = []
-    for entity_id in entity_ids:
-        scope = entity_scope(entity_id)
-        existing = memory.observation_ids_in_scope(scope)
-        name = names.get(entity_id)
-        standing: list[Fact] = []
-        if name is not None:
-            try:
-                ids = memory.fact_ids_for_entity(entity_id)
-            except UnknownEntity:
-                ids = []
-            standing = [by_id[i] for i in ids if i in by_id and i not in replaced]
-        if name is None or len(standing) < 2:
-            removed.extend(memory.delete_observations(existing))
-            continue
-        standing.sort(key=lambda fact: (fact.created_ts, fact.id), reverse=True)
-        cited = standing[:MAX_CONSOLIDATED_FACTS]
-        text = consolidation_text(name, cited)
-        confidence = min(0.95, 0.5 + 0.1 * len(standing))
-        now = memory.clock()
-        result = memory.save_observation(
-            scope, text, confidence, [fact.id for fact in cited], now=now, run_ts=now,
-        )
-        saved.append(result.observation.id)
-        removed.extend(result.removed_ids)
-        rewritten.extend(i for i in existing if i != result.observation.id)
+    with memory.exclusive():
+        kept, all_ids = entity_bases(memory)
+        by_scope, marks, stale = _observation_state(memory, kept, all_ids)
+        wanted = {entry.scope for entry in kept}
+        for scope, observation_ids in by_scope.items():
+            if scope not in wanted:
+                removed.extend(memory.delete_observations(observation_ids))
+        for entry in kept:
+            existing = by_scope.get(entry.scope, [])
+            fresh, method = _is_fresh(entry, by_scope, marks, stale)
+            summary = offered.get(entry.scope)
+            if summary is not None and summary.basis != entry.basis:
+                summary = None  # written from facts that have changed since
+            if fresh and (summary is None or method == METHOD_MODEL or summary.method != METHOD_MODEL):
+                continue
+            if summary is None:
+                summary = rule_summary(entry.name, list(entry.facts))
+            now = memory.clock()
+            confidence = min(0.95, 0.5 + 0.1 * len(entry.facts))
+            result = memory.save_observation(
+                entry.scope, summary.text, confidence, summary.fact_ids, now=now, run_ts=now,
+            )
+            memory.mark_observation(result.observation.id, summary.method, entry.basis)
+            saved.append(result.observation.id)
+            removed.extend(i for i in result.removed_ids if i not in existing)
+            rewritten.extend(i for i in existing if i != result.observation.id)
     return ProcessOutcome(
         observations_saved=tuple(saved),
         observations_removed=tuple(removed),
         observations_rewritten=tuple(rewritten),
+        model_written=model_written,
+        model_failure=failure,
     )
 
 
 def process_fact(memory, fact_id: int) -> ProcessOutcome:
     """After a write: replace older facts the new one contradicts, then
-    re-consolidate every entity the new fact or a replaced one mentions."""
+    bring the observations in line (the rules write; the server's model
+    pass rewrites them afterwards when an endpoint is configured)."""
     fact = memory.get(fact_id)
     links = memory.fact_entity_ids()
     mine = set(links.get(fact.id, []))
@@ -356,10 +586,7 @@ def process_fact(memory, fact_id: int) -> ProcessOutcome:
             if replaces(fact.text, other.text):
                 memory.mark_superseded(other.id, fact.id)
                 replaced.append(other.id)
-    touched = set(mine)
-    for other_id in replaced:
-        touched.update(links.get(other_id, []))
-    consolidated = consolidate_entities(memory, sorted(touched))
+    consolidated = reconcile_observations(memory)
     return ProcessOutcome(
         replaced=tuple(replaced),
         observations_saved=consolidated.observations_saved,
@@ -416,9 +643,13 @@ class CaptureOutcome:
 
 
 def _known_texts(memory, inbox, draft_kind: str) -> set[str]:
+    """Texts capture must not propose again: stored facts, candidates
+    waiting for review, and candidates the user rejected (the inbox keeps
+    dismissed cards for thirty days), so a channel that repeats itself,
+    like the workbook's rolling 24-hour delta, never re-asks."""
     known = {normalize_fact_text(fact.text) for fact in memory.all()}
     if inbox is not None:
-        for card in inbox.waiting(include_snoozed=True):
+        for card in [*inbox.waiting(include_snoozed=True), *inbox.dismissed()]:
             if card.kind == draft_kind:
                 known.add(normalize_fact_text(card.draft))
     return known
@@ -436,6 +667,7 @@ def capture(
     stage_card: Callable[[CandidateFact, int, str, str], object],
     speaker: str = "You",
     draft_kind: str = "memory_draft",
+    candidates: list[CandidateFact] | None = None,
 ) -> CaptureOutcome | None:
     """Run one capture. `extract` is the endpoint extractor's call (None
     when endpoint calls are off); when it is missing or raises, the
@@ -445,7 +677,12 @@ def capture(
     if not settings.captures(channel) or not (excerpt or "").strip():
         return None
     method, cause = METHOD_RULES, ""
-    candidates: list[CandidateFact] = []
+    if candidates is not None:
+        # The channel wrote its own candidates (the workbook's cells).
+        candidates = facts_to_retain(list(candidates))
+        extract = None
+    else:
+        candidates = []
     if extract is not None:
         try:
             candidates = facts_to_retain(list(extract(excerpt)))
@@ -453,7 +690,7 @@ def capture(
         except Exception as exc:  # noqa: BLE001 - the classified extractor errors and anything else fall back
             cause = str(exc)[:200] or "The endpoint did not answer."
             candidates = []
-    if method == METHOD_RULES:
+    if method == METHOD_RULES and not candidates:
         candidates = rule_candidates(own_words)
     known = _known_texts(memory, inbox, draft_kind)
     fresh: list[CandidateFact] = []
@@ -491,6 +728,88 @@ def capture(
     )
 
 
+# -- the workbook channel ---------------------------------------------------
+
+MAX_WORKBOOK_FACTS = 10
+MAX_WORKBOOK_COLUMNS = 3
+
+
+def _cell(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return " ".join(str(value).split())
+
+
+def workbook_candidates(header: list, added: list, removed: list) -> list[CandidateFact]:
+    """Facts from one workbook poll delta, written from the cells: the
+    first column names the row (a deal, an account), the header names the
+    columns. An edited row (same name in removed and added) gives one fact
+    per changed column; a new row, what it was added with; a row that
+    went, that it left the tracker. The row's name is the entity."""
+    columns = [_cell(cell) for cell in (header or [])]
+    head_key = [cell.lower() for cell in columns]
+
+    def is_header(row) -> bool:
+        return [_cell(cell).lower() for cell in row] == head_key
+
+    def name_of(row) -> str:
+        return _cell(row[0]) if row else ""
+
+    def column(index: int) -> str:
+        return columns[index] if index < len(columns) and columns[index] else f"Column {index + 1}"
+
+    old_rows = {name_of(row): row for row in removed if row and not is_header(row) and name_of(row)}
+    out: list[CandidateFact] = []
+    seen_names: set[str] = set()
+    for row in added:
+        if not row or is_header(row):
+            continue
+        name = name_of(row)
+        if not name:
+            continue
+        seen_names.add(name)
+        entities = names_in(name) or ((name, "other"),)
+        entities = ((name, entities[0][1]),)
+        old = old_rows.get(name)
+        if old is not None:
+            changes = 0
+            for index in range(1, max(len(row), len(old))):
+                before = _cell(old[index]) if index < len(old) else ""
+                after = _cell(row[index]) if index < len(row) else ""
+                if before == after or changes >= MAX_WORKBOOK_COLUMNS:
+                    continue
+                changes += 1
+                if before and after:
+                    text = f"{name}: {column(index)} changed from {before} to {after}."
+                elif after:
+                    text = f"{name}: {column(index)} is now {after}."
+                else:
+                    text = f"{name}: {column(index)} was cleared (it was {before})."
+                out.append(CandidateFact(text=text, kind="world", entities=entities))
+        else:
+            details = [
+                f"{column(index)} {_cell(row[index])}"
+                for index in range(1, len(row)) if _cell(row[index])
+            ][:MAX_WORKBOOK_COLUMNS]
+            text = f"{name} was added to the tracker" + (f" with {', '.join(details)}." if details else ".")
+            out.append(CandidateFact(text=text, kind="world", entities=entities))
+    for name, _row in old_rows.items():
+        if name not in seen_names:
+            out.append(CandidateFact(
+                text=f"{name} was removed from the tracker.", kind="world",
+                entities=((name, "other"),),
+            ))
+    return out[:MAX_WORKBOOK_FACTS]
+
+
+def workbook_excerpt(workbook: str, candidates: list[CandidateFact]) -> str:
+    """The provenance excerpt stored with workbook facts."""
+    lines = "\n".join(candidate.text for candidate in candidates)
+    return f"Changes in {workbook or 'the watched workbook'}:\n{lines}"
+
+
 # -- removal ----------------------------------------------------------------
 
 TARGET_TYPES = ("fact", "source", "entity", "observation")
@@ -516,6 +835,13 @@ class RemovalPlan:
     entities_updated: tuple[int, ...] = ()
     released_fact_ids: tuple[int, ...] = ()
     sources_removed: tuple[int, ...] = ()
+    # The text each updated observation will read after the removal,
+    # keyed by observation id, with the scope it is saved under.
+    after: dict = field(default_factory=dict, compare=False)
+
+    def planned(self) -> dict[str, Summary]:
+        """Scope to the previewed text, for reconcile_observations."""
+        return {scope: summary for scope, summary in self.after.values()}
 
     def to_json(self, memory) -> dict:
         facts = {fact.id: fact for fact in memory.all()}
@@ -528,6 +854,19 @@ class RemovalPlan:
         def obs_rows(ids):
             return [{"id": i, "text": observations[i].text} for i in ids if i in observations]
 
+        def updated_rows(ids):
+            rows = []
+            for i in ids:
+                if i not in observations:
+                    continue
+                row = {"id": i, "text": observations[i].text, "after": None, "afterMethod": None}
+                if i in self.after:
+                    summary = self.after[i][1]
+                    row["after"] = summary.text
+                    row["afterMethod"] = summary.method
+                rows.append(row)
+            return rows
+
         def entity_rows(ids):
             return [{"id": i, "name": entities[i].canonical_name} for i in ids if i in entities]
 
@@ -535,7 +874,7 @@ class RemovalPlan:
             "target": {"type": self.target_type, "id": self.target_id, "label": self.label},
             "facts": fact_rows(self.fact_ids),
             "observationsRemoved": obs_rows(self.observations_removed),
-            "observationsUpdated": obs_rows(self.observations_updated),
+            "observationsUpdated": updated_rows(self.observations_updated),
             "observationsFlagged": obs_rows(self.observations_flagged),
             "entitiesRemoved": entity_rows(self.entities_removed),
             "entitiesUpdated": entity_rows(self.entities_updated),
@@ -572,45 +911,63 @@ def _target_facts(memory, target_type: str, target_id: int) -> tuple[list[int], 
 
 
 def plan_removal(memory, target_type: str, target_id: int,
-                 keep_source_ids: Iterable[int] = ()) -> RemovalPlan:
+                 keep_source_ids: Iterable[int] = (),
+                 summarize: Summarize | None = None) -> RemovalPlan:
     """Everything a removal would change, computed from the rows, with
-    nothing written."""
+    nothing written: including the text each rewritten observation will
+    read afterwards (by `summarize`, the endpoint, when given; the rules
+    otherwise or when it fails)."""
     fact_ids, label, named_obs, named_sources = _target_facts(memory, target_type, int(target_id))
     doomed = set(fact_ids)
     links = memory.fact_entity_ids()
     replaced = memory.superseded_map()
-    entity_count: dict[int, int] = {}
-    for fid, eids in links.items():
-        for eid in eids:
-            entity_count[eid] = entity_count.get(eid, 0) + 1
     touched_entities = sorted({eid for fid in doomed for eid in links.get(fid, [])})
     entities_removed = [
         eid for eid in touched_entities
         if all(fid in doomed for fid, eids in links.items() if eid in eids)
+        # The entity being removed is the subject, not a knock-on effect.
+        and not (target_type == "entity" and eid == int(target_id))
     ]
-    entities_updated = [eid for eid in touched_entities if eid not in entities_removed]
-    entity_scopes = memory.scope_of_observations(
-        entity_scope(eid) for eid in touched_entities
-    )
-    scope_entity = {oid: int(scope[len(ENTITY_SCOPE_PREFIX):]) for oid, scope in entity_scopes.items()}
+    entities_updated = [
+        eid for eid in touched_entities
+        if eid not in entities_removed and not (target_type == "entity" and eid == int(target_id))
+    ]
+    _now, all_entities = entity_bases(memory)
+    scope_of = memory.scope_of_observations(entity_scope(eid) for eid in all_entities)
+    after_bases = {entry.scope: entry for entry in entity_bases(memory, without=doomed)[0]}
+    marks = memory.observation_marks()
     observations_removed: list[int] = list(named_obs)
     observations_updated: list[int] = []
     observations_flagged: list[int] = []
+    after: dict[int, tuple[str, Summary]] = {}
+    failed = False
     for obs in memory.observations():
         if obs.id in named_obs:
+            continue
+        if obs.id in scope_of:
+            scope = scope_of[obs.id]
+            basis = marks.get(obs.id, (None, frozenset()))[1] or frozenset(obs.fact_ids)
+            if not (basis | set(obs.fact_ids)) & doomed:
+                continue
+            entry = after_bases.get(scope)
+            if entry is None:
+                observations_removed.append(obs.id)
+                continue
+            observations_updated.append(obs.id)
+            summary = None
+            if summarize is not None and not failed:
+                try:
+                    summary = summarize(entry.name, list(entry.facts))
+                except SummaryFailed:
+                    failed = True
+            if summary is None:
+                summary = rule_summary(entry.name, list(entry.facts))
+            after[obs.id] = (scope, summary)
             continue
         cited = set(obs.fact_ids)
         if not cited & doomed:
             continue
-        left = cited - doomed
-        if obs.id in scope_entity:
-            eid = scope_entity[obs.id]
-            standing = [
-                fid for fid, eids in links.items()
-                if eid in eids and fid not in doomed and fid not in replaced
-            ]
-            (observations_updated if len(standing) >= 2 else observations_removed).append(obs.id)
-        elif not left:
+        if not cited - doomed:
             observations_removed.append(obs.id)
         else:
             observations_flagged.append(obs.id)
@@ -639,6 +996,7 @@ def plan_removal(memory, target_type: str, target_id: int,
         entities_updated=tuple(entities_updated),
         released_fact_ids=tuple(released),
         sources_removed=tuple(sorted(sources_removed - keep if target_type != "source" else sources_removed)),
+        after=after,
     )
 
 
@@ -666,9 +1024,12 @@ class RemovalResult:
         }
 
 
-def apply_removal(memory, plan: RemovalPlan, keep_source_ids: Iterable[int] = ()) -> RemovalResult:
-    """Write the plan in one transaction, then re-consolidate the
-    entities that keep facts. The dump rides the result for undo."""
+def apply_removal(memory, plan: RemovalPlan, keep_source_ids: Iterable[int] = (),
+                  planned: dict[str, Summary] | None = None) -> RemovalResult:
+    """Write the plan in one transaction, then bring the observations in
+    line: with the previewed text where the facts are still the ones it
+    was written from (`planned`, else the plan's own), the rules
+    otherwise. The dump rides the result for undo."""
     before_obs = {obs.id for obs in memory.observations()}
     raw = memory.remove_with_effects(
         plan.fact_ids,
@@ -676,10 +1037,9 @@ def apply_removal(memory, plan: RemovalPlan, keep_source_ids: Iterable[int] = ()
         source_ids=plan.source_ids,
         keep_source_ids=keep_source_ids,
     )
-    touched = set(plan.entities_updated)
-    for fid in raw["released_fact_ids"]:
-        touched.update(memory.fact_entity_ids().get(fid, []))
-    consolidated = consolidate_entities(memory, sorted(touched))
+    consolidated = reconcile_observations(
+        memory, planned=planned if planned is not None else plan.planned(),
+    )
     after_obs = {obs.id for obs in memory.observations()}
     created = tuple(sorted(after_obs - before_obs))
     gone = set(raw["observation_ids"]) | set(consolidated.observations_removed)
@@ -739,8 +1099,33 @@ class UndoBuffer:
 
 
 def undo_removal(memory, held: _Held) -> None:
-    """Put a held removal back and re-consolidate what it touched."""
+    """Put a held removal back; the observations it rewrote come back as
+    they were (the dump), and anything else is brought in line."""
     memory.restore_dump(held.result.dump, drop_observation_ids=held.result.created_observation_ids)
-    links = memory.fact_entity_ids()
-    touched = {eid for fid in held.result.fact_ids for eid in links.get(fid, [])}
-    consolidate_entities(memory, sorted(touched))
+    reconcile_observations(memory)
+
+
+class PreviewCache:
+    """The removal previews shown in the last few minutes, by target, so
+    the removal writes the observation text the user just read (the
+    endpoint is not asked twice for the same facts). Process memory only."""
+
+    def __init__(self, clock: Callable[[], float], ttl_s: float = 300.0) -> None:
+        self.clock = clock
+        self.ttl_s = ttl_s
+        self._plans: dict[tuple[str, int], tuple[float, dict[str, Summary]]] = {}
+        self._lock = threading.Lock()
+
+    def put(self, plan: RemovalPlan) -> None:
+        with self._lock:
+            self._plans[(plan.target_type, plan.target_id)] = (self.clock(), plan.planned())
+
+    def take(self, target_type: str, target_id: int) -> dict[str, Summary] | None:
+        with self._lock:
+            entry = self._plans.pop((target_type, int(target_id)), None)
+            now = self.clock()
+            for key in [k for k, (ts, _p) in self._plans.items() if now - ts > self.ttl_s]:
+                del self._plans[key]
+        if entry is None or self.clock() - entry[0] > self.ttl_s:
+            return None
+        return entry[1]

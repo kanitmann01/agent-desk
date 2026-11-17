@@ -76,6 +76,7 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "memory_auto_approve": False,
         "memory_capture_assistant": True,
         "memory_capture_research": True,
+        "memory_capture_workbook": True,
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

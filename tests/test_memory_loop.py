@@ -158,7 +158,9 @@ def test_capture_settings_read_the_settings_store():
     settings.set("memory_auto_approve", True)
     settings.set("memory_capture_research", False)
     read = loop.capture_settings(settings)
-    assert read.auto_approve and read.channels == frozenset({"assistant"})
+    assert read.auto_approve and read.channels == frozenset({"assistant", "workbook"})
+    settings.set("memory_capture_workbook", False)
+    assert loop.capture_settings(settings).channels == frozenset({"assistant"})
 
 
 # -- storing and processing -------------------------------------------------
@@ -199,11 +201,14 @@ def test_an_entity_with_two_facts_gets_one_consolidated_observation_that_follows
     loop.store_fact(memory, "Acme Corp signed for three years.", source="page",
                     entities=[("Acme Corp", "org")])
     [obs] = memory.observations()
-    assert obs.text.startswith("Acme Corp signed for three years; Priya Shah owns")
+    assert obs.text == ("2 facts about Acme Corp. Latest, Jan 15: Acme Corp signed for three "
+                        "years. Before that: Priya Shah owns the Acme Corp renewal.")
     assert len(obs.fact_ids) == 2
     loop.store_fact(memory, "Acme Corp is based in Pune.", source="page", entities=[("Acme Corp", "org")])
     [obs] = memory.observations()
-    assert len(obs.fact_ids) == 3 and "Pune" in obs.text
+    # Newest first, a count and the latest two states, never every fact.
+    assert len(obs.fact_ids) == 3 and obs.text.startswith("3 facts about Acme Corp. Latest, Jan 15: Acme Corp is based in Pune.")
+    assert "Priya Shah owns" not in obs.text
 
 
 # -- removal ----------------------------------------------------------------
