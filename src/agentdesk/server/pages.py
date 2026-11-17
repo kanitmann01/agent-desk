@@ -95,19 +95,46 @@ _ICON_PEERS = (
 # families resolve locally: the named faces when installed, otherwise the
 # OS fallbacks. Nothing is fetched from the network.
 STYLES = """
+:root,:root[data-theme="unkey"],[data-theme-preview="unkey"]{
+  color-scheme:dark;
+  --bg:#060609; --surface:#101014; --surface-2:#16161A;
+  --ink-1:#FBFBFB; --ink-2:#C8C8CC; --ink-3:#8E8E93; --ink-4:#5C5C61;
+  --hairline:#26272A; --heading:#FBFBFB;
+  --primary:#FBFBFB; --primary-ink:#060609; --primary-soft:#1C1C20;
+  --accent:#E1F56A; --accent-text:#E1F56A; --on-accent:#060609; --focus:#E1F56A;
+  --good:#E1F56A; --bad:#C8C8CC;
+  --attention-bg:#16161A; --attention-ink:#E1F56A;
+ --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238E8E93' stroke-width='1.5' stroke-linecap='round'/></svg>");
+}
+:root[data-theme="coforge"],[data-theme-preview="coforge"]{
+  color-scheme:dark;
+  --bg:#082340; --surface:#0C2A4A; --surface-2:#10315A;
+  --ink-1:#FFFFFF; --ink-2:#EBEBEB; --ink-3:#A0A1A2; --ink-4:#787A7A;
+  --hairline:#1E4472; --heading:#FFFFFF;
+  --primary:#FFFFFF; --primary-ink:#082340; --primary-soft:#153A68;
+  --accent:#F15840; --accent-text:#F68076; --on-accent:#082340; --focus:#F68076;
+  --good:#F68076; --bad:#CDCDCD;
+  --attention-bg:#10315A; --attention-ink:#F68076;
+ --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23A0A1A2' stroke-width='1.5' stroke-linecap='round'/></svg>");
+}
+:root[data-theme="momentuum"],[data-theme-preview="momentuum"]{
+  color-scheme:light;
+  --bg:#F3F6FA; --surface:#FFFFFF; --surface-2:#EDF1F7;
+  --ink-1:#082340; --ink-2:#3A4A63; --ink-3:#5B6B82; --ink-4:#A9B6C8;
+  --hairline:#D5DDE8; --heading:#082340;
+  --primary:#1F6BA8; --primary-ink:#FFFFFF; --primary-soft:#EDF1F7;
+  --accent:#2470B0; --accent-text:#1F6BA8; --on-accent:#FFFFFF; --focus:#2470B0;
+  --good:#1F6BA8; --bad:#5B6B82;
+  --attention-bg:#EDF1F7; --attention-ink:#1F6BA8;
+ --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%235B6B82' stroke-width='1.5' stroke-linecap='round'/></svg>");
+}
 :root{
-  --bg:#F6F3EC; --surface:#FFFDF8; --surface-2:#F6F3EC;
-  --ink-1:#141414; --ink-2:#3A3A3A; --ink-3:#5C5C5C; --ink-4:#8A8A8A;
-  --hairline:#141414;
-  --shadow-card:6px 6px 0 #141414;
-  --shadow-card-hover:6px 6px 0 #141414;
-  --primary:#8C2F2F; --primary-ink:#FFFDF8; --primary-soft:#F3E4E1;
-  --good:#1B6B3A; --bad:#8C2F2F;
-  --attention-bg:#F6F3EC; --attention-ink:#8C2F2F;
-  --r-card:0px; --r-control:0px; --r-inner:0px; --dur:120ms;
-  --font-display:"Source Serif 4","Iowan Old Style",Palatino,serif;
-  --font-ui:"Source Sans 3","Segoe UI",sans-serif;
-  --font-mono:"IBM Plex Mono","Consolas",monospace;
+  --shadow-card:none;
+  --shadow-card-hover:none;
+  --r-card:8px; --r-control:6px; --r-inner:4px; --dur:120ms;
+  --font-display:"Geist","Segoe UI",sans-serif;
+  --font-ui:"Geist","Segoe UI",sans-serif;
+  --font-mono:"Geist Mono","Consolas",monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -115,19 +142,19 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 button:disabled{opacity:.55;cursor:default}
 a{color:var(--primary);text-decoration:none}
 a:hover{text-decoration:underline}
-:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
 svg{display:block;flex:none}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
-.app{display:grid;grid-template-columns:200px 1fr;min-height:calc(100vh - 32px);margin:16px;background:var(--bg);border:2px solid var(--ink-1);box-shadow:8px 8px 0 var(--ink-1)}
-.rail{border-right:2px solid var(--ink-1);background:transparent;padding:20px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100%}
+.app{display:grid;grid-template-columns:200px 1fr;min-height:calc(100vh - 32px);margin:16px;background:var(--bg);border:1px solid var(--hairline);border-radius:var(--r-card);box-shadow:none}
+.rail{border-right:1px solid var(--hairline);background:transparent;padding:20px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100%}
 .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
 .brand .mark{display:none}
 .brand b,.brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em}
 .rail-mark{display:none;font-family:var(--font-mono);font-weight:600}
 .phone-bar{display:none}
-.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 0;border-radius:0;color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
-.rail a:hover{background:transparent;color:var(--ink-1);text-decoration:underline}
-.rail a[aria-current="page"]{background:transparent;color:var(--ink-1);box-shadow:inset 0 -2px 0 var(--ink-1)}
+.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
+.rail a:hover{background:var(--surface-2);color:var(--ink-1);text-decoration:none}
+.rail a[aria-current="page"]{background:var(--surface-2);color:var(--heading);box-shadow:inset 2px 0 0 var(--accent);border-radius:0 var(--r-control) var(--r-control) 0}
 .rail .nav-off{opacity:.45}
 .rail .count{margin-left:8px;font-family:var(--font-mono);font-size:14px;font-weight:500;background:transparent;color:var(--ink-1);border-radius:0;padding:0}
 .origin-line{font-size:12px;font-weight:700;color:var(--primary);letter-spacing:.06em}
@@ -147,7 +174,7 @@ svg{display:block;flex:none}
 .cardform .btn{align-self:flex-start}
 .cardform label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .cardform input,.cardform select,.cardform textarea{font:inherit;font-size:14px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;min-height:36px}
-.cardform input:focus,.cardform select:focus,.cardform textarea:focus{outline:2px solid var(--primary);outline-offset:1px}
+.cardform input:focus,.cardform select:focus,.cardform textarea:focus{outline:2px solid var(--focus);outline-offset:1px}
 /* The inbox card's quick actions: one shared grid so the three forms
    keep proportional columns and land their labels, controls and buttons
    on the same three baselines. The audit measured natural-width columns
@@ -202,7 +229,7 @@ svg{display:block;flex:none}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px}
 .rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;transition:background var(--dur) ease,color var(--dur) ease}
-.rail-toggle:hover{background:#EFEDE5;color:var(--ink-1)}
+.rail-toggle:hover{background:var(--surface-2);color:var(--ink-1)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
    drops its text; the column narrows to the mark width. Scoped to the
    wide rail: below 981px the strip shows every entry and hides the
@@ -229,13 +256,13 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .dot.amber{background:var(--attention-ink)}
 .dot.sample{background:var(--ink-4)}
 .btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
-.btn-primary{background:var(--ink-1);color:var(--primary-ink);box-shadow:none;border:2px solid var(--ink-1)}
+.btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:none;border:1px solid var(--accent)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
 .btn-danger{background:var(--surface);color:var(--bad);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-danger:hover:not(:disabled){background:var(--surface-2)}
 .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--r-inner);color:var(--ink-3);transition:background var(--dur) ease,color var(--dur) ease}
-.icon-btn:hover{background:#EFEDE5;color:var(--ink-1)}
+.icon-btn:hover{background:var(--surface-2);color:var(--ink-1)}
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 .widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
 .widget:hover{box-shadow:var(--shadow-card-hover)}
@@ -286,7 +313,7 @@ table.rows td.neg{color:var(--bad)}
 .answer .well-input{width:100%}
 .src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
 .tag-sample{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.08em}
-.widget.amber{background:var(--surface);box-shadow:0 0 0 1px rgba(138,90,20,.18),0 1px 2px -1px rgba(138,90,20,.10),0 2px 4px 0 rgba(138,90,20,.08)}
+.widget.amber{background:var(--surface);box-shadow:inset 2px 0 0 var(--accent)}
 .alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:14px}
 .badge-pilot{font-size:12px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
 .btn-start{align-self:flex-start}
@@ -316,8 +343,8 @@ table.rows td.neg{color:var(--bad)}
   /* The strip stays pinned while the page scrolls and its entries wrap
      instead of clipping, matching the dashboard SPA's behavior. */
   .phone-bar{display:flex;align-items:center;gap:12px;width:100%}
-  .phone-menu{margin-left:auto;border:2px solid var(--ink-1);background:var(--surface);min-height:44px;padding:0 12px;font-weight:700}
-  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:2px solid var(--ink-1);padding:8px 12px}
+  .phone-menu{margin-left:auto;border:1px solid var(--hairline);border-radius:var(--r-control);background:var(--surface);min-height:44px;padding:0 12px;font-weight:700}
+  .rail{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--hairline);padding:8px 12px}
   .rail > a,.rail .brand,.rail .user{display:none}
   .rail.rail-open{position:fixed;inset:0;height:100vh;flex-direction:column;align-items:stretch;background:var(--bg);padding:16px;overflow:auto}
   .rail.rail-open > a,.rail.rail-open .brand{display:flex}
@@ -334,11 +361,53 @@ table.rows td.neg{color:var(--bad)}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important}
 }
+
+/* Appearance: three theme tiles. Each swatch is drawn from the tile's
+   own theme scope, so no colour is written here. */
+.theme-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,200px));gap:12px;margin:8px 0 4px}
+.theme-tile{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);color:var(--ink-1);text-align:left}
+.theme-tile:hover{border-color:var(--ink-3)}
+.theme-tile[aria-checked="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.theme-tile .tile-sw{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:38px 14px;gap:4px;padding:8px;border-radius:var(--r-inner);background:var(--bg);border:1px solid var(--hairline)}
+.theme-tile .tile-sw i{border-radius:2px;background:var(--surface)}
+.theme-tile .tile-sw i:first-child{grid-row:span 2;border:1px solid var(--hairline)}
+.theme-tile .tile-sw i:last-child{background:var(--accent)}
+.theme-tile b{font-size:13px;font-weight:650;color:var(--ink-1)}
+.theme-tile small{font-size:12px;color:var(--ink-3);font-weight:400}
+.theme-tile .tile-sw,.theme-tile .tile-sw i{transition:none}
+select,.cardform select{appearance:none;-webkit-appearance:none;padding-right:30px;background:var(--surface) var(--chevron) no-repeat right 10px center;cursor:pointer}
+input[type="checkbox"],input[type="radio"]{appearance:none;-webkit-appearance:none;width:16px;height:16px;margin:0;display:inline-grid;place-items:center;border:1px solid var(--ink-4);border-radius:3px;background:var(--surface);vertical-align:middle;cursor:pointer}
+input[type="radio"]{border-radius:50%}
+input[type="checkbox"]:checked{background:var(--accent);border-color:var(--accent)}
+input[type="checkbox"]:checked::after{content:"";width:8px;height:4px;border-left:2px solid var(--on-accent);border-bottom:2px solid var(--on-accent);transform:translateY(-1px) rotate(-45deg)}
+input[type="radio"]:checked{border-color:var(--accent)}
+input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+@media (max-width:560px){.theme-tiles{grid-template-columns:1fr}}
 """
 
 # The scripts the shell ships: the workbook picker flow, the Re-test
 # calls for the live widgets, and the card actions. Same-origin only;
 # no frameworks.
+# The desk theme, applied before first paint. A byte-for-byte copy of
+# frontend/public/theme-boot.js (a test holds them equal), so pages work
+# with or without a built SPA.
+THEME_BOOT_JS = """\
+// Applies the stored desk theme before the first paint, so a page never
+// flashes the default theme first. Loaded as a plain blocking script in
+// <head> (the CSP allows scripts from 'self' only, never inline).
+(function () {
+  var themes = { unkey: 1, coforge: 1, momentuum: 1 };
+  var id = 'unkey';
+  try {
+    var stored = window.localStorage.getItem('agentdesk.theme');
+    if (stored && Object.prototype.hasOwnProperty.call(themes, stored)) id = stored;
+  } catch (e) {
+    // Storage unavailable: the default theme.
+  }
+  document.documentElement.setAttribute('data-theme', id);
+})();
+"""
+
 APP_JS = """\
 // Same-origin POST helper: every call here stays on 127.0.0.1.
 function post(url, body) {
@@ -669,6 +738,39 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     menu.textContent = open ? 'Close' : 'Menu';
   });
 })();
+
+// Appearance: the three theme tiles on Settings. Same key and the same
+// attribute as the desk, so the choice holds on every page.
+(function () {
+  var tiles = Array.prototype.slice.call(document.querySelectorAll('[data-theme-option]'));
+  if (!tiles.length) return;
+  var KEY = 'agentdesk.theme';
+  function mark(id) {
+    tiles.forEach(function (t) {
+      var on = t.getAttribute('data-theme-option') === id;
+      t.setAttribute('aria-checked', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+    });
+  }
+  function choose(id, focus) {
+    document.documentElement.setAttribute('data-theme', id);
+    try { window.localStorage.setItem(KEY, id); } catch (e) { /* storage off: this page only */ }
+    mark(id);
+    if (focus) tiles.filter(function (t) { return t.getAttribute('data-theme-option') === id; })[0].focus();
+  }
+  mark(document.documentElement.getAttribute('data-theme') || 'unkey');
+  tiles.forEach(function (t, i) {
+    t.addEventListener('click', function () { choose(t.getAttribute('data-theme-option'), false); });
+    t.addEventListener('keydown', function (e) {
+      var step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1
+        : (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      var next = tiles[(i + step + tiles.length) % tiles.length];
+      choose(next.getAttribute('data-theme-option'), true);
+    });
+  });
+})();
 """
 
 _DOT_CLASS = {FRESH: "dot", ATTENTION: "dot amber", SAMPLE: "dot sample"}
@@ -791,6 +893,7 @@ def page_shell(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc_title}, Agent Desk</title>
+<script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -834,6 +937,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent Desk</title>
+<script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -868,6 +972,7 @@ def render_error_page(title: str, message: str) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}, Agent Desk</title>
+<script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>

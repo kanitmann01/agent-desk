@@ -72,19 +72,28 @@ _XLSX_WORKBOOK_RELS = (
 _CRM_HEADER = ["Deal", "Region", "Stage", "Amount", "Close date", "Owner"]
 _REGIONS = ("AMER", "EMEA", "APAC")
 _STAGES = ("Prospect", "Qualify", "Propose", "Negotiate", "Closed Won")
-_OWNERS = (
-    "Sample: Avery Kim",
-    "Sample: Jordan Lee",
-    "Sample: Riley Chen",
-    "Sample: Sam Ortiz",
+_OWNERS = ("Avery Kim", "Jordan Lee", "Riley Chen", "Sam Ortiz")
+# Twenty accounts and five kinds of deal. Row i pairs account i % 20
+# with kind (i // 20 + i) % 5, so all 100 deal names are different and
+# no two rows read as the same deal. The workbook sits in the sample
+# folder under a sheet named Sample; the desk marks it SAMPLE DATA once
+# per cell, so the names themselves carry no prefix.
+_ACCOUNTS = (
+    "Halvorsen Freight", "Brightwater Clinics", "Kestrel Foods", "Marlow & Finch",
+    "Northgate Utilities", "Pellam Logistics", "Ridgeway Dental", "Sato Instruments",
+    "Tamsin Hotels", "Ubeda Textiles", "Corran Mining", "Lindqvist Retail",
+    "Oakhurst Schools", "Fenwick Insurance", "Delgado Farms", "Wexford Transit",
+    "Ashby Pharma", "Quayle Media", "Iverson Steel", "Galen Health",
 )
-_DEAL_BASES = (
-    "Atlas renewal",
-    "Field services expansion",
-    "Care plan uplift",
-    "ERP modules add-on",
-    "Support retainer",
+_DEAL_KINDS = (
+    "renewal", "expansion", "pilot", "support retainer", "platform add-on",
 )
+
+
+def _deal_name(idx: int) -> str:
+    account = _ACCOUNTS[idx % len(_ACCOUNTS)]
+    kind = _DEAL_KINDS[(idx // len(_ACCOUNTS) + idx) % len(_DEAL_KINDS)]
+    return f"{account} {kind}"
 
 
 def _sample_sales_rows() -> list[list]:
@@ -94,10 +103,10 @@ def _sample_sales_rows() -> list[list]:
     for i in range(1, 101):
         idx = i - 1
         rows.append([
-            f"Sample: {_DEAL_BASES[idx % len(_DEAL_BASES)]} — {i}",
+            _deal_name(idx),
             _REGIONS[idx % len(_REGIONS)],
             _STAGES[idx % len(_STAGES)],
-            float(12_000 + (i * 1_370) % 240_000),
+            float(12_000 + round((i * 7_919) % 168_000, -1)),
             (base + timedelta(days=idx * 3)).isoformat(),
             _OWNERS[idx % len(_OWNERS)],
         ])
@@ -105,7 +114,7 @@ def _sample_sales_rows() -> list[list]:
 
 
 # Header-only .eml fixtures: the seven headers the mail path reads, no
-# blank line, no body, ever. Subjects say Sample. The Date headers are
+# blank line, no body, ever. File names say sample. The Date headers are
 # built at seed time a few hours back: the digest counts the last 24
 # hours of headers, so fixtures pinned to authored dates would bind
 # zeros forever and the demo card would look broken while behaving
@@ -114,21 +123,21 @@ _SAMPLE_MAILS = (
     (
         "sample-thread-1.eml",
         "sender@example.com",
-        "Sample: Q4 plan",
+        "Q4 plan",
         3.0,
         False,
     ),
     (
         "sample-thread-2.eml",
         "operations@example.com",
-        "Sample: field services rollout",
+        "Field services rollout",
         6.0,
         False,
     ),
     (
         "sample-thread-3.eml",
         "finance@example.com",
-        "Sample: care plan pricing",
+        "Care plan pricing",
         9.0,
         True,
     ),
@@ -221,7 +230,7 @@ def sample_workbook_bytes() -> bytes:
 
 
 def sample_calendar_bytes(now: datetime) -> bytes:
-    """A calendar-sync shaped JSON with Sample in every subject."""
+    """A calendar-sync shaped JSON. The file name and folder say Sample."""
     first = now.replace(second=0, microsecond=0) + timedelta(hours=2)
     second = now.replace(second=0, microsecond=0) + timedelta(hours=4)
     doc = {
@@ -229,18 +238,18 @@ def sample_calendar_bytes(now: datetime) -> bytes:
         "events": [
             {
                 "id": "sample-evt-1",
-                "subject": "Sample: Q4 pipeline review",
+                "subject": "Q4 pipeline review",
                 "start": first.isoformat(),
                 "end": (first + timedelta(hours=1)).isoformat(),
-                "location": "Room Beaufort (sample)",
+                "location": "Room Beaufort",
                 "attendees": 6,
             },
             {
                 "id": "sample-evt-2",
-                "subject": "Sample: care plan check-in",
+                "subject": "Care plan check-in",
                 "start": second.isoformat(),
                 "end": (second + timedelta(minutes=30)).isoformat(),
-                "location": "Call (sample)",
+                "location": "Call",
                 "attendees": 3,
             },
         ],

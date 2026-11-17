@@ -911,6 +911,9 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     }
     return {
         "version": agentdesk.__version__,
+        # The Sample data switch: the desk tags each cell that shows
+        # sample content once, in the cell header.
+        "sample": bool(settings.get("sample_data")) if settings is not None else False,
         "flags": {
             "excelEnabled": allowed("excel_enabled"),
             "calendarEnabled": allowed("calendar_enabled"),
@@ -1188,6 +1191,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
         elif path == "/static/app.js":
             self._send_bytes(200, pages.APP_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+        elif path == "/static/theme-boot.js":
+            self._send_bytes(200, pages.THEME_BOOT_JS.encode("utf-8"), "text/javascript; charset=utf-8")
         elif path.startswith("/static/spa/"):
             self._send_spa_asset(path[len("/static/spa/"):])
         elif path == "/marketplace" or path.startswith("/marketplace/"):

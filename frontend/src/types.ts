@@ -107,6 +107,7 @@ export interface LayoutCardState {
 }
 
 export interface DashboardData {
+  sample?: boolean;
   version: string;
   flags: {
     excelEnabled: boolean;

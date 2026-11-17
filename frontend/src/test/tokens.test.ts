@@ -60,13 +60,12 @@ const componentSources = walkSources(resolve(frontend, 'src', 'components'))
 // The fourteen DESIGN.md frontmatter colors, each asserted as the exact
 // hex so a near-miss (a re-darkened green, a colder paper) fails.
 const SYSTEM_COLORS: Array<[string, string]> = [
-  ['stone paper', '#F6F3EC'],
-  ['brief white', '#FFFDF8'],
-  ['ink', '#141414'],
-  ['ink secondary', '#3A3A3A'],
-  ['ink muted', '#5C5C5C'],
-  ['oxide', '#8C2F2F'],
-  ['fir', '#1B6B3A'],
+  ['canvas', '#060609'],
+  ['cell', '#101014'],
+  ['rule', '#26272A'],
+  ['text', '#FBFBFB'],
+  ['muted', '#8E8E93'],
+  ['highlighter', '#E1F56A'],
 ];
 
 // The recorded dark-glass drift palette: none of it may survive.
@@ -83,8 +82,8 @@ const DRIFT_COLORS = [
   '#F8FAFC',
 ];
 
-const CARD_AT_REST = '6px 6px 0 #141414';
-const CARD_LIFTED = '4px 4px 0 var(--ink-1)';
+const CARD_AT_REST = '--shadow-card:none';
+const CARD_LIFTED = '--shadow-card-hover:none';
 
 describe('index.css speaks the warm-paper system', () => {
   it('carries every DESIGN.md color token', () => {
@@ -99,8 +98,8 @@ describe('index.css speaks the warm-paper system', () => {
     }
   });
 
-  it('declares color-scheme light', () => {
-    expect(css).toContain('color-scheme: light');
+  it('declares color-scheme dark', () => {
+    expect(css).toContain('color-scheme: dark');
   });
 
   it('sets the paper-lift shadows as the only depth', () => {
@@ -113,7 +112,6 @@ describe('index.css speaks the warm-paper system', () => {
       'backdrop-filter',
       'conic-gradient',
       'linear-gradient',
-      'radial-gradient',
       'text-shadow',
       'drop-shadow',
       '@property',
@@ -123,27 +121,35 @@ describe('index.css speaks the warm-paper system', () => {
     }
   });
 
-  it('sets numerals in IBM Plex Mono and words in Source Serif and Source Sans', () => {
-    expect(css).toContain('"IBM Plex Mono"');
+  it('allows one radial light, monochrome, on the Unkey hero only', () => {
+    const radials = css.match(/radial-gradient\([^;]*\);/g) ?? [];
+    expect(radials).toHaveLength(1);
+    expect(radials[0]).toMatch(/^radial-gradient\(ellipse [^;]*rgb\(255 255 255 \/ \.\d+\),rgb\(255 255 255 \/ 0\)\);$/);
+    expect(css).toContain(`--hero-light:${radials[0]}`);
+    expect(css.match(/--hero-light:none;/g)).toHaveLength(2);
+    expect(marketCss).not.toContain('gradient');
+  });
+
+  it('sets numerals in Geist Mono and words in Geist', () => {
+    expect(css).toContain('"Geist Mono"');
     expect(css).toContain('tabular-nums');
-    expect(css).toContain('"Source Serif 4"');
-    expect(css).toContain('"Source Sans 3"');
+    expect(css).toContain('"Geist"');
     expect(css).not.toContain('Plus Jakarta Sans');
+    expect(css).not.toContain('Source Serif 4');
   });
 
   it('imports only the system fonts, self-hosted', () => {
-    expect(css).toContain('@fontsource-variable/source-serif-4');
-    expect(css).toContain('@fontsource-variable/source-sans-3');
-    expect(css).toContain('@fontsource/ibm-plex-mono');
+    expect(css).toContain('@fontsource/geist/400.css');
+    expect(css).toContain('@fontsource/geist-mono/400.css');
     expect(css).not.toContain('@fontsource-variable/plus-jakarta-sans');
     expect(css).not.toContain('@fontsource-variable/inter');
     expect(css).not.toContain('@fontsource-variable/space-grotesk');
   });
 
   it('uses the concentric radii and the full-round pill', () => {
-    expect(css).toContain('--r-card:0px');
-    expect(css).toContain('--r-control:0px');
-    expect(css).toContain('--r-inner:0px');
+    expect(css).toContain('--r-card:8px');
+    expect(css).toContain('--r-control:6px');
+    expect(css).toContain('--r-inner:4px');
     expect(css).not.toContain('999px');
   });
 
@@ -153,10 +159,11 @@ describe('index.css speaks the warm-paper system', () => {
     expect(css).toContain('28px 36px 60px');
   });
 
-  it('sets the greeting at 56px and the one figure at 64px', () => {
+  it('sets the greeting at 40px and the one figure at 56px', () => {
     expect(css).not.toContain('clamp(');
+    expect(css).toContain('font-size:40px');
     expect(css).toContain('font-size:56px');
-    expect(css).toContain('font-size:64px');
+    expect(css).not.toContain('font-size:64px');
   });
 
   it('still freezes animation under prefers-reduced-motion', () => {
@@ -166,10 +173,10 @@ describe('index.css speaks the warm-paper system', () => {
 
 describe('the SPA shell declares the light paper world', () => {
   it('declares color-scheme light and the paper theme color', () => {
-    expect(html).toContain('content="light"');
-    expect(html).toContain('#F6F3EC');
+    expect(html).toContain('content="dark"');
+    expect(html).toContain('#060609');
     expect(html).not.toContain('#020617');
-    expect(html).not.toContain('content="dark"');
+    expect(html).not.toContain('content="light"');
   });
 });
 
@@ -210,12 +217,13 @@ describe('the authored sheet keeps its interaction promises', () => {
   });
 
   it('gives the command bar field a visible focus ring', () => {
-    expect(css).toContain(':focus-visible{outline:2px solid var(--ink-1)');
+    expect(css).toContain(':focus-visible{outline:2px solid var(--focus)');
     expect(css).not.toContain('.cmd-field:focus{outline:none');
   });
 
-  it('stacks the command bar through its wrapper on small screens', () => {
-    expect(css).toContain('.cmd-magnet{flex:1 1 100%');
+  it('folds Research into an icon button inside the field on small screens', () => {
+    expect(css).toContain('.cmd-magnet{flex:none;display:flex}');
+    expect(css).toContain('.cmd-send-label{');
   });
 });
 
@@ -436,23 +444,22 @@ describe('marketplace type stays inside the design language', () => {
   it('draws catalog icons as strokes without a filled chip', () => {
     for (const selector of ['.mkt-card-icon', '.mkt-detail-icon', '.mkt-pack-icon']) {
       expect(decl(marketCss, selector, 'background'), selector).toBe('none');
-      expect(decl(marketCss, selector, 'color'), selector).toBe('var(--primary)');
+      expect(decl(marketCss, selector, 'color'), selector).toBe('var(--accent-text)');
     }
   });
 
   it('shows a keyboard ring on the marketplace main and keeps the search well ring', () => {
-    expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--ink-1)');
+    expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--focus)');
     expect(marketCss).toContain('.mkt-search-field:focus-within');
-    expect(marketCss).toContain('.mkt-search-field input:focus-visible { outline: 2px solid var(--ink-1)');
+    expect(marketCss).toContain('.mkt-search-field input:focus-visible { outline: 2px solid var(--focus)');
   });
 });
 
 describe('the toolchain matches the system', () => {
   it('depends on the system fonts and not the drift fonts', () => {
-    expect(pkg.dependencies['@fontsource-variable/source-serif-4']).toBeTruthy();
-    expect(pkg.dependencies['@fontsource-variable/source-sans-3']).toBeTruthy();
+    expect(pkg.dependencies['@fontsource/geist']).toBeTruthy();
+    expect(pkg.dependencies['@fontsource/geist-mono']).toBeTruthy();
     expect(pkg.dependencies['@fontsource-variable/plus-jakarta-sans']).toBeUndefined();
-    expect(pkg.dependencies['@fontsource/ibm-plex-mono']).toBeTruthy();
     expect(pkg.dependencies['@fontsource-variable/inter']).toBeUndefined();
     expect(pkg.dependencies['@fontsource-variable/space-grotesk']).toBeUndefined();
   });
@@ -477,17 +484,16 @@ describe('the toolchain matches the system', () => {
   });
 
   it('records the system fonts in the license manifest', () => {
-    expect(manifest).toContain('Source Serif 4');
-    expect(manifest).toContain('Source Sans 3');
+    expect(manifest).toContain('Geist');
+    expect(manifest).toContain('Geist Mono');
     expect(manifest).not.toContain('Plus Jakarta Sans');
-    expect(manifest).toContain('IBM Plex Mono');
     expect(manifest).not.toContain('Space Grotesk');
     expect(manifest).not.toContain('Inter Variable');
   });
 
   it('ships the fonts\u2019 OFL files and not the drift fonts\u2019', () => {
-    expect(licenses.some((f) => f.startsWith('OFL-PlusJakartaSans'))).toBe(true);
-    expect(licenses.some((f) => f.startsWith('OFL-IBMPlexMono'))).toBe(true);
+    expect(licenses.some((f) => f.startsWith('OFL-Geist'))).toBe(true);
+    expect(licenses.some((f) => f.startsWith('OFL-GeistMono'))).toBe(true);
     expect(licenses.some((f) => f === 'OFL-Inter.txt')).toBe(false);
     expect(licenses.some((f) => f === 'OFL-Space-Grotesk.txt')).toBe(false);
   });

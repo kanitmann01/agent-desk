@@ -516,9 +516,11 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
           </section>
         ) : null}
         <footer className="page-foot">
-          <span>Agent Desk <span className="mono">{data.version}</span>.</span>
-          <span>Workbooks are copied before they are read. Calendar setup stays in the browser. Research calls are logged; file contents stay here.</span>
-          <a href="/what-this-touches">What this app touches</a>
+          <p>
+            Agent Desk <span className="mono">{data.version}</span>. Workbooks are copied before they
+            are read. Calendar setup stays in the browser. Research calls are logged; file contents
+            stay here. <a href="/what-this-touches">What this app touches</a>
+          </p>
         </footer>
       </main>
     </div>

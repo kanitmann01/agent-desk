@@ -239,3 +239,13 @@ def test_committed_bundle_references_only_known_static_kinds():
             assert suffix in server_app._SPA_MIME, (
                 f"{asset.name}: no MIME mapping in app._SPA_MIME"
             )
+
+
+def test_the_server_theme_boot_matches_the_spa_copy():
+    # Server pages and the SPA apply the stored theme with the same
+    # script; the two copies must not drift.
+    from pathlib import Path
+
+    from agentdesk.server import pages
+    spa_copy = Path(__file__).resolve().parents[1] / "frontend" / "public" / "theme-boot.js"
+    assert pages.THEME_BOOT_JS == spa_copy.read_text(encoding="utf-8")

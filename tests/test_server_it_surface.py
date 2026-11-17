@@ -154,9 +154,8 @@ def test_manifest_file_exists_and_states_the_allowlist():
     # and the replaced fonts must be gone from the file entirely.
     for shipped in (
         "react 19",
-        "@fontsource-variable/source-serif-4",
-        "@fontsource-variable/source-sans-3",
-        "@fontsource/ibm-plex-mono",
+        "@fontsource/geist",
+        "@fontsource/geist-mono",
         "OFL-1.1",
     ):
         assert shipped in manifest, shipped

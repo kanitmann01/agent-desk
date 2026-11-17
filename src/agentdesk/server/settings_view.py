@@ -165,6 +165,27 @@ def _extra_hosts_section(extra_hosts: str, port: int) -> str:
     )
 
 
+_THEMES = (
+    ("unkey", "Unkey", "Dark, yellow-green"),
+    ("coforge", "Coforge", "Navy, coral"),
+    ("momentuum", "Momentuum blue", "Light, brand blue"),
+)
+
+
+def _theme_tiles() -> str:
+    """The Appearance picker. A radiogroup of three tiles; app.js marks
+    the stored theme as checked and keeps keyboard focus roving. Each
+    swatch takes its colours from its own data-theme-preview scope."""
+    tiles = "".join(
+        f"<button type='button' class='theme-tile' role='radio' aria-checked='false' "
+        f"tabindex='-1' data-theme-option='{tid}'>"
+        f"<span class='tile-sw' data-theme-preview='{tid}' aria-hidden='true'><i></i><i></i><i></i></span>"
+        f"<b>{name}</b><small>{note}</small></button>"
+        for tid, name, note in _THEMES
+    )
+    return f"<div class='theme-tiles' role='radiogroup' aria-label='Theme'>{tiles}</div>"
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -237,13 +258,17 @@ def render_settings_page(
     content = f"""<h1>Settings</h1>
 <p>Toggles plus the endpoint form. The defaults are the recommended
 ones; a setting you have never touched is the right setting.</p>
+<h2>Appearance</h2>
+{_theme_tiles()}
+<p class='empty'>The theme is kept in this browser and applies to every page of the desk.</p>
+<h2>Desk</h2>
 <div class='settings-block'>
 {toggles_html}
 </div>
 <p class='empty'>Sample data fills a fresh desk with labelled example cards
 and sample files (a workbook, a calendar file, header-only mail) so every
-inbox action can be tried safely. Everything it adds is marked Sample,
-and turning it off removes exactly what it added.</p>
+inbox action can be tried safely. Every cell it fills carries a Sample
+data tag, and turning it off removes exactly what it added.</p>
 <h2>Endpoint</h2>
 {endpoint_html}
 <h2>Calendar source</h2>

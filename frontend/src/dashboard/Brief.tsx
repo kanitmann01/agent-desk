@@ -1,23 +1,43 @@
-// The morning brief: one figure, a list of movers, and one decision
-// panel. It replaces the three equal cards on the dashboard. Customize
-// mode still uses the cards, because reordering needs one object per card.
-import { useState, type KeyboardEvent } from 'react';
+// The desk as a bento. Two columns that always close: on the left the
+// pipeline hero and the moves table, on the right the decisions and the
+// digest, each column's last cell taking the leftover height. Under
+// them one row of plugin cells, three across; a remainder of one runs
+// the full width, a remainder of two splits the row. On a phone the
+// columns dissolve and every cell stacks in priority order.
+//
+// While the Sample data switch is on, a cell with no real source shows
+// the sample world (sampleDesk.ts) and says so once, in its header.
+import { useState, type KeyboardEvent, type ReactNode } from 'react';
 import { postJson } from '../api';
-import type { DashboardData } from '../types';
+import type { DashboardData, PluginCard } from '../types';
 import Button from '../components/Button';
 import TrackerCard from './TrackerCard';
+import PluginCardView from './PluginCardView';
+import { pluginKind, kindTag } from './pluginKind';
 import {
   MOVER_CAP,
-  dealMeta,
-  dealName,
   formatAmount,
   formatSigned,
   moversFromDelta,
+  netByStage,
   netPipeline,
-  type Mover,
 } from './briefModel';
+import {
+  CellHead,
+  DigestList,
+  HealthMatrix,
+  StageChart,
+  TrackerFigure,
+  WatchDiff,
+  WireChart,
+  WireState,
+  clock,
+  type HealthRow,
+} from './cells';
+import { SAMPLE_TRACKER, sampleDigest, sampleWatch } from './sampleDesk';
 
 const WALKTHROUGH = '/walkthrough/calendar';
+const SAMPLE_FILE = /(^|[\\/])sample[\\/]sample-[^\\/]+$/;
 
 interface BriefProps {
   data: DashboardData;
@@ -25,46 +45,33 @@ interface BriefProps {
   onExpired: () => void;
 }
 
-function moverTitle(mover: Mover): string {
-  if (mover.previousName) return `${mover.previousName} → ${mover.name}`;
-  return mover.name;
+function isTracker(card: PluginCard): boolean {
+  return card.id === 'excel-report' || card.id.startsWith('excel-report~');
 }
 
-function moverPath(mover: Mover): string {
-  if (mover.kind === 'changed' && mover.oldAmount != null && mover.newAmount != null) {
-    return `${formatAmount(mover.oldAmount)} → ${formatAmount(mover.newAmount)}`;
-  }
-  if (mover.kind === 'added') return 'Added';
-  if (mover.kind === 'removed') return 'Removed';
-  return '';
+function fromEpoch(ts: number | null | undefined): string {
+  if (ts == null || !Number.isFinite(ts)) return '—';
+  return clock(new Date(ts * 1000));
 }
 
-function Movers({ movers }: { movers: Mover[] }) {
-  const [open, setOpen] = useState(false);
-  if (movers.length === 0) {
-    return <p className="brief-quiet">No rows changed in the last 24 hours.</p>;
-  }
-  const shown = open ? movers : movers.slice(0, MOVER_CAP);
-  const hidden = movers.length - MOVER_CAP;
-  return (
-    <>
-      <ul className="movers">
-        {shown.map((mover, index) => (
-          <li key={`${mover.kind}-${index}-${mover.name}`}>
-            <span className="mover-name">{moverTitle(mover)}</span>
-            <span className={mover.delta < 0 ? 'mover down' : 'mover up'}>{formatSigned(mover.delta)}</span>
-            {mover.meta ? <span className="mover-meta">{mover.meta}</span> : <span />}
-            <span className="mover-path">{moverPath(mover)}</span>
-          </li>
-        ))}
-      </ul>
-      {hidden > 0 ? (
-        <button type="button" className="brief-more" onClick={() => setOpen((value) => !value)}>
-          {open ? 'Show top 5' : 'See all'}
-        </button>
-      ) : null}
-    </>
-  );
+function fromIso(value: string | null | undefined): string {
+  if (!value) return '—';
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? '—' : clock(at);
+}
+
+interface Lower {
+  key: string;
+  kind: string;
+  node: ReactNode;
+}
+
+function lowerSpans(count: number): number[] {
+  const spans = Array.from({ length: count }, () => 4);
+  const rest = count % 3;
+  if (rest === 1) spans[count - 1] = 12;
+  if (rest === 2) { spans[count - 1] = 6; spans[count - 2] = 6; }
+  return spans;
 }
 
 export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
@@ -72,30 +79,28 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const [manualOpen, setManualOpen] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [movesOpen, setMovesOpen] = useState(false);
+  const [now] = useState(() => new Date());
 
+  const sample = Boolean(data.sample);
   const sales = data.sales;
   const status = sales.status;
   const configured = sales.mode === 'live' && Boolean(status?.configured);
+  const salesIsSample = configured && SAMPLE_FILE.test(status?.path ?? '');
   const delta = status?.delta ?? null;
   const movers = delta ? moversFromDelta(delta) : [];
   const net = delta ? netPipeline(delta) : 0;
+  const stages = netByStage(movers);
   const changedCount = movers.filter((mover) => mover.kind === 'changed').length;
   const addedCount = movers.filter((mover) => mover.kind === 'added').length;
   const removedCount = movers.filter((mover) => mover.kind === 'removed').length;
-  const trackers = data.plugins.cards.filter((card) => (
-    card.id === 'excel-report' || card.id.startsWith('excel-report~')
-  ));
+  const trackers = data.plugins.cards.filter(isTracker);
   const salesNeedsConnect = trackers.length === 0 && sales.mode !== 'disabled'
     && (sales.mode === 'unconfigured' || status === null || !status.configured);
   const calendarNeedsConnect = data.commitments.mode !== 'live'
     || data.commitments.status?.state === 'empty'
     || data.commitments.status == null;
   const researchNeedsAsk = data.research.lastAnsweredTs == null;
-  const decisions = [
-    salesNeedsConnect ? 'workbook' : null,
-    calendarNeedsConnect ? 'calendar' : null,
-    researchNeedsAsk ? 'question' : null,
-  ].filter(Boolean);
 
   async function connect(path: string) {
     setBusy(true);
@@ -149,99 +154,349 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     document.querySelector<HTMLTextAreaElement>('.cmd-field')?.focus();
   }
 
-  return (
-    <div className={configured ? 'brief' : 'brief brief-empty'}>
-      {trackers.length > 0 ? (
-        <div className="tracker-stack">
-          {trackers.map((card) => (
-            <TrackerCard key={card.id} card={card} onRefetch={onRefetch} onExpired={onExpired} />
-          ))}
-        </div>
-      ) : configured ? (
-        <div className="brief-figure">
-          <div className="kpi">
-            <div className={`value${delta && net < 0 ? ' down' : ''}${delta && net === 0 ? ' flat' : ''}`}>
-              {delta ? formatSigned(net) : (status?.rowsSeen ?? 0).toLocaleString('en-US')}
-            </div>
-          </div>
-          <div className="brief-figure-copy">
-            <p className="brief-label">{delta ? 'Net pipeline, last 24 hours' : 'Rows in the workbook'}</p>
-            <p className="brief-quiet">
-              {delta ? (
-                <>
-                  {changedCount > 0 ? <span>{changedCount} changed</span> : null}
-                  {addedCount > 0 ? <span className="mover up">+{addedCount} added</span> : null}
-                  {removedCount > 0 ? <span className="mover down">−{removedCount} removed</span> : null}
-                </>
-              ) : (
-                'First snapshot. The 24-hour diff starts at the next read.'
-              )}
-            </p>
-          </div>
-          {delta ? <Movers movers={movers} /> : (
-            <ul className="movers">
-              {(status?.examples ?? []).slice(1, 1 + MOVER_CAP).map((row, i) => {
-                const cells = row as unknown[];
-                const amount = cells[3];
-                return (
-                  <li key={i}>
-                    <span className="mover-name">{dealName(cells)}</span>
-                    <span className="mono">{typeof amount === 'number' ? formatAmount(amount) : ''}</span>
-                    {dealMeta(cells) ? <span className="mover-meta">{dealMeta(cells)}</span> : <span />}
-                    <span />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+  // ---- decisions ------------------------------------------------------
+  const decisions: Array<{ key: string; title: string; why: string; action: ReactNode }> = [];
+  if (salesNeedsConnect) {
+    decisions.push({
+      key: 'workbook',
+      title: 'Connect a workbook',
+      why: 'The pipeline figure and the moves come from it.',
+      action: <Button tone="secondary" className="btn-sm" onClick={() => void pick()} disabled={busy}>Connect</Button>,
+    });
+  }
+  if (calendarNeedsConnect) {
+    decisions.push({
+      key: 'calendar',
+      title: 'Connect your calendar',
+      why: 'The digest reads today’s meetings from it.',
+      action: <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Connect</Button>,
+    });
+  }
+  if (researchNeedsAsk) {
+    decisions.push({
+      key: 'question',
+      title: 'Ask your first question',
+      why: 'Answers come from your company endpoint and are logged.',
+      action: <Button tone="secondary" className="btn-sm" onClick={askFirst}>Ask</Button>,
+    });
+  }
+  const connected = data.sources.connected;
+  const total = data.sources.total;
+
+  // ---- digest ---------------------------------------------------------
+  const event = data.commitments.status?.keyEvent;
+  const digestItems = event
+    ? [{ at: new Date(event.start), source: 'CAL' as const, title: event.subject, detail: [event.location, event.attendees ? `${event.attendees} people` : ''].filter(Boolean).join(', ') }]
+    : sample ? sampleDigest(now) : [];
+  const digestIsSample = !event && sample;
+
+  // ---- desk health ----------------------------------------------------
+  const commitments = data.commitments.status;
+  const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
+  const healthRows: HealthRow[] = [
+    {
+      name: 'Workbook',
+      live: configured && status?.state !== 'unreadable' && status?.state !== 'locked',
+      status: !configured ? 'off' : status?.state === 'healthy' || status?.state === 'first' ? 'live' : (status?.state ?? 'off').replace('_', ' '),
+      lastRun: fromEpoch(status?.last_ok_ts ?? null),
+      items: configured ? (status?.rowsSeen ?? 0).toLocaleString('en-US') : '—',
+    },
+    {
+      name: 'Calendar',
+      live: sourceStatus('calendar-bridge') === 'connected',
+      status: sourceStatus('calendar-bridge') === 'connected' ? 'live' : 'off',
+      lastRun: fromIso(commitments?.generatedAt ?? null),
+      items: event ? '1' : '—',
+    },
+    {
+      name: 'Research',
+      live: sourceStatus('research-endpoint') === 'connected',
+      status: sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
+      lastRun: fromEpoch(data.research.lastAnsweredTs),
+      items: '—',
+    },
+    ...data.plugins.cards.map((card) => ({
+      name: card.title,
+      live: card.freshness === 'fresh',
+      status: card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
+      lastRun: fromIso(card.checkedAt || null),
+      items: card.payload?.setup ? '—' : String(card.payload?.elements?.length ?? 0),
+    })),
+  ];
+
+  const LIST = new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' });
+  const listJoin = (names: string[]) => LIST.format(names);
+
+  // ---- the lower row ----------------------------------------------------
+  const lower: Lower[] = [];
+  lower.push({
+    key: 'health',
+    kind: 'health',
+    node: (
+      <>
+        <CellHead tag="DESK HEALTH" meta={<span className="mono">{connected}/{total} live</span>} />
+        <HealthMatrix rows={healthRows} />
+        <p className="cell-foot health-foot">
+          {healthRows.every((row) => row.live)
+            ? 'Every source answered on its last run.'
+            : `${listJoin(healthRows.filter((row) => !row.live).map((row) => row.name))} ${healthRows.filter((row) => !row.live).length === 1 ? 'is' : 'are'} not live yet.`}
+        </p>
+      </>
+    ),
+  });
+  if (trackers.length > 0) {
+    for (const card of trackers) {
+      lower.push({
+        key: card.id,
+        kind: 'tracker',
+        node: (
+          <>
+            <CellHead tag="TRACKER" />
+            <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />
+          </>
+        ),
+      });
+    }
+  } else {
+    lower.push({
+      key: 'tracker',
+      kind: 'tracker',
+      node: sample ? (
+        <>
+          <CellHead tag="TRACKER" sample />
+          <TrackerFigure view={SAMPLE_TRACKER} />
+        </>
       ) : (
-        <p className="brief-lead">Connect a workbook and this desk shows the pipeline change and the deals that moved.</p>
-      )}
-      {decisions.length > 0 ? (
-        <section className="decisions" aria-label="Needs a decision">
-          <h2>Needs a decision</h2>
-          <ul>
-            {salesNeedsConnect ? (
-              <li>
-                <span>Connect a workbook</span>
-                <Button tone="secondary" onClick={() => void pick()} disabled={busy}>Connect</Button>
-              </li>
-            ) : null}
-            {calendarNeedsConnect ? (
-              <li>
-                <span>Connect your calendar</span>
-                <Button tone="secondary" href={WALKTHROUGH}>Connect</Button>
-              </li>
-            ) : null}
-            {researchNeedsAsk ? (
-              <li>
-                <span>Ask your first question</span>
-                <Button tone="secondary" onClick={askFirst}>Ask</Button>
-              </li>
-            ) : null}
-          </ul>
-          {note ? <p className="alert" role="status">{note}</p> : null}
-          {manualOpen ? (
-            <div className="well">
-              <input
-                className="well-input"
-                type="text"
-                name="workbook-path"
-                autoComplete="off"
-                aria-label="Workbook path"
-                placeholder="Full path to the workbook"
-                value={pathInput}
-                onChange={(e) => setPathInput(e.target.value)}
-                onKeyDown={onPathKey}
-              />
-              <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void connect(pathInput.trim())}>
-                Connect
-              </button>
+        <>
+          <CellHead tag="TRACKER" />
+          <h3 className="cell-title">Workbook tracker</h3>
+          <WireState
+            line="Follow one number from any workbook: a total, a column, the rows you pick."
+            action={<Button tone="secondary" className="btn-sm" href="/marketplace/plugin/excel-report">Add tracker</Button>}
+          />
+        </>
+      ),
+    });
+  }
+  const watchCards = data.plugins.cards.filter((card) => !isTracker(card) && pluginKind(card.id) === 'watch');
+  if (watchCards.length === 0) {
+    lower.push({
+      key: 'watch',
+      kind: 'watch',
+      node: sample ? (
+        <>
+          <CellHead tag="PAGE WATCH" sample />
+          <WatchDiff view={sampleWatch(now)} />
+        </>
+      ) : (
+        <>
+          <CellHead tag="PAGE WATCH" />
+          <h3 className="cell-title">Page watch</h3>
+          <WireState
+            shape="lines"
+            line="No page is being watched. Name one page and see what changed on it."
+            action={<Button tone="secondary" className="btn-sm" href="/marketplace/plugin/competitor-watch">Add a page</Button>}
+          />
+        </>
+      ),
+    });
+  }
+  for (const card of data.plugins.cards.filter((c) => !isTracker(c))) {
+    const kind = pluginKind(card.id);
+    lower.push({
+      key: card.id,
+      kind,
+      node: (
+        <>
+          <CellHead tag={kindTag(kind)} />
+          <PluginCardView card={card} onRefetch={onRefetch} onExpired={onExpired} />
+        </>
+      ),
+    });
+  }
+  const spans = lowerSpans(lower.length);
+
+  // ---- render -----------------------------------------------------------
+  const shown = movesOpen ? movers : movers.slice(0, MOVER_CAP);
+  const maxMove = Math.max(1, ...movers.map((m) => Math.abs(m.delta)));
+
+  return (
+    <div className="brief">
+      <div className="brief-col brief-main">
+        <article className="cell cell-hero" aria-labelledby="cell-brief">
+          <CellHead id="cell-brief" tag="PIPELINE" sample={salesIsSample} meta={configured && status?.path ? <span className="mono">{status.path.split(/[\\/]/).pop()}</span> : undefined} />
+          {configured ? (
+            <div className="hero-grid">
+              <div className="hero-figure">
+                <div className="kpi">
+                  <div className={`value${delta && net < 0 ? ' down' : ''}${!delta || net === 0 ? ' flat' : ''}`}>
+                    {delta ? formatSigned(net) : (status?.rowsSeen ?? 0).toLocaleString('en-US')}
+                  </div>
+                </div>
+                <p className="brief-label">{delta ? 'Net pipeline, last 24 hours' : 'Rows in the workbook'}</p>
+                {delta ? (
+                  <dl className="hero-stats">
+                    <div><dt>Changed</dt><dd>{changedCount}</dd></div>
+                    <div><dt>Added</dt><dd>{addedCount}</dd></div>
+                    <div><dt>Removed</dt><dd>{removedCount}</dd></div>
+                  </dl>
+                ) : (
+                  <p className="brief-quiet">First snapshot. The 24-hour change starts at the next read.</p>
+                )}
+              </div>
+              {delta && stages.length > 0 ? <StageChart stages={stages} /> : (
+                <div className="stage-chart">
+                  <p className="chart-cap">Net change by stage</p>
+                  <WireChart bars={5} label="No change yet; the chart fills after the next read" />
+                </div>
+              )}
             </div>
-          ) : null}
-        </section>
-      ) : null}
+          ) : (
+            <div className="hero-grid">
+              <div className="hero-figure">
+                <div className="kpi"><div className="value flat ghost">—</div></div>
+                <p className="brief-label">Net pipeline, last 24 hours</p>
+                <p className="brief-quiet">No workbook is connected, so there is no pipeline figure yet.</p>
+              </div>
+              <div className="stage-chart">
+                <p className="chart-cap">Net change by stage</p>
+                <WireChart bars={5} />
+              </div>
+            </div>
+          )}
+        </article>
+        <article className="cell cell-moves" aria-labelledby="cell-moves">
+          <CellHead
+            id="cell-moves"
+            tag="MOVES"
+            sample={salesIsSample && movers.length > 0}
+            meta={movers.length > 0 ? <span className="mono">{shown.length} of {movers.length}</span> : undefined}
+          />
+          {delta && movers.length > 0 ? (
+            <>
+              <div className="table-scroll">
+                <table className="moves">
+                  <thead>
+                    <tr>
+                      <th scope="col">Deal</th>
+                      <th scope="col">Stage</th>
+                      <th scope="col" className="num">Close</th>
+                      <th scope="col" className="num">Was → now</th>
+                      <th scope="col" className="num">Change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((mover, index) => (
+                      <tr key={`${mover.name}-${index}`}>
+                        <th scope="row">
+                          <span className="deal">{mover.deal}</span>
+                          {mover.previousName ? <span className="deal-was">was {mover.previousName}</span> : null}
+                        </th>
+                        <td className="stage-cell">{mover.stage || '—'}<span className="region mono">{mover.region}</span></td>
+                        <td className="num mono">{mover.close || '—'}</td>
+                        <td className="num mono was-now">
+                          {mover.kind === 'changed' ? (
+                            <>{formatAmount(mover.oldAmount)} <span aria-label="to">→</span> {formatAmount(mover.newAmount)}</>
+                          ) : mover.kind === 'added' ? <span className="kind">new · {formatAmount(mover.newAmount)}</span>
+                            : <span className="kind">left · {formatAmount(mover.oldAmount)}</span>}
+                        </td>
+                        <td className={mover.delta < 0 ? 'num mono change down' : 'num mono change up'}>
+                          <span className="change-bar" aria-hidden="true">
+                            <span style={{ width: `${(Math.abs(mover.delta) / maxMove) * 100}%` }} />
+                          </span>
+                          {formatSigned(mover.delta)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {movers.length > MOVER_CAP ? (
+                <button type="button" className="text-btn" onClick={() => setMovesOpen((open) => !open)}>
+                  {movesOpen ? `Show top ${MOVER_CAP}` : `See all ${movers.length}`}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="moves-wire" aria-hidden="true">
+                <div className="mw-row mw-head"><span>Deal</span><span>Stage</span><span>Close</span><span>Was → now</span><span>Change</span></div>
+                {[58, 72, 44, 66, 50].map((w, i) => (
+                  <div className="mw-row" key={i}>
+                    <i style={{ width: `${w}%` }} /><i style={{ width: '60%' }} /><i style={{ width: '50%' }} /><i style={{ width: '70%' }} /><i style={{ width: '45%' }} />
+                  </div>
+                ))}
+              </div>
+              <p className="cell-foot">{configured ? 'No deal has moved in the last 24 hours.' : 'Deals that move show here once a workbook is connected.'}</p>
+            </>
+          )}
+        </article>
+      </div>
+      <div className="brief-col brief-side">
+        {decisions.length > 0 ? (
+          <section className="cell cell-decisions" aria-label="Needs a decision">
+            <CellHead tag="DECISIONS" meta={<span className="mono">{decisions.length} open</span>} />
+            <div className="setup-meter" role="img" aria-label={`${connected} of ${total} sources connected`}>
+              {Array.from({ length: total }, (_, i) => <span key={i} className={i < connected ? 'on' : ''} />)}
+              <span className="setup-meter-label mono">{connected}/{total} sources</span>
+            </div>
+            <ul className="decisions">
+              {decisions.map((d) => (
+                <li key={d.key}>
+                  <div className="decision-text">
+                    <span className="decision-title">{d.title}</span>
+                    <span className="decision-why">{d.why}</span>
+                  </div>
+                  {d.action}
+                </li>
+              ))}
+            </ul>
+            {note ? <p className="alert" role="status">{note}</p> : null}
+            {manualOpen ? (
+              <div className="well">
+                <input
+                  className="well-input"
+                  type="text"
+                  name="workbook-path"
+                  autoComplete="off"
+                  aria-label="Workbook path"
+                  placeholder="Full path to the workbook…"
+                  value={pathInput}
+                  onChange={(e) => setPathInput(e.target.value)}
+                  onKeyDown={onPathKey}
+                />
+                <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void connect(pathInput.trim())}>
+                  Connect
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+        <article className={digestItems.length > 0 ? 'cell cell-digest' : 'cell cell-digest is-empty'} aria-labelledby="cell-digest">
+          <CellHead id="cell-digest" tag="DIGEST" sample={digestIsSample} meta={digestItems.length > 0 ? <span className="mono">{digestItems.length} items</span> : undefined} />
+          {digestItems.length > 0 ? <DigestList items={digestItems} /> : (
+            <>
+              <ol className="digest-wire" aria-hidden="true">
+                {[64, 48, 72, 40, 56].map((w, i) => (
+                  <li key={i}><span className="mono">--:--</span><i style={{ width: `${w}%` }} /></li>
+                ))}
+              </ol>
+              <div className="digest-empty">
+                <p>Nothing on the calendar yet.</p>
+                <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Set up</Button>
+              </div>
+            </>
+          )}
+        </article>
+      </div>
+      {lower.map((cell, index) => (
+        <article
+          key={cell.key}
+          className={`cell cell-${cell.kind} span-${spans[index]}${spans[index] === 12 ? ' is-wide' : ''}`}
+        >
+          {cell.node}
+        </article>
+      ))}
     </div>
   );
 }
