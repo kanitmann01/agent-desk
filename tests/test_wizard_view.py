@@ -115,12 +115,53 @@ def test_preview_state_shows_rows_summary_and_the_two_actions():
 
 
 def test_approved_state_shows_summary_pilot_note_and_dashboard_link():
-    session = {"id": "wiz-9", "state": "approved", "draft": DRAFT}
+    session = {
+        "id": "wiz-9",
+        "state": "approved",
+        "draft": DRAFT,
+        "installed": {"ok": True, "id": "morning-sales", "version": "0.1.0"},
+    }
     page = render_wizard_page(session, VERSION)
     assert "Shows the sales delta every morning." in page
     assert "in pilot mode" in page
     assert "Remove it from the Plugins surface" in page
     assert 'href="/"' in page
+
+
+def test_approved_state_shows_the_installed_plugin_and_the_setup_step():
+    """The finish line (T1): the installed plugin's id and version, the
+    pilot badge, and the primary call to action. A config-backed draft
+    points at its manage surface, where its setup lives."""
+    session = {
+        "id": "wiz-9",
+        "state": "approved",
+        "draft": dict(DRAFT, config={"kinds": ["workbook"]}),
+        "installed": {"ok": True, "id": "morning-sales",
+                      "version": "0.1.0", "pilot": True},
+    }
+    page = render_wizard_page(session, VERSION)
+    assert '<span class="mono">morning-sales</span>' in page
+    assert '<span class="mono">0.1.0</span>' in page
+    assert "badge-pilot" in page
+    assert 'href="/marketplace/plugin/morning-sales/manage"' in page
+    assert "Set up its data" in page
+
+
+def test_approved_state_without_config_points_at_the_marketplace():
+    """A draft without config kinds cannot be set up from its manage
+    surface, so the link says what it does: open the plugin in the
+    marketplace (T1, honest copy)."""
+    session = {
+        "id": "wiz-9",
+        "state": "approved",
+        "draft": DRAFT,
+        "installed": {"ok": True, "id": "morning-sales", "version": "0.1.0"},
+    }
+    page = render_wizard_page(session, VERSION)
+    assert "Open in the marketplace" in page
+    assert 'href="/marketplace/plugin/morning-sales"' in page
+    assert "Set up its data" not in page
+    assert "/manage" not in page
 
 
 def test_escalated_state_shows_dead_end_and_user_words():

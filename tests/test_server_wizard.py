@@ -236,9 +236,8 @@ def test_the_no_code_form_flow_installs_through_the_default_runtime(tmp_path, mo
         status, _h, _b = post_form(booted, f"/wizard/{sid}/answer",
                                    {"question": "0", "answer": "hourly"}, auth)
         assert status == 303
-        status, _h, body = booted.request("POST", f"/wizard/{sid}/approve", auth, b"")
-        assert status == 200
-        assert json.loads(body)["status"] == "installed"
+        status, _h, _b = post_form(booted, f"/wizard/{sid}/approve", {}, auth)
+        assert status == 303
         records = booted.server.plugins.list_records()
         assert [r["state"] for r in records] == ["enabled"]
         assert (tmp_path / "plugins").is_dir()
@@ -263,6 +262,81 @@ def test_approve_installs_in_pilot_mode_with_consolidated_summary(env, auth):
     assert len(records) == 1
     assert records[0]["state"] == "enabled"
     assert records[0]["pilot_views_left"] > 0  # pilot mode
+
+
+def test_approve_json_post_keeps_the_install_document(env, auth):
+    """Scripted installs keep today's 200 JSON contract in shape (T1):
+    status, pilot, summary, install. The form-post redirect changes
+    nothing for a client that asked for JSON."""
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    status, headers, body = env.post_json(f"/wizard/{started['id']}/approve", {}, auth)
+    payload = json.loads(body)
+    assert status == 200
+    assert "application/json" in headers["Content-Type"]
+    assert set(payload) == {"status", "pilot", "summary", "install"}
+    assert payload["status"] == "installed"
+    assert payload["pilot"] is True
+    install = payload["install"]
+    assert install["ok"] is True
+    assert install["pilot"] is True
+    assert install["id"]
+    assert install["version"]
+
+
+def test_approve_form_post_redirects_to_the_approved_screen(env, auth):
+    """The reproduced bug (T1): a plain form post to approve answered
+    200 JSON and parked the browser on the raw response document. Now
+    the form post redirects to the session page, which renders the
+    approved screen: what was installed, the pilot line, the summary,
+    and no raw JSON anywhere."""
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    status, headers, body = post_form(env, f"/wizard/{started['id']}/approve", {}, auth)
+    assert status == 303
+    assert headers["Location"] == f"/wizard/{started['id']}"
+    assert b'"status"' not in body  # no response document on the form post
+    page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
+    records = env.server.plugins.list_records()
+    assert len(records) == 1  # installed exactly once
+    assert records[0]["id"] in page
+    assert records[0]["active_version"] in page
+    assert "in pilot mode" in page  # the pilot line
+    assert "What it does" in page  # the does/reads/never summary
+    assert "Delete it from the Plugins surface" in page  # the removal hint
+    assert "marketplace" in page  # the call to action names its surface
+    assert '"status"' not in page  # no raw JSON anywhere on the page
+
+
+def test_second_approve_form_post_refuses_and_never_installs_twice(env, auth):
+    """Approve stays idempotent-refusing (T1): a second form post cannot
+    install again. The form client lands back on the session page, which
+    shows the state the session is honestly in; the JSON client keeps
+    the existing 409 refusal."""
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    post_form(env, f"/wizard/{started['id']}/approve", {}, auth)
+    status, headers, body = post_form(env, f"/wizard/{started['id']}/approve", {}, auth)
+    assert status == 303
+    assert headers["Location"] == f"/wizard/{started['id']}"
+    assert b'"error"' not in body  # a form post never gets the raw refusal
+    assert len(env.server.plugins.list_records()) == 1
+    page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
+    assert "Added" in page  # the approved screen, not a raw JSON page
+    status, _h, body = env.post_json(f"/wizard/{started['id']}/approve", {}, auth)
+    assert status == 409
+    assert json.loads(body)["error"] == "wizard:not-in-preview"
+    assert len(env.server.plugins.list_records()) == 1
+
+
+def test_unknown_session_approve_still_serves_the_error_page(env, auth):
+    """A stale or wrong session id keeps today's error-page behavior for
+    both client kinds: the error page family is untouched (T1)."""
+    status, _h, body = post_form(env, "/wizard/wiz-missing/approve", {}, auth)
+    assert status == 500
+    assert "Something broke" in body.decode("utf-8")
+    status, _h, _b = env.post_json("/wizard/wiz-missing/approve", {}, auth)
+    assert status == 500
 
 
 def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
@@ -295,6 +369,55 @@ def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
         assert status == 200
         assert json.loads(body)["status"] == "installed"
         assert [r["state"] for r in booted.server.plugins.list_records()] == ["enabled"]
+    finally:
+        booted.close()
+
+
+def test_the_full_no_js_walk_ends_on_an_approved_page(tmp_path, monkeypatch):
+    """The reproduced walk (T1), end to end with no JavaScript anywhere:
+    start, describe, answer, approve. Every form post answers with a
+    page or a redirect, so the walk never parks on a raw JSON document."""
+    for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    clock = FakeClock(NOW)
+    from agentdesk.wizard.core import WizardStore
+
+    booted = server_harness.Booted(
+        plugins=make_runtime(tmp_path),
+        wizard_store=WizardStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+        inbox_store=InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+    )
+    try:
+        auth = booted.exchange()
+        # The dashboard button: an empty start asks for the words, on a
+        # page, not a document.
+        status, headers, body = post_form(booted, "/wizard/start", {}, auth)
+        assert status == 200
+        assert "text/html" in headers["Content-Type"]
+        assert 'action="/wizard/new/answer"' in body.decode("utf-8")
+        # The words make the session; the questions screen renders.
+        status, headers, _b = post_form(booted, "/wizard/new/answer",
+                                        {"description": CANONICAL}, auth)
+        assert status == 303
+        sid = headers["Location"].rsplit("/", 1)[-1]
+        page = booted.request("GET", f"/wizard/{sid}", auth)[2].decode("utf-8")
+        assert "What should the widget watch?" in page  # the standard questions
+        # One answer form, then the preview with its approve form.
+        status, _h, _b = post_form(booted, f"/wizard/{sid}/answer",
+                                   {"question": "0", "answer": "An Excel workbook"},
+                                   auth)
+        assert status == 303
+        page = booted.request("GET", f"/wizard/{sid}", auth)[2].decode("utf-8")
+        assert f'action="/wizard/{sid}/approve"' in page
+        # Add widget: the form post redirects; no document parks anywhere.
+        status, headers, body = post_form(booted, f"/wizard/{sid}/approve", {}, auth)
+        assert status == 303
+        assert headers["Location"] == f"/wizard/{sid}"
+        assert b"{" not in body
+        page = booted.request("GET", f"/wizard/{sid}", auth)[2].decode("utf-8")
+        assert "Added" in page
+        records = booted.server.plugins.list_records()
+        assert [r["state"] for r in records] == ["enabled"]
     finally:
         booted.close()
 

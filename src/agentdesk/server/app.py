@@ -4766,15 +4766,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _wizard_approve(self, session_id: str) -> None:
         """The one consolidated approval: zip the validated draft and hand
         it to the plugin runtime, which validates again and installs in
-        pilot mode."""
+        pilot mode. A form post (the no-JS browser) answers with a
+        redirect back to the session page, which renders the approved
+        screen; a JSON client keeps the 200 install document."""
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
         session = wizard.get(session_id)
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
-            self._send_json(503, {"error": "plugins:unavailable",
-                                  "message": "no plugin runtime is configured"})
+            if self._is_form_submit():
+                self._send_error_page(503, "Plugins unavailable",
+                                      "No plugin runtime is configured.")
+            else:
+                self._send_json(503, {"error": "plugins:unavailable",
+                                      "message": "no plugin runtime is configured"})
             return
         if session.state != "preview" or not session.draft:
+            if self._is_form_submit():
+                # The refusal, honestly rendered: back to the page, which
+                # shows the state the session is really in (the approved
+                # screen after an approval, the preview and its button
+                # otherwise). Nothing installs twice.
+                self._send_redirect(f"/wizard/{session_id}")
+                return
             self._send_json(409, {"error": "wizard:not-in-preview"})
             return
         import tempfile
@@ -4796,6 +4809,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         session.draft = {**session.draft, "installed": result}
         wizard.save(session)
         summary = approval_summary(session.draft["manifest"])
+        if self._is_form_submit():
+            self._send_redirect(f"/wizard/{session_id}")
+            return
         self._send_json(200, {"status": "installed", "pilot": True,
                               "summary": summary, "install": result})
 
