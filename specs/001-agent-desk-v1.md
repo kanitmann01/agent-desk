@@ -1,4 +1,4 @@
-# Spec: Agent Desk v1 and v2, no-code personal agent web app
+# Spec: Nexuus Bot v1 and v2, no-code personal agent web app
 
 Seams confirmed with the owner: primary seam is the local HTTP API; second seam is the plugin validator CLI (byte-identical to registry CI). Sources: docs/research.md (binding section A9), docs/PRD.md, docs/design-language.md, docs/design/dashboard.html.
 
@@ -8,7 +8,7 @@ A non-technical manager works on a locked-down corporate Windows laptop: no admi
 
 ## Solution
 
-Agent Desk: a local web app started with one double-click. It shows a widget dashboard (sales change over the last 24 hours, today's key commitment broken into checkable subtasks, a research panel), keeps every widget's freshness visible, and lets her grow the dashboard herself: she describes a plugin in plain English, the agent builds and previews it, and one consolidated approval installs it. The agent's own suggestions (skill proposals after repeated tasks, update re-consents, pre-meeting briefs) wait in an inbox under a strict interruption budget. Raw files never leave the machine; only derived abstractions go to the corporate LLM endpoint. Everything runs user-space, no admin, delete-folder uninstall.
+Nexuus Bot: a local web app started with one double-click. It shows a widget dashboard (sales change over the last 24 hours, today's key commitment broken into checkable subtasks, a research panel), keeps every widget's freshness visible, and lets her grow the dashboard herself: she describes a plugin in plain English, the agent builds and previews it, and one consolidated approval installs it. The agent's own suggestions (skill proposals after repeated tasks, update re-consents, pre-meeting briefs) wait in an inbox under a strict interruption budget. Raw files never leave the machine; only derived abstractions go to the corporate LLM endpoint. Everything runs user-space, no admin, delete-folder uninstall.
 
 ## User Stories
 
@@ -131,7 +131,7 @@ Fixtures: sample workbooks with known 24-hour deltas, calendar JSON snapshots, f
 
 Open decisions, each with a recommended default. These are veto points: tickets may be cut against the defaults, and a decision changes here before it changes in code.
 
-- Product name: default keeps the working name Agent Desk.
+- Product name: default keeps the working name Nexuus Bot.
 - Quiet hours: default 18:00-08:00 local, notification cap 3 per day.
 - Assistant chat: default ships in v1 (the mockup and PRD already carry it).
 - Dismissed-card retention: default 30 days.

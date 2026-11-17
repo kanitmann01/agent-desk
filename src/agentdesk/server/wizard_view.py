@@ -376,15 +376,15 @@ def _page_shell(title: str, body: str, version: str) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc_title}, Agent Desk</title>
+<title>{esc_title}, Nexuus Bot</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <div class="doc">
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Nexuus Bot</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {body}
-<footer class="page-foot"><span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span><span>Local only: nothing here reaches the internet.</span></footer>
+<footer class="page-foot"><span>Nexuus Bot <span class="mono">{html.escape(version)}</span>.</span><span>Local only: nothing here reaches the internet.</span></footer>
 </div>
 </body>
 </html>

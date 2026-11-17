@@ -1,4 +1,4 @@
-# Design language: Agent Desk
+# Design language: Nexuus Bot
 
 The previous warm-paper, deep-green, Plus Jakarta system read as a template. This file replaces it. `DESIGN.md` at the repo root is the token sheet. The target comps are the pull-request artifacts `dashboard-target-desktop` and `dashboard-target-narrow`, drawn from the Rosterline operations desk and adapted to this product.
 

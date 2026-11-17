@@ -17,7 +17,7 @@ from agentdesk.server import app
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m agentdesk.server",
-        description="Start the Agent Desk dashboard (127.0.0.1 only).",
+        description="Start the Nexuus Bot dashboard (127.0.0.1 only).",
     )
     parser.add_argument(
         "--port",

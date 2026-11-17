@@ -270,7 +270,7 @@ def _self_check() -> int:
 def main(argv=None, adapters: Adapters | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="agentdesk.probe",
-        description="Agent Desk environment probe: go/no-go gates for the target laptop. Never elevates; writes only under --workdir.",
+        description="Nexuus Bot environment probe: go/no-go gates for the target laptop. Never elevates; writes only under --workdir.",
     )
     parser.add_argument("--workdir", default=None, help="scratch + report directory (default: ./probe-run)")
     parser.add_argument("--self-check", action="store_true", help="run every gate with fakes and print classified outcomes")

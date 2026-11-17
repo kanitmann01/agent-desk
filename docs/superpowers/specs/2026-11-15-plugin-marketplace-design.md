@@ -147,7 +147,7 @@ Required evidence per area: v1 manifests still pass and install; unknown element
 
 ## Further Notes
 
-- **Resolved decisions (Ken, 2026-11-15):** three seams approved; one allowlisted network plugin ships behind admin policy; 24 in-box plugins planned with 11 in the first batch; signed policy with no fake RBAC; product name stays Agent Desk; marketplace lives in the SPA with `/plugins` redirecting.
+- **Resolved decisions (Ken, 2026-11-15):** three seams approved; one allowlisted network plugin ships behind admin policy; 24 in-box plugins planned with 11 in the first batch; signed policy with no fake RBAC; product name stays Nexuus Bot; marketplace lives in the SPA with `/plugins` redirecting.
 - **Open questions, recommended defaults, vetoable now:** whether the four aggregate plugins ship in the first batch (default: last, cut first if T2 slips); whether the dashboard theme pull-back lands in T12 or a separate ticket (default: T12); whether peer catalogs are enabled by default in curated mode (default: off until policy allows).
 - **Known limitation:** the Ed25519 implementation is in-repo and verification-focused. It is tested against RFC vectors and pinned anchors, but it is not a substitute for an audited library; the interface is isolated for replacement.
 - **Migration:** existing plugin ids and lockfiles are preserved; `excel-report` moves from the in-box set to the reference set without uninstalling; index v1 is wrapped into the v2 shape on load; legacy API routes remain for one release.

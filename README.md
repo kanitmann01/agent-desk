@@ -1,4 +1,4 @@
-# Agent Desk
+# Nexuus Bot
 
 A no-code personal agent for a locked-down corporate Windows laptop. One double-click opens a local web dashboard: what changed in the sales file overnight, today's key commitment broken into subtasks, a research panel, and plugins described in plain English that the agent builds, previews, and installs after one consolidated approval. No admin rights, no terminal, no data leaving the machine except derived abstractions sent to the corporate LLM endpoint.
 
@@ -24,7 +24,7 @@ The app runs with zero configuration, and the two things you may ever need to se
 Text configuration still works: create a file at `%USERPROFILE%\.agent-desk\config.env` (`~/.agent-desk/config.env`):
 
 ```
-# Agent Desk settings, KEY=VALUE lines, # comments
+# Nexuus Bot settings, KEY=VALUE lines, # comments
 # Foundry example: AGENTDESK_LLM_BASE=https://<resource>.openai.azure.com/openai/v1
 AGENTDESK_LLM_BASE=https://llm.yourcompany.example/v1
 AGENTDESK_LLM_KEY=your-key

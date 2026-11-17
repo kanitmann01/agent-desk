@@ -4,7 +4,7 @@ Audit: `docs/plugins/audit-2026-11-16.md`. This file is the decision. Product co
 
 ## Problem
 
-Agent Desk is one person's desk. The 25 bundled plugins were written as if every desk had the same workbook, the same columns, and the same companies. They share one catalog tile, one sample shell, and, once installed, one dashboard renderer that only draws a metric. Several pairs read the same source and show it twice. Four of them cannot run, because the host never passes a desk-state callback. The samples show numbers the host cannot produce.
+Nexuus Bot is one person's desk. The 25 bundled plugins were written as if every desk had the same workbook, the same columns, and the same companies. They share one catalog tile, one sample shell, and, once installed, one dashboard renderer that only draws a metric. Several pairs read the same source and show it twice. Four of them cannot run, because the host never passes a desk-state callback. The samples show numbers the host cannot produce.
 
 The built-in sales card already does the interaction this spec generalizes: a connect action, a named file, and no zero when the file is missing.
 

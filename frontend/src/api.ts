@@ -33,5 +33,5 @@ async function safeJson(response: Response): Promise<unknown> {
 }
 
 export const SESSION_EXPIRED_TITLE = 'Session required';
-export const SESSION_EXPIRED_MESSAGE = 'Open Agent Desk from its shortcut to get a fresh link.';
+export const SESSION_EXPIRED_MESSAGE = 'Open Nexuus Bot from its shortcut to get a fresh link.';
 export const UNREACHABLE = 'The dashboard could not reach its own server';
