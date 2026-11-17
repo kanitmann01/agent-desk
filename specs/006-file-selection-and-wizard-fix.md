@@ -92,10 +92,14 @@ Three connected failures around giving plugins data:
    primary call to action that opens the file setup for the new plugin. A JSON request
    keeps today's 200 JSON contract. The describing/answer flow already redirects and is
    unchanged.
-2. **The approved screen links to setup.** The handoff target is the existing per-instance
-   setup entry for the just-installed plugin (create-instance then setup), so the
-   fabricated default glob remains only a pre-configuration default until the user
-   confirms a real file.
+2. **Wizard workbook builds become configurable instances.** When the compiled plugin
+   watches a workbook, the wizard emits the config-backed shape the bundled tracker
+   already uses (workbook config kind, no data-source file, empty filesystem read, plugin
+   data write) instead of a fabricated glob. The just-installed plugin therefore lands in
+   the setup state, and the approved screen's primary action opens its per-instance setup
+   (create instance, then pick file and rows). Non-workbook wizard builds keep the
+   declarative glob shape unchanged, and the fabricate-a-glob behaviour disappears for
+   the workbook case rather than being papered over by copy.
 3. **Instance setup becomes plugin-generic.** The per-user instance store and the setup
    flow (create, pick, stage, preview, suggest, confirm, accept-outside) stop being pinned
    to one tracker plugin id. Any installed plugin whose manifest declares config kinds
@@ -168,6 +172,7 @@ Three connected failures around giving plugins data:
 - The approve dead-end was reproduced live on 2026-11-17 (real server, real browser):
   form-post approve returns 200 JSON and the browser shows the raw document. The answer
   step, by contrast, already redirects; the fix mirrors that.
-- The wizard's default `reports/*.xlsx` permission is deliberately kept as the
-  pre-configuration default (validator still requires a permitted glob); the approved
-  screen's setup handoff is what makes it a default rather than a dead end.
+- The wizard's default `reports/*.xlsx` permission was originally kept as the
+  pre-configuration default; the amended decision above replaces that for workbook
+  builds with the config-backed instance shape, which the bundled tracker already proves
+  validates cleanly today.
