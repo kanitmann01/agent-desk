@@ -128,12 +128,14 @@ def test_sample_sales_rows_are_100_crm_deals():
     for row in body:
         assert len(row) == 6
         deal, region, stage, amount, close_date, owner = row
-        assert isinstance(deal, str) and deal.startswith("Sample: ")
+        assert isinstance(deal, str) and deal and not deal.startswith("Sample")
         assert isinstance(region, str) and region
         assert isinstance(stage, str) and stage
         assert isinstance(amount, float)
         assert isinstance(close_date, str) and len(close_date) == 10 and close_date[4] == "-"
-        assert isinstance(owner, str) and owner.startswith("Sample: ")
+        assert isinstance(owner, str) and owner and not owner.startswith("Sample")
+    # Every deal is a different deal: no name repeats.
+    assert len({row[0] for row in body}) == len(body)
     # Deterministic: two calls match, and workbook bytes round-trip the same rows
     assert demo_data._sample_sales_rows() == rows
     assert parse_workbook_bytes(demo_data.sample_workbook_bytes()) == rows
@@ -169,15 +171,17 @@ def test_toggling_on_writes_the_sample_fixtures_under_the_data_dir(env, auth):
     rows = parse_workbook_bytes(workbook.read_bytes())  # the real reader
     assert rows[0] == ["Deal", "Region", "Stage", "Amount", "Close date", "Owner"]
     assert len(rows) == 101
-    assert all(r[0].startswith("Sample: ") for r in rows[1:])
+    # The sample marker is the folder, the file name and the sheet; the
+    # desk tags the cell once, so the rows carry no prefix.
+    assert not any(str(r[0]).startswith("Sample") for r in rows[1:])
     calendar = json.loads((folder / "sample-calendar.json").read_text("utf-8"))
     assert calendar["events"]
-    assert all(e["subject"].startswith("Sample:") for e in calendar["events"])
+    assert all(e["id"].startswith("sample-") for e in calendar["events"])
     mails = sorted((folder / "sample-mail").glob("*.eml"))
     assert len(mails) >= 3
     for path in mails:
         raw = path.read_text("utf-8")
-        assert "Sample:" in raw  # the subject line says it
+        assert path.name.startswith("sample-")  # the file name says it
         _head, sep, body = raw.partition("\n\n")
         assert sep == "" or body.strip() == ""  # header-only: no bodies ever
 
@@ -450,3 +454,14 @@ def test_sample_mail_dates_fall_inside_the_digest_window(env, auth):
         assert timedelta(0) <= age <= timedelta(hours=24), (
             f"{path.name} is dated {age} old; outside the 24-hour window"
         )
+
+
+def test_the_dashboard_payload_says_when_sample_data_is_on(env, auth):
+    def sample_flag():
+        status, _headers, body = env.request("GET", "/api/dashboard", auth)
+        assert status == 200
+        return json.loads(body)["sample"]
+
+    assert sample_flag() is False
+    _toggle(env, auth)
+    assert sample_flag() is True

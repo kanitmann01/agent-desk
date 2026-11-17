@@ -911,6 +911,9 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     }
     return {
         "version": agentdesk.__version__,
+        # The Sample data switch: the desk tags each cell that shows
+        # sample content once, in the cell header.
+        "sample": bool(settings.get("sample_data")) if settings is not None else False,
         "flags": {
             "excelEnabled": allowed("excel_enabled"),
             "calendarEnabled": allowed("calendar_enabled"),

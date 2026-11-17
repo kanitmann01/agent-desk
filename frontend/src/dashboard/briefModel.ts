@@ -10,7 +10,14 @@ export type MoverKind = 'changed' | 'added' | 'removed';
 
 export interface Mover {
   kind: MoverKind;
+  /** The deal name with its close date, distinct even when titles repeat. */
   name: string;
+  /** The deal name alone, as the workbook spells it. */
+  deal: string;
+  /** The close date as "27 Jan", or "". */
+  close: string;
+  region: string;
+  stage: string;
   previousName: string | null;
   meta: string;
   oldAmount: number | null;
@@ -36,6 +43,23 @@ export function dealName(row: unknown[]): string {
   return when ? `${base}, ${when}` : base;
 }
 
+export function dealBase(row: unknown[]): string {
+  return String(row[0] ?? '').replace(ROW_INDEX, '').trim() || 'Row';
+}
+
+function cellText(value: unknown): string {
+  return value == null ? '' : String(value).trim();
+}
+
+function rowFields(row: unknown[]) {
+  return {
+    deal: dealBase(row),
+    close: shortDate(row[4]),
+    region: cellText(row[1]),
+    stage: cellText(row[2]),
+  };
+}
+
 export function dealMeta(row: unknown[]): string {
   return [row[1], row[2]]
     .map((cell) => (cell == null ? '' : String(cell).trim()))
@@ -59,6 +83,7 @@ function pair(next: unknown[], prev: unknown[]): Mover {
   const prevName = dealName(prev);
   return {
     kind: 'changed',
+    ...rowFields(next),
     name: nextName,
     previousName: prevName !== nextName ? prevName : null,
     meta: dealMeta(next) || dealMeta(prev),
@@ -91,6 +116,7 @@ export function moversFromDelta(delta: DeltaPayload): Mover[] {
     const amount = amountOf(row);
     movers.push({
       kind: 'added',
+      ...rowFields(row),
       name: dealName(row),
       previousName: null,
       meta: dealMeta(row),
@@ -105,6 +131,7 @@ export function moversFromDelta(delta: DeltaPayload): Mover[] {
     const amount = amountOf(row);
     movers.push({
       kind: 'removed',
+      ...rowFields(row),
       name: dealName(row),
       previousName: null,
       meta: dealMeta(row),
@@ -135,4 +162,41 @@ export function formatSigned(value: number): string {
 export function formatAmount(value: number | null): string {
   if (value == null) return '';
   return Math.round(value).toLocaleString('en-US');
+}
+
+export interface StageNet {
+  stage: string;
+  net: number;
+  deals: number;
+}
+
+/**
+ * The net change per pipeline stage, in the order the stages first
+ * appear in the movers (largest move first). A deal that changed stage
+ * counts where it sits now. Rows without a stage group under "Other".
+ */
+export function netByStage(movers: Mover[]): StageNet[] {
+  const order: string[] = [];
+  const totals = new Map<string, StageNet>();
+  for (const mover of movers) {
+    const stage = mover.stage || 'Other';
+    let entry = totals.get(stage);
+    if (!entry) {
+      entry = { stage, net: 0, deals: 0 };
+      totals.set(stage, entry);
+      order.push(stage);
+    }
+    entry.net += mover.delta;
+    entry.deals += 1;
+  }
+  return order.map((stage) => totals.get(stage)!);
+}
+
+/** "18,850" style, for a figure that may be absent. */
+export function formatCompact(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `${Math.round(value / 1_000)}k`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(Math.round(value));
 }
