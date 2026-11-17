@@ -199,7 +199,7 @@ def test_an_entity_with_two_facts_gets_one_consolidated_observation_that_follows
     loop.store_fact(memory, "Acme Corp signed for three years.", source="page",
                     entities=[("Acme Corp", "org")])
     [obs] = memory.observations()
-    assert obs.text.startswith("Acme Corp: Acme Corp signed for three years; Priya Shah owns")
+    assert obs.text.startswith("Acme Corp signed for three years; Priya Shah owns")
     assert len(obs.fact_ids) == 2
     loop.store_fact(memory, "Acme Corp is based in Pune.", source="page", entities=[("Acme Corp", "org")])
     [obs] = memory.observations()
@@ -240,6 +240,10 @@ def test_removing_a_fact_names_and_applies_every_knock_on_change():
     consolidated = [o for o in memory.observations() if o.id != reflected.id]
     assert len(consolidated) == 1 and set(consolidated[0].fact_ids) == {b.id, c.id}
     assert "Priya" not in consolidated[0].text
+    # The result reports the rewrite once: not also removed, not flagged.
+    assert result.observations_updated == (consolidated[0].id,)
+    assert result.observations_removed == ()
+    assert result.observations_flagged == (reflected.id,)
 
 
 def test_removing_an_entity_takes_every_fact_that_mentions_it_and_undo_puts_it_all_back():

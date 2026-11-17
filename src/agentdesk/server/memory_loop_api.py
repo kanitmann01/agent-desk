@@ -39,9 +39,9 @@ def origin_of(source: str, card, excerpt) -> dict:
         return {"id": f"auto:{channel}", "label": CHANNEL_LABELS.get(channel, channel),
                 "how": "Saved automatically"}
     if source == "page":
-        return {"id": "page", "label": "Typed on this page", "how": "Typed"}
+        return {"id": "page", "label": "Typed on this page", "how": ""}
     if source == SAMPLE_SOURCE:
-        return {"id": "sample", "label": "Sample data", "how": "Sample"}
+        return {"id": "sample", "label": "Sample data", "how": ""}
     if source.startswith("inbox card "):
         meta = (card.meta.get("memoryFact") if card is not None else None) or {}
         channel = str(meta.get("channel") or channel)

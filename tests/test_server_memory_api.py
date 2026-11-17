@@ -221,6 +221,7 @@ def test_entity_merge_route_unions_aliases_and_relinks_facts(env, auth):
 def test_entity_merge_route_refuses_self_and_unknown(env, auth):
     fact = _add_fact(env, auth, "Maya joined Acme")
     _link_entities(env, fact["id"], [("Acme", "org")])
+    before = len(env.server.memory.entities())
     status, _h, body = env.post_json(
         "/memory/entities/merge", {"survivor": 1, "removed": 1}, auth
     )
@@ -233,7 +234,7 @@ def test_entity_merge_route_refuses_self_and_unknown(env, auth):
         "/memory/entities/merge", {"survivor": "x", "removed": 2}, auth
     )
     assert status == 400
-    assert len(env.server.memory.entities()) == 1
+    assert len(env.server.memory.entities()) == before
 
 
 def test_get_memory_sweep_lists_candidates_with_reasons(env, auth):

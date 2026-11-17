@@ -304,6 +304,13 @@ def memory_graph_island_built() -> bool:
     return (SPA_DIR / "assets" / "memory-graph.js").is_file()
 
 
+def memory_loop_island_built() -> bool:
+    """True when the committed SPA build carries the Memory page island
+    (capture, review, knowledge, removal); without it /memory stays the
+    server-rendered page."""
+    return (SPA_DIR / "assets" / "memory-loop.js").is_file()
+
+
 def spa_index_path() -> Path:
     """The SPA shell, read through the module global so tests can re-point it."""
     return SPA_DIR / "index.html"
@@ -2374,12 +2381,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 embeddings=memory.embedding_counts(),
                 inbox_count=self._inbox_waiting_count(),
                 graph_island=memory_graph_island_built(),
+                loop_island=memory_loop_island_built(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_add(self) -> None:
-        """The page's one explicit creation path. The assistant and
-        research paths may recall, never create. Ticket #95: the
+        """The page's typed-fact path. (The Assistant and Research create
+        facts only through capture, which the memory settings govern and
+        review gates by default.) Ticket #95: the
         semantic half is derived per action, so an active fact embeds
         at write and a failure stores the fact without a vector."""
         memory = self._memory_available()
@@ -2391,7 +2400,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not isinstance(text, str) or not text.strip():
             self._send_json(400, {"error": 'expected {"text": "..."}'})
             return
-        outcome = memory_loop.store_fact(memory, text.strip(), source="page")
+        # Typed facts keep the user's words; the names they mention link
+        # them to entities, so supersede and consolidation see them too.
+        outcome = memory_loop.store_fact(
+            memory, text.strip(), source="page", entities=memory_loop.names_in(text),
+        )
         self._memory_response(_fact_json(outcome.fact), status=201)
 
     def _memory_edit(self, fact_id: int | None) -> None:
@@ -2687,9 +2700,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._configure_memory_embeddings()
         result = memory_loop.apply_removal(memory, plan, keep_source_ids=keep)
         token, expires = server.memory_undo.hold(result, plan.label)
-        counts = (f"{len(result.fact_ids)} facts, {len(result.observations_removed)} observations removed,"
-                  f" {len(result.observations_updated)} updated, {len(result.observations_flagged)} flagged,"
-                  f" {len(result.entities_removed)} entities removed")
+        counts = (f"{memory_loop.counted(len(result.fact_ids), 'fact')}; observations:"
+                  f" {len(result.observations_removed)} removed, {len(result.observations_updated)} rewritten,"
+                  f" {len(result.observations_flagged)} flagged;"
+                  f" {memory_loop.counted(len(result.entities_removed), 'entity', 'entities')} forgotten")
         self._audit("memory.remove", target=f"{kind} {target_id}", detail=counts)
         self._send_json(200, {
             "status": "ok",
@@ -2713,7 +2727,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send_json(409, {"error": str(exc)})
             return
-        self._audit("memory.undo", target=f"{len(held.result.fact_ids)} facts",
+        self._audit("memory.undo", target=memory_loop.counted(len(held.result.fact_ids), "fact"),
                     detail="removal undone within the window")
         self._send_json(200, {"status": "ok", "restored": held.result.to_json()})
 

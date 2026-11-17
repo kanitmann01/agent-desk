@@ -1,0 +1,197 @@
+/* The Memory page. Server-page tokens only (src/agentdesk/server/pages.py
+   theme blocks): surfaces, hairline, the ink ramp, the one accent. No
+   colour literal lives here, so Unkey, Coforge and Momentuum blue all
+   come from the same rules. One bento language with the dashboard:
+   1px hairlines, 8px cells, mono eyebrow labels, Geist Mono figures. */
+#memory-loop-root{font-family:var(--font-ui)}
+#memory-loop-root .ml{display:flex;flex-direction:column;gap:12px;margin:4px 0 32px}
+#memory-loop-root .ml-mono,#memory-loop-root .ml-figure,#memory-loop-root .ml-step-index,#memory-loop-root time{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+#memory-loop-root .ml-quiet{color:var(--ink-3);font-size:13px;margin:0}
+#memory-loop-root .ml-pad{padding:14px 0 4px}
+#memory-loop-root .ml-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#memory-loop-root .ml-alert{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-card);padding:14px 16px;color:var(--ink-1)}
+#memory-loop-root a:focus-visible,#memory-loop-root button:focus-visible,#memory-loop-root input:focus-visible,
+#memory-loop-root textarea:focus-visible,#memory-loop-root summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* Header */
+#memory-loop-root .ml-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:4px}
+#memory-loop-root .ml-head h1,#memory-loop-root .ml-dialog-title{text-wrap:balance}
+#memory-loop-root .ml-head h1{font-family:var(--font-display);font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.025em;color:var(--heading);margin:0}
+#memory-loop-root .ml-sub{color:var(--ink-2);font-size:14px;line-height:1.5;margin:6px 0 0;max-width:72ch}
+
+/* Labels and chips */
+#memory-loop-root .ml-tag{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:0}
+#memory-loop-root .ml-chip,#memory-loop-root .ml-chip-quiet{display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border-radius:var(--r-inner);padding:1px 6px;line-height:1.6;white-space:nowrap}
+#memory-loop-root .ml-chip{color:var(--accent-text);border:1px solid var(--hairline);background:var(--surface-2)}
+#memory-loop-root .ml-chip-quiet{color:var(--ink-3);border:1px solid var(--hairline)}
+#memory-loop-root .ml-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
+#memory-loop-root .ml-entity{font:inherit;font-size:12px;color:var(--ink-2);background:transparent;border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;line-height:1.5}
+#memory-loop-root button.ml-entity{cursor:pointer;transition:border-color var(--dur) ease,color var(--dur) ease}
+#memory-loop-root button.ml-entity:hover{border-color:var(--ink-3);color:var(--ink-1)}
+#memory-loop-root .ml-note{font-size:12.5px;line-height:1.5;color:var(--ink-3);margin:10px 0 0}
+
+/* Buttons */
+#memory-loop-root button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#memory-loop-root .ml-field-error{font-size:12.5px;color:var(--ink-1);margin:-2px 0 0;padding-left:8px;border-left:2px solid var(--accent)}
+#memory-loop-root .ml-btn{font:inherit;font-size:13px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;
+  border-radius:var(--r-control);border:1px solid var(--hairline);background:var(--surface-2);color:var(--ink-1);cursor:pointer;white-space:nowrap;
+  transition:background var(--dur) ease,border-color var(--dur) ease,transform var(--dur) ease}
+#memory-loop-root .ml-btn:hover:not(:disabled){border-color:var(--ink-4)}
+#memory-loop-root .ml-btn:active:not(:disabled){transform:translateY(1px)}
+#memory-loop-root .ml-btn:disabled{opacity:.45;cursor:default}
+#memory-loop-root .ml-btn-primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#memory-loop-root .ml-btn-primary:hover:not(:disabled){border-color:var(--accent);filter:brightness(1.06)}
+#memory-loop-root .ml-btn-danger{background:var(--ink-1);border-color:var(--ink-1);color:var(--bg)}
+#memory-loop-root .ml-btn-danger:hover:not(:disabled){border-color:var(--ink-1);filter:brightness(.92)}
+#memory-loop-root .ml-btn-remove{background:transparent}
+#memory-loop-root .ml-text-btn{font:inherit;font-size:12.5px;color:var(--ink-2);background:none;border:none;padding:0;margin-left:8px;cursor:pointer;
+  text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px}
+#memory-loop-root .ml-text-btn:hover{color:var(--ink-1);text-decoration-color:var(--ink-3)}
+#memory-loop-root .ml-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+
+/* The flow: four steps sharing one frame, each a link to where it is worked. */
+#memory-loop-root .ml-flow{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);overflow:hidden}
+#memory-loop-root .ml-step{border-left:1px solid var(--hairline);min-width:0}
+#memory-loop-root .ml-step:first-child{border-left:none}
+#memory-loop-root .ml-step-link{display:flex;flex-direction:column;gap:2px;height:100%;padding:14px 16px 16px;color:inherit;text-decoration:none;transition:background var(--dur) ease}
+#memory-loop-root .ml-step-link:hover{background:var(--surface-2)}
+#memory-loop-root .ml-step-top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+#memory-loop-root .ml-step-index{font-size:11px;color:var(--ink-4)}
+#memory-loop-root .ml-step-top .ml-chip-quiet{margin-left:auto}
+#memory-loop-root .ml-figure{font-size:40px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--heading)}
+#memory-loop-root .ml-step-capture .ml-figure{color:var(--accent-text)}
+#memory-loop-root .ml-step-unit{font-size:13px;color:var(--ink-2);margin-top:4px}
+#memory-loop-root .ml-step-line{font-size:12.5px;line-height:1.45;color:var(--ink-3);margin-top:8px}
+
+#memory-loop-root .ml-notice{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);color:var(--ink-1);font-size:13px}
+#memory-loop-root .ml-notice .ml-text-btn{margin-left:auto}
+
+/* The bento: review beside the settings, then knowledge, then the graph. */
+#memory-loop-root .ml-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;align-items:start}
+#memory-loop-root .ml-span-8{grid-column:span 8}
+#memory-loop-root .ml-span-12{grid-column:1 / -1}
+#memory-loop-root .ml-side{grid-column:span 4;display:flex;flex-direction:column;gap:12px;min-width:0}
+#memory-loop-root .ml-tile{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-card);padding:14px 16px 16px;min-width:0;scroll-margin-top:16px}
+#memory-loop-root .ml-tile-head{display:flex;align-items:center;gap:10px;min-height:28px}
+#memory-loop-root .ml-tile-count{font-size:12.5px;color:var(--ink-3);margin-left:auto}
+#memory-loop-root .ml-tile-head .ml-tile-count + .ml-btn{margin-left:4px}
+#memory-loop-root .ml-tile-link{margin-left:auto;font-size:13px;color:var(--ink-2);text-decoration:none;border-bottom:1px solid var(--hairline)}
+#memory-loop-root .ml-tile-link:hover{color:var(--ink-1);border-color:var(--ink-3)}
+#memory-loop-root .ml-tile-sub{font-size:13px;color:var(--ink-3);margin:4px 0 0}
+
+/* Review */
+#memory-loop-root .ml-review{min-height:100%}
+#memory-loop-root .ml-cands{list-style:none;margin:8px 0 0;padding:0}
+#memory-loop-root .ml-cand{padding:14px 0;border-top:1px solid var(--hairline)}
+#memory-loop-root .ml-cand:first-child{border-top:none}
+#memory-loop-root .ml-cand-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3)}
+#memory-loop-root .ml-cand-meta time{margin-left:auto}
+#memory-loop-root .ml-cand-text{font-size:15px;line-height:1.45;color:var(--ink-1);margin:8px 0 0;max-width:70ch}
+#memory-loop-root .ml-edit textarea,#memory-loop-root .ml-add textarea{width:100%;box-sizing:border-box;font:inherit;font-size:14px;line-height:1.45;color:var(--ink-1);
+  background:var(--bg);border:1px solid var(--hairline);border-radius:var(--r-control);padding:8px 10px;resize:vertical;margin-top:8px}
+#memory-loop-root .ml-excerpt{margin-top:8px;font-size:12.5px;color:var(--ink-3)}
+#memory-loop-root .ml-excerpt summary{cursor:pointer;width:max-content;color:var(--ink-2)}
+#memory-loop-root .ml-excerpt blockquote,#memory-loop-root .ml-quote{margin:8px 0 0;padding:2px 0 2px 12px;border-left:2px solid var(--hairline);color:var(--ink-2);font-size:13px;line-height:1.5;white-space:pre-line}
+#memory-loop-root .ml-excerpt ul{margin:6px 0 0;padding-left:18px;color:var(--ink-2)}
+#memory-loop-root .ml-empty{padding:28px 0 16px;max-width:52ch}
+#memory-loop-root .ml-empty-title{font-size:15px;font-weight:600;color:var(--ink-1);margin:0 0 6px}
+#memory-loop-root .ml-empty p{font-size:13.5px;line-height:1.5;color:var(--ink-3);margin:0}
+
+/* Capture settings */
+#memory-loop-root .ml-switch-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--hairline)}
+#memory-loop-root .ml-tile-head + .ml-switch-row{border-top:none;margin-top:4px}
+#memory-loop-root .ml-switch-row.is-disabled{opacity:.5}
+#memory-loop-root .ml-switch-label{display:flex;flex-direction:column;gap:2px;font-size:13.5px;color:var(--ink-1);min-width:0}
+#memory-loop-root .ml-switch-hint{font-size:12px;color:var(--ink-3)}
+#memory-loop-root .ml-switch{margin-left:auto;flex:none;position:relative;width:36px;height:20px;border-radius:999px;border:1px solid var(--hairline);background:var(--surface-2);cursor:pointer;padding:0;transition:background var(--dur) ease,border-color var(--dur) ease}
+#memory-loop-root .ml-switch-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--ink-3);transition:transform var(--dur) ease,background var(--dur) ease}
+#memory-loop-root .ml-switch[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
+#memory-loop-root .ml-switch[aria-checked="true"] .ml-switch-knob{transform:translateX(16px);background:var(--on-accent)}
+#memory-loop-root .ml-fieldset{border:none;margin:0;padding:0;min-width:0}
+#memory-loop-root .ml-fieldset legend{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-4);padding:12px 0 2px}
+#memory-loop-root .ml-fieldset .ml-switch-row:first-of-type{border-top:none}
+#memory-loop-root .ml-segment{display:grid;grid-template-columns:1fr 1fr;margin-top:8px;border:1px solid var(--hairline);border-radius:var(--r-control);overflow:hidden}
+#memory-loop-root .ml-segment button{font:inherit;font-size:13px;min-height:34px;border:none;background:transparent;color:var(--ink-2);cursor:pointer;transition:background var(--dur) ease,color var(--dur) ease}
+#memory-loop-root .ml-segment button + button{border-left:1px solid var(--hairline)}
+#memory-loop-root .ml-segment button[aria-checked="true"]{background:var(--surface-2);color:var(--ink-1);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+#memory-loop-root .ml-fieldset:disabled .ml-segment{opacity:.5}
+#memory-loop-root .ml-add{display:flex;flex-direction:column;gap:10px}
+#memory-loop-root .ml-add .ml-btn{align-self:flex-start}
+
+/* Stored knowledge */
+#memory-loop-root .ml-filter{margin-left:auto}
+#memory-loop-root .ml-filter input{font:inherit;font-size:13px;color:var(--ink-1);background:var(--bg);border:1px solid var(--hairline);border-radius:var(--r-control);padding:6px 10px;width:220px;min-height:32px;box-sizing:border-box}
+#memory-loop-root .ml-tabs{display:flex;gap:4px;margin:10px 0 0;border-bottom:1px solid var(--hairline);overflow-x:auto;scrollbar-width:none}
+#memory-loop-root .ml-tabs::-webkit-scrollbar{display:none}
+#memory-loop-root .ml-tabs [role="tab"]{font:inherit;font-size:13.5px;color:var(--ink-3);background:none;border:none;border-bottom:2px solid transparent;padding:8px 10px 9px;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+#memory-loop-root .ml-tabs [role="tab"] .ml-mono{font-size:12px;color:var(--ink-4);margin-left:4px}
+#memory-loop-root .ml-tabs [role="tab"]:hover{color:var(--ink-1)}
+#memory-loop-root .ml-tabs [role="tab"][aria-selected="true"]{color:var(--ink-1);border-bottom-color:var(--accent)}
+#memory-loop-root .ml-subbar{display:flex;align-items:flex-start;gap:16px;padding:12px 0 2px}
+#memory-loop-root .ml-subbar .ml-note{margin:0;flex:1}
+#memory-loop-root .ml-rows{list-style:none;margin:0;padding:0}
+#memory-loop-root .ml-row{display:flex;align-items:flex-start;gap:16px;padding:14px 0;border-top:1px solid var(--hairline)}
+#memory-loop-root .ml-rows .ml-row:first-child{border-top:none}
+#memory-loop-root .ml-row-main{flex:1;min-width:0}
+#memory-loop-root .ml-row-text{font-size:14.5px;line-height:1.45;color:var(--ink-1);margin:0;max-width:80ch;overflow-wrap:anywhere}
+#memory-loop-root .ml-row.is-replaced .ml-row-text{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--ink-4)}
+#memory-loop-root .ml-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;font-size:12.5px;color:var(--ink-3);margin:6px 0 0}
+#memory-loop-root .ml-row-actions{display:flex;align-items:center;gap:12px;flex:none}
+#memory-loop-root .ml-row-actions .ml-text-btn{margin:0}
+#memory-loop-root .ml-flag{font-size:12.5px;line-height:1.5;color:var(--ink-1);margin:8px 0 0;padding:6px 10px;border-left:2px solid var(--accent);background:var(--surface-2);border-radius:0 var(--r-inner) var(--r-inner) 0;max-width:80ch}
+
+/* The graph sits inside its tile: undo the stand-alone island's breakout. */
+#memory-loop-root #memory-graph-root{position:static;left:auto;transform:none;width:auto;margin-top:10px}
+#memory-loop-root #memory-graph-root .mg{margin:0}
+#memory-loop-root #memory-graph-root .mg-canvas,#memory-loop-root #memory-graph-root .mg-detail,#memory-loop-root #memory-graph-root .mg-empty{background:var(--bg)}
+
+/* Removal: the plan, then the undo bar. */
+#memory-loop-root .ml-scrim{position:fixed;inset:0;overscroll-behavior:contain;z-index:50;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--bg) 72%,transparent)}
+#memory-loop-root .ml-dialog{overscroll-behavior:contain;width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-card);padding:18px 20px 16px;
+  box-shadow:0 24px 48px -24px color-mix(in srgb,var(--bg) 80%,transparent)}
+#memory-loop-root .ml-dialog-title{font-size:16px;line-height:1.4;font-weight:600;color:var(--heading);margin:6px 0 4px;overflow-wrap:anywhere}
+#memory-loop-root .ml-plan-group{margin-top:14px}
+#memory-loop-root .ml-plan-group h3{font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 6px}
+#memory-loop-root .ml-plan-group ul{margin:0;padding-left:18px;font-size:13px;line-height:1.5;color:var(--ink-1)}
+#memory-loop-root .ml-plan-group li + li{margin-top:4px}
+#memory-loop-root .ml-dialog-actions{justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--hairline)}
+#memory-loop-root .ml-undo{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px);box-sizing:border-box;
+  padding:8px 10px 8px 16px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-card);color:var(--ink-1);font-size:13px;
+  box-shadow:0 16px 32px -16px color-mix(in srgb,var(--bg) 80%,transparent)}
+#memory-loop-root .ml-undo-left{color:var(--ink-3);font-size:12px;min-width:3ch;text-align:right}
+
+@media (prefers-reduced-motion:reduce){
+  #memory-loop-root *{transition:none!important;scroll-behavior:auto!important}
+}
+
+@media (max-width:1100px){
+  #memory-loop-root .ml-span-8,#memory-loop-root .ml-side{grid-column:1 / -1}
+  #memory-loop-root .ml-side{display:grid;grid-template-columns:1fr 1fr;align-items:start}
+}
+@media (max-width:760px){
+  #memory-loop-root .ml-flow{grid-template-columns:1fr 1fr}
+  #memory-loop-root .ml-step:nth-child(3){border-left:none}
+  #memory-loop-root .ml-step:nth-child(n+3){border-top:1px solid var(--hairline)}
+  #memory-loop-root .ml-side{display:flex}
+  #memory-loop-root .ml-row{flex-direction:column;gap:10px}
+  #memory-loop-root .ml-row-actions{width:100%;justify-content:flex-end}
+  #memory-loop-root .ml-subbar{flex-direction:column;gap:10px}
+  #memory-loop-root .ml-tile-head{flex-wrap:wrap}
+  #memory-loop-root .ml-filter{width:100%;margin-left:0}
+  #memory-loop-root .ml-filter input{width:100%}
+}
+@media (max-width:560px){
+  #memory-loop-root .ml-head h1,#memory-loop-root .ml-dialog-title{text-wrap:balance}
+#memory-loop-root .ml-head h1{font-size:26px}
+  #memory-loop-root .ml-figure{font-size:32px}
+  #memory-loop-root .ml-btn,#memory-loop-root .ml-segment button,#memory-loop-root .ml-tabs [role="tab"]{min-height:44px}
+  #memory-loop-root .ml-switch-row{min-height:44px}
+  #memory-loop-root .ml-switch{width:44px;height:26px}
+  #memory-loop-root .ml-switch-knob{width:20px;height:20px}
+  #memory-loop-root .ml-switch[aria-checked="true"] .ml-switch-knob{transform:translateX(18px)}
+  #memory-loop-root .ml-text-btn{min-height:44px}
+  #memory-loop-root .ml-actions .ml-btn{flex:1}
+  #memory-loop-root .ml-undo{left:16px;right:16px;transform:none;bottom:12px}
+  #memory-loop-root .ml-undo span:first-child{flex:1}
+}

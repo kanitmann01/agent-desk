@@ -61,7 +61,7 @@ export default defineConfig({
     // The CSP allows fonts from 'self' only, so no font may travel as a
     // data: URL (vite inlines small assets by default).
     assetsInlineLimit: 0,
-    // Two entries: the SPA shell, and the Memory page graph island the
+    // Three entries: the SPA shell, the Memory page, and the graph island the
     // server-rendered memory pages load by a fixed name
     // (assets/memory-graph.js and .css), so the Python side never has
     // to read a manifest to find it.
@@ -69,14 +69,23 @@ export default defineConfig({
       input: {
         index: resolve(here, 'index.html'),
         'memory-graph': resolve(here, 'src/memory/island.tsx'),
+        // The Memory page itself (capture, review, knowledge, removal),
+        // mounted into /memory by the same fixed-name rule.
+        'memory-loop': resolve(here, 'src/memory/loop/island.tsx'),
       },
       output: {
         entryFileNames: (chunk) =>
-          chunk.name === 'memory-graph' ? 'assets/memory-graph.js' : 'assets/[name]-[hash].js',
-        assetFileNames: (asset) =>
-          (asset.names ?? []).includes('memory-graph.css')
-            ? 'assets/memory-graph.css'
-            : 'assets/[name]-[hash][extname]',
+          chunk.name === 'memory-graph' || chunk.name === 'memory-loop'
+            ? `assets/${chunk.name}.js`
+            : 'assets/[name]-[hash].js',
+        assetFileNames: (asset) => {
+          const names = asset.names ?? [];
+          // The page entry also pulls in the graph's stylesheet, so its
+          // bundle carries both names: match it first.
+          if (names.includes('memory-loop.css')) return 'assets/memory-loop.css';
+          if (names.includes('memory-graph.css')) return 'assets/memory-graph.css';
+          return 'assets/[name]-[hash][extname]';
+        },
       },
     },
   },

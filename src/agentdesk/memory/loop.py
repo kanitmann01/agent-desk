@@ -170,6 +170,11 @@ def _names_in(sentence: str) -> tuple[tuple[str, str], ...]:
     return tuple(names[:6])
 
 
+def names_in(text: str) -> tuple[tuple[str, str], ...]:
+    """The named things a typed fact mentions, for entity linking."""
+    return _names_in(" ".join((text or "").split()))
+
+
 def rule_candidates(text: str) -> list[CandidateFact]:
     """Statements worth remembering in the user's own words: declarative
     sentences that name something (a capitalized name or a number) and
@@ -250,6 +255,11 @@ def replaces(newer: str, older: str) -> bool:
     return len(new_frame & old_frame) / len(union) >= REPLACE_FRAME_SIMILARITY
 
 
+def counted(n: int, noun: str, plural: str | None = None) -> str:
+    """"1 fact", "2 facts": the audit rows read as plain English."""
+    return f"{n} {noun if n == 1 else (plural or noun + 's')}"
+
+
 def consolidation_text(name: str, facts: list[Fact]) -> str:
     """One readable line per entity: its name, then what the standing
     facts say about it, newest first, bounded."""
@@ -261,7 +271,12 @@ def consolidation_text(name: str, facts: list[Fact]) -> str:
             break
         parts.append(clause)
         used += len(clause) + 2
-    return f"{name}: " + "; ".join(parts) + "."
+    body = "; ".join(parts) + "."
+    # The name leads once: no "Acme: Acme signed ..." when the newest
+    # fact already names it.
+    if parts and name.lower() in parts[0].lower():
+        return body
+    return f"{name}: " + body
 
 
 def entity_scope(entity_id: int) -> str:
@@ -273,6 +288,9 @@ class ProcessOutcome:
     replaced: tuple[int, ...] = ()
     observations_saved: tuple[int, ...] = ()
     observations_removed: tuple[int, ...] = ()
+    # Old ids a rewrite replaced (the new id is in observations_saved):
+    # the same observation to the user, not a removal.
+    observations_rewritten: tuple[int, ...] = ()
 
 
 def consolidate_entities(memory, entity_ids: Iterable[int]) -> ProcessOutcome:
@@ -286,6 +304,7 @@ def consolidate_entities(memory, entity_ids: Iterable[int]) -> ProcessOutcome:
     by_id = {fact.id: fact for fact in memory.all()}
     saved: list[int] = []
     removed: list[int] = []
+    rewritten: list[int] = []
     for entity_id in entity_ids:
         scope = entity_scope(entity_id)
         existing = memory.observation_ids_in_scope(scope)
@@ -310,7 +329,12 @@ def consolidate_entities(memory, entity_ids: Iterable[int]) -> ProcessOutcome:
         )
         saved.append(result.observation.id)
         removed.extend(result.removed_ids)
-    return ProcessOutcome(observations_saved=tuple(saved), observations_removed=tuple(removed))
+        rewritten.extend(i for i in existing if i != result.observation.id)
+    return ProcessOutcome(
+        observations_saved=tuple(saved),
+        observations_removed=tuple(removed),
+        observations_rewritten=tuple(rewritten),
+    )
 
 
 def process_fact(memory, fact_id: int) -> ProcessOutcome:
@@ -659,10 +683,15 @@ def apply_removal(memory, plan: RemovalPlan, keep_source_ids: Iterable[int] = ()
     after_obs = {obs.id for obs in memory.observations()}
     created = tuple(sorted(after_obs - before_obs))
     gone = set(raw["observation_ids"]) | set(consolidated.observations_removed)
+    rewritten = set(consolidated.observations_rewritten) | set(consolidated.observations_saved)
     return RemovalResult(
         fact_ids=tuple(raw["fact_ids"]),
-        observations_removed=tuple(sorted(gone - set(consolidated.observations_saved))),
-        observations_flagged=tuple(raw["flagged_observation_ids"]),
+        observations_removed=tuple(sorted(gone - rewritten)),
+        # Flagged means it still stands and lost a cited fact; one the
+        # rewrite replaced or that went away is not left to look at.
+        observations_flagged=tuple(
+            sorted(set(raw["flagged_observation_ids"]) - gone - rewritten)
+        ),
         observations_updated=tuple(consolidated.observations_saved),
         entities_removed=tuple(raw["entity_ids"]),
         sources_removed=tuple(raw["source_ids"]),

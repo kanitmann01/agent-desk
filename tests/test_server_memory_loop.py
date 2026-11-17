@@ -188,3 +188,32 @@ def test_removing_an_excerpt_also_rejects_its_waiting_cards(env, auth):
     assert status == 200
     state = _loop(env, auth)
     assert state["candidates"] == [] and state["sources"] == []
+
+
+def test_the_memory_page_mounts_the_loop_island_over_the_server_forms(env, auth, monkeypatch):
+    from agentdesk.server import app as app_module
+    monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: True)
+    status, _h, body = env.request("GET", "/memory", auth)
+    page = body.decode()
+    assert status == 200
+    assert 'id="memory-loop-root" data-endpoint="/api/memory/loop"' in page
+    assert "/static/spa/assets/memory-loop.js" in page
+    assert "/static/spa/assets/memory-loop.css" in page
+    assert 'class="doc doc-wide"' in page
+    # The no-JavaScript page lives inside the root and still posts.
+    root = page.split('id="memory-loop-root"', 1)[1].split("</div><link", 1)[0]
+    assert 'action="/memory/add"' in root
+    # Maintenance stays on the server page, below the island.
+    assert 'id="memory-maintenance"' in page
+    # A recall query renders the server page, which shows its answer.
+    status, _h, body = env.post_json("/memory/recall", {"query": "revenue"}, auth)
+    assert status == 200 and 'id="memory-loop-root"' not in body.decode()
+
+
+def test_without_the_build_the_memory_page_stays_server_rendered(env, auth, monkeypatch):
+    from agentdesk.server import app as app_module
+    monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: False)
+    _s, _h, body = env.request("GET", "/memory", auth)
+    page = body.decode()
+    assert 'id="memory-loop-root"' not in page
+    assert 'class="doc"' in page

@@ -79,6 +79,20 @@ def graph_island_html(mode: str) -> str:
     )
 
 
+def loop_island_html(fallback_html: str) -> str:
+    """The Memory page island (the SPA build's memory-loop entry): the
+    whole capture, review, knowledge and removal page. The server forms
+    inside the root are the no-JavaScript page; React replaces them on
+    mount. The graph stylesheet rides along because the page embeds it."""
+    return (
+        '<div id="memory-loop-root" data-endpoint="/api/memory/loop">'
+        f"{fallback_html}</div>"
+        '<link rel="stylesheet" href="/static/spa/assets/memory-graph.css">'
+        '<link rel="stylesheet" href="/static/spa/assets/memory-loop.css">'
+        '<script type="module" src="/static/spa/assets/memory-loop.js"></script>\n'
+    )
+
+
 def _locked_banner(cause: str) -> str:
     """The locked state: the cause verbatim, and what it means. Nothing
     else renders: a locked store reads and writes nothing."""
@@ -350,6 +364,7 @@ def render_memory_page(
     observations: list[Observation] | None = None,
     embeddings: dict | None = None,
     graph_island: bool = False,
+    loop_island: bool = False,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview,
     the entities with their merge form, the optional junk-sweep preview,
@@ -369,6 +384,37 @@ def render_memory_page(
         if observations is not None else ""
     )
     embeddings_row = _embeddings_section(embeddings)
+    intro = """<p>Facts saved on this machine. The assistant recalls at most five of
+them, 500 characters in total, as derived abstractions it may read.
+Facts arrive here, from an inbox card you accept, or by capture from the
+Assistant and Research when it is on in the memory settings.</p>"""
+    add_form = """<h2>Add a fact</h2>
+<form method="post" action="/memory/add" class="cardform">
+<label class="empty" for="new-fact">Fact</label>
+<input id="new-fact" type="text" name="text" placeholder="The revenue total is 220.">
+<button class="btn btn-primary" type="submit">Save fact</button>
+</form>"""
+    # The plain page (no query, no sweep, no notice) is the loop island
+    # when the build carries it; a form result keeps the server page so
+    # the answer it rendered stays on screen.
+    if loop_island and recall is None and sweep is None and not notice:
+        fallback = f"""<h1>Memory</h1>
+{intro}
+{add_form}
+<h2>Saved facts</h2>
+{_fact_rows(facts)}
+{observations_row}
+{entities_row}"""
+        content = f"""{loop_island_html(fallback)}
+<h2 id="memory-maintenance">Maintenance</h2>
+<p>Recall preview, encryption at rest and embeddings for semantic links.</p>
+{_recall_section(recall, query)}
+{_encrypt_section(encrypt)}
+{embeddings_row}
+"""
+        return page_shell(
+            "Memory", "/memory", content, version, inbox_count=inbox_count, wide=True,
+        )
     island_row = graph_island_html("page") if graph_island else ""
     content = f"""<h1>Memory</h1>
 {notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
