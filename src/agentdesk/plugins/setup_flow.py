@@ -12,11 +12,6 @@ from agentdesk.plugins.config import ConfigError, InstanceStore
 from agentdesk.plugins.preview import preview_table
 from agentdesk.plugins.suggest import build_suggestion_request, heuristic, propose_columns
 
-# The HTTP dispatch (app.py's _plugin_setup_post/_plugin_setup_get) still
-# calls these helpers without a plugin id, so until it forwards the id the
-# path names, a bare call serves the historical tracker. Nothing else may
-# rely on this constant; pass plugin_id explicitly.
-LEGACY_TRACKER_ID = "excel-report"
 JOB = "Track one series from this workbook: a label column and a value column."
 
 
@@ -24,8 +19,8 @@ def store_for(runtime, cap: int) -> InstanceStore:
     return InstanceStore(runtime.data_dir, runtime.workspace_dir, cap=cap)
 
 
-def ensure_instance(store: InstanceStore, instance_id: str, name: str, good: str = "up",
-                    plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+def ensure_instance(store: InstanceStore, instance_id: str, name: str, plugin_id: str,
+                    good: str = "up") -> dict:
     try:
         return store.read(plugin_id, instance_id)
     except ConfigError:
@@ -33,7 +28,7 @@ def ensure_instance(store: InstanceStore, instance_id: str, name: str, good: str
 
 
 def pick(runtime, cap: int, instance_id: str, name: str, pick_workbook,
-         plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+         plugin_id: str) -> dict:
     store = store_for(runtime, cap)
     ensure_instance(store, instance_id, name, plugin_id=plugin_id)
     if pick_workbook is None:
@@ -48,7 +43,7 @@ def pick(runtime, cap: int, instance_id: str, name: str, pick_workbook,
 
 
 def stage(runtime, cap: int, instance_id: str, name: str, path: str,
-          plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+          plugin_id: str) -> dict:
     store = store_for(runtime, cap)
     ensure_instance(store, instance_id, name, plugin_id=plugin_id)
     store.stage_file(plugin_id, instance_id, path)
@@ -58,7 +53,7 @@ def stage(runtime, cap: int, instance_id: str, name: str, path: str,
 
 
 def preview(runtime, cap: int, instance_id: str, *, sheet=None, header_row=1, range_text=None,
-            plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+            plugin_id: str) -> dict:
     store = store_for(runtime, cap)
     document = store.read(plugin_id, instance_id)
     source = document.get("source") or {}
@@ -74,7 +69,7 @@ def preview(runtime, cap: int, instance_id: str, *, sheet=None, header_row=1, ra
 
 
 def suggest(runtime, cap: int, instance_id: str, *, headers_only: bool, complete,
-            plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+            plugin_id: str) -> dict:
     store = store_for(runtime, cap)
     document = store.read(plugin_id, instance_id)
     source = document.get("source") or {}
@@ -100,7 +95,7 @@ def suggest(runtime, cap: int, instance_id: str, *, headers_only: bool, complete
 
 def confirm(runtime, cap: int, instance_id: str, tracking: dict, *, suggested: bool,
             header_row=None, range_text=None, name: str | None = None,
-            plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+            plugin_id: str) -> dict:
     store = store_for(runtime, cap)
     document = store.read(plugin_id, instance_id)
     source = dict(document.get("source") or {})
@@ -117,6 +112,6 @@ def confirm(runtime, cap: int, instance_id: str, tracking: dict, *, suggested: b
 
 
 def accept_outside(runtime, cap: int, instance_id: str,
-                   plugin_id: str = LEGACY_TRACKER_ID) -> dict:
+                   plugin_id: str) -> dict:
     store = store_for(runtime, cap)
     return store.accept_outside(plugin_id, instance_id)

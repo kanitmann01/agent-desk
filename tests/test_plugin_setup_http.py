@@ -120,13 +120,6 @@ def test_a_config_backed_plugin_that_is_not_the_tracker_shows_its_setup_card(boo
     assert card["payload"]["elements"] == []
 
 
-@pytest.mark.xfail(
-    reason="app.py's dispatch drops the plugin id: _plugin_setup_post and "
-           "_plugin_setup_get parse parts[2] but call the setup_flow helpers "
-           "without it, so every /api/plugins/<id>/instances request serves "
-           "excel-report's namespace. T3 follow-up: forward "
-           "plugin_id=parts[2] in both handlers.",
-    strict=False)
 def test_the_whole_chain_serves_the_fixture_plugin_over_http(booted_pack):
     """Create, pick, stage, preview, confirm over real HTTP for a plugin
     that is not the tracker, then the dashboard reads exactly the
@@ -175,7 +168,7 @@ def test_the_whole_chain_serves_the_fixture_plugin_over_http(booted_pack):
                if element["kind"] == "metric"}
     assert metrics["Value"] == "15"
 
-    for index in range(1, 5):
+    for index in range(1, 6):
         status, _headers, _body = server.post_json(
             "/api/plugins/qbr-pack/instances", {"name": f"Extra {index}"}, auth)
         assert status == 200, _body

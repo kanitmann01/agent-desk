@@ -3436,6 +3436,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     sheet=params.get("sheet"),
                     header_row=int(params.get("headerRow") or 1),
                     range_text=params.get("range"),
+                    plugin_id=parts[2],
                 )
                 self._send_json(200, result)
                 return
@@ -3450,11 +3451,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             accept_outside, confirm, ensure_instance, pick, stage, store_for, suggest,
         )
         parts = [part for part in path.split("/") if part]
-        # api plugins excel-report instances [iid] [action]
+        # api plugins <id> instances [iid] [action]
         if len(parts) < 4 or parts[3] != "instances":
             self._send_json(404, {"error": "not-found", "message": path})
             return
         cap = self._instance_cap()
+        plugin_id = parts[2]
         try:
             if len(parts) == 4:
                 name = str(body.get("name") or "").strip()
@@ -3465,6 +3467,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 saved = ensure_instance(
                     store_for(plugins, cap), instance_id, name,
                     good="down" if body.get("good") == "down" else "up",
+                    plugin_id=plugin_id,
                 )
                 self._send_json(200, {"instance": saved})
                 return
@@ -3473,10 +3476,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             name = str(body.get("name") or instance_id)
             if action == "pick":
                 self._send_json(200, pick(
-                    plugins, cap, instance_id, name, self.server.pick_workbook))  # type: ignore[attr-defined]
+                    plugins, cap, instance_id, name, self.server.pick_workbook,  # type: ignore[attr-defined]
+                    plugin_id=plugin_id))
                 return
             if action == "stage":
-                self._send_json(200, stage(plugins, cap, instance_id, name, str(body.get("path") or "")))
+                self._send_json(200, stage(
+                    plugins, cap, instance_id, name, str(body.get("path") or ""),
+                    plugin_id=plugin_id))
                 return
             if action == "suggest":
                 headers_only = self._headers_only()
@@ -3484,7 +3490,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     headers_only = bool(body.get("headersOnly"))
                 complete = self._suggestion_complete()
                 self._send_json(200, suggest(
-                    plugins, cap, instance_id, headers_only=headers_only, complete=complete))
+                    plugins, cap, instance_id, headers_only=headers_only, complete=complete,
+                    plugin_id=plugin_id))
                 return
             if action == "confirm":
                 tracking = body.get("tracking") if isinstance(body.get("tracking"), dict) else body
@@ -3493,10 +3500,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     suggested=bool(body.get("suggested")),
                     header_row=body.get("headerRow"),
                     range_text=body.get("range"),
-                    name=body.get("name")))
+                    name=body.get("name"),
+                    plugin_id=plugin_id))
                 return
             if action == "outside":
-                self._send_json(200, accept_outside(plugins, cap, instance_id))
+                self._send_json(200, accept_outside(plugins, cap, instance_id, plugin_id=plugin_id))
                 return
         except ConfigError as exc:
             self._send_json(400, {"error": exc.code, "message": exc.message})
