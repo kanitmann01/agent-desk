@@ -61,6 +61,9 @@ export function InstanceSetupSheet({
   const [picked, setPicked] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The staged file is outside the workspace folder: the confirm was
+  // refused, and the honest inline choice (accept once, retry) is up.
+  const [outside, setOutside] = useState(false);
 
   const steps = isCreate ? CREATE_STEPS : EDIT_STEPS;
   // Each mode numbers its own list: create walks name, open, choose
@@ -141,10 +144,36 @@ export function InstanceSetupSheet({
         });
       onDone(`${name || instance.name} now reads ${baseName(instance)}, tracking ${picked.length} rows.`);
     } catch (err) {
-      fail(err);
+      if (err instanceof MarketApiError && err.code === 'config:outside-workspace') {
+        // The dead-end becomes a choice (T6 review): the sheet offers
+        // the acceptance the API supports, then retries this step.
+        setOutside(true);
+        setError('');
+      } else {
+        fail(err);
+      }
     } finally {
       setBusy(false);
     }
+  };
+
+  const acceptOutside = async () => {
+    if (!instance) return;
+    setBusy(true);
+    setError('');
+    try {
+      await postInstance<{ outsideAccepted: boolean }>(
+        setupPluginId,
+        `/${encodeURIComponent(instance.instanceId)}/outside`,
+        {});
+    } catch (err) {
+      fail(err);
+      setBusy(false);
+      return;
+    }
+    setOutside(false);
+    setBusy(false);
+    await confirm();
   };
 
   const statusLabel = instance?.confirmedAt ? 'Confirmed' : 'Needs setup';
@@ -237,6 +266,19 @@ export function InstanceSetupSheet({
             <input aria-label="Instance name" value={name}
                    onChange={(event) => setName(event.target.value)} />
           </label>
+          {outside ? (
+            <div className="setup-proposal" role="status">
+              <p className="setup-reason">
+                That file lives outside the workspace folder. Accept it
+                once and this instance can read it.
+              </p>
+              <div className="setup-actions">
+                <Button tone="primary" onClick={() => void acceptOutside()} disabled={busy}>
+                  {busy ? 'Accepting…' : 'Use it anyway'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Button tone="primary" onClick={() => void confirm()} disabled={busy || !name.trim()}>
             {busy ? 'Confirming…' : 'Confirm'}
           </Button>

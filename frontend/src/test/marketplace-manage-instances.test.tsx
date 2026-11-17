@@ -76,11 +76,20 @@ function listing(overrides: ListOverrides = {}) {
 
 interface StubOptions {
   pick?: { status: number; body: unknown };
-  confirm?: { status: number; body: unknown };
+  // A static refusal, or a per-call answer (first confirm refused, the
+  // retry accepted, and so on).
+  confirm?: { status: number; body: unknown } | ((calls: number) => { status: number; body: unknown });
+}
+
+function confirmAnswer(options: StubOptions, calls: number): { status: number; body: unknown } | undefined {
+  const step = options.confirm;
+  if (typeof step === 'function') return step(calls);
+  return step;
 }
 
 function stubFetch(listing: ListOverrides, create?: { status: number; body: unknown }, options: StubOptions = {}) {
   const state = { listing: listing as Record<string, unknown> };
+  const confirmCalls = { count: 0 };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === 'POST') {
@@ -119,8 +128,13 @@ function stubFetch(listing: ListOverrides, create?: { status: number; body: unkn
           };
         return jsonResponse({ instance: opened, preview: PREVIEW, step: 'columns' });
       }
+      if (url.endsWith('/outside')) {
+        return jsonResponse({ outsideAccepted: true });
+      }
       if (url.endsWith('/confirm')) {
-        if (options.confirm) return jsonResponse(options.confirm.body, options.confirm.status);
+        confirmCalls.count += 1;
+        const answer = confirmAnswer(options, confirmCalls.count);
+        if (answer) return jsonResponse(answer.body, answer.status);
         return jsonResponse({ instance: CONFIG_INSTANCE, step: 'done' });
       }
       return jsonResponse({});
@@ -294,6 +308,39 @@ describe('the manage view configures a config-backed plugin', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'That selection names rows the file does not have.');
     expect(screen.getByRole('dialog', { name: 'Edit Board pack' })).toBeInTheDocument();
+  });
+
+  it('an outside-workspace refusal offers the honest accept and retries the confirm', async () => {
+    const { fetchMock } = stubFetch(listing(), undefined, {
+      confirm: (calls: number) => (calls === 1
+        ? { status: 400, body: { error: 'config:outside-workspace', message: 'That file is outside the workspace. Accept it before confirming.' } }
+        : { status: 200, body: { instance: CONFIG_INSTANCE, step: 'done' } }),
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
+    await user.click(await within(dialog).findByRole('button', { name: 'Open a workbook' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Booked' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Row label' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Region' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    // The refusal becomes the honest inline choice, not a dead end.
+    expect(await within(dialog).findByText(/outside the workspace folder/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Use it anyway' }));
+
+    // The acceptance posts once, then the same confirm retries and lands.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const posts = postsOf(fetchMock);
+    expect(posts.some((post) => post.url.endsWith('/instances/board-pack/outside'))).toBe(true);
+    const confirmPosts = posts.filter((post) => post.url.endsWith('/instances/board-pack/confirm'));
+    expect(confirmPosts.length).toBe(2);
+    expect(await screen.findByText(/tracking 2 rows/)).toBeInTheDocument();
   });
 
   it('opens the workbook flow for an existing instance from Edit', async () => {

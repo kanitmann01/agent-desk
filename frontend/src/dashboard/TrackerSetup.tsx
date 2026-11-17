@@ -52,6 +52,9 @@ export default function TrackerSetup({
   const [suggested, setSuggested] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // The opened file is outside the workspace folder: the confirm was
+  // refused, and the honest inline choice (accept once, retry) is up.
+  const [outside, setOutside] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +70,7 @@ export default function TrackerSetup({
   const pickUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/pick`;
   const suggestUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/suggest`;
   const confirmUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/confirm`;
+  const outsideUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/outside`;
 
   function assign(header: string) {
     if (role === 'value') setValueColumn(header);
@@ -139,11 +143,32 @@ export default function TrackerSetup({
     setBusy(false);
     if (res.status === 401) { onExpired(); return; }
     if (!res.ok) {
+      if ((res.data as { error?: string }).error === 'config:outside-workspace') {
+        // The dead-end becomes a choice (T6 review): the sheet offers
+        // the acceptance the API supports, then retries this step.
+        setOutside(true);
+        setError('');
+        return;
+      }
       setError((res.data as { message?: string }).message || 'The choice was not saved.');
       return;
     }
     await onDone();
     onClose();
+  }
+
+  async function acceptOutside() {
+    setBusy(true);
+    setError('');
+    const res = await postJson(outsideUrl, {});
+    setBusy(false);
+    if (res.status === 401) { onExpired(); return; }
+    if (!res.ok) {
+      setError((res.data as { message?: string }).message || 'The choice was not saved.');
+      return;
+    }
+    setOutside(false);
+    await confirm();
   }
 
   return (
@@ -229,6 +254,19 @@ export default function TrackerSetup({
           <label className="setup-field">Unit
             <input aria-label="Unit" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="USD" />
           </label>
+          {outside ? (
+            <div className="setup-proposal" role="status">
+              <p className="setup-reason">
+                That file lives outside the workspace folder. Accept it
+                once and this tracker can read it.
+              </p>
+              <div className="setup-actions">
+                <Button tone="primary" onClick={() => void acceptOutside()} disabled={busy}>
+                  {busy ? 'Accepting…' : 'Use it anyway'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Button tone="primary" onClick={() => void confirm()} disabled={busy || !instanceName.trim()}>Confirm</Button>
         </section>
       ) : null}

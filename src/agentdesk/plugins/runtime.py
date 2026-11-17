@@ -597,7 +597,21 @@ class PluginRuntime:
         instances = InstanceStore(self.data_dir, self.workspace_dir).list(plugin_id)
         if not instances:
             return [plugin_id]
-        return [f"{plugin_id}~{item['instanceId']}" for item in instances]
+        keys = []
+        for item in instances:
+            instance_id = item["instanceId"]
+            if instance_id == "main" and not item.get("confirmedAt"):
+                # The unconfirmed main instance is the plugin's own setup
+                # card (the card rule keys it by the plugin id), so the
+                # layout must name the plugin id here too: a pick that
+                # never reaches confirm leaves the setup card at home
+                # instead of orphaning it under a key no card carries
+                # (T6 review). A confirmed main keeps plugin~main, the
+                # historical tracker's confirmed card id.
+                keys.append(plugin_id)
+            else:
+                keys.append(f"{plugin_id}~{instance_id}")
+        return keys
 
     def _plugin_entry(self, state: dict, plugin_id: str):
         return state["plugins"].get(plugin_id)

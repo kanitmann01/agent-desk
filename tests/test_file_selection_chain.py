@@ -178,6 +178,20 @@ def test_the_whole_chain_wizard_to_live_card(walk):
     assert '"status"' not in approved_page  # no raw JSON on the page
     assert '"install"' not in approved_page
 
+    # (g, continued) The CTA is followable: the detail payload the manage
+    # view renders from resolves the wizard-installed plugin id. A wizard
+    # install is in no catalog, so resolution falls back to the installed
+    # record; the Discover listing itself stays catalog-only.
+    status, headers, body = walk.request(
+        "GET", f"/api/marketplace/plugin/{plugin_id}", auth)
+    assert status == 200, body
+    assert "application/json" in _content_type(headers)
+    detail_payload = json.loads(body)
+    assert detail_payload["plugin"]["id"] == plugin_id
+    assert detail_payload["plugin"]["name"]
+    assert detail_payload["installed"]["id"] == plugin_id
+    assert detail_payload["installed"]["enabled"] is True
+
     # (h) The instance chain against the wizard-installed plugin id.
     # The manage surface's listing answers the same plugin (no
     # alias/wizard-id mismatch): config-backed, its own setup.
@@ -294,6 +308,28 @@ def test_the_whole_chain_wizard_to_live_card(walk):
     by_id = {item["instanceId"]: item for item in listing["instances"]}
     assert by_id["pipeline"]["confirmedAt"]
     assert by_id["spare"]["confirmedAt"] is None
+
+    # The auto-created main instance (the dashboard sheet's
+    # pick-without-create path) answers under the plugin id in the
+    # layout and on the dashboard, exactly like the pre-pick card: a
+    # pick that never reaches confirm must not orphan the setup card.
+    status, _headers, body = walk.post_json(
+        f"/api/plugins/{plugin_id}/instances/main/pick",
+        {"name": "Main"}, auth)
+    assert status == 200, body
+    status, _headers, body = walk.request("GET", "/api/layout", auth)
+    assert status == 200
+    keys = [entry["key"] for entry in json.loads(body)["cards"]]
+    status, _headers, body = walk.request("GET", "/api/dashboard", auth)
+    assert status == 200
+    cards = json.loads(body)["plugins"]["cards"]
+    family = [c for c in cards
+              if c["id"] == plugin_id or c["id"].startswith(f"{plugin_id}~")]
+    assert len(family) == 3  # pipeline fresh, spare setup, main setup
+    assert all(c["id"] in keys for c in family), ([c["id"] for c in family], keys)
+    main_card = next(c for c in family if c["instanceId"] == "main")
+    assert main_card["id"] == plugin_id
+    assert main_card["freshness"] == "setup"
 
 
 def test_the_chain_walk_never_serves_json_to_a_form_or_html_to_an_api(walk):
