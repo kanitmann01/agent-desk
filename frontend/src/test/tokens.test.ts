@@ -498,3 +498,16 @@ describe('the toolchain matches the system', () => {
     expect(licenses.some((f) => f === 'OFL-Space-Grotesk.txt')).toBe(false);
   });
 });
+
+describe('text fields', () => {
+  // Kanit: "hide the scroller in the input field". The ask bar grows and
+  // then scrolls; the bar itself never shows, in the SPA or the server pages.
+  it('hide the scrollbar on every textarea but keep it scrollable', () => {
+    expect(css).toMatch(/textarea\{scrollbar-width:none\}/);
+    expect(css).toMatch(/textarea::-webkit-scrollbar\{display:none\}/);
+    expect(css).not.toMatch(/\.cmd-field\{[^}]*overflow(-y)?:hidden/);
+    const serverCss = readFileSync(resolve(repo, 'src/agentdesk/server/pages.py'), 'utf8');
+    expect(serverCss).toMatch(/textarea\{scrollbar-width:none\}/);
+    expect(serverCss).toMatch(/textarea::-webkit-scrollbar\{display:none\}/);
+  });
+});

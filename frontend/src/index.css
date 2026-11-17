@@ -138,6 +138,11 @@ h1:focus,h1:focus-visible,h2:focus,h2:focus-visible{outline:none}
 svg{display:block;flex:none}
 ::selection{background:var(--accent-tint);color:var(--heading)}
 *{scrollbar-width:thin;scrollbar-color:var(--faint) transparent}
+/* Text fields scroll without a visible bar: the ask bar grows to five
+   rows and then scrolls, and a bar inside a one-line well reads as a
+   rendering fault. Wheel, touch and keyboard scrolling still work. */
+textarea{scrollbar-width:none}
+textarea::-webkit-scrollbar{display:none}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 
 /* Form controls: no browser defaults anywhere. One select, one

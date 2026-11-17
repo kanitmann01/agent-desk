@@ -138,6 +138,9 @@ STYLES = """
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* Text fields scroll without a visible bar (the SPA does the same). */
+textarea{scrollbar-width:none}
+textarea::-webkit-scrollbar{display:none}
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 button:disabled{opacity:.55;cursor:default}
 a{color:var(--primary);text-decoration:none}
