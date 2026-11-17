@@ -1,5 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = fileURLToPath(new URL('.', import.meta.url));
 
 // The build lands straight into the served static folder and is committed:
 // the Python launcher serves it with zero node involvement. base matches
@@ -57,5 +61,23 @@ export default defineConfig({
     // The CSP allows fonts from 'self' only, so no font may travel as a
     // data: URL (vite inlines small assets by default).
     assetsInlineLimit: 0,
+    // Two entries: the SPA shell, and the Memory page graph island the
+    // server-rendered memory pages load by a fixed name
+    // (assets/memory-graph.js and .css), so the Python side never has
+    // to read a manifest to find it.
+    rollupOptions: {
+      input: {
+        index: resolve(here, 'index.html'),
+        'memory-graph': resolve(here, 'src/memory/island.tsx'),
+      },
+      output: {
+        entryFileNames: (chunk) =>
+          chunk.name === 'memory-graph' ? 'assets/memory-graph.js' : 'assets/[name]-[hash].js',
+        assetFileNames: (asset) =>
+          (asset.names ?? []).includes('memory-graph.css')
+            ? 'assets/memory-graph.css'
+            : 'assets/[name]-[hash][extname]',
+      },
+    },
   },
 });
