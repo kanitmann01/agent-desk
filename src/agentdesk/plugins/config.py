@@ -136,6 +136,7 @@ class InstanceStore:
         candidate = Path(raw).resolve()
         self._require_inside_or_accepted(plugin_id, instance_id, candidate)
         clean = _tracking(tracking, document.get("tracking") or {})
+        _require_rows_in_file(candidate, source, clean)
         document["tracking"] = clean
         document["confirmedAt"] = _now()
         document["suggested"] = bool(suggested)
@@ -188,6 +189,31 @@ class InstanceStore:
     def _write(self, path: Path, document: dict) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+
+def _require_rows_in_file(candidate: Path, source: dict, clean: dict) -> None:
+    """A selection naming rows the staged file does not have means the
+    preview went stale underneath the modal: the confirm is refused with
+    the existing mismatched-file code, not a new failure shape. The lazy
+    import keeps config free of file reading at module load (preview
+    imports this module's errors)."""
+    rows = clean.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return
+    from agentdesk.plugins.preview import preview_table
+    table = preview_table(
+        candidate,
+        sheet=source.get("sheet"),
+        header_row=int(source.get("headerRow") or 1),
+        range_text=source.get("range"),
+        limit=1_000_000,
+    )
+    highest = max(row for row in rows if isinstance(row, int))
+    if highest >= len(table["rows"]):
+        raise ConfigError(
+            "config:not-granted",
+            "That selection names rows the file does not have. Open the file again.",
+        )
 
 
 def _tracking(incoming: dict, previous: dict) -> dict:

@@ -404,6 +404,94 @@ def test_a_second_config_backed_plugin_gets_its_own_instance_cards(tmp_path):
     assert metrics["Value"] == "15"
 
 
+def test_confirm_records_the_row_selection_and_the_reader_honors_the_order(tmp_path):
+    """T4: the ordered zero-based data rows ride the confirm payload, land
+    in the stored tracking document, and are read back in that order:
+    "latest" over the selection [1, 0] must return the first picked row's
+    value, not the file's physically last row."""
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "Q4 bookings")
+    store.stage_file("excel-report", "main", book)
+    saved = store.confirm("excel-report", "main", {
+        "labelColumn": "Region",
+        "valueColumn": "Booked",
+        "aggregate": "latest",
+        "rows": [1, 0],
+    })
+    assert saved["tracking"]["rows"] == [1, 0]
+    assert read_tracker(store, "excel-report", "main")["value"] == 10
+
+
+def test_confirm_without_a_selection_keeps_todays_meaning(tmp_path):
+    """T4: a confirm whose tracking carries no rows stores rows as None,
+    and the read totals every row exactly as it did before the selection
+    existed."""
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "Q4 bookings")
+    store.stage_file("excel-report", "main", book)
+    saved = store.confirm("excel-report", "main", {
+        "labelColumn": "Region",
+        "valueColumn": "Booked",
+        "aggregate": "sum",
+    })
+    assert saved["tracking"]["rows"] is None
+    assert read_tracker(store, "excel-report", "main")["value"] == 15
+
+
+def test_confirm_refuses_a_selection_past_the_staged_file(tmp_path):
+    """T4: rows past the end of the staged file mean the preview went
+    stale underneath the modal: the confirm is refused with the existing
+    mismatched-file code (config:not-granted, the same 400 envelope), the
+    instance stays unconfirmed, and the boundary row itself still
+    confirms."""
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([
+        ["Region", "Booked"],
+        ["East", 10],
+        ["West", 5],
+    ]))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "Q4 bookings")
+    store.stage_file("excel-report", "main", book)
+    with pytest.raises(ConfigError) as refused:
+        store.confirm("excel-report", "main", {
+            "labelColumn": "Region",
+            "valueColumn": "Booked",
+            "aggregate": "sum",
+            "rows": [0, 2],
+        })
+    assert refused.value.code == "config:not-granted"
+    assert store.read("excel-report", "main")["confirmedAt"] is None
+    saved = store.confirm("excel-report", "main", {
+        "labelColumn": "Region",
+        "valueColumn": "Booked",
+        "aggregate": "sum",
+        "rows": [0, 1],
+    })
+    assert saved["tracking"]["rows"] == [0, 1]
+
+
 def test_tracker_reads_the_granted_file_and_pace_uses_only_the_users_numbers(tmp_path):
     from tests import excel_fixtures
     workspace = tmp_path / "workspace"

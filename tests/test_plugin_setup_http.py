@@ -176,3 +176,56 @@ def test_the_whole_chain_serves_the_fixture_plugin_over_http(booted_pack):
         "/api/plugins/qbr-pack/instances", {"name": "One too many"}, auth)
     assert status == 400, body
     assert json.loads(body)["error"] == "config:cap"
+
+
+def test_confirm_carries_the_selected_rows_and_the_card_reads_only_them(booted_pack):
+    """T4: the confirm body's tracking.rows (ordered zero-based data rows)
+    reach the stored config over the real endpoint, and the dashboard card
+    then reads exactly the selected rows' values."""
+    server, _book = booted_pack
+    auth = server.exchange()
+    status, _headers, body = server.post_json(
+        "/api/plugins/qbr-pack/instances/pipeline/pick", {"name": "Pipeline"}, auth)
+    assert status == 200, body
+
+    status, _headers, body = server.post_json(
+        "/api/plugins/qbr-pack/instances/pipeline/confirm",
+        {"tracking": {"labelColumn": "Region", "valueColumn": "Booked",
+                      "aggregate": "sum", "rows": [0]}}, auth)
+    assert status == 200, body
+    saved = json.loads(body)
+    assert saved["instance"]["tracking"]["rows"] == [0]
+
+    status, _headers, body = server.request("GET", "/api/dashboard", auth)
+    assert status == 200
+    cards = json.loads(body)["plugins"]["cards"]
+    card = next(item for item in cards if item["id"] == "qbr-pack~pipeline")
+    assert card["freshness"] == "fresh"
+    metrics = {element["label"]: element["value"]
+               for element in card["payload"]["elements"]
+               if element["kind"] == "metric"}
+    assert metrics["Value"] == "10"
+
+
+def test_a_stale_row_selection_is_refused_over_http(booted_pack):
+    """T4: rows past the staged file's data rows keep the existing
+    stale-config refusal shape over HTTP: 400 with the mismatched-file
+    code, and the instance stays unconfirmed."""
+    server, _book = booted_pack
+    auth = server.exchange()
+    status, _headers, body = server.post_json(
+        "/api/plugins/qbr-pack/instances/pipeline/pick", {"name": "Pipeline"}, auth)
+    assert status == 200, body
+
+    status, _headers, body = server.post_json(
+        "/api/plugins/qbr-pack/instances/pipeline/confirm",
+        {"tracking": {"labelColumn": "Region", "valueColumn": "Booked",
+                      "aggregate": "sum", "rows": [9]}}, auth)
+    assert status == 400, body
+    assert json.loads(body)["error"] == "config:not-granted"
+
+    status, _headers, body = server.request("GET", "/api/dashboard", auth)
+    assert status == 200
+    cards = json.loads(body)["plugins"]["cards"]
+    card = next(item for item in cards if item["id"] == "qbr-pack~pipeline")
+    assert card["freshness"] == "setup"
