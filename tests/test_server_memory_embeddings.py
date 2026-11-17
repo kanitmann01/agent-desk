@@ -303,7 +303,8 @@ def test_the_memory_page_shows_the_live_counts(boot, auth):
     assert status == 200
     page = body.decode("utf-8")
     assert "embeddings-counts" in page
-    assert "0 embedded" in page and "1 remaining" in page
+    # The loop page's maintenance tile, or the plain page's section.
+    assert ("0 of 1 fact ready" in page) or ("0 embedded" in page and "1 remaining" in page)
     assert "/memory/embeddings/backfill" in page
 
 

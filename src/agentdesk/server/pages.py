@@ -338,6 +338,7 @@ table.rows td.neg{color:var(--bad)}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
+.doc.doc-wide{max-width:1160px}
 .doc h1{font-size:20px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
 .doc > h2{font-size:16px;font-weight:700;margin:24px 0 0;letter-spacing:-.01em}
 .doc p{color:var(--ink-2);font-size:14px;margin:8px 0}
@@ -855,6 +856,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         "/": "Dashboard",
         "/inbox": "Inbox",
         "/assistant": "Assistant",
+        "/memory": "Memory",
         "/settings": "Settings",
         "/marketplace": "Marketplace",
     }.get(active, "Nexuus Bot")
@@ -893,6 +895,7 @@ def page_shell(
     content_html: str,
     version: str,
     inbox_count: int = 0,
+    wide: bool = False,
 ) -> str:
     """The shared document shell for the server-rendered pages: the rail
     beside the content column, a breadcrumb naming where you are, then
@@ -902,7 +905,8 @@ def page_shell(
 
     `content_html` is authored by the caller (each view escapes its own
     dynamic values) and sits inside the .doc column; the app.js actions
-    script ships with every page.
+    script ships with every page. `wide` widens the column for a page
+    laid out as a grid of tiles (the Memory page).
     """
     esc_version = html.escape(version)
     esc_title = html.escape(title)
@@ -917,7 +921,7 @@ def page_shell(
 </head>
 <body>
 <div class="app">{_rail(active, inbox_count)}
-<main><div class="doc">
+<main><div class="{'doc doc-wide' if wide else 'doc'}">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Nexuus Bot</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
 <footer class="page-foot"><span>Nexuus Bot <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>

@@ -116,6 +116,8 @@ from agentdesk.memory.reflect import (
 )
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
+from agentdesk.memory import loop as memory_loop
+from agentdesk.server.memory_loop_api import build_loop_state
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
@@ -300,6 +302,13 @@ def memory_graph_island_built() -> bool:
     """True when the committed SPA build carries the memory graph island
     (a source checkout without a build keeps the static graph link)."""
     return (SPA_DIR / "assets" / "memory-graph.js").is_file()
+
+
+def memory_loop_island_built() -> bool:
+    """True when the committed SPA build carries the Memory page island
+    (capture, review, knowledge, removal); without it /memory stays the
+    server-rendered page."""
+    return (SPA_DIR / "assets" / "memory-loop.js").is_file()
 
 
 def spa_index_path() -> Path:
@@ -773,6 +782,23 @@ class AgentDeskServer(ThreadingHTTPServer):
             if activity_log is not None and inbox_store is not None and skill_store is not None
             else None
         )
+        # The memory loop (memory/loop.py): captures run off the request
+        # thread, one at a time; removals are held for undo in process
+        # memory only. A test swaps the runner for an inline call.
+        self.memory_undo = memory_loop.UndoBuffer(time.time)
+        self.memory_capture_lock = threading.Lock()
+        self.memory_capture_runner = _background_runner
+        self.memory_last_capture: dict | None = None
+        # The removal previews just shown (their observation text), so the
+        # removal writes what the user read; and the model pass's flag.
+        self.memory_previews = memory_loop.PreviewCache(time.time)
+        self.memory_observe_pending = False
+        if excel is not None:
+            excel.change_hook = lambda workbook, header, delta: _workbook_changed(
+                self, workbook, header, delta)
+        self.memory_observe_after = 0.0
+        # Tests inject a summarizer port; None builds the endpoint one.
+        self.summarizer = None
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -987,6 +1013,33 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     }
 
 
+def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
+    """A handler with no request, for work that starts outside one (the
+    workbook watch's poll thread). Only the helpers that read
+    `self.server` may be called on it: the memory capture path."""
+    handler = DashboardHandler.__new__(DashboardHandler)
+    handler.server = server
+    return handler
+
+
+def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, delta) -> None:
+    """The memory loop's workbook channel: rows that changed since the
+    watch's 24-hour reference become facts written from the cells, staged
+    for review (or saved, in automatic mode) like any captured fact.
+    Already stored, waiting or rejected facts are not proposed again."""
+    if server.memory is None or server.settings is None:
+        return
+    if not bool(server.settings.get("excel_enabled")):
+        return
+    candidates = memory_loop.workbook_candidates(header, delta.added, delta.removed)
+    if not candidates:
+        return
+    _detached_handler(server)._capture_memory(
+        "workbook", memory_loop.workbook_excerpt(workbook, candidates), "",
+        candidates=candidates,
+    )
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     """GET for the shell, health and statics; POST for state changes."""
 
@@ -1143,6 +1196,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_memory_page()
         elif path == "/memory/graph":
             self._memory_graph_page()
+        elif path == "/api/memory/loop":
+            self._memory_loop_json()
         elif path == "/api/memory/graph":
             self._memory_graph_json()
         elif path == "/memory/sweep":
@@ -1358,8 +1413,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
                 return
             self._log_activity("research", question)
-            self._send_json(200, self._run_llm_turn(
-                question, summary_mode=True).to_json())
+            answer = self._run_llm_turn(question, summary_mode=True)
+            summary = getattr(answer, "summary", "") if answer.status == "ok" else ""
+            self._capture_memory(
+                "research",
+                f"Research question: {question}" + (f"\nSourced summary: {summary}" if summary else ""),
+                question,
+                use_model=answer.status == "ok",
+            )
+            self._send_json(200, answer.to_json())
         elif path == "/inbox/cards":
             if self.server.inbox is None:  # type: ignore[attr-defined]
                 self._send_json(503, {"error": "the inbox is not available"})
@@ -1413,6 +1475,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._memory_reflect()
         elif path == "/memory/embeddings/backfill":
             self._memory_embeddings_backfill()
+        elif path == "/api/memory/remove/preview":
+            self._memory_remove(preview=True)
+        elif path == "/api/memory/remove":
+            self._memory_remove(preview=False)
+        elif path == "/api/memory/undo":
+            self._memory_undo()
+        elif path.startswith("/api/memory/facts/") and path.endswith("/keep"):
+            self._memory_keep(path[len("/api/memory/facts/"):-len("/keep")])
         elif path.startswith("/capabilities/") and path.endswith("/retest"):
             self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
         elif path == "/inbox/consolidate":
@@ -1484,6 +1554,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             self._log_activity("assistant", question)
             answer = self._run_llm_turn(question, summary_mode=False)
+            reply = answer.reply if answer.status == "ok" else ""
+            self._capture_memory(
+                "assistant",
+                f"You: {question}" + (f"\nAssistant: {reply}" if reply else ""),
+                question,
+                use_model=answer.status == "ok",
+            )
             if self.server.audit_conn is not None:  # type: ignore[attr-defined]
                 threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
                 text = answer.reply if answer.status == "ok" else f"[degraded] {answer.cause}"
@@ -1899,7 +1976,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "suggest_headers_only", "plugin_instance_cap"):
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "suggest_headers_only", "plugin_instance_cap",
+                       "memory_capture", "memory_auto_approve", "memory_capture_assistant",
+                       "memory_capture_research", "memory_capture_workbook"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -1912,7 +1991,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # the next memory action re-derives the store's semantic
             # half from this value and the probe's cached answer.
             pass
-        elif key in ("suggest_headers_only", "plugin_instance_cap"):
+        elif key in ("suggest_headers_only", "plugin_instance_cap") or key.startswith("memory_"):
+            # The memory loop reads its switches on every capture.
             pass
         else:
             self._apply_source_toggles(key, value)
@@ -2346,12 +2426,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 embeddings=memory.embedding_counts(),
                 inbox_count=self._inbox_waiting_count(),
                 graph_island=memory_graph_island_built(),
+                loop_island=memory_loop_island_built(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _memory_add(self) -> None:
-        """The page's one explicit creation path. The assistant and
-        research paths may recall, never create. Ticket #95: the
+        """The page's typed-fact path. (The Assistant and Research create
+        facts only through capture, which the memory settings govern and
+        review gates by default.) Ticket #95: the
         semantic half is derived per action, so an active fact embeds
         at write and a failure stores the fact without a vector."""
         memory = self._memory_available()
@@ -2363,8 +2445,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not isinstance(text, str) or not text.strip():
             self._send_json(400, {"error": 'expected {"text": "..."}'})
             return
-        fact = memory.add(text.strip(), source="page")
-        self._memory_response(_fact_json(fact), status=201)
+        # Typed facts keep the user's words; the names they mention link
+        # them to entities, so supersede and consolidation see them too.
+        outcome = memory_loop.store_fact(
+            memory, text.strip(), source="page", entities=memory_loop.names_in(text),
+        )
+        self._schedule_observation_pass()
+        self._memory_response(_fact_json(outcome.fact), status=201)
 
     def _memory_edit(self, fact_id: int | None) -> None:
         if fact_id is None:
@@ -2402,10 +2489,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if memory is None:
             return
         try:
-            memory.delete(fact_id)
-        except UnknownFact as exc:
+            plan = memory_loop.plan_removal(
+                memory, "fact", fact_id, keep_source_ids=self._pending_source_ids())
+        except memory_loop.UnknownTarget as exc:
             self._send_json(404, {"error": str(exc)})
             return
+        memory_loop.apply_removal(memory, plan, keep_source_ids=self._pending_source_ids())
+        self._audit("memory.remove", target=f"fact {fact_id}", detail="1 fact")
+        self._schedule_observation_pass()
         self._memory_response({"deleted": fact_id})
 
     def _memory_sweep_page(self) -> None:
@@ -2473,6 +2564,318 @@ class DashboardHandler(BaseHTTPRequestHandler):
             semantic=bool(memory.embeddings_active),
         )
         self._send_json(200, payload)
+
+    # -- the memory loop: capture, the page's state, removal and undo ------
+
+    def _capture_memory(self, channel: str, excerpt: str, own_words: str,
+                        use_model: bool = True, candidates=None) -> None:
+        """Offer what just flowed through a channel to the memory loop.
+        Runs off the request thread (one capture at a time) so a reply is
+        never slowed by extraction; any failure is logged, never raised
+        into the turn that triggered it. A turn the endpoint just failed
+        (`use_model` false) goes straight to the rules instead of asking
+        the same endpoint again."""
+        server = self.server  # type: ignore[attr-defined]
+        memory = server.memory
+        if memory is None or memory.locked_cause is not None:
+            return
+        settings = memory_loop.capture_settings(server.settings)
+        if not settings.captures(channel):
+            return
+        if candidates is not None:
+            use_model = False  # the channel wrote its own candidates
+        extractor, endpoint, model = self._capture_extractor() if use_model else (None, "", "")
+        extract = extractor.extract if extractor is not None else None
+
+        def job() -> None:
+            with server.memory_capture_lock:
+                try:
+                    self._configure_memory_embeddings()
+                    outcome = memory_loop.capture(
+                        memory, server.inbox,
+                        channel=channel, excerpt=excerpt[:RETAIN_EXCERPT_MAX_CHARS],
+                        own_words=own_words, settings=settings, extract=extract,
+                        stage_card=self._capture_card,
+                        speaker="Workbook" if channel == "workbook" else "You",
+                        candidates=candidates,
+                    )
+                except Exception:  # noqa: BLE001 - capture must never break a turn
+                    LOG.exception("memory capture on %s failed", channel)
+                    return
+                if outcome is None:
+                    return
+                if extractor is not None:
+                    self._model_audit(
+                        "llm.retain", endpoint or "", model or "", self._port_bytes(extractor),
+                        status="ok" if outcome.method == memory_loop.METHOD_MODEL else "error",
+                        detail=outcome.cause,
+                    )
+                server.memory_last_capture = {
+                    "channel": channel,
+                    "channelLabel": memory_loop.CHANNEL_LABELS.get(channel, channel),
+                    "method": outcome.method,
+                    "cause": outcome.cause,
+                    "found": outcome.found,
+                    "skipped": outcome.skipped,
+                    "staged": len(outcome.card_ids),
+                    "stored": len(outcome.fact_ids),
+                    "ts": time.time(),
+                }
+                if outcome.card_ids or outcome.fact_ids:
+                    self._audit(
+                        "memory.capture", target=channel,
+                        detail=(f"{len(outcome.card_ids)} to review, "
+                                f"{len(outcome.fact_ids)} saved, by {outcome.method}"),
+                    )
+                if outcome.card_ids and server.inbox is not None:
+                    self._evaluate_inbox(server.inbox)
+            if outcome is not None and outcome.fact_ids:
+                self._schedule_observation_pass()
+
+        server.memory_capture_runner(job)
+
+    def _observation_summarizer(self) -> tuple:
+        """(summarizer, endpoint, model) for the per-entity observations,
+        or (None, "", "") when endpoint calls are off or none is
+        configured: then the rules write them."""
+        server = self.server  # type: ignore[attr-defined]
+        if not self._source_allowed("endpoint_enabled"):
+            return None, "", ""
+        llm, endpoint, model = self._effective_llm()
+        if server.summarizer is not None:
+            return server.summarizer, endpoint or "", model or ""
+        if endpoint or not server.llm_defaulted_to_env:
+            return memory_loop.EndpointSummarizer(llm), endpoint or "", model or ""
+        return None, "", ""
+
+    def _observe_audit(self, summarizer, endpoint: str, model: str, written: int,
+                       failure: str) -> None:
+        self._model_audit(
+            "llm.observe", endpoint or "", model or "", self._port_bytes(summarizer),
+            status="error" if failure else "ok",
+            detail=(f"{memory_loop.counted(written, 'observation')} written"
+                    + (f"; {failure[:160]}" if failure else "")),
+        )
+
+    def _schedule_observation_pass(self) -> None:
+        """After memory changes: let the endpoint rewrite the observations
+        the rules just wrote (or any built from changed facts), off the
+        request thread. Coalesced: one pending pass at a time; a change
+        during a pass schedules the next one."""
+        server = self.server  # type: ignore[attr-defined]
+        memory = server.memory
+        if memory is None or memory.locked_cause is not None:
+            return
+        summarizer, endpoint, model = self._observation_summarizer()
+        if summarizer is None or server.memory_observe_pending:
+            return
+        server.memory_observe_pending = True
+
+        def job() -> None:
+            server.memory_observe_pending = False
+            with server.memory_capture_lock:
+                try:
+                    outcome = memory_loop.reconcile_observations(memory, summarize=summarizer)
+                except Exception:  # noqa: BLE001 - a failed pass leaves the rules' text
+                    LOG.exception("memory observation pass failed")
+                    return
+            if getattr(summarizer, "calls", 1):
+                self._observe_audit(summarizer, endpoint, model,
+                                    outcome.model_written, outcome.model_failure)
+
+        server.memory_capture_runner(job)
+
+    def _capture_card(self, candidate, source_id: int, channel: str, method: str):
+        """The review card for one captured candidate: the same memory
+        draft card the manual save makes, with the channel and the
+        extraction method recorded so the page can say where it came
+        from and how."""
+        label = memory_loop.CHANNEL_LABELS.get(channel, channel)
+        names = ", ".join(name for name, _type in candidate.entities)
+        how = ("the company endpoint" if method == memory_loop.METHOD_MODEL
+               else "the built-in rules (no endpoint answered)")
+        return self.server.inbox.add(  # type: ignore[attr-defined]
+            kind=KIND_MEMORY_DRAFT,
+            origin=(f"Captured from your {label} activity by {how}. "
+                    "Approving saves this fact to memory; rejecting leaves nothing behind."),
+            title=f"Fact from {label}" + (f": {names}" if names else ""),
+            body=f"Captured from {label}." + (f" Mentions {names}." if names else ""),
+            action_label="Save to memory",
+            draft=candidate.text,
+            meta={"memoryFact": {
+                "kind": candidate.kind,
+                "occurrence_ts": candidate.occurrence_ts,
+                "entities": [[name, entity_type] for name, entity_type in candidate.entities],
+                "source_id": source_id,
+                "channel": channel,
+                "method": method,
+            }},
+        )
+
+    def _pending_source_ids(self) -> set[int]:
+        """Excerpts a waiting review card still points at: a removal
+        leaves them in place so approving the card later still links."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            return set()
+        ids: set[int] = set()
+        for card in inbox.waiting(include_snoozed=True):
+            meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
+            if isinstance(meta, dict) and isinstance(meta.get("source_id"), int):
+                ids.add(int(meta["source_id"]))
+        return ids
+
+    def _capture_extractor(self) -> tuple:
+        """(extractor, endpoint, model) capture asks first, or (None, "",
+        "") when endpoint calls are off or no endpoint is configured."""
+        server = self.server  # type: ignore[attr-defined]
+        if not self._source_allowed("endpoint_enabled"):
+            return None, "", ""
+        llm, endpoint, model = self._effective_llm()
+        if server.extractor is not None:
+            return server.extractor, endpoint or "", model or ""
+        if endpoint or not server.llm_defaulted_to_env:
+            return EndpointExtractor(llm), endpoint or "", model or ""
+        return None, "", ""
+
+    def _extractor_status(self) -> dict:
+        if not self._source_allowed("endpoint_enabled"):
+            return {"mode": memory_loop.METHOD_RULES,
+                    "detail": "Endpoint calls are off in Settings, so capture uses the built-in rules on your own words."}
+        extractor, _endpoint, model = self._capture_extractor()
+        if extractor is not None:
+            return {"mode": memory_loop.METHOD_MODEL,
+                    "detail": f"Extracting with {model or 'the default model'}. If the endpoint does not answer, the built-in rules take over."}
+        return {"mode": memory_loop.METHOD_RULES,
+                "detail": "No endpoint is saved in Settings, so capture uses the built-in rules on your own words."}
+
+    def _memory_loop_json(self) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        memory = server.memory
+        if memory is None:
+            self._send_json(503, {"status": "unavailable", "error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_json(423, {"status": "locked", "error": memory.locked_cause})
+            return
+        # Observations the rules wrote (the endpoint was down, or the bank
+        # predates it) are offered to the endpoint again, at most once a
+        # minute while the page is open.
+        now = time.time()
+        if now >= server.memory_observe_after and any(
+            method == memory_loop.METHOD_RULES for method, _b in memory.observation_marks().values()
+        ):
+            server.memory_observe_after = now + 60.0
+            self._schedule_observation_pass()
+        settings = memory_loop.capture_settings(server.settings)
+        self._send_json(200, build_loop_state(
+            memory, server.inbox, settings.to_json(), self._extractor_status(),
+            server.memory_last_capture, server.memory_undo.window_s,
+        ))
+
+    def _memory_target(self, body: dict) -> tuple[str, int] | None:
+        target = body.get("target") if isinstance(body.get("target"), dict) else body
+        kind = target.get("type")
+        raw = target.get("id")
+        if kind not in memory_loop.TARGET_TYPES or isinstance(raw, bool) or not isinstance(raw, int):
+            return None
+        return kind, raw
+
+    def _memory_remove(self, preview: bool) -> None:
+        """Preview names everything a removal changes and writes nothing;
+        the removal itself writes once, holds an undo for the window and
+        records an audit row with counts, never memory text."""
+        server = self.server  # type: ignore[attr-defined]
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        target = self._memory_target(body)
+        if target is None:
+            self._send_json(400, {"error": 'expected {"target": {"type": "fact|source|entity|observation", "id": <id>}}'})
+            return
+        kind, target_id = target
+        if kind == "source" and not preview and server.inbox is not None:
+            # Removing an excerpt also rejects the cards still waiting on it.
+            for card in server.inbox.waiting(include_snoozed=True):
+                meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
+                if isinstance(meta, dict) and meta.get("source_id") == target_id:
+                    server.inbox.dismiss(card.id)
+        keep = self._pending_source_ids()
+        # The preview asks the endpoint for the observations' new text (so
+        # the dialog shows what they will read); the removal reuses it.
+        summarizer, endpoint, model = self._observation_summarizer() if preview else (None, "", "")
+        try:
+            plan = memory_loop.plan_removal(
+                memory, kind, target_id, keep_source_ids=keep,
+                summarize=summarizer,
+            )
+        except (memory_loop.UnknownTarget, UnknownEntity, UnknownFact) as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        if summarizer is not None and getattr(summarizer, "calls", 0):
+            self._observe_audit(summarizer, endpoint, model, sum(
+                1 for _scope, summary in plan.after.values()
+                if summary.method == memory_loop.METHOD_MODEL
+            ), "")
+        if preview:
+            server.memory_previews.put(plan)
+            self._send_json(200, {"status": "ok", "plan": plan.to_json(memory)})
+            return
+        self._configure_memory_embeddings()
+        planned = server.memory_previews.take(kind, target_id)
+        result = memory_loop.apply_removal(memory, plan, keep_source_ids=keep, planned=planned)
+        self._schedule_observation_pass()
+        token, expires = server.memory_undo.hold(result, plan.label)
+        counts = (f"{memory_loop.counted(len(result.fact_ids), 'fact')}; observations:"
+                  f" {len(result.observations_removed)} removed, {len(result.observations_updated)} rewritten,"
+                  f" {len(result.observations_flagged)} flagged;"
+                  f" {memory_loop.counted(len(result.entities_removed), 'entity', 'entities')} forgotten")
+        self._audit("memory.remove", target=f"{kind} {target_id}", detail=counts)
+        self._send_json(200, {
+            "status": "ok",
+            "removed": result.to_json(),
+            "undo": {"token": token, "expiresTs": expires, "windowS": server.memory_undo.window_s},
+        })
+
+    def _memory_undo(self) -> None:
+        server = self.server  # type: ignore[attr-defined]
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        token = body.get("token")
+        held = server.memory_undo.take(token) if isinstance(token, str) else None
+        if held is None:
+            self._send_json(410, {"error": "The undo window has passed, so that removal is final."})
+            return
+        try:
+            memory_loop.undo_removal(memory, held)
+        except ValueError as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        self._schedule_observation_pass()
+        self._audit("memory.undo", target=memory_loop.counted(len(held.result.fact_ids), "fact"),
+                    detail="removal undone within the window")
+        self._send_json(200, {"status": "ok", "restored": held.result.to_json()})
+
+    def _memory_keep(self, raw_id: str) -> None:
+        """Keep both: a replaced fact rides recall again."""
+        memory = self._memory_available()
+        if memory is None:
+            return
+        if not raw_id.isdigit():
+            self._send_json(404, {"error": "no fact at this address"})
+            return
+        try:
+            memory.clear_superseded(int(raw_id))
+        except UnknownFact as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        memory_loop.reconcile_observations(memory)
+        self._schedule_observation_pass()
+        self._audit("memory.keep", target=f"fact {raw_id}", detail="kept beside its replacement")
+        self._send_json(200, {"status": "ok", "kept": int(raw_id)})
 
     def _memory_sweep(self) -> None:
         """Delete the checked candidates through the donor's removeFacts
@@ -3146,7 +3549,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         text = card.meta.get("fact")
         if not isinstance(text, str) or not text.strip():
             return
-        fact = memory.add(text.strip(), source=f"inbox card {card.id}")
+        fact = memory_loop.store_fact(memory, text.strip(), source=f"inbox card {card.id}").fact
         self._audit("memory.fact", target=str(fact.id), detail=fact.source)
 
     def _carry_memory_fact(self, card, memory_fact: dict) -> None:
@@ -3177,18 +3580,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 and isinstance(pair[1], str)
             ):
                 entities.append((pair[0], pair[1]))
-        fact = memory.add(
-            text,
-            source=f"inbox card {card.id}",
-            kind=kind,
-            occurrence_ts=occurrence_ts,
-            source_id=source_id,
-        )
         try:
-            memory.resolve_and_link(fact.id, entities)
+            outcome = memory_loop.store_fact(
+                memory, text, source=f"inbox card {card.id}", kind=kind,
+                occurrence_ts=occurrence_ts, source_id=source_id, entities=entities,
+            )
         except ValueError:
             LOG.warning("memory card %s carried an invalid entity type; the fact stays unlinked", card.id)
+            outcome = memory_loop.store_fact(
+                memory, text, source=f"inbox card {card.id}", kind=kind,
+                occurrence_ts=occurrence_ts, source_id=source_id,
+            )
+        fact = outcome.fact
         self._audit("memory.fact", target=str(fact.id), detail=fact.source)
+        self._schedule_observation_pass()
 
     def _carry_memory_observation(self, card, observation_meta: dict) -> None:
         """Write the accepted reflection (ticket #93): one observation
@@ -5082,6 +5487,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # answer names the close (send_header also flips
             # close_connection).
             self.send_header("Connection", "close")
+
+
+def _background_runner(job) -> None:
+    """Run a memory capture off the request thread."""
+    threading.Thread(target=job, name="memory-capture", daemon=True).start()
 
 
 def create_server(

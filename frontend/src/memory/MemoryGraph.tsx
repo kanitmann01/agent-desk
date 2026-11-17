@@ -19,6 +19,7 @@ import { COLUMNS, GAP, PILL, fitLabel, layoutGraph, lineage, neighbourFor, type 
 import type { GraphEdge, GraphNode, MemoryGraphData } from './types';
 
 const LIST_BREAKPOINT = 560;
+const REMOVABLE = new Set(['fact', 'entity', 'source', 'observation']);
 
 type Load =
   | { state: 'loading' }
@@ -31,11 +32,31 @@ export interface MemoryGraphProps {
   mode?: 'page' | 'full';
   // Tests pin the width; the page measures its own box.
   initialWidth?: number;
+  // The Memory page draws its own header and pipeline; it turns these off.
+  chrome?: boolean;
+  // Bumped by the page after a write, so the picture re-reads the store.
+  reloadKey?: number;
+  // Select a point from outside the picture ("Show in graph").
+  focusId?: string | null;
+  // Offered on removable points (facts, entities, excerpts, observations).
+  onRemove?: (node: GraphNode) => void;
 }
 
-export default function MemoryGraph({ endpoint = '/api/memory/graph', mode = 'page', initialWidth }: MemoryGraphProps) {
+export default function MemoryGraph({
+  endpoint = '/api/memory/graph',
+  mode = 'page',
+  initialWidth,
+  chrome = true,
+  reloadKey = 0,
+  focusId = null,
+  onRemove,
+}: MemoryGraphProps) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [selected, setSelected] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focusId) setSelected(focusId);
+  }, [focusId]);
 
   useEffect(() => {
     let live = true;
@@ -53,7 +74,7 @@ export default function MemoryGraph({ endpoint = '/api/memory/graph', mode = 'pa
     return () => {
       live = false;
     };
-  }, [endpoint]);
+  }, [endpoint, reloadKey]);
 
   if (load.state === 'loading') {
     return (
@@ -69,7 +90,10 @@ export default function MemoryGraph({ endpoint = '/api/memory/graph', mode = 'pa
       </section>
     );
   }
-  return <Ready data={load.data} mode={mode} selected={selected} onSelect={setSelected} initialWidth={initialWidth} />;
+  return (
+    <Ready data={load.data} mode={mode} selected={selected} onSelect={setSelected}
+      initialWidth={initialWidth} chrome={chrome} onRemove={onRemove} />
+  );
 }
 
 function Ready({
@@ -78,12 +102,16 @@ function Ready({
   selected,
   onSelect,
   initialWidth,
+  chrome = true,
+  onRemove,
 }: {
   data: MemoryGraphData;
   mode: 'page' | 'full';
   selected: string | null;
   onSelect: (id: string | null) => void;
   initialWidth?: number;
+  chrome?: boolean;
+  onRemove?: (node: GraphNode) => void;
 }) {
   const facts = data.nodes.filter((node) => node.kind === 'fact');
   const entities = data.nodes.filter((node) => node.kind === 'entity');
@@ -93,7 +121,8 @@ function Ready({
   const chosen = selected ? byId.get(selected) ?? null : null;
 
   return (
-    <section className={`mg mg-${mode}`} aria-labelledby="mg-title">
+    <section className={`mg mg-${mode}${chrome ? '' : ' mg-bare'}`} aria-label={chrome ? undefined : 'Provenance graph'} aria-labelledby={chrome ? 'mg-title' : undefined}>
+      {chrome && (<>
       <header className="mg-head">
         <div>
           <h2 id="mg-title">How this memory was made</h2>
@@ -119,12 +148,13 @@ function Ready({
           </li>
         ))}
       </ol>
+      </>)}
 
       {empty ? (
         <EmptyGraph />
       ) : (
         <Body data={data} selected={selected} onSelect={onSelect} mode={mode} initialWidth={initialWidth}
-          detail={<Provenance node={chosen} data={data} byId={byId} onSelect={onSelect} />} />
+          detail={<Provenance node={chosen} data={data} byId={byId} onSelect={onSelect} onRemove={onRemove} />} />
       )}
       {data.truncated && (
         <p className="mg-quiet">Showing the newest points only. The full page takes a date window.</p>
@@ -152,9 +182,9 @@ function EmptyGraph() {
       <div className="mg-empty-copy">
         <h3>No knowledge points yet</h3>
         <p>
-          A point arrives three ways: type a fact below, save a conversation from the{' '}
-          <a href="/assistant">Assistant</a> and accept the drafts it proposes in the{' '}
-          <a href="/inbox">Inbox</a>, or turn on Sample data in <a href="/settings">Settings</a> to see a labelled example.
+          Points arrive as you work: facts captured from the <a href="/assistant">Assistant</a> and
+          Research wait for your review on this page or in the <a href="/inbox">Inbox</a>. You can also
+          type one, or turn on Sample data in <a href="/settings">Settings</a> to see a labelled example.
         </p>
       </div>
     </div>
@@ -480,11 +510,13 @@ function Provenance({
   data,
   byId,
   onSelect,
+  onRemove,
 }: {
   node: GraphNode | null;
   data: MemoryGraphData;
   byId: Map<string, GraphNode>;
   onSelect: (id: string | null) => void;
+  onRemove?: (node: GraphNode) => void;
 }) {
   if (!node) {
     return (
@@ -587,7 +619,14 @@ function Provenance({
           </dl>
         </>
       )}
-      <button type="button" className="mg-clear" onClick={() => onSelect(null)}>Clear selection</button>
+      <div className="mg-detail-actions">
+        {onRemove && REMOVABLE.has(node.kind) && (
+          <button type="button" className="mg-remove" onClick={() => onRemove(node)}>
+            {node.kind === 'entity' ? `Forget ${node.label}…` : 'Remove…'}
+          </button>
+        )}
+        <button type="button" className="mg-clear" onClick={() => onSelect(null)}>Clear selection</button>
+      </div>
     </aside>
   );
 }

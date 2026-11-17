@@ -226,3 +226,28 @@ def test_status_grid_keeps_numbers_as_numbers_and_blanks_as_text(tmp_path):
     grid = watch.status()["grid"]
     assert grid["columns"] == ["Name", "Amount", "Due"]
     assert grid["rows"] == [["Acme", 12, ""], ["Beta", 7, "true"]]
+
+
+def test_a_poll_with_changed_rows_calls_the_change_hook_with_the_header(tmp_path):
+    watch, clock = make_watch(tmp_path, [BASE, CHANGED, CHANGED])
+    seen = []
+    watch.change_hook = lambda name, header, delta: seen.append((name, header, delta))
+    watch.register("C:\\Sales\\Q4-sales.xlsx")
+    assert seen == [], "the first snapshot is not a change"
+    clock.advance(24 * 3600)
+    watch.poll()
+    [(name, header, delta)] = seen
+    assert name == "Q4-sales.xlsx" and header == ["Product", "Units"]
+    assert delta.added == [["Atlas", 44.0], ["Care", 7.0]]
+
+
+def test_a_failing_change_hook_never_breaks_the_watch(tmp_path):
+    watch, clock = make_watch(tmp_path, [BASE, CHANGED])
+
+    def boom(*_args):
+        raise RuntimeError("hook failed")
+
+    watch.change_hook = boom
+    watch.register("Q4-sales.xlsx")
+    clock.advance(24 * 3600)
+    assert watch.poll().state == "healthy"

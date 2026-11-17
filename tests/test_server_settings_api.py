@@ -70,6 +70,13 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "embeddings_model": "text-embedding-3-small",
         "suggest_headers_only": False,
         "plugin_instance_cap": 6,
+        # The memory loop: capture on, review before saving, both
+        # channels read.
+        "memory_capture": True,
+        "memory_auto_approve": False,
+        "memory_capture_assistant": True,
+        "memory_capture_research": True,
+        "memory_capture_workbook": True,
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

@@ -37,6 +37,14 @@ TOGGLES = {
     "semantic_memory": True,
     # Suggestion sends column names only when this is on. Off sends up to 5 rows.
     "suggest_headers_only": False,
+    # The memory loop (memory/loop.py): capture facts from what you do,
+    # review them before they are saved unless auto-approve is on, and
+    # one switch per channel capture reads.
+    "memory_capture": True,
+    "memory_auto_approve": False,
+    "memory_capture_assistant": True,
+    "memory_capture_research": True,
+    "memory_capture_workbook": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only

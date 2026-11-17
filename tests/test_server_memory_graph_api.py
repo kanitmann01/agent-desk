@@ -199,6 +199,7 @@ def test_the_builder_reads_without_an_inbox(tmp_path):
 def test_the_memory_page_mounts_the_island_when_it_is_built(booted, auth, monkeypatch):
     from agentdesk.server import app as app_module
     monkeypatch.setattr(app_module, "memory_graph_island_built", lambda: True)
+    monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: False)
     status, _h, body = booted.request("GET", "/memory", auth)
     page = body.decode()
     assert status == 200

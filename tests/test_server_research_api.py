@@ -152,7 +152,8 @@ def test_assistant_uses_widget_context_without_restating_it(env, auth, stub, tmp
     assert payload["status"] == "ok"
     # The prompt the endpoint received carried the workbook's context: the
     # manager never had to restate it.
-    sent_prompt = stub.requests[-1]["body"]["messages"][0]["content"]
+    # The first request is the turn itself; memory capture may follow.
+    sent_prompt = stub.requests[0]["body"]["messages"][0]["content"]
     assert "Q4-sales.xlsx" in sent_prompt
     assert "Atlas ERP modules" in sent_prompt
 
