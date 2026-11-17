@@ -92,6 +92,19 @@ class Observation:
 
 
 @dataclass(frozen=True)
+class SourceExcerpt:
+    """One retained excerpt (the sources table): the text a retain
+    extracted its candidate facts from, who spoke it, the context the
+    retain recorded, and when it was saved."""
+
+    id: int
+    text: str
+    speaker: str = ""
+    context: str = ""
+    created_ts: float = 0.0
+
+
+@dataclass(frozen=True)
 class SavedObservation:
     """What one save wrote (the donor's saveObservations result, reduced
     to the single-observation shape the approval cards need): the

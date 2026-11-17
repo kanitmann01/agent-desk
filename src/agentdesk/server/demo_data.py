@@ -414,3 +414,105 @@ def _card_specs() -> list[dict]:
             ),
         },
     ]
+
+
+# -- sample memories (the Memory page graph) ---------------------------------
+#
+# Three retained excerpts about the same sample pipeline the workbook and
+# calendar fixtures describe, the facts a retain would extract from them
+# with their entities, one fact typed on the Memory page, and one
+# observation citing two facts. Every row is labelled: facts carry the
+# source "sample seed", excerpts the context "sample seed", and clearing
+# removes exactly those (and the observations and entities they leave
+# orphaned, through the store's own removeFacts).
+
+SAMPLE_MEMORY_SOURCE = "sample seed"
+_DAY = 86_400.0
+
+_SAMPLE_EXCERPTS = (
+    {
+        "days_ago": 6,
+        "text": ("Call with Dana Ortiz at Halvorsen Freight: they want the renewal "
+                 "signed before December 15 and asked for a three-year price lock. "
+                 "Jordan Lee owns the deal."),
+        "facts": (
+            ("Halvorsen Freight wants the renewal signed before December 15.",
+             "world", (("Halvorsen Freight", "org"),)),
+            ("Halvorsen Freight asked for a three-year price lock on the renewal.",
+             "world", (("Halvorsen Freight", "org"), ("Dana Ortiz", "person"))),
+            ("Jordan Lee owns the Halvorsen Freight renewal.",
+             "world", (("Jordan Lee", "person"), ("Halvorsen Freight", "org"))),
+        ),
+    },
+    {
+        "days_ago": 3,
+        "text": ("Pipeline prep: the Kestrel Foods pilot slipped to January because "
+                 "their IT security review is still open. Riley Chen is chasing it."),
+        "facts": (
+            ("The Kestrel Foods pilot slipped to January.",
+             "world", (("Kestrel Foods", "org"),)),
+            ("Kestrel Foods' IT security review is still open.",
+             "world", (("Kestrel Foods", "org"),)),
+            ("Riley Chen is chasing the Kestrel Foods security review.",
+             "world", (("Riley Chen", "person"), ("Kestrel Foods", "org"))),
+        ),
+    },
+    {
+        "days_ago": 1,
+        "text": ("I sent the Q4 pipeline summary to Avery Kim before the review and "
+                 "flagged Halvorsen and Kestrel as the two at-risk deals."),
+        "facts": (
+            ("I sent the Q4 pipeline summary to Avery Kim and flagged two at-risk deals.",
+             "experience", (("Avery Kim", "person"), ("Q4 pipeline review", "concept"))),
+        ),
+    },
+)
+
+_SAMPLE_TYPED_FACT = "The sample quarter closes on December 31."
+_SAMPLE_OBSERVATION = (
+    "Both at-risk Q4 deals are waiting on the customer: a signing deadline at "
+    "Halvorsen Freight and a security review at Kestrel Foods."
+)
+
+
+def seed_memory(memory) -> int:
+    """Write the labelled sample memories; returns the facts written.
+    A locked or missing store is left alone. Any earlier sample rows are
+    cleared first, so a re-seed cannot mint twins."""
+    if memory is None or memory.locked_cause is not None:
+        return 0
+    clear_memory(memory)
+    now = memory.clock()
+    written = []
+    for excerpt in _SAMPLE_EXCERPTS:
+        when = now - excerpt["days_ago"] * _DAY
+        source_id = memory.add_source(excerpt["text"], speaker="You",
+                                      context=SAMPLE_MEMORY_SOURCE)
+        for text, kind, entities in excerpt["facts"]:
+            fact = memory.add(text, source=SAMPLE_MEMORY_SOURCE, kind=kind,
+                              occurrence_ts=when, source_id=source_id)
+            memory.resolve_and_link(fact.id, list(entities))
+            written.append(fact)
+    typed = memory.add(_SAMPLE_TYPED_FACT, source=SAMPLE_MEMORY_SOURCE)
+    written.append(typed)
+    deadline = next(f for f in written if "December 15" in f.text)
+    review = next(f for f in written if "security review is still open" in f.text)
+    memory.save_observation("sample", _SAMPLE_OBSERVATION, 0.8,
+                            [deadline.id, review.id], now=now)
+    return len(written)
+
+
+def clear_memory(memory) -> int:
+    """Remove exactly the sample memories: facts written by the sample
+    seed (their orphaned observations and entities go with them) and the
+    sample excerpts. Returns the facts removed."""
+    if memory is None or memory.locked_cause is not None:
+        return 0
+    ids = [fact.id for fact in memory.all() if fact.source == SAMPLE_MEMORY_SOURCE]
+    if ids:
+        memory.remove_facts(ids)
+    memory.delete_sources(
+        [excerpt.id for excerpt in memory.sources()
+         if excerpt.context == SAMPLE_MEMORY_SOURCE]
+    )
+    return len(ids)
