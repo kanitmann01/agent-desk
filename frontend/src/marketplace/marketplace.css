@@ -467,8 +467,8 @@
 .mkt-field small { color: var(--muted); font-weight: 400; }
 .mkt-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mkt-field-wide { grid-column: 1 / -1; }
-.mkt-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--text-2); }
-.mkt-check input { margin-top: 2px; }
+.mkt-grant { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--text-2); }
+.mkt-grant input { margin-top: 2px; }
 
 .mkt-scrim {
   position: fixed; inset: 0; z-index: 60;
