@@ -2,7 +2,7 @@
 
 The presenter's script for a 12 minute demo of Agent Desk on one corporate
 Windows laptop. Every click below exists in the shipped product; the whole
-path is proven headless by `python tools/demo_walkthrough.py` (19 steps, run
+path is proven headless by `python tools/demo_walkthrough.py` (20 steps, run
 it once before the demo to warm up). Nothing leaves the machine except
 derived abstractions sent to a corporate LLM endpoint, and this demo never
 needs one: the wizard runs its deterministic path with no endpoint
@@ -91,7 +91,7 @@ the activity log. Dismissal is recovery, not deletion.
 IF IT FAILS: `/activity` and `/audit/export.csv` are the same truth from
 two angles; open either and read the rows.
 
-## Beat 4: create a plugin from English (2 minutes)
+## Beat 4: create a plugin from English, then give it its data (2.5 minutes)
 
 CLICKS: back on `/`, click `Add plugin` in the header. The describe
 screen opens (`Describe a plugin`). Type:
@@ -99,19 +99,30 @@ screen opens (`Describe a plugin`). Type:
 questions screen appears; with no endpoint configured it says so and
 asks the standard questions (radio buttons, defaults pre-selected).
 Click `Ask` on each. The preview screen shows the widget on sample
-rows plus the consolidated summary: what it does, what it reads (the
-exact glob), what it can never do (no code, no shell, no network), how
-to remove it. Click `Add widget`.
+rows plus the consolidated summary: what it does, what it reads (for a
+workbook ask: `a workbook you pick in setup`, nothing is guessed),
+what it can never do (no code, no shell, no network), how to remove
+it. Click `Add widget`. The `Added` screen shows what was installed
+(id, version, the Pilot badge) and offers `Set up its data`. Click it:
+on the plugin's manage view, `Set up a new instance`, name it, `Open a
+workbook`, pick `sample-sales.xlsx` from the sample folder, click the
+`Amount` header, switch the assignment to `Row label` and click
+`Deal`, select row 1 (or Select all), `Continue`, `Confirm`. The card
+on `/` turns fresh: row 1's amount, the workbook's name, and the pilot
+badge it earned at install.
 
 SAY: plain English in, a validated declarative plugin out. One approval,
-and it installs in pilot mode. No endpoint was needed for this.
+and it installs in pilot mode, already asking for the one thing no
+wizard can know: where your data lives. No endpoint was needed for
+this.
 
-IF IT FAILS: the preview names exactly what it would read; if the words
-cannot be built safely the wizard says so and exports the request to
-the inbox instead of guessing. That dead-end is the honest path. If the
-preview's metric line shows its label without a number, that is the
-honest state before any workbook matches the glob; Beat 7's excel-report
-card carries the real numbers once a workbook is connected.
+IF IT FAILS: the preview names what it would read (`a workbook you
+pick in setup` for a workbook ask); if the words cannot be built
+safely the wizard says so and exports the request to the inbox instead
+of guessing. That dead-end is the honest path. Until a workbook is
+picked and confirmed, the plugin's card says `Set up` instead of
+showing numbers; Beat 7's excel-report card carries the registry
+plugin's story once a workbook is connected.
 
 ## Beat 5: publish it to the registry (1 minute)
 

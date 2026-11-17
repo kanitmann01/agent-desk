@@ -495,6 +495,20 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             </p>
           )}
           {instancesError && <p className="mkt-error" role="alert">{instancesError}</p>}
+          {!instances.aliasOf && instances.instances.length === 0 && (
+            // The finish line of the wizard walk (T6): a just-installed
+            // config-backed plugin has zero instances, so Set up leads
+            // the panel as the visible primary, above the empty table.
+            <div className="mkt-actions">
+              <Button tone="primary" onClick={() => {
+                setError('');
+                setSheetError('');
+                setSetupSheet({ kind: 'create' });
+              }}>
+                Set up a new instance
+              </Button>
+            </div>
+          )}
           <div className="mkt-table-wrap">
             <table className="rows">
               <caption className="mkt-sr-only">Instances of {plugin.name}</caption>
@@ -531,7 +545,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
               </tbody>
             </table>
           </div>
-          {!instances.aliasOf && (
+          {!instances.aliasOf && instances.instances.length > 0 && (
             <div className="mkt-actions">
               <Button tone="primary" onClick={() => {
                 setError('');
@@ -700,6 +714,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             ? { mode: 'create' }
             : { mode: 'edit', instance: setupSheet.instance }}
           onCancel={() => setSetupSheet(null)}
+          onChanged={() => setInstanceAttempt((n) => n + 1)}
           onDone={(note) => {
             setSetupSheet(null);
             setMessage(note);

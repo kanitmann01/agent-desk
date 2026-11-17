@@ -644,7 +644,7 @@ class PluginRuntime:
             card["title"] = title
             card["freshness"] = "fresh"
             card["cause"] = ""
-            card["pilot"] = False
+            card["pilot"] = pilot
             card["payload"] = {
                 "elements": elements,
                 "status": "fresh",
@@ -673,7 +673,10 @@ class PluginRuntime:
             "id": card_id,
             "title": title,
             "version": version,
-            "pilot": False,
+            # The badge tells the truth about the install (T6): a wizard
+            # plugin runs in pilot mode, and its cards say so instead of
+            # hiding the badge while the views are spent.
+            "pilot": bool(pilot),
             "state": "enabled",
             "freshness": "setup",
             "cause": "",

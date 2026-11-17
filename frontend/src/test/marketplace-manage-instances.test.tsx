@@ -1,7 +1,11 @@
-// The manage view's instance setup (T5): a config-backed plugin lists its
-// instances with Set up and Edit against the same endpoints the dashboard
-// card drives; a plain plugin shows no setup entry; a refused action
-// surfaces the server's error, never a silent no-op.
+// The manage view's instance setup (T5, finished in T6): a config-backed
+// plugin lists its instances with Set up and Edit; the sheet is the
+// desk's shared flow (ModalSheet shell + RowSelectGrid preview), walking
+// name -> open workbook -> columns and rows -> confirm carrying
+// tracking.rows against the same endpoints the dashboard card drives.
+// A plain plugin shows no setup entry; an alias never opens a second
+// config surface; a refused action surfaces the server's error, never a
+// silent no-op.
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +46,13 @@ const UNCONFIGURED_INSTANCE = {
   suggested: false,
 };
 
+const PREVIEW = {
+  headers: ['Region', 'Booked'],
+  // The server stringifies every cell (preview_table), so the stub does too.
+  rows: [['East', '10'], ['West', '5']],
+  sheet: 'Data',
+};
+
 interface ListOverrides {
   pluginId?: string;
   configBacked?: boolean;
@@ -63,7 +74,12 @@ function listing(overrides: ListOverrides = {}) {
   };
 }
 
-function stubFetch(listing: ListOverrides, create?: { status: number; body: unknown }) {
+interface StubOptions {
+  pick?: { status: number; body: unknown };
+  confirm?: { status: number; body: unknown };
+}
+
+function stubFetch(listing: ListOverrides, create?: { status: number; body: unknown }, options: StubOptions = {}) {
   const state = { listing: listing as Record<string, unknown> };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -84,11 +100,28 @@ function stubFetch(listing: ListOverrides, create?: { status: number; body: unkn
         return jsonResponse({ instance: created });
       }
       if (url.endsWith('/pick')) {
-        const opened = {
-          ...CONFIG_INSTANCE,
-          source: { ...CONFIG_INSTANCE.source },
-        };
-        return jsonResponse({ instance: opened, preview: { headers: ['Region', 'Booked'], rows: [] }, step: 'columns' });
+        if (options.pick) return jsonResponse(options.pick.body, options.pick.status);
+        // /api/plugins/<id>/instances/<iid>/pick: echo the real instance
+        // document with a staged file, exactly as the server does.
+        const iid = url.split('/')[5] ?? '';
+        const found = (state.listing.instances as Array<Record<string, unknown>>)
+          .find((item) => item.instanceId === iid);
+        const opened = found
+          ? { ...found, source: { kind: 'workbook', path: '/workspace/reports/q4.xlsx', sheet: null, headerRow: 1, range: null } }
+          : {
+            schemaVersion: 1,
+            instanceId: iid,
+            name: body.name ?? iid,
+            source: { kind: 'workbook', path: '/workspace/reports/q4.xlsx', sheet: null, headerRow: 1, range: null },
+            tracking: { good: 'up' },
+            confirmedAt: null,
+            suggested: false,
+          };
+        return jsonResponse({ instance: opened, preview: PREVIEW, step: 'columns' });
+      }
+      if (url.endsWith('/confirm')) {
+        if (options.confirm) return jsonResponse(options.confirm.body, options.confirm.status);
+        return jsonResponse({ instance: CONFIG_INSTANCE, step: 'done' });
       }
       return jsonResponse({});
     }
@@ -142,7 +175,21 @@ describe('the manage view configures a config-backed plugin', () => {
     expect(within(section).getByRole('button', { name: 'Edit Board pack' })).toBeInTheDocument();
   });
 
-  it('creates an instance from the Set up sheet and refreshes the list', async () => {
+  it('leads a zero-instance panel with the Set up primary (the wizard walk lands here)', async () => {
+    stubFetch(listing({ instances: [] }));
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    // The only instance row is the honest empty line; Set up comes
+    // before it in the DOM, as the panel's leading primary action.
+    expect(within(section).getByText(/No instances yet/)).toBeInTheDocument();
+    const setUp = within(section).getByRole('button', { name: 'Set up a new instance' });
+    expect(setUp).toHaveClass('btn-primary');
+    const emptyCell = within(section).getByText(/No instances yet/).closest('td');
+    expect(setUp.compareDocumentPosition(emptyCell as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('creates an instance from the Set up sheet and walks on to the workbook', async () => {
     const { fetchMock } = stubFetch(listing({ instances: [] }));
     const user = userEvent.setup();
     render(<MarketplaceApp />);
@@ -153,12 +200,56 @@ describe('the manage view configures a config-backed plugin', () => {
     await user.type(within(dialog).getByLabelText('Instance name'), 'Watch two');
     await user.click(within(dialog).getByRole('button', { name: 'Create instance' }));
 
-    await waitFor(() => {
-      const posts = postsOf(fetchMock);
-      expect(posts.some((post) => post.url === '/api/plugins/qbr-pack/instances'
-        && post.body.name === 'Watch two')).toBe(true);
-    });
+    // The create posts; the sheet stays open and the walk continues.
+    expect(postsOf(fetchMock).some((post) => post.url === '/api/plugins/qbr-pack/instances'
+      && post.body.name === 'Watch two')).toBe(true);
+    expect(await within(dialog).findByRole('button', { name: 'Open a workbook' })).toBeInTheDocument();
+    // The list behind the sheet re-reads and shows the new instance.
     const refreshed = await screen.findByRole('region', { name: 'Instances' });
+    expect(within(refreshed).getByRole('rowheader', { name: 'Watch two' })).toBeInTheDocument();
+  });
+
+  it('the full walk ends in a confirm carrying the selected rows', async () => {
+    const { fetchMock } = stubFetch(listing({ instances: [] }));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
+    await user.type(within(dialog).getByLabelText('Instance name'), 'Watch two');
+    await user.click(within(dialog).getByRole('button', { name: 'Create instance' }));
+
+    // Open the workbook: the shared grid renders with the live count.
+    await user.click(await within(dialog).findByRole('button', { name: 'Open a workbook' }));
+    expect(await within(dialog).findByRole('columnheader', { name: 'Region' })).toBeInTheDocument();
+    expect(within(dialog).getByText('2/2 rows')).toBeInTheDocument();
+
+    // Assign on header clicks, then narrow to one row.
+    await user.click(within(dialog).getByRole('radio', { name: 'Row label' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Region' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Value column' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Booked' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Clear' }));
+    await user.click(within(dialog).getByLabelText('Track row 2'));
+    expect(within(dialog).getByText('1/2 rows')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    const confirm = postsOf(fetchMock).find((post) => post.url === '/api/plugins/qbr-pack/instances/watch-two/confirm');
+    expect(confirm?.body.tracking).toMatchObject({
+      labelColumn: 'Region',
+      valueColumn: 'Booked',
+      aggregate: 'sum',
+      rows: [1],
+    });
+    // The manage view says what happened and re-reads the list.
+    expect(await screen.findByText(/tracking 1 rows/)).toBeInTheDocument();
+    const refreshed = screen.getByRole('region', { name: 'Instances' });
     expect(within(refreshed).getByRole('rowheader', { name: 'Watch two' })).toBeInTheDocument();
   });
 
@@ -183,6 +274,28 @@ describe('the manage view configures a config-backed plugin', () => {
     expect((state.listing.instances as unknown[]).length).toBe(0);
   });
 
+  it('a refused confirm keeps the sheet open with the server error', async () => {
+    stubFetch(listing(), undefined, {
+      confirm: { status: 400, body: { error: 'config:not-granted', message: 'That selection names rows the file does not have. Open the file again.' } },
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
+    await user.click(await within(dialog).findByRole('button', { name: 'Open a workbook' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Booked' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Row label' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Region' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'That selection names rows the file does not have.');
+    expect(screen.getByRole('dialog', { name: 'Edit Board pack' })).toBeInTheDocument();
+  });
+
   it('opens the workbook flow for an existing instance from Edit', async () => {
     const { fetchMock } = stubFetch(listing());
     const user = userEvent.setup();
@@ -191,15 +304,16 @@ describe('the manage view configures a config-backed plugin', () => {
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
-    expect(within(dialog).getByText('Not set up')).toBeInTheDocument();
+    expect(within(dialog).getByText(/Not set up/)).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Open workbook' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Open a workbook' }));
     await waitFor(() => {
       const posts = postsOf(fetchMock);
       expect(posts.some((post) =>
         post.url === '/api/plugins/qbr-pack/instances/board-pack/pick')).toBe(true);
     });
-    expect(await within(dialog).findByText('q4.xlsx')).toBeInTheDocument();
+    expect(await within(dialog).findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
+    expect(within(dialog).getByText('2/2 rows')).toBeInTheDocument();
   });
 
   it('shows no setup entry for a plain plugin and leaves the manage view as it is', async () => {
@@ -237,11 +351,12 @@ describe('the manage view configures a config-backed plugin', () => {
 
     await user.click(within(section).getByRole('button', { name: 'Edit Sales' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Sales' });
-    await user.click(within(dialog).getByRole('button', { name: 'Open workbook' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Open a workbook' }));
     await waitFor(() => {
       const posts = postsOf(fetchMock);
       expect(posts.some((post) =>
         post.url === '/api/plugins/excel-report/instances/sales/pick')).toBe(true);
     });
+    expect(await within(dialog).findByRole('columnheader', { name: 'Region' })).toBeInTheDocument();
   });
 });
