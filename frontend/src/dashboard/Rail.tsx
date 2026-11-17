@@ -9,6 +9,7 @@
 // The collapsed state persists in localStorage and mirrors the
 // server-rendered pages' toggle (key: agentdesk.railCollapsed).
 import { useEffect, useState } from 'react';
+import ThemePicker from '../theme/ThemePicker';
 
 interface RailProps {
   inboxWaiting: number;
@@ -100,6 +101,10 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
         </svg>
         <span className="rail-toggle-label">Collapse</span>
       </button>
+      <div className="rail-theme">
+        <span className="rail-theme-label">Theme</span>
+        <ThemePicker compact />
+      </div>
       <div className="user">
         <span className="avatar" aria-hidden="true">AD</span>
         <div>
