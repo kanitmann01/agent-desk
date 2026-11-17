@@ -11,8 +11,8 @@ license, a permissive license reviewed separately from bundled
 components.
 
 The **dashboard SPA bundle does ship third-party work**: React
-compiled into its JavaScript, and Geist, Geist Mono and Montserrat
-font files. Every item is listed with its license in the
+compiled into its JavaScript, and the Geist, Geist Mono, and
+Montserrat font files. Every item is listed with its license in the
 Dashboard SPA section below.
 
 The allowlist for any Python dependency is MIT, Apache-2.0,
@@ -34,8 +34,8 @@ and which only run at development time.
 | react 19.3.1 | UI library | MIT | yes, compiled into the JavaScript |
 | react-dom 19.3.1 | DOM renderer | MIT | yes, compiled into the JavaScript |
 | @fontsource/geist | Geist, the UI face | OFL-1.1 | yes, the .woff2 files unchanged |
-| @fontsource/geist-mono | Geist Mono, the numeric face | OFL-1.1 | yes, the .woff2 files unchanged |
-| @fontsource/montserrat | Montserrat, headings in the Momentuum blue theme | OFL-1.1 | yes, the .woff2 files unchanged |
+| @fontsource/geist-mono | Geist Mono, the numeric typeface | OFL-1.1 | yes, the .woff2 files unchanged |
+| @fontsource/montserrat | Montserrat, the display face | OFL-1.1 | yes, the .woff2 files unchanged |
 | vite | build tool | MIT | no, development only |
 | @vitejs/plugin-react | build plugin | MIT | no, development only |
 | typescript 5.9.3 | type checking | Apache-2.0 | no, development only |

@@ -564,58 +564,79 @@ class PluginRuntime:
     def layout_keys(self) -> list[str]:
         """Card keys for the dashboard layout.
 
-        A workbook plugin with instances contributes one key per instance.
-        An alias contributes none: its instance is a card of the target.
+        Every config-backed plugin contributes one key per instance of
+        its own; before any instance exists it contributes its plugin id
+        so the setup card has a home. An alias contributes none: its
+        instance is a card of the target.
         """
         keys = []
-        tracker_done = False
+        emitted: set[str] = set()
         for entry in self.list_records():
             if entry.get("state") != "enabled" or not entry.get("versions"):
                 continue
             manifest = self._manifest(entry["id"])
             config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
-            if config.get("aliasOf") or self._is_tracker(manifest):
-                if not tracker_done:
-                    keys.extend(self._tracker_keys())
-                    tracker_done = True
+            plugin_id = entry["id"]
+            target = str(config.get("aliasOf")) if config.get("aliasOf") else plugin_id
+            if config.get("aliasOf") or self._is_instance_capable(manifest):
+                if target not in emitted:
+                    keys.extend(self._instance_keys(target))
+                    emitted.add(target)
                 continue
             keys.append(entry["id"])
         return keys
 
-    def _is_tracker(self, manifest: dict) -> bool:
+    def _is_instance_capable(self, manifest: dict) -> bool:
+        """True when the manifest itself opts in: the workbook config
+        kind, and no alias (an alias's cards belong to its target)."""
         config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
         return "workbook" in (config.get("kinds") or []) and not config.get("aliasOf")
 
-    def _tracker_keys(self) -> list[str]:
+    def _instance_keys(self, plugin_id: str) -> list[str]:
         from agentdesk.plugins.config import InstanceStore
-        instances = InstanceStore(self.data_dir, self.workspace_dir).list("excel-report")
+        instances = InstanceStore(self.data_dir, self.workspace_dir).list(plugin_id)
         if not instances:
-            return ["excel-report"]
-        return [f"excel-report~{item['instanceId']}" for item in instances]
+            return [plugin_id]
+        keys = []
+        for item in instances:
+            instance_id = item["instanceId"]
+            if instance_id == "main" and not item.get("confirmedAt"):
+                # The unconfirmed main instance is the plugin's own setup
+                # card (the card rule keys it by the plugin id), so the
+                # layout must name the plugin id here too: a pick that
+                # never reaches confirm leaves the setup card at home
+                # instead of orphaning it under a key no card carries
+                # (T6 review). A confirmed main keeps plugin~main, the
+                # historical tracker's confirmed card id.
+                keys.append(plugin_id)
+            else:
+                keys.append(f"{plugin_id}~{instance_id}")
+        return keys
 
-    def _tracker_entry(self, state: dict):
-        return state["plugins"].get("excel-report")
+    def _plugin_entry(self, state: dict, plugin_id: str):
+        return state["plugins"].get(plugin_id)
 
-    def _tracker_cards(self, entry) -> list[dict]:
+    def _instance_cards(self, plugin_id: str, entry) -> list[dict]:
         from agentdesk.plugins.config import ConfigError, InstanceStore
         from agentdesk.plugins.tracker import read_tracker
         store = InstanceStore(self.data_dir, self.workspace_dir)
-        instances = store.list("excel-report")
+        instances = store.list(plugin_id)
         version = "" if not entry else str(entry.get("active_version") or "")
         pilot = bool(entry and entry.get("pilot_views_left", 0) > 0)
+        plugin_name = str(entry.get("name") or plugin_id) if entry else plugin_id
         if not instances:
-            return [self._tracker_setup_card("main", "Workbook tracker", version, pilot, "source")]
+            return [self._instance_setup_card(plugin_id, "main", plugin_name, version, pilot, "source")]
         cards = []
         for item in instances:
             instance_id = item["instanceId"]
             title = str(item.get("name") or instance_id)
             if not item.get("confirmedAt"):
                 step = "columns" if (item.get("source") or {}).get("path") else "source"
-                cards.append(self._tracker_setup_card(instance_id, title, version, pilot, step))
+                cards.append(self._instance_setup_card(plugin_id, instance_id, title, version, pilot, step))
                 continue
-            card = self._tracker_setup_card(instance_id, title, version, pilot, "done")
+            card = self._instance_setup_card(plugin_id, instance_id, title, version, pilot, "done")
             try:
-                reading = read_tracker(store, "excel-report", instance_id)
+                reading = read_tracker(store, plugin_id, instance_id)
             except ConfigError as exc:
                 card["freshness"] = "attention"
                 card["cause"] = exc.message
@@ -637,7 +658,7 @@ class PluginRuntime:
             card["title"] = title
             card["freshness"] = "fresh"
             card["cause"] = ""
-            card["pilot"] = False
+            card["pilot"] = pilot
             card["payload"] = {
                 "elements": elements,
                 "status": "fresh",
@@ -659,26 +680,27 @@ class PluginRuntime:
             cards.append(card)
         return cards
 
-    def _tracker_setup_card(self, instance_id: str, title: str, version: str,
-                            pilot: bool, step: str) -> dict:
-        card_id = "excel-report" if instance_id == "main" and step != "done" else f"excel-report~{instance_id}"
-        if instance_id == "main" and step == "source":
-            card_id = "excel-report"
+    def _instance_setup_card(self, plugin_id: str, instance_id: str, title: str, version: str,
+                             pilot: bool, step: str) -> dict:
+        card_id = plugin_id if instance_id == "main" and step != "done" else f"{plugin_id}~{instance_id}"
         return {
             "id": card_id,
             "title": title,
             "version": version,
-            "pilot": False,
+            # The badge tells the truth about the install (T6): a wizard
+            # plugin runs in pilot mode, and its cards say so instead of
+            # hiding the badge while the views are spent.
+            "pilot": bool(pilot),
             "state": "enabled",
             "freshness": "setup",
             "cause": "",
             "checked_at": "",
-            "pluginId": "excel-report",
+            "pluginId": plugin_id,
             "instanceId": instance_id,
             "payload": {
                 "elements": [],
                 "setup": {
-                    "pluginId": "excel-report",
+                    "pluginId": plugin_id,
                     "instanceId": instance_id,
                     "name": title,
                     "step": step,
@@ -714,7 +736,7 @@ class PluginRuntime:
         state = self._read()
         cards = []
         dirty = False
-        tracker_emitted = False
+        emitted: set[str] = set()
         for entry in state["plugins"].values():
             if entry["state"] != "enabled" or not entry["versions"]:
                 continue
@@ -723,10 +745,14 @@ class PluginRuntime:
             if manifest_path.exists():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
-            if config.get("aliasOf") or self._is_tracker(manifest):
-                if not tracker_emitted:
-                    cards.extend(self._tracker_cards(entry if self._is_tracker(manifest) else self._tracker_entry(state)))
-                    tracker_emitted = True
+            plugin_id = entry["id"]
+            target = str(config.get("aliasOf")) if config.get("aliasOf") else plugin_id
+            if config.get("aliasOf") or self._is_instance_capable(manifest):
+                if target not in emitted:
+                    target_entry = (entry if target == plugin_id
+                                    else self._plugin_entry(state, target))
+                    cards.extend(self._instance_cards(target, target_entry))
+                    emitted.add(target)
                 if entry["pilot_views_left"] > 0:
                     entry["pilot_views_left"] -= 1
                     dirty = True

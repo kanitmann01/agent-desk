@@ -5,8 +5,10 @@ that into a Class D declarative plugin draft. Three guardrails keep the
 engine honest:
 
 - Vocabulary confinement. A draft can only watch the four data sources
-  in VOCABULARY, and its permissions are fixed by the one chosen file
-  glob: no shell, no network, no llm. The endpoint (when configured) may
+  in VOCABULARY, and its permissions are fixed: a workbook ask reads
+  nothing at build time (the file is picked per instance in setup),
+  any other kind reads the one chosen glob, and no draft gets shell,
+  network, or llm. The endpoint (when configured) may
   shape the human-readable copy and suggest structure inside the
   vocabulary; the sanitizer strips everything else before the validator
   ever sees it.
@@ -533,6 +535,8 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
     VOCABULARY, or touch identity (schemaVersion, class, id, publisher).
     Whatever it omits falls back to the deterministic skeleton, and the
     validator, not the suggestion, has the final word on what survives.
+    A config-backed skeleton keeps that shape on the suggestion too:
+    its config kinds are pinned and its widgets stay file-less.
     """
     floored: dict = {}
     if isinstance(raw, dict):
@@ -540,12 +544,16 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
             if key in raw:
                 floored[key] = copy.deepcopy(raw[key])
 
-    # Identity and permissions are never negotiable.
+    # Identity and permissions are never negotiable. A config-backed
+    # skeleton pins its config kinds too, so the suggestion can shape
+    # the copy but never unmake the setup-state install (T2).
     floored["schemaVersion"] = 1
     floored["class"] = "declarative"
     floored["publisher"] = PUBLISHER
     floored["id"] = skeleton["id"]
     floored["permissions"] = copy.deepcopy(skeleton["permissions"])
+    if "config" in skeleton:
+        floored["config"] = copy.deepcopy(skeleton["config"])
 
     if not isinstance(floored.get("license"), str) or floored["license"] not in ALLOWED_LICENSES:
         floored["license"] = LICENSE_ID
@@ -564,13 +572,19 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
     else:
         widgets = contributes.get("widgets")
         if isinstance(widgets, list):
-            contributes["widgets"] = [
-                widget
-                for widget in widgets
-                if isinstance(widget, dict)
-                and isinstance(widget.get("dataSource"), dict)
-                and widget["dataSource"].get("type") in VOCABULARY
-            ]
+            fileless = "config" in floored
+            kept: list = []
+            for widget in widgets:
+                if not (isinstance(widget, dict)
+                        and isinstance(widget.get("dataSource"), dict)
+                        and widget["dataSource"].get("type") in VOCABULARY):
+                    continue
+                if fileless:
+                    # The config kind and a watched file cannot coexist:
+                    # the floor strips the file the suggestion named.
+                    widget["dataSource"].pop("file", None)
+                kept.append(widget)
+            contributes["widgets"] = kept
     return floored
 
 
@@ -710,8 +724,12 @@ class WizardCompiler:
         return style
 
     def _compose(self, description: str, answers: dict, style: dict) -> tuple[dict, dict]:
-        """The deterministic Class D draft: one widget, one watched glob,
-        permissions that cannot widen, shaped like the repo's fixtures."""
+        """The deterministic Class D draft: one widget, permissions that
+        cannot widen, shaped like the repo's fixtures. A workbook ask
+        composes the config-backed shape the bundled tracker uses
+        (T2): no fabricated glob, no watched file. The install lands in
+        the setup state, and the data is picked per instance through the
+        file dialog. Every other kind keeps the watched-glob shape."""
         slug = safe_slug(description)
         source_type = _source_type(description, answers)
         glob_full = WORKSPACE_PREFIX + _file_glob(description, answers, source_type)
@@ -723,9 +741,19 @@ class WizardCompiler:
             else ""
         )
 
-        data_source: dict = {"type": source_type, "file": glob_full}
-        if window:
-            data_source["deltaWindow"] = window
+        # The workbook kind is config-backed, and the validator forbids a
+        # config kind alongside a data source file: the read permission
+        # stays empty and the data source names only its type. The 24h
+        # window stays a preview-copy concern, not a manifest one.
+        config_backed = source_type == "excel-watch"
+        data_source: dict = {"type": source_type}
+        if config_backed:
+            read_globs: list[str] = []
+        else:
+            data_source["file"] = glob_full
+            if window:
+                data_source["deltaWindow"] = window
+            read_globs = [glob_full]
 
         manifest = {
             "schemaVersion": 1,
@@ -737,7 +765,7 @@ class WizardCompiler:
             "engines": {"dashboardHost": DASHBOARD_ENGINE},
             "license": LICENSE_ID,
             "permissions": {
-                "filesystem": {"read": [glob_full], "write": [PLUGIN_DATA_GLOB]},
+                "filesystem": {"read": read_globs, "write": [PLUGIN_DATA_GLOB]},
                 "network": {"allow": []},
                 "llm": {"allow": False},
                 "shell": SHELL_NONE,
@@ -754,6 +782,8 @@ class WizardCompiler:
                 ]
             },
         }
+        if config_backed:
+            manifest["config"] = {"kinds": ["workbook"]}
 
         title, blurb = _human_copy(description, style)
         if not blurb:

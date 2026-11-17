@@ -620,6 +620,14 @@ def _active_version_dir(record: dict) -> Path:
     return Path(record["versions"][-1]["dir"])
 
 
+def _alias_instance_id(name: str) -> str:
+    """The instance id an alias's named instance resolves to. Mirrors the
+    runtime's derivation, so the manage view lists exactly the instance
+    the install materialized."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-")
+    return cleaned or "instance"
+
+
 def _normalize_peer_address(address: str) -> str | None:
     """host:port with an optional http:// scheme stripped; None when the
     shape is wrong (a hostname without a port is refused: the peer
@@ -3873,9 +3881,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if plugins is None:
             self._send_json(503, {"error": "plugins are not available"})
             return
+        parts = [part for part in path.split("/") if part]
         try:
+            # api plugins <id> instances   (the manage view's instance list)
+            if len(parts) == 4 and parts[3] == "instances":
+                self._send_json(200, self._instance_listing(plugins, parts[2]))
+                return
             from ..plugins.setup_flow import preview
-            parts = [part for part in path.split("/") if part]
             # api plugins <id> instances <iid> preview
             if len(parts) >= 6 and parts[5] == "preview":
                 query = self.path.partition("?")[2]
@@ -3888,13 +3900,62 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     sheet=params.get("sheet"),
                     header_row=int(params.get("headerRow") or 1),
                     range_text=params.get("range"),
+                    plugin_id=parts[2],
                 )
                 self._send_json(200, result)
                 return
+        except PluginError as exc:
+            self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+            return
         except Exception as exc:  # noqa: BLE001 - the setup envelope names the cause
             self._setup_error(exc)
             return
         self._send_json(404, {"error": "not-found", "message": path})
+
+    def _instance_listing(self, plugins: PluginRuntime, plugin_id: str) -> dict:
+        """The manage view's instance list for one plugin id.
+
+        A config-backed plugin answers its own instance documents. An
+        alias answers the one named instance of its target, and names the
+        target as the setup plugin, so the SPA drives the target's
+        endpoints instead of opening a second config surface for the
+        alias. A plain plugin answers configBacked false and no instances.
+        """
+        from ..plugins.setup_flow import store_for
+        record = plugins.record(plugin_id)  # PluginError(404) when unknown
+        manifest = {}
+        if record.get("versions"):
+            manifest_path = _active_version_dir(record) / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        alias_of = str(config.get("aliasOf")) if config.get("aliasOf") else None
+        config_backed = alias_of is not None or "workbook" in (config.get("kinds") or [])
+        store = store_for(plugins, self._instance_cap())
+        if alias_of:
+            target_record = plugins.record(alias_of)
+            instance_id = _alias_instance_id(
+                str(config.get("instanceName") or plugin_id or "instance"))
+            documents = [item for item in store.list(alias_of)
+                         if item.get("instanceId") == instance_id]
+            setup_id = alias_of
+            setup_name = str(target_record.get("name") or alias_of)
+        elif config_backed:
+            documents = store.list(plugin_id)
+            setup_id = plugin_id
+            setup_name = str(record.get("name") or plugin_id)
+        else:
+            documents = []
+            setup_id = plugin_id
+            setup_name = str(record.get("name") or plugin_id)
+        return {
+            "pluginId": plugin_id,
+            "configBacked": config_backed,
+            "aliasOf": alias_of,
+            "setupPluginId": setup_id,
+            "setupPluginName": setup_name,
+            "instances": documents,
+        }
 
     def _plugin_setup_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
         from ..plugins.config import ConfigError
@@ -3902,11 +3963,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             accept_outside, confirm, ensure_instance, pick, stage, store_for, suggest,
         )
         parts = [part for part in path.split("/") if part]
-        # api plugins excel-report instances [iid] [action]
+        # api plugins <id> instances [iid] [action]
         if len(parts) < 4 or parts[3] != "instances":
             self._send_json(404, {"error": "not-found", "message": path})
             return
         cap = self._instance_cap()
+        plugin_id = parts[2]
         try:
             if len(parts) == 4:
                 name = str(body.get("name") or "").strip()
@@ -3917,6 +3979,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 saved = ensure_instance(
                     store_for(plugins, cap), instance_id, name,
                     good="down" if body.get("good") == "down" else "up",
+                    plugin_id=plugin_id,
                 )
                 self._send_json(200, {"instance": saved})
                 return
@@ -3925,10 +3988,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             name = str(body.get("name") or instance_id)
             if action == "pick":
                 self._send_json(200, pick(
-                    plugins, cap, instance_id, name, self.server.pick_workbook))  # type: ignore[attr-defined]
+                    plugins, cap, instance_id, name, self.server.pick_workbook,  # type: ignore[attr-defined]
+                    plugin_id=plugin_id))
                 return
             if action == "stage":
-                self._send_json(200, stage(plugins, cap, instance_id, name, str(body.get("path") or "")))
+                self._send_json(200, stage(
+                    plugins, cap, instance_id, name, str(body.get("path") or ""),
+                    plugin_id=plugin_id))
                 return
             if action == "suggest":
                 headers_only = self._headers_only()
@@ -3936,7 +4002,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     headers_only = bool(body.get("headersOnly"))
                 complete = self._suggestion_complete()
                 self._send_json(200, suggest(
-                    plugins, cap, instance_id, headers_only=headers_only, complete=complete))
+                    plugins, cap, instance_id, headers_only=headers_only, complete=complete,
+                    plugin_id=plugin_id))
                 return
             if action == "confirm":
                 tracking = body.get("tracking") if isinstance(body.get("tracking"), dict) else body
@@ -3945,10 +4012,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     suggested=bool(body.get("suggested")),
                     header_row=body.get("headerRow"),
                     range_text=body.get("range"),
-                    name=body.get("name")))
+                    name=body.get("name"),
+                    plugin_id=plugin_id))
                 return
             if action == "outside":
-                self._send_json(200, accept_outside(plugins, cap, instance_id))
+                self._send_json(200, accept_outside(plugins, cap, instance_id, plugin_id=plugin_id))
                 return
         except ConfigError as exc:
             self._send_json(400, {"error": exc.code, "message": exc.message})
@@ -5218,15 +5286,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _wizard_approve(self, session_id: str) -> None:
         """The one consolidated approval: zip the validated draft and hand
         it to the plugin runtime, which validates again and installs in
-        pilot mode."""
+        pilot mode. A form post (the no-JS browser) answers with a
+        redirect back to the session page, which renders the approved
+        screen; a JSON client keeps the 200 install document."""
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
         session = wizard.get(session_id)
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
-            self._send_json(503, {"error": "plugins:unavailable",
-                                  "message": "no plugin runtime is configured"})
+            if self._is_form_submit():
+                self._send_error_page(503, "Plugins unavailable",
+                                      "No plugin runtime is configured.")
+            else:
+                self._send_json(503, {"error": "plugins:unavailable",
+                                      "message": "no plugin runtime is configured"})
             return
         if session.state != "preview" or not session.draft:
+            if self._is_form_submit():
+                # The refusal, honestly rendered: back to the page, which
+                # shows the state the session is really in (the approved
+                # screen after an approval, the preview and its button
+                # otherwise). Nothing installs twice.
+                self._send_redirect(f"/wizard/{session_id}")
+                return
             self._send_json(409, {"error": "wizard:not-in-preview"})
             return
         import tempfile
@@ -5248,6 +5329,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         session.draft = {**session.draft, "installed": result}
         wizard.save(session)
         summary = approval_summary(session.draft["manifest"])
+        if self._is_form_submit():
+            self._send_redirect(f"/wizard/{session_id}")
+            return
         self._send_json(200, {"status": "installed", "pilot": True,
                               "summary": summary, "install": result})
 

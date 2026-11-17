@@ -42,6 +42,9 @@ NEVER_NO_CODE = "Runs no code"
 NEVER_NO_NETWORK = "Opens no network connection"
 NEVER_NO_WRITES = "Writes no files"
 REMOVE_LINE = "Delete it from the Plugins surface, or delete the app folder."
+# The read line for a config-backed draft (T2): nothing is read at
+# approval time, the workbook is picked per instance in setup.
+SETUP_READS_LINE = "a workbook you pick in setup"
 
 DEFAULT_CANNOT = (
     "Widgets here read allowed files and draw cards; they cannot run "
@@ -66,6 +69,18 @@ def _draft_of(session_json: dict) -> dict:
     """The session's plugin draft, or an empty draft when absent."""
     draft = session_json.get("draft")
     return draft if isinstance(draft, dict) else {}
+
+
+def _is_config_backed(draft: dict) -> bool:
+    """True when the manifest declares config kinds: the plugin points
+    at its data through instances, so its summary names the setup
+    handoff and its manage surface is where setup lives. A glob-shaped
+    draft has no setup to offer, and its copy must not claim otherwise."""
+    config = draft.get("config")
+    if not isinstance(config, dict):
+        return False
+    kinds = config.get("kinds")
+    return isinstance(kinds, list) and bool(kinds)
 
 
 def _questions_of(session_json: dict) -> list[dict]:
@@ -129,9 +144,14 @@ def approval_summary(draft: dict) -> dict:
         never.append(NEVER_NO_NETWORK)
     if not _string_list(filesystem.get("write")):
         never.append(NEVER_NO_WRITES)
+    reads = _string_list(filesystem.get("read"))
+    if _is_config_backed(draft):
+        # A config-backed draft grants no glob here (T2): its read line
+        # names the setup handoff instead of a path nothing reads yet.
+        reads = [SETUP_READS_LINE]
     return {
         "does": _does_line(draft),
-        "reads": _string_list(filesystem.get("read")),
+        "reads": reads,
         "never": never,
         "remove": REMOVE_LINE,
     }
@@ -313,30 +333,61 @@ def _preview_html(session_json: dict) -> str:
     )
 
 
-def _approved_html(session_json: dict) -> str:
-    """The installed screen: summary, pilot-mode removal line, the
-    publish step, way back."""
+def _installed_of(session_json: dict) -> dict:
+    """The install record a finished session carries, or {} when absent."""
     installed = session_json.get("installed")
-    plugin_id = ""
-    if isinstance(installed, dict):
-        candidate = str(installed.get("id", "")).strip()
-        plugin_id = candidate if candidate else ""
+    return installed if isinstance(installed, dict) else {}
+
+
+def _approved_html(session_json: dict) -> str:
+    """The installed screen: what was installed (id, version), the pilot
+    line, the summary, the honest next step, way back."""
+    installed = _installed_of(session_json)
+    draft = _draft_of(session_json)
+    plugin_id = str(installed.get("id", "")).strip()
+    version = str(installed.get("version", "")).strip()
+    installed_line = ""
+    if plugin_id:
+        version_chip = (
+            f' <span class="mono">{_esc(version)}</span>' if version else ""
+        )
+        installed_line = (
+            '<section class="answer" aria-label="What was installed">'
+            '<p class="subhead">Installed</p>'
+            f'<p><span class="mono">{_esc(plugin_id)}</span>{version_chip} '
+            '<span class="badge-pilot">Pilot</span></p>'
+            "<p>It runs in pilot mode. Remove it from the Plugins surface "
+            "whenever you want.</p>"
+            "</section>"
+        )
+    cta = ""
     publish_form = ""
     if plugin_id:
-        # The create-to-publish loop: a plain form post to the plugins
-        # page's publish action, no JavaScript anywhere in it.
+        if _is_config_backed(draft):
+            cta = (
+                f'<a class="btn btn-primary" '
+                f'href="/marketplace/plugin/{_esc(plugin_id)}/manage">'
+                "Set up its data</a>"
+            )
+        else:
+            cta = (
+                f'<a class="btn btn-primary" '
+                f'href="/marketplace/plugin/{_esc(plugin_id)}">'
+                "Open in the marketplace</a>"
+            )
+        # The create-to-publish loop keeps its step: a plain form post to
+        # the plugins page's publish action, no JavaScript anywhere in it.
         publish_form = (
             f'<form method="post" action="/plugins/{_esc(plugin_id)}/publish">'
-            '<button type="submit" class="btn btn-primary">'
+            '<button type="submit" class="btn btn-secondary">'
             "Publish to the registry</button></form>"
         )
     return (
         "<h1>Added</h1>"
         "<p>The widget is on your dashboard now.</p>"
-        '<p><span class="badge-pilot">Pilot</span> It runs in pilot mode. '
-        "Remove it from the Plugins surface whenever you want.</p>"
-        f"{_summary_html(approval_summary(_draft_of(session_json)))}"
-        f'<div class="cardrow">{publish_form}'
+        f"{installed_line}"
+        f"{_summary_html(approval_summary(draft))}"
+        f'<div class="cardrow">{cta}{publish_form}'
         '<a class="btn btn-secondary" href="/">'
         "Back to the dashboard</a></div>"
     )
@@ -402,9 +453,12 @@ def render_wizard_page(session_json: dict, version: str) -> str:
     labeled as preview, the consolidated approval block, the Approve
     form (POST /wizard/<id>/approve) and the escalate form (POST
     /wizard/<id>/escalate; a plain link cannot POST, so the escape is a
-    quiet button). approved shows the summary, the pilot-mode removal
-    line, the publish step (POST /plugins/<id>/publish, offered when
-    the session recorded its install) and the way back. escalated is
+    quiet button). approved shows what was installed (id, version, the
+    pilot badge), the summary, the pilot-mode removal line, and the
+    honest next step: a config-backed draft links to its manage surface
+    to set up its data, any other links to its marketplace page. The
+    publish step (POST /plugins/<id>/publish, offered when the session
+    recorded its install) and the way back ride along. escalated is
     the honest dead-end: what the wizard cannot do and the feature
     request exported in the user's own words.
     """

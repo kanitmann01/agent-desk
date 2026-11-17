@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "id": "qbr-pack",
+  "name": "QBR pack",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "reference",
+  "tags": ["excel", "qbr", "workbook"],
+  "icon": "chart",
+  "summary": "One series from a workbook, packaged for the quarterly review.",
+  "description": "QBR pack is a config-backed plugin that is not the historical tracker: it declares the workbook config kind and otherwise gets the same per-instance setup flow, read gate, cap, and dashboard cards as the bundled tracker. It writes nothing, uses no network, and does not call a model on its own.",
+  "highlights": [
+    "Declares the workbook kind; the host supplies the whole setup flow.",
+    "You open the workbook and confirm the columns.",
+    "A separate instance namespace from every other plugin."
+  ],
+  "permissions": {
+    "filesystem": {"read": [], "write": []},
+    "network": {"allow": []},
+    "llm": {"allow": false},
+    "shell": "none"
+  },
+  "config": {"kinds": ["workbook"]},
+  "activationEvents": ["onWidget:qbr-pack"],
+  "contributes": {
+    "widgets": [{
+      "id": "qbr-pack",
+      "size": "2x1",
+      "dataSource": {"type": "excel-watch"},
+      "render": {"type": "ui-schema", "file": "widget.ui.json"}
+    }]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

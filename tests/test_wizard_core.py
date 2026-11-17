@@ -152,6 +152,10 @@ def test_questions_are_capped_at_five():
 
 
 def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp_path):
+    """The workbook build (T2) is the config-backed shape the bundled
+    tracker uses: workbook config kind, an empty filesystem read, and a
+    widget data source with no file. Nothing is fabricated at compose
+    time; the file is picked per instance in setup."""
     session = canonical_session()
     draft = WizardCompiler(None).build(session, CANONICAL_ANSWERS)
 
@@ -163,8 +167,10 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
     assert manifest["version"] == "0.1.0"
     assert manifest["publisher"] == "agent-desk-wizard"
     assert manifest["id"].startswith("wizard-")
-    assert set(manifest) <= set(FIXTURE_MANIFEST)
-    assert manifest["permissions"]["filesystem"]["read"] == [CANONICAL_GLOB]
+    assert set(manifest) <= set(FIXTURE_MANIFEST) | {"config"}
+    assert manifest["config"] == {"kinds": ["workbook"]}
+    assert manifest["permissions"]["filesystem"]["read"] == []
+    assert manifest["permissions"]["filesystem"]["write"] == ["${pluginData}"]
     assert manifest["permissions"]["network"] == {"allow": []}
     assert manifest["permissions"]["llm"] == {"allow": False}
     assert manifest["permissions"]["shell"] == "none"
@@ -172,9 +178,7 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
     widget = manifest["contributes"]["widgets"][0]
     fixture_widget = FIXTURE_MANIFEST["contributes"]["widgets"][0]
     assert set(widget) == set(fixture_widget)
-    assert widget["dataSource"]["type"] == "excel-watch"
-    assert widget["dataSource"]["file"] == CANONICAL_GLOB
-    assert widget["dataSource"]["deltaWindow"] == "24h"
+    assert widget["dataSource"] == {"type": "excel-watch"}
     assert widget["render"] == {"type": "ui-schema", "file": "widget.ui.json"}
 
     ui_schema = draft["ui_schema"]
@@ -192,6 +196,27 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
     )
     verdict = real_validate_plugin(plugin_dir)
     assert verdict.ok, verdict.as_dict()
+
+
+def test_a_json_build_keeps_the_watched_glob_shape():
+    """Only workbook builds become config-backed instances (T2): a JSON
+    build composes today's declarative glob shape, byte-identical to
+    before, the read permission mirroring the data source file. (The
+    json-watch type wants a selector the deterministic composer never
+    invents, so that shape has always been the endpoint-repair path's
+    to finish; the composition itself is what must not drift.)"""
+    manifest, _ui = WizardCompiler(None)._compose(
+        CANONICAL_DESCRIPTION, {"source": "A JSON file", "file": "data/*.json"}, {}
+    )
+
+    assert "config" not in manifest
+    assert manifest["permissions"]["filesystem"]["read"] == ["${workspace}/data/*.json"]
+    widget = manifest["contributes"]["widgets"][0]
+    assert widget["dataSource"] == {
+        "type": "json-watch",
+        "file": "${workspace}/data/*.json",
+        "deltaWindow": "24h",
+    }
 
 
 # ---- building with a hostile endpoint --------------------------------------
@@ -439,9 +464,15 @@ def test_sanitize_manifest_strips_permissions_and_foreign_structure():
     assert floored["version"] == "9.9.9"
     assert floored["engines"] == {"dashboardHost": ">=2.0.0"}
     assert floored["activationEvents"] == list(skeleton["activationEvents"])
+    # The workbook skeleton is config-backed (T2): its config kinds are
+    # pinned like permissions, and a suggested widget never keeps a
+    # watched file the config kind forbids.
+    assert floored["config"] == skeleton["config"]
+    kept = floored["contributes"]["widgets"][0]
     assert [widget["dataSource"]["type"] for widget in floored["contributes"]["widgets"]] == [
         "json-watch"
     ]
+    assert "file" not in kept["dataSource"]
 
 
 # ---- the session store ------------------------------------------------------
