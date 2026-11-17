@@ -255,7 +255,8 @@ def test_approve_installs_in_pilot_mode_with_consolidated_summary(env, auth):
     assert payload["pilot"] is True
     summary = payload["summary"]
     assert summary["does"]
-    assert summary["reads"]
+    # The workbook build names the setup handoff, not a fabricated glob (T2).
+    assert summary["reads"] == ["a workbook you pick in setup"]
     assert any("no code" in line.lower() for line in summary["never"])
     assert summary["remove"]
     records = env.server.plugins.list_records()
@@ -418,6 +419,51 @@ def test_the_full_no_js_walk_ends_on_an_approved_page(tmp_path, monkeypatch):
         assert "Added" in page
         records = booted.server.plugins.list_records()
         assert [r["state"] for r in records] == ["enabled"]
+        # The workbook build reads no glob (T2): the approval summary
+        # names the setup handoff, and the call to action is the manage
+        # surface where that setup lives.
+        assert "a workbook you pick in setup" in page
+        assert "reports/*.xlsx" not in page
+        assert "Set up its data" in page
+    finally:
+        booted.close()
+
+
+def test_a_workbook_install_lands_in_setup_with_its_dashboard_card(tmp_path, monkeypatch):
+    """T2: the config-backed workbook build installs into the setup
+    state (no file was ever granted), and the dashboard renders its
+    wireframe card keyed by the plugin id, the same card the bundled
+    tracker shows before its first instance exists."""
+    for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    clock = FakeClock(NOW)
+    from agentdesk.wizard.core import WizardStore
+
+    booted = server_harness.Booted(
+        plugins=make_runtime(tmp_path),
+        wizard_store=WizardStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+        inbox_store=InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+    )
+    try:
+        auth = booted.exchange()
+        started = json.loads(booted.post_json("/wizard/start",
+                                              {"description": CANONICAL}, auth)[2])
+        assert booted.post_json(f"/wizard/{started['id']}/answer", {}, auth)[0] == 303
+        status, _h, _b = post_form(booted, f"/wizard/{started['id']}/approve", {}, auth)
+        assert status == 303
+        records = booted.server.plugins.list_records()
+        assert [r["state"] for r in records] == ["enabled"]
+        assert records[0]["pilot_views_left"] > 0  # pilot mode, as always
+        plugin_id = records[0]["id"]
+        assert plugin_id.startswith("wizard-")
+        status, _h, body = booted.request("GET", "/api/dashboard", auth)
+        assert status == 200
+        cards = json.loads(body)["plugins"]["cards"]
+        card = next(item for item in cards if item["id"] == plugin_id)
+        assert card["freshness"] == "setup"
+        assert card["payload"]["setup"]["pluginId"] == plugin_id
+        assert card["payload"]["setup"]["step"] == "source"
+        assert card["payload"]["elements"] == []
     finally:
         booted.close()
 

@@ -188,6 +188,17 @@ def test_approval_summary_lists_reads_and_never_lines():
     assert summary["remove"] == "Delete it from the Plugins surface, or delete the app folder."
 
 
+def test_approval_summary_names_the_setup_handoff_for_a_workbook_build():
+    """A config-backed draft reads no glob at approval time (T2): its
+    data is a workbook the user picks per instance in setup, so the
+    summary says that instead of naming a path. The never lines are
+    untouched: plugin data writes are still not file writes."""
+    summary = approval_summary(dict(DRAFT, config={"kinds": ["workbook"]}))
+    assert summary["reads"] == ["a workbook you pick in setup"]
+    assert summary["never"] == approval_summary(DRAFT)["never"]
+    assert summary["does"] == approval_summary(DRAFT)["does"]
+
+
 def test_approval_summary_never_claims_what_permissions_allow():
     wide = {
         "name": "Wide",

@@ -42,6 +42,9 @@ NEVER_NO_CODE = "Runs no code"
 NEVER_NO_NETWORK = "Opens no network connection"
 NEVER_NO_WRITES = "Writes no files"
 REMOVE_LINE = "Delete it from the Plugins surface, or delete the app folder."
+# The read line for a config-backed draft (T2): nothing is read at
+# approval time, the workbook is picked per instance in setup.
+SETUP_READS_LINE = "a workbook you pick in setup"
 
 DEFAULT_CANNOT = (
     "Widgets here read allowed files and draw cards; they cannot run "
@@ -66,6 +69,18 @@ def _draft_of(session_json: dict) -> dict:
     """The session's plugin draft, or an empty draft when absent."""
     draft = session_json.get("draft")
     return draft if isinstance(draft, dict) else {}
+
+
+def _is_config_backed(draft: dict) -> bool:
+    """True when the manifest declares config kinds: the plugin points
+    at its data through instances, so its summary names the setup
+    handoff and its manage surface is where setup lives. A glob-shaped
+    draft has no setup to offer, and its copy must not claim otherwise."""
+    config = draft.get("config")
+    if not isinstance(config, dict):
+        return False
+    kinds = config.get("kinds")
+    return isinstance(kinds, list) and bool(kinds)
 
 
 def _questions_of(session_json: dict) -> list[dict]:
@@ -129,9 +144,14 @@ def approval_summary(draft: dict) -> dict:
         never.append(NEVER_NO_NETWORK)
     if not _string_list(filesystem.get("write")):
         never.append(NEVER_NO_WRITES)
+    reads = _string_list(filesystem.get("read"))
+    if _is_config_backed(draft):
+        # A config-backed draft grants no glob here (T2): its read line
+        # names the setup handoff instead of a path nothing reads yet.
+        reads = [SETUP_READS_LINE]
     return {
         "does": _does_line(draft),
-        "reads": _string_list(filesystem.get("read")),
+        "reads": reads,
         "never": never,
         "remove": REMOVE_LINE,
     }
@@ -317,18 +337,6 @@ def _installed_of(session_json: dict) -> dict:
     """The install record a finished session carries, or {} when absent."""
     installed = session_json.get("installed")
     return installed if isinstance(installed, dict) else {}
-
-
-def _is_config_backed(draft: dict) -> bool:
-    """True when the manifest declares config kinds: the plugin points
-    at its data through instances, so its manage surface is where setup
-    lives. A glob-shaped draft has no setup to offer, and its link must
-    not claim otherwise."""
-    config = draft.get("config")
-    if not isinstance(config, dict):
-        return False
-    kinds = config.get("kinds")
-    return isinstance(kinds, list) and bool(kinds)
 
 
 def _approved_html(session_json: dict) -> str:
