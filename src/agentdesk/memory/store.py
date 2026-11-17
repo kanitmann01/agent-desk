@@ -221,6 +221,20 @@ _ENCRYPTION_COLUMNS = {
 }
 
 
+# What the memory loop adds (auto-capture and removal): a fact a newer
+# one replaced points at its replacement, and an observation that lost
+# a cited fact carries the moment it went stale. Both null by default
+# and added idempotently on every open, like the encryption columns.
+_LOOP_COLUMNS = {
+    "facts": (
+        ("superseded_by", "ALTER TABLE facts ADD COLUMN superseded_by INTEGER"),
+    ),
+    "observations": (
+        ("stale_ts", "ALTER TABLE observations ADD COLUMN stale_ts REAL"),
+    ),
+}
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Create or migrate the schema in place, safe on every open.
 
@@ -237,6 +251,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _add_missing_fact_columns(conn)
     _add_missing_encryption_columns(conn)
+    _add_missing_loop_columns(conn)
     if version != SCHEMA_VERSION:
         # The donor's startup dedupe, exactly once per upgrade. On a
         # stamped reopen it must not run again: a duplicate re-added
@@ -276,6 +291,16 @@ def _add_missing_encryption_columns(conn: sqlite3.Connection) -> None:
     """Add the encryption columns any table lacks (ticket #94); null on
     an unconverted bank."""
     for table, columns in _ENCRYPTION_COLUMNS.items():
+        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, ddl in columns:
+            if name not in present:
+                conn.execute(ddl)
+
+
+def _add_missing_loop_columns(conn: sqlite3.Connection) -> None:
+    """Add the memory loop's columns (superseded_by, stale_ts) any table
+    lacks; null on a bank written before the loop existed."""
+    for table, columns in _LOOP_COLUMNS.items():
         present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, ddl in columns:
             if name not in present:
@@ -1078,7 +1103,7 @@ class MemoryStore:
                 ).fetchone()
                 self.conn.execute(
                     "UPDATE observations SET text = ?, confidence = ?,"
-                    " updated_ts = ? WHERE id = ?",
+                    " updated_ts = ?, stale_ts = NULL WHERE id = ?",
                     (self._plain(text), float(confidence), now, prior_id),
                 )
                 self._seal_observation_text(prior_id, text, normalized)
@@ -1391,46 +1416,57 @@ class MemoryStore:
         unique = list(dict.fromkeys(int(fact_id) for fact_id in fact_ids))
         if not unique:
             raise ValueError("at least one fact id is required")
-        marks = ",".join("?" for _ in unique)
         with self.conn:
-            present = {
-                int(row[0])
-                for row in self.conn.execute(
-                    f"SELECT id FROM facts WHERE id IN ({marks})", unique
-                ).fetchall()
-            }
-            missing = [fact_id for fact_id in unique if fact_id not in present]
-            if missing:
-                raise UnknownFact(f"no fact {missing[0]}")
-            entity_ids = [
-                int(row[0])
-                for row in self.conn.execute(
-                    f"SELECT DISTINCT entity_id FROM edges WHERE fact_id IN ({marks})",
-                    unique,
-                ).fetchall()
-            ]
-            self.conn.execute(f"DELETE FROM edges WHERE fact_id IN ({marks})", unique)
+            return self._remove_fact_statements(unique)
+
+    def _remove_fact_statements(self, unique: list[int]) -> RemovedFacts:
+        """remove_facts' statements without a transaction of their own,
+        so the memory loop's removal can run them inside its one write.
+        A fact another one superseded points back at nothing afterwards:
+        the pointer clears so the older fact rides recall again."""
+        marks = ",".join("?" for _ in unique)
+        present = {
+            int(row[0])
+            for row in self.conn.execute(
+                f"SELECT id FROM facts WHERE id IN ({marks})", unique
+            ).fetchall()
+        }
+        missing = [fact_id for fact_id in unique if fact_id not in present]
+        if missing:
+            raise UnknownFact(f"no fact {missing[0]}")
+        entity_ids = [
+            int(row[0])
+            for row in self.conn.execute(
+                f"SELECT DISTINCT entity_id FROM edges WHERE fact_id IN ({marks})",
+                unique,
+            ).fetchall()
+        ]
+        self.conn.execute(
+            f"UPDATE facts SET superseded_by = NULL WHERE superseded_by IN ({marks})",
+            unique,
+        )
+        self.conn.execute(f"DELETE FROM edges WHERE fact_id IN ({marks})", unique)
+        self.conn.execute(
+            f"DELETE FROM observation_sources WHERE fact_id IN ({marks})", unique
+        )
+        self.conn.execute(f"DELETE FROM facts WHERE id IN ({marks})", unique)
+        observation_ids = _prune_orphan_statements(self.conn)
+        entity_removed: list[int] = []
+        for entity_id in entity_ids:
+            still_used = self.conn.execute(
+                "SELECT 1 FROM edges WHERE entity_id = ? LIMIT 1", (entity_id,)
+            ).fetchone()
+            if still_used is not None:
+                continue
+            # The donor deletes only edge-less entities; a sealed
+            # bank trims the blind index rows with the row itself.
             self.conn.execute(
-                f"DELETE FROM observation_sources WHERE fact_id IN ({marks})", unique
+                "DELETE FROM entity_name_index WHERE entity_id = ?", (entity_id,)
             )
-            self.conn.execute(f"DELETE FROM facts WHERE id IN ({marks})", unique)
-            observation_ids = _prune_orphan_statements(self.conn)
-            entity_removed: list[int] = []
-            for entity_id in entity_ids:
-                still_used = self.conn.execute(
-                    "SELECT 1 FROM edges WHERE entity_id = ? LIMIT 1", (entity_id,)
-                ).fetchone()
-                if still_used is not None:
-                    continue
-                # The donor deletes only edge-less entities; a sealed
-                # bank trims the blind index rows with the row itself.
-                self.conn.execute(
-                    "DELETE FROM entity_name_index WHERE entity_id = ?", (entity_id,)
-                )
-                self.conn.execute(
-                    "DELETE FROM entities WHERE id = ?", (entity_id,)
-                )
-                entity_removed.append(entity_id)
+            self.conn.execute(
+                "DELETE FROM entities WHERE id = ?", (entity_id,)
+            )
+            entity_removed.append(entity_id)
         return RemovedFacts(
             fact_ids=tuple(unique),
             observation_ids=tuple(observation_ids),
@@ -1767,7 +1803,10 @@ class MemoryStore:
         or a mismatched model or dimension simply leaves the leg out,
         so recall is never an error because of it."""
         self._guard()
-        facts = self.all()
+        # A fact a newer one replaced (the memory loop's supersede step)
+        # stays on the page for review but never rides recall.
+        replaced = self.superseded_map()
+        facts = [fact for fact in self.all() if fact.id not in replaced]
         links = self._entity_links()
         vector_scores = self._vector_scores(query)
         return rank_hybrid(
@@ -1811,6 +1850,314 @@ class MemoryStore:
                 EntityLink(id=entity_id, name=name, aliases=_parse_aliases(aliases_json))
             )
         return links
+
+
+    # -- the memory loop: supersede, stale flags, removal and undo ---------
+
+    def superseded_map(self) -> dict[int, int]:
+        """Replaced fact id to the newer fact id that replaced it."""
+        self._guard()
+        return {
+            int(old): int(new)
+            for old, new in self.conn.execute(
+                "SELECT id, superseded_by FROM facts WHERE superseded_by IS NOT NULL"
+            ).fetchall()
+        }
+
+    @_locked
+    def mark_superseded(self, old_id: int, new_id: int) -> None:
+        """Record that `new_id` replaces `old_id` (the loop's contradiction
+        step). The older fact stays stored and visible; recall skips it."""
+        self._guard()
+        if int(old_id) == int(new_id):
+            raise ValueError("a fact cannot replace itself")
+        self.get(old_id)
+        self.get(new_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE facts SET superseded_by = ? WHERE id = ?",
+                (int(new_id), int(old_id)),
+            )
+
+    @_locked
+    def clear_superseded(self, fact_id: int) -> None:
+        """Keep both: the older fact rides recall again."""
+        self._guard()
+        self.get(fact_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE facts SET superseded_by = NULL WHERE id = ?", (int(fact_id),)
+            )
+
+    def stale_observations(self) -> dict[int, float]:
+        """Observation id to the moment one of its cited facts was removed;
+        only observations that still cite something stay to be flagged."""
+        self._guard()
+        return {
+            int(row_id): float(stale)
+            for row_id, stale in self.conn.execute(
+                "SELECT id, stale_ts FROM observations WHERE stale_ts IS NOT NULL"
+            ).fetchall()
+        }
+
+    def observation_ids_in_scope(self, scope_key: str) -> list[int]:
+        """The observation rows one scope holds (blinded on a sealed bank)."""
+        self._guard()
+        stored = self._box.blind(scope_key) if self._box is not None else scope_key
+        return [
+            int(row[0])
+            for row in self.conn.execute(
+                "SELECT id FROM observations WHERE scope_key = ? ORDER BY id", (stored,)
+            ).fetchall()
+        ]
+
+    def scope_of_observations(self, scope_keys) -> dict[int, str]:
+        """Observation id to the scope key it was saved under, for the
+        scope keys asked about (a sealed bank stores only their blind
+        form, so the caller names the keys it wants to recognize)."""
+        self._guard()
+        wanted = {
+            (self._box.blind(key) if self._box is not None else key): key
+            for key in scope_keys
+        }
+        if not wanted:
+            return {}
+        marks = ",".join("?" for _ in wanted)
+        return {
+            int(row_id): wanted[stored]
+            for row_id, stored in self.conn.execute(
+                f"SELECT id, scope_key FROM observations WHERE scope_key IN ({marks})",
+                list(wanted),
+            ).fetchall()
+        }
+
+    @_locked
+    def delete_observations(self, observation_ids) -> list[int]:
+        """Delete observations and their citations; the facts stay."""
+        self._guard()
+        ids = list(dict.fromkeys(int(value) for value in observation_ids))
+        if not ids:
+            return []
+        marks = ",".join("?" for _ in ids)
+        with self.conn:
+            present = [
+                int(row[0]) for row in self.conn.execute(
+                    f"SELECT id FROM observations WHERE id IN ({marks})", ids
+                ).fetchall()
+            ]
+            self.conn.execute(
+                f"DELETE FROM observation_sources WHERE observation_id IN ({marks})", ids
+            )
+            self.conn.execute(f"DELETE FROM observations WHERE id IN ({marks})", ids)
+        return present
+
+    def fact_ids_for_entity(self, entity_id: int) -> list[int]:
+        self._guard()
+        if self.conn.execute(
+            "SELECT 1 FROM entities WHERE id = ?", (int(entity_id),)
+        ).fetchone() is None:
+            raise UnknownEntity(f"no entity {entity_id}")
+        return [
+            int(row[0]) for row in self.conn.execute(
+                "SELECT fact_id FROM edges WHERE entity_id = ? ORDER BY fact_id",
+                (int(entity_id),),
+            ).fetchall()
+        ]
+
+    def fact_ids_for_sources(self, source_ids) -> list[int]:
+        self._guard()
+        ids = [int(value) for value in source_ids]
+        if not ids:
+            return []
+        marks = ",".join("?" for _ in ids)
+        return [
+            int(row[0]) for row in self.conn.execute(
+                f"SELECT id FROM facts WHERE source_id IN ({marks}) ORDER BY id", ids
+            ).fetchall()
+        ]
+
+    def source_exists(self, source_id: int) -> bool:
+        self._guard()
+        return self.conn.execute(
+            "SELECT 1 FROM sources WHERE id = ?", (int(source_id),)
+        ).fetchone() is not None
+
+    def _rows(self, table: str, column: str, ids) -> dict:
+        """Raw rows (every column, ciphertext included) for an undo dump."""
+        ids = list(dict.fromkeys(int(value) for value in ids))
+        if not ids:
+            return {"columns": [], "rows": []}
+        marks = ",".join("?" for _ in ids)
+        cursor = self.conn.execute(
+            f"SELECT * FROM {table} WHERE {column} IN ({marks})", ids
+        )
+        columns = [item[0] for item in cursor.description]
+        return {"columns": columns, "rows": [tuple(row) for row in cursor.fetchall()]}
+
+    @_locked
+    def remove_with_effects(
+        self,
+        fact_ids,
+        observation_ids=(),
+        source_ids=(),
+        keep_source_ids=(),
+    ) -> dict:
+        """The memory loop's removal: one transaction that removes the
+        facts (remove_facts' rules: citations, orphan observations and
+        edge-less entities go with them), the observations named
+        outright, the excerpts named outright and any excerpt the
+        removal leaves without a fact (unless a waiting card still needs
+        it, `keep_source_ids`), flags the surviving observations that
+        lost a citation, and releases any fact a removed fact had
+        replaced. Before writing it dumps every row it touches, so the
+        caller can hold an undo; the answer carries the dump and what
+        changed."""
+        self._guard()
+        facts = list(dict.fromkeys(int(value) for value in fact_ids))
+        named_observations = list(dict.fromkeys(int(value) for value in observation_ids))
+        named_sources = {int(value) for value in source_ids}
+        keep = {int(value) for value in keep_source_ids}
+        now = self.clock()
+        with self.conn:
+            fmarks = ",".join("?" for _ in facts) or "NULL"
+            citing = [
+                int(row[0]) for row in self.conn.execute(
+                    f"SELECT DISTINCT observation_id FROM observation_sources"
+                    f" WHERE fact_id IN ({fmarks})", facts
+                ).fetchall()
+            ] if facts else []
+            entity_ids = [
+                int(row[0]) for row in self.conn.execute(
+                    f"SELECT DISTINCT entity_id FROM edges WHERE fact_id IN ({fmarks})",
+                    facts,
+                ).fetchall()
+            ] if facts else []
+            released_pairs = [
+                (int(row[0]), int(row[1])) for row in self.conn.execute(
+                    f"SELECT id, superseded_by FROM facts WHERE superseded_by IN ({fmarks})"
+                    f" AND id NOT IN ({fmarks})", facts + facts
+                ).fetchall()
+            ] if facts else []
+            released = [old for old, _new in released_pairs]
+            fact_sources = {
+                int(row[0]) for row in self.conn.execute(
+                    f"SELECT DISTINCT source_id FROM facts WHERE id IN ({fmarks})"
+                    " AND source_id IS NOT NULL", facts
+                ).fetchall()
+            } if facts else set()
+            candidate_sources = sorted(named_sources | fact_sources)
+            touched_observations = list(dict.fromkeys(citing + named_observations))
+            dump = {
+                "facts": self._rows("facts", "id", facts),
+                "released_pairs": released_pairs,
+                "edges": self._rows("edges", "fact_id", facts),
+                "observations": self._rows("observations", "id", touched_observations),
+                "observation_sources": self._rows(
+                    "observation_sources", "observation_id", touched_observations
+                ),
+                "entities": self._rows("entities", "id", entity_ids),
+                "entity_name_index": self._rows("entity_name_index", "entity_id", entity_ids),
+                "sources": self._rows("sources", "id", candidate_sources),
+            }
+            if named_observations:
+                omarks = ",".join("?" for _ in named_observations)
+                self.conn.execute(
+                    f"DELETE FROM observation_sources WHERE observation_id IN ({omarks})",
+                    named_observations,
+                )
+                self.conn.execute(
+                    f"DELETE FROM observations WHERE id IN ({omarks})", named_observations
+                )
+            removed = (
+                self._remove_fact_statements(facts) if facts
+                else RemovedFacts(fact_ids=())
+            )
+            removed_observations = list(dict.fromkeys(
+                [oid for oid in named_observations] + list(removed.observation_ids)
+            ))
+            flagged = [
+                oid for oid in citing
+                if oid not in removed_observations
+                and self.conn.execute(
+                    "SELECT 1 FROM observations WHERE id = ?", (oid,)
+                ).fetchone() is not None
+            ]
+            for oid in flagged:
+                self.conn.execute(
+                    "UPDATE observations SET stale_ts = ? WHERE id = ?", (now, oid)
+                )
+            removed_sources: list[int] = []
+            for source_id in candidate_sources:
+                if source_id in keep:
+                    continue
+                still_cited = self.conn.execute(
+                    "SELECT 1 FROM facts WHERE source_id = ? LIMIT 1", (source_id,)
+                ).fetchone()
+                if still_cited is not None and source_id not in named_sources:
+                    continue
+                self.conn.execute(
+                    "UPDATE facts SET source_id = NULL WHERE source_id = ?", (source_id,)
+                )
+                cursor = self.conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+                if cursor.rowcount:
+                    removed_sources.append(source_id)
+        return {
+            "fact_ids": list(removed.fact_ids),
+            "observation_ids": removed_observations,
+            "flagged_observation_ids": flagged,
+            "entity_ids": list(removed.entity_ids),
+            "source_ids": removed_sources,
+            "released_fact_ids": released,
+            "dump": dump,
+        }
+
+    @_locked
+    def restore_dump(self, dump: dict, drop_observation_ids=()) -> None:
+        """Undo a remove_with_effects: put every dumped row back with its
+        own id (ciphertext stays bound to it), drop the observations the
+        removal's re-consolidation wrote, and point the released facts
+        at their replacement again. Refused, with nothing written, when
+        a removed fact's id has been taken since."""
+        self._guard()
+        fact_rows = dump["facts"]
+        with self.conn:
+            if fact_rows["rows"]:
+                id_at = fact_rows["columns"].index("id")
+                ids = [row[id_at] for row in fact_rows["rows"]]
+                marks = ",".join("?" for _ in ids)
+                taken = self.conn.execute(
+                    f"SELECT id FROM facts WHERE id IN ({marks})", ids
+                ).fetchone()
+                if taken is not None:
+                    raise ValueError(
+                        "Memory changed since the removal, so it can no longer be undone."
+                    )
+            drop = list(dict.fromkeys(int(v) for v in drop_observation_ids))
+            dumped_obs = dump["observations"]
+            if dumped_obs["rows"]:
+                at = dumped_obs["columns"].index("id")
+                drop.extend(int(row[at]) for row in dumped_obs["rows"])
+            if drop:
+                marks = ",".join("?" for _ in drop)
+                self.conn.execute(
+                    f"DELETE FROM observation_sources WHERE observation_id IN ({marks})", drop
+                )
+                self.conn.execute(f"DELETE FROM observations WHERE id IN ({marks})", drop)
+            for table in ("sources", "entities", "entity_name_index", "facts",
+                          "edges", "observations", "observation_sources"):
+                part = dump[table]
+                if not part["rows"]:
+                    continue
+                columns = ", ".join(part["columns"])
+                marks = ", ".join("?" for _ in part["columns"])
+                self.conn.executemany(
+                    f"INSERT OR IGNORE INTO {table} ({columns}) VALUES ({marks})",
+                    part["rows"],
+                )
+            for old_id, new_id in dump.get("released_pairs", []):
+                self.conn.execute(
+                    "UPDATE facts SET superseded_by = ? WHERE id = ?", (new_id, old_id)
+                )
 
 
 def _normalize_name(name: str) -> str:

@@ -91,6 +91,12 @@ def _origin_for(source: str, card) -> _Origin:
     if source == "page":
         return _Origin("origin:page", "Memory page",
                        "Facts typed into the Add a fact form and saved as written.")
+    if source.startswith("auto: "):
+        channel = source[len("auto: "):]
+        label = channel.capitalize()
+        return _Origin(f"origin:auto:{channel}", f"Captured from {label}",
+                       f"Facts captured from your {label} activity and saved "
+                       "automatically (review was off).")
     if source == SAMPLE_SOURCE:
         return _Origin("origin:sample", "Sample seed",
                        "Written when Sample data was turned on in Settings; "
@@ -101,6 +107,12 @@ def _origin_for(source: str, card) -> _Origin:
             if plugin:
                 return _Origin(f"origin:plugin:{plugin}", f"Plugin {plugin}",
                                f"Cards from the {plugin} plugin that you accepted.")
+            channel = str((card.meta.get("memoryFact") or {}).get("channel") or "")
+            if card.kind == KIND_MEMORY_DRAFT and channel:
+                label = channel.capitalize()
+                return _Origin(f"origin:capture:{channel}", f"Captured from {label}",
+                               f"Facts captured from your {label} activity "
+                               "that you approved.")
             if card.kind == KIND_MEMORY_DRAFT:
                 return _Origin("origin:retain", "Save to memory",
                                "Conversations you saved from the Assistant, "
@@ -338,12 +350,12 @@ def build_memory_graph(
     all_facts = list(facts.values())
     pipeline = [
         {"step": STEP_RETAIN, "count": len(excerpts),
-         "text": "Save to memory on the Assistant keeps the excerpt."},
+         "text": "Capture keeps the excerpt from the Assistant or Research, or a conversation you saved."},
         {"step": STEP_EXTRACT, "count": sum(1 for f in all_facts if f.source_id is not None),
          "waiting": waiting_drafts,
-         "text": "The company endpoint proposes up to five facts, with kind, entities and time."},
+         "text": "The company endpoint, or the built-in rules when it does not answer, proposes up to five facts."},
         {"step": STEP_APPROVE, "count": sum(1 for f in all_facts if f.source.startswith("inbox card ")),
-         "text": "Each candidate waits in the inbox. Nothing is written until you accept."},
+         "text": "Each candidate waits for review unless auto-approve is on."},
         {"step": STEP_STORE, "count": len(all_facts),
          "text": "Written once: the same words merge into the older fact."},
         {"step": STEP_LINK, "count": len(entities),

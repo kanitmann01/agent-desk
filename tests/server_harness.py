@@ -215,6 +215,9 @@ class Booted:
         # machine's real AGENTDESK_LLM_BASE.
         kwargs.setdefault("llm_endpoint", "")
         self.server = server_app.create_server(port=0, **kwargs)
+        # Memory captures run inline under test, so a request's capture
+        # has landed by the time its response is read.
+        self.server.memory_capture_runner = lambda job: job()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 

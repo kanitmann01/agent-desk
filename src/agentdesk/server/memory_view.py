@@ -372,9 +372,9 @@ def render_memory_page(
     island_row = graph_island_html("page") if graph_island else ""
     content = f"""<h1>Memory</h1>
 {notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
-them, 500 characters in total, as derived abstractions it may read;
-nothing is captured from your conversations. Facts arrive here, or with
-an inbox card you accept.</p>
+them, 500 characters in total, as derived abstractions it may read.
+Facts arrive here, from an inbox card you accept, or by capture from the
+Assistant and Research when it is on in the memory settings.</p>
 {island_row}{_encrypt_section(encrypt)}
 {_recall_section(recall, query)}
 <h2>Add a fact</h2>
