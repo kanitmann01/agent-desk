@@ -4,6 +4,26 @@
 import { useEffect, useState } from 'react';
 import { getJson, postJson } from '../api';
 import Button from '../components/Button';
+import { WireChart } from './cells';
+
+// A preview cell that is a plain number ("18000", "-1250.5") reads as an
+// amount: right-aligned mono with thousands separators. Anything else
+// (names, dates, codes with leading zeros) is shown as the sheet has it.
+const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
+const AMOUNT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
+function cellView(value: string | undefined): { text: string; numeric: boolean } {
+  const raw = (value ?? '').trim();
+  if (NUMBER.test(raw)) return { text: AMOUNT.format(Number(raw)), numeric: true };
+  return { text: raw, numeric: false };
+}
+
+function numericColumn(rows: string[][], column: number): boolean {
+  const filled = rows.map((row) => (row[column] ?? '').trim()).filter(Boolean);
+  return filled.length > 0 && filled.every((value) => NUMBER.test(value));
+}
+
+const STEPS = ['Open', 'Choose what to track', 'Confirm'] as const;
 
 interface Preview {
   headers: string[];
@@ -149,61 +169,80 @@ export default function TrackerSetup({
           <Button tone="secondary" onClick={onClose}>Close</Button>
         </header>
         <ol className="setup-steps">
-          <li className={step === 1 ? 'is-current' : ''}>1. Open</li>
-          <li className={step === 2 ? 'is-current' : ''}>2. Choose what to track</li>
-          <li className={step === 3 ? 'is-current' : ''}>3. Confirm</li>
+          {STEPS.map((label, index) => {
+            const n = (index + 1) as 1 | 2 | 3;
+            const state = n === step ? 'is-current' : n < step ? 'is-done' : '';
+            return (
+              <li key={label} className={state} aria-current={n === step ? 'step' : undefined}>
+                <span className="setup-step-n">{n}</span><span className="setup-step-label">{label}</span>
+              </li>
+            );
+          })}
         </ol>
         {step === 1 ? (
-          <section>
-            <p>Open the workbook. Nothing is read until you confirm.</p>
-            <Button tone="primary" onClick={() => void openFile()} disabled={busy}>Open a workbook</Button>
+          <section className="setup-open">
+            <div className="setup-open-copy">
+              <p>Open the workbook. Nothing is read until you confirm.</p>
+              <dl className="setup-reads">
+                <div><dt>Reads</dt><dd>A copy of the file, never the one you work in</dd></div>
+                <div><dt>You pick</dt><dd>One value column, a row label and the rows to count</dd></div>
+                <div><dt>Shows</dt><dd>The total, its change since the last reading and a sparkline</dd></div>
+              </dl>
+              <Button tone="primary" onClick={() => void openFile()} disabled={busy}>Open a workbook</Button>
+            </div>
+            <div className="setup-open-wire"><WireChart bars={8} /></div>
           </section>
         ) : null}
         {step === 2 && preview ? (
           <section className="setup-choose">
-            <fieldset className="setup-role">
-              <legend>A click on a column header assigns</legend>
-              <label><input type="radio" name="role" checked={role === 'value'} onChange={() => setRole('value')} /> Value column</label>
-              <label><input type="radio" name="role" checked={role === 'label'} onChange={() => setRole('label')} /> Row label</label>
-            </fieldset>
-            <p className="setup-assignment">
-              Value: {valueColumn || 'not chosen'}. Label: {labelColumn || 'not chosen'}.
-            </p>
-            <div className="setup-table-wrap">
+            <div className="setup-toolbar">
+              <div className="seg" role="radiogroup" aria-label="A click on a column header assigns">
+                <span className="seg-label">Header click sets</span>
+                <button type="button" role="radio" aria-checked={role === 'value'} className="seg-btn" onClick={() => setRole('value')}>Value column</button>
+                <button type="button" role="radio" aria-checked={role === 'label'} className="seg-btn" onClick={() => setRole('label')}>Row label</button>
+              </div>
+              <p className="setup-assignment">
+                <span className="pick-chip is-value"><span className="pick-k">VALUE</span>{valueColumn || 'not chosen'}</span>
+                <span className="pick-chip is-label"><span className="pick-k">LABEL</span>{labelColumn || 'not chosen'}</span>
+                <span className="pick-count mono">{picked.length}/{preview.rows.length} rows</span>
+              </p>
+            </div>
+            <div className="setup-table-wrap" tabIndex={0} aria-label={`${preview.sheet}, first ${preview.rows.length} rows`}>
               <table className="preview-grid">
-                <caption>{preview.sheet}, first {preview.rows.length} rows</caption>
+                <caption className="sr-only">{preview.sheet}, first {preview.rows.length} rows</caption>
                 <thead>
                   <tr>
                     <th scope="col" className="row-num">#</th>
-                    <th scope="col">Track</th>
-                    {preview.headers.map((header) => (
-                      <th
-                        key={header}
-                        scope="col"
-                        className={header === valueColumn ? 'is-value' : header === labelColumn ? 'is-label' : ''}
-                      >
-                        <button type="button" onClick={() => assign(header)}>{header}</button>
-                      </th>
-                    ))}
+                    <th scope="col" className="row-pick"><span className="sr-only">Track</span></th>
+                    {preview.headers.map((header, column) => {
+                      const numeric = numericColumn(preview.rows, column);
+                      const cls = [header === valueColumn ? 'is-value' : header === labelColumn ? 'is-label' : '', numeric ? 'num' : ''].filter(Boolean).join(' ');
+                      return (
+                        <th key={header} scope="col" className={cls}>
+                          <button type="button" onClick={() => assign(header)}>{header}</button>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
                   {preview.rows.map((row, index) => (
                     <tr key={index} className={picked.includes(index) ? 'is-picked' : ''}>
                       <td className="row-num">{index + 1}</td>
-                      <td>
+                      <td className="row-pick">
                         <input
                           type="checkbox"
+                          className="check-box"
                           aria-label={`Track row ${index + 1}`}
                           checked={picked.includes(index)}
                           onChange={() => toggleRow(index)}
                         />
                       </td>
-                      {preview.headers.map((header, column) => (
-                        <td key={header} className={header === valueColumn ? 'is-value' : header === labelColumn ? 'is-label' : ''}>
-                          {row[column] ?? ''}
-                        </td>
-                      ))}
+                      {preview.headers.map((header, column) => {
+                        const view = cellView(row[column]);
+                        const cls = [header === valueColumn ? 'is-value' : header === labelColumn ? 'is-label' : '', view.numeric ? 'num' : ''].filter(Boolean).join(' ');
+                        return <td key={header} className={cls}>{view.text}</td>;
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -229,7 +268,7 @@ export default function TrackerSetup({
                 </div>
               </div>
             ) : (
-              <Button tone="primary" onClick={() => setStep(3)} disabled={!labelColumn || !valueColumn || picked.length === 0}>
+              <Button tone="primary" className="setup-continue" onClick={() => setStep(3)} disabled={!labelColumn || !valueColumn || picked.length === 0}>
                 Continue
               </Button>
             )}
@@ -237,6 +276,7 @@ export default function TrackerSetup({
         ) : null}
         {step === 3 ? (
           <section className="setup-name">
+            <p className="setup-summary mono">{valueColumn} by {labelColumn} · {picked.length} rows</p>
             <label className="setup-field">Name this tracker
               <input aria-label="Instance name" value={instanceName} onChange={(event) => setInstanceName(event.target.value)} />
             </label>
