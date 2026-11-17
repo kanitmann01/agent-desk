@@ -377,6 +377,7 @@ def _page_shell(title: str, body: str, version: str) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc_title}, Agent Desk</title>
+<script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>

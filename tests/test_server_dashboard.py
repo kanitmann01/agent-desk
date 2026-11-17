@@ -193,8 +193,9 @@ def test_strict_csp_scripts_stay_self_and_pages_stay_inline_free(booted, page):
     assert csp.count("unsafe-inline") == 1
     scan = _scan(page)
     assert scan.inline_styles == 0
-    assert len(scan.scripts) == 1
-    assert scan.scripts[0].get("src") == "/static/app.js"
+    # The theme boot runs first (before paint), then the app script; both
+    # from self, neither inline.
+    assert [s.get("src") for s in scan.scripts] == ["/static/theme-boot.js", "/static/app.js"]
 
 
 def test_strict_csp_lets_bundled_fonts_load_from_self_only(booted):

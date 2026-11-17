@@ -1191,6 +1191,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
         elif path == "/static/app.js":
             self._send_bytes(200, pages.APP_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+        elif path == "/static/theme-boot.js":
+            self._send_bytes(200, pages.THEME_BOOT_JS.encode("utf-8"), "text/javascript; charset=utf-8")
         elif path.startswith("/static/spa/"):
             self._send_spa_asset(path[len("/static/spa/"):])
         elif path == "/marketplace" or path.startswith("/marketplace/"):
