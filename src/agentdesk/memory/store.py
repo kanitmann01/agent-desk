@@ -65,6 +65,7 @@ from agentdesk.memory.core import (
     Observation,
     RemovedFacts,
     SavedObservation,
+    SourceExcerpt,
     SweepCandidate,
     UnknownEntity,
     UnknownFact,
@@ -1206,6 +1207,77 @@ class MemoryStore:
             )
             for row_id, text, confidence, created_ts, updated_ts in rows
         ]
+
+    def sources(self) -> list[SourceExcerpt]:
+        """Every retained excerpt (the retain write's provenance rows),
+        oldest first. Sealed banks open the three text columns like
+        every other read; a missing ciphertext refuses rather than
+        showing a blank excerpt."""
+        self._guard()
+        if self._box is not None:
+            rows = self.conn.execute(
+                "SELECT id, text_enc, speaker_enc, context_enc, created_ts"
+                " FROM sources ORDER BY created_ts ASC, id ASC"
+            ).fetchall()
+            excerpts = []
+            for row_id, text_enc, speaker_enc, context_enc, created_ts in rows:
+                opened = []
+                for column, blob in (("text", text_enc), ("speaker", speaker_enc),
+                                     ("context", context_enc)):
+                    if blob is None:
+                        raise MemoryEncryptedError(
+                            f"Missing ciphertext for sources.{column}."
+                        )
+                    opened.append(self._box.open(blob, "sources", column, int(row_id)))
+                excerpts.append(SourceExcerpt(
+                    int(row_id), opened[0], opened[1], opened[2], float(created_ts)
+                ))
+            return excerpts
+        rows = self.conn.execute(
+            "SELECT id, text, speaker, context, created_ts FROM sources"
+            " ORDER BY created_ts ASC, id ASC"
+        ).fetchall()
+        return [
+            SourceExcerpt(int(row_id), text, speaker, context, float(created_ts))
+            for row_id, text, speaker, context, created_ts in rows
+        ]
+
+    def fact_entity_ids(self) -> dict[int, list[int]]:
+        """Which entities each fact mentions (the edges table), the
+        memory graph's mention links: fact id to entity ids, in the
+        order recall loads them."""
+        self._guard()
+        return {
+            fact_id: [link.id for link in links]
+            for fact_id, links in self._entity_links().items()
+        }
+
+    def fact_ids_with_vectors(self) -> set[int]:
+        """The facts that carry a stored vector (the semantic half's
+        rows), for the graph's provenance line."""
+        self._guard()
+        return {
+            int(row[0]) for row in self.conn.execute(
+                "SELECT id FROM facts WHERE embedding_model IS NOT NULL"
+            ).fetchall()
+        }
+
+    @_locked
+    def delete_sources(self, source_ids) -> int:
+        """Remove retained excerpts by id, clearing the pointer on any
+        fact that still names one (the fact itself stays). Used by the
+        sample seed's clear, which removes exactly what it wrote."""
+        self._guard()
+        ids = [int(value) for value in source_ids]
+        if not ids:
+            return 0
+        marks = ",".join("?" for _ in ids)
+        with self.conn:
+            self.conn.execute(
+                f"UPDATE facts SET source_id = NULL WHERE source_id IN ({marks})", ids
+            )
+            cursor = self.conn.execute(f"DELETE FROM sources WHERE id IN ({marks})", ids)
+        return int(cursor.rowcount or 0)
 
     def _citation_ids(self, observation_id) -> tuple[int, ...]:
         rows = self.conn.execute(

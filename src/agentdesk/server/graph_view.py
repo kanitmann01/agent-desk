@@ -43,11 +43,13 @@ NODE_RADIUS = 10.0
 
 # Presentation attributes per edge type (the CSP governs style
 # attributes, but SVG painting attributes keep the markup static).
+# Colour comes from the theme through the graph-edge classes in the
+# shared stylesheet (pages.STYLES); only width and dash ride here.
 _EDGE_STYLE = {
-    "entity": {"stroke": "#1B6B3A", "width": "1.5", "dash": None},
-    "temporal": {"stroke": "#8A5A14", "width": "1.3", "dash": "5 4"},
-    "derived": {"stroke": "#B3402A", "width": "1.3", "dash": None},
-    "semantic": {"stroke": "#4C5A55", "width": "1.1", "dash": "1.5 3.5"},
+    "entity": {"width": "1.5", "dash": None},
+    "temporal": {"width": "1.3", "dash": "5 4"},
+    "derived": {"width": "1.3", "dash": None},
+    "semantic": {"width": "1.1", "dash": "1.5 3.5"},
 }
 
 _LEGEND = (
@@ -141,7 +143,7 @@ def _edge_lines(snapshot: GraphSnapshot, positions: dict) -> str:
         lines.append(
             f'<line class="graph-edge edge-{edge.type}"'
             f' x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"'
-            f' stroke="{style["stroke"]}" stroke-width="{style["width"]}"'
+            f' stroke-width="{style["width"]}"'
             f"{dash}{marker}></line>"
         )
     return "".join(lines)
@@ -151,7 +153,7 @@ def _node_groups(snapshot: GraphSnapshot, positions: dict) -> str:
     groups = []
     for node in snapshot.nodes:
         x, y = positions[node.id]
-        fill = "#8C2F2F" if node.derived else "#1B6B3A"
+        kind = "observation" if node.derived else "fact"
         # Recency shading: a brand-new node paints full strength, the
         # thirty-day half-life fades the circle toward a quarter.
         opacity = 0.25 + 0.75 * max(0.0, min(1.0, node.recency))
@@ -165,9 +167,9 @@ def _node_groups(snapshot: GraphSnapshot, positions: dict) -> str:
             f'<g class="graph-node" id="graph-node-{_node_id(node.id)}">'
             f"<title>{tooltip}</title>"
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{NODE_RADIUS:.0f}"'
-            f' fill="{fill}" fill-opacity="{opacity:.3f}"></circle>'
+            f' class="graph-dot graph-dot-{kind}" fill-opacity="{opacity:.3f}"></circle>'
             f'<text x="{x:.1f}" y="{y + 26:.1f}" font-size="9"'
-            f' text-anchor="middle" fill="#4C5A55">{label}</text>'
+            f' text-anchor="middle" class="graph-text">{label}</text>'
             "</g>"
         )
     return "".join(groups)
@@ -186,8 +188,8 @@ def _legend() -> str:
         rows.append(
             f'<li id="graph-legend-{edge_type}" style="display:flex;'
             'align-items:center;gap:6px;list-style:none">'
-            f'<svg width="26" height="10" aria-hidden="true"><line x1="1" y1="5"'
-            f' x2="19" y2="5" stroke="{style["stroke"]}"'
+            f'<svg width="26" height="10" aria-hidden="true"><line'
+            f' class="graph-edge edge-{edge_type}" x1="1" y1="5" x2="19" y2="5"'
             f' stroke-width="{style["width"]}"{dash}{marker}></line></svg>'
             f"<span><b>{title}</b> {html.escape(description)}</span></li>"
         )
@@ -197,12 +199,26 @@ def _legend() -> str:
     )
 
 
+def _island(fallback: str, query: str) -> str:
+    """The interactive graph's mount point around the static fallback,
+    with the island's stylesheet and module script."""
+    endpoint = "/api/memory/graph" + (f"?{query}" if query else "")
+    return (
+        "<h1>Memory graph</h1>\n"
+        f'<section id="memory-graph-root" data-endpoint="{html.escape(endpoint, quote=True)}"'
+        f' data-mode="full" aria-label="Memory graph">\n{fallback}\n</section>\n'
+        '<link rel="stylesheet" href="/static/spa/assets/memory-graph.css">\n'
+        '<script type="module" src="/static/spa/assets/memory-graph.js"></script>\n'
+    )
+
+
 def render_graph_page(
     snapshot: GraphSnapshot,
     version: str,
     since: float | None = None,
     until: float | None = None,
     inbox_count: int = 0,
+    island_query: str | None = None,
 ) -> str:
     """The full memory graph document: the counts header, the optional
     window line, the edge legend and the snapshot's static SVG, or the
@@ -234,6 +250,8 @@ yet: save a fact on the <a href="/memory">memory page</a> and it will
 appear here with its entity, temporal, citation and semantic
 links.</p>
 """
+        if island_query is not None:
+            content = _island(content.replace("<h1>Memory graph</h1>\n", ""), island_query)
         return page_shell(
             "Memory graph", "/memory", content, version, inbox_count=inbox_count
         )
@@ -253,15 +271,20 @@ links.</p>
         f' aria-label="{html.escape(aria)}">'
         '<defs><marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5"'
         ' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
-        '<path d="M 0 1 L 9 5 L 0 9 z" fill="#B3402A"></path></marker></defs>'
+        '<path class="graph-arrow" d="M 0 1 L 9 5 L 0 9 z"></path></marker></defs>'
         f"{_edge_lines(snapshot, positions)}{_node_groups(snapshot, positions)}"
         "</svg>"
     )
     scrolled = (
-        '<div style="overflow-x:auto;border:1px solid #E5E1D6;'
-        'border-radius:12px;background:#FFFFFF;padding:8px">'
-        f"{svg}</div>"
+        f'<div class="graph-static">{svg}</div>'
     )
+    if island_query is not None:
+        # The interactive graph mounts over the static picture, which
+        # stays as the no-JavaScript fallback inside the mount point.
+        content = _island(f"{counts}{window}{_legend()}{scrolled}", island_query)
+        return page_shell(
+            "Memory graph", "/memory", content, version, inbox_count=inbox_count
+        )
     content = f"""<h1>Memory graph</h1>
 <p>The bank as one static picture: newest first, each node's shading
 fading with the same thirty-day half-life recall uses. Derived
