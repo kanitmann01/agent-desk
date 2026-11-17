@@ -54,3 +54,19 @@ export function removedSummary(done: RemovalDone): string {
   if (done.factsRestored.length) parts.push(`${count(done.factsRestored.length, 'older fact')} back in recall`);
   return parts.join(' · ');
 }
+
+// Under each "Read from" switch: what that channel hands to capture.
+export const CHANNEL_HINT: Record<string, string> = {
+  assistant: 'Your questions and its answers',
+  research: 'Your questions and the sourced summary',
+  workbook: 'Rows that change in the watched workbook',
+};
+
+// Who wrote an observation, in the row's meta line.
+export function observationWriter(obs: { derived: string; method: string | null }): string {
+  if (obs.derived !== 'consolidated') return 'Reflected by the endpoint';
+  return obs.method === 'model' ? 'Summarized by the endpoint' : 'Built-in summary';
+}
+
+// The stored-knowledge lists show this many rows until "Show all".
+export const LIST_CAP = 8;

@@ -182,8 +182,7 @@
   #memory-loop-root .ml-filter input{width:100%}
 }
 @media (max-width:560px){
-  #memory-loop-root .ml-head h1,#memory-loop-root .ml-dialog-title{text-wrap:balance}
-#memory-loop-root .ml-head h1{font-size:26px}
+  #memory-loop-root .ml-head h1{font-size:26px}
   #memory-loop-root .ml-figure{font-size:32px}
   #memory-loop-root .ml-btn,#memory-loop-root .ml-segment button,#memory-loop-root .ml-tabs [role="tab"]{min-height:44px}
   #memory-loop-root .ml-switch-row{min-height:44px}
@@ -195,3 +194,52 @@
   #memory-loop-root .ml-undo{left:16px;right:16px;transform:none;bottom:12px}
   #memory-loop-root .ml-undo span:first-child{flex:1}
 }
+
+/* Stored knowledge: the cap's footer, the observation's entity line, and
+   the removal dialog's before/after text. */
+#memory-loop-root .ml-more{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 0;border-top:1px solid var(--hairline);margin-top:2px}
+#memory-loop-root .ml-more .ml-text-btn{margin-left:0;min-height:32px}
+#memory-loop-root .ml-row-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;color:var(--accent-text);margin:0 0 2px}
+#memory-loop-root .ml-rewrites{list-style:none;padding-left:0!important}
+#memory-loop-root .ml-rewrites li + li{margin-top:10px!important;padding-top:10px;border-top:1px solid var(--hairline)}
+#memory-loop-root .ml-rewrite-old{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-3)}
+#memory-loop-root .ml-rewrite-old s{text-decoration-color:var(--ink-4)}
+#memory-loop-root .ml-rewrite-new{margin:4px 0 0;padding-left:10px;border-left:2px solid var(--accent);font-size:13px;line-height:1.5;color:var(--ink-1)}
+#memory-loop-root .ml-rewrite-new .ml-chip-quiet{margin-left:8px;vertical-align:1px}
+
+/* Maintenance: a server-rendered tile below the island, folded away.
+   One row per action: what it does for the user, then its control. */
+.ml-maint{font-family:var(--font-ui);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-card);margin:0 0 32px;overflow:hidden}
+.ml-maint>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;min-height:24px;transition:background var(--dur) ease}
+.ml-maint>summary::-webkit-details-marker{display:none}
+.ml-maint>summary::before{content:"";width:6px;height:6px;flex:none;border-right:1.5px solid var(--ink-3);border-bottom:1.5px solid var(--ink-3);transform:rotate(-45deg);transition:transform var(--dur) ease}
+.ml-maint[open]>summary::before{transform:rotate(45deg)}
+.ml-maint>summary:hover{background:var(--surface-2)}
+.ml-maint>summary:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.ml-maint-title{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.ml-maint-sub{font-size:13px;color:var(--ink-3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ml-maint-chip{margin-left:auto;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:1px 6px;white-space:nowrap}
+.ml-maint-body{border-top:1px solid var(--hairline)}
+.ml-maint-row{display:flex;align-items:center;gap:16px;padding:12px 16px}
+.ml-maint-row + .ml-maint-row{border-top:1px solid var(--hairline)}
+.ml-maint-copy{flex:1;min-width:0}
+.ml-maint-copy b{display:block;font-size:13.5px;font-weight:600;color:var(--ink-1)}
+.ml-maint-copy p{margin:2px 0 0;font-size:13px;line-height:1.5;color:var(--ink-3);max-width:68ch}
+.ml-maint-copy .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.ml-maint-act{flex:none;display:flex;align-items:center;gap:8px}
+.ml-maint-form{display:flex;align-items:center;gap:8px;margin:0}
+.ml-maint-form input{font:inherit;font-size:13px;min-height:32px;box-sizing:border-box;width:260px;padding:0 10px;border-radius:var(--r-control);border:1px solid var(--hairline);background:var(--bg);color:var(--ink-1)}
+.ml-maint-form input::placeholder{color:var(--ink-4)}
+.ml-maint-form input:focus-visible,.ml-maint-act a:focus-visible,.ml-maint-act button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ml-maint-act .btn{min-height:32px;font-size:13px;white-space:nowrap}
+.ml-maint-done{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.ml-maint .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:760px){
+  .ml-maint-sub{display:none}
+  .ml-maint-row{flex-direction:column;align-items:stretch;gap:10px}
+  .ml-maint-act{justify-content:flex-end}
+  .ml-maint-form{width:100%}
+  .ml-maint-form input{flex:1;width:auto;min-height:44px}
+  .ml-maint-act .btn{min-height:44px}
+}
+@media (prefers-reduced-motion:reduce){.ml-maint *,.ml-maint>summary::before{transition:none!important}}

@@ -13,7 +13,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { getJson, postJson } from '../../api';
 import MemoryGraph from '../MemoryGraph';
 import type { GraphNode } from '../types';
-import { channelList, count, methodLabel, removeLabel, removedSummary, stamp, TARGET_NOUN } from './copy';
+import {
+  CHANNEL_HINT, channelList, count, LIST_CAP, methodLabel, observationWriter, removeLabel, removedSummary, stamp, TARGET_NOUN,
+} from './copy';
 import type {
   Candidate, EntityRow, FactRow, LoopState, ObservationRow, RemovalDone, RemovalPlan, SourceRow, TargetType,
 } from './types';
@@ -415,7 +417,7 @@ function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; 
         <legend>Read from</legend>
         {capture.channels.map((channel) => (
           <Switch key={channel.id} id={`ml-sw-${channel.id}`} label={channel.label}
-            hint={channel.id === 'assistant' ? 'Your questions and its answers' : 'Your questions and the sourced summary'}
+            hint={CHANNEL_HINT[channel.id]}
             on={channel.on} disabled={!capture.enabled} onToggle={() => toggle(channel.setting)} />
         ))}
       </fieldset>
@@ -502,6 +504,11 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
     observations: data.observations.length,
   };
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  // Each list stops at LIST_CAP rows so the graph stays near; "Show all"
+  // opens that tab's list until the page reloads.
+  const [opened, setOpened] = useState<Partial<Record<Tab, boolean>>>({});
+  const cap = <T,>(rows: T[]): T[] => (opened[tab] ? rows : rows.slice(0, LIST_CAP));
+  let matched = 0;
   const factsById = useMemo(() => new Map(data.facts.map((f) => [f.id, f])), [data.facts]);
   const onKeyDown = (event: ReactKeyboardEvent) => {
     const index = TABS.findIndex((t) => t.id === tab);
@@ -520,9 +527,10 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
   let body: ReactNode;
   if (tab === 'facts') {
     const rows = data.facts.filter((f) => matches(`${f.text} ${f.entities.map((e) => e.name).join(' ')} ${f.origin.label}`, filter));
+    matched = rows.length;
     body = rows.length === 0 ? <Empty filter={filter} noun="facts" /> : (
       <ul className="ml-rows">
-        {rows.map((fact) => (
+        {cap(rows).map((fact) => (
           <FactItem key={fact.id} fact={fact} factsById={factsById} onRemove={onRemove} onShow={onShow}
             onKeep={onKeep} onEntity={(name) => onFilter(name)} />
         ))}
@@ -530,21 +538,24 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
     );
   } else if (tab === 'entities') {
     const rows = data.entities.filter((e) => matches(`${e.name} ${e.aliases.join(' ')} ${e.type}`, filter));
+    matched = rows.length;
     body = rows.length === 0 ? <Empty filter={filter} noun="entities" /> : (
-      <ul className="ml-rows">{rows.map((entity) => <EntityItem key={entity.id} entity={entity} onRemove={onRemove} onShow={onShow} />)}</ul>
+      <ul className="ml-rows">{cap(rows).map((entity) => <EntityItem key={entity.id} entity={entity} onRemove={onRemove} onShow={onShow} />)}</ul>
     );
   } else if (tab === 'sources') {
     const rows = data.sources.filter((s) => matches(`${s.text} ${s.channelLabel}`, filter));
+    matched = rows.length;
     body = rows.length === 0 ? <Empty filter={filter} noun="excerpts" /> : (
-      <ul className="ml-rows">{rows.map((source) => <SourceItem key={source.id} source={source} onRemove={onRemove} onShow={onShow} />)}</ul>
+      <ul className="ml-rows">{cap(rows).map((source) => <SourceItem key={source.id} source={source} onRemove={onRemove} onShow={onShow} />)}</ul>
     );
   } else {
-    const rows = data.observations.filter((o) => matches(o.text, filter));
+    const rows = data.observations.filter((o) => matches(`${o.entityName ?? ''} ${o.text}`, filter));
+    matched = rows.length;
     body = (
       <>
         <div className="ml-subbar">
           <p className="ml-note">
-            Consolidated observations are rebuilt whenever their facts change. Reflected ones come from the endpoint and are kept until you remove them.
+            Each entity with two or more facts gets one short observation, rewritten whenever those facts change. Reflected ones come from the endpoint and stay until you remove them.
           </p>
           <button type="button" className="ml-btn" onClick={onReflect} disabled={data.extractor.mode !== 'model'}
             title={data.extractor.mode !== 'model' ? 'Needs a working endpoint' : undefined}>
@@ -553,7 +564,7 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
         </div>
         {rows.length === 0 ? <Empty filter={filter} noun="observations" /> : (
           <ul className="ml-rows">
-            {rows.map((obs) => <ObservationItem key={obs.id} obs={obs} factsById={factsById} onRemove={onRemove} onShow={onShow} />)}
+            {cap(rows).map((obs) => <ObservationItem key={obs.id} obs={obs} factsById={factsById} onRemove={onRemove} onShow={onShow} />)}
           </ul>
         )}
       </>
@@ -577,7 +588,18 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
           </button>
         ))}
       </div>
-      <div role="tabpanel" id="ml-tabpanel" aria-labelledby={`ml-tab-${tab}`}>{body}</div>
+      <div role="tabpanel" id="ml-tabpanel" aria-labelledby={`ml-tab-${tab}`}>
+        {body}
+        {matched > LIST_CAP && (
+          <div className="ml-more">
+            <span className="ml-quiet ml-mono">{opened[tab] ? matched : LIST_CAP} of {matched}</span>
+            <button type="button" className="ml-text-btn" aria-expanded={Boolean(opened[tab])}
+              onClick={() => setOpened((o) => ({ ...o, [tab]: !o[tab] }))}>
+              {opened[tab] ? 'Show fewer' : `Show all ${matched}`}
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -679,9 +701,10 @@ function ObservationItem({ obs, factsById, onRemove, onShow }: {
   return (
     <li className={`ml-row${obs.staleTs ? ' is-flagged' : ''}`}>
       <div className="ml-row-main">
+        {obs.entityName && <p className="ml-row-eyebrow">{obs.entityName}</p>}
         <p className="ml-row-text">{obs.text}</p>
         <p className="ml-row-meta">
-          <span>{obs.derived === 'consolidated' ? 'Consolidated' : 'Reflected'}</span>
+          <span>{observationWriter(obs)}</span>
           <span>cites {count(obs.factIds.filter((id) => factsById.has(id)).length, 'fact')}</span>
           <span className="ml-mono">{obs.confidence.toFixed(2)} confidence</span>
           <span className="ml-mono">{stamp(obs.updatedTs)}</span>
@@ -704,6 +727,32 @@ function PlanList({ title, items }: { title: string; items: string[] }) {
       <ul>
         {shown.map((item, index) => <li key={index}>{item}</li>)}
         {items.length > shown.length && <li className="ml-quiet">and {items.length - shown.length} more</li>}
+      </ul>
+    </div>
+  );
+}
+
+// Each rewritten observation as it reads now (struck through) and as it
+// will read after the removal, so nothing changes unseen.
+function RewriteList({ rows }: { rows: RemovalPlan['observationsUpdated'] }) {
+  if (rows.length === 0) return null;
+  const shown = rows.slice(0, 3);
+  return (
+    <div className="ml-plan-group">
+      <h3>{rows.length === 1 ? 'Observation rewritten' : 'Observations rewritten'}</h3>
+      <ul className="ml-rewrites">
+        {shown.map((row) => (
+          <li key={row.id}>
+            <p className="ml-rewrite-old"><span className="ml-sr">Now: </span><s>{row.text}</s></p>
+            {row.after !== null ? (
+              <p className="ml-rewrite-new">
+                <span className="ml-sr">After: </span>{row.after}
+                <span className="ml-chip-quiet">{row.afterMethod === 'model' ? 'Endpoint' : 'Built-in'}</span>
+              </p>
+            ) : <p className="ml-rewrite-new ml-quiet">Rewritten from the facts that remain.</p>}
+          </li>
+        ))}
+        {rows.length > shown.length && <li className="ml-quiet">and {rows.length - shown.length} more</li>}
       </ul>
     </div>
   );
@@ -743,7 +792,7 @@ function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCanc
         {/* A fact is its own title; an entity or excerpt lists what goes with it. */}
         <PlanList title={plan.target.type === 'entity' ? 'Facts that mention it' : 'Facts taken from it'}
           items={plan.target.type === 'entity' || plan.target.type === 'source' ? plan.facts.map((f) => f.text) : []} />
-        <PlanList title="Observations rewritten without it" items={plan.observationsUpdated.map((o) => o.text)} />
+        <RewriteList rows={plan.observationsUpdated} />
         <PlanList title="Observations removed" items={plan.observationsRemoved.map((o) => o.text)} />
         <PlanList title="Observations flagged for a look" items={plan.observationsFlagged.map((o) => o.text)} />
         <PlanList title="Entities forgotten, nothing else mentions them" items={plan.entitiesRemoved.map((e) => e.name)} />

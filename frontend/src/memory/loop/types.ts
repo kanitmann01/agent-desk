@@ -81,7 +81,10 @@ export interface ObservationRow {
   updatedTs: number;
   staleTs: number | null;
   entityId: number | null;
+  entityName: string | null;
   derived: 'consolidated' | 'reflected';
+  // Who wrote an entity's observation: the endpoint, or the built-in summary.
+  method: 'model' | 'rules' | null;
 }
 
 export interface LastCapture {
@@ -125,7 +128,8 @@ export interface RemovalPlan {
   target: { type: TargetType; id: number; label: string };
   facts: { id: number; text: string }[];
   observationsRemoved: { id: number; text: string }[];
-  observationsUpdated: { id: number; text: string }[];
+  // `after` is the observation's text once the removal is done.
+  observationsUpdated: { id: number; text: string; after: string | null; afterMethod: 'model' | 'rules' | null }[];
   observationsFlagged: { id: number; text: string }[];
   entitiesRemoved: { id: number; name: string }[];
   entitiesUpdated: { id: number; name: string }[];

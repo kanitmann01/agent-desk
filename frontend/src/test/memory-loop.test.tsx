@@ -48,8 +48,9 @@ function state(overrides: Partial<LoopState> = {}): LoopState {
     entities: [{ id: 5, name: 'Acme', type: 'org', aliases: [], factCount: 2 }],
     sources: [{ id: 9, text: 'Acme has 40 seats.', speaker: 'You', channel: 'assistant', channelLabel: 'Assistant', createdTs: NOW, factIds: [2] }],
     observations: [{
-      id: 3, text: 'Acme: renews in February; has 40 seats.', confidence: 0.7, factIds: [1, 2],
-      createdTs: NOW, updatedTs: NOW, staleTs: null, entityId: 5, derived: 'consolidated',
+      id: 3, text: 'Acme renews in February and has 40 seats.', confidence: 0.7, factIds: [1, 2],
+      createdTs: NOW, updatedTs: NOW, staleTs: null, entityId: 5, entityName: 'Acme', derived: 'consolidated',
+      method: 'model',
     }],
     ...overrides,
   };
@@ -74,7 +75,7 @@ const graph: MemoryGraphData = {
 const plan: RemovalPlan = {
   target: { type: 'fact', id: 1, label: 'Acme renews in February.' },
   facts: [{ id: 1, text: 'Acme renews in February.' }],
-  observationsRemoved: [{ id: 3, text: 'Acme: renews in February; has 40 seats.' }],
+  observationsRemoved: [{ id: 3, text: 'Acme renews in February and has 40 seats.' }],
   observationsUpdated: [],
   observationsFlagged: [],
   entitiesRemoved: [],
@@ -194,7 +195,9 @@ describe('MemoryLoop', () => {
     expect(within(screen.getByRole('tabpanel')).getByRole('button', { name: 'Forget…' })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole('tab', { name: /Entities/ }), { key: 'End' });
     expect(screen.getByRole('tab', { name: /Observations/ }).getAttribute('aria-selected')).toBe('true');
-    expect(within(screen.getByRole('tabpanel')).getByText('Consolidated')).toBeTruthy();
+    const obsPanel = screen.getByRole('tabpanel');
+    expect(within(obsPanel).getByText('Summarized by the endpoint')).toBeTruthy();
+    expect(within(obsPanel).getByText('Acme', { selector: '.ml-row-eyebrow' })).toBeTruthy();
   });
 
   it('previews a removal, removes on confirm, then offers undo', async () => {
@@ -215,7 +218,7 @@ describe('MemoryLoop', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Acme renews in February.' });
     expect(within(dialog).getByText('Observations removed')).toBeTruthy();
-    expect(within(dialog).getByText('Acme: renews in February; has 40 seats.')).toBeTruthy();
+    expect(within(dialog).getByText('Acme renews in February and has 40 seats.')).toBeTruthy();
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(calls.at(-1)).toEqual({ url: '/api/memory/remove/preview', body: { target: { type: 'fact', id: 1 } } });
 
@@ -286,6 +289,56 @@ describe('MemoryLoop', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) }) as Response));
     render(<MemoryLoop pollMs={0} graphWidth={900} />);
     expect((await screen.findByRole('alert')).textContent).toMatch(/session ended/);
+  });
+});
+
+describe('MemoryLoop, the new pieces', () => {
+  it('shows each rewritten observation as it reads now and after the removal', async () => {
+    const rewrite: RemovalPlan = {
+      ...plan,
+      observationsRemoved: [],
+      observationsUpdated: [{ id: 3, text: 'Acme renews in February and has 40 seats.', after: 'Acme has 40 seats.', afterMethod: 'model' }],
+    };
+    serve(state(), { '/api/memory/remove/preview': { plan: rewrite } });
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    await screen.findByRole('tabpanel');
+    await user.click(screen.getAllByRole('button', { name: 'Remove…' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Observation rewritten')).toBeTruthy();
+    const old = within(dialog).getByText('Acme renews in February and has 40 seats.');
+    expect(old.tagName).toBe('S');
+    const next = within(dialog).getByText('Acme has 40 seats.', { selector: '.ml-rewrite-new' });
+    expect(within(next).getByText('Endpoint')).toBeTruthy();
+  });
+
+  it('stops each stored list at eight rows with a Show all button', async () => {
+    const base = state();
+    const facts = Array.from({ length: 11 }, (_, i) => ({ ...base.facts[0], id: 100 + i, text: `Fact number ${i + 1}.` }));
+    serve(state({ facts, counts: { ...base.counts, facts: 11, standing: 11 } }));
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    const panel = await screen.findByRole('tabpanel');
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(8);
+    expect(within(panel).getByText('8 of 11')).toBeTruthy();
+    await user.click(within(panel).getByRole('button', { name: 'Show all 11' }));
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(11);
+    await user.click(within(panel).getByRole('button', { name: 'Show fewer' }));
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(8);
+  });
+
+  it('gives the workbook channel its own switch under Read from', async () => {
+    const { calls } = serve(state({
+      capture: {
+        ...state().capture,
+        channels: [...state().capture.channels, { id: 'workbook', label: 'Workbook tracker', setting: 'memory_capture_workbook', on: true }],
+      },
+    }));
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    expect(await screen.findByText('Rows that change in the watched workbook')).toBeTruthy();
+    await user.click(screen.getByRole('switch', { name: /Workbook tracker/ }));
+    await waitFor(() => expect(calls.at(-1)).toEqual({ url: '/settings/toggle', body: { key: 'memory_capture_workbook' } }));
   });
 });
 

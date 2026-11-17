@@ -167,6 +167,80 @@ def _encrypt_section(state: dict | None) -> str:
     )
 
 
+def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
+    """The loop page's housekeeping, folded away by default: one row per
+    action, each saying in one line what it does for the user, with its
+    control on the right. Every form posts to the same routes as the
+    plain page, so it works without JavaScript."""
+    rows: list[str] = []
+
+    def row(title: str, line: str, control: str, row_id: str = "") -> None:
+        ident = f" id='{row_id}'" if row_id else ""
+        rows.append(
+            f"<div class='ml-maint-row'{ident}><div class='ml-maint-copy'>"
+            f"<b>{title}</b><p>{line}</p></div>"
+            f"<div class='ml-maint-act'>{control}</div></div>"
+        )
+
+    row(
+        "Check what the assistant would recall",
+        "Type a question to see which saved facts the assistant would read when answering it.",
+        "<form method='post' action='/memory/recall' class='ml-maint-form'>"
+        "<label class='sr-only' for='recall-query'>Question</label>"
+        "<input id='recall-query' type='text' name='query' "
+        "placeholder='e.g. Who owns the Acme renewal?'>"
+        "<button class='btn btn-secondary' type='submit'>Check</button></form>",
+    )
+    if embeddings is not None:
+        total = embeddings["embedded"] + embeddings["remaining"]
+        ready = (
+            f"<span class='mono' id='embeddings-counts'>{embeddings['embedded']} of "
+            f"{_count(total, 'fact')} ready</span>"
+        )
+        button = (
+            "<form method='post' action='/memory/embeddings/backfill' class='ml-maint-form'>"
+            "<button class='btn btn-secondary' type='submit' id='backfill-embeddings'>"
+            "Prepare the rest</button></form>"
+            if embeddings["remaining"] else ""
+        )
+        row(
+            "Find facts by meaning",
+            "Lets recall match facts that say the same thing in different words. "
+            f"{ready}.",
+            button or "<span class='ml-maint-done'>Up to date</span>",
+        )
+    if encrypt is not None and encrypt.get("already"):
+        row(
+            "Encrypted on this computer",
+            "<span id='memory-encrypted'>Memory is encrypted at rest: the database "
+            "is unreadable without the key file <span class='mono'>memory.key</span> "
+            "on this computer.</span>",
+            "<span class='ml-maint-done'>On</span>",
+        )
+    elif encrypt is not None:
+        row(
+            "Encrypt memory on this computer",
+            "<span id='encrypt-offer'>Locks every saved fact with a key file kept here, "
+            "so the database file is unreadable without it. You review the counts first.</span>",
+            "<a class='btn btn-secondary' href='/memory/encrypt'>Review</a>",
+        )
+    row(
+        "Clear out junk facts",
+        "Lists near-empty and duplicate facts so you can delete them; nothing goes "
+        "until you tick and confirm.",
+        "<a class='btn btn-secondary' href='/memory/sweep'>Review</a>",
+    )
+    sealed = bool(encrypt and encrypt.get("already"))
+    hint = "Encrypted" if sealed else "Not encrypted"
+    return (
+        "<details class='ml-maint' id='memory-maintenance'>"
+        "<summary><span class='ml-maint-title'>Maintenance</span>"
+        "<span class='ml-maint-sub'>Recall check, search by meaning, encryption, cleanup</span>"
+        f"<span class='ml-maint-chip'>{hint}</span></summary>"
+        f"<div class='ml-maint-body'>{''.join(rows)}</div></details>"
+    )
+
+
 def _fact_rows(facts: list[Fact]) -> str:
     """One row per fact: the text, its provenance, and its two actions."""
     if not facts:
@@ -406,11 +480,7 @@ Assistant and Research when it is on in the memory settings.</p>"""
 {observations_row}
 {entities_row}"""
         content = f"""{loop_island_html(fallback)}
-<h2 id="memory-maintenance">Maintenance</h2>
-<p>Recall preview, encryption at rest and embeddings for semantic links.</p>
-{_recall_section(recall, query)}
-{_encrypt_section(encrypt)}
-{embeddings_row}
+{_maintenance_tile(encrypt, embeddings)}
 """
         return page_shell(
             "Memory", "/memory", content, version, inbox_count=inbox_count, wide=True,
