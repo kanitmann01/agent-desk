@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TrackerCard from '../dashboard/TrackerCard';
@@ -84,5 +84,75 @@ describe('tracker setup sheet', () => {
     await user.type(name, 'Q4 bookings');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(onDone).toHaveBeenCalled();
+  });
+
+  it('an outside-workspace refusal offers the honest accept and retries the confirm', async () => {
+    const user = userEvent.setup();
+    const outsideCalls: string[] = [];
+    let confirmCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (target.endsWith('/pick')) {
+        return jsonResponse({
+          preview: {
+            sheet: 'Data',
+            headers: ['Region', 'Booked'],
+            rows: [['East', '10'], ['West', '5']],
+          },
+        });
+      }
+      if (target.endsWith('/suggest')) {
+        return jsonResponse({
+          disclosure: 'This sends the column names and up to 5 rows to the company endpoint. The file path stays on this machine.',
+          proposal: {
+            labelColumn: 'Region',
+            valueColumn: 'Booked',
+            aggregate: 'sum',
+            rows: [0, 1],
+            reason: 'Booked looks like the amount; Region groups rows.',
+            source: 'heuristic',
+          },
+        });
+      }
+      if (target.endsWith('/outside')) {
+        outsideCalls.push(target);
+        return jsonResponse({ outsideAccepted: true });
+      }
+      if (target.endsWith('/confirm')) {
+        confirmCalls += 1;
+        if (confirmCalls === 1) {
+          return jsonResponse({ error: 'config:outside-workspace',
+                                message: 'That file is outside the workspace. Accept it before confirming.' }, 400);
+        }
+        return jsonResponse({ step: 'done' });
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onDone = vi.fn(async () => {});
+    render(<TrackerCard card={setupCard} onRefetch={onDone} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Suggest what to track' }));
+    await user.click(await screen.findByRole('button', { name: 'Accept' }));
+    const name = screen.getByLabelText('Instance name');
+    await user.clear(name);
+    await user.type(name, 'Q4 bookings');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    // The refusal becomes the honest inline choice, not a dead end.
+    expect(await screen.findByText(/outside the workspace folder/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Use it anyway' }));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(confirmCalls).toBe(2);
+    expect(outsideCalls.length).toBe(1);
+    expect(outsideCalls[0]).toContain('/instances/main/outside');
   });
 });

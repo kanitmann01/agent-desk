@@ -31,6 +31,7 @@ from .catalog import (
     filter_entries,
     load_catalog_file,
     merge_catalogs,
+    normalize_entry,
 )
 from .policy import (
     POLICY_FILE,
@@ -242,9 +243,72 @@ class _API:
         for entry in entries:
             if entry.get("id") == plugin_id:
                 return entry, entries, policy
+        # A wizard install (any local install, really) is in no catalog:
+        # the requested id still resolves, from the installed record
+        # itself. The listing above stays catalog-only, so the Discover
+        # surface never gains an installed-only entry; only the
+        # resolution of one requested id falls back to installed. The
+        # approved screen's manage link depends on this (T6 review).
+        synthesized = self._installed_entry(plugin_id, policy)
+        if synthesized is not None:
+            return synthesized, entries, policy
         raise MarketplaceError(
             404, "catalog:not-found",
             f"no catalog entry for plugin {plugin_id}", {"id": plugin_id})
+
+    def _installed_entry(self, plugin_id: str, policy) -> dict | None:
+        """One catalog-shaped entry synthesized from the installed record.
+
+        The runtime carries name, version, digest and the installed
+        manifest; a wizard build never published a catalog entry. The
+        shared normalize_entry keeps the exact detail DTO shape, the
+        same policy evaluate() the listing applies decides eligibility,
+        and governance (quarantine, yank, deprecation) rides on top, so
+        a refused plugin looks refused here too. None when the id names
+        no live install."""
+        record = self._record(plugin_id)
+        if record is None or record.get("state") == "uninstalled":
+            return None
+        manifest = self._installed_manifest(record)
+        raw = {
+            **manifest,
+            "id": str(record.get("id") or plugin_id),
+            "name": str(manifest.get("name") or record.get("name") or plugin_id),
+            "version": str(record.get("active_version")
+                           or manifest.get("version") or ""),
+            "digest": str(record.get("sha256") or ""),
+            "publishedAt": str(record.get("installed_at") or ""),
+            "source": "installed",
+            "versions": [
+                {"version": str(item.get("version") or ""),
+                 "sha256": str(item.get("sha256") or "")}
+                for item in (record.get("versions") or [])
+                if isinstance(item, dict)
+            ],
+        }
+        entry = normalize_entry(raw, "installed")
+        if entry is None:
+            return None
+        decision = evaluate(entry, policy, installed=True)
+        entry["eligible"] = decision["eligible"]
+        entry["ineligibleReasons"] = decision["reasons"]
+        entry = self._apply_governance(entry, self._governance())
+        return entry
+
+    def _installed_manifest(self, record: dict) -> dict:
+        """The active version's manifest from the runtime's own tree."""
+        versions = record.get("versions")
+        folder = ""
+        if isinstance(versions, list) and versions:
+            last = versions[-1]
+            if isinstance(last, dict):
+                folder = str(last.get("dir") or "")
+        if not folder:
+            folder = str(record.get("folder") or "")
+        if not folder:
+            return {}
+        document = self._read_json(Path(folder) / "manifest.json", {})
+        return document if isinstance(document, dict) else {}
 
     def _installed_summary(self, record: dict) -> dict:
         pending = record.get("pending_update")

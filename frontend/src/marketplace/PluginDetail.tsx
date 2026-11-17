@@ -3,14 +3,15 @@
 // after it finishes; nothing is shown as done before the server says so.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Button from '../components/Button';
-import { MarketApiError, getMarket, marketErrorText, postMarket } from './client';
+import { MarketApiError, getInstances, getMarket, marketErrorText, postMarket } from './client';
 import { ConsentSheet } from './ConsentSheet';
+import { InstanceSetupSheet, instanceFileName } from './InstanceSetupSheet';
 import { MarketLink, useMarketplaceNav } from './context';
 import { MarketGrid, PublisherMark, SkeletonGrid, categoryLabel, riskLabel } from './MarketGrid';
 import { canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { SamplePreview } from './Sample';
 import { SignatureChip, StatusChip } from './StatusChip';
-import type { DetailResponse, MarketDetail, InstalledSummary } from './types';
+import type { DetailResponse, InstanceDocument, InstancesResponse, MarketDetail, InstalledSummary } from './types';
 
 type Load =
   | { kind: 'loading' }
@@ -212,6 +213,16 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeError, setPurgeError] = useState('');
   const [confirmAction, setConfirmAction] = useState<null | { action: 'rollback' | 'uninstall'; title: string; body: string }>(null);
+  // The manage view's instance setup (T5): the list, its load error, and
+  // which sheet is open. instanceAttempt re-reads after a sheet finishes.
+  const [instances, setInstances] = useState<InstancesResponse | null>(null);
+  const [instancesError, setInstancesError] = useState('');
+  const [instanceAttempt, setInstanceAttempt] = useState(0);
+  const [setupSheet, setSetupSheet] = useState<
+    | { kind: 'create' }
+    | { kind: 'edit'; instance: InstanceDocument }
+    | null
+  >(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -238,6 +249,26 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       });
     return () => { cancelled = true; };
   }, [id, attempt]);
+
+  useEffect(() => {
+    const current = load.kind === 'ready' ? load.data.installed : null;
+    if (!manage || !current) {
+      setInstances(null);
+      return undefined;
+    }
+    let cancelled = false;
+    getInstances(id)
+      .then((data) => {
+        if (!cancelled) {
+          setInstances(data);
+          setInstancesError('');
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setInstancesError(marketErrorText(err));
+      });
+    return () => { cancelled = true; };
+  }, [id, manage, load, instanceAttempt]);
 
   const run = async (fn: () => Promise<string>) => {
     setBusy(true);
@@ -453,6 +484,81 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         <div><span>Published</span><strong>{formatDate(plugin.publishedAt)}</strong></div>
       </section>
 
+      {manage && installed && instances?.configBacked && (
+        <section className="mkt-panel" aria-labelledby="mkt-instances">
+          <h2 id="mkt-instances">Instances</h2>
+          {instances.aliasOf && (
+            <p className="w-note">
+              {plugin.name} runs as the {instances.instances[0]?.name ?? 'named'} instance
+              of {instances.setupPluginName}; its setup lives with that plugin, so there is
+              nothing separate to configure here.
+            </p>
+          )}
+          {instancesError && <p className="mkt-error" role="alert">{instancesError}</p>}
+          {!instances.aliasOf && instances.instances.length === 0 && (
+            // The finish line of the wizard walk (T6): a just-installed
+            // config-backed plugin has zero instances, so Set up leads
+            // the panel as the visible primary, above the empty table.
+            <div className="mkt-actions">
+              <Button tone="primary" onClick={() => {
+                setError('');
+                setSheetError('');
+                setSetupSheet({ kind: 'create' });
+              }}>
+                Set up a new instance
+              </Button>
+            </div>
+          )}
+          <div className="mkt-table-wrap">
+            <table className="rows">
+              <caption className="mkt-sr-only">Instances of {plugin.name}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Instance</th>
+                  <th scope="col">File</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Setup</th>
+                </tr>
+              </thead>
+              <tbody>
+                {instances.instances.map((item) => (
+                  <tr key={item.instanceId}>
+                    <th scope="row">{item.name}</th>
+                    <td className="mkt-mono">{instanceFileName(item)}</td>
+                    <td>{item.confirmedAt ? 'Confirmed' : 'Needs setup'}</td>
+                    <td>
+                      <Button tone="secondary" onClick={() => {
+                        setError('');
+                        setSheetError('');
+                        setSetupSheet({ kind: 'edit', instance: item });
+                      }}>
+                        Edit {item.name}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {instances.instances.length === 0 && (
+                  <tr>
+                    <td colSpan={4}>No instances yet. Set one up to point {plugin.name} at its data.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {!instances.aliasOf && instances.instances.length > 0 && (
+            <div className="mkt-actions">
+              <Button tone="primary" onClick={() => {
+                setError('');
+                setSheetError('');
+                setSetupSheet({ kind: 'create' });
+              }}>
+                Set up a new instance
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="mkt-detail-cols">
         <section className="mkt-panel" aria-labelledby="mkt-about">
           <h2 id="mkt-about">About this plugin</h2>
@@ -598,6 +704,24 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         onCancel={() => { if (!busy) setConsent(null); }}
         onConfirm={confirmConsent}
       />
+
+      {setupSheet && instances && (
+        <InstanceSetupSheet
+          title={setupSheet.kind === 'create' ? 'Set up an instance' : `Edit ${setupSheet.instance.name}`}
+          pluginName={plugin.name}
+          setupPluginId={instances.setupPluginId}
+          target={setupSheet.kind === 'create'
+            ? { mode: 'create' }
+            : { mode: 'edit', instance: setupSheet.instance }}
+          onCancel={() => setSetupSheet(null)}
+          onChanged={() => setInstanceAttempt((n) => n + 1)}
+          onDone={(note) => {
+            setSetupSheet(null);
+            setMessage(note);
+            setInstanceAttempt((n) => n + 1);
+          }}
+        />
+      )}
 
       {purgeOpen && (
         <PurgeDialog id={plugin.id} busy={busy} error={purgeError}

@@ -55,7 +55,9 @@ RAIL_PAGES = (
     ("/memory", "Memory"),
     ("/mail", "Mail"),
     ("/capabilities", "Capabilities"),
-    ("/plugins", "Plugins"),
+    # The legacy plugins address now 302s to the marketplace's installed
+    # surface (the SPA owns it), so like "/" it answers with the shell.
+    ("/plugins", None),
     ("/peers", "Peers"),
     ("/settings", "Settings"),
 )
@@ -143,13 +145,15 @@ class Desk:
     shaped client (a cookie jar that follows redirects, and a no-redirect
     opener for asserting the 303s the forms answer with)."""
 
-    def __init__(self, name: str, data_dir: Path, announce_port: int):
+    def __init__(self, name: str, data_dir: Path, announce_port: int,
+                 pick_workbook=None):
         from agentdesk.server import app as server_app
 
         os.environ["AGENTDESK_DATA"] = str(data_dir)
         self.name = name
         self.data_dir = data_dir
-        self.server = server_app.create_server(port=0, announce_port=announce_port)
+        self.server = server_app.create_server(port=0, announce_port=announce_port,
+                                               pick_workbook=pick_workbook)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.server.port}"
@@ -269,7 +273,13 @@ class Walkthrough:
     # -- the steps ------------------------------------------------------
 
     def step_boot(self) -> None:
-        desk = Desk("A", self.root / "desk-a", _free_udp_port())
+        # The picker stands in for the native file dialog (it opens on
+        # the server, so a headless script injects the choice): it hands
+        # back the seeded sample workbook, the demo's stand-in for "the
+        # user's real file".
+        sample = self.root / "desk-a" / "sample" / "sample-sales.xlsx"
+        desk = Desk("A", self.root / "desk-a", _free_udp_port(),
+                    pick_workbook=lambda: str(sample))
         self.desks.append(desk)
         self.a = desk
         desk.exchange()
@@ -457,11 +467,78 @@ class Walkthrough:
         card = cards[self.wizard_id]
         check(card["pilot"] is True, "the wizard card must wear the pilot badge")
         check(card["version"] == "0.1.0", f"the card says v{card['version']}")
-        # no workbook yet in the wizard's scope: the honest amber state
-        check(card["freshness"] == "attention",
-              f"a scope with no workbook must be amber, got {card['freshness']}")
-        check("no file matches" in card["cause"],
-              f"the amber cause must name the missing file, got {card['cause']!r}")
+        # A workbook ask installs config-backed (T2): no file was ever
+        # granted, so the honest state is the setup card, not an amber
+        # guess about a glob nothing reads.
+        check(card["freshness"] == "setup",
+              f"a workbook build must land in the setup state, got {card['freshness']}")
+        setup = card["payload"]["setup"]
+        check(setup["pluginId"] == self.wizard_id,
+              f"the setup payload names {setup.get('pluginId')!r}")
+        check(setup["step"] == "source",
+              f"the setup step is {setup.get('step')!r}, expected source")
+        check(card["payload"]["elements"] == [],
+              "the setup card must bind nothing before a workbook exists")
+
+    def step_wizard_setup_data(self) -> None:
+        """The finish line (T6): create the instance, open the workbook
+        through the injected picker (the native dialog's stand-in),
+        accept the outside-workspace path by name, confirm a row
+        selection, and the card is fresh with exactly that row's value."""
+        desk = self.a
+        wid = self.wizard_id
+        base = f"/api/plugins/{wid}/instances"
+        out = desk.post_json_ok(base, {"name": "Sample tracker"})
+        check(out["instance"]["instanceId"] == "sample-tracker",
+              f"the create answered {out}")
+        payload = desk.get_json("/api/dashboard")
+        card = next(c for c in payload["plugins"]["cards"]
+                    if c["id"] == f"{wid}~sample-tracker")
+        check(card["freshness"] == "setup",
+              f"the new instance's card is {card['freshness']}, expected setup")
+        check(card["payload"]["setup"]["step"] == "source",
+              "the new instance starts at the source step")
+
+        out = desk.post_json_ok(f"{base}/sample-tracker/pick",
+                                {"name": "Sample tracker"})
+        preview = out["preview"]
+        check(preview["headers"][:2] == ["Deal", "Region"],
+              f"the preview headers are {preview['headers']!r}")
+        check(preview["rows"][0][0] == "Halvorsen Freight renewal",
+              f"the preview's first row is {preview['rows'][0]!r}")
+
+        tracking = {"labelColumn": "Deal", "valueColumn": "Amount",
+                    "aggregate": "sum", "rows": [0]}
+        status, _headers, body = desk.post_json(
+            f"{base}/sample-tracker/confirm", {"tracking": tracking})
+        check(status == 400, f"the first confirm answered {status}")
+        refusal = json.loads(body.decode("utf-8"))
+        check(refusal["error"] == "config:outside-workspace",
+              f"the refusal is {refusal.get('error')!r}, expected config:outside-workspace")
+        check(refusal["message"], "the refusal must carry its plain-language message")
+
+        out = desk.post_json_ok(f"{base}/sample-tracker/outside", {})
+        check(out.get("outsideAccepted") is True, f"the accept said {out}")
+        out = desk.post_json_ok(f"{base}/sample-tracker/confirm",
+                                {"tracking": tracking})
+        check(out["instance"]["tracking"]["rows"] == [0],
+              f"the confirm stored {out['instance']['tracking'].get('rows')!r}")
+
+        payload = desk.get_json("/api/dashboard")
+        card = next(c for c in payload["plugins"]["cards"]
+                    if c["id"] == f"{wid}~sample-tracker")
+        check(card["freshness"] == "fresh",
+              f"the confirmed card is {card['freshness']}, expected fresh")
+        metrics = {e["label"]: e["value"] for e in card["payload"]["elements"]
+                   if e["kind"] == "metric"}
+        # Row 1 only: 12000 + round(7919, -1); the other 99 rows are not
+        # in the card, which is the whole point of the row selection.
+        check(metrics.get("Value") == "19920",
+              f"the tracked value is {metrics.get('Value')!r}, expected 19920")
+        workbook = next(e for e in card["payload"]["elements"]
+                        if e["kind"] == "text" and e.get("label") == "Workbook")
+        check(workbook["text"] == "sample-sales.xlsx",
+              f"the bound workbook is {workbook['text']!r}")
 
     def step_publish(self) -> None:
         desk = self.a
@@ -496,16 +573,21 @@ class Walkthrough:
                                 {"id": self.excel_plugin})
         check(out["ok"] is True, f"the install refused: {out}")
         check(out["version"] == "0.1.0", f"installed v{out['version']}")
+        # The shipped tracker is config-backed: it installs into the
+        # setup state (no file was granted), not an amber glob guess.
         record = desk.get_json(f"/api/plugins/{self.excel_plugin}")
         source = record["data_source"]
-        check(source["status"] == "attention",
-              f"no workbook connected: expected amber, got {source['status']}")
-        check("no file matches" in source["cause"],
-              f"the amber cause must name the missing file, got {source['cause']!r}")
+        check(source["status"] == "setup",
+              f"no workbook picked yet: expected setup, got {source['status']}")
+        check(source["cause"] == "",
+              f"the setup state carries no cause, got {source['cause']!r}")
         payload = desk.get_json("/api/dashboard")
         card = next(c for c in payload["plugins"]["cards"]
                     if c["id"] == self.excel_plugin)
-        check(card["freshness"] == "attention", "the card must render amber")
+        check(card["freshness"] == "setup",
+              f"the card must render setup, got {card['freshness']}")
+        check(card["payload"]["setup"]["step"] == "source",
+              "the tracker starts at the source step")
 
     def step_connect_workbook(self) -> None:
         desk = self.a
@@ -518,25 +600,42 @@ class Walkthrough:
         payload = desk.get_json("/api/dashboard")
         check(payload["sales"]["mode"] == "live",
               f"the sales card is {payload['sales']['mode']}, expected live")
-        # the plugin card: the same sample workbook, inside the plugin's
-        # own scoped workspace folder
-        reports = desk.data_dir / "workspace" / "reports"
-        reports.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(sample, reports / "sample-sales.xlsx")
-        out = desk.post_json_ok(f"/api/plugins/{self.excel_plugin}/retest", {})
-        check(out["status"] == "fresh",
-              f"Re-test after connecting said {out['status']}: {out.get('cause')}")
+        # the plugin card: the same pick-and-confirm flow the wizard
+        # plugin used, on the shipped tracker. The picker stands in for
+        # the native dialog; the sample folder is outside the scoped
+        # workspace, so the acceptance step runs for real.
+        base = f"/api/plugins/{self.excel_plugin}/instances"
+        out = desk.post_json_ok(base, {"name": "Workbook tracker"})
+        check(out["instance"]["instanceId"] == "workbook-tracker",
+              f"the create answered {out}")
+        out = desk.post_json_ok(f"{base}/workbook-tracker/pick",
+                                {"name": "Workbook tracker"})
+        check(out["preview"]["headers"][:1] == ["Deal"],
+              f"the preview headers are {out['preview']['headers']!r}")
+        tracking = {"labelColumn": "Deal", "valueColumn": "Amount",
+                    "aggregate": "sum", "rows": [0]}
+        status, _headers, body = desk.post_json(
+            f"{base}/workbook-tracker/confirm", {"tracking": tracking})
+        check(status == 400, f"the first confirm answered {status}")
+        refusal = json.loads(body.decode("utf-8"))
+        check(refusal["error"] == "config:outside-workspace",
+              f"the refusal is {refusal.get('error')!r}")
+        desk.post_json_ok(f"{base}/workbook-tracker/outside", {})
+        out = desk.post_json_ok(f"{base}/workbook-tracker/confirm",
+                                {"tracking": tracking})
+        check(out["instance"]["confirmedAt"], "the confirm did not stick")
         payload = desk.get_json("/api/dashboard")
         card = next(c for c in payload["plugins"]["cards"]
-                    if c["id"] == self.excel_plugin)
+                    if c["id"] == f"{self.excel_plugin}~workbook-tracker")
         check(card["freshness"] == "fresh", "the card must be fresh now")
         elements = card["payload"]["elements"]
         by_label = {e.get("label"): e for e in elements if e["kind"] == "metric"}
-        check(by_label.get("Workbook", {}).get("value") == "sample-sales.xlsx",
-              f"the bound workbook is {by_label.get('Workbook')}")
-        rows = by_label.get("Rows seen", {}).get("value", "")
-        check(rows.isdigit() and int(rows) > 0,
-              f"the bound rows-seen is {rows!r}, expected the real row count")
+        check(by_label.get("Value", {}).get("value") == "19920",
+              f"the tracked value is {by_label.get('Value')}")
+        workbook = next(e for e in elements
+                        if e["kind"] == "text" and e.get("label") == "Workbook")
+        check(workbook["text"] == "sample-sales.xlsx",
+              f"the bound workbook is {workbook['text']!r}")
 
     def step_outlook_live(self) -> None:
         """The Outlook card live over the seeded sample mail (#69): turn
@@ -708,8 +807,12 @@ class Walkthrough:
         desk = self.a
         listed = desk.get_json("/api/layout")["cards"]
         keys = [c["key"] for c in listed]
-        check(set(BUILTINS) <= set(keys) and self.wizard_id in keys
-              and self.excel_plugin in keys,
+        # A config-backed plugin contributes one key per instance once
+        # instances exist (its plugin id before that, the setup card's
+        # home), so both trackers appear under their instance keys here.
+        check(set(BUILTINS) <= set(keys)
+              and f"{self.excel_plugin}~workbook-tracker" in keys
+              and f"{self.wizard_id}~sample-tracker" in keys,
               f"the layout must list every card, got {keys}")
         # reorder (research first) and hide the sales card
         reordered = ([{"key": "research"}]
@@ -760,11 +863,13 @@ class Walkthrough:
              self.step_wizard_create),
             ("wizard plugin's card renders on the dashboard",
              self.step_wizard_card_on_dashboard),
+            ("wizard: set up its data, pick, confirm rows, card fresh",
+             self.step_wizard_setup_data),
             ("publish: the temp registry lists the wizard plugin",
              self.step_publish),
-            ("registry: excel-report installs amber with its cause",
+            ("registry: excel-report installs into the setup state",
              self.step_registry_install),
-            ("connect the workbook: live source and bound values",
+            ("connect the workbook: pick, confirm, bound values",
              self.step_connect_workbook),
             ("outlook: the digest card binds the sample mail live", self.step_outlook_live),
             ("research: the brief card binds a stored answer live", self.step_research_live),
