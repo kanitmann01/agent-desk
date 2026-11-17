@@ -357,7 +357,7 @@ function CandidateItem({ candidate, busy, onDecide }: {
       )}
       {candidate.excerpt && (
         <details className="ml-excerpt">
-          <summary>From what was said</summary>
+          <summary>{candidate.channel === 'workbook' ? 'From the workbook change' : 'From what was said'}</summary>
           <blockquote>{candidate.excerpt.text}</blockquote>
         </details>
       )}
