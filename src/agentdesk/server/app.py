@@ -1021,7 +1021,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._authenticated():
             self._refuse_and_close(
                 401, "Session required",
-                "Open Agent Desk from its shortcut to get a fresh link.",
+                "Open Nexuus Bot from its shortcut to get a fresh link.",
             )
             return False
         return True
@@ -5428,7 +5428,7 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     if sys.stdout is not None:  # pythonw runs without a console stream
         # flush: launchers redirect this to a log file, where a buffered
         # print would hide the one-time start link until the process ends
-        print(f"Agent Desk is running: {url}", flush=True)
+        print(f"Nexuus Bot is running: {url}", flush=True)
     start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()

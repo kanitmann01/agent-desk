@@ -1,4 +1,4 @@
-"""Agent Desk environment probe: go/no-go gates for the target laptop."""
+"""Nexuus Bot environment probe: go/no-go gates for the target laptop."""
 
 from agentdesk.probe.core import (
     EXIT_GO,

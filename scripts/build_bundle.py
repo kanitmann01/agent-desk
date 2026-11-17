@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Agent Desk one-folder Windows bundle with Nuitka.
+"""Build the Nexuus Bot one-folder Windows bundle with Nuitka.
 
 The profile is deliberately one-folder (Nuitka --standalone), never
 --onefile: a one-file executable unpacks itself to a temporary directory on
@@ -95,9 +95,9 @@ def _build_command(root: Path, *, allow_downloads: bool) -> list[str]:
         "--output-dir=build/nuitka",
         "--output-filename=" + EXE_NAME,
         "--windows-console-mode=disable",
-        "--windows-product-name=Agent Desk",
-        "--windows-company-name=Agent Desk",
-        "--windows-file-description=Agent Desk local application",
+        "--windows-product-name=Nexuus Bot",
+        "--windows-company-name=Nexuus Bot",
+        "--windows-file-description=Nexuus Bot local application",
         "--windows-file-version=" + numeric,
         "--windows-product-version=" + numeric,
         "--report=build/nuitka-report.xml",
@@ -188,7 +188,7 @@ def _manifest(
     sbom_path = output / "sbom.cdx.json"
     return {
         "schema_version": 1,
-        "product": "Agent Desk",
+        "product": "Nexuus Bot",
         "version": _app_version(root),
         "built_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "build": {
@@ -534,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = ["build", *argv]
     parser = argparse.ArgumentParser(
         prog="build_bundle.py",
-        description="Build/smoke/verify the Agent Desk Nuitka one-folder bundle.",
+        description="Build/smoke/verify the Nexuus Bot Nuitka one-folder bundle.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -219,7 +219,7 @@ export default function AdminPage() {
           <h2 id="mkt-admin-off">Admin mode is off</h2>
           <p>
             The admin surface is disabled on this desk. Set <code>AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
-            in the environment that starts Agent Desk, then reload this page.
+            in the environment that starts Nexuus Bot, then reload this page.
           </p>
           <p className="w-note">
             Nothing is served while admin mode is off: no snapshot, no mutation and no audit export.

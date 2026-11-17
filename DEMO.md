@@ -1,6 +1,6 @@
 # DEMO.md: the executive walkthrough script
 
-The presenter's script for a 12 minute demo of Agent Desk on one corporate
+The presenter's script for a 12 minute demo of Nexuus Bot on one corporate
 Windows laptop. Every click below exists in the shipped product; the whole
 path is proven headless by `python tools/demo_walkthrough.py` (19 steps, run
 it once before the demo to warm up). Nothing leaves the machine except
@@ -22,7 +22,7 @@ configured.
 ## The URL flow (how it starts)
 
 Double-click `tools/agent-desk.cmd`. It finds Python, starts the dashboard
-windowless, prints `Agent Desk is running: http://127.0.0.1:8765/auth/<one-time-token>`
+windowless, prints `Nexuus Bot is running: http://127.0.0.1:8765/auth/<one-time-token>`
 and opens the browser at that link itself. The link is the session: it
 becomes the cookie, there is no sign-in screen. If the browser did not
 open, copy the printed link; if port 8765 was taken, the printed link

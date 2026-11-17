@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Nuitka entry point for the Agent Desk bundle.
+"""Nuitka entry point for the Nexuus Bot bundle.
 
 Nuitka is pointed at a script rather than at src/agentdesk/server/ so the
 compiled program keeps the real package name (agentdesk) instead of

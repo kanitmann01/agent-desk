@@ -838,17 +838,17 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         "/assistant": "Assistant",
         "/settings": "Settings",
         "/marketplace": "Marketplace",
-    }.get(active, "Agent Desk")
+    }.get(active, "Nexuus Bot")
     phone = (
         '<div class="phone-bar">'
-        '<b class="brand-name">Agent Desk</b>'
+        '<b class="brand-name">Nexuus Bot</b>'
         f'<span class="phone-current">{current_label}</span>'
         '<button type="button" class="phone-menu" aria-expanded="false" '
         'aria-controls="main-rail">Menu</button></div>'
     )
     return (
         f'<nav class="rail" id="main-rail" aria-label="Main">{phone}'
-        '<div class="brand"><b class="brand-name">Agent Desk</b></div>'
+        '<div class="brand"><b class="brand-name">Nexuus Bot</b></div>'
         f'{entry("/", _ICON_DASHBOARD, "Dashboard")}'
         # The count rides inside the link: one row on the rail, and
         # the accessible name carries the waiting number.
@@ -863,7 +863,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
         f'{toggle}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
-        '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
+        '<div><b class="user-name">Nexuus Bot</b><small>local only</small></div></div>'
         "</nav>"
     )
 
@@ -892,16 +892,16 @@ def page_shell(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc_title}, Agent Desk</title>
+<title>{esc_title}, Nexuus Bot</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <div class="app">{_rail(active, inbox_count)}
 <main><div class="doc">
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Nexuus Bot</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
+<footer class="page-foot"><span>Nexuus Bot <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
 </div>
 </main>
 <script src="/static/app.js"></script>
@@ -936,7 +936,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Desk</title>
+<title>Nexuus Bot</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -955,7 +955,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
+<footer class="page-foot"><span>Nexuus Bot <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
 </main>
 </div>
 <script src="/static/app.js"></script>
@@ -971,7 +971,7 @@ def render_error_page(title: str, message: str) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}, Agent Desk</title>
+<title>{html.escape(title)}, Nexuus Bot</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -1012,7 +1012,7 @@ def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_
             "Reset to automatic discovery</button>"
         )
     content = """<h1>Connect your calendar</h1>
-<p>Agent Desk reads one file that a small Power Automate flow keeps fresh
+<p>Nexuus Bot reads one file that a small Power Automate flow keeps fresh
 in your OneDrive. You create that flow once, in your browser: no admin,
 no terminal, nothing installed.</p>
 <ol>

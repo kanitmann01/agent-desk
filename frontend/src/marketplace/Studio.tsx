@@ -39,7 +39,7 @@ function buildManifest(draft: Draft) {
   const highlights = [
     summary || `${name} runs on this desk.`,
     'It reads only the scopes you approve.',
-    'It runs only while Agent Desk is open.',
+    'It runs only while Nexuus Bot is open.',
   ].map((line) => line.slice(0, 120));
   return {
     schemaVersion: 2,

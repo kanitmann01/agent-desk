@@ -1,4 +1,4 @@
-# Agent Desk: Plugin Portfolio, Marketplace, and Enterprise Plan
+# Nexuus Bot: Plugin Portfolio, Marketplace, and Enterprise Plan
 
 **Status:** Draft for approval · 2026-11-15
 **Author:** CTO track (lead agent), for Ken
@@ -271,7 +271,7 @@ A failed validation shows a report, not a stack trace: rule id, field path, what
   "schemaVersion": 2,
   "org": { "id": "acme", "name": "Acme", "anchorFingerprint": "SHA256:..." },
   "publishers": [
-    { "id": "agent-desk", "name": "Agent Desk", "verified": true,
+    { "id": "agent-desk", "name": "Nexuus Bot", "verified": true,
       "keys": [{ "fingerprint": "SHA256:...", "publicKey": "base64...", "validFrom": "2026-11-01", "revokedAt": null }] }
   ],
   "plugins": [
@@ -469,7 +469,7 @@ No new e2e harness in this pass; a scripted walkthrough covers the demo.
 2. **http-get in v1:** ship `competitor-watch` now with allowlist + no-FS rule, or defer? *Recommend ship one reference plugin behind admin policy; it proves the network boundary.*
 3. **Portfolio size:** 24 in-box vs 18? *Recommend 24 planned, first batch 11 finance/time, second 9, aggregates last. Cut the 4 aggregates first if time slips.*
 4. **Admin model:** signed policy + local admin mode, no RBAC? *Recommend yes; document deferral.*
-5. **Product name:** keep **Agent Desk**? *Recommend yes; marketplace is a surface, not a second brand.*
+5. **Product name:** keep **Nexuus Bot**? *Recommend yes; marketplace is a surface, not a second brand.*
 6. **Marketplace placement:** SPA `/marketplace`, `/plugins` redirects? *Recommend yes.*
 
 ---

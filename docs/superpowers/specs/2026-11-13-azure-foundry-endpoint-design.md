@@ -5,7 +5,7 @@ Status: approved for planning (pending user review of this spec)
 
 ## Problem
 
-Agent Desk already accepts any OpenAI-compatible endpoint via Settings → Endpoint (Base URL, API key, Model) and `AGENTDESK_LLM_BASE` / `AGENTDESK_LLM_KEY` / `AGENTDESK_LLM_MODEL`. Azure AI Foundry’s OpenAI-compatible surface uses the same three credentials, but authenticates with the `api-key` header rather than `Authorization: Bearer`. The adapter today always sends Bearer, so Foundry paste-in is not reliably plug-and-play.
+Nexuus Bot already accepts any OpenAI-compatible endpoint via Settings → Endpoint (Base URL, API key, Model) and `AGENTDESK_LLM_BASE` / `AGENTDESK_LLM_KEY` / `AGENTDESK_LLM_MODEL`. Azure AI Foundry’s OpenAI-compatible surface uses the same three credentials, but authenticates with the `api-key` header rather than `Authorization: Bearer`. The adapter today always sends Bearer, so Foundry paste-in is not reliably plug-and-play.
 
 ## Goals
 

@@ -1,6 +1,6 @@
 ---
 version: 1
-name: Agent Desk morning brief
+name: Nexuus Bot morning brief
 description: A printed morning brief, not a card grid. Stone paper, black rules, one oxide action, fir only when a number is up.
 colors:
   paper: "#F6F3EC"
@@ -44,7 +44,7 @@ elevation:
   card-hover: "4px 4px 0 #141414"
 ---
 
-# Agent Desk
+# Nexuus Bot
 
 The desk is a morning brief for one manager. The first screen is a greeting, one question, one figure, and the decisions that are waiting. It is not a mosaic of equal cards.
 

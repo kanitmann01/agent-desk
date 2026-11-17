@@ -63,7 +63,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   return (
     <nav id="main-rail" className={menuOpen ? 'rail rail-open' : 'rail'} aria-label="Main">
       <div className="phone-bar">
-        <span className="brand-name">Agent Desk</span>
+        <span className="brand-name">Nexuus Bot</span>
         <span className="phone-current">{sectionName}</span>
         <button
           type="button"
@@ -76,7 +76,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
         </button>
       </div>
       <div className="brand">
-        <span className="brand-name">Agent Desk</span>
+        <span className="brand-name">Nexuus Bot</span>
       </div>
       <a href="/" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
       <a href="/inbox" aria-label={inboxName}><span className="rail-mark" aria-hidden="true">I</span><span className="rail-label">Inbox</span>{badge}</a>
@@ -108,7 +108,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
       <div className="user">
         <span className="avatar" aria-hidden="true">AD</span>
         <div>
-          <b className="user-name">Agent Desk</b>
+          <b className="user-name">Nexuus Bot</b>
           <small>local only</small>
         </div>
       </div>
