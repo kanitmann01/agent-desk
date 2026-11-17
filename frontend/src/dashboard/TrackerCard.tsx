@@ -1,31 +1,17 @@
-// The workbook tracker on the desk: a status and one action. The setup
-// sheet is separate. A live card is the instance name, one figure, the
-// signed change, a sparkline, and the file name.
+// The workbook tracker on the desk. Live: the tracker pattern (name,
+// figure, signed change, trend line, pace to the goal, file). Not set
+// up: the dotted wireframe with one Set up action. The setup sheet is
+// separate and opens over the desk.
 import { useState } from 'react';
 import type { PluginCard } from '../types';
 import Button from '../components/Button';
 import TrackerSetup from './TrackerSetup';
+import { TrackerFigure, WireState } from './cells';
 
 interface TrackerCardProps {
   card: PluginCard;
   onRefetch: () => Promise<void>;
   onExpired: () => void;
-}
-
-function Sparkline({ points }: { points: number[] }) {
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const span = max - min || 1;
-  const coords = points.map((point, index) => {
-    const x = (index / (points.length - 1)) * 100;
-    const y = 28 - ((point - min) / span) * 24;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  return (
-    <svg className="tracker-spark" viewBox="0 0 100 32" role="img" aria-label="Recent readings">
-      <polyline points={coords} fill="none" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
 }
 
 export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardProps) {
@@ -35,34 +21,19 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
   const live = Boolean(tracker) && card.freshness === 'fresh';
 
   return (
-    <article className={live ? 'tracker-live' : 'tracker-live tracker-empty'}>
+    <div className="tracker-card">
       {live && tracker ? (
-        <>
-          <header className="tracker-head">
-            <h2>{tracker.name}</h2>
-            <Button tone="secondary" onClick={() => setOpen(true)}>Edit</Button>
-          </header>
-          <div className="kpi">
-            <div className={`value${tracker.direction === 'down' ? ' down' : ''}${tracker.direction === 'flat' ? ' flat' : ''}`}>
-              {tracker.value}
-              {tracker.unit ? <span className="tracker-unit">{tracker.unit}</span> : null}
-            </div>
-          </div>
-          <p className={tracker.direction === 'down' ? 'tracker-delta down' : tracker.direction === 'up' ? 'tracker-delta up' : 'tracker-delta'}>
-            {tracker.delta === 'First reading' ? 'First reading' : `${tracker.delta} since the last reading`}
-          </p>
-          {tracker.goal ? (
-            <p className="brief-quiet">Goal {tracker.goal.value}{tracker.goal.unit ? ` ${tracker.goal.unit}` : ''}</p>
-          ) : null}
-          {tracker.paceNote ? <p className="brief-quiet">{tracker.paceNote}</p> : null}
-          {tracker.points.length >= 2 ? <Sparkline points={tracker.points} /> : null}
-          <p className="tracker-file">{tracker.file}</p>
-        </>
+        <TrackerFigure
+          view={tracker}
+          action={<Button tone="secondary" className="btn-sm" onClick={() => setOpen(true)}>Edit</Button>}
+        />
       ) : (
         <>
-          <h2>{card.title || 'Workbook tracker'}</h2>
-          <p className="brief-quiet">No workbook is connected, so there is nothing to track.</p>
-          <Button tone="primary" onClick={() => setOpen(true)}>Set up</Button>
+          <h3 className="cell-title">{card.title || 'Workbook tracker'}</h3>
+          <WireState
+            line="Pick a workbook and the column to follow. Nothing is read until you confirm."
+            action={<Button tone="primary" className="btn-sm" onClick={() => setOpen(true)}>Set up</Button>}
+          />
         </>
       )}
       {open && setup ? (
@@ -85,6 +56,6 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
           onExpired={onExpired}
         />
       ) : null}
-    </article>
+    </div>
   );
 }

@@ -112,7 +112,6 @@ describe('index.css speaks the warm-paper system', () => {
       'backdrop-filter',
       'conic-gradient',
       'linear-gradient',
-      'radial-gradient',
       'text-shadow',
       'drop-shadow',
       '@property',
@@ -120,6 +119,15 @@ describe('index.css speaks the warm-paper system', () => {
     ]) {
       expect(css, `banned effect survived: ${banned}`).not.toContain(banned);
     }
+  });
+
+  it('allows one radial light, monochrome, on the Unkey hero only', () => {
+    const radials = css.match(/radial-gradient\([^;]*\);/g) ?? [];
+    expect(radials).toHaveLength(1);
+    expect(radials[0]).toMatch(/^radial-gradient\(ellipse [^;]*rgb\(255 255 255 \/ \.\d+\),rgb\(255 255 255 \/ 0\)\);$/);
+    expect(css).toContain(`--hero-light:${radials[0]}`);
+    expect(css.match(/--hero-light:none;/g)).toHaveLength(2);
+    expect(marketCss).not.toContain('gradient');
   });
 
   it('sets numerals in Geist Mono and words in Geist', () => {
@@ -209,12 +217,13 @@ describe('the authored sheet keeps its interaction promises', () => {
   });
 
   it('gives the command bar field a visible focus ring', () => {
-    expect(css).toContain(':focus-visible{outline:2px solid var(--ink-1)');
+    expect(css).toContain(':focus-visible{outline:2px solid var(--focus)');
     expect(css).not.toContain('.cmd-field:focus{outline:none');
   });
 
-  it('stacks the command bar through its wrapper on small screens', () => {
-    expect(css).toContain('.cmd-magnet{flex:1 1 100%');
+  it('folds Research into an icon button inside the field on small screens', () => {
+    expect(css).toContain('.cmd-magnet{flex:none;display:flex}');
+    expect(css).toContain('.cmd-send-label{');
   });
 });
 
@@ -435,14 +444,14 @@ describe('marketplace type stays inside the design language', () => {
   it('draws catalog icons as strokes without a filled chip', () => {
     for (const selector of ['.mkt-card-icon', '.mkt-detail-icon', '.mkt-pack-icon']) {
       expect(decl(marketCss, selector, 'background'), selector).toBe('none');
-      expect(decl(marketCss, selector, 'color'), selector).toBe('var(--primary)');
+      expect(decl(marketCss, selector, 'color'), selector).toBe('var(--accent-text)');
     }
   });
 
   it('shows a keyboard ring on the marketplace main and keeps the search well ring', () => {
-    expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--ink-1)');
+    expect(marketCss).toContain('.mkt-main:focus-visible { outline: 2px solid var(--focus)');
     expect(marketCss).toContain('.mkt-search-field:focus-within');
-    expect(marketCss).toContain('.mkt-search-field input:focus-visible { outline: 2px solid var(--ink-1)');
+    expect(marketCss).toContain('.mkt-search-field input:focus-visible { outline: 2px solid var(--focus)');
   });
 });
 

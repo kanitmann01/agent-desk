@@ -10,6 +10,8 @@ import { postJson } from '../api';
 import type { PluginCard, PluginElement } from '../types';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
 import TrackerCard from './TrackerCard';
+import Button from '../components/Button';
+import { WireState } from './cells';
 
 interface PluginCardViewProps {
   card: PluginCard;
@@ -56,6 +58,20 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
   const [note, setNote] = useState('');
   if (card.payload?.setup || card.payload?.tracker || card.id === 'excel-report' || card.id.startsWith('excel-report~')) {
     return <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />;
+  }
+  if (card.freshness === 'setup') {
+    // Installed, not set up yet: the dotted wireframe and one action.
+    const base = card.pluginId || card.id.split('~')[0];
+    return (
+      <div className="plugin-unset">
+        <h3 className="cell-title">{card.title}</h3>
+        <WireState
+          wide
+          line="Installed, not set up. It reads nothing until you choose what it watches."
+          action={<Button tone="secondary" className="btn-sm" href={`/marketplace/plugin/${encodeURIComponent(base)}`}>Set up</Button>}
+        />
+      </div>
+    );
   }
   const fresh = card.freshness === 'fresh';
   const elements = fresh ? (card.payload?.elements ?? []) : [];

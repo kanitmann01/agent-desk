@@ -69,8 +69,8 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
           <kbd>Enter</kbd> to ask
         </span>
         <span className="cmd-magnet">
-          <button className="cmd-send" type="button" onClick={() => void ask()} disabled={busy}>
-            Research {ICON_SEND}
+          <button className="cmd-send" type="button" aria-label="Research" onClick={() => void ask()} disabled={busy}>
+            <span className="cmd-send-label">Research</span> {ICON_SEND}
           </button>
         </span>
       </div>
