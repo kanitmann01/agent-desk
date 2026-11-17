@@ -7,7 +7,7 @@ prints the summary.
 from agentdesk.probe.core import GateResult, Verdict
 from agentdesk.probe.verdict import verdict_line
 
-_REPORT_HEADER = """# Agent Desk environment probe report
+_REPORT_HEADER = """# Nexuus Bot environment probe report
 
 - Generated: {generated}
 - Python: {python}
@@ -49,7 +49,7 @@ def render_report(results, verdict: Verdict, context) -> str:
 def render_summary(results, verdict: Verdict) -> str:
     """Short stdout summary; its final line is the verdict line."""
     ordered = sorted(results, key=lambda r: r.number)
-    lines = ["Agent Desk environment probe"]
+    lines = ["Nexuus Bot environment probe"]
     lines.extend(f"Gate {r.number}: {r.title} ({r.key}): {r.status}" for r in ordered)
     lines.extend(f"Note: {note}" for note in verdict.notes)
     lines.append(verdict_line(verdict))

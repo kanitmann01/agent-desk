@@ -39,7 +39,7 @@ function buildManifest(draft: Draft) {
   const highlights = [
     summary || `${name} runs on this desk.`,
     'It reads only the scopes you approve.',
-    'It runs only while Agent Desk is open.',
+    'It runs only while Nexuus Bot is open.',
   ].map((line) => line.slice(0, 120));
   return {
     schemaVersion: 2,
@@ -76,18 +76,27 @@ function buildManifest(draft: Draft) {
   };
 }
 
-function buildWidgetUi(draft: Draft, manifest: ReturnType<typeof buildManifest>) {
-  const elements: MarketElement[] = [
-    { kind: 'metric', label: 'Value', value: '0' },
-    { kind: 'text', text: draft.summary.trim() || 'A small local plugin.' },
-  ];
+// The widget.ui.json the validator and the runtime read: every element
+// names its kind in `type` (lint.py and plugins/render.py), never in
+// `kind`, which is only the preview's rendered shape.
+function buildWidgetUi(manifest: ReturnType<typeof buildManifest>) {
   return {
     type: 'card',
     title: manifest.name,
-    elements: elements.map((element) => element.kind === 'metric'
-      ? { kind: 'metric', label: element.label, binding: 'value' }
-      : { kind: 'text', label: 'About', binding: 'note' }),
+    elements: [
+      { type: 'metric', label: 'Value', binding: 'value' },
+      { type: 'text', label: 'About', binding: 'note' },
+    ],
   };
+}
+
+// The live preview: the same two elements in the rendered shape the
+// sample renderer takes.
+function previewElements(draft: Draft): MarketElement[] {
+  return [
+    { kind: 'metric', label: 'Value', value: '0' },
+    { kind: 'text', text: draft.summary.trim() || 'A small local plugin.' },
+  ];
 }
 
 function buildSample(): { bindings: Record<string, unknown>; state: string; checkedAt: string } {
@@ -119,10 +128,10 @@ export function StudioPage() {
   }, []);
 
   const manifest = useMemo(() => buildManifest(draft), [draft]);
-  const widgetUi = useMemo(() => buildWidgetUi(draft, manifest), [draft, manifest]);
+  const widgetUi = useMemo(() => buildWidgetUi(manifest), [manifest]);
   const sample = useMemo(() => buildSample(), []);
   const previewSample: MarketSample = {
-    elements: widgetUi.elements as MarketElement[],
+    elements: previewElements(draft),
     status: 'fresh',
     cause: '',
     checked_at: sample.checkedAt,
@@ -324,7 +333,7 @@ export function StudioPage() {
               <textarea value={changelog} onChange={(event) => setChangelog(event.target.value)}
                         rows={4} placeholder="What changed in this version?" required />
             </label>
-            <label className="mkt-check">
+            <label className="mkt-grant">
               <input type="checkbox" checked={grant} onChange={(event) => setGrant(event.target.checked)} />
               <span>I grant this desk permission to distribute the plugin under its declared license.</span>
             </label>

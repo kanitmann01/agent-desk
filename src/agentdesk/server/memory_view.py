@@ -65,6 +65,20 @@ GRAPH_LINK = (
 )
 
 
+def graph_island_html(mode: str) -> str:
+    """The mount point of the interactive memory graph (the SPA build's
+    memory-graph island) with its stylesheet and module script. Without
+    JavaScript the section keeps a plain pointer to the static graph."""
+    return (
+        f'<section id="memory-graph-root" data-endpoint="/api/memory/graph"'
+        f' data-mode="{html.escape(mode, quote=True)}" aria-label="Memory graph">'
+        '<p class="empty">The interactive graph needs JavaScript. '
+        '<a href="/memory/graph">Open the static graph</a>.</p></section>'
+        '<link rel="stylesheet" href="/static/spa/assets/memory-graph.css">'
+        '<script type="module" src="/static/spa/assets/memory-graph.js"></script>\n'
+    )
+
+
 def _locked_banner(cause: str) -> str:
     """The locked state: the cause verbatim, and what it means. Nothing
     else renders: a locked store reads and writes nothing."""
@@ -335,6 +349,7 @@ def render_memory_page(
     notice: str | None = None,
     observations: list[Observation] | None = None,
     embeddings: dict | None = None,
+    graph_island: bool = False,
 ) -> str:
     """The full memory document: list, add, edit, delete, recall preview,
     the entities with their merge form, the optional junk-sweep preview,
@@ -354,12 +369,13 @@ def render_memory_page(
         if observations is not None else ""
     )
     embeddings_row = _embeddings_section(embeddings)
+    island_row = graph_island_html("page") if graph_island else ""
     content = f"""<h1>Memory</h1>
 {notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
 them, 500 characters in total, as derived abstractions it may read;
 nothing is captured from your conversations. Facts arrive here, or with
 an inbox card you accept.</p>
-{_encrypt_section(encrypt)}
+{island_row}{_encrypt_section(encrypt)}
 {_recall_section(recall, query)}
 <h2>Add a fact</h2>
 <form method="post" action="/memory/add" class="cardform">

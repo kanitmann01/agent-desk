@@ -69,4 +69,41 @@ describe('Plugin Studio', () => {
     expect(publish).toBeDisabled();
     expect(screen.queryByRole('heading', { name: 'Pending review' })).not.toBeInTheDocument();
   });
+
+  // Regression: the generated widget.ui.json named each element's kind in
+  // `kind`, the validator reads `type`, so every Studio draft failed with
+  // "unknown element kind: None" and Publish never unlocked.
+  it('sends widget elements typed the way the validator reads them, then publishes', async () => {
+    let sentElements: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/marketplace/validate') {
+        const body = JSON.parse(String(init?.body)) as { widgetUi: { elements: Record<string, unknown>[] } };
+        sentElements = body.widgetUi.elements;
+        return jsonResponse({ ok: true, failures: [] });
+      }
+      if (url === '/api/marketplace/publish') {
+        return jsonResponse({ pendingId: 'p-1', status: 'pending-review', validation: { ok: true, failures: [] } }, 202);
+      }
+      return jsonResponse(installedResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    await user.type(await screen.findByLabelText('Plugin id'), 'team-notes');
+    await user.type(screen.getByLabelText('Name'), 'Team notes');
+    await user.click(screen.getByRole('button', { name: 'Run validator' }));
+    expect(await screen.findByText('Validator passed.')).toBeInTheDocument();
+    expect(sentElements.length).toBeGreaterThan(0);
+    for (const element of sentElements) {
+      expect(typeof element.type).toBe('string');
+      expect(element).not.toHaveProperty('kind');
+    }
+
+    await user.type(screen.getByLabelText(/Changelog/), 'First version.');
+    await user.click(screen.getByLabelText(/I grant this desk/));
+    await user.click(screen.getByRole('button', { name: 'Publish for review' }));
+    expect(await screen.findByRole('heading', { name: 'Pending review' })).toBeInTheDocument();
+  });
 });

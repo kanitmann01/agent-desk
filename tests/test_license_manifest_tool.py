@@ -121,7 +121,7 @@ def test_fallback_rejects_multiline_strings():
 
 def test_fallback_rejects_dotted_keys():
     with pytest.raises(ValueError, match=r"sample.toml:2: dotted keys"):
-        fallback('[project]\nname.first = "Agent Desk"\n')
+        fallback('[project]\nname.first = "Nexuus Bot"\n')
 
 
 def test_fallback_rejects_duplicate_table_headers():

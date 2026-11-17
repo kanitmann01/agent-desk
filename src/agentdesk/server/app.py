@@ -143,6 +143,7 @@ from agentdesk.server.commitments import (
 from agentdesk.server.graph_view import parse_graph_query, render_graph_page
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
+from agentdesk.server.memory_graph_api import build_memory_graph
 from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
 from agentdesk.server.plugins_view import render_plugins_page
 from agentdesk.server.peers_view import render_peers_page
@@ -293,6 +294,12 @@ _SPA_MIME = {
     ".woff2": "font/woff2",
     ".txt": "text/plain; charset=utf-8",
 }
+
+
+def memory_graph_island_built() -> bool:
+    """True when the committed SPA build carries the memory graph island
+    (a source checkout without a build keeps the static graph link)."""
+    return (SPA_DIR / "assets" / "memory-graph.js").is_file()
 
 
 def spa_index_path() -> Path:
@@ -1029,7 +1036,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._authenticated():
             self._refuse_and_close(
                 401, "Session required",
-                "Open Agent Desk from its shortcut to get a fresh link.",
+                "Open Nexuus Bot from its shortcut to get a fresh link.",
             )
             return False
         return True
@@ -1136,6 +1143,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_memory_page()
         elif path == "/memory/graph":
             self._memory_graph_page()
+        elif path == "/api/memory/graph":
+            self._memory_graph_json()
         elif path == "/memory/sweep":
             self._memory_sweep_page()
         elif path == "/memory/encrypt":
@@ -1924,6 +1933,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             demo_data.seed(server.inbox, default_data_dir()) if value
             else demo_data.clear(server.inbox, default_data_dir())
         )
+        # The Memory page graph's labelled sample memories ride the same
+        # switch; a locked store is left alone.
+        memories = (
+            demo_data.seed_memory(server.memory) if value
+            else demo_data.clear_memory(server.memory)
+        )
+        if memories:
+            verb = "seeded" if value else "removed"
+            result = dict(result, detail=f"{result['detail']} Memory: {verb} {memories} sample facts.")
         self._audit("demo.seeded" if value else "demo.cleared",
                     target="sample_data", detail=result["detail"])
 
@@ -2327,6 +2345,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 notice=notice, observations=memory.observations(),
                 embeddings=memory.embedding_counts(),
                 inbox_count=self._inbox_waiting_count(),
+                graph_island=memory_graph_island_built(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2424,8 +2443,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
             since=since,
             until=until,
             inbox_count=self._inbox_waiting_count(),
+            island_query=query if memory_graph_island_built() else None,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _memory_graph_json(self) -> None:
+        """The Memory page graph's data (GET /api/memory/graph): the
+        store's real facts, observations, entities, retained excerpts
+        and the actions that wrote them, with each node's provenance.
+        Same window vocabulary as the static graph page; a locked store
+        answers 423 with its cause and reads nothing."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            self._send_json(503, {"status": "unavailable",
+                                  "error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_json(423, {"status": "locked", "error": memory.locked_cause})
+            return
+        self._configure_memory_embeddings()
+        _path, _sep, query = self.path.partition("?")
+        since, until, limit = parse_graph_query(query)
+        payload = build_memory_graph(
+            memory,
+            inbox=self.server.inbox,  # type: ignore[attr-defined]
+            since=since,
+            until=until,
+            limit=limit,
+            semantic=bool(memory.embeddings_active),
+        )
+        self._send_json(200, payload)
 
     def _memory_sweep(self) -> None:
         """Delete the checked candidates through the donor's removeFacts
@@ -5512,7 +5559,7 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     if sys.stdout is not None:  # pythonw runs without a console stream
         # flush: launchers redirect this to a log file, where a buffered
         # print would hide the one-time start link until the process ends
-        print(f"Agent Desk is running: {url}", flush=True)
+        print(f"Nexuus Bot is running: {url}", flush=True)
     start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
