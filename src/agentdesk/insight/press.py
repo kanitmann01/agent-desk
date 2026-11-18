@@ -22,11 +22,11 @@ DISCLOSURE = (
 
 
 def draft_reply(
-    server: Any,
+    server: Any,  # noqa: ARG001 - kept for the caller's symmetry; unused by design
     body: object,
     *,
     preferences: dict,
-    complete: Callable[[dict, str], str] | None = None,
+    complete: Callable[[str], str] | None = None,
 ) -> dict:
     """Compose one reply draft for one thread, or say why not."""
     if not isinstance(body, dict):

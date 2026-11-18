@@ -160,6 +160,30 @@ def test_a_missing_memory_is_a_note_not_a_crash():
     assert context.memory_note
 
 
+def test_the_next_meeting_rides_in_the_context():
+    view = {
+        "upcoming": [{"time": "2026-11-19T09:30:00+00:00", "title": "Pricing review", "meta": "Zoom"}],
+        "items": [{"text": "Confirm with Dana", "done": False, "due": "2026-11-19T09:30:00+00:00"}],
+    }
+    server = SimpleNamespace(memory=None, calendar=SimpleNamespace(day_view=lambda: view))
+
+    context = build_context(server, defaults())
+
+    assert context.agenda == {
+        "title": "Pricing review",
+        "time": "2026-11-19T09:30:00+00:00",
+        "meta": "Zoom",
+        "prep": ["Confirm with Dana"],
+    }
+
+
+def test_no_calendar_is_a_note_not_a_crash():
+    context = build_context(SimpleNamespace(memory=None, calendar=None), defaults())
+
+    assert context.agenda is None
+    assert "calendar" in context.agenda_note
+
+
 def test_recall_forgets_the_score_and_keeps_the_source():
     class Fact:
         def __init__(self, text, source):

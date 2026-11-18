@@ -1355,6 +1355,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self.server,
                     self._read_json_body(),
                     preferences=PreferenceStore(default_data_dir()).read(),
+                    complete=self._insight_complete(),
                 )
             except InsightError as exc:
                 self._send_json(exc.status, {"error": exc.message, "code": exc.code})
@@ -4132,6 +4133,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         def complete(prompt: str) -> str:
             return server.llm(prompt)
+        return complete
+
+    def _insight_complete(self):
+        """The one model call a reading may offer, or None when this desk
+        has no endpoint or the user turned model calls off. A reading that
+        gets None keeps its local elements and offers no press."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.llm is None or not server.llm_endpoint:
+            return None
+        if not self._source_allowed("endpoint_enabled"):
+            return None
+
+        def complete(prompt: str) -> str:
+            return server.llm(prompt)
+
         return complete
 
     def _setup_error(self, exc: Exception) -> None:

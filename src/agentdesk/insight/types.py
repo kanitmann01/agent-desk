@@ -29,6 +29,11 @@ class InsightContext:
     now: float
     recall: Recall | None = None
     memory_note: str = ""
+    # The next meeting, when the calendar is readable: {"title", "time",
+    # "meta", "prep"} or None. Shared so a card about research can be
+    # about *this* meeting without reaching for the calendar itself.
+    agenda: dict | None = None
+    agenda_note: str = ""
 
     @property
     def density(self) -> str:

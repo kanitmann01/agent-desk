@@ -20,7 +20,7 @@ def compose(
     thread: dict,
     preferences: dict,
     *,
-    complete: Callable[[dict, str], str] | None = None,
+    complete: Callable[[str], str] | None = None,
 ) -> str:
     """One reply draft from the thread's subject, sender and last line."""
     return ""
