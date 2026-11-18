@@ -138,3 +138,25 @@ def test_an_unknown_receipt_name_draws_nothing():
 def test_no_receipt_line_without_a_reading():
     assert app._receipt_line({"elements": []}) == ""
     assert app._receipt_line({"insight": {"status": "ok"}}) == ""
+
+def test_a_rendered_card_with_a_press_draws_a_form_and_escapes_it():
+    card = _receipt_card({})
+    card["payload"]["insight"]["press"] = {
+        "label": "Draft a reply",
+        "route": "/api/insight/draft",
+        "kind": "reply-draft",
+        "thread": {"subject": "<script>Budget</script>", "sender": "Priya Raman"},
+    }
+    widget = app.DashboardHandler._plugin_widget(None, card)
+    body = widget.body_html
+    assert '<form method="post" action="/insight/press"' in body
+    assert 'name="kind" value="reply-draft"' in body
+    assert 'name="sender" value="Priya Raman"' in body
+    assert "<script>Budget</script>" not in body
+    assert "Draft a reply" in body
+
+
+def test_a_rendered_card_without_a_press_draws_no_form():
+    widget = app.DashboardHandler._plugin_widget(None, _receipt_card({}))
+    assert "/insight/press" not in widget.body_html
+
