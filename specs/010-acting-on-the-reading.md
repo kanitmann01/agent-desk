@@ -1,6 +1,6 @@
 # 010: The desk acts on what it read
 
-**Status:** ready-for-agent
+**Status:** done (2026-11-18); evidence in `docs/evidence/2026-11-18-acting-on-the-reading.md`
 **GitHub:** issue #136; its six tickets are #137–#142
 **Builds on:** spec 009 (the coupled reading), branch `feature/coupled-intelligence`
 
@@ -103,4 +103,5 @@ Test external behaviour only, at the highest existing seam.
 
 - The press is the shortest path from "the desk noticed" to "the desk did". It is also the first place where a model's words would enter a durable artefact, which is why staging goes through the approval card rather than the outbox.
 - Receipts are cheap now and expensive later: every family already knows which preference it consulted, but reconstructing that from sentences would be guesswork.
-- The two SPA tickets are the only part of this spec that cannot be verified on this machine. They are written as ordinary tickets so that a checkout with dependencies can pick them up unchanged.
+- The two SPA tickets were written as unverifiable when dependencies were absent. They were verified after `npm ci --include=dev`: `tsc --noEmit` exit 0 and 24 vitest files / 272 tests green (with `NODE_ENV=test`; this machine exports `production`, which breaks every render test).
+- Both remaining gate failures are the pre-existing registry content-pin drift, reproduced identically at base. The gate's own `--plugins` flag is appended once per plugin and argparse keeps only the last, so it checks one plugin; that is a separate defect.
