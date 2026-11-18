@@ -24,6 +24,15 @@ export async function postJson(url: string, body?: unknown): Promise<ApiResult> 
   return { ok: response.ok, status: response.status, data };
 }
 
+export async function postFile(url: string, file: File): Promise<ApiResult> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', Accept: 'application/json' },
+    body: file,
+  });
+  return { ok: response.ok, status: response.status, data: await safeJson(response) };
+}
+
 async function safeJson(response: Response): Promise<unknown> {
   try {
     return await response.json();

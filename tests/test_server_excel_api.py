@@ -22,6 +22,7 @@ import server_harness
 from agentdesk.excel.core import WorkbookLocked
 from agentdesk.excel.watcher import Adapters, ExcelWatch
 from agentdesk.excel.xlsx import parse_workbook_bytes
+from agentdesk.plugins.config import ConfigError
 from agentdesk.server import app as server_app
 from excel_fixtures import BASE_ROWS, base_workbook, make_xlsx
 
@@ -302,7 +303,8 @@ class TestTkPickerParentParsing:
         def fake_run(cmd, **kwargs):
             seen["cmd"] = cmd
             seen["kwargs"] = kwargs
-            return FakePickerProcess(stdout="D:/books/Q4-sales.xlsx\n")
+            return FakePickerProcess(stdout=json.dumps(
+                {"status": "picked", "path": "D:/books/Q4-sales.xlsx"}) + "\n")
 
         monkeypatch.setattr(server_app.subprocess, "run", fake_run)
 
@@ -311,7 +313,10 @@ class TestTkPickerParentParsing:
         assert seen["cmd"][0] == sys.executable
         assert "-c" in seen["cmd"]
 
-    def test_empty_output_is_a_cancelled_dialog(self, monkeypatch):
+    def test_empty_output_is_still_none_for_the_workbook_picker(self, monkeypatch):
+        # The dashboard and calendar pages publish 200 {"path": null} for
+        # "no dialog here, type it", so the workbook picker keeps folding
+        # an unreadable child into None; only the plugin picker reports it.
         def fake_run(cmd, **kwargs):
             return FakePickerProcess(stdout="\n")
 
@@ -326,6 +331,52 @@ class TestTkPickerParentParsing:
         monkeypatch.setattr(server_app.subprocess, "run", fake_run)
 
         assert server_app.tk_pick_workbook() is None
+
+    def test_the_plugin_picker_reports_a_dialog_that_did_not_open(self, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            return FakePickerProcess(stdout="")
+
+        monkeypatch.setattr(server_app.subprocess, "run", fake_run)
+
+        # The setup route is the one that must tell a cancel from a broken
+        # dialog, so its picker propagates the refusal instead of None.
+        with pytest.raises(ConfigError) as caught:
+            server_app.tk_pick_plugin_file()
+        assert caught.value.code == "config:picker-unavailable"
+        assert server_app.tk_pick_workbook() is None
+
+
+class TestPickerOutcome:
+    """The child's one JSON line: picked, cancelled, unavailable.
+
+    Nothing else may mean cancelled - a traceback or an empty line is a
+    dialog that did not open, not a decision the user made.
+    """
+
+    def test_a_picked_document_returns_the_path(self):
+        stdout = '\n{"status": "picked", "path": "C:/books/q4.xlsx"}\n\n'
+        assert server_app._picker_outcome(stdout) == "C:/books/q4.xlsx"
+
+    def test_a_cancelled_document_answers_none(self):
+        assert server_app._picker_outcome('{"status": "cancelled"}') is None
+
+    def test_an_unavailable_document_raises_picker_unavailable(self):
+        with pytest.raises(ConfigError) as caught:
+            server_app._picker_outcome('{"status": "unavailable", "reason": "TclError"}')
+        assert caught.value.code == "config:picker-unavailable"
+        assert caught.value.message == (
+            "The file dialog could not open on this computer. "
+            "Type the file's path, or upload the file instead.")
+
+    def test_garbage_raises_picker_unavailable(self):
+        with pytest.raises(ConfigError) as caught:
+            server_app._picker_outcome("Traceback (most recent call last):\n  TclError: no display")
+        assert caught.value.code == "config:picker-unavailable"
+
+    def test_empty_output_raises_picker_unavailable(self):
+        with pytest.raises(ConfigError) as caught:
+            server_app._picker_outcome("")
+        assert caught.value.code == "config:picker-unavailable"
 
 
 class TestPickerDialogVisibility:
@@ -343,9 +394,16 @@ class TestPickerDialogVisibility:
         assert "-topmost" in snippet
 
     def test_snippet_survives_a_broken_tk(self):
-        # The child answers an empty line, never a traceback.
-        assert "except Exception:" in server_app.WORKBOOK_PICK_SNIPPET
-        assert 'print(chosen)' in server_app.WORKBOOK_PICK_SNIPPET
+        # The child answers one JSON document, never a traceback: the
+        # three statuses are what separate a cancel from a broken dialog.
+        snippet = server_app.WORKBOOK_PICK_SNIPPET
+        assert '"status": "picked"' in snippet
+        assert '"status": "cancelled"' in snippet
+        assert '"status": "unavailable"' in snippet
+        assert "json.dumps" in snippet
+        assert "print(chosen)" not in snippet
+        # The answer leaves the child before teardown can fail.
+        assert snippet.index("json.dumps") < snippet.index("root.destroy")
 
 
 def test_pick_failure_is_never_silent_in_the_page_script():

@@ -1,7 +1,7 @@
 // Same-origin marketplace calls. Every failure becomes a MarketApiError
 // carrying the server's stable code and details, so a surface never has
 // to invent an error message or a status.
-import { getJson, postJson, SESSION_EXPIRED_MESSAGE } from '../api';
+import { getJson, postFile, postJson, SESSION_EXPIRED_MESSAGE } from '../api';
 import type { InstancesResponse } from './types';
 
 export class MarketApiError extends Error {
@@ -57,6 +57,12 @@ export async function getInstances(pluginId: string): Promise<InstancesResponse>
 
 export async function postInstance<T>(pluginId: string, tail: string, body?: unknown): Promise<T> {
   const res = await postJson(`/api/plugins/${encodeURIComponent(pluginId)}/instances${tail}`, body);
+  if (!res.ok) unwrap(res.status, res.data);
+  return res.data as T;
+}
+
+export async function postUpload<T>(pluginId: string, tail: string, file: File): Promise<T> {
+  const res = await postFile(`/api/plugins/${encodeURIComponent(pluginId)}/instances${tail}`, file);
   if (!res.ok) unwrap(res.status, res.data);
   return res.data as T;
 }
