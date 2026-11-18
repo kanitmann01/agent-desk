@@ -1019,6 +1019,61 @@ def render_error_page(title: str, message: str) -> str:
 """
 
 
+def render_press_page(
+    label: str,
+    disclosure: list[str],
+    version: str,
+    text: str = "",
+    source: str = "",
+    note: str = "",
+    refusal: str = "",
+    stage_html: str = "",
+    staged_id: str = "",
+    inbox_count: int = 0,
+) -> str:
+    """What one pressed card answered, as a page of its own.
+
+    The disclosure comes first and the answer second, because the promise
+    and the result are read together: a person decides whether to press
+    again from the same screen that shows what the press sent. A refusal
+    is the whole answer when it happens — the page keeps the sentence and
+    offers nothing to press.
+    """
+    lines = "".join(
+        '<li>' + html.escape(str(line)) + "</li>" for line in disclosure
+    )
+    disclosed = f'<ul class="empty" aria-label="What this press sends">{lines}</ul>' if lines else ""
+    if refusal:
+        answer_html = '<div class="alert"><p>' + html.escape(refusal) + "</p></div>"
+    else:
+        answer_html = '<pre class="press-draft">' + html.escape(text) + "</pre>"
+        if note:
+            answer_html += '<p class="empty">' + html.escape(note) + "</p>"
+        if source:
+            answer_html += (
+                '<p class="empty">Source: <span class="mono">'
+                + html.escape(source)
+                + "</span></p>"
+            )
+    staged = ""
+    if staged_id:
+        staged = (
+            '<p class="empty">Staged as a card: <span class="mono">'
+            + html.escape(staged_id)
+            + '</span>. <a href="/inbox">Open the inbox</a> to accept or edit it.</p>'
+        )
+    content = (
+        '<section class="card">'
+        "<h2>" + html.escape(label) + "</h2>"
+        + disclosed
+        + answer_html
+        + stage_html
+        + staged
+        + "</section>"
+    )
+    return page_shell(label, "/", content, version, inbox_count=inbox_count)
+
+
 def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0) -> str:
     """The calendar connection walkthrough: three browser steps, no terminal.
 

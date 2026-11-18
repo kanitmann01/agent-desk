@@ -88,3 +88,53 @@ def test_the_rendered_card_carries_the_reading(monkeypatch):
     cards = app.with_insight(SimpleNamespace(), [_widget_card([{"kind": "metric", "label": "Value", "value": "91"}])])
     widget = app.DashboardHandler._plugin_widget(None, cards[0])
     assert "Booked falls as Margin rises." in widget.body_html
+
+def _receipt_card(receipts: dict, elements: list[dict] | None = None) -> dict:
+    card = _widget_card(elements or [{"kind": "text", "text": "Booked falls as Margin rises."}])
+    card["payload"]["insight"] = {"status": "ok", "source": "local", "preferences": [], "note": "", "press": None, "receipts": receipts}
+    return card
+
+
+def test_the_rendered_card_prints_what_the_reading_used():
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _receipt_card({
+            "preferences": ["chart"],
+            "inputs": ["memory", "rows"],
+            "counts": {"memory": 2},
+        }),
+    )
+    assert "Used: your chart preference · memory (2 notes) · this card's rows." in widget.body_html
+
+
+def test_one_note_reads_in_the_singular():
+    line = app._receipt_line({
+        "insight": {"receipts": {"preferences": [], "inputs": ["memory"], "counts": {"memory": 1}}}
+    })
+    assert "memory (1 note)" in line
+
+
+def test_a_reading_that_used_only_its_defaults_says_so():
+    only_rows = app._receipt_line({"insight": {"receipts": {"preferences": [], "inputs": ["rows"]}}})
+    assert only_rows == '<p class="w-note">Used the defaults; read only this card\'s rows.</p>'
+    with_memory = app._receipt_line({
+        "insight": {"receipts": {"preferences": [], "inputs": ["memory", "calendar"]}}
+    })
+    assert with_memory == '<p class="w-note">Used the defaults; read memory and this calendar.</p>'
+
+
+def test_a_reading_that_read_nothing_prints_no_receipt():
+    assert app._receipt_line({"insight": {"receipts": {"preferences": [], "inputs": []}}}) == ""
+
+
+def test_an_unknown_receipt_name_draws_nothing():
+    line = app._receipt_line({
+        "insight": {"receipts": {"preferences": ["<b>chart</b>"], "inputs": ["sqlite", "rows"]}}
+    })
+    assert line == '<p class="w-note">Used the defaults; read only this card\'s rows.</p>'
+    assert "sqlite" not in line
+
+
+def test_no_receipt_line_without_a_reading():
+    assert app._receipt_line({"elements": []}) == ""
+    assert app._receipt_line({"insight": {"status": "ok"}}) == ""

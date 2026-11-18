@@ -959,6 +959,99 @@ def _plugin_element_html(element: dict) -> str:
     return ""
 
 
+# How a receipt reads: the seam names preference keys and input names,
+# and this is the only place a key becomes a phrase a person would say.
+# An unknown name draws nothing rather than a raw identifier, so the line
+# can never read like a changelog.
+_RECEIPT_PHRASES = {
+    "chart": "your chart preference",
+    "replyTone": "your reply tone",
+    "replyLength": "your reply length",
+    "insightDensity": "your density setting",
+    "focusTopics": "your focus topics",
+    "prepMinutes": "your prep window",
+}
+_INPUT_PHRASES = {
+    "rows": "this card's rows",
+    "memory": "memory",
+    "calendar": "this calendar",
+}
+_DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows."
+
+# The press page's heading, taken from the label the card carried, so the
+# page a press lands on repeats the sentence the person just pressed.
+_PRESS_LABELS = {"reply-draft": "Draft a reply", "explain-range": "Explain this range"}
+
+
+def _receipt_line(payload: dict) -> str:
+    """One reading's receipts as a quiet line under its card."""
+    insight = payload.get("insight")
+    receipts = insight.get("receipts") if isinstance(insight, dict) else None
+    if not isinstance(receipts, dict):
+        return ""
+    chosen: list[str] = []
+    for key in receipts.get("preferences") or []:
+        phrase = _RECEIPT_PHRASES.get(str(key))
+        if phrase:
+            chosen.append(phrase)
+    counts = receipts.get("counts") if isinstance(receipts.get("counts"), dict) else {}
+    notes = counts.get("memory")
+    read: list[str] = []
+    for name in receipts.get("inputs") or []:
+        phrase = _INPUT_PHRASES.get(str(name))
+        if not phrase:
+            continue
+        if name == "memory" and isinstance(notes, int) and notes > 0:
+            phrase = f"memory ({notes} note)" if notes == 1 else f"memory ({notes} notes)"
+        read.append(phrase)
+    # The phrases are the server's own, so the only escaping needed is for
+    # the ampersand-and-angle shapes; the apostrophe in "this card's rows"
+    # is copy, and escaping it would print an entity where a person reads.
+    if chosen:
+        return '<p class="w-note">Used: ' + html.escape(" · ".join(chosen + read), quote=False) + ".</p>"
+    # A reading that read nothing at all says nothing: a receipt line under
+    # an empty card would invent a consultation that did not happen.
+    if not read:
+        return ""
+    if read == ["this card's rows"]:
+        return '<p class="w-note">' + _DEFAULTS_RECEIPT + "</p>"
+    return '<p class="w-note">Used the defaults; read ' + html.escape(" and ".join(read), quote=False) + ".</p>"
+
+
+def _press_form(card: dict, press: object) -> str:
+    """A card's press as a real control: a plain form, no script.
+
+    The hidden fields are the whole request, so what the page posts is
+    exactly what the press promised to send. The card's identity rides
+    along so the answer can name the card that was pressed.
+    """
+    if not isinstance(press, dict):
+        return ""
+    label = str(press.get("label") or "").strip()
+    kind = str(press.get("kind") or "").strip()
+    if not label or not kind:
+        return ""
+    hidden = {
+        "kind": kind,
+        "text": press.get("text"),
+        "subject": press.get("subject"),
+        "sender": press.get("sender"),
+        "pluginId": card.get("pluginId") or card.get("id"),
+        "instanceId": card.get("instanceId"),
+    }
+    fields = "".join(
+        '<input type="hidden" name="' + name + '" value="' + html.escape(str(value)) + '">'
+        for name, value in hidden.items()
+        if isinstance(value, str) and value.strip()
+    )
+    return (
+        '<form method="post" action="/insight/press" class="cardform">'
+        + fields
+        + '<button class="btn btn-secondary" type="submit">' + html.escape(label) + "</button>"
+        + "</form>"
+    )
+
+
 def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
     """Attach the coupled reading to cards as whichever surface renders them.
 
@@ -1423,6 +1516,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(exc.status, {"error": exc.message, "code": exc.code})
                 return
             self._send_json(200, answer)
+            return
+        if path == "/insight/press":
+            self._insight_press_page()
             return
         if path == "/sources/excel-watch/pick":
             if excel is None:
@@ -4265,6 +4361,92 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return server.llm(prompt)
         return complete
 
+    def _insight_press_page(self) -> None:
+        """A pressed card's answer as a page: what would be sent, then the
+        sentence or the draft, then the one stage form that may follow.
+
+        A refusal keeps the page and repeats the sentence the JSON route
+        would have sent, because a person who pressed a button asked a
+        question and deserves the answer on the same screen.
+        """
+        body = self._read_json_body() or {}
+        kind = str(body.get("kind") or "").strip()
+        request: dict = {"kind": kind}
+        for key in ("text", "subject", "sender"):
+            value = body.get(key)
+            if isinstance(value, str) and value.strip():
+                request[key] = value.strip()
+        if str(body.get("stage") or "").strip() not in ("", "0", "false", "False"):
+            request["stage"] = True
+        label = _PRESS_LABELS.get(kind, "Ask the model")
+        try:
+            answer = draft_reply(
+                self.server,
+                request,
+                preferences=PreferenceStore(default_data_dir()).read(),
+                complete=self._insight_complete(),
+            )
+        except InsightError as exc:
+            self._audit("insight.press", target=kind or "press", detail=exc.code)
+            page = pages.render_press_page(
+                label, [], agentdesk.__version__, refusal=exc.message
+            )
+            self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            return
+        thread = answer.get("thread") if isinstance(answer.get("thread"), dict) else None
+        staged = str(answer.get("cardId") or "") if answer.get("staged") else ""
+        stage_html = ""
+        if thread is not None and not staged and answer.get("text"):
+            stage_html = self._press_stage_form(
+                thread, str(request.get("sender") or ""), str(answer["text"])
+            )
+        # The audit names the thread and the source, never the words: a
+        # draft is the user's to send, so the log records the act alone.
+        self._audit(
+            "insight.press",
+            target=str(thread.get("id")) if thread is not None else (kind or "press"),
+            detail=kind + ":" + str(answer.get("source") or "none")
+            + (": staged" if staged else ""),
+        )
+        page = pages.render_press_page(
+            label,
+            [str(line) for line in answer.get("disclosure") or []],
+            agentdesk.__version__,
+            text=str(answer.get("text") or ""),
+            source=str(answer.get("source") or ""),
+            note=str(answer.get("note") or ""),
+            stage_html=stage_html,
+            staged_id=staged,
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    @staticmethod
+    def _press_stage_form(thread: dict, sender: str, text: str) -> str:
+        """The one form that may turn a draft into an inbox card.
+
+        It posts the same press again with `stage`, so there is a single
+        composer and a single route: what travels the second time is
+        exactly what this page already showed.
+        """
+        hidden = {
+            "kind": "reply-draft",
+            "subject": str(thread.get("subject") or ""),
+            "sender": sender,
+            "text": text,
+            "stage": "1",
+        }
+        fields = "".join(
+            '<input type="hidden" name="' + name + '" value="' + html.escape(value) + '">'
+            for name, value in hidden.items()
+            if value
+        )
+        return (
+            '<form method="post" action="/insight/press" class="cardform">'
+            + fields
+            + '<button class="btn btn-primary" type="submit">Stage as a reply card</button>'
+            + "</form>"
+        )
+
     def _insight_complete(self):
         """The one model call a reading may offer, or None when this desk
         has no endpoint or the user turned model calls off. A reading that
@@ -4409,6 +4591,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "probe does the same for every plugin.</p></div>"
             )
             extra = "amber"
+        if status == FRESH:
+            # The reading's receipts and its press belong on the card, so
+            # the rendered dashboard is never a poorer version of the API.
+            insight = payload.get("insight")
+            body += _receipt_line(payload)
+            body += _press_form(card, insight.get("press") if isinstance(insight, dict) else None)
         freshness = Freshness(
             status=status,
             stamp="Re-test available" if status == ATTENTION else "live",

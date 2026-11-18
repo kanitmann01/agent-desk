@@ -57,7 +57,8 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
         {"kind": "text", "label": finding.label, "text": finding.text}
         for finding in found[:MAX_FINDINGS]
     ]
-    _shape, sentence = relations.chart_choice(found[0], _chart_preference(context))
+    preference = _chart_preference(context)
+    _shape, sentence = relations.chart_choice(found[0], preference)
     elements.append({"kind": "text", "label": "Chart", "text": sentence})
     if context.density == "chatty":
         checklist = _checklist(table, found)
@@ -69,7 +70,16 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
     # The press carries the sentence it would explain, so a client never has
     # to re-derive which finding the button belonged to.
     press = dict(PRESS, text=found[0].text[: press_module.MAX_FINDING])
-    return InsightReading(elements=elements, suggested=suggested, press=press)
+    # The table is the only thing this reading read, and the chart setting is
+    # a receipt only once it is off auto: that is when it changed the sentence.
+    used = ("chart",) if preference != "auto" else ()
+    return InsightReading(
+        elements=elements,
+        suggested=suggested,
+        press=press,
+        used=used,
+        inputs=("rows",),
+    )
 
 
 def _note(message: str) -> InsightReading:

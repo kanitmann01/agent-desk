@@ -53,6 +53,11 @@ class InsightReading:
     render through the same ElementView chain as everything else. `press`
     is the offer of a model call (label + route + the disclosure of what
     would be sent); nothing is spent until the user presses it.
+
+    `used` and `inputs` are the reading's receipts: the preference keys
+    whose stored value shaped it, and the sources it consulted. They name
+    keys and sources only, never a value, so a receipt cannot leak a focus
+    list into a screenshot.
     """
 
     elements: list[dict] = field(default_factory=list)
@@ -62,6 +67,15 @@ class InsightReading:
     press: dict | None = None
     note: str = ""
     status: str = ""
+    # The preference keys whose stored value shaped this reading, and the
+    # inputs it consulted, in the order it consulted them. Appended after
+    # the fields above so a positional construction still says what it did.
+    used: tuple[str, ...] = ()
+    inputs: tuple[str, ...] = ()
+    # How many remembered notes the reading drew on. A name cannot carry a
+    # number, and the card's line says "memory (2 notes)"; zero means there
+    # is nothing to count.
+    memory_notes: int = 0
 
 
 class InsightError(Exception):

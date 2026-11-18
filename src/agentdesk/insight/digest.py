@@ -18,7 +18,7 @@ import re
 from typing import Callable
 
 from agentdesk.insight.agenda import focus_matches, normalise, recalled, truncate
-from agentdesk.insight.preferences import REPLY_LENGTHS, REPLY_TONES, prompt_lines
+from agentdesk.insight.preferences import REPLY_LENGTHS, REPLY_TONES, defaults, prompt_lines
 from agentdesk.insight.types import InsightContext, InsightReading
 
 PRESS_LABEL = "Draft a reply"
@@ -34,6 +34,10 @@ _SUBJECT_LABELS = ("email", "message", "subject")
 # The outlook card prints its three openers as a list marked with this meta.
 # An opener is not a thread, so a reading must not draft from one.
 _NON_THREAD_META = frozenset({"reply starter"})
+
+# The two preferences that shape a draft: the tone of the opener and how much
+# of it there is. Nothing else on Settings changes the skeleton's form.
+DRAFT_KEYS = ("replyTone", "replyLength")
 
 
 def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading:
@@ -56,7 +60,14 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
 
     press = _press(chosen[0] if chosen else threads[0])
     if chosen is None:
-        return InsightReading(status="empty", press=press)
+        # The press still offers a draft from the first thread, so the tone
+        # and length that shape it are receipts even without an element.
+        return InsightReading(
+            status="empty",
+            press=press,
+            used=_shaped_keys(threads[0], context.preferences),
+            inputs=_inputs(context),
+        )
 
     thread, topics, facts = chosen
     elements = [
@@ -78,7 +89,44 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
                 ],
             }
         )
-    return InsightReading(elements=elements, press=press, status="ok")
+    return InsightReading(
+        elements=elements,
+        press=press,
+        status="ok",
+        used=_shaped_keys(thread, context.preferences),
+        inputs=_inputs(context),
+        memory_notes=len(facts),
+    )
+
+
+def _shaped_keys(thread: dict, preferences: dict) -> tuple[str, ...]:
+    """The draft preferences whose stored value changed this thread's skeleton.
+
+    The counterfactual is the test: a key is a receipt only when resetting it
+    to its default would build a different draft. A thread with nobody to
+    address has no skeleton at all, so nothing shaped one.
+    """
+    facts = _facts(thread)
+    if facts is None:
+        return ()
+    document = preferences if isinstance(preferences, dict) else {}
+    base = defaults()
+    skeleton = _template(facts, document)
+    shaped = []
+    for key in DRAFT_KEYS:
+        reset = dict(document, **{key: base[key]})
+        if _template(facts, reset) != skeleton:
+            shaped.append(key)
+    return tuple(shaped)
+
+
+def _inputs(context: InsightContext) -> tuple[str, ...]:
+    """The card's own threads, and memory when the bank was open to reading.
+
+    A sealed or missing bank leaves `recall` None, so memory is not declared:
+    the receipt must not claim a consultation that never happened.
+    """
+    return ("rows", "memory") if context.recall is not None else ("rows",)
 
 
 def thread_facts(payload: dict) -> list[dict]:

@@ -70,6 +70,7 @@ def test_a_reading_is_appended_to_the_cards_own_elements(monkeypatch):
         "note": "",
         "press": reading.press,
         "suggested": [],
+        "receipts": {"preferences": [], "inputs": []},
     }
 
 

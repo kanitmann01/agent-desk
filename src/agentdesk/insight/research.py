@@ -103,10 +103,12 @@ def derive(
                 "are set and the next meeting has no subject."
             )
 
+    memory_notes = 0
     if context.recall is not None:
         rows = _recall_rows(context, answer)
         if rows:
             elements.append({"kind": "list", "title": "From memory", "rows": rows})
+        memory_notes = len(rows)
     elif not elements and context.memory_note.strip():
         # With nothing else on the card, why memory stayed quiet is the whole
         # reading; with anything above it, the reason is only noise.
@@ -114,7 +116,19 @@ def derive(
             {"kind": "status", "text": context.memory_note.strip(), "tone": "attention"}
         )
 
-    return InsightReading(elements=elements, note=note)
+    # The focus topics are visible in the sentences themselves, so this
+    # reading names its sources and no preference key.
+    inputs = ["rows"]
+    if meeting is not None:
+        inputs.append("calendar")
+    if context.recall is not None:
+        inputs.append("memory")
+    return InsightReading(
+        elements=elements,
+        note=note,
+        inputs=tuple(inputs),
+        memory_notes=memory_notes,
+    )
 
 
 def _answer(payload: dict) -> str:

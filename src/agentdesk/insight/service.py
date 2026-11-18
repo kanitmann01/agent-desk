@@ -11,9 +11,13 @@ from __future__ import annotations
 from typing import Callable
 
 from agentdesk.insight import calendar, digest, research, workbook
-from agentdesk.insight.preferences import changed
+from agentdesk.insight.preferences import FIELDS, changed
 from agentdesk.insight.types import InsightContext, InsightError, InsightReading
 from agentdesk.plugins.render import ELEMENT_KINDS
+
+# The input names a receipt may carry, fixed so a surface prints a phrase it
+# already knows instead of echoing whatever a family wrote.
+INPUT_NAMES = ("rows", "memory", "calendar")
 
 FAMILIES: dict[str, Callable[[dict, dict, InsightContext], InsightReading]] = {
     "excel-report": workbook.derive,
@@ -74,4 +78,35 @@ def _attach(
         "note": reading.note,
         "press": reading.press,
         "suggested": [row for row in reading.suggested[:5] if isinstance(row, int)],
+        "receipts": _receipts(reading),
     }
+
+
+def _receipts(reading: InsightReading) -> dict:
+    """What this reading used, filtered to the vocabulary a surface prints.
+
+    A name outside the vocabulary is dropped rather than printed, and a
+    repeat survives once, in the order it was first declared, so a family
+    cannot turn the line into a changelog. Counts ride only on an input that
+    was declared: the card never says "memory (2 notes)" about a reading
+    that did not consult memory.
+    """
+    inputs = _named(reading.inputs, INPUT_NAMES)
+    receipts: dict = {
+        "preferences": _named(reading.used, FIELDS),
+        "inputs": inputs,
+    }
+    notes = reading.memory_notes
+    counted = isinstance(notes, int) and not isinstance(notes, bool) and notes > 0
+    if "memory" in inputs and counted:
+        receipts["counts"] = {"memory": notes}
+    return receipts
+
+
+def _named(names: tuple[str, ...], vocabulary: tuple[str, ...]) -> list[str]:
+    """The declared names the vocabulary holds, once each, in order."""
+    kept: list[str] = []
+    for name in names or ():
+        if name in vocabulary and name not in kept:
+            kept.append(name)
+    return kept
