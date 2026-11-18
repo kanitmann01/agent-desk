@@ -17,6 +17,12 @@ RECALL_LIMIT = 3
 def build_context(
     server: Any, preferences: dict, *, now: float | None = None
 ) -> InsightContext:
+    """Resolve everything a payload's families may read, once, up front.
+
+    Memory and the calendar are consulted here and nowhere else, so every
+    card on one payload sees the same agenda and the same recall adapter,
+    and a family stays a pure function of its context. `now` defaults to
+    the wall clock and is injectable so a test can fix time."""
     recall, note = _memory(server)
     agenda, agenda_note = _agenda(server)
     return InsightContext(
@@ -70,6 +76,10 @@ def _memory(server: Any) -> tuple[Any, str]:
         return None, "Memory is locked, so nothing was recalled."
 
     def recall(subject: str, limit: int = RECALL_LIMIT) -> list[dict]:
+        """The bank's facts for a subject, as {"text", "source"} rows.
+
+        Every failure, a lock taken mid-read included, reads as no facts:
+        a reading must never take a card down over memory."""
         try:
             found = memory.recall(subject)
         except MemoryEncryptedError:

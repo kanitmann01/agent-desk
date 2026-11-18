@@ -1,9 +1,9 @@
 """The workbook family: what the selected rows are hiding.
 
 The card already carries the total of the rows the user picked. This family
-adds the relationship that total cannot show — a movement in time, a link
+adds the relationship that total cannot show (a movement in time, a link
 between two columns, a group carrying the range, a near-tie, or one row far
-from the rest — and names the chart that would carry it. The maths lives in
+from the rest) and names the chart that would carry it. The maths lives in
 `relations`; this module decides what fits on one card.
 
 Two findings at most, then one sentence about the chart. Below the
@@ -83,10 +83,12 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
 
 
 def _note(message: str) -> InsightReading:
+    """A reading that says one honest sentence and shows nothing."""
     return InsightReading(note=message)
 
 
 def _label_column(tracker: dict) -> str | None:
+    """The column the tracker chose to name rows by, when it chose one."""
     name = tracker.get("labelColumn")
     if isinstance(name, str) and name.strip():
         return name.strip()
@@ -94,6 +96,9 @@ def _label_column(tracker: dict) -> str | None:
 
 
 def _chart_preference(context: InsightContext) -> str:
+    """The chart setting, or \"auto\" when none of the three shapes is
+    stored: only a stated shape is a receipt, auto is the desk's own
+    judgement."""
     value = context.preferences.get("chart")
     return value if value in _CHART_PREFERENCES else "auto"
 
@@ -120,6 +125,8 @@ def _checklist(table: relations.Table, found: list[relations.Finding]) -> dict |
 
 
 def _row_label(table: relations.Table, index: int) -> str:
+    """A row's first non-numeric cell, capped at 40 characters, falling
+    back to \"row N\" when the row is nothing but numbers."""
     for column in table.columns:
         if column.kind == "number":
             continue
