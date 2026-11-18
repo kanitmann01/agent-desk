@@ -101,6 +101,7 @@ def parse_eml(text: str) -> Message:
             date_ts = 0.0
 
     def header(name: str) -> str:
+        """One named header as readable text; empty when the header is absent."""
         value = parsed.get(name)
         return _decode_value(value) if value is not None else ""
 

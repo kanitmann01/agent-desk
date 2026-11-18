@@ -226,15 +226,32 @@ def _opened_files(data_source) -> set:
 
 
 def _is_plugin_data(file_glob: str) -> bool:
+    """Whether the glob names the plugin's own data directory.
+
+    The bare root and anything below it qualify; a sibling path that merely
+    shares the prefix does not.
+    """
     return (file_glob == PLUGIN_DATA_ROOT
             or file_glob.startswith(PLUGIN_DATA_ROOT + "/"))
 
 
 def _covered_by_read_glob(file_glob: str, read_globs) -> bool:
+    """Whether a declared read glob admits the path, exactly or by pattern.
+
+    Exact equality is checked as well because fnmatch would read a bracket in
+    a literal path as a character class.
+    """
     return any(file_glob == glob or fnmatch(file_glob, glob) for glob in read_globs)
 
 
 def _validate_data_source_type(widget) -> list[Failure]:
+    """Check one widget's dataSource against the rules of its declared type.
+
+    The type selects which checks run, so an unknown type fails once instead
+    of drawing a complaint from every per-type rule. The widget is inspected
+    rather than a source alone: a missing or non-object dataSource is itself
+    the failure.
+    """
     data_source = widget.get("dataSource")
     if not isinstance(data_source, dict):
         return [Failure("bad-schema", "widget dataSource must be an object")]
@@ -269,11 +286,21 @@ def _validate_data_source_type(widget) -> list[Failure]:
 
 
 def _valid_json_selector(selector) -> bool:
+    """Whether the selector is one of the two json-watch shapes.
+
+    A non-string never parses; the grammar is an object path, or one list
+    field with a scalar beneath it.
+    """
     return isinstance(selector, str) and bool(
         _JSON_OBJECT.match(selector) or _JSON_LIST.match(selector))
 
 
 def _validate_fallback(data_source, source_type) -> list[Failure]:
+    """Check the excel-watch fallback is a csv-watch source with named columns.
+
+    A fallback on any other type is an error rather than an ignored extra, so
+    the rule is enforced where the nested block is accepted.
+    """
     if source_type != "excel-watch":
         return [Failure(
             "bad-schema", "only excel-watch may declare a fallback dataSource")]
@@ -296,6 +323,11 @@ def _validate_fallback(data_source, source_type) -> list[Failure]:
 
 
 def _validate_compare(data_source) -> list[Failure]:
+    """Check that both compare sides are local sources of a known type.
+
+    http-get is a known type but is still refused here: compare reads beside
+    the plugin, never over the network.
+    """
     failures: list[Failure] = []
     for side in ("left", "right"):
         nested = data_source.get(side)
@@ -314,6 +346,12 @@ def _validate_compare(data_source) -> list[Failure]:
 
 
 def _validate_http_get(data_source) -> list[Failure]:
+    """Check an http-get source's URL, host allowlist and timeout.
+
+    The allowlist must name at least one host, so a fetch can never be
+    unconstrained. The timeout is optional; when present it must be greater
+    than zero and at most 15 seconds.
+    """
     failures: list[Failure] = []
     url = data_source.get("url")
     if not isinstance(url, str) or not url.startswith(("http://", "https://")):
@@ -381,6 +419,13 @@ _CONFIG_KINDS = (
 
 
 def _validate_config(manifest, permissions) -> list[Failure]:
+    """Check the config block a plugin declares and what it rules out.
+
+    config.kinds must come from the host vocabulary and config.aliasOf must
+    be a plugin id. A config-backed plugin is configured rather than read, so
+    it may not also name a dataSource file, and permissions.llm.allow must be
+    false because a suggestion is a host call.
+    """
     config = manifest.get("config")
     if config is None:
         return []
@@ -418,6 +463,11 @@ def _validate_config(manifest, permissions) -> list[Failure]:
 
 
 def _validate_shell(permissions) -> list[Failure]:
+    """Require the shell permission to be declared and set to none.
+
+    The key is mandatory: a manifest that omits it fails rather than taking
+    none as a default.
+    """
     if "shell" not in permissions:
         return [Failure("bad-schema", "permissions must declare shell")]
     shell = permissions["shell"]
@@ -427,6 +477,11 @@ def _validate_shell(permissions) -> list[Failure]:
 
 
 def _validate_filesystem_scoping(permissions) -> list[Failure]:
+    """Check every filesystem read and write glob is rooted where it may be.
+
+    Globs must be strings and each must sit under the workspace root or the
+    plugin data directory, so an absolute path is refused here too.
+    """
     filesystem = permissions.get("filesystem")
     if not isinstance(filesystem, dict):
         return []
@@ -451,6 +506,11 @@ def _validate_filesystem_scoping(permissions) -> list[Failure]:
 
 
 def _is_scoped(glob: str) -> bool:
+    """Whether the glob is rooted at the workspace or the plugin data directory.
+
+    The bare plugin data root counts as scoped, as does anything beneath
+    either root; an absolute path outside them does not.
+    """
     return (
         glob.startswith(WORKSPACE_ROOT)
         or glob == PLUGIN_DATA_ROOT
@@ -459,6 +519,11 @@ def _is_scoped(glob: str) -> bool:
 
 
 def _validate_network_allow(permissions) -> list[Failure]:
+    """Require the base network allowlist to stay empty.
+
+    Network access belongs in optionalPermissions, so a non-empty list here
+    is an over-permission even when the hosts themselves are legitimate.
+    """
     network = permissions.get("network")
     if not isinstance(network, dict):
         return []
@@ -508,6 +573,12 @@ def _validate_render(manifest, reader) -> tuple[list[Failure], list[dict]]:
 
 def _validate_render_entry(render, reader,
                            source=None) -> tuple[list[Failure], dict | None]:
+    """Check one widget's render entry and load the ui-schema it names.
+
+    Plugin-supplied HTML or a template is refused before any file is read.
+    The parsed document comes back beside the failures so the sample can be
+    checked against the same elements; a document that never parsed is None.
+    """
     failures: list[Failure] = []
 
     for banned_key in ("template", "html"):
@@ -614,6 +685,12 @@ def _validate_element_source(kind: str, element, render_file: str) -> list[Failu
 
 
 def _validate_element_caps(kind: str, element) -> list[Failure]:
+    """Check the row or point count an element declares against its cap.
+
+    Only list and table carry row caps and only sparkline carries a point
+    range, so other kinds are never counted. A missing or non-list count
+    passes here.
+    """
     failures: list[Failure] = []
     if kind in ROW_CAPS:
         rows = element.get("rows")
@@ -631,6 +708,11 @@ def _validate_element_caps(kind: str, element) -> list[Failure]:
 
 
 def _cap_failure(kind: str, count: int) -> Failure | None:
+    """Return the failure a count earns against its kind's cap, or None.
+
+    List and table are capped above only; a sparkline has a floor as well as
+    a ceiling. A kind with no cap never fails.
+    """
     if kind in ROW_CAPS:
         cap = ROW_CAPS[kind]
         if count > cap:
@@ -650,6 +732,11 @@ def _cap_failure(kind: str, count: int) -> Failure | None:
 
 
 def _is_v2(manifest) -> bool:
+    """Whether the manifest is a version 2 document.
+
+    schemaVersion must be the integer 2. bool is an int in Python, so True is
+    excluded rather than read as 2.
+    """
     version = manifest.get("schemaVersion")
     return isinstance(version, int) and not isinstance(version, bool) and version == 2
 
@@ -723,6 +810,12 @@ def _validate_sample_caps(ui_schemas, bindings) -> list[Failure]:
 
 
 def _binding_cap_failure(element, bindings) -> Failure | None:
+    """Return a cap failure when a sample binding supplies too many values.
+
+    The binding key follows the kind: rowsBinding for list and table,
+    pointsBinding for the rest. A missing binding name or an unreadable value
+    passes here, since only a count that breaks a cap fails.
+    """
     kind = element.get("type")
     binding_key = "rowsBinding" if kind in ROW_CAPS else "pointsBinding"
     binding_name = element.get(binding_key)

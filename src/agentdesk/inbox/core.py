@@ -62,12 +62,18 @@ class Card:
     meta: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Reject a card whose kind is not in CARD_KINDS or whose origin is blank."""
         if self.kind not in CARD_KINDS:
             raise ValueError(f"unknown card kind: {self.kind!r}")
         if not self.origin.strip():
             raise ValueError("a card without an origin line is not a card")
 
     def is_expired(self, now_ts: float) -> bool:
+        """Return True when the card's window has closed by now_ts.
+
+        A card that carries no window never expires; the closing instant itself
+        already counts as closed.
+        """
         if self.window_hours is None:
             return False
         return now_ts >= self.created_ts + self.window_hours * 3600
@@ -77,6 +83,7 @@ class Card:
         return self.snoozed_until is not None and now_ts < self.snoozed_until
 
     def dismissed_for_days(self, now_ts: float) -> float:
+        """Return the days since the card was dismissed, 0.0 while it was not."""
         if self.dismissed_ts is None:
             return 0.0
         return (now_ts - self.dismissed_ts) / 86400

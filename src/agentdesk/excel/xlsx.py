@@ -35,6 +35,11 @@ def _column_index(cell_ref: str) -> int:
 
 
 def _read_shared_strings(zf: zipfile.ZipFile) -> list[str]:
+    """The shared string table, in cell-index order.
+
+    An absent part is an empty list: a workbook that keeps every string inline is
+    valid and has no table.
+    """
     try:
         raw = zf.read("xl/sharedStrings.xml")
     except KeyError:
@@ -48,6 +53,11 @@ def _read_shared_strings(zf: zipfile.ZipFile) -> list[str]:
 
 
 def _first_sheet_name(zf: zipfile.ZipFile) -> str:
+    """The archive path of the worksheet to read.
+
+    The choice is by archive path, not by the workbook's declared sheet order.
+    A workbook with no worksheet raises WorkbookUnreadable.
+    """
     names = sorted(n for n in zf.namelist() if n.startswith("xl/worksheets/") and n.endswith(".xml"))
     if not names:
         raise WorkbookUnreadable("no worksheet inside the workbook")

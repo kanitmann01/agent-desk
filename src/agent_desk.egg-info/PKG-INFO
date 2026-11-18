@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: agent-desk
+Version: 0.1.0
+Summary: No-code personal agent web app for a locked-down corporate Windows laptop
+License: Proprietary
+Requires-Python: >=3.10
+License-File: LICENSE
+License-File: LICENSE-SDK
+Requires-Dist: cryptography>=44
+Dynamic: license-file

@@ -91,6 +91,11 @@ _DEAL_KINDS = (
 
 
 def _deal_name(idx: int) -> str:
+    """A deterministic deal title for a row index.
+
+    Accounts and deal kinds cycle independently, so consecutive rows differ while the
+    generated sheet stays reproducible.
+    """
     account = _ACCOUNTS[idx % len(_ACCOUNTS)]
     kind = _DEAL_KINDS[(idx // len(_ACCOUNTS) + idx) % len(_DEAL_KINDS)]
     return f"{account} {kind}"
@@ -163,6 +168,11 @@ def _sample_mail_headers(name: str, sender: str, subject: str, age_hours: float,
 
 
 def _xml_escape(text: str) -> str:
+    """Escape text for XML element content and double-quoted attributes.
+
+    The hand-rolled replacements cover ampersand, angle brackets and the double quote,
+    which is the whole set these sheets can contain.
+    """
     return (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -172,6 +182,11 @@ def _xml_escape(text: str) -> str:
 
 
 def _column_letters(index: int) -> str:
+    """The spreadsheet column letters for a zero-based column index.
+
+    Index 0 is A, 25 is Z and 26 is AA, the letters a cell reference such as A1 is built
+    from.
+    """
     letters = ""
     index += 1
     while index:
@@ -258,6 +273,11 @@ def sample_calendar_bytes(now: datetime) -> bytes:
 
 
 def sample_folder(data_dir: Path) -> Path:
+    """The folder holding the generated sample workbook.
+
+    The path is returned whether or not the folder exists; creating it is the caller's
+    job.
+    """
     return Path(data_dir) / SAMPLE_DIR_NAME
 
 

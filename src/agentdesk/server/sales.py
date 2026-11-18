@@ -72,6 +72,11 @@ def _fmt(value) -> str:
 
 
 def _row_line(row: list) -> str:
+    """One example row as a text line: its first four non-empty cells, joined.
+
+    Grouped numbers come from _fmt, and the whole line is escaped as text because it
+    lands inside a table cell as content, not markup.
+    """
     cells = [_fmt(v) for v in row[:4] if v != ""]
     return html.escape(" · ".join(cells) if cells else "(empty row)")
 
@@ -93,6 +98,12 @@ def freshness_for(state: str, last_ok_ts: float | None) -> Freshness:
 
 
 def _healthy_body(status: dict) -> str:
+    """Body HTML for a healthy poll: the 24-hour row-change count and examples.
+
+    added and removed are the row-hash delta against the snapshot from 24 hours ago. At
+    most MAX_EXAMPLE_ROWS of each are listed, and the remainder is counted in one
+    trailing line so the card never implies it showed everything.
+    """
     delta = status["delta"] or {"added": [], "removed": [], "unchanged": 0}
     added, removed = delta["added"], delta["removed"]
     changed = len(added) + len(removed)
@@ -116,6 +127,10 @@ def _healthy_body(status: dict) -> str:
 
 
 def _amber_body(cause: str, with_retest: bool) -> str:
+    """Body HTML for a blocked or stale poll: the cause, plus the Re-test button.
+
+    The cause is escaped. The button is only included when with_retest is set.
+    """
     parts = [f'<div class="alert"><span>{html.escape(cause)}</span></div>']
     if with_retest:
         parts.append(

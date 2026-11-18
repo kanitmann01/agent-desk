@@ -17,6 +17,11 @@ from agentdesk.mail.watcher import STATE_ERROR
 
 
 def _off_page(version: str, off_reason: str, inbox_count: int = 0) -> str:
+    """The whole page for the mail toggle being off, with the reason it is off.
+
+    The reason is escaped and shown as the body; the rest of the copy says what the page
+    would show and what it reads, so the off state still explains the feature.
+    """
     esc_reason = html.escape(off_reason)
     content = f"""<h1>Mail</h1>
 <div class="widget" id="mail-off">
@@ -35,6 +40,11 @@ the folder it watches).</p>
 
 
 def _status_line(view: dict) -> str:
+    """The one-line folder status: path, message count and the follow-up threshold.
+
+    A watcher error replaces the threshold sentence with its cause, so a failing folder
+    never reads as a working one.
+    """
     folder = html.escape(view.get("folder") or "")
     count = len(view.get("messages") or [])
     days = html.escape(str(view.get("followUpDays", "")))
@@ -54,6 +64,7 @@ def _status_line(view: dict) -> str:
 
 
 def _retest_form() -> str:
+    """The no-JS form that asks the server to re-read the watched folder now."""
     return (
         "<form method='post' action='/mail/retest' class='cardform'>"
         "<button class='btn btn-secondary' type='submit'>Check the folder now</button>"
@@ -62,6 +73,11 @@ def _retest_form() -> str:
 
 
 def _digest_section(view: dict) -> str:
+    """The "active in the last 24 hours" section, or its empty state.
+
+    One line per digest entry: thread, message count, and the last sender and its
+    formatted header time.
+    """
     digest = view.get("digest") or []
     if not digest:
         return (
@@ -79,6 +95,11 @@ def _digest_section(view: dict) -> str:
 
 
 def _followups_section(view: dict) -> str:
+    """The "waiting on you" section, or its empty state.
+
+    Each entry is indexed as followup-<n> for the client and names the view's follow-up
+    threshold, so the page states why the thread is listed.
+    """
     follow_ups = view.get("followUps") or []
     days = html.escape(str(view.get("followUpDays", "")))
     if not follow_ups:
@@ -99,6 +120,12 @@ def _followups_section(view: dict) -> str:
 
 
 def _message_rows(view: dict) -> str:
+    """One card per message: its headers, an optional Cc line, and a reply draft form.
+
+    The message id is percent-encoded before it is escaped, so an id with a slash or
+    space still reaches /mail/<id>/draft intact. The textarea starts empty: the draft is
+    the user's own words, and the body was never read.
+    """
     messages = view.get("messages") or []
     if not messages:
         return (
@@ -132,6 +159,7 @@ def _message_rows(view: dict) -> str:
 
 
 def _handled_section(view: dict) -> str:
+    """The "handled" section: the thread names marked handled, or its empty state."""
     handled = view.get("handled") or []
     if not handled:
         return (

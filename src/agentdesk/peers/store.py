@@ -89,6 +89,7 @@ class PeerError(Exception):
     """A named peer-flow refusal: ``code`` is the stable vocabulary."""
 
     def __init__(self, code: str, message: str) -> None:
+        """Keep the stable code beside the message."""
         super().__init__(message)
         self.code = code
 
@@ -113,6 +114,7 @@ def hash_token(token: str) -> str:
 
 
 def _row(cursor: sqlite3.Cursor) -> dict | None:
+    """Return the cursor's next row as a column-keyed dict, or None if empty."""
     row = cursor.fetchone()
     if row is None:
         return None
@@ -124,6 +126,12 @@ class PeerStore:
 
     def __init__(self, conn: sqlite3.Connection,
                  clock: Callable[[], float] = time.time) -> None:
+        """Open the store on this connection and migrate it in place.
+
+        The schema is created if absent and the misses column is added to stores
+        from earlier builds; existing rows are never rewritten. The clock supplies
+        every timestamp written.
+        """
         self.conn = conn
         self.clock = clock
         self._lock = threading.Lock()
@@ -157,6 +165,7 @@ class PeerStore:
             return {"peer_id": peer_id, "name": name}
 
     def set_name(self, name: str) -> None:
+        """Rename this desk, creating its identity row first when it has none."""
         with self._lock:
             self.desk()
             self.conn.execute("UPDATE desk SET name = ? WHERE id = 1",
@@ -277,12 +286,14 @@ class PeerStore:
         return self.peer(peer_id)  # type: ignore[return-value]
 
     def peer(self, peer_id: str) -> dict | None:
+        """Return one paired peer by id, or None. The channel token is not in it."""
         with self._lock:
             return _row(self.conn.execute(
                 "SELECT peer_id, name, base_url, token_hash, paired_at"
                 " FROM peers WHERE peer_id = ?", (peer_id,)))
 
     def peers(self) -> list[dict]:
+        """Return every paired peer, oldest pairing first, without the token."""
         with self._lock:
             rows = self.conn.execute(
                 "SELECT peer_id, name, base_url, token_hash, paired_at"
@@ -314,6 +325,7 @@ class PeerStore:
     # -- shares: what this desk publishes ---------------------------------
 
     def set_shared(self, plugin_id: str, shared: bool) -> None:
+        """Record whether a plugin is shared with peers, replacing the last answer."""
         with self._lock:
             self.conn.execute(
                 "INSERT INTO shares (plugin_id, shared, shared_at)"
@@ -324,6 +336,7 @@ class PeerStore:
             self.conn.commit()
 
     def shared_ids(self) -> set[str]:
+        """Return the ids of every plugin this desk currently shares."""
         with self._lock:
             rows = self.conn.execute(
                 "SELECT plugin_id FROM shares WHERE shared = 1").fetchall()
@@ -357,6 +370,7 @@ class PeerStore:
             self.conn.commit()
 
     def subscriptions(self) -> list[dict]:
+        """Return every subscription, ordered by peer id and then plugin id."""
         with self._lock:
             rows = self.conn.execute(
                 "SELECT plugin_id, peer_id, seen_version, seen_sha256,"
@@ -382,6 +396,11 @@ class PeerStore:
             self.conn.commit()
 
     def peer_state(self, peer_id: str) -> dict:
+        """Return the last refresh outcome recorded for one peer.
+
+        A peer that was never refreshed reports ok False, no timestamp and an empty
+        cause, so a page can say so rather than show a blank.
+        """
         with self._lock:
             row = _row(self.conn.execute(
                 "SELECT peer_id, last_refresh, ok, cause FROM peer_state"

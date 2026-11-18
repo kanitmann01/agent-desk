@@ -78,6 +78,11 @@ def parse_calendar_document(raw: dict) -> CalendarDocument:
 
 
 def _parse_dt(value) -> datetime:
+    """Parse an ISO timestamp into an aware datetime.
+
+    A trailing Z is read as UTC; a value carrying no offset is taken as local
+    time, which is what the flow writes when it emits a naive timestamp.
+    """
     text = str(value).replace("Z", "+00:00")
     parsed = datetime.fromisoformat(text)
     if parsed.tzinfo is None:

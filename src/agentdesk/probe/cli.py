@@ -57,6 +57,12 @@ def run_all_gates(workdir: Path, adapters: Adapters) -> list[GateResult]:
 
 
 def _run_probe(workdir: Path, adapters: Adapters) -> int:
+    """Run every gate, write the report, print the summary.
+
+    Returns the verdict's exit code, or EXIT_USAGE when the workdir or the
+    report cannot be written: a probe that cannot record its findings must not
+    report a verdict.
+    """
     try:
         workdir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -83,6 +89,11 @@ def _run_probe(workdir: Path, adapters: Adapters) -> int:
 
 
 def _current_user() -> str:
+    """The current account name, from the login database or the environment.
+
+    Falls back to "unknown" rather than raising: an unnamed user must not stop
+    a probe.
+    """
     import getpass
 
     try:
@@ -105,16 +116,24 @@ def _current_user() -> str:
 
 
 def _fake_runner(returncode: int, stdout: str = "", stderr: str = ""):
+    """A runner that answers every command with the same fixed result."""
     def run(cmd):
+        """Return the canned result, whatever the command."""
         return RunResult(returncode=returncode, stdout=stdout, stderr=stderr)
 
     return run
 
 
 def _fake_sequence(*results):
+    """A runner that answers the nth command with the nth result.
+
+    The last result repeats once the sequence runs out, so a gate that calls
+    more often than the case lists still gets a classified answer.
+    """
     state = {"calls": 0}
 
     def run(cmd):
+        """Return the next canned result, repeating the last one."""
         index = min(state["calls"], len(results) - 1)
         state["calls"] += 1
         return results[index]
@@ -123,10 +142,20 @@ def _fake_sequence(*results):
 
 
 def _mk_gate(key: str, number: int, status: str) -> GateResult:
+    """A gate result carrying only what aggregation reads.
+
+    Title mirrors the key and the evidence is a placeholder: these feed verdict
+    cases, not a report.
+    """
     return GateResult(key=key, number=number, title=key, status=status, evidence=("fake",))
 
 
 def _self_check() -> int:
+    """Run every gate and three verdict cases against fakes, and compare.
+
+    Returns 0 when every case classifies as expected, 1 otherwise. No network,
+    no OneDrive write, no EDR scan; the temp workdir is removed either way.
+    """
     print("self-check: running every gate with fakes (no network, no OneDrive writes, no EDR scan)")
     tmp = Path(tempfile.mkdtemp(prefix="agentdesk-selfcheck-"))
     ok = True
@@ -268,6 +297,11 @@ def _self_check() -> int:
 
 
 def main(argv=None, adapters: Adapters | None = None) -> int:
+    """Parse arguments and run the self-check or the real probe.
+
+    Returns the process exit code; argparse's own exits are turned back into
+    codes instead of escaping.
+    """
     parser = argparse.ArgumentParser(
         prog="agentdesk.probe",
         description="Nexuus Bot environment probe: go/no-go gates for the target laptop. Never elevates; writes only under --workdir.",

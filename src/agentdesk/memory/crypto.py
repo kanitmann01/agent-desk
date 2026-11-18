@@ -87,6 +87,12 @@ def derive_keys(key: bytes) -> tuple[bytes, bytes]:
 
 
 def _random_iv() -> bytes:
+    """A fresh 12-byte GCM nonce, drawn from the OS every call.
+
+    GCM loses its authentication guarantee entirely if one nonce repeats
+    under the same key, so the nonce is never derived from the plaintext,
+    the destination or a counter.
+    """
     return os.urandom(IV_BYTES)
 
 
@@ -98,6 +104,12 @@ class CryptoBox:
     """
 
     def __init__(self, key: bytes) -> None:
+        """Derive the encryption and MAC subkeys from one 32-byte key.
+
+        The key is the memory.key file's raw contents; anything else raises
+        ValueError before any subkey exists, so a truncated or over-long file
+        cannot produce a box that seals data nothing can open.
+        """
         self.enc_key, self.mac_key = derive_keys(load_key(key))
         self._aead = AESGCM(self.enc_key)
 
@@ -112,6 +124,13 @@ class CryptoBox:
         return self._seal_raw(bytes(value), table, column, row_id)
 
     def _seal_raw(self, data: bytes, table: str, column: str, row_id) -> bytes:
+        """Seal bytes as version byte, nonce, then ciphertext with its tag.
+
+        The destination enters only as associated data, so it is not stored in
+        the envelope: opening requires the caller to name the same table,
+        column and row_id, which is what makes a ciphertext pasted elsewhere
+        fail instead of decrypt.
+        """
         iv = _random_iv()
         ciphertext = self._aead.encrypt(
             iv, data, aad(table, column, row_id).encode("utf-8")
@@ -129,6 +148,13 @@ class CryptoBox:
         return self._open_raw(envelope, table, column, row_id)
 
     def _open_raw(self, envelope: bytes, table: str, column: str, row_id) -> bytes:
+        """Open an envelope to raw bytes, or raise AuthenticationFailed.
+
+        The length-and-version check runs before the cipher and reports the
+        same authentication wording as a tag failure, so a truncated value, an
+        unknown version and a forged ciphertext are indistinguishable to the
+        caller.
+        """
         envelope = bytes(envelope)
         header = 1 + IV_BYTES + TAG_BYTES
         if len(envelope) < header or envelope[0] != VERSION:

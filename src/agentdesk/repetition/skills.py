@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS skill_versions (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the skill and version tables and commit; safe on every open."""
     conn.executescript(SCHEMA)
     conn.commit()
 
@@ -45,6 +46,11 @@ class SkillError(Exception):
 
 
 def slugify(name: str) -> str:
+    """A skill name as a stable slug: lower case, single dashes, length-capped.
+
+    A name that leaves nothing behind becomes "skill", because an empty slug
+    cannot name a row.
+    """
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return slug[:NAME_MAX].rstrip("-") or "skill"
 
@@ -67,6 +73,7 @@ def render_skill_md(name: str, description: str, prompt: str) -> str:
 
 class SkillStore:
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time) -> None:
+        """Open the store on a connection, creating both tables if they are absent."""
         self.conn = conn
         self.clock = clock
         ensure_schema(conn)
@@ -120,6 +127,7 @@ class SkillStore:
         return {"id": skill_id, "version": version, "active": False}
 
     def _next_version(self, skill_id: int) -> int:
+        """The next version for a skill: its history's high-water mark plus one."""
         row = self.conn.execute(
             "SELECT COALESCE(MAX(version), 0) + 1 FROM skill_versions WHERE skill_id = ?",
             (skill_id,),
@@ -127,12 +135,14 @@ class SkillStore:
         return int(row[0])
 
     def active(self) -> list[dict]:
+        """Every active skill, oldest first, each with the ask it re-runs."""
         rows = self.conn.execute(
             "SELECT id, name, description, prompt FROM skills WHERE active = 1 ORDER BY id"
         ).fetchall()
         return [{"id": r[0], "name": r[1], "description": r[2], "prompt": r[3]} for r in rows]
 
     def get(self, skill_id: int) -> dict | None:
+        """One skill by id, active or not, or None when the id is unknown."""
         row = self.conn.execute(
             "SELECT id, name, description, prompt, active FROM skills WHERE id = ?",
             (skill_id,),
@@ -142,6 +152,7 @@ class SkillStore:
         return {"id": row[0], "name": row[1], "description": row[2], "prompt": row[3], "active": bool(row[4])}
 
     def history(self, skill_id: int) -> list[dict]:
+        """Every recorded version of a skill, oldest first, deactivations included."""
         rows = self.conn.execute(
             "SELECT version, active, ts, note FROM skill_versions WHERE skill_id = ? ORDER BY version",
             (skill_id,),
@@ -149,6 +160,11 @@ class SkillStore:
         return [{"version": r[0], "active": bool(r[1]), "ts": r[2], "note": r[3]} for r in rows]
 
     def markdown(self, skill_id: int) -> str:
+        """The SKILL.md text for one skill.
+
+        Raises SkillError for an unknown id: a document that names no skill would be
+        worse than a refusal.
+        """
         skill = self.get(skill_id)
         if skill is None:
             raise SkillError(f"no skill {skill_id}")

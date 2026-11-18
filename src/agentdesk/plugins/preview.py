@@ -18,6 +18,16 @@ from agentdesk.plugins.config import ConfigError
 
 
 def preview_table(path, *, sheet, header_row, range_text, limit: int = 20) -> dict:
+    """Read the top of a file as a header row plus the data rows under it.
+
+    CSV and JSON are a single sheet named after the file; a workbook reports the
+    sheet names it finds, and ``sheet`` chooses which of them is reported, though the
+    rows themselves come from the workbook parse, which is not sheet-aware here.
+    ``limit`` caps the returned rows, not the work: a workbook is parsed whole.
+    Raises ``config:missing-file``, ``config:unreadable``, ``config:not-a-table``,
+    ``config:empty-table`` or ``config:bad-preview`` with a message meant for the
+    person who opened the file.
+    """
     candidate = Path(path)
     if not candidate.is_file():
         raise ConfigError("config:missing-file", f"That file does not exist: {candidate}")
@@ -51,6 +61,12 @@ def preview_table(path, *, sheet, header_row, range_text, limit: int = 20) -> di
 
 
 def _cell(value) -> str:
+    """Render one cell as the string the preview shows.
+
+    Booleans print as true/false, whole floats lose their decimal point, other floats
+    keep at most two decimals with trailing zeros trimmed, and None prints as an empty
+    string so a missing cell reads like an empty one.
+    """
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, float) and value.is_integer():
@@ -63,6 +79,11 @@ def _cell(value) -> str:
 
 
 def _csv_grid(path: Path) -> list[list]:
+    """Read a CSV into a grid of strings, accepting a UTF-8 BOM at the start.
+
+    A file that cannot be read or decoded raises ``config:unreadable`` instead of
+    surfacing the codec error.
+    """
     try:
         text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
@@ -107,6 +128,12 @@ def _json_grid(path: Path) -> list[list]:
 
 
 def _json_records(parsed):
+    """Find the table inside parsed JSON, or None when the document is not one.
+
+    An array of objects is the table, an array of scalars becomes one "value"
+    column, and an object is searched depth-first for the first value that is itself a
+    table. Mixed arrays and objects with nothing table-shaped return None.
+    """
     if isinstance(parsed, list):
         if all(isinstance(item, dict) for item in parsed):
             return parsed
@@ -123,12 +150,23 @@ def _json_records(parsed):
 
 
 def _json_value(value) -> str:
+    """Render one JSON value for a cell.
+
+    Objects and arrays are serialised as compact JSON, since a preview cell has to be
+    one string; everything else goes through ``_cell``.
+    """
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
     return _cell(value)
 
 
 def _sheet_names(path: Path) -> list[str]:
+    """List the sheet names in a workbook without parsing its cells.
+
+    A file that is not a readable zip or has no ``xl/workbook.xml`` reads as no
+    sheets rather than an error, which is what lets the caller fall back to a default
+    name.
+    """
     try:
         with zipfile.ZipFile(path) as archive:
             raw = archive.read("xl/workbook.xml")
@@ -145,6 +183,13 @@ def _sheet_names(path: Path) -> list[str]:
 
 
 def _apply_range(grid: list[list], range_text) -> list[list]:
+    """Clip a grid to an A1:B10-style range.
+
+    A range that is missing, is not a string, lacks a colon, or has an unreadable
+    start corner returns the grid untouched. Rows count from 1 and either row bound may
+    be omitted; the column slice applies to every kept row, so a row shorter than the
+    start column contributes an empty list.
+    """
     if not range_text or not isinstance(range_text, str) or ":" not in range_text:
         return grid
     start, end = range_text.split(":", 1)
@@ -163,6 +208,13 @@ def _apply_range(grid: list[list], range_text) -> list[list]:
 
 
 def _ref(text: str):
+    """Turn a cell reference such as B7 into a column index and a row number.
+
+    The column is zero-based and the row one-based, matching the grid and the A1 range
+    it comes from. Letters are read as a base-26 label, so AA is column 26; a
+    reference with no letters yields None for the column and one with no digits yields
+    None for the row.
+    """
     letters = []
     digits = []
     for char in text.strip().upper():

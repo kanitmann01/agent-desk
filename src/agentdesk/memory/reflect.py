@@ -434,10 +434,24 @@ class EndpointReflector:
     actually went out, for the audit row."""
 
     def __init__(self, llm) -> None:
+        """Bind the prompt-to-text callable; nothing is called here.
+
+        last_request_bytes starts at zero and only becomes the audit figure
+        once reflect has set it.
+        """
         self._llm = llm
         self.last_request_bytes = 0
 
     def reflect(self, topic: str, facts: list[Fact]) -> list[ObservationDraft]:
+        """One reflection call over the facts gathered for a topic.
+
+        Returns draft observations only: nothing is written here, and the caller
+        decides which drafts to keep. Raises ReflectorUnavailable when the
+        callable fails at all — LlmUnavailable keeps its pinned cause, any other
+        exception becomes the generic one — and ReflectFailed when the reply
+        cannot be parsed. last_request_bytes is set before the call, so a failed
+        call still reports the prompt size it sent.
+        """
         prompt = REFLECT_SYSTEM_PROMPT + "\n\n" + reflect_user_message(topic, facts)
         self.last_request_bytes = len(prompt.encode("utf-8"))
         try:

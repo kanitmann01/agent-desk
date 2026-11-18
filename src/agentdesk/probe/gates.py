@@ -49,6 +49,11 @@ CONNECTION_HINTS = (
 
 
 def _runner_result(res: RunResult) -> str:
+    """One command result as a single evidence line.
+
+    Only the streams that carry text appear, so a clean run stays one short line
+    and a failure keeps its own output verbatim.
+    """
     parts = [f"rc={res.returncode}"]
     if res.stdout.strip():
         parts.append(f"stdout: {res.stdout.strip()}")

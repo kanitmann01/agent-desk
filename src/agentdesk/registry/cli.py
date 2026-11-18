@@ -13,6 +13,12 @@ from .install import RegistryError, install_from_registry
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run one subcommand and return its exit code.
+
+    The list command prints one line per plugin and exits 0. Install prints OK
+    for a verified install, or FAIL <code>: <message> and exit 1 when the index
+    or the validator refuses it.
+    """
     parser = argparse.ArgumentParser(prog="agentdesk.registry")
     sub = parser.add_subparsers(dest="command", required=True)
 

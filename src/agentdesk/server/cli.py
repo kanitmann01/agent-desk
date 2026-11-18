@@ -15,6 +15,11 @@ from agentdesk.server import app
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """The argparse definition for `python -m agentdesk.server`.
+
+    --port defaults to None rather than PREFERRED_PORT so create_server can try the
+    preferred port and fall back to a free one instead of failing.
+    """
     parser = argparse.ArgumentParser(
         prog="python -m agentdesk.server",
         description="Start the Nexuus Bot dashboard (127.0.0.1 only).",
@@ -35,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse argv, load the env file, then serve until the process stops.
+
+    The env file is loaded before any bridge or endpoint is constructed so both read the
+    same configuration; real environment variables still win. Returns 0 once the server
+    stops.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     # Before anything builds the bridge or the endpoint adapter, so both

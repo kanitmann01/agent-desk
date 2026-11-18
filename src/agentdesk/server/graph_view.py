@@ -95,6 +95,11 @@ def parse_graph_query(query: str) -> tuple[float | None, float | None, int]:
 
 
 def _show_date(epoch: float) -> str:
+    """The UTC calendar date of an epoch timestamp, as YYYY-MM-DD.
+
+    UTC on purpose: the page's since and until bounds are read as UTC days, so the date
+    a node shows matches the day that admitted it.
+    """
     return datetime.fromtimestamp(epoch, tz=UTC).date().isoformat()
 
 
@@ -105,6 +110,11 @@ def _node_id(node_id) -> str:
 
 
 def _position(index: int) -> tuple[float, float]:
+    """The centre of the grid slot at this index, in SVG user units.
+
+    Slots fill COLUMNS columns left to right and then rows top to bottom, following the
+    snapshot's newest-first order.
+    """
     column = index % COLUMNS
     row = index // COLUMNS
     return (
@@ -125,6 +135,12 @@ def _shifted(point, toward, distance: float):
 
 
 def _edge_lines(snapshot: GraphSnapshot, positions: dict) -> str:
+    """The SVG lines for every edge whose endpoints both have a position.
+
+    Each line is pulled back to the node rim by NODE_RADIUS + 2 so it does not vanish
+    under the circle. Width and dash come from _EDGE_STYLE, an unknown edge type falls
+    back to the entity style, and only derived edges carry the arrowhead.
+    """
     lines = []
     for edge in snapshot.edges:
         start = positions.get(edge.source)
@@ -150,6 +166,12 @@ def _edge_lines(snapshot: GraphSnapshot, positions: dict) -> str:
 
 
 def _node_groups(snapshot: GraphSnapshot, positions: dict) -> str:
+    """The SVG group for every node: a circle, its label and a title tooltip.
+
+    Opacity runs from 0.25 to 1.0 with the node's recency, whose half-life is thirty
+    days. The tooltip repeats the label, its UTC date and its citation count, and a
+    derived node uses the observation class.
+    """
     groups = []
     for node in snapshot.nodes:
         x, y = positions[node.id]
@@ -176,6 +198,11 @@ def _node_groups(snapshot: GraphSnapshot, positions: dict) -> str:
 
 
 def _legend() -> str:
+    """The edge-type legend: one sample line per type, with its written contract.
+
+    Every sample reuses the same style attributes as the drawn edges, so a legend line
+    and a graph line cannot disagree.
+    """
     rows = []
     for edge_type, title, description in _LEGEND:
         style = _EDGE_STYLE[edge_type]

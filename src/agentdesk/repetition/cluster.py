@@ -18,10 +18,12 @@ def normalize(text: str) -> str:
 
 
 def tokens(text: str) -> frozenset[str]:
+    """Token set of the normalized text; empty when nothing comparable is left."""
     return frozenset(normalize(text).split())
 
 
 def similarity(a: str, b: str) -> float:
+    """Jaccard overlap in [0.0, 1.0]; 0.0 when either side has no tokens."""
     ta, tb = tokens(a), tokens(b)
     if not ta or not tb:
         return 0.0

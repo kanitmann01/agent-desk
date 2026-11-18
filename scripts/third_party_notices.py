@@ -32,6 +32,12 @@ EXCEPTION_PROPERTY = "agentdesk:license-exception"
 
 
 def _licences(component: dict[str, Any]) -> list[str]:
+    """Collect one component's licence identifiers, sorted and deduplicated.
+
+    An SPDX expression is kept as one string rather than split; a component
+    with nothing usable declared yields ["UNKNOWN"], so the generated table
+    never shows an empty licence cell.
+    """
     values: list[str] = []
     for entry in component.get("licenses") or []:
         if not isinstance(entry, dict):
@@ -49,6 +55,11 @@ def _licences(component: dict[str, Any]) -> list[str]:
 
 
 def _property(component: dict[str, Any], name: str) -> str | None:
+    """Return the value of the named CycloneDX property, or None.
+
+    Only the first match is read, and a property whose value is not a string
+    counts as absent.
+    """
     for prop in component.get("properties") or []:
         if isinstance(prop, dict) and prop.get("name") == name:
             value = prop.get("value")
@@ -57,6 +68,11 @@ def _property(component: dict[str, Any], name: str) -> str | None:
 
 
 def _sha256(path: Path) -> str:
+    """Return the hex sha256 of a file, read in 64 KiB chunks.
+
+    The notices file records it beside each upstream licence text, so an
+    edited licence shows up as a diff in the generated document.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(65536), b""):
@@ -65,12 +81,25 @@ def _sha256(path: Path) -> str:
 
 
 def _cell(value: str) -> str:
+    """Escape a value for a Markdown table cell.
+
+    Only the pipe needs escaping, because it would otherwise end the cell; new
+    lines never reach here from an SBOM field in practice.
+    """
     return value.replace("|", "\\|")
 
 
 def _component_table(
     components: list[dict[str, Any]], root: Path, require_text: bool
 ) -> tuple[list[str], list[str]]:
+    """Render the Markdown table for one component list, plus the errors found.
+
+    A licence text recorded in the SBOM but missing on disk is always an
+    error; a component with no text recorded is one only when require_text is
+    set, which is how build-only components are allowed to ship none. The
+    CPython row reports its version as "bundled" because the patch level
+    follows the build host and would make the committed file churn.
+    """
     lines = [
         "| Component | Version | Licence | Upstream text |",
         "|---|---|---|---|",
@@ -107,6 +136,14 @@ def _component_table(
 
 
 def render(sbom: dict[str, Any], root: Path) -> tuple[str, list[str]]:
+    """Render the whole notices document from one SBOM.
+
+    Returns the document and the errors that should stop it being written; a
+    document that is not CycloneDX 1.6 renders as empty text with that error.
+    Distributed and build-only components get separate tables, each sorted by
+    name and version, and the SBOM's timestamp and serial are deliberately not
+    reproduced so the file stays stable for --check.
+    """
     if sbom.get("bomFormat") != "CycloneDX" or str(sbom.get("specVersion")) != "1.6":
         return "", ["not a CycloneDX 1.6 document"]
     components = [c for c in sbom.get("components") or [] if isinstance(c, dict)]
@@ -199,6 +236,14 @@ def render(sbom: dict[str, Any], root: Path) -> tuple[str, list[str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Regenerate or check THIRD-PARTY-NOTICES.md and return the exit code.
+
+    Reads --sbom (default build/sbom.cdx.json). With --check it compares the
+    rendered text against --output and writes nothing, so CI can catch a stale
+    file; without it, --output is overwritten with Unix newlines. Returns 0 on
+    success and 1 when the SBOM cannot be read, the render found errors, or
+    --check found a difference, with the reason on stderr.
+    """
     parser = argparse.ArgumentParser(
         prog="third_party_notices.py",
         description="Regenerate THIRD-PARTY-NOTICES.md from the SBOM.",

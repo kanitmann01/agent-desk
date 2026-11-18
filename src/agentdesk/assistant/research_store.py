@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS research_answer (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the research store's tables.
+
+    Idempotent: the schema uses IF NOT EXISTS, so this runs on every open.
+    """
     conn.executescript(SCHEMA)
     conn.commit()
 
@@ -35,6 +39,12 @@ class ResearchStore:
 
     def __init__(self, conn: sqlite3.Connection,
                  clock: Callable[[], float] = time.time) -> None:
+        """Open the store on an existing connection and prepare its schema.
+
+        The connection is shared by request threads, so every read and write is
+        serialized through the lock; it is re-entrant because a holder may call
+        another method that takes it again.
+        """
         self.conn = conn
         self.clock = clock
         # One connection serves request threads (a POST /research save

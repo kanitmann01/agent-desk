@@ -62,5 +62,11 @@ class Freshness:
     updated_iso: str
 
     def __post_init__(self) -> None:
+        """Reject a status the shell has no dot for.
+
+        Freshness is built from watcher state strings, so a state that arrives here
+        without a FRESHNESS_STATUSES entry fails at construction instead of rendering a
+        dot no renderer can label.
+        """
         if self.status not in FRESHNESS_STATUSES:
             raise ValueError(f"unknown freshness status: {self.status!r}")

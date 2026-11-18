@@ -26,6 +26,11 @@ from .install import tree_digest
 
 
 def _dependency_reasons(index, plugin_dir: Path, plugin_id: str) -> list[str]:
+    """Return the reasons the reviewed plugin's dependencies do not resolve.
+
+    The plugin has to be indexed itself before its dependencies can be looked
+    up; every dependency missing from the index gets its own reason.
+    """
     entry = index.plugin(plugin_id)
     if entry is None:
         return [f"registry-ci:unindexed-plugin:{plugin_id}"]
@@ -34,6 +39,12 @@ def _dependency_reasons(index, plugin_dir: Path, plugin_id: str) -> list[str]:
 
 
 def _hash_reasons(index, plugin_dir: Path, plugin_id: str) -> list[str]:
+    """Return the reasons the index pin disagrees with the plugin directory.
+
+    The version is read from the directory's own manifest, so an unreadable
+    manifest or an unindexed release is reported before any digest is
+    recomputed.
+    """
     try:
         manifest = json.loads((plugin_dir / "manifest.json").read_text(
             encoding="utf-8"))
@@ -81,6 +92,12 @@ def _local_release_reasons(index, registry_root: Path,
 
 
 def _history_reasons(new_index, base_index_text: str | None) -> list[str]:
+    """Return the reasons the new index lost something the base index carried.
+
+    No base (None, empty, or an empty object) has no history to lose. Only
+    removals are reported: appending a release and yanking one are exactly what
+    the append-only rule permits.
+    """
     if base_index_text is None:
         return []
     stripped = (base_index_text or "").strip()

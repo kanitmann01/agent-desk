@@ -30,6 +30,7 @@ class PeerClientError(Exception):
     """A named client-side refusal: ``code`` is the stable vocabulary."""
 
     def __init__(self, code: str, message: str) -> None:
+        """Keep the stable code beside the message."""
         super().__init__(message)
         self.code = code
 
@@ -59,12 +60,20 @@ class PeerClient:
     """One-shot requests; no connection state worth keeping."""
 
     def __init__(self, timeout: float = DEFAULT_TIMEOUT_S) -> None:
+        """Hold the socket timeout every request from this client uses."""
         self.timeout = timeout
 
     # -- request plumbing ------------------------------------------------
 
     def _request(self, base_url: str, method: str, path: str, *,
                  token: str | None = None, body: bytes | None = None) -> tuple[int, bytes]:
+        """Send one request and return its status and body bytes.
+
+        The base URL is a bare host:port. An unparsable port is peer:bad-address,
+        a transport failure peer:unreachable, and a body past MAX_RESPONSE_BYTES
+        peer:too-large. One attempt per call, nothing retried, and the connection
+        is closed before this returns.
+        """
         host, _, port_text = base_url.partition(":")
         try:
             port = int(port_text) if port_text else 80
@@ -99,6 +108,12 @@ class PeerClient:
 
     def _json(self, base_url: str, method: str, path: str, *,
               token: str | None = None, body: bytes | None = None) -> dict:
+        """Fetch one reply that has to be a 200 JSON object.
+
+        Any other status becomes the server's own error name and message when its
+        body carries both, peer:http-error otherwise; a body that is not a UTF-8
+        JSON object is peer:bad-response.
+        """
         status, payload = self._request(base_url, method, path,
                                         token=token, body=body)
         if status != 200:

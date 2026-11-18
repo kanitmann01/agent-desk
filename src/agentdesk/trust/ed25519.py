@@ -17,6 +17,13 @@ IDENTITY = (0, 1, 1, 0)
 
 
 def _recover_x(y: int, sign: int) -> int | None:
+    """Return the x coordinate for the point with this y and sign bit.
+
+    None means the bytes are not a point: y outside the field, or y not on the
+    curve. x == 0 has one square root, so sign 1 there is rejected rather than
+    silently flipped to the only candidate. Callers treat None as a failed
+    decoding, never as a value to keep going with.
+    """
     if y >= P:
         return None
     x2 = (y * y - 1) * pow(D * y * y + 1, P - 2, P) % P
@@ -33,6 +40,12 @@ def _recover_x(y: int, sign: int) -> int | None:
 
 
 def _base_point() -> tuple[int, int, int, int]:
+    """Derive the RFC 8032 base point, in extended coordinates.
+
+    y = 4/5 fixes the point and the even square root fixes x, so the result is a
+    constant. A ValueError here can only mean the field constants are wrong; it
+    is not a data-dependent failure.
+    """
     y = 4 * pow(5, P - 2, P) % P
     x = _recover_x(y, 0)
     if x is None:
@@ -44,6 +57,12 @@ BASE = _base_point()
 
 
 def _add(first, second):
+    """Add two points in extended twisted-Edwards coordinates.
+
+    Arguments and result are (x, y, z, t) with x = X/Z, y = Y/Z, t = XY/Z. The
+    formula is the unified one for a = -1, so it handles equal inputs and the
+    identity too, which is what lets _multiply use it for every bit.
+    """
     x1, y1, z1, t1 = first
     x2, y2, z2, t2 = second
     a = (y1 - x1) * (y2 - x2) % P
@@ -58,6 +77,11 @@ def _add(first, second):
 
 
 def _double(point):
+    """Double a point in extended coordinates.
+
+    The t coordinate is recomputed rather than read, so the fourth element of the
+    input cannot influence the result.
+    """
     x1, y1, z1, _ = point
     a = x1 * x1 % P
     b = y1 * y1 % P
@@ -70,6 +94,13 @@ def _double(point):
 
 
 def _multiply(scalar: int, point):
+    """Return scalar * point by right-to-left double-and-add.
+
+    The loop runs once per bit of the scalar and branches on each bit, so it is
+    not constant time; this module trades side-channel resistance for a small,
+    dependency-free implementation. A scalar of zero or less returns the
+    identity, because the loop never runs.
+    """
     result = IDENTITY
     addend = point
     while scalar > 0:
@@ -81,6 +112,12 @@ def _multiply(scalar: int, point):
 
 
 def _encode(point) -> bytes:
+    """Encode a point as the 32-byte RFC 8032 form.
+
+    z is inverted first, so any projective representative of a point encodes to
+    the same bytes. The low bit of x becomes the top bit of the last byte, which
+    is where the decoder looks for the sign.
+    """
     x, y, z, _ = point
     inverse = pow(z, P - 2, P)
     x = x * inverse % P
@@ -91,6 +128,13 @@ def _encode(point) -> bytes:
 
 
 def _decode(data: bytes):
+    """Decode 32 bytes into extended coordinates, or None.
+
+    Rejects a wrong length, a y outside the field, and a y not on the curve, so a
+    malformed signature cannot be coerced onto a nearby point. None is a
+    verification failure, not an error: verify turns it into 'the signature does
+    not verify'.
+    """
     if len(data) != 32:
         return None
     value = int.from_bytes(data, "little")
@@ -103,6 +147,13 @@ def _decode(data: bytes):
 
 
 def _check_bytes(value, length: int, what: str) -> bytes:
+    """Return value as immutable bytes, requiring exactly this length.
+
+    bytearray is accepted and copied, so a caller cannot keep a handle that
+    changes the seed or key after it was checked. The ValueError message names
+    the argument, which is how a caller with several byte arguments learns which
+    one was wrong.
+    """
     if not isinstance(value, (bytes, bytearray)):
         raise ValueError(f"{what} must be bytes")
     data = bytes(value)

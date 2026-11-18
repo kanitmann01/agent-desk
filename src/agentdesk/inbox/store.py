@@ -55,6 +55,12 @@ _COLUMNS = (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the tables and add the columns later builds introduced.
+
+    The migrations are append-only: existing rows keep their values and a
+    column that is already there is left alone, so a current store comes out
+    unchanged. Commits.
+    """
     conn.executescript(SCHEMA)
     # Append-only migration for stores created by earlier builds: new
     # columns are added, never rewritten (the audit store's precedent).
@@ -79,6 +85,7 @@ def _serialized(method):
     back through get)."""
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        """Run one store method with the store's re-entrant lock held."""
         with self._lock:
             return method(self, *args, **kwargs)
     return wrapper
@@ -89,6 +96,11 @@ class InboxStore:
     every method serializes on one lock (see _serialized)."""
 
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float]) -> None:
+        """Adopt the connection as the store's only one, and migrate it.
+
+        The lock belongs to this instance; the clock supplies every timestamp the
+        store writes and compares against.
+        """
         self.conn = conn
         self.clock = clock
         self._lock = threading.RLock()
@@ -115,6 +127,12 @@ class InboxStore:
         card_id: str | None = None,
         draft: str = "",
     ) -> Card:
+        """Insert a waiting card and return it as the store now holds it.
+
+        The id is generated unless one is handed in, and created_ts comes from the
+        store clock. Nothing is deduplicated here: an identical waiting card is
+        inserted too, so suppressing repeats stays the callers' concern.
+        """
         card = Card(
             id=card_id or new_card_id(),
             kind=kind,
@@ -141,6 +159,12 @@ class InboxStore:
 
     @_serialized
     def dismiss(self, card_id: str) -> Card:
+        """Mark a card dismissed and stamp the start of its recovery window.
+
+        The status write is unconditional, so an accepted card becomes dismissed and
+        keeps its acceptance stamp. An unknown id raises UnknownCard before anything
+        is written.
+        """
         card = self.get(card_id)
         with self.conn:
             self.conn.execute(
@@ -151,6 +175,12 @@ class InboxStore:
 
     @_serialized
     def accept(self, card_id: str) -> Card:
+        """Mark a card accepted and stamp when it was accepted.
+
+        The status write is unconditional, so a dismissed card becomes accepted and
+        keeps its dismissal stamp. An unknown id raises UnknownCard before anything
+        is written.
+        """
         card = self.get(card_id)
         with self.conn:
             self.conn.execute(
@@ -243,6 +273,11 @@ class InboxStore:
 
     @_serialized
     def mark_notified(self, card_id: str) -> None:
+        """Stamp the card as notified without touching its status.
+
+        Only the API payload reads this stamp; the daily budget counts the
+        notification rows instead.
+        """
         with self.conn:
             self.conn.execute(
                 "UPDATE cards SET notified_ts = ? WHERE id = ?", (self.clock(), card_id)
@@ -263,6 +298,7 @@ class InboxStore:
 
     @_serialized
     def record_notification(self, kind: str, card_count: int = 1) -> None:
+        """Append one notification to the ledger the daily budget counts."""
         with self.conn:
             self.conn.execute(
                 "INSERT INTO notifications (ts, kind, card_count) VALUES (?, ?, ?)",
@@ -273,6 +309,10 @@ class InboxStore:
 
     @_serialized
     def get(self, card_id: str) -> Card:
+        """Read one card by id, with its meta decoded from the stored JSON.
+
+        Raises UnknownCard when no row carries the id.
+        """
         row = self.conn.execute(
             f"SELECT {_COLUMNS} FROM cards WHERE id = ?",
             (card_id,),
@@ -303,6 +343,7 @@ class InboxStore:
 
     @_serialized
     def dismissed(self) -> list[Card]:
+        """Return every dismissed card, oldest created first."""
         return self._by_status(STATUS_DISMISSED)
 
     @_serialized
@@ -316,6 +357,7 @@ class InboxStore:
 
     @_serialized
     def _by_status(self, status: str) -> list[Card]:
+        """Return every card in one status, ordered by creation time, oldest first."""
         rows = self.conn.execute(
             "SELECT id FROM cards WHERE status = ? ORDER BY created_ts ASC",
             (status,),

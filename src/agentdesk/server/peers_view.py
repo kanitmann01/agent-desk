@@ -16,10 +16,19 @@ from agentdesk.server import pages
 
 
 def _e(value) -> str:
+    """Escape any value for HTML text, turning None into an empty string.
+
+    The peer catalog mixes missing and null fields, so every interpolation goes through
+    one rule.
+    """
     return html.escape(str(value if value is not None else ""))
 
 
 def _pair_form(address: str = "", code: str = "") -> str:
+    """The manual pairing form, optionally pre-filled with an address and code.
+
+    Both values are escaped into their inputs and the form posts to /peers/pair.
+    """
     return (
         '<form method="post" action="/peers/pair" class="cardform">'
         f'<label for="pair-address">Desk address</label>'
@@ -35,6 +44,12 @@ def _pair_form(address: str = "", code: str = "") -> str:
 
 
 def _desk_section(catalog: dict) -> str:
+    """This desk's identity and its live pairing code, or the block that offers to generate
+    one.
+
+    The code is displayed with its contract: it pairs a single desk and expires in ten
+    minutes.
+    """
     desk = catalog.get("desk") or {}
     code = catalog.get("pairingCode")
     identity = (
@@ -62,6 +77,12 @@ def _desk_section(catalog: dict) -> str:
 
 
 def _discovered_section(catalog: dict) -> str:
+    """Cards for the desks that announced themselves over the local network.
+
+    A desk announced from this machine gets its address pre-filled into the pair form;
+    one announced from elsewhere shows the address the announcement came from and gets
+    an empty form, because the app only listens on its own machine.
+    """
     discovered = catalog.get("discovered") or []
     if discovered:
         cards = []
@@ -115,6 +136,12 @@ def _discovered_section(catalog: dict) -> str:
 
 
 def _plugin_row(peer_id: str, plugin: dict) -> str:
+    """One plugin of a paired desk: version, whether this desk has it, and the action that
+    follows.
+
+    The form posts the peer and plugin ids to /peers/install or /peers/update; an
+    installed plugin with no update gets no form.
+    """
     plugin_id = _e(plugin.get("id"))
     name = _e(plugin.get("id"))
     version = _e(plugin.get("version"))
@@ -151,6 +178,12 @@ def _plugin_row(peer_id: str, plugin: dict) -> str:
 
 
 def _paired_section(catalog: dict) -> str:
+    """Cards for the desks already paired, each with its last refresh result and plugin
+    list.
+
+    A refresh that failed shows its cause as an alert and one that never ran says so, so
+    an unknown state is never rendered as a working one.
+    """
     paired = catalog.get("paired") or []
     if not paired:
         return (

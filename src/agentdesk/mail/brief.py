@@ -66,6 +66,7 @@ def age_words(seconds: float) -> str:
 
 
 def _subject(message: Message) -> str:
+    """The subject as written, or the placeholder used when it is empty."""
     return (message.subject or "").strip() or "(no subject)"
 
 
@@ -81,6 +82,11 @@ def _topic(message: Message) -> str:
 
 
 def _importance_bonus(message: Message) -> int:
+    """The score adjustment a message's importance header earns.
+
+    High and urgent add 5, low subtracts 2, and normal or an unrecognised value
+    changes nothing, so an unusual header never skews the ranking.
+    """
     value = (message.importance or "").strip().lower()
     if value in ("high", "1", "urgent"):
         return 5

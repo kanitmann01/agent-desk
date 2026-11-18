@@ -64,6 +64,7 @@ class Adapters:
 
 
 def default_adapters() -> Adapters:
+    """The adapters a real watch uses: the folder reader and the wall clock."""
     return Adapters(read_folder=read_eml_folder_reported, clock=time.time)
 
 
@@ -94,6 +95,11 @@ class MailWatch:
         digest_hours: float = DIGEST_HOURS,
         self_address: str = MAIL_USER,
     ) -> None:
+        """Wire the inbox, the handled store and the adapters for one folder.
+
+        folder_provider is asked on every poll, so a folder chosen in settings
+        applies without a restart. Nothing polls until start_polling.
+        """
         self.inbox = inbox
         self.store = store
         self.adapters = adapters if adapters is not None else default_adapters()
@@ -161,6 +167,7 @@ class MailWatch:
         return status
 
     def retest(self) -> dict:
+        """Poll once, now; the retest button's whole behaviour."""
         return self.poll()
 
     def _file_cards(self, messages: list, handled: set[str], now: float) -> int:
@@ -203,6 +210,12 @@ class MailWatch:
         return created
 
     def _digest_exists(self, digest: list[str]) -> bool:
+        """Whether this digest is already filed, or suppressed by its predecessor.
+
+        A waiting digest suppresses any successor and a dismissed one suppresses its
+        own thread set; an accepted digest does not, because its threads are still
+        active and the next poll may honestly re-file them.
+        """
         wanted = sorted(digest)
         # One waiting digest at a time, whatever set it carries: a second
         # would only spend the user's attention twice.
@@ -219,6 +232,11 @@ class MailWatch:
         )
 
     def _card_for_thread_exists(self, thread: str) -> bool:
+        """Whether this thread's follow-up card is waiting, snoozed, or already decided.
+
+        Decided counts: one follow-up card per thread, ever, so no poll can nudge
+        the same thread twice.
+        """
         cards = self.inbox.waiting(include_snoozed=True) + self.inbox.dismissed()
         return any(
             c.kind == KIND_MAIL_FOLLOW_UP and c.meta.get("thread") == thread
@@ -306,6 +324,11 @@ class MailWatch:
         self._timer.start()
 
     def _loop(self, interval_s: float) -> None:
+        """Poll once, survive any failure, then rearm unless stopped.
+
+        The exception is logged rather than raised: one bad read must not end the
+        watch.
+        """
         if self._stop.is_set():
             return
         try:
@@ -318,6 +341,7 @@ class MailWatch:
             self._timer.start()
 
     def stop_polling(self) -> None:
+        """Cancel the timer chain; a poll already running finishes."""
         stop = getattr(self, "_stop", None)
         if stop is not None:
             stop.set()

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS handled_threads (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the handled-thread table and commit; safe to run on every open."""
     conn.executescript(SCHEMA)
     conn.commit()
 
@@ -28,6 +29,7 @@ class MailStore:
     """Handled-thread markers in, the handled set out."""
 
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float]) -> None:
+        """Open the store on a connection, creating the table if it is absent."""
         self.conn = conn
         self.clock = clock
         ensure_schema(conn)
@@ -43,10 +45,12 @@ class MailStore:
             )
 
     def handled(self) -> set[str]:
+        """Every thread ever marked handled, as a set of thread names."""
         rows = self.conn.execute("SELECT thread FROM handled_threads").fetchall()
         return {row[0] for row in rows}
 
     def is_handled(self, thread: str) -> bool:
+        """Whether this thread carries a handled marker."""
         return self.handled_ts(thread) is not None
 
     def handled_ts(self, thread: str) -> float | None:

@@ -198,10 +198,15 @@ def load_effective_policy(workspace_dir) -> tuple[Policy, dict]:
 
 
 def _reason(code: str, message: str) -> dict:
+    """One ineligibility reason in the shape the UI renders."""
     return {"code": code, "message": message}
 
 
 def _scope_host(value) -> str:
+    """Reduce a network scope to its host.
+
+    A URL, host/path and host:port all work; the result is lowercased, and an
+    empty string means the scope named no host."""
     text = str(value).strip()
     if "://" in text:
         return (urlsplit(text).hostname or "").lower()
@@ -209,6 +214,10 @@ def _scope_host(value) -> str:
 
 
 def _host_allowed(host: str, patterns) -> bool:
+    """True when a host matches any allowlist pattern.
+
+    A pattern may be a bare glob over the host or a URL, in which case only its
+    hostname is matched; matching is case-insensitive."""
     for pattern in patterns or ():
         text = str(pattern)
         if "://" in text:
@@ -220,6 +229,11 @@ def _host_allowed(host: str, patterns) -> bool:
 
 
 def _network_hosts(entry) -> list:
+    """The hosts an entry would contact, from the most specific source available.
+
+    A catalog capability list wins, then a top-level networkHosts list, then
+    the manifest's optional network allow block; an entry that declares none
+    is an empty list."""
     capabilities = entry.get("capabilities")
     if isinstance(capabilities, dict):
         network = capabilities.get("network")

@@ -18,10 +18,16 @@ _REPORT_HEADER = """# Nexuus Bot environment probe report
 
 
 def _gate_heading(result: GateResult) -> str:
+    """The markdown heading for one gate: number, title and stable key."""
     return f"## Gate {result.number}: {result.title} ({result.key})"
 
 
 def _gate_section(result: GateResult) -> str:
+    """One gate as a markdown section: heading, status, evidence, note.
+
+    Evidence lines are kept verbatim and in order; they are the only record of
+    what the gate saw.
+    """
     lines = [_gate_heading(result), "", f"Status: {result.status}", "", "Evidence:"]
     lines.extend(f"- {item}" for item in result.evidence)
     if result.note:

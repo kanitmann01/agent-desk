@@ -175,6 +175,12 @@ def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
     rows: list[str] = []
 
     def row(title: str, line: str, control: str, row_id: str = "") -> None:
+        """Append one maintenance row to the tile: a title, a description line and a
+        control.
+
+        row_id is optional and exists only to give the row a DOM id a client-side update
+        can target.
+        """
         ident = f" id='{row_id}'" if row_id else ""
         rows.append(
             f"<div class='ml-maint-row'{ident}><div class='ml-maint-copy'>"

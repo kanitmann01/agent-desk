@@ -17,6 +17,16 @@ from .errors import TrustError
 
 
 def _reject_floats(value: Any, path: str = "") -> None:
+    """Reject floats anywhere in a JSON value before it is serialised.
+
+    Float formatting is the one part of JSON that implementations do not agree
+    on, and integer-valued floats (1.0) do not serialise like the integers they
+    denote. Keeping signed metadata to ints and strings is what makes the bytes
+    identical on every platform. Non-string object keys are rejected too: json
+    would silently stringify them and change the document.
+
+    ValueError names the path of the first offending value.
+    """
     if isinstance(value, float):
         raise ValueError(f"floats are not allowed in canonical JSON at {path or '<root>'}")
     if isinstance(value, dict):
@@ -46,10 +56,23 @@ def canonical_bytes(value: Any) -> bytes:
 
 
 def b64u_encode(data: bytes) -> str:
+    """Encode bytes as unpadded base64url.
+
+    The alphabet is URL- and filename-safe ('-' and '_' in place of '+' and
+    '/') and no '=' padding is written, so the value can go straight into
+    canonical JSON. b64u_decode restores the padding when reading it back.
+    """
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
 def b64u_decode(text: str) -> bytes:
+    """Decode base64url into bytes, tolerating a missing '=' padding.
+
+    The alphabet is validated: a corrupted or truncated field raises ValueError
+    here instead of silently yielding the wrong bytes. The standard '+' and '/'
+    characters decode as well, because base64.b64decode translates them first.
+    Correctly padded input is accepted, so callers need not strip '='.
+    """
     if not isinstance(text, str):
         raise ValueError("base64url value must be a string")
     padded = text + "=" * (-len(text) % 4)
@@ -57,6 +80,11 @@ def b64u_decode(text: str) -> bytes:
 
 
 def _utc_now() -> str:
+    """Return the current UTC time as an ISO 8601 string.
+
+    Always with an explicit +00:00 offset, which is what makes the default
+    envelope signedAt compare cleanly against timestamps read from another host.
+    """
     return datetime.now(timezone.utc).isoformat()
 
 

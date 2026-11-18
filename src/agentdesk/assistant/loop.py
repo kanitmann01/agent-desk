@@ -37,10 +37,20 @@ class Answer:
     cause: str = ""
 
     def __post_init__(self) -> None:
+        """Give the frozen dataclass a real list when sources was omitted.
+
+        The None default exists only because a mutable default would be shared
+        between instances; this replaces it per instance.
+        """
         if self.sources is None:
             object.__setattr__(self, "sources", [])
 
     def to_json(self) -> dict:
+        """Return the wire shape the research and assistant views render.
+
+        The key set is the contract those views read; sources is always a list
+        by the time this runs.
+        """
         return {
             "status": self.status,
             "summary": self.summary,
@@ -96,6 +106,14 @@ def assistant_reply(
 
 
 def _ask(prompt: str, *, kind: str, llm, audit_conn, endpoint: str, model: str, clock, summary_mode: bool) -> Answer:
+    """Run one model call for a surface, degrading instead of raising.
+
+    A failed call returns a degraded Answer whose cause is the endpoint's own
+    message for LlmUnavailable and DEGRADED_CAUSE for anything unexpected.
+    Every attempt is audited under llm.<kind> with the prompt's size in UTF-8
+    bytes, never its text. In summary mode the reply is parsed into summary
+    and sources; otherwise it is stripped and returned as reply.
+    """
     now = clock if clock is not None else _time.time
     request_bytes = len(prompt.encode("utf-8"))
     try:

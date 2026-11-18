@@ -39,6 +39,11 @@ REMEDIATIONS = {
 
 
 def _detail(failed_gates) -> str:
+    """The remediation clauses for the failed gates, one per gate.
+
+    Joined with "; " into the parenthesised tail of a RESHAPE or NO-GO verdict
+    line.
+    """
     return "; ".join(
         f"gate {g.number} ({g.key}): {REMEDIATIONS[g.key]}" for g in failed_gates
     )

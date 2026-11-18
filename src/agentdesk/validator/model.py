@@ -19,6 +19,7 @@ class Verdict:
 
     @property
     def ok(self) -> bool:
+        """True when validation found nothing to report, i.e. `failures` is empty."""
         return not self.failures
 
     def as_dict(self) -> dict:

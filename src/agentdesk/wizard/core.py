@@ -244,6 +244,7 @@ class WizardError(Exception):
         status: int = 409,
         feature_request: dict | None = None,
     ) -> None:
+        """Keep the named code, the HTTP status and any escalation payload."""
         super().__init__(message)
         self.code = code
         self.status = status
@@ -267,6 +268,7 @@ class WizardSession:
     created_ts: float = 0.0
 
     def __post_init__(self) -> None:
+        """Reject a state outside WIZARD_STATES."""
         if self.state not in WIZARD_STATES:
             raise ValueError(f"unknown wizard state: {self.state!r}")
 
@@ -292,12 +294,21 @@ class WizardStore:
     def __init__(
         self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time
     ) -> None:
+        """Adopt the connection and create the session table if it is absent.
+
+        The clock supplies the creation timestamp of every new session.
+        """
         self.conn = conn
         self.clock = clock
         conn.executescript(STORE_SCHEMA)
         conn.commit()
 
     def create(self, description: str) -> WizardSession:
+        """Start a session in the questions state and persist it.
+
+        The description is stored verbatim, because an escalation hands it on
+        unchanged; a blank or non-text one raises ValueError.
+        """
         if not isinstance(description, str) or not description.strip():
             raise ValueError("a wizard session needs a plain-English description")
         session = WizardSession(
@@ -310,6 +321,7 @@ class WizardStore:
         return session
 
     def get(self, session_id: str) -> WizardSession:
+        """Read one session by id, or raise WizardError wizard:unknown with 404."""
         row = self.conn.execute(
             "SELECT document FROM wizard_sessions WHERE id = ?", (session_id,)
         ).fetchone()
@@ -318,9 +330,11 @@ class WizardStore:
         return _session_from_document(json.loads(row[0]))
 
     def save(self, session: WizardSession) -> None:
+        """Persist the session's current fields over its stored document."""
         self._write(session)
 
     def _write(self, session: WizardSession) -> None:
+        """Replace the session's row with its whole serialized document."""
         document = json.dumps(
             {
                 "id": session.id,
@@ -343,6 +357,12 @@ class WizardStore:
 
 
 def _session_from_document(document: dict) -> WizardSession:
+    """Rebuild a session from its stored document.
+
+    Every absent key falls back to the dataclass default, so a document written
+    by an earlier build still loads; the state is checked by WizardSession
+    itself.
+    """
     return WizardSession(
         id=str(document.get("id", "")),
         state=str(document.get("state", STATE_QUESTIONS)),
@@ -426,6 +446,11 @@ def _feature_request(description: str, answers: dict) -> Callable[[str], dict]:
     ask travels with every refusal, verbatim."""
 
     def make(reason: str) -> dict:
+        """Build the escalation payload for one refusal.
+
+        The description and the answers travel verbatim; the reason is cut at
+        REASON_LIMIT characters.
+        """
         return {
             "description": description,
             "answers": dict(answers),
@@ -487,11 +512,21 @@ def _clean_glob(candidate: object) -> str:
 
 
 def _glob_in_text(description: str) -> str:
+    """Return the first file glob written in the description, or no match.
+
+    The match is raw: _clean_glob still decides whether it may be watched.
+    """
     match = GLOB_PATTERN.search(description)
     return match.group(0) if match else ""
 
 
 def _file_glob(description: str, answers: dict, source_type: str) -> str:
+    """Return the workspace-relative glob to watch for one source type.
+
+    The chosen answer is tried first, then a glob written in the description,
+    and both must survive _clean_glob; when neither does, the source type's
+    default applies.
+    """
     for candidate in (answers.get("file"), _glob_in_text(description)):
         glob = _clean_glob(candidate)
         if glob:
@@ -500,6 +535,11 @@ def _file_glob(description: str, answers: dict, source_type: str) -> str:
 
 
 def _cadence(answers: dict) -> str:
+    """Return the cron entry the answers' wording asks for, or the default.
+
+    Phrases are tried in CADENCE_CRON order and matched anywhere in the string
+    answers, so the earliest listed cadence wins when several are named.
+    """
     joined = " ".join(str(value).lower() for value in answers.values() if isinstance(value, str))
     for phrases, cron in CADENCE_CRON:
         if any(phrase in joined for phrase in phrases):
@@ -508,6 +548,7 @@ def _cadence(answers: dict) -> str:
 
 
 def _mentions_day_window(description: str, answers: dict) -> bool:
+    """Return True when the description or an answer says 24 hours."""
     haystack = description + " " + " ".join(
         str(value) for value in answers.values() if isinstance(value, str)
     )
@@ -594,6 +635,7 @@ class WizardCompiler:
     identity; the validator is the only judge of the result."""
 
     def __init__(self, llm: Callable[[str], str] | None) -> None:
+        """Hold the prompt-to-text callable; None keeps every step offline."""
         self.llm = llm
 
     # -- questions --------------------------------------------------------

@@ -94,6 +94,12 @@ class GateResult:
 
 
 def _label(component: dict[str, Any]) -> str:
+    """Name one component for a report line, with version and purl.
+
+    The purl is appended only when the name and version are not already
+    visible in it, so an ordinary npm component reads as "pkg@1.2.3" and does
+    not repeat its whole coordinate.
+    """
     name = str(component.get("name") or "<unnamed>")
     version = component.get("version")
     purl = component.get("purl")
@@ -106,6 +112,12 @@ def _label(component: dict[str, Any]) -> str:
 
 
 def _exception_marker(component: dict[str, Any]) -> str | None:
+    """Return the component's recorded licence exception, or None.
+
+    Reads the first ``agentdesk:license-exception`` property. A property whose
+    value is not a string counts as absent, so a malformed SBOM cannot open an
+    exception by accident.
+    """
     for prop in component.get("properties") or []:
         if isinstance(prop, dict) and prop.get("name") == EXCEPTION_PROPERTY:
             value = prop.get("value")
@@ -146,6 +158,13 @@ def _license_tokens(component: dict[str, Any]) -> list[str]:
 
 
 def _disallowed_reason(token: str) -> str | None:
+    """Return why a licence token is banned outright, or None when it is not.
+
+    The match is on substrings of the lowercased token because SBOMs spell
+    these licences many ways (GPL-3.0-only, LGPL-2.1, "AGPL v3"). A hit
+    cannot be excepted: the caller fails the component without consulting the
+    allowlist or the recorded exceptions.
+    """
     lowered = token.lower()
     if "commons" in lowered and "clause" in lowered:
         return "Commons Clause is never distributable (and cannot be excepted)"
@@ -163,6 +182,16 @@ def _disallowed_reason(token: str) -> str | None:
 
 
 def evaluate(sbom: dict[str, Any]) -> GateResult:
+    """Check every declared licence in one CycloneDX 1.6 document.
+
+    Returns a GateResult whose ok is False when any component failed. A
+    component that declares no licence fails; a banned token fails the
+    component immediately, without looking at the rest of its expression; and
+    build-only components (scope "excluded") are checked like the rest even
+    though they are counted apart. Raises SbomError for anything that is not a
+    CycloneDX 1.6 document with a components list, so a gate that cannot read
+    its input never reports a pass.
+    """
     if not isinstance(sbom, dict):
         raise SbomError("the document root must be a JSON object")
     if sbom.get("bomFormat") != "CycloneDX":
@@ -227,6 +256,12 @@ def evaluate(sbom: dict[str, Any]) -> GateResult:
 
 
 def render_report(result: GateResult, sbom_path: Path) -> str:
+    """Render the human-readable report for stdout and for --report.
+
+    It restates the allowlist and the recorded exceptions, so a failing run
+    explains the policy it applied, and its last line is "RESULT: PASS" or
+    "RESULT: FAIL". The returned text always ends with a newline.
+    """
     lines = [
         "Agent Desk licence gate (CycloneDX 1.6)",
         f"SBOM: {sbom_path.as_posix()}",
@@ -263,6 +298,12 @@ def render_report(result: GateResult, sbom_path: Path) -> str:
 
 
 def _load(path: Path) -> dict[str, Any]:
+    """Read and parse one SBOM file, naming the file in any error.
+
+    An unreadable file and invalid JSON both become SbomError, which is what
+    lets main answer exit code 1 (no verdict possible) rather than a licence
+    failure.
+    """
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -274,6 +315,14 @@ def _load(path: Path) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the gate on one SBOM and return its documented exit code.
+
+    Prints the report on stdout and, with --report, writes the same text to
+    that path, creating parent directories. Exit 0 when every component
+    passes, 1 when the SBOM is missing, unreadable or not CycloneDX 1.6 (no
+    report is written then) or the report cannot be saved, and 2 when the
+    licence policy fails.
+    """
     parser = argparse.ArgumentParser(
         prog="license_gate.py",
         description="Fail closed on licences outside the Agent Desk allowlist.",

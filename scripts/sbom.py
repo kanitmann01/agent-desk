@@ -92,10 +92,22 @@ LICENSE_EXCEPTIONS = {
 
 
 def _sha256(data: bytes) -> str:
+    """Return the hex sha256 of a byte string.
+
+    This is the digest form CycloneDX records, used here for the frontend
+    lockfile so the document names the exact dependency tree it describes.
+    """
     return hashlib.sha256(data).hexdigest()
 
 
 def _load_pyproject(path: Path) -> dict:
+    """Parse pyproject.toml, or exit 1 with the reason on stderr.
+
+    On Python 3.11+ that is tomllib. The 3.10 fallback reads only name,
+    version and license with a regex, and it accepts an empty dependency list
+    only: a non-empty one exits, because resolving it without a TOML parser
+    would mean guessing which packages ship.
+    """
     if not path.is_file():
         raise SystemExit(f"sbom: missing {path}")
     text = path.read_text(encoding="utf-8")
@@ -118,6 +130,12 @@ def _load_pyproject(path: Path) -> dict:
 
 
 def _npm_purl(name: str, version: str) -> str:
+    """Build the CycloneDX package URL for one npm name and version.
+
+    Scoped names are split at the slash and both halves are percent-encoded,
+    which is why a purl in the document reads %40fontsource-variable rather
+    than @fontsource-variable.
+    """
     if name.startswith("@"):
         scope, _, bare = name.partition("/")
         return f"pkg:npm/{quote(scope, safe='')}/{quote(bare, safe='')}@{quote(version, safe='')}"
@@ -125,6 +143,12 @@ def _npm_purl(name: str, version: str) -> str:
 
 
 def _sha512_from_integrity(integrity: str | None) -> str | None:
+    """Convert an npm "sha512-" integrity string to hex, or return None.
+
+    Only the first sha512 token is used. An absent, non-sha512 or undecodable
+    value yields None, and the component is emitted without a hash rather than
+    with a wrong one.
+    """
     if not integrity:
         return None
     for token in integrity.split():
@@ -137,6 +161,12 @@ def _sha512_from_integrity(integrity: str | None) -> str | None:
 
 
 def _licence_object(licence: str) -> dict:
+    """Wrap one licence string in a CycloneDX license choice object.
+
+    Identifiers in SPDX_LICENSE_IDS are emitted as an id and everything else
+    by name, because an id has to be a real SPDX identifier for the document
+    to be valid.
+    """
     if licence in SPDX_LICENSE_IDS:
         return {"license": {"id": licence}}
     return {"license": {"name": licence}}
@@ -155,6 +185,13 @@ def _component(
     external_refs: list[dict] | None = None,
     properties: list[dict] | None = None,
 ) -> dict:
+    """Assemble one CycloneDX component from the fields that are set.
+
+    Unset optionals are omitted rather than written as empty arrays, and
+    hashes, external references and properties are sorted by their key fields,
+    so the output does not depend on the order a source file happened to be
+    walked.
+    """
     component: dict = {
         "type": ctype,
         "bom-ref": bom_ref,
@@ -179,6 +216,16 @@ def _component(
 
 
 def _npm_components(lock_path: Path) -> list[dict]:
+    """Turn package-lock.json's packages map into components.
+
+    The root entry is skipped and a purl already seen is dropped, so a package
+    hoisted into several node_modules paths appears once. Dev dependencies keep
+    scope "excluded" while their licence, hash and distribution URL are still
+    recorded. Components named in LOCAL_LICENSE_FILES or LICENSE_EXCEPTIONS
+    gain the matching properties, which the notices renderer and the licence
+    gate read back. A bad entry, a missing version or an unreadable lockfile
+    exits instead of producing a half-filled component.
+    """
     if not lock_path.is_file():
         raise SystemExit(f"sbom: missing {lock_path}")
     try:
@@ -244,6 +291,13 @@ def _npm_components(lock_path: Path) -> list[dict]:
 
 
 def _python_components(pyproject: dict) -> list[dict]:
+    """Return the CPython component, refusing a project with runtime deps.
+
+    The interpreter running this script is the one Nuitka embeds, so its
+    version is what the document records. A non-empty [project].dependencies
+    exits on purpose: a runtime dependency is a licensing decision, and this
+    generator cannot resolve or licence one.
+    """
     project = pyproject.get("project")
     if not isinstance(project, dict):
         raise SystemExit("sbom: pyproject.toml has no [project] table")
@@ -280,6 +334,14 @@ def _python_components(pyproject: dict) -> list[dict]:
 
 
 def build_sbom(root: Path = REPO_ROOT) -> dict:
+    """Build the whole SBOM document for one repository root.
+
+    Deterministic apart from the timestamp: components are sorted by bom-ref
+    and the serial number is a UUIDv5 over the canonical metadata and
+    component list, so the same inputs and the same SOURCE_DATE_EPOCH give the
+    same bytes. Raises SystemExit when pyproject.toml or the frontend lockfile
+    is missing or unusable.
+    """
     pyproject_path = root / "pyproject.toml"
     lock_path = root / "frontend" / "package-lock.json"
     pyproject = _load_pyproject(pyproject_path)
@@ -347,6 +409,12 @@ def build_sbom(root: Path = REPO_ROOT) -> dict:
 
 
 def _timestamp() -> str:
+    """Return the document timestamp, honoring SOURCE_DATE_EPOCH.
+
+    Microseconds are dropped and the UTC offset is written as "Z", so two
+    runs with the same pinned epoch are byte-identical. An unparseable epoch
+    exits rather than silently falling back to the current time.
+    """
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     if epoch:
         try:
@@ -359,6 +427,14 @@ def _timestamp() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Write the SBOM to --output and report what it contains.
+
+    --root defaults to the parent of scripts/. Creates the output directory,
+    writes UTF-8 with Unix newlines and a trailing newline, then prints the
+    path, the required/excluded tally and the serial number. Returns 1 when
+    the output cannot be written; an unusable input exits before anything is
+    written.
+    """
     parser = argparse.ArgumentParser(
         prog="sbom.py", description="Generate build/sbom.cdx.json (CycloneDX 1.6)."
     )

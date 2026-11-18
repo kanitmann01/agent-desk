@@ -46,12 +46,18 @@ class LayoutError(ValueError):
     """
 
     def __init__(self, code: str, message: str, key: str | None = None) -> None:
+        """Build a refusal from its named API code and, when known, the card key.
+
+        The message is the sentence for a human; code is what the handler switches
+        on.
+        """
         super().__init__(message)
         self.code = code
         self.key = key
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the layout table and commit; safe to run on every open."""
     conn.executescript(SCHEMA)
     conn.commit()
 
@@ -66,6 +72,7 @@ def parse_layout(entries: object, known_keys: set[str]) -> list[dict]:
     """
 
     def refuse(code: str, message: str, key: str | None = None):
+        """The named refusal for one invalid entry, as an exception to raise."""
         return LayoutError(code, message, key)
 
     if not isinstance(entries, list):
@@ -106,6 +113,7 @@ class LayoutStore:
     """Order, visibility and titles per card key; resolution is a read."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
+        """Open the store on a connection, creating the table if it is absent."""
         self.conn = conn
         ensure_schema(conn)
 

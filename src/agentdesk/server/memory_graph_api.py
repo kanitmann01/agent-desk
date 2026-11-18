@@ -58,11 +58,20 @@ _CARD_KIND_WORDS = {
 
 
 def _bounded(text: str, limit: int) -> str:
+    """One value cut to a character budget on a single line.
+
+    Whitespace runs, newlines included, collapse to one space before measuring, and a
+    truncated value ends in an ellipsis that counts toward the limit.
+    """
     flat = " ".join(str(text).split())
     return flat if len(flat) <= limit else flat[: limit - 1] + "\u2026"
 
 
 def _plural(count: int, noun: str) -> str:
+    """Count a noun, adding the plural s unless the count is exactly one.
+
+    Zero takes the plural, as English does.
+    """
     return f"{count} {noun}" + ("" if count == 1 else "s")
 
 
@@ -214,6 +223,11 @@ def build_memory_graph(
     seen: set[str] = set()
 
     def push(node: dict) -> None:
+        """Append a node unless an earlier one already claimed its id.
+
+        The first occurrence wins, so a node reached from several sources is listed once
+        and in the order it was first seen.
+        """
         if node["id"] not in seen:
             seen.add(node["id"])
             nodes.append(node)

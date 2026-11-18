@@ -56,6 +56,12 @@ def _watch_word(
     watching: tuple[str, ...],
     error: tuple[str, ...],
 ) -> str:
+    """The word a source card shows, from the connection table and the watch state.
+
+    unconfigured wins over any watch state because a source health calls disconnected
+    has no watch to read; a state listed in error names itself, and anything else reads
+    as watching rather than a guess.
+    """
     if row_status != STATUS_CONNECTED:
         return "unconfigured"
     if status is not None:
@@ -158,6 +164,11 @@ def _endpoint_card(sources: list[SourceStatus], endpoint: dict) -> str:
 
 
 def _source_card(title: str, word: str, detail: str, cause: str = "") -> str:
+    """One source card: title, the watch word as a stamp, detail and an optional cause.
+
+    Every value is escaped; the cause line appears only for an error that carries a
+    cause.
+    """
     cause_line = (
         f" <span class='empty'>{html.escape(cause)}</span>"
         if word == "error" and cause

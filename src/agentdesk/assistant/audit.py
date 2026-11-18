@@ -118,6 +118,12 @@ ACTOR = "agent-desk"
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the audit tables, adding the columns older stores lack.
+
+    Append-only means the migration only ever adds columns: each ALTER is
+    tried and a duplicate-column error is ignored, so the call is safe on a
+    fresh store and on one created by an earlier build.
+    """
     conn.executescript(SCHEMA)
     # Light migration for stores created by earlier builds: append-only
     # means we add columns, never rewrite rows.
@@ -139,6 +145,12 @@ def record(
     request_bytes: int = 0,
     clock: Callable[[], float] = time.time,
 ) -> None:
+    """Append one audited call, committed before the function returns.
+
+    The timestamp comes from the injected clock and the actor is always
+    ACTOR: the store describes calls made by this app, never by anyone else.
+    detail is stored verbatim, so the caller decides how much to keep.
+    """
     with conn:
         conn.execute(
             "INSERT INTO audit (ts, actor, action, target, status, model, request_bytes, detail)"
@@ -152,6 +164,10 @@ _SELECT = ("SELECT ts, actor, action, target, status, model, request_bytes,"
 
 
 def _as_entries(rows) -> list[dict]:
+    """Turn the selected audit columns into the dicts the pages consume.
+
+    Positions are fixed by _SELECT; the two change together.
+    """
     return [
         {
             "ts": r[0],
@@ -168,6 +184,11 @@ def _as_entries(rows) -> list[dict]:
 
 
 def entries(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
+    """Return the newest audit rows, newest first.
+
+    Ordering is by row id rather than by ts, so rows written within the same
+    clock tick keep their insertion order.
+    """
     rows = conn.execute(
         _SELECT + " ORDER BY id DESC LIMIT ?",
         (limit,),
@@ -201,6 +222,11 @@ def decision_entries(conn: sqlite3.Connection, actions, limit: int = 100) -> lis
 
 
 def observed_actions(conn: sqlite3.Connection) -> set[str]:
+    """Return the action names that appear in the store.
+
+    Lets a page tell a vocabulary entry that has actually run from one that
+    is only described.
+    """
     return {r[0] for r in conn.execute("SELECT DISTINCT action FROM audit")}
 
 
@@ -221,10 +247,20 @@ def csv_bytes(conn: sqlite3.Connection) -> bytes:
 
 
 def format_ts(ts: float) -> str:
+    """Render a stored timestamp for display and CSV export.
+
+    Local time to the second with no UTC offset, so the string is for human
+    reading only; keep the stored float for arithmetic.
+    """
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
 
 
 def last_ok_ts(conn: sqlite3.Connection, action: str) -> float | None:
+    """Return when the given action last succeeded, or None if it never has.
+
+    Failed rows are ignored: this answers when the action last worked, not
+    when it was last attempted.
+    """
     row = conn.execute(
         "SELECT MAX(ts) FROM audit WHERE action = ? AND status = 'ok'", (action,)
     ).fetchone()

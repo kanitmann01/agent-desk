@@ -46,10 +46,20 @@ SMOKE_REPORT = REPO_ROOT / "build" / "smoke-report.json"
 
 
 def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+    """Run one command with its output captured as text.
+
+    A non-zero exit code comes back in the result instead of raising, and the
+    extra keyword arguments go straight to subprocess.run.
+    """
     return subprocess.run(cmd, text=True, capture_output=True, **kwargs)
 
 
 def _app_version(root: Path) -> str:
+    """The product version the bundle is stamped with.
+
+    Read from pyproject.toml, then src/agentdesk/__init__.py, then "0.0.0": an
+    unversioned build still gets a manifest.
+    """
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
     if match:
@@ -60,6 +70,7 @@ def _app_version(root: Path) -> str:
 
 
 def _sha256(path: Path) -> str:
+    """The hex sha256 of one file's bytes, read in chunks so size does not matter."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -68,6 +79,11 @@ def _sha256(path: Path) -> str:
 
 
 def _nuitka_version() -> str | None:
+    """The installed Nuitka version, or None when it is not installed.
+
+    None is the skip signal: the build prints SKIP and claims no artifact, so a
+    missing toolchain never reads as a failed build.
+    """
     try:
         result = _run([sys.executable, "-m", "nuitka", "--version"])
     except OSError:
@@ -80,6 +96,12 @@ def _nuitka_version() -> str | None:
 
 
 def _build_command(root: Path, *, allow_downloads: bool) -> list[str]:
+    """The exact Nuitka command line for the one-folder build.
+
+    The version flags carry four numeric parts because the Windows version
+    resource rejects anything else; --assume-yes-for-downloads appears only when
+    the caller opts in.
+    """
     version = _app_version(root)
     numeric = ".".join((version.split(".") + ["0", "0", "0", "0"])[:4])
     cmd = [
@@ -110,11 +132,18 @@ def _build_command(root: Path, *, allow_downloads: bool) -> list[str]:
 
 
 def _secure_rmtree(path: Path) -> None:
+    """Remove a build directory if it exists; a missing path is not an error."""
     if path.exists():
         shutil.rmtree(path)
 
 
 def _prepare_output(output: Path, force: bool) -> None:
+    """Clear a previous build's output directory, or refuse to touch it.
+
+    An absent or empty directory is used as is. A non-empty one is removed only
+    when it carries manifest.json, so it is provably ours, or when --force says
+    it is; anything else raises SystemExit before a file is written.
+    """
     if not output.exists():
         return
     if not output.is_dir():
@@ -131,6 +160,11 @@ def _prepare_output(output: Path, force: bool) -> None:
 
 
 def _missing_build_inputs(root: Path) -> list[str]:
+    """The required legal and SBOM inputs that are absent, as repo-relative paths.
+
+    An empty list means the build may proceed; each name is exactly what the
+    caller prints, so the fix is named rather than guessed.
+    """
     required = [
         root / "LICENSE",
         root / "LICENSE-SDK",
@@ -143,6 +177,11 @@ def _missing_build_inputs(root: Path) -> list[str]:
 
 
 def _copy_support_files(root: Path, output: Path) -> None:
+    """Copy the licences, third-party texts and SBOM into the bundle.
+
+    Raises SystemExit when a required file is absent: a bundle without its
+    notices is not shippable, so the build stops instead of shipping one.
+    """
     notices = root / "THIRD-PARTY-NOTICES.md"
     for name in ("LICENSE", "LICENSE-SDK", "THIRD-PARTY-NOTICES.md"):
         source = root / name
@@ -177,6 +216,13 @@ def _manifest(
     static_count: int,
     static_index_sha: str,
 ) -> dict[str, Any]:
+    """The manifest.json document describing one built bundle.
+
+    Every file under the output directory is hashed here except the manifest
+    itself, so verify can catch both a changed file and an added one. Paths are
+    relative to the output root and POSIX-spelled, so a manifest written on
+    Windows verifies anywhere.
+    """
     files = []
     for path in sorted(output.rglob("*")):
         if not path.is_file() or path.name == MARKER_NAME:
@@ -245,6 +291,12 @@ def _manifest(
 
 
 def build(args: argparse.Namespace) -> int:
+    """Build the bundle into the output directory and write its manifest.
+
+    Returns 0 on success, 1 on a failed or unusable build, and SKIP_EXIT when
+    Nuitka is absent: a skip means no artifact was attempted. --dry-run prints
+    the command and the frontend hash, runs nothing, and returns 0.
+    """
     root = REPO_ROOT
     output = args.output.resolve()
     static = root / "src" / "agentdesk" / "server" / "static" / "spa"
@@ -358,6 +410,11 @@ def build(args: argparse.Namespace) -> int:
 
 
 def _http_health(port: int) -> tuple[int, str]:
+    """GET /health on loopback: the status and the start of the body.
+
+    Status 0 with the failure text means no HTTP response arrived at all, which
+    is how the smoke loop tells a dead process from a live one.
+    """
     url = f"http://127.0.0.1:{port}/health"
     try:
         with urllib.request.urlopen(url, timeout=2) as response:
@@ -369,12 +426,17 @@ def _http_health(port: int) -> tuple[int, str]:
 
 
 def _free_port() -> int:
+    """An ephemeral loopback port, bound and released, for the smoke run."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
 
 def _stop(pid: int) -> None:
+    """Kill a process and its children, so a smoke run leaves nothing behind.
+
+    Best effort: a process that is already gone is not an error.
+    """
     if os.name == "nt":
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
@@ -389,6 +451,11 @@ def _stop(pid: int) -> None:
 
 
 def _verify_manifest(output: Path) -> list[str]:
+    """Every mismatch between the bundle and its manifest, as readable lines.
+
+    An empty list means the bundle verifies: listed files exist at the recorded
+    size and hash, and nothing unlisted sits in the directory.
+    """
     manifest_path = output / MARKER_NAME
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -417,6 +484,12 @@ def _verify_manifest(output: Path) -> list[str]:
 
 
 def verify(args: argparse.Namespace) -> int:
+    """Check the bundle on disk against its manifest.json.
+
+    Returns 0 and prints PASS when every listed file matches its recorded size
+    and sha256 and no unlisted file is present; otherwise 1, with one line per
+    problem on stderr.
+    """
     output = args.output.resolve()
     errors = _verify_manifest(output)
     if errors:
@@ -433,6 +506,13 @@ def verify(args: argparse.Namespace) -> int:
 
 
 def smoke(args: argparse.Namespace) -> int:
+    """Start the built executable and check that it serves /health.
+
+    Returns 0 when the server answers 200 or 401 (401 proves the HTTP server and
+    auth gate are live, since the bootstrap token never leaves the process), 1
+    when it does not, and SKIP_EXIT when there is no executable to start. A run
+    writes build/smoke-report.json either way.
+    """
     output = args.output.resolve()
     exe = (args.exe or (output / EXE_NAME)).resolve()
     if not exe.is_file():
@@ -529,6 +609,11 @@ def smoke(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse the subcommand and return its exit code.
+
+    No subcommand, or a leading flag, means build, so the bare command keeps
+    working; argparse's own exits are turned back into codes.
+    """
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0].startswith("-"):
         argv = ["build", *argv]
