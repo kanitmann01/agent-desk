@@ -1911,6 +1911,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.server.activity_log is not None:  # type: ignore[attr-defined]
             self.server.activity_log.record(kind, text)  # type: ignore[attr-defined]
 
+    def _preference_notice(self) -> str:
+        """The store's own words after a save, or its confirmation.
+
+        The save route answers with a 303 carrying the outcome in the
+        query, so the page shows what the store decided rather than
+        re-deciding it here.
+        """
+        query = parse_qs(self.path.partition("?")[2])
+        refusal = query.get("preferences_error", [""])[0]
+        if refusal:
+            return refusal
+        if "preferences_saved" in query:
+            return "Saved. The card below reads back what the store now holds."
+        return ""
+
     def _send_settings_page(self) -> None:
         server = self.server  # type: ignore[attr-defined]
         entries = server.activity_log.entries() if server.activity_log is not None else []
@@ -1936,6 +1951,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             inbox_count=self._inbox_waiting_count(),
             audit_entries=audit_entries,
             audit_total=audit_total,
+            preference_notice=self._preference_notice(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 

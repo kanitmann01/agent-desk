@@ -5,16 +5,18 @@ small choices; the endpoint section takes a base URL, an API key and a
 model, and tells the truth about the last call under failure. The key is
 secret: this module renders only its masked state, never the value. The
 activity log, skills, audit export and the what-this-touches statement
-are reachable from here.
+are reachable from here. The preferences card is the only place the desk
+is told what to assume about its reader; its values are read back from the
+store on every render, never inferred.
 """
 
 import html
 from datetime import datetime
 
+from agentdesk.insight.preferences import PreferenceStore, changed
+from agentdesk.repetition.skills import render_skill_md
 from agentdesk.server import audit_view
 from agentdesk.server.pages import page_shell
-
-from agentdesk.repetition.skills import render_skill_md
 
 _LABELS = {
     "excel_enabled": "Sales workbook watching",
@@ -183,6 +185,107 @@ def _theme_tiles() -> str:
     return f"<div class='theme-tiles' role='radiogroup' aria-label='Theme'>{tiles}</div>"
 
 
+_PREFERENCE_CHOICES = (
+    (
+        "chart",
+        "Chart shape",
+        "Automatic lets each reading choose; the others ask for that shape.",
+        (
+            ("auto", "Automatic, from the data"),
+            ("bar", "Bar"),
+            ("line", "Line"),
+            ("table", "Table"),
+        ),
+    ),
+    (
+        "replyTone",
+        "Reply tone",
+        "Used when you press a draft control, never on its own.",
+        (("direct", "Direct"), ("warm", "Warm"), ("formal", "Formal")),
+    ),
+    (
+        "replyLength",
+        "Reply length",
+        "",
+        (("one-line", "One line"), ("short", "Short"), ("paragraph", "A paragraph")),
+    ),
+    (
+        "insightDensity",
+        "How much each card says",
+        "Quiet keeps one line; chatty adds the suggested rows and topics.",
+        (("quiet", "Quiet"), ("normal", "Normal"), ("chatty", "Chatty")),
+    ),
+)
+
+
+def _stored_preferences() -> dict:
+    """The document the desk would use on its next dashboard read.
+
+    The data directory is resolved by app.py, which imports this module,
+    so the lookup happens here rather than at import time (the shape
+    touches.py uses for its statement).
+    """
+    from agentdesk.server.app import default_data_dir
+
+    return PreferenceStore(default_data_dir()).read()
+
+
+def _preferences_section(document: dict, notice: str = "") -> str:
+    """The six statements of preference, as the store currently holds them.
+
+    Every value is server-rendered, so the card reads with no script at
+    all. The form posts its six fields to /settings/preferences, which
+    converts the two typed ones and answers with a 303 carrying the
+    store's own refusal back here as the notice.
+    """
+    fields = []
+    for key, label, hint, choices in _PREFERENCE_CHOICES:
+        stored = str(document.get(key, ""))
+        options = "".join(
+            f"<option value='{value}'"
+            + (" selected" if value == stored else "")
+            + f">{name}</option>"
+            for value, name in choices
+        )
+        fields.append(
+            f"<label class='empty' for='pref-{key}'>{label}</label>"
+            f"<select id='pref-{key}' name='{key}'>{options}</select>"
+            + (f"<p class='empty'>{hint}</p>" if hint else "")
+        )
+    topics = document.get("focusTopics")
+    topics = [str(topic) for topic in topics] if isinstance(topics, list) else []
+    minutes = document.get("prepMinutes")
+    if isinstance(minutes, bool) or not isinstance(minutes, int):
+        minutes = 15
+    stated = len(changed(document))
+    stamp = f"{stated} SET" if stated else "DEFAULTS"
+    topics_text = html.escape("\n".join(topics))
+    note = (
+        f"<div class='alert' id='preferences-note'>{html.escape(notice)}</div>"
+        if notice
+        else "<div class='alert' id='preferences-note' hidden></div>"
+    )
+    return f"""<section class='card settings-card' id='preferences'>
+<div class='w-head'><h2>What the desk knows about you</h2><span class='stamp'>{stamp}</span></div>
+<p>These six are the only preferences the desk uses. You state them here,
+and it never infers them from what you open, select or reply to. A saved
+value applies from the next dashboard read.</p>
+<form method='post' action='/settings/preferences' class='cardform' id='preferences-form'>
+{''.join(fields)}
+<label class='empty' for='pref-focusTopics'>Focus topics</label>
+<textarea id='pref-focusTopics' name='focusTopics' rows='3'>{topics_text}</textarea>
+<p class='empty'>One topic per line, up to ten, each a short line.</p>
+<label class='empty' for='pref-prepMinutes'>Meeting prep (minutes)</label>
+<input id='pref-prepMinutes' name='prepMinutes' type='number' min='0' max='120' step='1' value='{minutes}'>
+<p class='empty'>How much reading you want before a meeting, 0 to 120.</p>
+<button class='btn btn-secondary' type='submit'>Save preferences</button>
+</form>
+{note}
+<p class='empty'>A value the desk cannot accept leaves every stored
+preference as it was, and the reason appears above in the server's words.</p>
+</section>"""
+
+
 def _record_card(audit_entries: list[dict], audit_total: int) -> str:
     """The trail's front door: the count, the last five rows, the links.
 
@@ -240,6 +343,8 @@ def render_settings_page(
     inbox_count: int = 0,
     audit_entries: list[dict] | None = None,
     audit_total: int | None = None,
+    preferences: dict | None = None,
+    preference_notice: str = "",
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -247,6 +352,7 @@ def render_settings_page(
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
     audit_entries = audit_entries or []
     audit_total = len(audit_entries) if audit_total is None else audit_total
+    preferences = _stored_preferences() if preferences is None else preferences
     toggles_html = "".join(
         _toggle_button(key, settings_values[key]) for key in _LABELS
     )
@@ -320,6 +426,8 @@ have never touched is the right setting.</p>
 {_theme_tiles()}
 <p class='empty'>The theme is kept in this browser and applies to every page of the desk.</p>
 </section>
+
+{_preferences_section(preferences, preference_notice)}
 
 <section class='card settings-card' id='desk'>
 <div class='w-head'><h2>Desk</h2><span class='stamp'>{desk_stamp}</span></div>
