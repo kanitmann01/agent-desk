@@ -9,7 +9,7 @@ import { useState } from 'react';
 import Button from '../components/Button';
 import ModalSheet from '../components/ModalSheet';
 import RowSelectGrid, { type GridPreview } from '../components/RowSelectGrid';
-import { MarketApiError, marketErrorText, postInstance } from './client';
+import { MarketApiError, marketErrorText, postInstance, postUpload } from './client';
 import type { InstanceDocument } from './types';
 
 export type SetupTarget =
@@ -64,6 +64,13 @@ export function InstanceSetupSheet({
   // The staged file is outside the workspace folder: the confirm was
   // refused, and the honest inline choice (accept once, retry) is up.
   const [outside, setOutside] = useState(false);
+  // The Open step's second way in: a disclosure the user can open.
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  // The pick answered that the dialog could not open, so the sheet's note
+  // about the dialog (and the file's name) stops being true.
+  const [pickerUnavailable, setPickerUnavailable] = useState(false);
+  const [typedPath, setTypedPath] = useState('');
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
   const steps = isCreate ? CREATE_STEPS : EDIT_STEPS;
   // Each mode numbers its own list: create walks name, open, choose
@@ -92,29 +99,40 @@ export function InstanceSetupSheet({
     }
   };
 
-  const openWorkbook = async () => {
-    if (!instance) return;
+  // One tail for every way in: the dialog's pick, a typed path and an
+  // uploaded file all land on the same preview grid.
+  function applyOpen(res: { instance: InstanceDocument; preview: GridPreview }) {
+    setInstance(res.instance);
+    const next = res.preview;
+    setPreview(next);
+    // A fresh open starts from every row; the user narrows or clears.
+    setPicked(next.rows.map((_row, index) => index));
+    setValueColumn('');
+    setLabelColumn('');
+    // The chosen path and file were consumed by this open; a later open
+    // must not start with a stale selection, as on the dashboard.
+    setTypedPath('');
+    setFileToUpload(null);
+    setPhase('choose');
+  }
+
+  // The pick's "the dialog could not open" answer keeps the server's
+  // sentence in the error slot and opens the recovery block.
+  async function runOpen(request: () => Promise<{ instance: InstanceDocument; preview: GridPreview }>) {
     setBusy(true);
     setError('');
     try {
-      const res = await postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
-        setupPluginId,
-        `/${encodeURIComponent(instance.instanceId)}/pick`,
-        { name: instance.name });
-      setInstance(res.instance);
-      const next = res.preview;
-      setPreview(next);
-      // A fresh open starts from every row; the user narrows or clears.
-      setPicked(next.rows.map((_row, index) => index));
-      setValueColumn('');
-      setLabelColumn('');
-      setPhase('choose');
+      applyOpen(await request());
     } catch (err) {
+      if (err instanceof MarketApiError && err.code === 'config:picker-unavailable') {
+        setPickerUnavailable(true);
+        setRecoveryOpen(true);
+      }
       fail(err);
     } finally {
       setBusy(false);
     }
-  };
+  }
 
   function assign(header: string) {
     if (role === 'value') setValueColumn(header);
@@ -219,13 +237,77 @@ export function InstanceSetupSheet({
                 ? `${name || instance.name} is created. Now point it at its data.`
                 : `${instance.name} currently reads ${instanceFileName(instance)} · ${statusLabel}.`}
             </p>
-            <p className="w-note">
-              The file dialog opens on this computer; only the file's name
-              comes back.
-            </p>
-            <Button tone="primary" onClick={() => void openWorkbook()} disabled={busy}>
+            {pickerUnavailable ? null : (
+              <p className="w-note">
+                The file dialog opens on this computer; only the file's name
+                comes back.
+              </p>
+            )}
+            <Button tone="primary"
+                    onClick={() => void runOpen(() => postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
+                      setupPluginId,
+                      `/${encodeURIComponent(instance.instanceId)}/pick`,
+                      { name: instance.name }))}
+                    disabled={busy}>
               {busy ? 'Opening…' : 'Open a workbook'}
             </Button>
+            <Button
+              aria-expanded={recoveryOpen}
+              onClick={() => setRecoveryOpen((open) => !open)}
+              disabled={busy}
+            >
+              Type a path or upload instead
+            </Button>
+            {recoveryOpen && (
+              <div className="setup-choose">
+                <div className="setup-actions">
+                  <label className="setup-field">
+                    Workbook path
+                    <input
+                      aria-label="Workbook path"
+                      value={typedPath}
+                      onChange={(event) => setTypedPath(event.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <Button
+                    onClick={() => void runOpen(() => postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
+                      setupPluginId,
+                      `/${encodeURIComponent(instance.instanceId)}/stage`,
+                      { path: typedPath.trim() }))}
+                    disabled={busy || typedPath.trim() === ''}
+                  >
+                    Use this path
+                  </Button>
+                </div>
+                <div className="setup-actions">
+                  <label className="setup-field">
+                    Workbook file
+                    <input
+                      type="file"
+                      aria-label="Workbook file"
+                      accept=".xlsx,.xlsm,.csv,.json"
+                      onChange={(event) => setFileToUpload(event.target.files?.[0] ?? null)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <Button
+                    onClick={() => {
+                      const file = fileToUpload;
+                      if (file) {
+                        void runOpen(() => postUpload<{ instance: InstanceDocument; preview: GridPreview }>(
+                          setupPluginId,
+                          `/${encodeURIComponent(instance.instanceId)}/upload/${encodeURIComponent(file.name)}`,
+                          file));
+                      }
+                    }}
+                    disabled={busy || fileToUpload === null}
+                  >
+                    Upload this file
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       ) : null}

@@ -58,6 +58,18 @@ def stage(runtime, cap: int, instance_id: str, name: str, path: str,
     return {"instance": document, "preview": preview, "step": "columns"}
 
 
+def upload(runtime, cap: int, instance_id: str, name: str, raw: bytes, filename: str,
+           plugin_id: str) -> dict:
+    store = store_for(runtime, cap)
+    ensure_instance(store, instance_id, name, plugin_id=plugin_id)
+    path = store.store_upload(plugin_id, instance_id, filename, raw)
+    store.stage_file(plugin_id, instance_id, path)
+    store.accept_outside(plugin_id, instance_id)
+    document = store.read(plugin_id, instance_id)
+    preview = preview_table(document["source"]["path"], sheet=None, header_row=1, range_text=None)
+    return {"instance": document, "preview": preview, "step": "columns"}
+
+
 def preview(runtime, cap: int, instance_id: str, *, sheet=None, header_row=1, range_text=None,
             plugin_id: str) -> dict:
     store = store_for(runtime, cap)

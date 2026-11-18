@@ -31,10 +31,23 @@ const setupCard: PluginCard = {
   },
 };
 
+// The dialog's failure is its own answer (spec 009, decision 4): the
+// sentence below is the server's, rendered verbatim.
+const unavailableAnswer = {
+  error: 'config:picker-unavailable',
+  message: "The file dialog could not open on this computer. Type the file's path, or upload the file instead.",
+};
+
+const openPreview = {
+  sheet: 'Data',
+  headers: ['Region', 'Booked'],
+  rows: [['East', '10'], ['West', '5']],
+};
+
 describe('tracker setup sheet', () => {
   it('opens a workbook, highlights a suggestion, and names the instance', async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       if (String(url).includes('/widgets/settings')) {
         return jsonResponse({ suggest_headers_only: false });
       }
@@ -90,7 +103,7 @@ describe('tracker setup sheet', () => {
     const user = userEvent.setup();
     const outsideCalls: string[] = [];
     let confirmCalls = 0;
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       const target = String(url);
       if (target.includes('/widgets/settings')) {
         return jsonResponse({ suggest_headers_only: false });
@@ -158,7 +171,7 @@ describe('tracker setup sheet', () => {
   it('opens the sheet from an amber card whose workbook went missing (no setup step on the card)', async () => {
     const user = userEvent.setup();
     const pickCalls: string[] = [];
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       if (String(url).includes('/widgets/settings')) {
         return jsonResponse({ suggest_headers_only: false });
       }
@@ -194,5 +207,138 @@ describe('tracker setup sheet', () => {
     await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
     await waitFor(() => expect(pickCalls.length).toBe(1));
     expect(pickCalls[0]).toContain('/api/plugins/excel-report/instances/main/pick');
+  });
+
+  it('a dialog that could not open shows the server sentence and opens the recovery block', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (String(url).includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (String(url).endsWith('/pick')) {
+        return jsonResponse(unavailableAnswer, 503);
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    // A fresh Open step shows the disclosure collapsed.
+    expect(screen.getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+
+    expect(await screen.findByText(unavailableAnswer.message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Workbook path')).toBeVisible();
+    expect(screen.getByLabelText('Workbook file')).toBeVisible();
+    // The dialog keeps its place and its wording.
+    expect(screen.getByRole('button', { name: 'Open a workbook' })).toBeInTheDocument();
+  });
+
+  it('a typed path posts to stage and lands on the columns step', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (target.endsWith('/pick')) {
+        return jsonResponse(unavailableAnswer, 503);
+      }
+      if (target.endsWith('/instances/main/stage')) {
+        return jsonResponse({ preview: openPreview });
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    const path = await screen.findByLabelText('Workbook path');
+    // Both recovery buttons stay disabled until they have something to send.
+    expect(screen.getByRole('button', { name: 'Use this path' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Upload this file' })).toBeDisabled();
+    await user.type(path, '   ');
+    expect(screen.getByRole('button', { name: 'Use this path' })).toBeDisabled();
+    await user.clear(path);
+    await user.type(path, '/workspace/q4.xlsx');
+    await user.click(screen.getByRole('button', { name: 'Use this path' }));
+
+    expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
+    const stageInit = fetchMock.mock.calls
+      .find(([target]) => String(target).endsWith('/instances/main/stage'))?.[1];
+    expect(stageInit?.method).toBe('POST');
+    expect(JSON.parse(String(stageInit?.body))).toEqual({ path: '/workspace/q4.xlsx' });
+  });
+
+  it('a chosen file uploads as octet-stream and lands on the columns step', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (target.endsWith('/pick')) {
+        return jsonResponse(unavailableAnswer, 503);
+      }
+      if (target.endsWith('/instances/main/upload/q4.xlsx')) {
+        return jsonResponse({ preview: openPreview });
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+    const file = new File(['region,booked\nEast,10\n'], 'q4.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    await user.upload(await screen.findByLabelText('Workbook file'), file);
+    expect(screen.getByRole('button', { name: 'Upload this file' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Upload this file' }));
+
+    expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
+    // A File body is not JSON, so the sent request is read off the mock.
+    const uploadCall = fetchMock.mock.calls
+      .find(([target]) => String(target).endsWith('/instances/main/upload/q4.xlsx'));
+    expect(String(uploadCall?.[0])).toContain('/api/plugins/excel-report/instances/main/upload/q4.xlsx');
+    const uploadInit = uploadCall?.[1];
+    expect(uploadInit?.method).toBe('POST');
+    const headers = uploadInit?.headers as Record<string, string>;
+    expect(headers['Content-Type']).toBe('application/octet-stream');
+    expect(uploadInit?.body).toBe(file);
+  });
+
+  it('a cancelled dialog keeps the block collapsed, and the disclosure still opens it', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (String(url).includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (String(url).endsWith('/pick')) {
+        return jsonResponse({ error: 'config:cancelled', message: 'No file was opened.' }, 400);
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    expect(await screen.findByText('No file was opened.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('Workbook path')).toBeNull();
+
+    // A genuine Cancel is one click away from the same two ways in.
+    await user.click(screen.getByRole('button', { name: 'Type a path or upload instead' }));
+    expect(screen.getByLabelText('Workbook path')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'true');
   });
 });

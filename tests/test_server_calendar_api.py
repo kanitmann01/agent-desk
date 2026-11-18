@@ -315,11 +315,18 @@ def test_calendar_picker_child_parsing_matches_the_workbook(monkeypatch):
             self.stdout = stdout
 
     def fake_run(cmd, **kwargs):
-        return FakeProcess(stdout="C:/cal/calendar_sync.json\n")
+        return FakeProcess(stdout='{"status": "picked", "path": "C:/cal/calendar_sync.json"}\n')
 
     monkeypatch.setattr(server_app.subprocess, "run", fake_run)
     assert server_app.tk_pick_calendar() == "C:/cal/calendar_sync.json"
 
+    monkeypatch.setattr(
+        server_app.subprocess, "run", lambda cmd, **k: FakeProcess(stdout='{"status": "cancelled"}\n')
+    )
+    assert server_app.tk_pick_calendar() is None
+
+    # No document at all means the dialog could not open; the calendar
+    # route keeps its "no path" answer, and the setup route reports it.
     monkeypatch.setattr(
         server_app.subprocess, "run", lambda cmd, **k: FakeProcess(stdout="\n")
     )

@@ -15,6 +15,7 @@ from pathlib import Path
 MAX_INSTANCE_CAP = 6
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SUFFIXES = {".xlsx", ".xlsm", ".csv", ".json"}
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
 
 class ConfigError(Exception):
@@ -126,6 +127,33 @@ class InstanceStore:
         grant["outsideAccepted"] = True
         self._write(path, grant)
         return grant
+
+    def store_upload(self, plugin_id: str, instance_id: str, filename: str, raw: bytes) -> Path:
+        if not filename or filename in {".", ".."} or "/" in filename or "\\" in filename:
+            raise ConfigError(
+                "config:unsafe-name",
+                "That file name cannot be stored. Rename the file and try again.",
+            )
+        if Path(filename).suffix.lower() not in _SUFFIXES:
+            raise ConfigError(
+                "config:unsupported",
+                "Open an .xlsx, .xlsm, .csv, or .json file.",
+            )
+        if not raw:
+            raise ConfigError(
+                "config:empty-upload",
+                "The upload carried no bytes. Choose the file again.",
+            )
+        if len(raw) > MAX_UPLOAD_BYTES:
+            raise ConfigError(
+                "config:too-large",
+                "The file is larger than 4 MB. Save a smaller copy, or type the file's path instead.",
+            )
+        folder = self.root / _safe(plugin_id, "plugin id") / "uploads" / _safe(instance_id, "instance id")
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / filename
+        target.write_bytes(raw)
+        return target
 
     def confirm(self, plugin_id: str, instance_id: str, tracking: dict, *, suggested: bool = False) -> dict:
         document = self.read(plugin_id, instance_id)

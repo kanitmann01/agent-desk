@@ -118,6 +118,7 @@ from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
 from agentdesk.server.memory_loop_api import build_loop_state
+from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
@@ -217,6 +218,14 @@ SECURITY_HEADERS = (
 
 MAX_BODY_BYTES = 1024 * 1024
 
+# The setup upload carries the file's bytes, so it drains under its own
+# cap; every other POST keeps the bound above.
+_PLUGIN_UPLOAD_PATH = re.compile(r"^/api/plugins/[^/]+/instances/[^/]+/upload/")
+
+# A setup refusal that is not a plain 400: a dialog that cannot open is
+# the server's problem, and an oversized body is its own status.
+_SETUP_ERROR_STATUS = {"config:picker-unavailable": 503, "config:too-large": 413}
+
 # The wizard's describing screen before any session exists: the shape
 # render_wizard_page renders for GET /wizard and for a wordless POST to
 # /wizard/start (the dashboard button) alike.
@@ -237,14 +246,15 @@ WIZARD_DESCRIBING_PAYLOAD = {
 MAX_DRAIN_BYTES = 8 * MAX_BODY_BYTES
 
 
-def body_drain_plan(length: int) -> str:
+def body_drain_plan(length: int, limit: int = MAX_BODY_BYTES) -> str:
     """What to do with a request body of this declared length: 'skip'
     (nothing declared), 'stash' it for the route, 'discard' it (over the
     stash limit but within the hard cap), or 'close' (beyond the cap;
-    the answer goes out with Connection: close)."""
+    the answer goes out with Connection: close). The limit is where the
+    stash stops; the hard cap below does not move with it."""
     if length <= 0:
         return "skip"
-    if length <= MAX_BODY_BYTES:
+    if length <= limit:
         return "stash"
     if length <= MAX_DRAIN_BYTES:
         return "discard"
@@ -342,13 +352,14 @@ def default_data_dir() -> Path:
 # The file dialogs run in a child interpreter, not in this process.
 # Tk must own the main thread on macOS, and the server's request threads
 # are workers; a fresh process sidesteps the threading rules on both
-# platforms. The child prints the chosen path, or an empty line when the
-# dialog is cancelled or Tk is unusable, so the parent only parses stdout.
+# platforms. The child prints exactly one JSON line - picked, cancelled,
+# or unavailable - so the parent can tell a dialog that could not open
+# from one the user closed; an empty line could only ever say both.
 # The dialog is parented to the hidden root and the root is lifted and
 # focused first: on Windows a parentless dialog can open invisibly
 # behind the browser, which reads to the user as "the button is broken".
 _PICKER_SNIPPET_TEMPLATE = """\
-import sys
+import json
 
 try:
     import tkinter as tk
@@ -364,10 +375,14 @@ try:
         title={title!r},
         filetypes={filetypes!r},
     )
+    answer = {{"status": "picked", "path": chosen}} if chosen else {{"status": "cancelled"}}
+except Exception as exc:
+    answer = {{"status": "unavailable", "reason": type(exc).__name__}}
+print(json.dumps(answer))
+try:
     root.destroy()
 except Exception:
-    chosen = ""
-print(chosen)
+    pass
 """
 
 WORKBOOK_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
@@ -397,12 +412,55 @@ PLUGIN_FILE_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
 )
 
 
+# The one sentence a dialog that cannot open is answered with, wherever
+# it surfaces: the parser, the refuse-on-spawn path and the setup route.
+_PICKER_UNAVAILABLE = (
+    "The file dialog could not open on this computer. "
+    "Type the file's path, or upload the file instead."
+)
+
+
+def _picker_outcome(stdout: str) -> str | None:
+    """Which of the picker child's three answers arrived on stdout.
+
+    A picked path is returned, a cancelled dialog answers None, and
+    anything else - the unavailable document, a traceback, an unknown
+    status, no output at all - raises config:picker-unavailable. Only a
+    document the child actually printed as cancelled can mean the user
+    closed the dialog; a child that died before it could report must not
+    be answered as that person's own decision.
+    """
+    from ..plugins.config import ConfigError
+
+    lines = [line.strip() for line in (stdout or "").splitlines() if line.strip()]
+    if not lines:
+        raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE)
+    try:
+        document = json.loads(lines[-1])
+    except ValueError:
+        raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE) from None
+    if not isinstance(document, dict):
+        raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE)
+    status = document.get("status")
+    if status == "picked":
+        chosen = document.get("path")
+        if isinstance(chosen, str) and chosen:
+            return chosen
+    elif status == "cancelled":
+        return None
+    raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE)
+
+
 def _tk_pick_file(snippet: str) -> str | None:
     """One child process per dialog call; the parent never imports Tk.
 
-    Any failure, including a cancelled dialog (empty output), answers
-    None: the UI treats it as cancelled rather than breaking the flow.
+    A picked path is returned and a cancelled dialog answers None. A
+    dialog that could not open raises config:picker-unavailable, and a
+    child that could not even start does the same after the log line, so
+    the caller decides whether to report it or keep a "no path" answer.
     """
+    from ..plugins.config import ConfigError
+
     try:
         completed = subprocess.run(
             [sys.executable, "-c", snippet],
@@ -412,19 +470,28 @@ def _tk_pick_file(snippet: str) -> str | None:
         )
     except Exception:  # noqa: BLE001 - a broken dialog must not break the app
         LOG.exception("file picker failed")
-        return None
-    chosen = (completed.stdout or "").strip()
-    return chosen or None
+        raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE) from None
+    return _picker_outcome(completed.stdout or "")
 
 
 def tk_pick_workbook() -> str | None:
     """The native workbook dialog, one child process per call."""
-    return _tk_pick_file(WORKBOOK_PICK_SNIPPET)
+    from ..plugins.config import ConfigError
+
+    try:
+        return _tk_pick_file(WORKBOOK_PICK_SNIPPET)
+    except ConfigError:
+        return None
 
 
 def tk_pick_calendar() -> str | None:
     """The native calendar-file dialog, same mechanism as the workbook."""
-    return _tk_pick_file(CALENDAR_PICK_SNIPPET)
+    from ..plugins.config import ConfigError
+
+    try:
+        return _tk_pick_file(CALENDAR_PICK_SNIPPET)
+    except ConfigError:
+        return None
 
 
 def tk_pick_plugin_file() -> str | None:
@@ -1317,8 +1384,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._gate():
             return
         # Drain the request body up front: an unread body on a keep-alive
-        # connection would be parsed as the next request.
-        self._raw_body = self._drain_body()
+        # connection would be parsed as the next request. A setup upload
+        # stashes up to its own cap instead of the 1 MiB JSON bound.
+        limit = MAX_UPLOAD_BYTES if _PLUGIN_UPLOAD_PATH.match(path) else MAX_BODY_BYTES
+        self._raw_body = self._drain_body(limit)
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
         if path.startswith("/sources/excel-watch") and not self._source_allowed("excel_enabled"):
@@ -1704,7 +1773,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError:
             return 0
 
-    def _drain_body(self) -> bytes:
+    def _drain_body(self, limit: int = MAX_BODY_BYTES) -> bytes:
         """Read and stash the request body; the route decides what it means.
 
         An over-limit body is still read and discarded (up to the hard
@@ -1718,7 +1787,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Stashed beside the body so routes read the parsed value rather
         # than re-parsing the header.
         self._content_length = length
-        plan = body_drain_plan(length)
+        plan = body_drain_plan(length, limit)
         if plan == "close":
             self._close_with_response = True
             self.close_connection = True
@@ -4002,6 +4071,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         from ..plugins.config import ConfigError
         from ..plugins.setup_flow import (
             accept_outside, confirm, ensure_instance, evaluate, pick, stage, store_for, suggest,
+            upload,
         )
         parts = [part for part in path.split("/") if part]
         # api plugins <id> instances [iid] [action]
@@ -4037,6 +4107,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     plugins, cap, instance_id, name, str(body.get("path") or ""),
                     plugin_id=plugin_id))
                 return
+            if action == "upload" and len(parts) > 6:
+                filename = unquote(parts[6])
+                # The declared length is tested first: an over-cap body was
+                # discarded by the drain, and only this header still says
+                # what the browser meant to send.
+                declared = getattr(self, "_content_length", 0)
+                if declared > MAX_UPLOAD_BYTES:
+                    raise ConfigError(
+                        "config:too-large",
+                        "The file is larger than 4 MB. Save a smaller copy, or type the file's path instead.",
+                    )
+                raw = getattr(self, "_raw_body", b"")
+                self._send_json(200, upload(
+                    plugins, cap, instance_id, name, raw, filename, plugin_id=plugin_id))
+                return
             if action == "suggest":
                 headers_only = self._headers_only()
                 if "headersOnly" in body:
@@ -4066,7 +4151,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(200, accept_outside(plugins, cap, instance_id, plugin_id=plugin_id))
                 return
         except ConfigError as exc:
-            self._send_json(400, {"error": exc.code, "message": exc.message})
+            self._send_json(_SETUP_ERROR_STATUS.get(exc.code, 400),
+                            {"error": exc.code, "message": exc.message})
             return
         except Exception as exc:  # noqa: BLE001
             self._setup_error(exc)
@@ -4103,7 +4189,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _setup_error(self, exc: Exception) -> None:
         from ..plugins.config import ConfigError
         if isinstance(exc, ConfigError):
-            self._send_json(400, {"error": exc.code, "message": exc.message})
+            self._send_json(_SETUP_ERROR_STATUS.get(exc.code, 400),
+                            {"error": exc.code, "message": exc.message})
             return
         self._send_json(400, {"error": "config:failed", "message": str(exc)})
 

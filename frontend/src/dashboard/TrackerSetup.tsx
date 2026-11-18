@@ -4,7 +4,7 @@
 // shell (scrim, Escape, focus trap, restore) and the grid is the shared
 // selection surface (click, drag sweep, shift-click, select all).
 import { useEffect, useState } from 'react';
-import { getJson, postJson } from '../api';
+import { getJson, postFile, postJson, type ApiResult } from '../api';
 import Button from '../components/Button';
 import ModalSheet from '../components/ModalSheet';
 import RowSelectGrid from '../components/RowSelectGrid';
@@ -62,6 +62,10 @@ export default function TrackerSetup({
   // The opened file is outside the workspace folder: the confirm was
   // refused, and the honest inline choice (accept once, retry) is up.
   const [outside, setOutside] = useState(false);
+  // The Open step's second way in: a disclosure the user can open.
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [typedPath, setTypedPath] = useState('');
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +83,10 @@ export default function TrackerSetup({
   const evaluateUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/evaluate`;
   const confirmUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/confirm`;
   const outsideUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/outside`;
+  const stageUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/stage`;
+  // The file name is a path segment: the server drops the query string
+  // before routing, so an encoded name is the only place it survives.
+  const uploadUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/upload/`;
 
   function assign(header: string) {
     if (role === 'value') setValueColumn(header);
@@ -95,22 +103,39 @@ export default function TrackerSetup({
     setSuggested(false);
   }
 
-  async function openFile() {
+  // One tail for every way in: the dialog's pick, a typed path and an
+  // uploaded file all land on the same preview grid.
+  function applyOpen(res: ApiResult): boolean {
+    if (res.status === 200) {
+      const next = (res.data as { preview: Preview }).preview;
+      setPreview(next);
+      setPicked(next.rows.map((_row, index) => index));
+      setValueColumn('');
+      setLabelColumn('');
+      setStep(2);
+      setTypedPath('');
+      setFileToUpload(null);
+      return true;
+    }
+    if (res.status === 503 && (res.data as { error?: string }).error === 'config:picker-unavailable') {
+      setError((res.data as { message?: string }).message || 'The file dialog could not open on this computer.');
+      setRecoveryOpen(true);
+      return false;
+    }
+    setError((res.data as { message?: string }).message || 'The file was not opened.');
+    return false;
+  }
+
+  async function runOpen(request: () => Promise<ApiResult>) {
     setBusy(true);
     setError('');
-    const res = await postJson(pickUrl, { name });
-    setBusy(false);
-    if (res.status === 401) { onExpired(); return; }
-    if (!res.ok) {
-      setError((res.data as { message?: string }).message || 'The file was not opened.');
-      return;
+    try {
+      const res = await request();
+      if (res.status === 401) { onExpired(); return; }
+      applyOpen(res);
+    } finally {
+      setBusy(false);
     }
-    const next = (res.data as { preview: Preview }).preview;
-    setPreview(next);
-    setPicked(next.rows.map((_row, index) => index));
-    setValueColumn('');
-    setLabelColumn('');
-    setStep(2);
   }
 
   async function suggest() {
@@ -250,7 +275,56 @@ export default function TrackerSetup({
               <div><dt>You pick</dt><dd>One value column, a row label and the rows to count</dd></div>
               <div><dt>Shows</dt><dd>The total, its change since the last reading and a sparkline</dd></div>
             </dl>
-            <Button tone="primary" onClick={() => void openFile()} disabled={busy}>Open a workbook</Button>
+            <Button tone="primary" onClick={() => void runOpen(() => postJson(pickUrl, { name }))} disabled={busy}>Open a workbook</Button>
+            <Button
+              aria-expanded={recoveryOpen}
+              onClick={() => setRecoveryOpen((open) => !open)}
+              disabled={busy}
+            >
+              Type a path or upload instead
+            </Button>
+            {recoveryOpen && (
+              <div className="setup-choose">
+                <div className="setup-actions">
+                  <label className="setup-field">
+                    Workbook path
+                    <input
+                      aria-label="Workbook path"
+                      value={typedPath}
+                      onChange={(event) => setTypedPath(event.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <Button
+                    onClick={() => void runOpen(() => postJson(stageUrl, { path: typedPath.trim() }))}
+                    disabled={busy || typedPath.trim() === ''}
+                  >
+                    Use this path
+                  </Button>
+                </div>
+                <div className="setup-actions">
+                  <label className="setup-field">
+                    Workbook file
+                    <input
+                      type="file"
+                      aria-label="Workbook file"
+                      accept=".xlsx,.xlsm,.csv,.json"
+                      onChange={(event) => setFileToUpload(event.target.files?.[0] ?? null)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <Button
+                    onClick={() => {
+                      const file = fileToUpload;
+                      if (file) void runOpen(() => postFile(uploadUrl + encodeURIComponent(file.name), file));
+                    }}
+                    disabled={busy || fileToUpload === null}
+                  >
+                    Upload this file
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="setup-open-wire"><WireChart bars={8} /></div>
         </section>

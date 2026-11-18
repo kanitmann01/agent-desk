@@ -53,6 +53,14 @@ const PREVIEW = {
   sheet: 'Data',
 };
 
+// The dialog's failure is its own answer (spec 009, decision 4): the
+// sentence below is the server's, rendered verbatim.
+const UNAVAILABLE = {
+  error: 'config:picker-unavailable',
+  message: "The file dialog could not open on this computer. Type the file's path, or upload the file instead.",
+};
+const DIALOG_NOTE = "The file dialog opens on this computer; only the file's name comes back.";
+
 interface ListOverrides {
   pluginId?: string;
   configBacked?: boolean;
@@ -76,6 +84,8 @@ function listing(overrides: ListOverrides = {}) {
 
 interface StubOptions {
   pick?: { status: number; body: unknown };
+  // A typed path or an uploaded file opens the same preview.
+  stage?: { status: number; body: unknown };
   // A static refusal, or a per-call answer (first confirm refused, the
   // retry accepted, and so on).
   confirm?: { status: number; body: unknown } | ((calls: number) => { status: number; body: unknown });
@@ -90,9 +100,32 @@ function confirmAnswer(options: StubOptions, calls: number): { status: number; b
 function stubFetch(listing: ListOverrides, create?: { status: number; body: unknown }, options: StubOptions = {}) {
   const state = { listing: listing as Record<string, unknown> };
   const confirmCalls = { count: 0 };
+  // Every way in answers with the real instance document carrying a
+  // staged file and the same preview, exactly as the server does.
+  const opened = (iid: string, fallbackName: string) => {
+    const found = (state.listing.instances as Array<Record<string, unknown>>)
+      .find((item) => item.instanceId === iid);
+    const document = found
+      ? { ...found, source: { kind: 'workbook', path: '/workspace/reports/q4.xlsx', sheet: null, headerRow: 1, range: null } }
+      : {
+        schemaVersion: 1,
+        instanceId: iid,
+        name: fallbackName,
+        source: { kind: 'workbook', path: '/workspace/reports/q4.xlsx', sheet: null, headerRow: 1, range: null },
+        tracking: { good: 'up' },
+        confirmedAt: null,
+        suggested: false,
+      };
+    return { instance: document, preview: PREVIEW, step: 'columns' };
+  };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === 'POST') {
+      // An upload carries a File, so its body is never parsed as JSON.
+      if (url.includes('/upload/')) {
+        const answer = options.stage ?? { status: 200, body: opened(url.split('/')[5] ?? '', 'uploaded') };
+        return jsonResponse(answer.body, answer.status);
+      }
       const body = JSON.parse(String(init.body ?? '{}')) as { name?: string };
       if (url === '/api/plugins/qbr-pack/instances') {
         if (create) return jsonResponse(create.body, create.status);
@@ -112,21 +145,11 @@ function stubFetch(listing: ListOverrides, create?: { status: number; body: unkn
         if (options.pick) return jsonResponse(options.pick.body, options.pick.status);
         // /api/plugins/<id>/instances/<iid>/pick: echo the real instance
         // document with a staged file, exactly as the server does.
-        const iid = url.split('/')[5] ?? '';
-        const found = (state.listing.instances as Array<Record<string, unknown>>)
-          .find((item) => item.instanceId === iid);
-        const opened = found
-          ? { ...found, source: { kind: 'workbook', path: '/workspace/reports/q4.xlsx', sheet: null, headerRow: 1, range: null } }
-          : {
-            schemaVersion: 1,
-            instanceId: iid,
-            name: body.name ?? iid,
-            source: { kind: 'workbook', path: '/workspace/reports/q4.xlsx', sheet: null, headerRow: 1, range: null },
-            tracking: { good: 'up' },
-            confirmedAt: null,
-            suggested: false,
-          };
-        return jsonResponse({ instance: opened, preview: PREVIEW, step: 'columns' });
+        return jsonResponse(opened(url.split('/')[5] ?? '', body.name ?? ''));
+      }
+      if (url.endsWith('/stage')) {
+        const answer = options.stage ?? { status: 200, body: opened(url.split('/')[5] ?? '', body.name ?? '') };
+        return jsonResponse(answer.body, answer.status);
       }
       if (url.endsWith('/outside')) {
         return jsonResponse({ outsideAccepted: true });
@@ -405,5 +428,136 @@ describe('the manage view configures a config-backed plugin', () => {
         post.url === '/api/plugins/excel-report/instances/sales/pick')).toBe(true);
     });
     expect(await within(dialog).findByRole('columnheader', { name: 'Region' })).toBeInTheDocument();
+  });
+
+  it('a dialog that could not open in create mode shows the sentence, drops the note and opens the block', async () => {
+    stubFetch(listing({ instances: [] }), undefined, { pick: { status: 503, body: UNAVAILABLE } });
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
+    await user.type(within(dialog).getByLabelText('Instance name'), 'Watch two');
+    await user.click(within(dialog).getByRole('button', { name: 'Create instance' }));
+
+    // A fresh Open step shows the dialog note, collapsed.
+    const open = await within(dialog).findByRole('button', { name: 'Open a workbook' });
+    expect(within(dialog).getByText(DIALOG_NOTE)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'false');
+    await user.click(open);
+
+    expect(await within(dialog).findByText(UNAVAILABLE.message)).toBeInTheDocument();
+    // The dialog did not open, so the note about it stops being true.
+    expect(within(dialog).queryByText(DIALOG_NOTE)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(within(dialog).getByLabelText('Workbook path')).toBeVisible();
+    expect(within(dialog).getByLabelText('Workbook file')).toBeVisible();
+    // The dialog keeps its place and its wording.
+    expect(within(dialog).getByRole('button', { name: 'Open a workbook' })).toBeInTheDocument();
+  });
+
+  it('the edit sheet shows the same sentence and drops the note as well', async () => {
+    stubFetch(listing(), undefined, { pick: { status: 503, body: UNAVAILABLE } });
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
+    expect(within(dialog).getByText(DIALOG_NOTE)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Open a workbook' }));
+
+    expect(await within(dialog).findByText(UNAVAILABLE.message)).toBeInTheDocument();
+    expect(within(dialog).queryByText(DIALOG_NOTE)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(within(dialog).getByLabelText('Workbook path')).toBeVisible();
+    expect(within(dialog).getByLabelText('Workbook file')).toBeVisible();
+  });
+
+  it('a typed path posts to stage and lands on the columns step', async () => {
+    const { fetchMock } = stubFetch(listing({ instances: [] }), undefined, {
+      pick: { status: 503, body: UNAVAILABLE },
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
+    await user.type(within(dialog).getByLabelText('Instance name'), 'Watch two');
+    await user.click(within(dialog).getByRole('button', { name: 'Create instance' }));
+    await user.click(await within(dialog).findByRole('button', { name: 'Open a workbook' }));
+
+    expect(await within(dialog).findByRole('button', { name: 'Use this path' })).toBeDisabled();
+    const path = within(dialog).getByLabelText('Workbook path');
+    await user.type(path, '   ');
+    expect(within(dialog).getByRole('button', { name: 'Use this path' })).toBeDisabled();
+    await user.clear(path);
+    await user.type(path, '/workspace/reports/q4.xlsx');
+    await user.click(within(dialog).getByRole('button', { name: 'Use this path' }));
+
+    // The same tail as a successful pick: every row starts selected.
+    expect(await within(dialog).findByRole('columnheader', { name: 'Region' })).toBeInTheDocument();
+    expect(within(dialog).getByText('2/2 rows')).toBeInTheDocument();
+    const stage = postsOf(fetchMock).find((post) =>
+      post.url === '/api/plugins/qbr-pack/instances/watch-two/stage');
+    expect(stage?.body).toEqual({ path: '/workspace/reports/q4.xlsx' });
+  });
+
+  it('a chosen file uploads as octet-stream and lands on the columns step', async () => {
+    const { fetchMock } = stubFetch(listing());
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
+    // The block is always one disclosure away, even without a refusal.
+    await user.click(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }));
+    const file = new File(['bytes'], 'q4.xlsx');
+    await user.upload(within(dialog).getByLabelText('Workbook file'), file);
+    expect(within(dialog).getByRole('button', { name: 'Upload this file' })).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Upload this file' }));
+
+    expect(await within(dialog).findByRole('columnheader', { name: 'Region' })).toBeInTheDocument();
+    expect(within(dialog).getByText('2/2 rows')).toBeInTheDocument();
+    // A File body is not JSON, so the sent request is read off the mock.
+    const uploadCall = fetchMock.mock.calls
+      .find(([target]) => String(target).endsWith('/instances/board-pack/upload/q4.xlsx'));
+    expect(String(uploadCall?.[0])).toBe('/api/plugins/qbr-pack/instances/board-pack/upload/q4.xlsx');
+    const uploadInit = uploadCall?.[1];
+    expect(uploadInit?.method).toBe('POST');
+    const headers = uploadInit?.headers as Record<string, string>;
+    expect(headers['Content-Type']).toBe('application/octet-stream');
+    expect(uploadInit?.body).toBe(file);
+  });
+
+  it('a cancelled dialog keeps the note and the block collapsed, still one click away', async () => {
+    stubFetch(listing(), undefined, {
+      pick: { status: 400, body: { error: 'config:cancelled', message: 'No file was opened.' } },
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    const section = await screen.findByRole('region', { name: 'Instances' });
+
+    await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
+    await user.click(within(dialog).getByRole('button', { name: 'Open a workbook' }));
+
+    expect(await within(dialog).findByText('No file was opened.')).toBeInTheDocument();
+    expect(within(dialog).getByText(DIALOG_NOTE)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'false');
+    expect(within(dialog).queryByLabelText('Workbook path')).not.toBeInTheDocument();
+
+    // A genuine Cancel is one click away from the same two ways in.
+    await user.click(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }));
+    expect(within(dialog).getByLabelText('Workbook path')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Type a path or upload instead' }))
+      .toHaveAttribute('aria-expanded', 'true');
   });
 });
