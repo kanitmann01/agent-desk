@@ -19,3 +19,8 @@
 # The .eml mail fixtures are synthetic headers, read by the stdlib
 # parser (line-ending agnostic); pinned so every checkout sees bytes.
 *.eml text eol=lf
+# Upstream licence texts are byte-pinned: THIRD-PARTY-NOTICES.md and
+# licenses/third-party/README.md publish their sha256 and byte counts,
+# so every checkout must see the LF bytes exactly as committed.
+licenses/third-party/*.txt text eol=lf
+frontend/public/licenses/*.txt text eol=lf
