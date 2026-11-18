@@ -62,7 +62,7 @@ from agentdesk.inbox.core import (
 # Aliased: agentdesk.assistant.context.build_context already owns this
 # name in this module, and it is the one the model turn calls.
 from agentdesk.insight.context import build_context as build_insight_context
-from agentdesk.insight.preferences import PreferenceStore, PreferencesError
+from agentdesk.insight.preferences import PreferenceStore, PreferencesError, changed
 from agentdesk.insight.press import draft_reply
 from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
@@ -1563,6 +1563,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_test()
         elif path == "/settings/mail/folder":
             self._mail_folder_save()
+        elif path == "/settings/preferences":
+            self._preferences_save()
         elif path == "/settings/registry/path":
             self._registry_path_save()
         elif path == "/settings/hosts/save":
@@ -3866,6 +3868,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_redirect("/settings")
             return
         self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
+
+    def _preferences_save(self) -> None:
+        """The settings form for what the desk knows about this person.
+
+        A form post arrives as strings while the store wants a list of
+        topics and a whole number of minutes, so this route converts
+        before the store validates; nothing is clamped or guessed. An
+        emptied field means "none": no topics, zero preparation minutes.
+        """
+        body = self._read_json_body() or {}
+        form = self._is_form_submit()
+        patch: dict = {}
+        for key in ("chart", "replyTone", "replyLength", "insightDensity"):
+            if key in body:
+                patch[key] = str(body[key]).strip()
+        if form or "focusTopics" in body:
+            raw_topics = str(body.get("focusTopics", ""))
+            patch["focusTopics"] = [
+                line.strip() for line in raw_topics.splitlines() if line.strip()
+            ]
+        if form or "prepMinutes" in body:
+            typed = str(body.get("prepMinutes", "")).strip()
+            if not typed:
+                patch["prepMinutes"] = 0
+            else:
+                try:
+                    patch["prepMinutes"] = int(typed)
+                except ValueError:
+                    self._send_redirect(
+                        "/settings?preferences_error=" + quote(
+                            "Preparation minutes must be a whole number from 0 to 120."))
+                    return
+        try:
+            document = PreferenceStore(default_data_dir()).write(patch)
+        except PreferencesError as exc:
+            if form:
+                self._send_redirect(
+                    "/settings?preferences_error=" + quote(exc.message))
+                return
+            self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+            return
+        self._audit("settings.preferences", target="preferences",
+                    detail=",".join(changed(document)) or "none")
+        if form:
+            self._send_redirect("/settings?preferences_saved=1")
+            return
+        self._send_json(200, document)
 
     def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
         """Accepting applies the held update; the "for this plugin"
