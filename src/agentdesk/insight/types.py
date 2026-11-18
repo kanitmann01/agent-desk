@@ -56,6 +56,9 @@ class InsightReading:
     """
 
     elements: list[dict] = field(default_factory=list)
+    # Row indices the reading would select if the user pressed it, in the
+    # workbook's own row numbering. Empty for every family but the workbook.
+    suggested: tuple[int, ...] = ()
     press: dict | None = None
     note: str = ""
     status: str = ""

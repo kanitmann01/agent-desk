@@ -671,6 +671,8 @@ class PluginRuntime:
                     "points": points,
                     "file": reading["file"],
                     "rowsSeen": reading.get("rowsSeen", 0),
+                    "labelColumn": reading.get("labelColumn") or "",
+                    "valueColumn": reading.get("valueColumn") or "",
                     "table": reading.get("table") or {"headers": [], "rows": []},
                     "readAt": reading.get("readAt", 0),
                     "sample": bool(reading.get("sample")),

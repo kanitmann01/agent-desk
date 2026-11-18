@@ -73,4 +73,5 @@ def _attach(
         "preferences": changed(context.preferences),
         "note": reading.note,
         "press": reading.press,
+        "suggested": [row for row in reading.suggested[:5] if isinstance(row, int)],
     }
