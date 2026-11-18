@@ -6,12 +6,12 @@
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done (2026-11-18)
 **GitHub:** issue #139
 
-- [ ] `POST /api/insight/draft` with `"stage": true` on a resolved reply-draft adds exactly one suggestion card whose `draft` is the composed text, whose origin and title name it as a drafted reply, and whose meta records the resolved thread (message id, recipients, subject) in the shape the existing acceptance path reads.
-- [ ] The card's copy names the source: "Drafted by the model" or "Skeleton, not a model draft", so the user knows what they are editing.
-- [ ] Accepting that card writes the `.eml` through the single existing outbox writer; no new writer is introduced.
-- [ ] A second press with the same thread and the same text stages nothing and answers 200 with `"staged": false` and the existing card's id; an edited text stages a new card.
-- [ ] The audit log records the press and the staging with the thread id, and records no message content.
-- [ ] tests/test_insight_press.py or a new tests/test_insight_staging.py covers: one card staged with the model text and label, acceptance writes one outbox file, repeat press stages nothing, refusal when unresolved, and the audit entry shape.
+- [x] `POST /api/insight/draft` with `"stage": true` on a resolved reply-draft adds exactly one suggestion card whose `draft` is the composed text, whose origin and title name it as a drafted reply, and whose meta records the resolved thread (message id, recipients, subject) in the shape the existing acceptance path reads.
+- [x] The card's copy names the source: "Drafted by the model" or "Skeleton, not a model draft", so the user knows what they are editing.
+- [x] Accepting that card writes the `.eml` through the single existing outbox writer; no new writer is introduced.
+- [x] A second press with the same thread and the same text stages nothing and answers 200 with `"staged": false` and the existing card's id; an edited text stages a new card.
+- [x] The audit log records the press and the staging with the thread id, and records no message content.
+- [x] tests/test_insight_press.py or a new tests/test_insight_staging.py covers: one card staged with the model text and label, acceptance writes one outbox file, repeat press stages nothing, refusal when unresolved, and the audit entry shape.

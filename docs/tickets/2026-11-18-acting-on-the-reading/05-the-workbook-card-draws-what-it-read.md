@@ -6,11 +6,11 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done (2026-11-18)
 **GitHub:** issue #141
 
-- [ ] The tracker card renders every element in `payload.elements` under its figure, using the same element component the generic plugin card uses (exported, not copied).
-- [ ] The receipt line renders under the elements from `payload.insight.receipts`, with the same words the server-rendered card uses.
-- [ ] An unknown element kind and a missing payload render nothing rather than an empty box; an attention card (no payload) is unchanged.
-- [ ] A vitest case in `frontend/src/test/tracker-cards.test.tsx` renders a card with two text elements, a checklist and receipts, and asserts the sentences and the receipt line are in the document; a second case asserts an attention card is untouched.
-- [ ] `npm ci && npx tsc --noEmit && npx vitest run frontend/src/test/tracker-cards.test.tsx` is green. **This cannot be run in the current checkout**: `frontend/node_modules` is empty and `frontend/dist` is absent, so the ticket declares the command rather than a result.
+- [x] The tracker card renders every element in `payload.elements` under its figure, using the same element component the generic plugin card uses (exported, not copied).
+- [x] The receipt line renders under the elements from `payload.insight.receipts`, with the same words the server-rendered card uses.
+- [x] An unknown element kind and a missing payload render nothing rather than an empty box; an attention card (no payload) is unchanged.
+- [x] A vitest case in `frontend/src/test/tracker-cards.test.tsx` renders a card with two text elements, a checklist and receipts, and asserts the sentences and the receipt line are in the document; a second case asserts an attention card is untouched.
+- [x] `npm ci && npx tsc --noEmit && npx vitest run frontend/src/test/tracker-cards.test.tsx` is green. Green in this checkout once dev dependencies are installed (`npm ci --include=dev`): `npx tsc --noEmit` exit 0 and `NODE_ENV=test npx vitest run` 24 files / 272 tests passed. `NODE_ENV` matters on this machine: it exports `production`, which loads React’s production build and fails every render test.

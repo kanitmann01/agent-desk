@@ -6,12 +6,12 @@
 
 **Blocked by:** 03, 05.
 
-**Status:** ready-for-agent
+**Status:** done (2026-11-18)
 **GitHub:** issue #142
 
-- [ ] A card with `payload.insight.press` renders a secondary button with the press's label under the reading; the button is disabled while a request is in flight and re-enabled on failure.
-- [ ] A successful explanation renders its text and the disclosure lines; a draft renders its text with a "Stage as a reply card" action that posts `stage: true` and then confirms with the card's id and refetches.
-- [ ] A refusal renders the server's sentence verbatim (409 model off, 404 no thread, 409 ambiguous) and never a generic error.
-- [ ] The disclosure lines are always shown before any stage action is offered.
-- [ ] Two vitest cases cover the explanation path and the stage path against a stubbed fetch; one covers the model-off refusal rendering.
-- [ ] `npm ci && npx tsc --noEmit && npx vitest run frontend/src/test/press.test.tsx` is green. **This cannot be run in the current checkout** for the same reason as ticket 05.
+- [x] A card with `payload.insight.press` renders a secondary button with the press's label under the reading; the button is disabled while a request is in flight and re-enabled on failure.
+- [x] A successful explanation renders its text and the disclosure lines; a draft renders its text with a "Stage as a reply card" action that posts `stage: true` and then confirms with the card's id and refetches.
+- [x] A refusal renders the server's sentence verbatim (409 model off, 404 no thread, 409 ambiguous) and never a generic error.
+- [x] The disclosure lines are always shown before any stage action is offered.
+- [x] Two vitest cases cover the explanation path and the stage path against a stubbed fetch; one covers the model-off refusal rendering.
+- [x] `npm ci && npx tsc --noEmit && npx vitest run frontend/src/test/press.test.tsx` is green. Green in this checkout, same command and same `NODE_ENV=test` caveat as ticket 05.
