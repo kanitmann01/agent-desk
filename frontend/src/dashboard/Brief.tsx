@@ -237,9 +237,16 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
         <CellHead tag="DESK HEALTH" meta={<span className="mono">{connected}/{total} live</span>} />
         <HealthMatrix rows={healthRows} />
         <p className="cell-foot health-foot">
-          {healthRows.every((row) => row.live)
-            ? 'Every source answered on its last run.'
-            : `${listJoin(healthRows.filter((row) => !row.live).map((row) => row.name))} ${healthRows.filter((row) => !row.live).length === 1 ? 'is' : 'are'} not live yet.`}
+          {(() => {
+            const feeds = healthRows.slice(0, 3);
+            const off = feeds.filter((row) => !row.live);
+            const reading = healthRows.slice(3).filter((row) => row.live);
+            if (off.length === 0) return 'Every source answered on its last run.';
+            const base = `${listJoin(off.map((row) => row.name))} ${off.length === 1 ? 'is' : 'are'} not live yet.`;
+            return reading.length > 0
+              ? `${base} ${listJoin(reading.map((row) => row.name))} ${reading.length === 1 ? 'reads its own file' : 'read their own files'}.`
+              : base;
+          })()}
         </p>
       </>
     ),
@@ -251,7 +258,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
         kind: 'tracker',
         node: (
           <>
-            <CellHead tag="TRACKER" />
+            <CellHead tag="TRACKER" sample={Boolean(card.payload?.tracker?.sample)} />
             <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />
           </>
         ),
@@ -356,7 +363,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
               <div className="hero-figure">
                 <div className="kpi"><div className="value flat ghost">—</div></div>
                 <p className="brief-label">Net pipeline, last 24 hours</p>
-                <p className="brief-quiet">No workbook is connected, so there is no pipeline figure yet.</p>
+                <p className="brief-quiet">No sales workbook is connected, so there is no pipeline figure yet.</p>
               </div>
               <div className="stage-chart">
                 <p className="chart-cap">Net change by stage</p>
@@ -427,7 +434,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
                   </div>
                 ))}
               </div>
-              <p className="cell-foot">{configured ? 'No deal has moved in the last 24 hours.' : 'Deals that move show here once a workbook is connected.'}</p>
+              <p className="cell-foot">{configured ? 'No deal has moved in the last 24 hours.' : 'Deals that move show here once a sales workbook is connected.'}</p>
             </>
           )}
         </article>
@@ -475,17 +482,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
         <article className={digestItems.length > 0 ? 'cell cell-digest' : 'cell cell-digest is-empty'} aria-labelledby="cell-digest">
           <CellHead id="cell-digest" tag="DIGEST" sample={digestIsSample} meta={digestItems.length > 0 ? <span className="mono">{digestItems.length} items</span> : undefined} />
           {digestItems.length > 0 ? <DigestList items={digestItems} /> : (
-            <>
-              <ol className="digest-wire" aria-hidden="true">
-                {[64, 48, 72, 40, 56].map((w, i) => (
-                  <li key={i}><span className="mono">--:--</span><i style={{ width: `${w}%` }} /></li>
-                ))}
-              </ol>
-              <div className="digest-empty">
-                <p>Nothing on the calendar yet.</p>
-                <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Set up</Button>
-              </div>
-            </>
+            <div className="digest-empty">
+              <p>Nothing on the calendar yet.</p>
+              <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Set up</Button>
+            </div>
           )}
         </article>
       </div>

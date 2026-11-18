@@ -35,7 +35,7 @@ from agentdesk.server.plugins_view import render_plugins_page
 SHELL_PAGES = [
     ("/inbox", "Inbox"),
     ("/assistant", "Assistant"),
-    ("/activity", "Activity"),
+    ("/settings/activity", "Activity"),
     ("/memory", "Memory"),
     ("/mail", "Mail"),
     ("/capabilities", "Capabilities"),
@@ -247,7 +247,10 @@ def test_every_rail_link_keeps_its_accessible_name(booted):
     page = _sample_inbox_page(booted)
     rail = page.split('<nav class="rail"')[1].split("</nav>")[0]
     anchors = re.findall(r'<a href="([^"]+)"', rail)
-    assert len(anchors) >= 10, anchors
+    # Dashboard, inbox, assistant, memory, mail, marketplace, settings:
+    # the daily surfaces. Activity, capabilities and peers live under
+    # Settings and no longer carry a rail entry.
+    assert len(anchors) >= 7, anchors
     # Collapse hides the visible labels, so each anchor must name
     # itself; the Inbox link also names its waiting count.
     for href in anchors:

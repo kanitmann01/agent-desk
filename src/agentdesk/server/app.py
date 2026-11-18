@@ -132,7 +132,8 @@ from agentdesk.registry.install import RegistryError, tree_digest
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
-from agentdesk.server.activity_view import DECISIONS, render_activity_page
+from agentdesk.server.audit_view import render_audit_page
+from agentdesk.server.activity_view import DECISIONS
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.capabilities_view import render_capabilities_page
@@ -376,6 +377,16 @@ CALENDAR_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
     ],
 )
 
+# The instance setup dialog: every format the instance store can stage,
+# so a tracker is never limited to a workbook the export tool did not make.
+PLUGIN_FILE_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
+    title="Choose a workbook or JSON export",
+    filetypes=[
+        ("Data files", "*.xlsx *.xlsm *.csv *.json"),
+        ("All files", "*.*"),
+    ],
+)
+
 
 def _tk_pick_file(snippet: str) -> str | None:
     """One child process per dialog call; the parent never imports Tk.
@@ -405,6 +416,11 @@ def tk_pick_workbook() -> str | None:
 def tk_pick_calendar() -> str | None:
     """The native calendar-file dialog, same mechanism as the workbook."""
     return _tk_pick_file(CALENDAR_PICK_SNIPPET)
+
+
+def tk_pick_plugin_file() -> str | None:
+    """The instance setup dialog: a workbook, a CSV, or a JSON export."""
+    return _tk_pick_file(PLUGIN_FILE_PICK_SNIPPET)
 
 
 # The stdlib xlsx reader opens zip-based workbooks only. .xls, .xlsb and
@@ -671,6 +687,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         sessions: SessionStore,
         excel: ExcelWatch | None = None,
         pick_workbook=None,
+        pick_plugin_file=None,
         calendar: CalendarBridge | None = None,
         llm=None,
         audit_conn=None,
@@ -701,6 +718,9 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.sessions = sessions
         self.excel = excel
         self.pick_workbook = pick_workbook
+        self.pick_plugin_file = (
+            pick_plugin_file if pick_plugin_file is not None else pick_workbook
+        )
         self.pick_calendar = pick_calendar
         self.calendar = calendar
         self.llm = llm if llm is not None else env_chat()
@@ -1138,7 +1158,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/inbox":
             self._send_inbox_page()
         elif path == "/activity":
-            self._send_activity_page()
+            # The decision log became the activity trail inside Settings;
+            # the old address keeps answering for bookmarks and links.
+            self._send_redirect_302("/settings/activity")
         elif path == "/memory":
             self._send_memory_page()
         elif path == "/memory/graph":
@@ -1164,6 +1186,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_peers_page(notice=notice)
         elif path == "/widgets/inbox":
             self._send_inbox_count()
+        elif path == "/settings/activity":
+            self._send_audit_page()
         elif path == "/settings":
             self._send_settings_page()
         elif path.startswith("/skills/") and path.endswith("/skill.md"):
@@ -1778,6 +1802,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         entries = server.activity_log.entries() if server.activity_log is not None else []
         skills = server.skills.active() if server.skills is not None else []
         histories = {s["id"]: server.skills.history(s["id"]) for s in skills}
+        audit_entries = (
+            audit_store.entries(server.audit_conn, 60)
+            if server.audit_conn is not None else []
+        )
+        audit_total = (
+            audit_store.count(server.audit_conn)
+            if server.audit_conn is not None else 0
+        )
         page = render_settings_page(
             entries, skills, histories, agentdesk.__version__,
             settings_values=self._settings_public_values(),
@@ -1788,6 +1820,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                          if server.settings is not None else ""),
             server_port=server.port,
             inbox_count=self._inbox_waiting_count(),
+            audit_entries=audit_entries,
+            audit_total=audit_total,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2255,17 +2289,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, payload)
 
-    def _send_activity_page(self) -> None:
-        """The decision log: inbox decisions from the audit store, newest
-        first. Non-decision rows stay in the CSV export, not here; the
-        decision filter runs in the store so background polls cannot push
-        a decision past the page's window."""
+    def _send_audit_page(self) -> None:
+        """The one activity trail inside Settings: every audit row,
+        newest first, plus the questions typed into research and the
+        assistant. The page's window is larger than the store's default
+        because it is the screen behind the CSV export."""
         entries = (
-            audit_store.decision_entries(self.server.audit_conn, tuple(DECISIONS))  # type: ignore[attr-defined]
+            audit_store.entries(self.server.audit_conn, 300)  # type: ignore[attr-defined]
             if self.server.audit_conn is not None else []  # type: ignore[attr-defined]
         )
-        page = render_activity_page(entries, agentdesk.__version__,
-                                    inbox_count=self._inbox_waiting_count())
+        questions = (
+            self.server.activity_log.entries()  # type: ignore[attr-defined]
+            if self.server.activity_log is not None else []  # type: ignore[attr-defined]
+        )
+        _, _sep, query = self.path.partition("?")
+        kind = parse_qs(query).get("kind", [""])[0] if query else ""
+        page = render_audit_page(entries, questions, agentdesk.__version__,
+                                 inbox_count=self._inbox_waiting_count(),
+                                 kind=kind or None)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     # -- memory: the page and its actions (tickets #42, #94) --------------
@@ -3555,7 +3596,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _plugin_setup_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
         from ..plugins.config import ConfigError
         from ..plugins.setup_flow import (
-            accept_outside, confirm, ensure_instance, pick, stage, store_for, suggest,
+            accept_outside, confirm, ensure_instance, evaluate, pick, stage, store_for, suggest,
         )
         parts = [part for part in path.split("/") if part]
         # api plugins <id> instances [iid] [action]
@@ -3583,7 +3624,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             name = str(body.get("name") or instance_id)
             if action == "pick":
                 self._send_json(200, pick(
-                    plugins, cap, instance_id, name, self.server.pick_workbook,  # type: ignore[attr-defined]
+                    plugins, cap, instance_id, name, self.server.pick_plugin_file,  # type: ignore[attr-defined]
                     plugin_id=plugin_id))
                 return
             if action == "stage":
@@ -3599,6 +3640,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(200, suggest(
                     plugins, cap, instance_id, headers_only=headers_only, complete=complete,
                     plugin_id=plugin_id))
+                return
+            if action == "evaluate":
+                tracking = body.get("tracking") if isinstance(body.get("tracking"), dict) else body
+                self._send_json(200, evaluate(
+                    plugins, cap, instance_id, tracking,
+                    complete=self._suggestion_complete(), plugin_id=plugin_id))
                 return
             if action == "confirm":
                 tracking = body.get("tracking") if isinstance(body.get("tracking"), dict) else body
@@ -5089,6 +5136,7 @@ def create_server(
     port: int | None = None,
     excel: ExcelWatch | None = None,
     pick_workbook=None,
+    pick_plugin_file=None,
     calendar: CalendarBridge | None = None,
     llm=None,
     audit_conn=None,
@@ -5151,6 +5199,13 @@ def create_server(
             skill_store = repetition[1]
     if pick_workbook is None:
         pick_workbook = tk_pick_workbook
+    if pick_plugin_file is None:
+        # Embedders and tests that inject one picker get that picker for
+        # instance setup too; production widens the dialog to every format
+        # the instance store can stage.
+        pick_plugin_file = (
+            tk_pick_plugin_file if pick_workbook is tk_pick_workbook else pick_workbook
+        )
     if pick_calendar is None:
         pick_calendar = tk_pick_calendar
     if wizard_store is None:
@@ -5191,6 +5246,7 @@ def create_server(
             sessions=sessions,
             excel=excel,
             pick_workbook=pick_workbook,
+            pick_plugin_file=pick_plugin_file,
             calendar=calendar,
             llm=llm,
             audit_conn=audit_conn,

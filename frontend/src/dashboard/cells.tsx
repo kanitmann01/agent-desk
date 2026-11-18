@@ -121,6 +121,15 @@ export function Sparkline({ points, label }: { points: number[]; label: string }
   );
 }
 
+/** "read 2 min ago" for a reading timestamp, second precision. */
+export function readAgo(at: number): string {
+  const seconds = Math.max(0, Math.round(Date.now() / 1000 - at));
+  if (seconds < 45) return 'just now';
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
+  return `${Math.round(seconds / 86400)} d ago`;
+}
+
 function parseFigure(value: string): number | null {
   const n = Number(value.replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) && value.trim() !== '' ? n : null;
@@ -158,7 +167,11 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
           </p>
         </div>
       ) : view.paceNote ? <p className="pace-note">{view.paceNote}</p> : null}
-      <p className="cell-foot mono">{view.file}</p>
+      <p className="cell-foot mono">
+        {view.file}
+        {typeof view.rowsSeen === 'number' ? ` · ${view.rowsSeen.toLocaleString('en-US')} rows` : ''}
+        {view.readAt ? ` · read ${readAgo(view.readAt)}` : ''}
+      </p>
     </div>
   );
 }

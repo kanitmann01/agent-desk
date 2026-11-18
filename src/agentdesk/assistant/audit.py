@@ -175,6 +175,12 @@ def entries(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
     return _as_entries(rows)
 
 
+def count(conn: sqlite3.Connection) -> int:
+    """Every row in the store, not just the newest page's window."""
+    row = conn.execute("SELECT COUNT(*) FROM audit").fetchone()
+    return int(row[0]) if row else 0
+
+
 def decision_entries(conn: sqlite3.Connection, actions, limit: int = 100) -> list[dict]:
     """Rows for the given actions only, newest first, filtered in SQL.
 

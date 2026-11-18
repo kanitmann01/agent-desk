@@ -452,6 +452,9 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
           </section>
         ) : null}
         <CommandBar busy={researchBusy} onAsk={ask} />
+        {!customizing && statusText ? (
+          <p className="research-status command-status" role="status">{statusText}</p>
+        ) : null}
         {!customizing ? (
           <>
             <Brief data={data} onRefetch={onRefetch} onExpired={onExpired} />

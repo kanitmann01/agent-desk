@@ -232,6 +232,7 @@ def render_capabilities_page(
     re-test forms are the only probing path."""
     mail_html = _mail_card(mail) if mail is not None else ""
     content = f"""<h1>Capabilities</h1>
+<p class='empty'><a href="/settings">Back to settings</a></p>
 <p>What this laptop offers the agent: the five environment gates the
 probe checks, the company endpoint, and the data sources. Gate results
 are stored, not probed live: every card names when it was tested, and
@@ -241,4 +242,4 @@ command-line probe stays available for IT.</p>
 {_endpoint_card(sources, endpoint)}
 {_source_cards(sources, excel_status, calendar_status)}
 {mail_html}"""
-    return page_shell("Capabilities", "/capabilities", content, version, inbox_count=inbox_count)
+    return page_shell("Capabilities", "/settings", content, version, inbox_count=inbox_count)

@@ -49,7 +49,7 @@ function pinClock() {
 }
 
 describe('the rail', () => {
-  it('renders the brand as plain text and the nine entries', () => {
+  it('renders the brand as plain text and the seven daily entries', () => {
     render(<Rail inboxWaiting={2} />);
     // The brand carries no gradient: a plain span in the ink.
     const brand = document.querySelector<HTMLElement>('.brand-name');
@@ -66,11 +66,11 @@ describe('the rail', () => {
       'href',
       '/marketplace',
     );
-    // So is Peers (ticket #67): the peer-sharing page.
-    expect(screen.getByText('Peers').closest('a')).toHaveAttribute(
-      'href',
-      '/peers',
-    );
+    // Activity, Capabilities and Peers moved under Settings: the rail
+    // carries the surfaces a person uses every day, not every URL.
+    for (const retired of ['Activity', 'Capabilities', 'Peers']) {
+      expect(screen.queryByText(retired)).toBeNull();
+    }
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
@@ -79,14 +79,12 @@ describe('the rail', () => {
     expect(document.querySelector('.rail .count')).toBeNull();
   });
 
-  it('links the four consolidation pages', () => {
+  it('keeps Memory and Mail on the rail', () => {
     render(<Rail inboxWaiting={0} />);
     const nav = screen.getByRole('navigation', { name: 'Main' });
     for (const [name, href] of [
-      ['Activity', '/activity'],
       ['Memory', '/memory'],
       ['Mail', '/mail'],
-      ['Capabilities', '/capabilities'],
     ] as Array<[string, string]>) {
       const link = screen.getByRole('link', { name });
       expect(link).toHaveAttribute('href', href);

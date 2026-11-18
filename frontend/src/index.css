@@ -444,6 +444,7 @@ table.rows td.neg{color:var(--text-2)}
   border-radius:var(--r-pill);padding:3px 10px;margin:10px 8px 0 0;
 }
 .research-status{display:flex;align-items:center;gap:10px;color:var(--text-2);font-size:13px}
+.command-status{margin:6px 0 0}
 
 /* Stacked: a plugin's alert carries two paragraphs (the cause, then
    what Re-test does) and they read top to bottom. */
@@ -770,6 +771,12 @@ table.rows td.neg{color:var(--text-2)}
 .setup-field{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:13px;color:var(--text-2);min-width:220px}
 .setup-field input{border:1px solid var(--rule);border-radius:var(--r-control);background:var(--surface-2);color:var(--heading);min-height:40px;padding:6px 10px;font:inherit;font-weight:400}
 .setup-field input:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.setup-review{gap:10px}
+.setup-verdict{margin:0;font-size:13px;color:var(--heading);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.verdict-tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;padding:2px 6px;border-radius:var(--r-inner);border:1px solid var(--rule-strong);color:var(--muted)}
+.verdict-tag.is-ok,.verdict-tag.is-adjust{border-color:var(--accent);color:var(--accent-text)}
+.verdict-tag.is-unchecked{border-style:dashed}
+.setup-check-note{margin:0;font-size:12px;color:var(--muted);max-width:62ch}
 
 /* ---- Theme picker ------------------------------------------------------ */
 .theme-swatch{

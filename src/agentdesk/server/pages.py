@@ -402,6 +402,17 @@ input[type="checkbox"]:checked::after{content:"";width:8px;height:4px;border-lef
 input[type="radio"]:checked{border-color:var(--accent)}
 input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
 @media (max-width:560px){.theme-tiles{grid-template-columns:1fr}}
+
+/* Settings: one card per concern, a single width and one gap rhythm, so
+   the page reads as a stack of live state rather than a pile of forms.
+   Every rule is scoped to .doc so it wins over the generic card rules. */
+.settings-stack{display:flex;flex-direction:column;gap:16px;margin-top:16px}
+.doc .settings-card{margin:0}
+.doc .settings-card h3{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
+.doc .settings-card .settings-block{max-width:none}
+.settings-links{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+.settings-skill{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--hairline)}
+.settings-skill:first-of-type{border-top:none;padding-top:0}
 """
 
 # The scripts the shell ships: the workbook picker flow, the Re-test
@@ -873,12 +884,12 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         # the accessible name carries the waiting number.
         f'{entry("/inbox", _ICON_INBOX, "Inbox", badge)}'
         f'{entry("/assistant", _ICON_ASSISTANT, "Assistant")}'
-        f'{entry("/activity", _ICON_ACTIVITY, "Activity")}'
+        # Activity, Capabilities and Peers moved under Settings: the rail
+        # carries the surfaces a person uses every day, not every URL the
+        # server can render. Their routes still answer for deep links.
         f'{entry("/memory", _ICON_MEMORY, "Memory")}'
         f'{entry("/mail", _ICON_MAIL, "Mail")}'
-        f'{entry("/capabilities", _ICON_CAPABILITIES, "Capabilities")}'
-        f'{entry("/plugins", _ICON_PLUGINS, "Plugins")}'
-        f'{entry("/peers", _ICON_PEERS, "Peers")}'
+        f'{entry("/marketplace", _ICON_PLUGINS, "Marketplace")}'
         f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
         f'{toggle}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'

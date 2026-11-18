@@ -5,6 +5,7 @@ from the instance config. Nothing else is opened.
 from __future__ import annotations
 
 import json
+import time
 
 from agentdesk.plugins.config import InstanceStore
 from agentdesk.plugins.preview import preview_table
@@ -59,6 +60,11 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
         "labelColumn": tracking.get("labelColumn"),
         "valueColumn": tracking.get("valueColumn"),
         "rowsSeen": len(body),
+        # Provenance: the card says when this reading happened, and whether
+        # the source is the app's own sample folder (demo fixture) rather
+        # than a file the user connected.
+        "readAt": time.time(),
+        "sample": any(part.lower() == "sample" for part in path.parent.parts),
     }
 
 

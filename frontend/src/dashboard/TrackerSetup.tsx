@@ -27,6 +27,12 @@ interface Proposal {
   source?: string;
 }
 
+interface Review {
+  verdict: 'ok' | 'adjust' | 'unchecked';
+  message: string;
+  recommendation: Proposal | null;
+}
+
 interface TrackerSetupProps {
   pluginId: string;
   instanceId: string;
@@ -49,6 +55,7 @@ export default function TrackerSetup({
   const [unit, setUnit] = useState('');
   const [headersOnly, setHeadersOnly] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
   const [suggested, setSuggested] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,6 +76,7 @@ export default function TrackerSetup({
 
   const pickUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/pick`;
   const suggestUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/suggest`;
+  const evaluateUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/evaluate`;
   const confirmUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/confirm`;
   const outsideUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/outside`;
 
@@ -76,11 +84,15 @@ export default function TrackerSetup({
     if (role === 'value') setValueColumn(header);
     else setLabelColumn(header);
     setProposal(null);
+    setReview(null);
+    setSuggested(false);
   }
 
   function chooseRows(rows: number[]) {
     setPicked(rows);
     setProposal(null);
+    setReview(null);
+    setSuggested(false);
   }
 
   async function openFile() {
@@ -121,6 +133,51 @@ export default function TrackerSetup({
 
   function acceptSuggestion() {
     setProposal(null);
+    setSuggested(true);
+    setStep(3);
+  }
+
+  // Continue is one press: the endpoint gets one look at the chosen
+  // columns and rows. A missing endpoint, a bad response, or a verdict
+  // with nothing to change lets the choice straight through; only a real
+  // recommendation holds the sheet open.
+  async function checkChoice() {
+    setBusy(true);
+    setError('');
+    let res: Awaited<ReturnType<typeof postJson>> | null = null;
+    try {
+      res = await postJson(evaluateUrl, {
+        tracking: { labelColumn, valueColumn, aggregate: 'sum', rows: picked },
+      });
+    } catch {
+      res = null;
+    }
+    setBusy(false);
+    if (res && res.status === 401) { onExpired(); return; }
+    if (!res || !res.ok) { setStep(3); return; }
+    const data = res.data as { verdict?: string; message?: string; recommendation?: Proposal | null };
+    const verdict = data.verdict === 'adjust' || data.verdict === 'unchecked' ? data.verdict : 'ok';
+    const next: Review = {
+      verdict,
+      message: data.message || 'The check came back without a note.',
+      recommendation: data.recommendation ?? null,
+    };
+    setReview(next);
+    if (!next.recommendation) setStep(3);
+  }
+
+  function useRecommendation(recommendation: Proposal) {
+    setLabelColumn(recommendation.labelColumn);
+    setValueColumn(recommendation.valueColumn);
+    if (recommendation.rows && recommendation.rows.length > 0) setPicked(recommendation.rows);
+    setReview(null);
+    setProposal(null);
+    setSuggested(true);
+    setStep(3);
+  }
+
+  function keepMine() {
+    setReview(null);
     setStep(3);
   }
 
@@ -238,16 +295,52 @@ export default function TrackerSetup({
                 <Button tone="secondary" onClick={() => setProposal(null)}>Adjust</Button>
               </div>
             </div>
+          ) : review?.recommendation ? (
+            <div className="setup-proposal setup-review" role="status">
+              <p className="setup-verdict" data-testid="evaluate-verdict">
+                <span className={`verdict-tag is-${review.verdict}`}>SUGGESTION</span>
+                {review.message}
+              </p>
+              <p className="setup-reason">
+                <strong>{review.recommendation.valueColumn}</strong> by <strong>{review.recommendation.labelColumn}</strong>
+                {review.recommendation.rows && review.recommendation.rows.length > 0
+                  ? ` · ${review.recommendation.rows.length} rows` : ''}
+                {review.recommendation.reason ? ` — ${review.recommendation.reason}` : ''}
+              </p>
+              <div className="setup-actions">
+                <Button tone="primary" onClick={() => useRecommendation(review.recommendation as Proposal)}>Use this instead</Button>
+                <Button tone="secondary" onClick={keepMine}>Keep mine</Button>
+              </div>
+            </div>
           ) : (
-            <Button tone="primary" className="setup-continue" onClick={() => setStep(3)} disabled={!labelColumn || !valueColumn || picked.length === 0}>
-              Continue
-            </Button>
+            <>
+              <Button
+                tone="primary"
+                className="setup-continue"
+                onClick={() => void checkChoice()}
+                disabled={busy || !labelColumn || !valueColumn || picked.length === 0}
+              >
+                {busy ? 'Checking…' : 'Continue'}
+              </Button>
+              <p className="setup-check-note">
+                One check runs here: the headers and up to 5 row values go to the company endpoint. The file path
+                stays on this machine. A missing endpoint skips the check; your choice still works.
+              </p>
+            </>
           )}
         </section>
       ) : null}
       {step === 3 ? (
         <section className="setup-name">
           <p className="setup-summary mono">{valueColumn} by {labelColumn} · {picked.length} rows</p>
+          {review ? (
+            <p className="setup-check-note" data-testid="evaluate-note">
+              <span className={`verdict-tag is-${review.verdict}`}>
+                {review.verdict === 'unchecked' ? 'CHECK SKIPPED' : review.verdict === 'adjust' ? 'KEPT YOUR CHOICE' : 'LOOKS RIGHT'}
+              </span>{' '}
+              {review.message}
+            </p>
+          ) : null}
           <label className="setup-field">Name this tracker
             <input aria-label="Instance name" value={instanceName} onChange={(event) => setInstanceName(event.target.value)} />
           </label>

@@ -600,6 +600,9 @@ def test_payload_carries_the_source_envelope_and_maps_states(tmp_path):
     manifest, version = _csv_plugin(tmp_path)
     path = write_csv(tmp_path / "workspace" / "sales.csv",
                      "Region,Sales\nNorth,10\n")
+    # The runner judges freshness against the real clock, so this one file
+    # is stamped now rather than at the fixture clock.
+    os.utime(path, None)
 
     status = runner.attach("p", manifest, version, tmp_path / "data")
     payload = runner.payload("p")
