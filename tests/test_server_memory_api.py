@@ -1,4 +1,4 @@
-"""Memory over HTTP: the page, the assistant prompt, and no auto-capture.
+"""Memory over HTTP: the page, the assistant prompt, and capture that waits for review.
 
 The seam tests drive the real server: the memory page's list, add, edit,
 delete and recall preview, the bounded facts block in the assistant
@@ -221,6 +221,7 @@ def test_entity_merge_route_unions_aliases_and_relinks_facts(env, auth):
 def test_entity_merge_route_refuses_self_and_unknown(env, auth):
     fact = _add_fact(env, auth, "Maya joined Acme")
     _link_entities(env, fact["id"], [("Acme", "org")])
+    before = len(env.server.memory.entities())
     status, _h, body = env.post_json(
         "/memory/entities/merge", {"survivor": 1, "removed": 1}, auth
     )
@@ -233,7 +234,7 @@ def test_entity_merge_route_refuses_self_and_unknown(env, auth):
         "/memory/entities/merge", {"survivor": "x", "removed": 2}, auth
     )
     assert status == 400
-    assert len(env.server.memory.entities()) == 1
+    assert len(env.server.memory.entities()) == before
 
 
 def test_get_memory_sweep_lists_candidates_with_reasons(env, auth):
@@ -521,9 +522,10 @@ def test_the_accepted_fact_is_audit_visible_without_its_text(env, auth):
 
 
 def test_a_chat_exchange_alone_creates_no_fact(env, auth):
-    """The no-auto-capture test: the teammate's memory remembered any
-    sentence containing " is "; ours never derives a fact from what the
-    user types. Creation is the page's add form or an accepted card."""
+    """Capture proposes, the user decides: with the default review mode
+    a chat exchange stages candidates for review and writes no fact.
+    (The teammate's memory remembered any sentence containing " is "
+    straight away; ours waits for an approval.)"""
     status, _h, _b = env.post_json(
         "/assistant/ask",
         {"question": "The revenue total is 220 and the meeting room is booked."},

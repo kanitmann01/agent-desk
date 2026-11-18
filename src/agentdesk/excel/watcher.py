@@ -90,6 +90,10 @@ class ExcelWatch:
         self._last_ok_ts: float | None = None
         self._last_rows: list = []
         self.audit_hook = audit_hook
+        # Called with (workbook file name, header row, delta) after a poll
+        # that found changed rows, outside the lock (the memory loop's
+        # workbook channel). A failing hook never breaks the watch.
+        self.change_hook: Callable[[str, list, object], None] | None = None
         self._stop = threading.Event()
         self._timer: threading.Timer | None = None
         # One sqlite connection shared by the poll thread and the request
@@ -118,7 +122,20 @@ class ExcelWatch:
     def poll(self) -> PollResult:
         """One poll: shadow copy, parse, diff against T-24h, snapshot."""
         with self._lock:
-            return self._poll_locked()
+            result = self._poll_locked()
+            header = list(self._last_rows[0]) if self._last_rows else []
+            path = self._path
+        self._notify_change(result, header, path)
+        return result
+
+    def _notify_change(self, result: PollResult, header: list, path: str | None) -> None:
+        if self.change_hook is None or result.delta is None or result.delta.is_empty:
+            return
+        name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
+        try:
+            self.change_hook(name, header, result.delta)
+        except Exception:  # noqa: BLE001 - the hook must never break the watch
+            LOG.exception("change hook failed")
 
     def _poll_locked(self) -> PollResult:
         if self._path is None:
