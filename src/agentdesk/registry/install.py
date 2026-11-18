@@ -25,6 +25,7 @@ class RegistryError(Exception):
     """A named install refusal: ``code`` is the stable vocabulary."""
 
     def __init__(self, code: str, message: str) -> None:
+        """Keep the stable code beside the message."""
         super().__init__(message)
         self.code = code
 

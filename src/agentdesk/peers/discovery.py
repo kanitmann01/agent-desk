@@ -40,6 +40,11 @@ _LOCAL_ADDRESSES: set[str] | None = None
 
 
 def _local_addresses() -> set[str]:
+    """Return this machine's own addresses, resolved once and then cached.
+
+    Loopback is always present; when the hostname does not resolve it is the
+    whole answer, because the servers bind loopback either way.
+    """
     global _LOCAL_ADDRESSES
     if _LOCAL_ADDRESSES is None:
         addresses = {"127.0.0.1", "localhost", "::1"}
@@ -86,6 +91,11 @@ class DiscoveryService:
                  ttl: float = DEFAULT_TTL_S,
                  clock: Callable[[], float] = time.monotonic,
                  targets: list[str] | None = None) -> None:
+        """Hold the identity this desk announces; nothing is opened or started.
+
+        Targets default to the broadcast addresses detected on this machine;
+        start() opens the sockets and the two threads.
+        """
         self.peer_id = peer_id
         self.name = name
         self.http_port = http_port
@@ -134,6 +144,11 @@ class DiscoveryService:
         self._announcer_thread.start()
 
     def stop(self) -> None:
+        """Signal both loops to stop and close the sockets.
+
+        The threads are not joined: each ends on its next socket error or interval.
+        Calling this twice is harmless.
+        """
         self._stop.set()
         for sock in (self._listen_socket, self._send_socket):
             if sock is not None:
@@ -145,6 +160,7 @@ class DiscoveryService:
         self._send_socket = None
 
     def running(self) -> bool:
+        """Return True while an announcer thread exists and stop() has not run."""
         return self._announcer_thread is not None and not self._stop.is_set()
 
     # -- sockets ------------------------------------------------------------
@@ -186,6 +202,7 @@ class DiscoveryService:
     # -- loops -----------------------------------------------------------
 
     def _announce_loop(self) -> None:
+        """Announce once per interval until stop() is signalled."""
         while not self._stop.is_set():
             self.announce_once()
             self._stop.wait(self.interval)
@@ -207,6 +224,11 @@ class DiscoveryService:
         return sent
 
     def _listen_loop(self) -> None:
+        """Record incoming announcements until the socket closes or stop() runs.
+
+        A poll timeout only retries, and a packet that is not JSON is dropped
+        without a word.
+        """
         sock = self._listen_socket
         if sock is None:
             return

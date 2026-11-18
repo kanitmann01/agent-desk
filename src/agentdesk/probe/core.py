@@ -96,4 +96,5 @@ class Verdict:
 
     @property
     def exit_code(self) -> int:
+        """The process exit code this verdict stands for: 0, 3 or 4."""
         return {VERDICT_GO: EXIT_GO, VERDICT_RESHAPE: EXIT_RESHAPE, VERDICT_NO_GO: EXIT_NO_GO}[self.name]

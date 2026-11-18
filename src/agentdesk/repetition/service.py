@@ -39,6 +39,10 @@ class Consolidator:
         skills: SkillStore,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        """Wire the three stores and create the cooldown table on the activity db.
+
+        clock is injectable so cooldown expiry is testable without waiting.
+        """
         self.activity = activity
         self.inbox = inbox
         self.skills = skills
@@ -83,6 +87,7 @@ class Consolidator:
         return {"proposed": False}
 
     def dismiss_cooldown(self, pattern: str) -> None:
+        """Start the cooldown for one pattern, replacing any earlier dismissal."""
         with self.activity.conn:
             self.activity.conn.execute(
                 "INSERT INTO proposal_cooldowns (pattern, dismissed_ts) VALUES (?, ?)"
@@ -91,6 +96,10 @@ class Consolidator:
             )
 
     def _on_cooldown(self, pattern: str, now: datetime) -> bool:
+        """Whether the pattern was dismissed inside the cooldown window.
+
+        A dismissal older than COOLDOWN_DAYS no longer suppresses a proposal.
+        """
         row = self.activity.conn.execute(
             "SELECT dismissed_ts FROM proposal_cooldowns WHERE pattern = ?", (pattern,)
         ).fetchone()
@@ -113,5 +122,6 @@ class Consolidator:
 
 
 def _skill_name(sample: str) -> str:
+    """A short skill name from the first few words of the sample ask."""
     words = sample.strip().split()[:5]
     return " ".join(words) if words else "saved ask"

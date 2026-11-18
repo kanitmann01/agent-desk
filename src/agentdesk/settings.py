@@ -67,12 +67,18 @@ DEFAULTS = {**TOGGLES, "daily_cap": 3, "plugin_instance_cap": 6, **TEXT_KEYS}
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the settings table and commit; safe to run on every open."""
     conn.executescript(SCHEMA)
     conn.commit()
 
 
 class SettingsStore:
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time) -> None:
+        """Open the store on a connection, with the lock that serializes it.
+
+        One connection is shared across request threads, so every statement runs
+        under the lock; clock is injectable for tests.
+        """
         self.conn = conn
         self.clock = clock
         # One lock around every statement: the connection is shared
@@ -100,6 +106,11 @@ class SettingsStore:
         return int(row[0])
 
     def set(self, key: str, value) -> None:
+        """Store one value, coerced by the key's default type.
+
+        A choice outside the allowed list raises ValueError; booleans are stored as
+        "1"/"0" and text exactly as given.
+        """
         if key not in DEFAULTS:
             raise KeyError(f"unknown setting: {key}")
         if isinstance(DEFAULTS[key], bool):
@@ -129,4 +140,5 @@ class SettingsStore:
         return new
 
     def all(self) -> dict:
+        """Every setting with its effective value, defaults included."""
         return {key: self.get(key) for key in DEFAULTS}

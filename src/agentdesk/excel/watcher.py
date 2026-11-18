@@ -62,6 +62,7 @@ class Adapters:
 
 
 def default_adapters() -> Adapters:
+    """The adapter bundle a real watch uses: shadow copy, parser, wall clock."""
     return Adapters(
         copy_shadow=lambda path: shadow_mod.copy_to_shadow(path),
         parse_workbook=xlsx.parse_workbook_file,
@@ -80,6 +81,12 @@ class ExcelWatch:
         source: str = "excel-watch",
         audit_hook: Callable[[str, str, str], None] | None = None,
     ) -> None:
+        """Wire the store, the side effects and the timer state for one workbook.
+
+        stale_after_s is derived from the interval, twice it but never under 2.5
+        hours, so a status read can call a watch stale without a second setting.
+        Nothing polls until register or resume.
+        """
         self.conn = conn
         self.adapters = adapters if adapters is not None else default_adapters()
         self.interval_s = interval_s
@@ -104,6 +111,7 @@ class ExcelWatch:
 
     @property
     def registered_path(self) -> str | None:
+        """The workbook path this watch points at, or None before a register."""
         return self._path
 
     def register(self, path: str) -> PollResult:
@@ -112,6 +120,11 @@ class ExcelWatch:
             return self._register_locked(path)
 
     def _register_locked(self, path: str) -> PollResult:
+        """Point the watch at a path, persist it, and poll once.
+
+        The path is stored before the first poll so a restart resumes a workbook
+        whose first read fails; the caller already holds the lock.
+        """
         self._path = path
         # Persisted before the poll so a restart resumes this workbook
         # even when the first poll finds the file locked or unreadable.
@@ -129,6 +142,11 @@ class ExcelWatch:
         return result
 
     def _notify_change(self, result: PollResult, header: list, path: str | None) -> None:
+        """Hand a non-empty delta to the change hook, when one is wired.
+
+        The hook receives the workbook's file name, not its path. A hook that
+        raises is logged and swallowed: the watch outlives whatever listens to it.
+        """
         if self.change_hook is None or result.delta is None or result.delta.is_empty:
             return
         name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
@@ -138,6 +156,12 @@ class ExcelWatch:
             LOG.exception("change hook failed")
 
     def _poll_locked(self) -> PollResult:
+        """One poll with the lock held: shadow copy, parse, diff, snapshot.
+
+        A locked or unreadable workbook becomes a state and a plain-language cause
+        instead of an exception, and the stored snapshot is left untouched. A
+        healthy poll always overwrites it, so the next diff is against this read.
+        """
         if self._path is None:
             raise RuntimeError("no workbook registered")
         ts = self.adapters.clock()
@@ -211,6 +235,12 @@ class ExcelWatch:
         return {"columns": columns, "rows": rows}
 
     def _status_locked(self) -> dict:
+        """The status payload with the lock held, staleness included.
+
+        A healthy last poll older than stale_after_s reports stale rather than
+        healthy; the wording on screen is the server's job. No poll yet reports
+        not_configured.
+        """
         now = self.adapters.clock()
         result = self._last_result
         if result is None:
@@ -273,6 +303,11 @@ class ExcelWatch:
             LOG.exception("excel poll failed")
 
     def _poll_loop(self) -> None:
+        """Poll once, then rearm the timer unless stop_polling() has been called.
+
+        The loop is a daemon timer chain rather than a sleeping thread, so a stopped
+        watch holds no thread.
+        """
         if self._stop.is_set():
             return
         self._poll_quietly()
@@ -282,6 +317,7 @@ class ExcelWatch:
             self._timer.start()
 
     def stop_polling(self) -> None:
+        """Stop the timer chain; a poll already running finishes."""
         self._stop.set()
         if self._timer is not None:
             self._timer.cancel()

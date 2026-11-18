@@ -63,6 +63,11 @@ class _NeverRedirect(urllib.request.HTTPRedirectHandler):
     login page the adapter cannot answer."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        """Refuse every redirect, so the 3xx surfaces as an HTTPError.
+
+        urllib follows a redirect only when this returns a request; None makes it
+        stop and raise, which is how an SSO portal is named instead of chased.
+        """
         return None
 
 
@@ -293,6 +298,7 @@ def chat(
 def chat_client(base_url: str, api_key: str, model: str):
     """A prompt-to-text callable bound to one endpoint config."""
     def complete(prompt: str) -> str:
+        """One completion against the endpoint this client was built with."""
         return chat(base_url, api_key, model, prompt)
 
     return complete
@@ -307,6 +313,7 @@ def settings_chat(settings_store=None):
     """A prompt-to-text callable that resolves settings over env on every
     call, so an endpoint saved in the app applies without a restart."""
     def complete(prompt: str) -> str:
+        """One completion, resolving the endpoint from settings over env right now."""
         base, key, model = effective_llm_config(settings_store)
         return chat(base, key, model, prompt)
 

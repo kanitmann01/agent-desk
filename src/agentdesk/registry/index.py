@@ -19,6 +19,7 @@ class RegistryIndexError(Exception):
     """A named reason the index cannot be trusted."""
 
     def __init__(self, code: str):
+        """Keep the named reason, which is also the exception's message."""
         super().__init__(code)
         self.code = code
 
@@ -32,6 +33,12 @@ _PROVENANCE_KINDS = {"dns", "github", "manual"}
 
 
 def _safe_name(value: str, what: str) -> str:
+    """Return the value when it is a safe path fragment, and raise otherwise.
+
+    Ids, versions and tags become directories and git pathspecs, so a
+    separator, a leading dash or any dot-segment is refused; the reason quotes
+    at most 40 characters of the value.
+    """
     if not _SAFE_NAME.match(value) or ".." in value:
         raise RegistryIndexError(f"index:unsafe-{what}:{value[:40]}")
     return value
@@ -77,6 +84,7 @@ class PluginEntry:
     tags: tuple[str, ...] = field(default_factory=tuple)
 
     def release_for(self, version: str) -> Release | None:
+        """Return the release carrying that exact version string, or None."""
         for release in self.releases:
             if release.version == version:
                 return release
@@ -95,26 +103,40 @@ class RegistryIndex:
     legacy: bool = False
 
     def plugin(self, plugin_id: str) -> PluginEntry | None:
+        """Return the entry for that plugin id, or None."""
         for entry in self.plugins:
             if entry.id == plugin_id:
                 return entry
         return None
 
     def to_json(self) -> str:
+        """Serialize the index as a schema v2 JSON document with sorted keys.
+
+        An index wrapped from a v1 document is written out as v2.
+        """
         return json.dumps(_as_dict(self), indent=2, sort_keys=True)
 
 
 def _require(condition: bool, reason: str) -> None:
+    """Raise RegistryIndexError(reason) unless the condition holds."""
     if not condition:
         raise RegistryIndexError(reason)
 
 
 def _reject_unknown(value: dict, allowed: set[str]) -> None:
+    """Refuse the first key outside the allowed set, naming it in the reason."""
     for key in sorted(set(value) - allowed):
         raise RegistryIndexError(f"index:unknown-key:{key}")
 
 
 def _parse_release(release: dict, *, legacy: bool) -> Release:
+    """Validate one release object into a Release, or raise a named reason.
+
+    Version and sha256 are required, and the version must be a safe name. A
+    local release carries no tag because its directory is the pin; every other
+    release must carry one, since the tag is what the archive is read at. The
+    remaining fields are optional and default to empty.
+    """
     _require(isinstance(release, dict), "index:release-not-an-object")
     if not legacy:
         _reject_unknown(
@@ -160,6 +182,11 @@ def _parse_release(release: dict, *, legacy: bool) -> Release:
 
 
 def _parse_plugin(entry: dict, *, legacy: bool) -> PluginEntry:
+    """Validate one plugin object into a PluginEntry, or raise a named reason.
+
+    The required keys are checked before their values; tags must be a list, and
+    dependencies stay a string map or become a tuple of strings.
+    """
     _require(isinstance(entry, dict), "index:plugin-not-an-object")
     if not legacy:
         _reject_unknown(
@@ -205,6 +232,11 @@ def _parse_plugin(entry: dict, *, legacy: bool) -> PluginEntry:
 
 
 def _parse_publishers(value) -> dict[str, PublisherInfo]:
+    """Validate the publisher map into key ids and provenance.
+
+    An absent map means no publishers. A present one must name a key id and a
+    provenance of kind dns, github or manual, with a non-empty value.
+    """
     if value is None:
         return {}
     _require(isinstance(value, dict), "index:publishers-must-be-object")
@@ -276,7 +308,13 @@ def load_index(raw: str | bytes) -> RegistryIndex:
 
 
 def _as_dict(index: RegistryIndex) -> dict:
+    """Build the schema v2 dictionary that to_json serializes.
+
+    Empty optional fields are omitted instead of written blank, and publishers
+    come out in sorted id order.
+    """
     def release_dict(r: Release) -> dict:
+        """One release in document form: a tag or the local marker, never both."""
         out = {"version": r.version, "sha256": r.sha256}
         if r.digest:
             out["digest"] = r.digest
@@ -294,6 +332,7 @@ def _as_dict(index: RegistryIndex) -> dict:
         return out
 
     def plugin_dict(p: PluginEntry) -> dict:
+        """One plugin entry in document form, dependencies only when declared."""
         out = {
             "id": p.id,
             "name": p.name,
