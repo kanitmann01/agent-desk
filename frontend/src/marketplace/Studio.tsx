@@ -85,7 +85,7 @@ function buildWidgetUi(manifest: ReturnType<typeof buildManifest>) {
     title: manifest.name,
     elements: [
       { type: 'metric', label: 'Value', binding: 'value' },
-      { type: 'text', label: 'About', binding: 'note' },
+      { type: 'text', label: 'Last updated', binding: 'lastUpdated' },
     ],
   };
 }
@@ -101,7 +101,7 @@ function previewElements(draft: Draft): MarketElement[] {
 
 function buildSample(): { bindings: Record<string, unknown>; state: string; checkedAt: string } {
   return {
-    bindings: { value: 0, note: 'This is the plugin sample.' },
+    bindings: { value: 0, lastUpdated: 'Never' },
     state: 'ok',
     checkedAt: new Date().toISOString(),
   };
@@ -119,6 +119,9 @@ export function StudioPage() {
   const [grant, setGrant] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState('');
+  const [created, setCreated] = useState<{ id: string; version: string } | null>(null);
   const [pending, setPending] = useState<{ pendingId: string; status: string; validation: Verdict } | null>(null);
 
   useEffect(() => {
@@ -188,6 +191,27 @@ export function StudioPage() {
     }
   };
 
+  const install = async () => {
+    setInstallError('');
+    setCreated(null);
+    if (!validation?.ok) {
+      setInstallError('Run the validator and fix its findings before installing.');
+      return;
+    }
+    setInstalling(true);
+    try {
+      const res = await postMarket<{ id: string; version: string; status: string }>(
+        '/api/marketplace/studio/install',
+        { manifest, widgetUi, sample },
+      );
+      setCreated({ id: res.id, version: res.version });
+    } catch (err) {
+      setInstallError(marketErrorText(err));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   const publish = async (event: FormEvent) => {
     event.preventDefault();
     if (!validation?.ok) {
@@ -223,17 +247,30 @@ export function StudioPage() {
         <span className="mkt-eyebrow">Marketplace</span>
         <h1>Plugin Studio</h1>
         <p className="mkt-lede">
-          Build a declarative plugin manifest, run the real validator, then submit it for review.
-          Publishing never installs the plugin.
+          Build a declarative plugin manifest, run the real validator, then install it on this desk
+          in one step. Publishing to the marketplace is a separate, optional review step.
         </p>
       </header>
+
+      {created && (
+        <section className="mkt-panel mkt-pending" aria-labelledby="mkt-created-title" role="status">
+          <h2 id="mkt-created-title">Installed on this desk</h2>
+          <p>
+            <strong>{created.id}</strong> v{created.version} is installed and ready on the dashboard.
+          </p>
+          <p className="mkt-actions">
+            <a className="btn btn-primary" href="/marketplace/installed">Open Installed</a>
+            <a className="btn btn-secondary" href="/">Back to dashboard</a>
+          </p>
+        </section>
+      )}
 
       {pending && (
         <section className="mkt-panel mkt-pending" aria-labelledby="mkt-pending-title" role="status">
           <h2 id="mkt-pending-title">Pending review</h2>
           <p>
             Submitted as <code>{pending.pendingId}</code>. An operator reviews it before it can appear
-            in the catalog. Nothing is installed by this step.
+            in the catalog. This review does not change the copy already installed on this desk.
           </p>
           <p className="w-note">
             Validator at submission: {pending.validation?.ok ? 'passed' : 'failed'}
@@ -326,8 +363,21 @@ export function StudioPage() {
             )}
           </section>
 
+          <section className="mkt-panel" aria-labelledby="mkt-install">
+            <h2 id="mkt-install">Install on this desk</h2>
+            <p className="w-note">
+              This is the personal path: the validated plugin is copied onto this machine and starts
+              running now. No operator or environment switch is involved.
+            </p>
+            {installError && <p className="mkt-error" role="alert">{installError}</p>}
+            <Button tone="primary" disabled={installing || !validation?.ok} onClick={() => void install()}>
+              {installing ? 'Installing…' : 'Install on this desk'}
+            </Button>
+            {!validation?.ok && <p className="w-note">Install unlocks after the validator passes.</p>}
+          </section>
+
           <section className="mkt-panel" aria-labelledby="mkt-publish">
-            <h2 id="mkt-publish">Publish for review</h2>
+            <h2 id="mkt-publish">Publish for review (optional)</h2>
             <label className="mkt-field">
               <span>Changelog (required)</span>
               <textarea value={changelog} onChange={(event) => setChangelog(event.target.value)}

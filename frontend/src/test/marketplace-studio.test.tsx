@@ -70,6 +70,40 @@ describe('Plugin Studio', () => {
     expect(screen.queryByRole('heading', { name: 'Pending review' })).not.toBeInTheDocument();
   });
 
+  // Creation is not finished at "pending review": the personal path must
+  // install the validated tree on this desk and say so.
+  it('installs the validated draft on this desk without an admin switch', async () => {
+    let installBody: { manifest: { id: string }; widgetUi: unknown; sample: unknown } | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/marketplace/validate') {
+        return jsonResponse({ ok: true, failures: [] });
+      }
+      if (url === '/api/marketplace/studio/install') {
+        installBody = JSON.parse(String(init?.body)) as typeof installBody;
+        return jsonResponse({ id: 'team-notes', version: '0.1.0', status: 'installed' });
+      }
+      return jsonResponse(installedResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    await user.type(await screen.findByLabelText('Plugin id'), 'team-notes');
+    await user.type(screen.getByLabelText('Name'), 'Team notes');
+    const install = screen.getByRole('button', { name: 'Install on this desk' });
+    expect(install).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Run validator' }));
+    expect(await screen.findByText('Validator passed.')).toBeInTheDocument();
+    await user.click(install);
+
+    expect(await screen.findByRole('heading', { name: 'Installed on this desk' })).toBeInTheDocument();
+    const sent = installBody as { manifest: { id: string }; widgetUi: unknown; sample: unknown } | null;
+    expect(sent?.manifest.id).toBe('team-notes');
+    expect(sent?.widgetUi).toBeTruthy();
+    expect(sent?.sample).toBeTruthy();
+  });
+
   // Regression: the generated widget.ui.json named each element's kind in
   // `kind`, the validator reads `type`, so every Studio draft failed with
   // "unknown element kind: None" and Publish never unlocked.

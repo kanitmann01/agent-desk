@@ -236,6 +236,7 @@ class MailWatch:
             "cause": "",
             "folder": None,
             "messages": [],
+            "unparsedFiles": 0,
             "digest": [],
             "followUps": [],
             "handled": sorted(self.store.handled()),
@@ -244,7 +245,7 @@ class MailWatch:
         if folder is None:
             return payload
         try:
-            raw_messages, _unparsed = self.adapters.read_folder(folder)
+            raw_messages, unparsed = self.adapters.read_folder(folder)
         except OSError as exc:
             payload["state"] = STATE_ERROR
             payload["cause"] = f"The mail folder could not be read: {exc}"
@@ -256,6 +257,7 @@ class MailWatch:
             "state": STATE_WATCHING,
             "folder": str(folder),
             "messages": messages,
+            "unparsedFiles": unparsed,
             "digest": digest_details(messages, now, hours=self.digest_hours),
             "followUps": follow_up_details(
                 messages, handled, now, days=self.follow_up_days,

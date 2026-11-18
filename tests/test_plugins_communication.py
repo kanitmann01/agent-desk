@@ -22,11 +22,15 @@ PLUGINS = ROOT / "registry" / "plugins"
 FAMILY = "communication"
 EXPECTED_IDS = {"outlook-digest", "vip-watch", "waiting-on-you"}
 
-# The host's mail-digest vocabulary (docs/design/plugin-authoring-v2.md,
-# section "Binding vocabulary emitted by the host").
+# The host's mail vocabulary (docs/design/plugin-authoring-v2.md,
+# section "Binding vocabulary emitted by the host"). outlook-brief adds the
+# ranked-message and reply-starter names; the other family members keep
+# reading the older mail-digest bridge.
 MAIL_BINDINGS = {
     "messages", "threads", "unread", "topSenders", "windowNote",
     "sendersRows", "vipRows", "waitingRows",
+    "threadRows", "topEmailSubject", "topEmailLine", "topEmailWhy",
+    "replyOptions",
 }
 
 # Every list, table, timeline and checklist element binds a row binding the
@@ -108,7 +112,7 @@ def test_manifest_metadata_matches_the_family_contract():
         assert len(highlights) == 3, name
         assert all(0 < len(line) <= 120 for line in highlights), name
         if name == "outlook-digest":
-            assert manifest["version"] == "0.2.0"
+            assert manifest["version"] == "0.3.0"
         else:
             assert manifest["version"] == "0.1.0"
 
@@ -166,7 +170,7 @@ def test_outlook_digest_upgrades_in_place_and_keeps_its_skill():
     manifest = json.loads(
         (plugin_dir / "manifest.json").read_text(encoding="utf-8-sig"))
     assert manifest["id"] == "outlook-digest"
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.3.0"
     assert manifest["contributes"]["skills"] == ["skills/mail-overview/SKILL.md"]
     assert (plugin_dir / "skills" / "mail-overview" / "SKILL.md").is_file()
 
@@ -186,7 +190,10 @@ def test_every_widget_reads_the_mail_metadata_bridge():
         widgets = manifest["contributes"]["widgets"]
         assert widgets, plugin_dir.name
         for widget in widgets:
-            assert widget["dataSource"] == {"type": "mail-digest"}
+            expected = ({"type": "outlook-brief"}
+                        if plugin_dir.name == "outlook-digest"
+                        else {"type": "mail-digest"})
+            assert widget["dataSource"] == expected, plugin_dir.name
             render = widget["render"]
             assert render["type"] == "ui-schema"
             assert (plugin_dir / render["file"]).is_file(), plugin_dir.name

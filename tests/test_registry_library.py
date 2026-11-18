@@ -42,7 +42,7 @@ LIBRARY = {
     "sales-delta-widget": "0.2.0",
     "excel-report": "0.1.0",
     "calendar-today": "0.2.0",
-    "outlook-digest": "0.2.0",
+    "outlook-digest": "0.3.0",
     "research-brief": "0.2.0",
 }
 NEW_IDS = ["excel-report", "calendar-today", "outlook-digest",
@@ -56,6 +56,9 @@ SOURCE_BINDINGS = {
     "calendar-read": {"nextEventTitle", "nextEventTime", "eventsToday",
                       "windowNote"},
     "mail-digest": {"messages", "threads", "topSenders", "windowNote"},
+    "outlook-brief": {"messages", "threads", "threadRows", "topEmailSubject",
+                      "topEmailLine", "topEmailWhy", "replyOptions",
+                      "windowNote"},
     "research-brief": {"summary", "sourcesCount", "answeredAt", "windowNote"},
 }
 
@@ -443,11 +446,15 @@ def test_outlook_digest_installs_and_binds_header_counts(
     assert card["freshness"] == "fresh"
     payload = card["payload"]
     assert payload["status"] == "fresh"
-    assert _element(payload, "metric", "Messages 24h")["value"] == "3"
-    senders = _element(payload, "list")["rows"]
-    assert [row["primary"] for row in senders] == [
-        "a@example.com", "b@example.com"]
-    assert _element(payload, "text", "Scope")["text"] == MAIL_WINDOW_NOTE
+    assert _element(payload, "metric", "Active messages (24h)")["value"] == "3"
+    assert _element(payload, "text", "Most important email")["text"] == "Q4 pricing"
+    assert _element(payload, "text", "From")["text"].startswith("a@example.com")
+    assert "addressed to you" in _element(payload, "text", "Why this one")["text"]
+    lists = [element for element in payload["elements"]
+             if element["kind"] == "list"]
+    assert [row["primary"] for row in lists[0]["rows"]] == ["Q4 pricing"]
+    assert [row["secondary"] for row in lists[1]["rows"]] == [
+        "Direct", "Clarify", "Brief"]
     # Metadata only: no message body ever rides along.
     assert "a body that must never reach a card" not in json.dumps(payload)
 

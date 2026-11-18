@@ -31,6 +31,7 @@ KNOWN_DATA_SOURCE_TYPES = (
     "http-get",
     "calendar-read",
     "mail-digest",
+    "outlook-brief",
     "research-brief",
     "csv-watch",
     "markdown-watch",

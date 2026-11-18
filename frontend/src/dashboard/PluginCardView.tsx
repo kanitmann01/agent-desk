@@ -7,7 +7,7 @@
 // links the plugins page; the item refuses clicks while one is running.
 import { useState } from 'react';
 import { postJson } from '../api';
-import type { PluginCard, PluginElement } from '../types';
+import type { PluginCard, PluginChecklistItem, PluginElement, PluginListRow, PluginTimelineItem } from '../types';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
 import TrackerCard from './TrackerCard';
 import Button from '../components/Button';
@@ -20,11 +20,22 @@ interface PluginCardViewProps {
 }
 
 function ElementView({ element }: { element: PluginElement }) {
+  const blank = element.reason ? <p className="w-note">{element.reason}</p> : null;
   if (element.kind === 'metric') {
     return (
       <>
         <p className="w-big">{element.value ?? ''}</p>
         {element.label ? <p className="w-note">{element.label}</p> : null}
+        {blank}
+      </>
+    );
+  }
+  if (element.kind === 'text') {
+    return (
+      <>
+        {element.label ? <p className="w-list-title">{element.label}</p> : null}
+        <p className="w-note">{element.text ?? ''}</p>
+        {blank}
       </>
     );
   }
@@ -33,6 +44,59 @@ function ElementView({ element }: { element: PluginElement }) {
       <p className="w-note">
         {element.label ? `${element.label}: ` : ''}{element.value ?? ''} {element.direction ?? ''}
       </p>
+    );
+  }
+  if (element.kind === 'progress') {
+    const value = typeof element.value === 'number' ? element.value : 0;
+    const target = typeof element.target === 'number' && element.target > 0 ? element.target : 0;
+    const pct = target > 0 ? Math.max(0, Math.min(100, (value / target) * 100)) : 0;
+    return (
+      <>
+        {element.label ? <p className="w-list-title">{element.label}</p> : null}
+        <div className="w-progress" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+          <span style={{ width: `${pct}%` }} />
+        </div>
+        <p className="w-note">{target > 0 ? `${value} of ${target}${element.unit ? ` ${element.unit}` : ''}` : 'No target reported.'}</p>
+        {blank}
+      </>
+    );
+  }
+  if (element.kind === 'list') {
+    const rows = (element.rows ?? []) as PluginListRow[];
+    if (!rows.length) return blank;
+    return (
+      <div className="w-list-block">
+        {element.title ? <p className="w-list-title">{element.title}</p> : null}
+        <ul className="w-list">
+          {rows.map((row, i) => (
+            <li key={i}>
+              <span className="w-list-primary">{row.primary ?? ''}</span>
+              {row.secondary ? <span className="w-list-secondary">{row.secondary}</span> : null}
+              {row.meta ? <span className="w-list-meta">{row.meta}</span> : null}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  if (element.kind === 'table') {
+    const rows = (element.rows ?? []) as string[][];
+    const columns = element.columns ?? [];
+    if (!columns.length) return blank;
+    return (
+      <div className="w-table-block">
+        {element.title ? <p className="w-list-title">{element.title}</p> : null}
+        <table className="w-table">
+          <thead>
+            <tr>{columns.map((column, i) => <th key={i}>{column}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((row, r) => (
+              <tr key={r}>{row.map((cell, c) => <td key={c}>{cell}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
   }
   if (element.kind === 'sparkline' && element.points && element.points.length > 1) {
@@ -48,6 +112,49 @@ function ElementView({ element }: { element: PluginElement }) {
       <svg viewBox="0 0 100 30" role="img" aria-label={element.label || 'History'}>
         <polyline points={coords} fill="none" stroke="currentColor" strokeWidth="1.6" />
       </svg>
+    );
+  }
+  if (element.kind === 'status') {
+    return (
+      <p className={`w-status w-tone-${element.tone || 'ok'}`}>
+        {element.text || element.reason || ''}
+      </p>
+    );
+  }
+  if (element.kind === 'timeline') {
+    const items = (element.items ?? []) as PluginTimelineItem[];
+    if (!items.length) return blank;
+    return (
+      <div className="w-list-block">
+        {element.title ? <p className="w-list-title">{element.title}</p> : null}
+        <ol className="w-timeline">
+          {items.map((item, i) => (
+            <li key={i}>
+              <span className="w-list-meta">{item.time ?? ''}</span>
+              <span className="w-list-primary">{item.title ?? ''}</span>
+              {item.meta ? <span className="w-list-secondary">{item.meta}</span> : null}
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+  if (element.kind === 'checklist') {
+    const items = (element.items ?? []) as PluginChecklistItem[];
+    if (!items.length) return blank;
+    return (
+      <div className="w-list-block">
+        {element.title ? <p className="w-list-title">{element.title}</p> : null}
+        <ul className="w-checklist">
+          {items.map((item, i) => (
+            <li key={i} className={item.done ? 'is-done' : ''}>
+              <span aria-hidden="true">{item.done ? '✓' : '○'}</span>
+              <span className="w-list-primary">{item.text ?? ''}</span>
+              {item.due ? <span className="w-list-meta">{item.due}</span> : null}
+            </li>
+          ))}
+        </ul>
+      </div>
     );
   }
   return <p className="w-note">{element.text ?? element.value ?? ''}</p>;

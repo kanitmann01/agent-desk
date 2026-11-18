@@ -279,6 +279,50 @@ describe('the plugin card', () => {
     expect(document.querySelector('.stamp')).not.toHaveClass('amber');
   });
 
+  it('draws lists, tables and statuses, not only metric and text', () => {
+    render(
+      <PluginCardView
+        card={{
+          id: 'outlook-digest',
+          title: 'Outlook Brief',
+          version: '0.3.0',
+          pilot: true,
+          state: 'enabled',
+          freshness: 'fresh',
+          cause: '',
+          payload: {
+            elements: [
+              { kind: 'metric', value: '5', label: 'Active messages (24h)' },
+              {
+                kind: 'list',
+                title: 'Active threads',
+                rows: [
+                  { primary: 'Q4 pipeline review', secondary: 'Priya Raman', meta: '3 msg · 2 h ago' },
+                  { primary: 'Lunch on Friday?', secondary: 'Ana Souza', meta: '1 msg · 1 h ago' },
+                ],
+              },
+              {
+                kind: 'table',
+                title: 'Reply starters',
+                columns: ['Starter', 'Style'],
+                rows: [['I am on it', 'Direct'], ['Could you confirm?', 'Clarify']],
+              },
+              { kind: 'status', text: 'Reading headers only', tone: 'ok' },
+            ],
+          },
+        }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    expect(screen.getByText('Active threads')).toBeInTheDocument();
+    expect(screen.getByText('Q4 pipeline review')).toBeInTheDocument();
+    expect(screen.getByText('3 msg · 2 h ago')).toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByText('Could you confirm?')).toBeInTheDocument();
+    expect(screen.getByText('Reading headers only')).toBeInTheDocument();
+  });
+
   it('states the cause honestly under the amber pair when attention', () => {
     render(
       <PluginCardView

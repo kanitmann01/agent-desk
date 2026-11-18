@@ -1,26 +1,46 @@
 {
   "bindings": {
-    "messages": 24,
-    "topSenders": "Priya Raman (7), Marcus Lee (5), Dana Whitfield (3)",
-    "windowNote": "Counts cover the last 24 hours of message headers; bodies are never read.",
-    "sendersRows": [
+    "messages": 6,
+    "threads": 3,
+    "threadRows": [
       {
-        "primary": "Priya Raman",
-        "secondary": "7 messages",
-        "meta": ""
+        "primary": "Lunch on Friday?",
+        "secondary": "Ana Souza",
+        "meta": "1 msg · 1 h ago"
       },
       {
-        "primary": "Marcus Lee",
-        "secondary": "5 messages",
-        "meta": ""
+        "primary": "Q4 pipeline review - need your numbers by EOD",
+        "secondary": "Priya Raman",
+        "meta": "3 msg · 2 h ago"
       },
       {
-        "primary": "Dana Whitfield",
-        "secondary": "3 messages",
-        "meta": ""
+        "primary": "Contract renewal - your signature",
+        "secondary": "Legal",
+        "meta": "1 msg · 17 h ago"
       }
-    ]
+    ],
+    "topEmailSubject": "Q4 pipeline review - need your numbers by EOD",
+    "topEmailLine": "Priya Raman · 2 h ago",
+    "topEmailWhy": "subject says \"eod\"; marked high importance; addressed to you; arrived today",
+    "replyOptions": [
+      {
+        "primary": "I have \"Q4 pipeline review - need your numbers by EOD\" and I am on it. I will send the specifics shortly.",
+        "secondary": "Direct",
+        "meta": "reply starter"
+      },
+      {
+        "primary": "Thanks Priya. Could you confirm the deadline and exactly what you need from me on \"Q4 pipeline review - need your numbers by EOD\"?",
+        "secondary": "Clarify",
+        "meta": "reply starter"
+      },
+      {
+        "primary": "Noted on \"Q4 pipeline review - need your numbers by EOD\". I will come back with next steps shortly.",
+        "secondary": "Brief",
+        "meta": "reply starter"
+      }
+    ],
+    "windowNote": "From message headers only. Bodies are never read; starters are built from the subject line."
   },
   "state": "ok",
-  "checkedAt": "2026-11-15T09:00:00"
+  "checkedAt": "2026-11-18T09:00:00"
 }

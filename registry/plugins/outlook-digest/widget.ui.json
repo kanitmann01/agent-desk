@@ -1,16 +1,36 @@
 {
   "type": "card",
-  "title": "Mail digest (24h)",
+  "title": "Outlook brief",
   "elements": [
     {
       "type": "metric",
       "binding": "messages",
-      "label": "Messages 24h"
+      "label": "Active messages (24h)"
+    },
+    {
+      "type": "text",
+      "binding": "topEmailSubject",
+      "label": "Most important email"
+    },
+    {
+      "type": "text",
+      "binding": "topEmailLine",
+      "label": "From"
+    },
+    {
+      "type": "text",
+      "binding": "topEmailWhy",
+      "label": "Why this one"
     },
     {
       "type": "list",
-      "title": "Top senders",
-      "rowsBinding": "sendersRows"
+      "title": "Active threads",
+      "rowsBinding": "threadRows"
+    },
+    {
+      "type": "list",
+      "title": "Reply starters",
+      "rowsBinding": "replyOptions"
     },
     {
       "type": "text",
