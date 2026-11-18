@@ -7,6 +7,7 @@
 **Blocked by:** none.
 
 **Status:** ready-for-agent
+**GitHub:** issue #137
 
 - [ ] `InsightReading` gains `used: tuple[str, ...]` and `inputs: tuple[str, ...]`; `service.attach_cards` writes `payload["insight"]["receipts"] = {"preferences": [...], "inputs": [...]}` and leaves the existing fields untouched.
 - [ ] Vocabulary is fixed and validated: inputs are drawn from `rows`, `memory`, `calendar`; preference receipts are keys of the preferences document. An unknown name is dropped rather than printed.

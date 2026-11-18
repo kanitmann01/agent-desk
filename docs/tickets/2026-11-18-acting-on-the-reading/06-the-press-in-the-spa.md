@@ -7,6 +7,7 @@
 **Blocked by:** 03, 05.
 
 **Status:** ready-for-agent
+**GitHub:** issue #142
 
 - [ ] A card with `payload.insight.press` renders a secondary button with the press's label under the reading; the button is disabled while a request is in flight and re-enabled on failure.
 - [ ] A successful explanation renders its text and the disclosure lines; a draft renders its text with a "Stage as a reply card" action that posts `stage: true` and then confirms with the card's id and refetches.

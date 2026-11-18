@@ -7,6 +7,7 @@
 **Blocked by:** 01.
 
 **Status:** ready-for-agent
+**GitHub:** issue #141
 
 - [ ] The tracker card renders every element in `payload.elements` under its figure, using the same element component the generic plugin card uses (exported, not copied).
 - [ ] The receipt line renders under the elements from `payload.insight.receipts`, with the same words the server-rendered card uses.

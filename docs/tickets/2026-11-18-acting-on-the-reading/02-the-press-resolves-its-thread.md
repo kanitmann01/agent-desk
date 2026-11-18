@@ -7,6 +7,7 @@
 **Blocked by:** none.
 
 **Status:** ready-for-agent
+**GitHub:** issue #138
 
 - [ ] A `reply-draft` body may carry `subject` and `sender`; when both are present the answer gains `thread: {"id", "to", "subject"}` alongside the existing draft fields.
 - [ ] Resolution is exact: subject equal to the message's thread or subject after the existing normalisation, and the sender matching the message's from (address or display name, case-insensitive). Case- and whitespace-insensitive, nothing fuzzier.

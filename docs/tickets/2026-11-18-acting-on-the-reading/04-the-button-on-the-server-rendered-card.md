@@ -7,6 +7,7 @@
 **Blocked by:** 02, 03.
 
 **Status:** ready-for-agent
+**GitHub:** issue #140
 
 - [ ] A card whose payload carries `insight.press` renders a `<form method="post" action="/insight/press">` with hidden `kind`, `text`, `subject`, `sender`, `pluginId`, `instanceId` and a submit button labelled with the press's own label; a card without a press renders nothing new.
 - [ ] Every hidden value is escaped at the boundary, and the button keeps the existing button markup and accessible name.

@@ -7,6 +7,7 @@
 **Blocked by:** 02.
 
 **Status:** ready-for-agent
+**GitHub:** issue #139
 
 - [ ] `POST /api/insight/draft` with `"stage": true` on a resolved reply-draft adds exactly one suggestion card whose `draft` is the composed text, whose origin and title name it as a drafted reply, and whose meta records the resolved thread (message id, recipients, subject) in the shape the existing acceptance path reads.
 - [ ] The card's copy names the source: "Drafted by the model" or "Skeleton, not a model draft", so the user knows what they are editing.

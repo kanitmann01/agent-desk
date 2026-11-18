@@ -1,6 +1,7 @@
 # 010: The desk acts on what it read
 
 **Status:** ready-for-agent
+**GitHub:** issue #136; its six tickets are #137–#142
 **Builds on:** spec 009 (the coupled reading), branch `feature/coupled-intelligence`
 
 ## Problem Statement
