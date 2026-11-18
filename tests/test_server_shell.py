@@ -22,10 +22,10 @@ import server_harness
 SHELL_PAGES = [
     ("/inbox", "Inbox", "/inbox"),
     ("/assistant", "Assistant", "/assistant"),
-    ("/activity", "Activity", "/activity"),
+    ("/settings/activity", "Activity", "/settings"),
     ("/memory", "Memory", "/memory"),
     ("/mail", "Mail", "/mail"),
-    ("/capabilities", "Capabilities", "/capabilities"),
+    ("/capabilities", "Capabilities", "/settings"),
     ("/settings", "Settings", "/settings"),
     ("/walkthrough/calendar", "Walkthrough", ""),
     ("/what-this-touches", "What this app touches", ""),
@@ -51,10 +51,9 @@ def _get(booted, path):
 @pytest.mark.parametrize("path,label,active", SHELL_PAGES)
 def test_every_page_carries_the_rail_marking_the_active_entry(booted, path, label, active):
     page = _get(booted, path)
-    assert '<nav class="rail" aria-label="Main">' in page, path
+    assert '<nav class="rail"' in page and 'aria-label="Main"' in page, path
     # The rail reaches every surface: all real entries present.
-    for href in ("/inbox", "/assistant", "/activity", "/memory", "/mail",
-                 "/capabilities", "/settings"):
+    for href in ("/inbox", "/assistant", "/memory", "/mail", "/settings"):
         assert f'href="{href}"' in page, (path, href)
     # Exactly the rail entries for this page's own surface are marked
     # current: one for a real page, none for a doc page.
@@ -98,9 +97,12 @@ def test_settings_has_one_display_heading_and_h2_sections(booted):
     h1s = re.findall(r"<h1[^>]*>(.*?)</h1>", page, flags=re.S)
     assert len(h1s) == 1, h1s
     assert "Settings" in h1s[0]
-    # The sections read below it as h2, with no inline spacing attributes.
-    for section in ("Endpoint", "Calendar source", "Review", "Activity log", "Skills"):
+    # The sections read below it as cards (h2), and the sub-sections
+    # inside a card are h3; no inline spacing attributes either way.
+    for section in ("Endpoint", "Sources", "Record", "Activity log", "Skills"):
         assert re.search(rf"<h2[^>]*>[^<]*{section}", page), section
+    for section in ("Calendar source", "Review"):
+        assert re.search(rf"<h3[^>]*>[^<]*{section}", page), section
     assert '<h2 style=' not in page and "<h1 style=" not in page
 
 

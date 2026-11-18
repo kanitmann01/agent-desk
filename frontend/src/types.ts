@@ -72,6 +72,11 @@ export interface TrackerView {
   direction: string;
   points: number[];
   file: string;
+  rowsSeen?: number;
+  /** Epoch seconds of the reading behind this card. */
+  readAt?: number;
+  /** True when the reading comes from the app's own sample folder. */
+  sample?: boolean;
   paceNote?: string;
   goal?: { value: string; unit: string } | null;
 }

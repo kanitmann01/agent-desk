@@ -14,7 +14,7 @@ from pathlib import Path
 
 MAX_INSTANCE_CAP = 6
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_SUFFIXES = {".xlsx", ".xlsm", ".csv"}
+_SUFFIXES = {".xlsx", ".xlsm", ".csv", ".json"}
 
 
 class ConfigError(Exception):
@@ -101,7 +101,7 @@ class InstanceStore:
         if candidate.suffix.lower() not in _SUFFIXES:
             raise ConfigError(
                 "config:unsupported",
-                "Open an .xlsx, .xlsm, or .csv file.",
+                "Open an .xlsx, .xlsm, .csv, or .json file.",
             )
         document = self.read(plugin_id, instance_id)
         document["source"] = {

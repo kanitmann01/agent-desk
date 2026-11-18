@@ -92,7 +92,9 @@ def test_fresh_boot_is_silent_and_the_peers_page_starts_discovery():
         assert status == 200
         text = page.decode("utf-8")
         assert "<h1>Peers</h1>" in text
-        assert 'href="/peers"' in text  # the rail carries the new page
+        # Peers is hidden from the rail for now; the page itself still
+        # answers for the pairing flow and for direct links.
+        assert 'href="/peers"' not in text
         assert booted.server.peer_discovery is not None
         assert booted.server.peer_discovery.running()
     finally:

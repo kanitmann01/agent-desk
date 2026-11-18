@@ -124,6 +124,134 @@ def _label_index(headers, rows, value_index: int) -> int:
     return best
 
 
+EVALUATION_PROMPT = (
+    "You review a user's column and row choice for a tracker before it is saved. "
+    "The user chose a label column (the row's name), a value column (the number to "
+    "aggregate), and the rows to count. Decide whether that pairing makes sense: the "
+    "label should identify rows, the value should be numeric and aggregatable, and the "
+    "row set should be a coherent slice. Reply with one JSON object and nothing else: "
+    '{"verdict": "ok" or "adjust", "message": "one short sentence", '
+    '"recommendation": {"labelColumn": "...", "valueColumn": "...", '
+    '"rows": [0, 1], "reason": "one short sentence"} or null}. '
+    "Use recommendation null when the choice is fine. Use only column names present in "
+    "the request. Row numbers refer to rowCount in the request, not to the sampled rows.\n"
+)
+
+
+def build_evaluation_request(*, job, sheet, headers, rows, choice, row_count) -> tuple[dict, str]:
+    """The user's own choice, plus the rows it covers, capped like suggest.
+
+    The path is never part of the request; only the selected row values and
+    their positions are. The row count lets a recommendation name rows the
+    five-row sample does not show without inventing numbers.
+    """
+    headers = [str(cell) for cell in (headers or [])]
+    selected = [index for index in (choice.get("rows") or []) if isinstance(index, int)]
+    sampled = [index for index in selected if 0 <= index < len(rows)][:_MAX_ROWS]
+    request = {
+        "job": str(job or ""),
+        "sheet": str(sheet or ""),
+        "headers": headers,
+        "rowCount": int(row_count or 0),
+        "choice": {
+            "labelColumn": str(choice.get("labelColumn") or ""),
+            "valueColumn": str(choice.get("valueColumn") or ""),
+            "rows": sampled,
+        },
+        "rows": [list(rows[index]) for index in sampled],
+    }
+    while request["rows"] and len(json.dumps(request).encode("utf-8")) > _MAX_BYTES:
+        request["rows"].pop()
+    note = DISCLOSURE_HEADERS if not request["rows"] else DISCLOSURE_ROWS
+    return request, note
+
+
+def evaluate_choice(request: dict, complete) -> dict:
+    """One model opinion on the user's choice. Never raises, never blocks.
+
+    No endpoint, a timeout, or an answer that cannot be parsed all return
+    verdict "unchecked" with a plain cause; the caller keeps the user's
+    choice and confirm still succeeds.
+    """
+    if complete is None:
+        return {
+            "verdict": "unchecked",
+            "message": "Model check skipped: no corporate endpoint configured. Your choice is used as chosen.",
+            "recommendation": None,
+            "source": "none",
+        }
+    try:
+        raw = complete(EVALUATION_PROMPT + json.dumps(request))
+    except Exception as exc:  # noqa: BLE001 - the check is advice, never a gate
+        return {
+            "verdict": "unchecked",
+            "message": f"Model check skipped: {exc}. Your choice is used as chosen.",
+            "recommendation": None,
+            "source": "none",
+        }
+    text = str(raw or "")
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return {
+            "verdict": "unchecked",
+            "message": "The endpoint did not return a verdict, so your choice is used as chosen.",
+            "recommendation": None,
+            "source": "none",
+        }
+    try:
+        parsed = json.loads(text[start:end + 1])
+    except ValueError:
+        return {
+            "verdict": "unchecked",
+            "message": "The endpoint did not return a verdict, so your choice is used as chosen.",
+            "recommendation": None,
+            "source": "none",
+        }
+    if not isinstance(parsed, dict):
+        return {
+            "verdict": "unchecked",
+            "message": "The endpoint did not return a verdict, so your choice is used as chosen.",
+            "recommendation": None,
+            "source": "none",
+        }
+    verdict = "adjust" if str(parsed.get("verdict") or "").strip().lower() == "adjust" else "ok"
+    message = str(parsed.get("message") or "").strip()[:240]
+    if not message:
+        message = "The pairing looks right." if verdict == "ok" else "The pairing may need a change."
+    return {
+        "verdict": verdict,
+        "message": message,
+        "recommendation": _validated_recommendation(parsed.get("recommendation"), request),
+        "source": "model",
+    }
+
+
+def _validated_recommendation(rec, request: dict):
+    """A recommendation is applied only if every name and row exists."""
+    if not isinstance(rec, dict):
+        return None
+    headers = set(request.get("headers") or [])
+    label = str(rec.get("labelColumn") or "").strip()
+    value = str(rec.get("valueColumn") or "").strip()
+    if not label or not value or label not in headers or value not in headers:
+        return None
+    row_count = int(request.get("rowCount") or 0)
+    raw_rows = rec.get("rows")
+    rows = None
+    if isinstance(raw_rows, list):
+        rows = [index for index in raw_rows if isinstance(index, int) and 0 <= index < row_count]
+        if not rows:
+            rows = None
+    reason = str(rec.get("reason") or "").strip()[:240]
+    return {
+        "labelColumn": label,
+        "valueColumn": value,
+        "rows": rows,
+        "reason": reason or f"{value} by {label} fits the chosen rows better.",
+    }
+
+
 def propose_columns(request: dict, complete) -> dict:
     prompt = (
         "Choose which columns to track. Reply with one JSON object and nothing else, "

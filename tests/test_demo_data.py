@@ -111,8 +111,8 @@ def test_toggling_sample_data_writes_its_audit_rows(env, auth):
     _toggle(env, auth)  # back off
     entries = json.loads(env.request("GET", "/audit/tail", auth)[2])["entries"]
     assert any(e["action"] == "demo.cleared" for e in entries)
-    # The demo turns are decisions: they show on the activity page.
-    page = env.request("GET", "/activity", auth)[2].decode("utf-8")
+    # The demo turns are decisions: they show on the activity trail.
+    page = env.request("GET", "/settings/activity", auth)[2].decode("utf-8")
     assert "<b>sample on</b>" in page
     assert "<b>sample off</b>" in page
 
@@ -382,8 +382,8 @@ def test_every_card_action_works_on_the_sample_cards_and_audits(env, auth):
     targets = {e["target"] for e in entries}
     assert {"sample-update", "sample-brief", "sample-feature-request"} <= targets
 
-    # and the activity page shows the words
-    page = env.request("GET", "/activity", auth)[2].decode("utf-8")
+    # and the activity trail shows the words
+    page = env.request("GET", "/settings/activity", auth)[2].decode("utf-8")
     for word in ("approved", "edited", "snoozed", "pending", "more-info",
                  "denied", "restored"):
         assert word in page

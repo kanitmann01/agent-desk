@@ -81,12 +81,12 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
       <a href="/" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
       <a href="/inbox" aria-label={inboxName}><span className="rail-mark" aria-hidden="true">I</span><span className="rail-label">Inbox</span>{badge}</a>
       <a href="/assistant" aria-label="Assistant"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Assistant</span></a>
-      <a href="/activity" aria-label="Activity"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Activity</span></a>
       <a href="/memory" aria-label="Memory"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Memory</span></a>
       <a href="/mail" aria-label="Mail"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Mail</span></a>
-      <a href="/capabilities" aria-label="Capabilities"><span className="rail-mark" aria-hidden="true">C</span><span className="rail-label">Capabilities</span></a>
       <a href="/marketplace" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Marketplace"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Marketplace</span></a>
-      <a href="/peers" aria-label="Peers"><span className="rail-mark" aria-hidden="true">P</span><span className="rail-label">Peers</span></a>
+      {/* Activity, Capabilities and Peers live under Settings now: the
+          rail carries the daily surfaces, not every route. */}
+
       <a href="/settings" aria-label="Settings"><span className="rail-mark" aria-hidden="true">S</span><span className="rail-label">Settings</span></a>
       <button
         type="button"

@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from agentdesk.plugins.config import ConfigError, InstanceStore
 from agentdesk.plugins.preview import preview_table
-from agentdesk.plugins.suggest import build_suggestion_request, heuristic, propose_columns
+from agentdesk.plugins.suggest import (
+    build_evaluation_request,
+    build_suggestion_request,
+    evaluate_choice,
+    heuristic,
+    propose_columns,
+)
 
 JOB = "Track one series from this workbook: a label column and a value column."
 
@@ -66,6 +72,33 @@ def preview(runtime, cap: int, instance_id: str, *, sheet=None, header_row=1, ra
     document["source"] = source
     store._write(store._config_path(plugin_id, instance_id), document)
     return {"preview": table, "step": "columns"}
+
+
+def evaluate(runtime, cap: int, instance_id: str, tracking: dict, *, complete,
+             plugin_id: str) -> dict:
+    """One model opinion on the choice already on screen. Never raises for
+    a model failure: the verdict says unchecked and confirm still works."""
+    store = store_for(runtime, cap)
+    document = store.read(plugin_id, instance_id)
+    source = document.get("source") or {}
+    if not source.get("path"):
+        raise ConfigError("config:missing-file", "Open a file first.")
+    table = preview_table(
+        source["path"], sheet=source.get("sheet"),
+        header_row=source.get("headerRow") or 1, range_text=source.get("range"),
+        limit=500,
+    )
+    choice = {
+        "labelColumn": str((tracking or {}).get("labelColumn") or ""),
+        "valueColumn": str((tracking or {}).get("valueColumn") or ""),
+        "rows": [index for index in ((tracking or {}).get("rows") or []) if isinstance(index, int)],
+    }
+    request, note = build_evaluation_request(
+        job=JOB, sheet=table["sheet"], headers=table["headers"], rows=table["rows"],
+        choice=choice, row_count=len(table["rows"]),
+    )
+    result = evaluate_choice(request, complete)
+    return {"disclosure": note, **result, "error": None}
 
 
 def suggest(runtime, cap: int, instance_id: str, *, headers_only: bool, complete,

@@ -11,6 +11,7 @@ are reachable from here.
 import html
 from datetime import datetime
 
+from agentdesk.server import audit_view
 from agentdesk.server.pages import page_shell
 
 from agentdesk.repetition.skills import render_skill_md
@@ -29,17 +30,13 @@ _LABELS = {
 }
 
 ENDPOINT_HINT = (
-    "<p>Works with any OpenAI-compatible endpoint: your company gateway, "
-    "OpenAI, OpenRouter, LiteLLM, Azure AI Foundry, or Anthropic's "
-    "OpenAI-compatible URL (https://api.anthropic.com/v1 with a Claude "
-    "model name). The base URL is the full API address: it starts with "
-    "http:// or https:// and usually ends in the API version, like /v1 "
-    "(Foundry often ends in /openai/v1); a portal sign-in page there is "
-    "not an API base. Paste the key and, for Foundry, the model or "
-    "deployment name; Azure/Foundry hosts use the API key header "
-    "automatically. A key and a URL are the whole login; there is no "
-    "separate sign-in step. Saved settings win over environment "
-    "variables and config.env.</p>"
+    "<p>Any OpenAI-compatible endpoint works: your company gateway, "
+    "OpenAI, OpenRouter, LiteLLM, Azure AI Foundry, or Anthropic at "
+    "https://api.anthropic.com/v1. Use the full API address: it starts "
+    "with http:// or https:// and usually ends in /v1; a portal sign-in "
+    "page is not an API base. The key and URL are the whole login. "
+    "Saving with an empty key field clears the saved key. Saved settings "
+    "win over environment variables.</p>"
 )
 
 
@@ -75,7 +72,7 @@ def _registry_section(status: dict | None) -> str:
         "</form>"
         "<p class='empty'>Saving with the field empty goes back to automatic. "
         "A folder without an index.json is refused; nothing is saved then. "
-        "<a href='/plugins'>Open the plugins page</a>.</p>")
+        "<a href='/marketplace/installed'>Open Marketplace</a>.</p>")
 
 
 def mask_llm_key(key: str) -> str:
@@ -186,6 +183,49 @@ def _theme_tiles() -> str:
     return f"<div class='theme-tiles' role='radiogroup' aria-label='Theme'>{tiles}</div>"
 
 
+def _record_card(audit_entries: list[dict], audit_total: int) -> str:
+    """The trail's front door: the count, the last five rows, the links.
+
+    The count comes from the store, not from this page's window, so a
+    desk with a thousand actions does not claim there are sixty.
+    """
+    total = audit_total if audit_total is not None else len(audit_entries)
+    stamp = f"{total} ACTIONS"
+    if audit_entries:
+        rows = "".join(
+            "<tr><td class='mono'>"
+            f"{audit_view.when_text(float(e.get('ts', 0)))}</td>"
+            f"<td>{html.escape(audit_view.kind_for(str(e.get('action', ''))))}</td>"
+            f"<td>{html.escape(audit_view.word_for(str(e.get('action', ''))))}</td>"
+            f"<td class='mono'>{html.escape(str(e.get('status', 'ok')))}</td></tr>"
+            for e in audit_entries[:5]
+        )
+        recent = (
+            "<table class='rows'><thead><tr><th scope='col'>When</th>"
+            "<th scope='col'>Kind</th><th scope='col'>Action</th>"
+            "<th scope='col'>Status</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+    else:
+        recent = (
+            "<p class='empty'>No actions recorded yet. The first one lands "
+            "here and on the trail.</p>"
+        )
+    return f"""<section class='card settings-card' id='record'>
+<div class='w-head'><h2>Record</h2><span class='stamp'>{stamp}</span></div>
+<p>One trail for the whole desk. Every inbox decision, model call, file
+read, plugin change, registry write, settings save and peer request is
+recorded with its time and status, and nothing here can be edited.</p>
+<h3>Review</h3>
+<div class='settings-links'>
+<a class='btn btn-secondary' href="/settings/activity">Open the activity trail</a>
+<a class='btn btn-secondary' href="/capabilities">Check the environment</a>
+<a class='btn btn-secondary' href="/audit/export.csv">Export as CSV</a>
+</div>
+{recent}
+</section>"""
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -198,12 +238,19 @@ def render_settings_page(
     extra_hosts: str = "",
     server_port: int = 8765,
     inbox_count: int = 0,
+    audit_entries: list[dict] | None = None,
+    audit_total: int | None = None,
 ) -> str:
+    """The settings document: one card per concern, each stamped with
+    the live state it actually reads (never a decoration)."""
     settings_values = settings_values or {}
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
+    audit_entries = audit_entries or []
+    audit_total = len(audit_entries) if audit_total is None else audit_total
     toggles_html = "".join(
         _toggle_button(key, settings_values[key]) for key in _LABELS
     )
+
     if endpoint_status["configured"]:
         indicator = (
             f"Configured. Last call: <b class='mono'>{html.escape(endpoint_status['last'])}</b>"
@@ -221,13 +268,13 @@ def render_settings_page(
             f"<td>{html.escape(e['kind'])}</td><td>{html.escape(e['text'][:120])}</td></tr>"
             for e in reversed(activity_entries[-30:])
         )
-        activity = (
+        questions = (
             "<table class='rows'><thead><tr><th scope='col'>When</th>"
             "<th scope='col'>Kind</th><th scope='col'>What you asked</th></tr></thead>"
             f"<tbody>{rows}</tbody></table>"
         )
     else:
-        activity = "<p class='empty'>Nothing asked yet. Research and assistant questions land here, for you to see.</p>"
+        questions = "<p class='empty'>Nothing asked yet. Research and assistant questions land here, for you to see.</p>"
 
     if skills:
         blocks = []
@@ -245,23 +292,37 @@ def render_settings_page(
                 else ""
             )
             blocks.append(
-                "<article class='widget settings-skill'>"
+                "<article class='settings-skill'>"
                 f"<div class='w-head'><h2 class='skill-name'>{html.escape(skill['name'])}</h2>"
                 f"<span class='stamp'>{versions}</span></div>"
                 f"<details><summary class='empty'>SKILL.md</summary><pre>{md}</pre></details>"
                 f"{undo}</article>"
             )
         skills_html = "".join(blocks)
+        skills_stamp = f"{len(skills)} ACTIVE"
     else:
         skills_html = "<p class='empty'>No skills yet. Accept a proposal in the inbox and it appears here with its history.</p>"
+        skills_stamp = "NONE YET"
+
+    desk_stamp = "SAMPLE DATA ON" if settings_values.get("sample_data") else "REAL DATA"
+    endpoint_stamp = "CONFIGURED" if endpoint_status["configured"] else "NOT SET"
+    mail_stamp = "MAIL ON" if settings_values.get("mail_enabled") else "MAIL OFF"
+    registry = registry_status or {}
+    registry_stamp = "READY" if registry.get("ok") else "NOT CONFIGURED"
 
     content = f"""<h1>Settings</h1>
-<p>Toggles plus the endpoint form. The defaults are the recommended
-ones; a setting you have never touched is the right setting.</p>
-<h2>Appearance</h2>
+<p>Everything this desk does, set from one page. A card's stamp is its
+live state on this machine, read when the page rendered; a setting you
+have never touched is the right setting.</p>
+<div class='settings-stack'>
+<section class='card settings-card' id='appearance'>
+<div class='w-head'><h2>Appearance</h2><span class='stamp'>THIS BROWSER</span></div>
 {_theme_tiles()}
 <p class='empty'>The theme is kept in this browser and applies to every page of the desk.</p>
-<h2>Desk</h2>
+</section>
+
+<section class='card settings-card' id='desk'>
+<div class='w-head'><h2>Desk</h2><span class='stamp'>{desk_stamp}</span></div>
 <div class='settings-block'>
 {toggles_html}
 </div>
@@ -269,13 +330,20 @@ ones; a setting you have never touched is the right setting.</p>
 and sample files (a workbook, a calendar file, header-only mail) so every
 inbox action can be tried safely. Every cell it fills carries a Sample
 data tag, and turning it off removes exactly what it added.</p>
-<h2>Endpoint</h2>
+</section>
+
+<section class='card settings-card' id='endpoint'>
+<div class='w-head'><h2>Endpoint</h2><span class='stamp'>{endpoint_stamp}</span></div>
 {endpoint_html}
-<h2>Calendar source</h2>
+</section>
+
+<section class='card settings-card' id='sources'>
+<div class='w-head'><h2>Sources</h2><span class='stamp'>{mail_stamp}</span></div>
+<h3>Calendar source</h3>
 <p>Calendar reading follows the OneDrive sync file by default. To pick
 a different file, paste a path, upload the JSON by hand, or go back to
 automatic, open the <a href="/walkthrough/calendar">calendar source page</a>.</p>
-<h2>Mail source</h2>
+<h3>Mail source</h3>
 <p>Mail digest is <b>off by default</b>. When the toggle above is on,
 the app polls one folder of .eml files and reads only their headers
 (From, To, Cc, Subject, Date, Message-ID, In-Reply-To); bodies are
@@ -289,22 +357,36 @@ AGENTDESK_MAIL_FOLDER environment variable.</p>
 <button class="btn btn-secondary" type="submit">Save folder</button>
 </form>
 <p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
-<h2>Plugin registry</h2>
+</section>
+
+<section class='card settings-card' id='registry'>
+<div class='w-head'><h2>Plugin registry</h2><span class='stamp'>{registry_stamp}</span></div>
 <p>The plugin registry is a local git checkout of the internal registry
 repository. Installs are pinned by content hash and verified with the
 same validator the registry's CI runs before anything executes. The
 path is read from this setting first, then the AGENTDESK_REGISTRY
 environment variable, then the app's own checkout.</p>
 {_registry_section(registry_status)}
-<h2>Where the app opens</h2>
+</section>
+
+<section class='card settings-card' id='machine'>
+<div class='w-head'><h2>Where the app opens</h2><span class='stamp'>LOOPBACK :{server_port}</span></div>
 {_extra_hosts_section(extra_hosts, server_port)}
-<h2>Review</h2>
-<p><a href="/activity">Read your decision log</a> (the activity page, newest first), <a href="/memory">review the facts the assistant recalls</a> (the memory page), <a href="/mail">review the mail digest</a> (headers only, off by default), <a href="/capabilities">check the environment gates, endpoint and sources</a> (the capabilities page), <a href="/audit/export.csv">export the audit log as CSV</a> (Security reads this) <span class="empty">or</span> <a href="/what-this-touches">read what this app touches</a>.</p>
-<h2>Activity log</h2>
+</section>
+
+{_record_card(audit_entries, audit_total)}
+
+<section class='card settings-card' id='skills'>
+<div class='w-head'><h2>Skills</h2><span class='stamp'>{skills_stamp}</span></div>
+{skills_html}
+</section>
+
+<section class='card settings-card' id='questions'>
+<div class='w-head'><h2>Activity log</h2><span class='stamp'>LOCAL ONLY</span></div>
 <p>Only what flows through the app: the asks you type into research and
 the assistant. No keystrokes, no screen, and this list is yours.</p>
-{activity}
-<h2>Skills</h2>
-{skills_html}
+{questions}
+</section>
+</div>
 """
     return page_shell("Settings", "/settings", content, version, inbox_count=inbox_count)

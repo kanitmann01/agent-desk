@@ -40,8 +40,8 @@ def test_start_cmd_dev_branch_starts_both_processes():
 def test_start_cmd_dev_labels_its_windows():
     # Two processes, two windows: the user must be able to tell them apart.
     text = cmd_text()
-    assert "agent desk api (dev)" in text
-    assert "agent desk ui (dev)" in text
+    assert "nexuus bot api (dev)" in text
+    assert "nexuus bot ui (dev)" in text
 
 
 def test_start_cmd_points_pythonpath_at_the_source_tree():

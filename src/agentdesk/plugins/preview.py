@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -20,8 +21,13 @@ def preview_table(path, *, sheet, header_row, range_text, limit: int = 20) -> di
     candidate = Path(path)
     if not candidate.is_file():
         raise ConfigError("config:missing-file", f"That file does not exist: {candidate}")
-    if candidate.suffix.lower() == ".csv":
+    suffix = candidate.suffix.lower()
+    if suffix == ".csv":
         grid = _csv_grid(candidate)
+        sheets = [candidate.stem]
+        chosen = sheets[0]
+    elif suffix == ".json":
+        grid = _json_grid(candidate)
         sheets = [candidate.stem]
         chosen = sheets[0]
     else:
@@ -62,6 +68,64 @@ def _csv_grid(path: Path) -> list[list]:
     except (OSError, UnicodeDecodeError) as exc:
         raise ConfigError("config:unreadable", f"The file could not be read: {exc}")
     return [list(row) for row in csv.reader(io.StringIO(text))]
+
+
+def _json_grid(path: Path) -> list[list]:
+    """A JSON export as the same grid a workbook gives: headers first.
+
+    Two shapes are tables: the array of objects an export usually is, and
+    an object holding one such array under any key ({"data": [...]}). An
+    array of scalars becomes a single "value" column. Anything else is
+    reported in the same plain language as an unreadable workbook, never
+    as a traceback.
+    """
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError("config:unreadable", f"The file could not be read: {exc}")
+    try:
+        parsed = json.loads(text)
+    except ValueError as exc:
+        raise ConfigError("config:unreadable", f"That file is not valid JSON: {exc}")
+    records = _json_records(parsed)
+    if records is None:
+        raise ConfigError(
+            "config:not-a-table",
+            "That JSON is not a table. Open a JSON file that holds a list of objects.",
+        )
+    headers = []
+    for record in records:
+        for key in record:
+            if key not in headers:
+                headers.append(key)
+    if not headers:
+        raise ConfigError("config:empty-table", "That JSON has no rows to preview.")
+    grid = [headers]
+    for record in records:
+        grid.append([_json_value(record.get(key)) for key in headers])
+    return grid
+
+
+def _json_records(parsed):
+    if isinstance(parsed, list):
+        if all(isinstance(item, dict) for item in parsed):
+            return parsed
+        if parsed and not any(isinstance(item, (dict, list)) for item in parsed):
+            return [{"value": item} for item in parsed]
+        return None
+    if isinstance(parsed, dict):
+        for value in parsed.values():
+            if isinstance(value, (list, dict)):
+                found = _json_records(value)
+                if found:
+                    return found
+    return None
+
+
+def _json_value(value) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return _cell(value)
 
 
 def _sheet_names(path: Path) -> list[str]:

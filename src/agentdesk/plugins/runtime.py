@@ -670,6 +670,9 @@ class PluginRuntime:
                     "direction": reading["direction"],
                     "points": points,
                     "file": reading["file"],
+                    "rowsSeen": reading.get("rowsSeen", 0),
+                    "readAt": reading.get("readAt", 0),
+                    "sample": bool(reading.get("sample")),
                     "paceNote": reading.get("paceNote") or "",
                     "goal": None if not goal else {
                         "value": _format_number(goal.get("value")),
