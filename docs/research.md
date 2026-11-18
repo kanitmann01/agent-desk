@@ -321,3 +321,34 @@ A9 verification sources (fetched 2026-11-11): api.github.com/repos/openclaw/open
 Proactivity + memory: hermes-agent.nousresearch.com/docs (cron, heartbeat, goals, skills, memory, curator, security, secure-hermes-on-a-work-machine, daily-briefing-bot); docs.openclaw.ai (automation/cron-jobs, gateway/heartbeat, automation/standing-orders, concepts/memory, tools/skills, platforms/windows); langchain.com/blog/introducing-ambient-agents (+ UX for Agents part 2); arXiv 2410.12361 (Proactive Agent), 2305.16291 (Voyager), 2409.07429 (AWM), 2504.07079 (SkillWeaver), 2505.20286 (Alita), 2504.13171 (sleep-time compute); github.com/mem0ai/mem0, getzep/graphiti, letta-ai/letta, asg017/sqlite-vec (all Apache-2.0 verified); learn.microsoft.com (Graph permissions, Entra consent, Sales Copilot meeting-prep, Executive Briefing Agent template, Purview endpoint DLP, schtasks, Modern Standby); Northwestern KB (Cortana Briefing); paloaltonetworks.com (endpoint DLP for local AI); ics.uci.edu/~gmark/chi08-mark.pdf (interruption costs).
 
 NL-to-plugin: github.com/anthropics/skills (skill-creator); agentskills.io (spec, optimizing descriptions, best practices); docs.openclaw.ai/tools/creating-skills + openclaw.ai/blog/openclaw-agent-skill-workshop; hermes docs (plugins); help.zapier.com (NL Zap outlines); lindy.ai/blog/lindy-3-0; help.openai.com (GPT builder) + openai.com/index/introducing-agentkit; github.com/hkuds/autoagent; arXiv 2502.05957; snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub; labs.cloudsecurityalliance.org (SKILL.md context poisoning); owasp.org Agentic Skills Top 10; securitylabs.datadoghq.com (malicious skills); simonwillison.net/2025/Jun/16/the-lethal-trifecta; claude.com/resources/articles/auto-mode-default-in-claude-code; github.com/anthropics/sandbox-runtime; docs.deno.com (permissions); quickjs-ng.github.io + CVE-2026-37630; github.com/python-jsonschema/jsonschema; healthchecks.io (dead man's switch); learn.microsoft.com (Power Automate triggers, Excel + Power Automate).
+
+## B. Outlook without a connector, and plugin truth (2026-11-18)
+
+Spec 008 asked for a working Outlook plugin with no connector. The detailed
+note is [research/2026-11-18-outlook-without-connector.md](research/2026-11-18-outlook-without-connector.md);
+the creation trace is [research/2026-11-18-plugin-creation-trace.md](research/2026-11-18-plugin-creation-trace.md).
+
+- **Decision: exported `.eml` folder is the only ingestion contract.** No Graph,
+  IMAP, EWS, PST/OST, or COM in the product. Feeders, in order: manual Save as /
+  OWA Download; personal Power Automate `Export email (V2)` to OneDrive; checked-in
+  mock inbox for CI and the demo. Classic Outlook COM stays a dev/demo helper
+  (`tools/export-outlook.ps1`) because new Outlook has no COM and the end user has
+  no terminal.
+- **Header-only survives.** The parser reads From, To, Cc, Subject, Date,
+  Message-ID, In-Reply-To and Importance; bodies are discarded at parse time. The
+  brief ranks messages with explainable rules and builds three subject-based reply
+  starters, so no body ever reaches a card.
+- **Declarative plugins stay declarative.** The Outlook card selects a host data
+  source (`outlook-brief`) and declares its widget elements; the host adapter is
+  code, the plugin is the binding. Adding executable plugin code was explicitly
+  rejected as a larger security surface than the demo needs.
+- **Install truth is a pin problem, not a resolver problem.** 24 of 25 local
+  release pins had drifted from their trees after later edits; `sync_registry.py`
+  plus `build_catalog.py` restored them. The old #115 failures were the same
+  drift, not a marketplace defect.
+- **Creation had two endings confused.** Publishing for review is a distribution
+  action and still needs the admin switch; Studio's personal path is
+  `POST /api/marketplace/studio/install`, which validates the inline tree and hands
+  it to the same runtime the wizard uses. This is the end-to-end demo path.
+- **Known limit.** A real Outlook profile is still required to export live mail;
+  this machine has OUTLOOK.EXE but no profile, hence the demo inbox.

@@ -28,6 +28,7 @@ DATA_SOURCES = (
     "http-get",
     "calendar-read",
     "mail-digest",
+    "outlook-brief",
     "research-brief",
     "csv-watch",
     "markdown-watch",

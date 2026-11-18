@@ -47,7 +47,7 @@ HTTP_MAX_BYTES = 256 * 1024
 LOCAL_TYPES = (
     "excel-watch", "csv-watch", "json-watch", "markdown-watch",
     "manual-metric", "desk-state", "compare", "aggregate",
-    "calendar-read", "mail-digest", "research-brief",
+    "calendar-read", "mail-digest", "outlook-brief", "research-brief",
 )
 
 _JSON_OBJECT = re.compile(r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
@@ -1238,6 +1238,7 @@ _READERS = {
     "http-get": _http_get,
     "calendar-read": _pipeline,
     "mail-digest": _pipeline,
+    "outlook-brief": _pipeline,
     "research-brief": _pipeline,
 }
 

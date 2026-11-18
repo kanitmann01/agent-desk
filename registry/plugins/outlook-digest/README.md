@@ -1,34 +1,43 @@
-# Outlook Digest
+# Outlook Brief
 
-**Question:** How much mail, and from whom?
+**Question:** What arrived, what matters, and how do I start a reply?
 
 ## What it reads
 
-The mail metadata bridge's last-24-hours header digest: the message
-count, the active thread count, the busiest senders, and the header
-window note. Message metadata only: counts, senders, ages and thread
-state. It never opens a message body, never reads attachments, and
-never sends mail.
+The local Outlook mail folder, exported as header-only `.eml` files by
+`tools/export-outlook.ps1` (or any other `.eml` export). It builds three
+views from the same read:
 
-Reads no files of its own, makes no network call, and runs no shell.
+- the active threads in the last 24 hours, newest first
+- the one message most worth opening in the last three days, with the
+  reasons it won
+- three reply starters built from that message's subject line only
+
+Works with no connector, no OAuth and no network call. Reads message
+headers only: it never opens a body, never reads attachments, and never
+sends mail. The plugin declares no filesystem read of its own: the host
+mail setting names the folder, and the plugin reads the host's header
+brief.
 
 ## Elements
 
 | element | binding | shows |
 |---|---|---|
-| metric "Messages 24h" | `messages` | messages received in the last 24 hours |
-| list "Top senders" | `topSenders` | the three busiest senders with their counts |
-| text "Scope" | `windowNote` | the window and the metadata-only promise |
+| metric "Active messages (24h)" | `messages` | messages received in the last 24 hours |
+| text "Most important email" | `topEmailSubject` | the subject of the one message that matters |
+| text "From" | `topEmailLine` | sender and age of that message |
+| text "Why this one" | `topEmailWhy` | the rule reasons, in plain words |
+| list "Active threads" | `threadRows` | thread, last sender, message count and age |
+| list "Reply starters" | `replyOptions` | Direct, Clarify and Brief openers |
 
 ## Binding note
 
-The host's `mail-digest` source emits `messages`, `threads`, `unread`,
-`topSenders` and `windowNote`. `topSenders` is one summary string, not
-rows, and the source emits no row binding at all. The "Top senders"
-list therefore points at the closest frozen name and renders blank
-instead of inventing a rows binding the host would never fill.
+The host's `outlook-brief` source emits `messages`, `threads`,
+`threadRows`, `topEmailSubject`, `topEmailLine`, `topEmailWhy`,
+`replyOptions` and `windowNote`. No body binding exists, so no element
+can request one.
 
 ## Skills
 
-Kept from 0.1.0: `skills/mail-overview` writes one plain-language
-overview line from the same header counts.
+`skills/mail-overview` turns the same header brief into one plain-language
+overview line: what arrived, what matters, and the suggested first reply.

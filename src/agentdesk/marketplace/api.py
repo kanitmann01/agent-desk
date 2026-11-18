@@ -967,6 +967,7 @@ class _API:
             "/share": lambda body: self._set_shared(body, True),
             "/unshare": lambda body: self._set_shared(body, False),
             "/publish": self.post_publish,
+            "/studio/install": self.post_studio_install,
             "/policy/import": self.post_policy_import,
             "/admin/kill-switch": self.post_kill_switch,
             "/deprecate": lambda body: self.post_governance("deprecated", body),
@@ -1079,6 +1080,105 @@ class _API:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
         return manifest
+
+    @staticmethod
+    def _studio_manual_source(manifest: dict) -> dict | None:
+        contributes = manifest.get("contributes")
+        widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
+        if not (isinstance(widgets, list) and widgets and isinstance(widgets[0], dict)):
+            return None
+        source = widgets[0].get("dataSource")
+        if not isinstance(source, dict) or source.get("type") != "manual-metric":
+            return None
+        return source
+
+    def _seed_studio_manual_metric(self, manifest: dict, body: dict,
+                                   plugin_id: str, runtime) -> None:
+        """Give a Studio-created manual metric its first file.
+
+        The Studio card is declared over ${pluginData}/manual.json, and
+        the manual-metric source does not invent a file: without this the
+        card lands amber with zero elements. The validated sample's value
+        is the only number the creator has already stated, so it becomes
+        the starting point, never a made-up figure.
+        """
+        source = self._studio_manual_source(manifest)
+        if source is None or source.get("file"):
+            return
+        sample = body.get("sample")
+        bindings = sample.get("bindings") if isinstance(sample, dict) else None
+        raw = bindings.get("value") if isinstance(bindings, dict) else 0
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raw = 0
+        number = int(raw) if float(raw).is_integer() else float(raw)
+        folder = Path(runtime.data_dir) / plugin_id
+        folder.mkdir(parents=True, exist_ok=True)
+        document = {
+            "value": number,
+            "updatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        (folder / "manual.json").write_text(
+            json.dumps(document, indent=2), encoding="utf-8")
+
+    def post_studio_install(self, body: dict) -> None:
+        """Create a plugin in Studio and install it on this desk now.
+
+        Publishing for review is a distribution action and still needs the
+        admin switch. This is the personal path: validate the inline draft,
+        keep the exact tree, and hand it to the runtime the same way the
+        wizard does. Nothing about it is catalog-signed, and the audit row
+        says so.
+        """
+        manifest = self._inline_manifest(body)
+        plugin_id = str(manifest.get("id") or "").strip()
+        version = str(manifest.get("version") or "").strip()
+        _safe_component(plugin_id, "plugin id")
+        _safe_component(version, "version")
+        runtime = self._runtime()
+        with tempfile.TemporaryDirectory(prefix="studio-install-") as tmp:
+            folder = Path(tmp) / plugin_id
+            self._write_inline_plugin(folder, body)
+            try:
+                validation = validate_plugin(folder).as_dict()
+            except Exception as exc:  # noqa: BLE001 - a verdict, not a crash
+                validation = {"ok": False, "failures": [
+                    {"code": "studio:unreadable", "message": str(exc)}]}
+            if not validation.get("ok"):
+                self.audit("studio.install", plugin_id or "untitled",
+                           "denied", "validation-failed")
+                raise MarketplaceError(
+                    400, "studio:validation-failed",
+                    "the plugin does not pass validation, so it was not installed",
+                    {"failures": validation.get("failures") or []})
+            target = self.marketplace_dir("studio", plugin_id, version)
+            if target.exists():
+                shutil.rmtree(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(folder, target)
+        try:
+            result = runtime.install(target, source="studio")
+        except PluginError as exc:
+            self.audit("studio.install", plugin_id, "error", exc.code)
+            raise MarketplaceError(exc.status, exc.code, str(exc),
+                                   {"id": plugin_id}) from exc
+        self._seed_studio_manual_metric(manifest, body, plugin_id, runtime)
+        try:
+            # install() probed before the seed existed, so its stored
+            # status is the amber "missing file" one. One retest after the
+            # seed is the same recovery the card's button runs, and it
+            # keeps Installed from warning about a file that now exists.
+            runtime.retest(plugin_id)
+        except PluginError:
+            pass  # the card's own Re-test still recovers; install stands
+        self.audit("studio.install", plugin_id, "ok",
+                   f"{version} created on this desk")
+        self.send(200, {
+            "id": plugin_id,
+            "version": str(result.get("version") or version),
+            "status": "installed",
+            "validation": validation,
+            "source": "studio",
+        })
 
     def post_validate(self, body: dict) -> None:
         self._inline_manifest(body)

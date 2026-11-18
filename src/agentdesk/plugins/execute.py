@@ -38,6 +38,7 @@ from agentdesk.calendar.watcher import (
     CalendarBridge,
 )
 from agentdesk.excel.watcher import Adapters, ExcelWatch
+from agentdesk.mail.brief import brief as mail_brief
 from agentdesk.mail.watcher import STATE_ERROR, STATE_UNCONFIGURED, MailWatch
 from agentdesk.plugins.render import render_elements
 from agentdesk.plugins.sources import (
@@ -63,6 +64,9 @@ from agentdesk.plugins.sources import (
 #                  sendersRows, vipRows, waitingRows
 #                  (header counts only; the mail Message record has no
 #                  body field and no read flag by construction)
+#   outlook-brief: messages, threads, threadRows, topEmailSubject,
+#                  topEmailLine, topEmailWhy, replyOptions, windowNote
+#                  (same header-only read; starters come from subjects)
 #   research-brief: summary, sourcesCount, answeredAt, windowNote,
 #                  sources, sourceRows, sourceTable
 BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
@@ -73,6 +77,8 @@ BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
             "todayRows", "upcoming", "weekPoints", "weekHours", "items",
             "messages", "threads", "topSenders", "sendersRows",
             "vipRows", "waitingRows",
+            "threadRows", "topEmailSubject", "topEmailLine",
+            "topEmailWhy", "replyOptions",
             "summary", "sourcesCount", "answeredAt",
             "sources", "sourceRows", "sourceTable")
 
@@ -82,7 +88,8 @@ EXCEL_TABLE_CAP = 20
 # Sources whose data lives in a shared built-in pipeline rather than a
 # workspace glob: the runner reads the pipeline the dashboard's own
 # cards use, and their honest states come from the pipeline itself.
-PIPELINE_TYPES = ("calendar-read", "mail-digest", "research-brief")
+PIPELINE_TYPES = ("calendar-read", "mail-digest", "outlook-brief",
+                  "research-brief")
 
 EXECUTABLE_TYPES = ("excel-watch",) + PIPELINE_TYPES
 
@@ -778,6 +785,8 @@ class PluginWidgetRunner:
             return self._calendar_status(plugin_id)
         if source_type == "mail-digest":
             return self._mail_status(plugin_id)
+        if source_type == "outlook-brief":
+            return self._outlook_status(plugin_id)
         if source_type == "research-brief":
             return self._research_status()
         return self._attention("data source has not run"), {}
@@ -889,6 +898,47 @@ class PluginWidgetRunner:
             "vipRows": vip_rows,
             "waitingRows": waiting_rows,
         }
+        return {"status": "fresh", "cause": "",
+                "checked_at": _iso(None)}, values
+
+    def _outlook_status(self, plugin_id: str = "") -> "tuple[dict, dict]":
+        """outlook-brief: the digest, the one message that matters and
+        three openers, all from the same header-only folder read the mail
+        page uses. No body is read and no model is called.
+
+        Empty and unconfigured folders are attention states with copy that
+        names the next action, never a zero dressed up as a reading.
+        """
+        watch = self.mail
+        if watch is None:
+            return self._attention(
+                "The Outlook brief is not running. Turn on mail in Settings, "
+                "choose the folder your .eml exports land in, then re-test."), {}
+        view = watch.view()
+        state = str(view.get("state", ""))
+        if state == STATE_UNCONFIGURED:
+            return self._attention(
+                "No mail folder is chosen yet. Turn on mail in Settings and "
+                "pick a folder, or run tools/export-outlook.ps1 -OutDir "
+                "<folder> first."), {}
+        if state == STATE_ERROR:
+            cause = str(view.get("cause") or
+                        "the mail folder could not be read")
+            return self._attention(cause), {}
+        messages = view.get("messages") or []
+        if not messages:
+            skipped = int(view.get("unparsedFiles") or 0)
+            if skipped:
+                return self._attention(
+                    f"{skipped} .eml file(s) in the mail folder could not be "
+                    "parsed. Re-export them with tools/export-outlook.ps1, "
+                    "then re-test."), {}
+            return self._attention(
+                "The mail folder is empty. Export Outlook mail into it with "
+                "tools/export-outlook.ps1 -OutDir <folder>, then re-test."), {}
+        now = watch.adapters.clock()
+        values = mail_brief(messages, now, watch.self_address,
+                            hours=watch.digest_hours)
         return {"status": "fresh", "cause": "",
                 "checked_at": _iso(None)}, values
 

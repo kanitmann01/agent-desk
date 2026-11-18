@@ -48,13 +48,49 @@ export interface CommitmentsStatus {
 // One bound ui-schema element the host computed for a plugin widget:
 // metric (a value with a label) or text (a note line). Anything the
 // host could not bind is dropped server-side, never invented here.
+export interface PluginListRow {
+  primary?: string;
+  secondary?: string;
+  meta?: string;
+}
+
+export interface PluginTimelineItem {
+  time?: string;
+  title?: string;
+  meta?: string;
+}
+
+export interface PluginChecklistItem {
+  text?: string;
+  done?: boolean;
+  due?: string;
+}
+
 export interface PluginElement {
-  kind: 'metric' | 'text' | 'delta' | 'sparkline';
+  kind:
+    | 'metric'
+    | 'text'
+    | 'delta'
+    | 'progress'
+    | 'list'
+    | 'table'
+    | 'sparkline'
+    | 'status'
+    | 'timeline'
+    | 'checklist';
   label?: string;
-  value?: string;
+  title?: string;
+  value?: string | number | null;
   text?: string;
   direction?: string;
   points?: number[];
+  rows?: PluginListRow[] | string[][];
+  columns?: string[];
+  items?: PluginTimelineItem[] | PluginChecklistItem[];
+  target?: number | null;
+  unit?: string;
+  tone?: 'ok' | 'attention' | 'alarm';
+  reason?: string;
 }
 
 export interface PluginSetup {

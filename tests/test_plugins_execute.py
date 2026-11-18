@@ -541,7 +541,7 @@ def test_calendar_card_ignores_excel_and_unknown_bindings(workspace, tmp_path):
 # the tests pin that the bound card can only ever carry header counts.
 
 def _eml(message_id: str, subject: str, sender: str, date_ts: float,
-         in_reply_to: str = "") -> bytes:
+         in_reply_to: str = "", importance: str = "") -> bytes:
     from email.utils import formatdate
 
     lines = [
@@ -551,6 +551,8 @@ def _eml(message_id: str, subject: str, sender: str, date_ts: float,
         f"Date: {formatdate(date_ts, usegmt=True)}",
         f"Message-ID: {message_id}",
     ]
+    if importance:
+        lines.append(f"Importance: {importance}")
     if in_reply_to:
         lines.append(f"In-Reply-To: {in_reply_to}")
     lines += ["MIME-Version: 1.0",
@@ -684,6 +686,97 @@ def test_mail_digest_without_a_folder_is_amber_with_cause(workspace, tmp_path):
     payload = runner.payload("p1")
     assert payload["status"] == "attention"
     assert payload["elements"] == []
+
+
+
+
+# The outlook-brief binding: the same header-only folder read as
+# mail-digest, shaped into the digest, the one message that matters and
+# three reply starters. No body field exists and no model is called.
+
+def test_outlook_brief_binds_digest_top_message_and_starters(workspace, tmp_path):
+    now = datetime(2026, 11, 18, 9, 0, 0).astimezone().timestamp()
+    files = {
+        "m1.eml": _eml("<1@x>", "Q4 pipeline review - need your numbers by EOD",
+                      "Priya <priya@northwind.example>", now - 2 * 3600,
+                      importance="high"),
+        "m2.eml": _eml("<2@x>", "Contract renewal",
+                      "Legal <legal@northwind.example>", now - 5 * 3600),
+        "m3.eml": _eml("<3@x>", "Lunch on Friday?",
+                      "Ana <ana@northwind.example>", now - 1800),
+    }
+    runner = _mail_runner(workspace, tmp_path, now, files,
+                          folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+        {"type": "text", "binding": "topEmailSubject", "label": "Top message"},
+        {"type": "text", "binding": "topEmailWhy", "label": "Why"},
+        {"type": "list", "rowsBinding": "threadRows", "title": "Digest"},
+        {"type": "list", "rowsBinding": "replyOptions", "title": "Reply starters"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("outlook-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "fresh"
+    payload = runner.payload("p1")
+    assert payload["status"] == "fresh"
+    elements = payload["elements"]
+    assert elements[0] == {"kind": "metric", "label": "Messages", "value": "3"}
+    assert elements[1]["text"] == ("Q4 pipeline review - need your numbers by EOD")
+    assert "high importance" in elements[2]["text"]
+    assert [row["primary"] for row in elements[3]["rows"]] == [
+        "Lunch on Friday?", "Q4 pipeline review - need your numbers by EOD",
+        "Contract renewal"]
+    starters = elements[4]["rows"]
+    assert [row["secondary"] for row in starters] == ["Direct", "Clarify", "Brief"]
+    assert starters[0]["primary"].startswith("I have \"Q4 pipeline review")
+    assert "a body that must never reach a card" not in json.dumps(payload)
+
+
+def test_outlook_brief_without_a_folder_points_at_the_export_script(workspace, tmp_path):
+    now = datetime(2026, 11, 18, 9, 0, 0).astimezone().timestamp()
+    runner = _mail_runner(workspace, tmp_path, now, {}, folder=lambda: "")
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("outlook-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "export-outlook.ps1" in status["cause"]
+    assert runner.payload("p1")["elements"] == []
+
+
+def test_outlook_brief_with_an_empty_folder_is_amber(workspace, tmp_path):
+    now = datetime(2026, 11, 18, 9, 0, 0).astimezone().timestamp()
+    runner = _mail_runner(workspace, tmp_path, now, {},
+                          folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("outlook-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "empty" in status["cause"].lower()
+
+
+def test_outlook_brief_with_only_unparsable_files_does_not_claim_empty(
+        workspace, tmp_path):
+    now = datetime(2026, 11, 18, 9, 0, 0).astimezone().timestamp()
+    runner = _mail_runner(
+        workspace, tmp_path, now,
+        {"broken.eml": b"From: x\r\nSubject: =?x-unknown?b?SGVsbG8=?=\r\n\r\nbody"},
+        folder=lambda: str(tmp_path / "mail"))
+    version_dir = tmp_path / "plugin"
+    _write_ui(version_dir, [
+        {"type": "metric", "binding": "messages", "label": "Messages"},
+    ])
+    status = runner.attach("p1", _pipeline_manifest("outlook-brief"),
+                           version_dir, tmp_path / "data")
+    assert status["status"] == "attention"
+    assert "could not be parsed" in status["cause"]
+    assert "empty" not in status["cause"].lower()
 
 
 def test_mail_digest_not_running_is_amber(workspace, tmp_path):

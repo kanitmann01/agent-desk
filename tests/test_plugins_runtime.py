@@ -165,6 +165,27 @@ def test_amber_data_source_with_cause_and_retest(runtime, tmp_path):
     status = runtime.retest("sales-delta-widget")
     assert status["status"] == "fresh"
 
+def test_a_restarted_runtime_rebinds_enabled_plugins_on_the_dashboard(tmp_path):
+    from agentdesk.plugins.runtime import PluginRuntime
+    from excel_fixtures import make_xlsx
+
+    dirs = dict(plugins_dir=tmp_path / "plugins", data_dir=tmp_path / "data",
+                workspace_dir=tmp_path / "workspace", now=NOW)
+    first = PluginRuntime(**dirs)
+    first.install(zip_file(tmp_path / "a.zip"), source="zip")
+    (tmp_path / "workspace" / "reports").mkdir(parents=True)
+    (tmp_path / "workspace" / "reports" / "q4.xlsx").write_bytes(
+        make_xlsx([["Region", "Sales"], ["North", 10]]))
+
+    restarted = PluginRuntime(**dirs)
+    assert restarted.widget_payload("sales-delta-widget") is None
+    cards = restarted.widget_cards()
+    assert len(cards) == 1
+    assert cards[0]["freshness"] == "fresh", cards[0]
+    assert cards[0]["payload"]["elements"], cards[0]
+    assert restarted.widget_payload("sales-delta-widget") is not None
+
+
 def test_widget_payload_detects_in_place_tampering(tmp_path):
     from agentdesk.plugins.runtime import PluginError, PluginRuntime
 

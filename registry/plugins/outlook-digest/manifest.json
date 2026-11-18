@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
   "id": "outlook-digest",
-  "name": "Outlook Digest",
-  "version": "0.2.0",
+  "name": "Outlook Brief",
+  "version": "0.3.0",
   "publisher": "agent-desk",
   "class": "declarative",
   "engines": {
@@ -12,16 +12,16 @@
   "category": "communication",
   "tags": [
     "mail",
-    "digest",
-    "senders"
+    "outlook",
+    "replies"
   ],
   "icon": "mail",
-  "summary": "How much mail, and from whom?",
-  "description": "Reads the last 24 hours of message headers from the mail metadata bridge: how many messages arrived, how many threads saw activity, and which senders wrote most. One metric, one sender list and one scope line answer the question without opening anything. Reads message metadata only: counts, senders, ages and thread state. It never opens a message body, never reads attachments, and never sends mail.",
+  "summary": "What arrived, what matters, and how to reply.",
+  "description": "Reads the last 24 hours of message headers from the local Outlook folder: the active threads, the one message most worth opening with the reasons it won, and three reply starters built from its subject line. Works from an .eml export made on this machine, with no connector, no OAuth and no network call. Reads message headers only: it never opens a body, never reads attachments, and never sends mail.",
   "highlights": [
-    "Messages and threads in the last 24 hours, from headers only",
-    "The three busiest senders in that window",
-    "States the window and that message bodies are never read"
+    "Active threads in the last 24 hours, newest first",
+    "The one message that matters, with the reasons it won",
+    "Three reply starters built from the subject line only"
   ],
   "permissions": {
     "filesystem": {
@@ -37,16 +37,15 @@
     "shell": "none"
   },
   "activationEvents": [
-    "onWidget:outlook-digest",
-    "onSchedule:0 * * * *"
+    "onWidget:outlook-digest"
   ],
   "contributes": {
     "widgets": [
       {
         "id": "outlook-digest",
-        "size": "2x1",
+        "size": "2x2",
         "dataSource": {
-          "type": "mail-digest"
+          "type": "outlook-brief"
         },
         "render": {
           "type": "ui-schema",

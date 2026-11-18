@@ -59,6 +59,7 @@ class Message:
     subject: str
     date_ts: float     # epoch seconds from the Date header; 0.0 when absent or unparseable
     thread: str = ""   # the root subject (Re: stripped), filled by with_threads
+    importance: str = ""  # Importance or X-Priority, as written; "" when absent
 
 
 def _decode_value(raw: str) -> str:
@@ -111,6 +112,7 @@ def parse_eml(text: str) -> Message:
         cc=header("Cc"),
         subject=header("Subject"),
         date_ts=date_ts,
+        importance=(header("Importance") or header("X-Priority")),
     )
     return message  # the parsed object, body included, dies here
 

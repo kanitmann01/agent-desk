@@ -760,6 +760,30 @@ class PluginRuntime:
                     entry["pilot_views_left"] -= 1
                     dirty = True
                 continue
+            if not self.runner.attached(entry["id"]):
+                # A runtime is rebuilt on every server start and the
+                # runner has no persisted attachment. Rebind enabled
+                # plugins here so a restart cannot leave a fresh card
+                # with no payload (it used to read "reading the data
+                # source" forever). Verify the pin first: a tampered
+                # tree must never execute.
+                try:
+                    self._verify_installed(entry)
+                except PluginError as exc:
+                    cards.append({
+                        "id": entry["id"],
+                        "title": entry.get("name", entry["id"]),
+                        "version": entry.get("active_version", ""),
+                        "pilot": entry.get("pilot_views_left", 0) > 0,
+                        "state": entry["state"],
+                        "freshness": "attention",
+                        "cause": str(exc),
+                        "checked_at": "",
+                        "manifest": manifest,
+                        "payload": None,
+                    })
+                    continue
+                self._attach_runner(entry["id"], entry)
             if self.runner.attached(entry["id"]):
                 # One source read for both halves of the card (#75
                 # review): status and payload come from a single

@@ -47,7 +47,8 @@ def test_default_policy_is_curated_and_fail_closed():
     assert policy.riskCeiling == "T1"
     assert policy.requireSignatures is True
     assert "bundled" in policy.enabledSources
-    assert len(policy.enabledSources) == 15
+    assert len(policy.enabledSources) == 16
+    assert "outlook-brief" in policy.enabledSources
     assert policy.platforms == ["windows"]
     assert policy.retentionDays == 30
 
