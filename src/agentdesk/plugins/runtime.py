@@ -954,6 +954,8 @@ class PluginRuntime:
                         "freshness": "attention",
                         "cause": str(exc),
                         "checked_at": "",
+                        "pluginId": plugin_id,
+                        "instanceId": "main",
                         "manifest": manifest,
                         "payload": None,
                     })
@@ -978,6 +980,11 @@ class PluginRuntime:
                 "freshness": data.get("status", "attention"),
                 "cause": data.get("cause", ""),
                 "checked_at": data.get("checked_at", ""),
+                # Every card names its plugin (#165): the reading seam
+                # keys off pluginId, so a card without it would never
+                # receive its reading or press, whatever its family.
+                "pluginId": plugin_id,
+                "instanceId": "main",
                 "manifest": manifest,
                 "payload": payload,
             })
