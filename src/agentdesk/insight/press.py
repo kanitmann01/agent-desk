@@ -15,6 +15,20 @@ from agentdesk.insight.types import InsightError
 
 KINDS = ("reply-draft",)
 
+# The desk will not hand back a skeleton dressed as a draft: when the model
+# path is off the route refuses, and the refusal repeats what would have
+# travelled so the promise and the refusal are the same sentence.
+MODEL_OFF = (
+    "Nothing was drafted: model calls are off on this desk, so there is no "
+    "model to write with. Turn the model on in Settings, then ask again."
+)
+
+# The draft never quotes a body, because none was read. Saying so on the
+# draft keeps the skeleton from being mistaken for a finished reply.
+SKELETON_NOTE = (
+    "A skeleton from the thread's subject and greeting; no message body was read."
+)
+
 DISCLOSURE = (
     "Sends: the thread's subject, who it is from, and its last line.",
     "Does not send: the rest of the thread, the workbook, the calendar, or any memory.",
@@ -42,7 +56,11 @@ def draft_reply(
         raise InsightError("insight:bad-request", "A draft needs the thread it answers.")
     if len(subject) > 200:
         raise InsightError("insight:bad-request", "That subject is too long to draft from.")
-    text = digest.compose(thread, preferences, complete=complete)
+    if complete is None and digest.draftable(thread):
+        raise InsightError(
+            "insight:model-off", " ".join((MODEL_OFF,) + DISCLOSURE), 409
+        )
+    text, source = digest.compose_draft(thread, preferences, complete=complete)
     if not text.strip():
         return {
             "status": "empty",
@@ -54,7 +72,7 @@ def draft_reply(
     return {
         "status": "draft",
         "text": text,
-        "source": "model" if complete is not None else "template",
+        "source": source,
         "disclosure": list(DISCLOSURE),
-        "note": "",
+        "note": SKELETON_NOTE if source == "template" else "",
     }
