@@ -59,6 +59,13 @@ from agentdesk.inbox.core import (
     STATUS_WAITING,
     UnknownCard,
 )
+# Aliased: agentdesk.assistant.context.build_context already owns this
+# name in this module, and it is the one the model turn calls.
+from agentdesk.insight.context import build_context as build_insight_context
+from agentdesk.insight.preferences import PreferenceStore, PreferencesError
+from agentdesk.insight.press import draft_reply
+from agentdesk.insight.service import attach_cards
+from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
 from agentdesk.layout import (
@@ -958,6 +965,13 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
 
     skills = server.skills.active() if server.skills is not None else []  # type: ignore[attr-defined]
     plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
+    # One reading per card, from the preferences the user set and the memory
+    # the desk already holds. Appended here so every client of this payload
+    # sees the same reading, and the cards themselves stay the plugin's own.
+    attach_cards(
+        plugin_cards,
+        build_insight_context(server, PreferenceStore(default_data_dir()).read()),
+    )
     sources = live_sources(server)
     inbox = server.inbox  # type: ignore[attr-defined]
     # The layout the dashboard renders in: hidden cards are omitted from
@@ -1267,6 +1281,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._peers_catalog())
         elif path == "/api/dashboard":
             self._send_json(200, dashboard_payload(self.server))
+        elif path == "/api/preferences":
+            self._send_json(200, PreferenceStore(default_data_dir()).read())
         elif path == "/api/layout":
             # The full layout, hidden cards included: the recoverable
             # truth behind the payload's visible-only listing.
@@ -1326,6 +1342,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/sources/calendar-bridge") and not self._source_allowed("calendar_enabled"):
             self._send_json(409, {"error": "Calendar reading is off in settings.", "reconnect": "/settings"})
+            return
+        if path == "/api/preferences":
+            try:
+                self._send_json(200, PreferenceStore(default_data_dir()).write(self._read_json_body()))
+            except PreferencesError as exc:
+                self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+            return
+        if path == "/api/insight/draft":
+            try:
+                answer = draft_reply(
+                    self.server,
+                    self._read_json_body(),
+                    preferences=PreferenceStore(default_data_dir()).read(),
+                )
+            except InsightError as exc:
+                self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+                return
+            self._send_json(200, answer)
             return
         if path == "/sources/excel-watch/pick":
             if excel is None:
