@@ -1031,11 +1031,16 @@ def _press_form(card: dict, press: object) -> str:
     kind = str(press.get("kind") or "").strip()
     if not label or not kind:
         return ""
+    # A card's press nests the thread's facts (the digest family does), and
+    # the pressed page posts them flat, so both shapes are read here: what
+    # travels is what the press promised to send, not less.
+    facts = press.get("thread") if isinstance(press.get("thread"), dict) else {}
     hidden = {
         "kind": kind,
         "text": press.get("text"),
-        "subject": press.get("subject"),
-        "sender": press.get("sender"),
+        "subject": press.get("subject") or facts.get("subject"),
+        "sender": press.get("sender") or facts.get("sender"),
+        "last": press.get("last") or facts.get("last"),
         "pluginId": card.get("pluginId") or card.get("id"),
         "instanceId": card.get("instanceId"),
     }
@@ -4372,7 +4377,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         body = self._read_json_body() or {}
         kind = str(body.get("kind") or "").strip()
         request: dict = {"kind": kind}
-        for key in ("text", "subject", "sender"):
+        for key in ("text", "subject", "sender", "last"):
             value = body.get(key)
             if isinstance(value, str) and value.strip():
                 request[key] = value.strip()
@@ -4398,7 +4403,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         stage_html = ""
         if thread is not None and not staged and answer.get("text"):
             stage_html = self._press_stage_form(
-                thread, str(request.get("sender") or ""), str(answer["text"])
+                thread,
+                str(request.get("sender") or ""),
+                str(answer["text"]),
+                str(request.get("last") or ""),
             )
         # The audit names the thread and the source, never the words: a
         # draft is the user's to send, so the log records the act alone.
@@ -4406,8 +4414,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "insight.press",
             target=str(thread.get("id")) if thread is not None else (kind or "press"),
             detail=kind + ":" + str(answer.get("source") or "none")
-            + (": staged" if staged else ""),
+            + (": staged " + staged if staged else ""),
         )
+        if staged:
+            # The card exists now, so the inbox badge and any notification
+            # follow it, exactly as a hand-typed reply draft does.
+            self._evaluate_inbox(self.server.inbox)
         page = pages.render_press_page(
             label,
             [str(line) for line in answer.get("disclosure") or []],
@@ -4421,7 +4433,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     @staticmethod
-    def _press_stage_form(thread: dict, sender: str, text: str) -> str:
+    def _press_stage_form(thread: dict, sender: str, text: str, last: str = "") -> str:
         """The one form that may turn a draft into an inbox card.
 
         It posts the same press again with `stage`, so there is a single
@@ -4432,6 +4444,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "kind": "reply-draft",
             "subject": str(thread.get("subject") or ""),
             "sender": sender,
+            "last": last,
             "text": text,
             "stage": "1",
         }

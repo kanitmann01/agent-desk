@@ -148,3 +148,100 @@ def test_an_explanation_page_shows_the_disclosure_then_the_answer(tmp_path, monk
     assert "Source: <span class=\"mono\">model</span>" in page
     # An explanation has no thread, so nothing can be staged from it.
     assert "Stage as a reply card" not in page
+
+
+def test_a_press_that_nests_its_thread_still_sends_flat_fields():
+    html = app._press_form(
+        _card(),
+        {
+            "label": "Draft a reply",
+            "route": "/api/insight/draft",
+            "kind": "reply-draft",
+            "thread": {"subject": "Budget", "sender": "Priya Raman", "last": "Here are the numbers."},
+        },
+    )
+    for name, value in (
+        ("subject", "Budget"),
+        ("sender", "Priya Raman"),
+        ("last", "Here are the numbers."),
+    ):
+        assert f'name="{name}" value="{value}"' in html
+
+
+def _stage_form_fields(page: str) -> dict[str, str]:
+    """The hidden fields of the one stage form the page rendered."""
+    import html as html_mod
+    import re
+
+    for form in re.findall(r"<form[^>]*>.*?</form>", page, re.S):
+        if "Stage as a reply card" in form:
+            return {
+                name: html_mod.unescape(value)
+                for name, value in re.findall(r'name="([^"]+)" value="([^"]*)"', form)
+            }
+    raise AssertionError("the page offered no stage form")
+
+
+def _mail_desk(tmp_path):
+    """A booted desk with one message in the folder and a model behind it."""
+    import sqlite3
+    import time
+
+    from agentdesk.inbox.store import InboxStore
+    from agentdesk.mail.store import MailStore
+    from agentdesk.settings import SettingsStore
+    from tests.server_harness import Booted
+
+    folder = tmp_path / "mail"
+    folder.mkdir()
+    (folder / "budget.eml").write_bytes(
+        b"From: Priya Raman <priya@example.com>\r\nTo: employee@example.com\r\n"
+        b"Subject: Budget\r\nDate: Wed, 11 Nov 2026 09:00:00 +0000\r\n"
+        b"Message-ID: <budget-1@example.com>\r\nMIME-Version: 1.0\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\nHere are the numbers.\r\n"
+    )
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+    settings.set("mail_enabled", True)
+    settings.set("mail_folder", str(folder))
+    inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+    booted = Booted(
+        llm=lambda _prompt: "Thanks, I will send the revised budget by Friday.",
+        llm_endpoint="http://llm.test/v1",
+        inbox_store=inbox,
+        mail_store=MailStore(sqlite3.connect(":memory:", check_same_thread=False), time.time),
+        settings_store=settings,
+    )
+    booted.server.settings.set("endpoint_enabled", True)
+    return booted
+
+
+def test_a_pressed_card_can_stage_its_draft_as_one_card(tmp_path):
+    booted = _mail_desk(tmp_path)
+    try:
+        auth = booted.exchange()
+        status, _headers, body = _post_form(
+            booted, auth,
+            {
+                "kind": "reply-draft",
+                "subject": "Budget",
+                "sender": "priya@example.com",
+                "last": "Here are the numbers.",
+            },
+        )
+        page = body.decode("utf-8")
+        assert status == 200
+        assert "Thanks, I will send the revised budget by Friday." in page
+        assert page.index("Sends: the thread") < page.index("Stage as a reply card")
+        fields = _stage_form_fields(page)
+        status, _headers, body = _post_form(booted, auth, fields)
+        staged_page = body.decode("utf-8")
+    finally:
+        booted.close()
+    assert status == 200
+    assert "Staged as a card:" in staged_page
+    assert "Stage as a reply card" not in staged_page
+    waiting = booted.server.inbox.waiting()
+    assert len(waiting) == 1
+    assert waiting[0].title == "Drafted reply: Re: Budget"
+    assert waiting[0].draft == "Thanks, I will send the revised budget by Friday."
+
