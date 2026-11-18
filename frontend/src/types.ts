@@ -117,6 +117,61 @@ export interface TrackerView {
   goal?: { value: string; unit: string } | null;
 }
 
+// What the reading behind a card cost its reader: which of the person's
+// own settings changed it, and which inputs it consulted. The keys are the
+// server's, and the SPA keeps one table of phrases so both surfaces print
+// the same sentence.
+export interface InsightReceipts {
+  preferences: string[];
+  inputs: string[];
+  counts?: { memory?: number };
+}
+
+// The one model call a reading may offer. Nothing is spent until the
+// person presses the button the label sits on, so the label says what the
+// press does rather than what the card is.
+export interface InsightPress {
+  label: string;
+  route: string;
+  kind: 'reply-draft' | 'explain-range';
+  text?: string;
+  subject?: string;
+  sender?: string;
+}
+
+// payload.insight: the reading behind a card's extra elements, the line
+// that says what it used, and the press when the family offered one.
+export interface InsightReading {
+  status: 'ok' | 'empty' | 'unavailable';
+  source: string;
+  /** Keys of the person's own settings that changed this reading. */
+  preferences?: string[];
+  note?: string;
+  press?: InsightPress | null;
+  receipts?: InsightReceipts;
+}
+
+// POST /api/insight/draft, answered. 'draft' covers both a drafted reply
+// and an explanation: what the press asked for decides which. 'staged' is
+// the follow-up answer to a reply draft, false when a card already existed.
+export interface InsightAnswer {
+  status: 'draft' | 'empty';
+  text: string;
+  source: 'model' | 'template' | 'none';
+  disclosure: string[];
+  note: string;
+  thread?: { id: string; to: string; subject: string };
+  staged?: boolean;
+  cardId?: string;
+}
+
+// A refused press. The sentence is written for the person and is shown as
+// it came, never replaced by a status code.
+export interface InsightRefusal {
+  error: string;
+  code: string;
+}
+
 export interface PluginCard {
   id: string;
   title: string;
@@ -128,7 +183,12 @@ export interface PluginCard {
   checkedAt?: string;
   pluginId?: string;
   instanceId?: string;
-  payload?: { elements: PluginElement[]; setup?: PluginSetup; tracker?: TrackerView } | null;
+  payload?: {
+    elements: PluginElement[];
+    setup?: PluginSetup;
+    tracker?: TrackerView;
+    insight?: InsightReading;
+  } | null;
 }
 
 // One card in the dashboard's layout as the payload lists it: visible
