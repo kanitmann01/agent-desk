@@ -103,7 +103,8 @@ def test_a_single_numeric_column_can_still_carry_a_share():
     payload = _payload(["region", "amount"], [["A", 51], ["B", 30], ["C", 19]])
     reading = workbook.derive(_card(payload), payload, _context())
     assert reading.elements[0]["label"] == "Share"
-    assert reading.press == PRESS
+    assert {key: reading.press[key] for key in PRESS} == PRESS
+    assert reading.press["text"] == reading.elements[0]["text"]
 
 
 def test_a_table_that_clears_no_threshold_gets_a_note():
@@ -130,7 +131,8 @@ def test_derive_states_the_strongest_two_and_the_chart():
     assert reading.elements[1]["label"] == "Share"
     assert reading.elements[2]["label"] == "Chart"
     assert reading.elements[2]["text"].startswith("A line chart fits this:")
-    assert reading.press == PRESS
+    assert {key: reading.press[key] for key in PRESS} == PRESS
+    assert reading.press["text"] == reading.elements[0]["text"]
     assert reading.note == ""
 
 
@@ -168,7 +170,8 @@ def test_one_numeric_column_with_a_date_still_reads():
     payload = _payload(["when", "amount"], rows)
     reading = workbook.derive(_card(payload), payload, _context())
     assert reading.elements[0]["label"] == "Trend"
-    assert reading.press == PRESS
+    assert {key: reading.press[key] for key in PRESS} == PRESS
+    assert reading.press["text"] == reading.elements[0]["text"]
 
 
 # -- checklist and density -------------------------------------------------
@@ -204,7 +207,8 @@ def test_attach_cards_adds_the_reading_and_the_press_offer():
     kinds = [element["kind"] for element in payload["elements"]]
     assert kinds[0] == "metric"
     assert kinds[1:] == ["text", "text", "text"]
-    assert payload["insight"]["press"] == PRESS
+    assert payload["insight"]["press"]["kind"] == PRESS["kind"]
+    assert payload["insight"]["press"]["text"] == payload["elements"][1]["text"]
     assert payload["insight"]["source"] == "local"
     assert payload["insight"]["status"] == "ok"
 

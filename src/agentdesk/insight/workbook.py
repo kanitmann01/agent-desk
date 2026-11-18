@@ -13,6 +13,7 @@ reading that cannot be computed is still a reading.
 
 from __future__ import annotations
 
+from agentdesk.insight import press as press_module
 from agentdesk.insight import relations
 from agentdesk.insight.types import InsightContext, InsightReading
 
@@ -65,7 +66,10 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
     suggested = tuple(
         row for row in found[0].suggested if isinstance(row, int)
     )[:5]
-    return InsightReading(elements=elements, suggested=suggested, press=dict(PRESS))
+    # The press carries the sentence it would explain, so a client never has
+    # to re-derive which finding the button belonged to.
+    press = dict(PRESS, text=found[0].text[: press_module.MAX_FINDING])
+    return InsightReading(elements=elements, suggested=suggested, press=press)
 
 
 def _note(message: str) -> InsightReading:

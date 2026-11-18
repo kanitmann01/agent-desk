@@ -13,7 +13,7 @@ from typing import Any, Callable
 from agentdesk.insight import digest
 from agentdesk.insight.types import InsightError
 
-KINDS = ("reply-draft",)
+KINDS = ("reply-draft", "explain-range")
 
 # The desk will not hand back a skeleton dressed as a draft: when the model
 # path is off the route refuses, and the refusal repeats what would have
@@ -34,6 +34,28 @@ DISCLOSURE = (
     "Does not send: the rest of the thread, the workbook, the calendar, or any memory.",
 )
 
+# An explanation of a finding sends the finding itself, which the card
+# already shows. The rows behind it never travel: the reading was computed
+# here, and only its conclusion is worth a model call.
+EXPLAIN_DISCLOSURE = (
+    "Sends: the one sentence this card already shows, with its column names, "
+    "its numbers and the chart the desk chose.",
+    "Does not send: the workbook, its rows, the calendar, or any memory.",
+)
+
+MODEL_OFF_EXPLAIN = (
+    "Nothing was explained: model calls are off on this desk, so there is no "
+    "model to explain with. Turn the model on in Settings, then ask again."
+)
+
+MAX_FINDING = 400
+
+EXPLAIN_PROMPT = (
+    "Explain one pattern a spreadsheet showed its owner, in at most three "
+    "sentences. Say what it means and what to check next. Do not invent a "
+    "cause, a date or a number.\n\nPattern: "
+)
+
 
 def draft_reply(
     server: Any,  # noqa: ARG001 - kept for the caller's symmetry; unused by design
@@ -42,12 +64,14 @@ def draft_reply(
     preferences: dict,
     complete: Callable[[str], str] | None = None,
 ) -> dict:
-    """Compose one reply draft for one thread, or say why not."""
+    """Compose one draft — a reply, or an explanation — or say why not."""
     if not isinstance(body, dict):
         raise InsightError("insight:bad-request", "Expected a JSON object.")
     kind = body.get("kind")
     if kind not in KINDS:
         raise InsightError("insight:unknown-kind", f"{kind} is not something the desk drafts.")
+    if kind == "explain-range":
+        return _explain(body, complete)
     thread = body.get("thread")
     if not isinstance(thread, dict):
         raise InsightError("insight:bad-request", "A draft needs the thread it answers.")
@@ -75,4 +99,37 @@ def draft_reply(
         "source": source,
         "disclosure": list(DISCLOSURE),
         "note": SKELETON_NOTE if source == "template" else "",
+    }
+
+
+def _explain(body: dict, complete: Callable[[str], str] | None) -> dict:
+    """One finding explained, or the reason it was not."""
+    text = str(body.get("text") or "").strip()
+    if not text:
+        raise InsightError("insight:bad-request", "An explanation needs the finding it explains.")
+    if len(text) > MAX_FINDING:
+        raise InsightError("insight:bad-request", "That finding is too long to explain.")
+    if complete is None:
+        raise InsightError(
+            "insight:model-off", " ".join((MODEL_OFF_EXPLAIN,) + EXPLAIN_DISCLOSURE), 409
+        )
+    try:
+        answer = complete(EXPLAIN_PROMPT + text)
+    except Exception:  # noqa: BLE001 - a failed explanation is a sentence, not a crash
+        answer = ""
+    explanation = answer.strip() if isinstance(answer, str) else ""
+    if not explanation:
+        return {
+            "status": "empty",
+            "text": "",
+            "source": "none",
+            "disclosure": list(EXPLAIN_DISCLOSURE),
+            "note": "The model did not answer, so nothing is explained.",
+        }
+    return {
+        "status": "draft",
+        "text": explanation,
+        "source": "model",
+        "disclosure": list(EXPLAIN_DISCLOSURE),
+        "note": "",
     }

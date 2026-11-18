@@ -907,6 +907,71 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     ]
 
 
+def _plugin_element_html(element: dict) -> str:
+    """One payload element as authored HTML, escaped at this boundary.
+
+    A declarative card names metric, text, list, checklist or status; the
+    coupled reading appends only those, so this is the whole vocabulary the
+    rendered dashboard draws. Anything else belongs to the SPA's own
+    renderer and is left to it rather than half-drawn here.
+    """
+    kind = element.get("kind")
+    if kind == "metric":
+        parts = [
+            '<p class="w-big">' + html.escape(str(element.get("value", ""))) + "</p>"
+        ]
+        label = str(element.get("label", "")).strip()
+        if label:
+            parts.append('<p class="w-note">' + html.escape(label) + "</p>")
+        return "".join(parts)
+    if kind == "text":
+        return '<p class="w-note">' + html.escape(str(element.get("text", ""))) + "</p>"
+    if kind == "status":
+        return '<p class="w-note">' + html.escape(str(element.get("text") or "")) + "</p>"
+    if kind == "list":
+        lines = []
+        title = str(element.get("title") or "").strip()
+        if title:
+            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
+        for row in element.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            text = " · ".join(
+                str(row.get(key) or "").strip()
+                for key in ("primary", "secondary", "meta")
+                if str(row.get(key) or "").strip()
+            )
+            if text:
+                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
+        return "".join(lines)
+    if kind == "checklist":
+        lines = []
+        title = str(element.get("title") or "").strip()
+        if title:
+            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
+        for item in element.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if text:
+                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
+        return "".join(lines)
+    return ""
+
+
+def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
+    """Attach the coupled reading to cards as whichever surface renders them.
+
+    Both surfaces call this, so a reading is never JSON-only: the same
+    sentence arrives through the API payload and through the authored HTML.
+    """
+    attach_cards(
+        cards,
+        build_insight_context(server, PreferenceStore(default_data_dir()).read()),
+    )
+    return cards
+
+
 def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
     """The plugin ids whose cards exist right now, in listing order.
 
@@ -968,10 +1033,7 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     # One reading per card, from the preferences the user set and the memory
     # the desk already holds. Appended here so every client of this payload
     # sees the same reading, and the cards themselves stay the plugin's own.
-    attach_cards(
-        plugin_cards,
-        build_insight_context(server, PreferenceStore(default_data_dir()).read()),
-    )
+    with_insight(server, plugin_cards)
     sources = live_sources(server)
     inbox = server.inbox  # type: ignore[attr-defined]
     # The layout the dashboard renders in: hidden cards are omitted from
@@ -1854,7 +1916,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         connected = sum(1 for s in live_sources(self.server) if s.status == STATUS_CONNECTED)
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is not None:
-            widgets += [self._plugin_widget(card) for card in plugins.widget_cards()]
+            widgets += [
+                self._plugin_widget(card)
+                for card in with_insight(self.server, plugins.widget_cards())
+            ]
         inbox = self.server.inbox  # type: ignore[attr-defined]
         skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
         page = pages.render_dashboard(
@@ -4323,22 +4388,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         payload = card.get("payload") or {}
         elements = payload.get("elements") if isinstance(payload, dict) else None
         if status == FRESH and elements:
-            parts = []
-            for element in elements:
-                if not isinstance(element, dict):
-                    continue
-                if element.get("kind") == "metric":
-                    parts.append('<p class="w-big">'
-                                 + html.escape(str(element.get("value", "")))
-                                 + "</p>")
-                    label = str(element.get("label", "")).strip()
-                    if label:
-                        parts.append('<p class="w-note">'
-                                     + html.escape(label) + "</p>")
-                elif element.get("kind") == "text":
-                    parts.append('<p class="w-note">'
-                                 + html.escape(str(element.get("text", "")))
-                                 + "</p>")
+            parts = [
+                _plugin_element_html(element)
+                for element in elements
+                if isinstance(element, dict)
+            ]
             body = "".join(parts) or (
                 '<p class="w-big">' + version + '</p><p class="w-note">'
                 "reading " + file_name + "</p>")
