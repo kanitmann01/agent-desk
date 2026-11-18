@@ -99,6 +99,12 @@ class SourceResult:
 
 def _result(state, reason="", human="", as_of="", source="",
             bindings=None, files=None, detail=None) -> SourceResult:
+    """Build a SourceResult, copying the mappings and lists handed to it.
+
+    The copies make the result independent of the caller's containers, and they
+    turn None into an empty dict or list, so every result has the same shape
+    whether or not the reader supplied files or details.
+    """
     return SourceResult(
         state=state,
         reason=reason,
@@ -113,10 +119,16 @@ def _result(state, reason="", human="", as_of="", source="",
 
 def _blank(reason: str, human: str, source: str = "", files=None,
            detail=None) -> SourceResult:
+    """Build a blank result: nothing to show, a stable reason, and no bindings.
+
+    ``as_of`` stays empty and no value is bound, which is the module's rule that a
+    missing source shows nothing rather than an invented zero.
+    """
     return _result("blank", reason, human, "", source, {}, files, detail)
 
 
 def _now_iso(ctx: SourceContext) -> str:
+    """Return the injected clock as an ISO 8601 string at whole-second precision."""
     return ctx.now.isoformat(timespec="seconds")
 
 
@@ -148,12 +160,23 @@ class _PermissionDenied(Exception):
     """A requested path that no declared read scope covers."""
 
     def __init__(self, declared: str, path: str) -> None:
+        """Record the declared path and the resolved path the reader tried to open.
+
+        Both are kept because the resulting blank names what the plugin asked for and
+        what was actually refused: that pair is what makes a scope miss diagnosable.
+        """
         super().__init__(f"not permitted: {path}")
         self.declared = declared
         self.path = path
 
 
 def _expand(path, ctx: SourceContext) -> Path:
+    """Substitute the path variables in a declaration and make it absolute.
+
+    ``${workspace}`` and ``${pluginData}`` are replaced literally, and a relative
+    path is taken from the workspace. Permission is not checked here and the path
+    is not resolved, so the check that follows sees the real target.
+    """
     text = str(path).replace("${workspace}", str(ctx.workspace_dir))
     text = text.replace("${pluginData}", str(ctx.data_dir))
     candidate = Path(text)
@@ -163,6 +186,11 @@ def _expand(path, ctx: SourceContext) -> Path:
 
 
 def _inside(path: Path, root) -> bool:
+    """Report whether ``path`` lies below ``root``.
+
+    Only ``root`` is resolved, so a caller that cares about symlinks passes an
+    already-resolved path — the readers resolve before they call this.
+    """
     try:
         Path(path).relative_to(Path(root).resolve())
         return True
@@ -182,6 +210,12 @@ def _permitted(path: Path, ctx: SourceContext) -> bool:
 
 
 def _resolve(path, ctx: SourceContext) -> Path:
+    """Expand, resolve and permission-check a declared path.
+
+    Returns the real path, or raises ``_PermissionDenied`` when the target is
+    outside the workspace and the plugin's data directory and no declared read
+    glob covers it.
+    """
     candidate = _expand(path, ctx).resolve()
     if not _permitted(candidate, ctx):
         raise _PermissionDenied(str(path), str(candidate))
@@ -217,6 +251,13 @@ def first_permitted_match(declared, ctx: SourceContext):
 
 
 def window_seconds(value, default: float = 86400.0) -> float:
+    """Convert a declared recency window into seconds.
+
+    Accepts the named windows (``daily``/``day``, ``weekly``/``week``,
+    ``monthly``/``month``) and the compact ``<n><h|d|w|m>`` form such as ``24h``
+    or ``2w``, with a month counted as 30 days. Anything unparsable returns
+    ``default`` rather than raising, so a typo cannot break a read.
+    """
     text = str(value or "").strip().lower()
     if text in ("daily", "day"):
         return 86400.0
@@ -233,6 +274,11 @@ def window_seconds(value, default: float = 86400.0) -> float:
 
 
 def _stale(path: Path, window, now: datetime) -> bool:
+    """Report whether the file's modification time is older than the declared window.
+
+    A file that cannot be stat'ed is not stale: it is missing or unreadable, and
+    the caller reports that cause instead of adding a second, misleading one.
+    """
     try:
         mtime = datetime.fromtimestamp(path.stat().st_mtime)
     except OSError:
@@ -241,6 +287,7 @@ def _stale(path: Path, window, now: datetime) -> bool:
 
 
 def _mtime_iso(path: Path) -> str:
+    """Return the file's modification time as an ISO 8601 string, or an empty string."""
     try:
         return datetime.fromtimestamp(path.stat().st_mtime).isoformat(
             timespec="seconds")
@@ -249,6 +296,11 @@ def _mtime_iso(path: Path) -> str:
 
 
 def _parse_ts(value):
+    """Parse an ISO 8601 timestamp, accepting a trailing ``Z``, or return None.
+
+    None means no date was recorded; callers treat that as undated rather than as
+    fresh or stale.
+    """
     text = str(value or "").strip()
     if not text:
         return None
@@ -308,6 +360,12 @@ def _relative_day(when, now: datetime) -> str:
 
 
 def _older_than_iso(value, window, now: datetime) -> bool:
+    """Report whether an ISO timestamp is older than the declared window.
+
+    An unparsable or empty value is never older: an undated reading is not
+    evidence of staleness. A naive timestamp is compared against a naive clock,
+    so a mix of aware and naive values does not raise.
+    """
     parsed = _parse_ts(value)
     if parsed is None:
         return False
@@ -320,6 +378,10 @@ def _older_than_iso(value, window, now: datetime) -> bool:
 
 
 def _number(value):
+    """Return a value as a float, or None when it is not numeric.
+
+    Booleans are not numbers here, so a checkbox never counts as 1.
+    """
     if isinstance(value, bool) or value is None:
         return None
     try:
@@ -329,6 +391,11 @@ def _number(value):
 
 
 def _scalar(value):
+    """Reduce a JSON scalar to the value the bindings carry.
+
+    Booleans pass through untouched, numeric text becomes an int when it is
+    integral and a float otherwise, and anything else is returned as given.
+    """
     if isinstance(value, bool):
         return value
     number = _number(value)
@@ -338,17 +405,29 @@ def _scalar(value):
 
 
 def _rows_from_mapping(mapping, limit=40):
+    """Turn a mapping into primary/secondary rows, in insertion order.
+
+    At most ``limit`` entries are kept, keys and values are stringified for
+    display, and ``meta`` is empty because a mapping has no third column.
+    """
     return [{"primary": str(key), "secondary": str(value), "meta": ""}
             for key, value in list(mapping.items())[:limit]]
 
 
 def _points(values, limit=30):
+    """Return a series' numeric values in order, keeping at most ``limit`` of them.
+
+    Non-numeric entries are dropped rather than zero-filled, so a gap makes a
+    shorter series instead of a fake reading. Integral values become ints so a
+    widget does not print ``3.0``.
+    """
     numbers = [_number(value) for value in values]
     numbers = [number for number in numbers if number is not None]
     return [int(n) if n.is_integer() else n for n in numbers[-limit:]]
 
 
 def _table_from_rows(rows):
+    """Render primary/secondary/meta row dicts as the three-column ``table`` binding."""
     return [[row.get("primary", ""), row.get("secondary", ""),
              row.get("meta", "")] for row in rows]
 
@@ -356,6 +435,14 @@ def _table_from_rows(rows):
 # ---- excel-watch (legacy binding path, plus a declared CSV fallback) ----
 
 def _excel_watch(source, ctx: SourceContext) -> SourceResult:
+    """Read a workbook through the host's Excel watcher, with an optional fallback.
+
+    The declared file glob is resolved and permission-checked first. Nothing
+    matching means the declared ``csv-watch`` fallback is read and reported as
+    ``coarse``; without one the result is blank with ``missing-file``. A workbook
+    the watcher does not call fresh becomes a blank carrying the watcher's own
+    reason and cause, so the card explains itself instead of showing a zero.
+    """
     declared = source.get("file", "")
     primary = _first_match(declared, ctx)
     if primary is None:
@@ -388,6 +475,13 @@ def _excel_watch(source, ctx: SourceContext) -> SourceResult:
 
 
 def _excel_fallback(source, fallback, ctx: SourceContext) -> SourceResult:
+    """Read the declared CSV fallback for a missing workbook and report it as coarse.
+
+    The fallback must itself be a ``csv-watch`` source naming a key and a value
+    column; anything else leaves the plain ``missing-file`` blank. When the
+    fallback cannot be read either, its reason is folded into this blank's detail
+    so the user sees the primary miss and the fallback failure together.
+    """
     columns = (fallback.get("keyColumn"), fallback.get("valueColumn"))
     if fallback.get("type") != "csv-watch" or not all(columns):
         return _blank(
@@ -423,6 +517,18 @@ def _excel_fallback(source, fallback, ctx: SourceContext) -> SourceResult:
 # ---- csv-watch ----
 
 def _csv_watch(source, ctx: SourceContext) -> SourceResult:
+    """Read a CSV file as one aggregate over a key and a value column.
+
+    The header is matched case-insensitively, and a declared column the file does
+    not have is a ``bad-schema`` blank listing the columns it does have. Rows whose
+    width differs from the header are skipped, which is what makes a result
+    ``partial``. With a ``dateColumn`` and a ``window``, the rows and the aggregate
+    are narrowed to the window while undated rows stay in, because dropping them
+    would lose data the file really holds.
+
+    Bindings carry ``value``, ``count``/``rowsSeen``, the row list, a three-column
+    ``table``, the ``points`` series of raw values, the file name and the header.
+    """
     declared = source.get("file", "")
     path = _first_match(declared, ctx)
     if path is None:
@@ -558,11 +664,24 @@ def _csv_watch(source, ctx: SourceContext) -> SourceResult:
 # ---- json-watch (mini selector grammar: $.a.b and $.a[*].n) ----
 
 def selector_valid(selector) -> bool:
+    """Report whether a JSON selector is one of the two supported forms.
+
+    ``$.a.b`` addresses one value and ``$.a[*].n`` addresses one field across an
+    array, with plain identifiers as keys. The grammar is closed on purpose: a
+    selector is a path, never an expression the file could steer.
+    """
     return isinstance(selector, str) and bool(
         _JSON_OBJECT.match(selector) or _JSON_LIST.match(selector))
 
 
 def _json_select(document, selector: str):
+    """Apply a selector to a parsed document and return ``(found, values)``.
+
+    For the list form the value is every object's field value, skipping items
+    that are not objects or lack the field; for the path form it is the node
+    itself. A path that does not exist returns ``(False, ...)`` instead of
+    raising.
+    """
     if _JSON_LIST.match(selector):
         path_part, field = selector.rsplit("[*].", 1)
         found, node = _json_walk(document, path_part)
@@ -576,6 +695,12 @@ def _json_select(document, selector: str):
 
 
 def _json_walk(document, path_part: str):
+    """Follow a selector's keys through nested objects and return ``(found, node)``.
+
+    The walk stops at the first missing key or non-object value, so a document
+    whose shape differs from the selector's yields not-found rather than an
+    exception.
+    """
     node = document
     for key in _JSON_PATH_PART.findall(path_part):
         if not isinstance(node, dict) or key not in node:
@@ -585,6 +710,13 @@ def _json_walk(document, path_part: str):
 
 
 def _json_watch(source, ctx: SourceContext) -> SourceResult:
+    """Read a JSON file through a selector and bind the selected value.
+
+    An object binds its entry count as the value and its entries as rows; an array
+    binds the sum of its numbers, or its length when nothing is numeric, and its
+    first 20 items as rows; a scalar binds itself with a one-row table. The file's
+    mtime decides ``stale`` against the declared window.
+    """
     selector = source.get("selector", "")
     if not selector_valid(selector):
         return _blank(
@@ -647,6 +779,16 @@ def _json_watch(source, ctx: SourceContext) -> SourceResult:
 # ---- markdown-watch ----
 
 def _markdown_watch(source, ctx: SourceContext) -> SourceResult:
+    """Read checkboxes from a markdown file and bind the open ones as the value.
+
+    When ``heading`` names one or more titles, only checkboxes under a heading that
+    contains one of them count; without it the whole file counts. A ``due:`` marker
+    inside an item's text becomes its ``due`` field and also sets the tone —
+    attention when something is overdue, warn when something is due today.
+
+    Bindings carry ``openCount``, ``doneCount``, the item list and ``nextDue`` when
+    an open item is dated.
+    """
     declared = source.get("file", "")
     path = _first_match(declared, ctx)
     if path is None:
@@ -723,6 +865,13 @@ def _markdown_watch(source, ctx: SourceContext) -> SourceResult:
 # ---- manual-metric ----
 
 def _manual_metric(source, ctx: SourceContext) -> SourceResult:
+    """Read a hand-maintained JSON metric from the plugin's data directory.
+
+    The file is an object with a numeric ``value`` plus optional ``unit``,
+    ``target``, ``updatedAt`` and a ``history`` list of ``{at, value}`` entries. The
+    history values become the ``points`` series and its last two give ``delta``; an
+    ``updatedAt`` older than ``cadence`` makes the read stale.
+    """
     declared = source.get("file") or "${pluginData}/manual.json"
     path = _resolve(declared, ctx)
     if not path.exists():
@@ -787,6 +936,15 @@ def _manual_metric(source, ctx: SourceContext) -> SourceResult:
 # ---- desk-state ----
 
 def _desk_state(source, ctx: SourceContext) -> SourceResult:
+    """Publish an injected host callback's state as a source result.
+
+    ``selector`` picks ``runtime``, ``audit`` or ``policy`` from an injected object —
+    either a dict of callables or an object with those attributes. A dict return
+    may set ``state``, ``bindings``, ``value``, ``status``, ``tone``, ``reason``,
+    ``human`` and ``asOf``; whatever it leaves out is filled in so the renderer
+    always finds the keys it needs. A non-dict value is bound as ``value`` with an
+    ``ok`` state.
+    """
     selector = str(source.get("selector", ""))
     if selector not in ("runtime", "audit", "policy"):
         return _blank("bad-schema",
@@ -847,6 +1005,16 @@ def _desk_state(source, ctx: SourceContext) -> SourceResult:
 # ---- compare ----
 
 def _compare(source, ctx: SourceContext) -> SourceResult:
+    """Compare the key sets of two local sources.
+
+    Both sides are read through ``read_source``, so each is subject to its own
+    permission and freshness rules, and a blank side makes the comparison blank
+    rather than an empty difference. Either side must be in ``LOCAL_TYPES``, which
+    is what stops a comparison from turning into an outbound call. The state
+    degrades in the order partial, stale, coarse, so the card reports the worst
+    thing that is true. Bindings carry the shared count, per-side counts, the
+    ``delta`` and the three key lists.
+    """
     left_source, right_source = source.get("left"), source.get("right")
     for side, spec in (("left", left_source), ("right", right_source)):
         if not isinstance(spec, dict):
@@ -915,6 +1083,12 @@ def _compare(source, ctx: SourceContext) -> SourceResult:
 
 
 def _compare_keys(result: SourceResult) -> set:
+    """Return the identity set of a source result.
+
+    Rows contribute their primary key, then ``items`` contribute their ``text``, then
+    a bare ``value`` counts as a one-element set. A result with none of these
+    compares as empty rather than failing.
+    """
     rows = result.bindings.get("rows")
     if isinstance(rows, list):
         return {str(row.get("primary", "")) for row in rows
@@ -931,6 +1105,16 @@ def _compare_keys(result: SourceResult) -> set:
 # ---- aggregate ----
 
 def _aggregate(source, ctx: SourceContext) -> SourceResult:
+    """Aggregate one value out of several installed plugins' own sources.
+
+    ``over`` names the plugin ids; when it is absent the aggregating plugin's own
+    ``requires`` list is used, which is the documented form. Each dependency is
+    read from its manifest's first widget data source with ``ctx.plugin_id``
+    swapped, so the dependency's own permissions apply. A dependency that is not
+    installed, contributes no widget, or reads blank makes the whole aggregate
+    blank, so a partial recipe never looks complete. The state degrades through
+    partial, stale and coarse in that order.
+    """
     dependencies = ctx.dependencies if isinstance(ctx.dependencies, dict) else {}
     over = source.get("over")
     if not isinstance(over, list) or not over:
@@ -1030,6 +1214,12 @@ def _aggregate(source, ctx: SourceContext) -> SourceResult:
 
 
 def _find_cycle(start: str, dependencies: dict):
+    """Return the dependency cycle reachable from ``start``, or None.
+
+    The path runs from the repeated node back to itself (``a, b, a``) so a message
+    can name the loop. Edges come from each manifest's ``requires`` list, and a
+    manifest that is not a dict is ignored.
+    """
     requires = {}
     for dep_id, manifest in dependencies.items():
         if isinstance(manifest, dict):
@@ -1040,6 +1230,12 @@ def _find_cycle(start: str, dependencies: dict):
     seen = set()
 
     def visit(node: str):
+        """Depth-first step: return the cycle if ``node`` closes one, otherwise None.
+
+        ``path`` is the current stack and ``seen`` the nodes already explored, so a
+        diamond-shaped dependency graph is walked once per node rather than once per
+        route to it.
+        """
         if node in path:
             return path[path.index(node):] + [node]
         if node in seen:
@@ -1059,6 +1255,12 @@ def _find_cycle(start: str, dependencies: dict):
 # ---- http-get ----
 
 def _host_allowed(url: str, patterns) -> bool:
+    """Report whether a URL matches one of the declared host patterns.
+
+    A pattern is either a bare host glob (``api.example.com``, ``*.example.com``) or
+    a full URL, whose host is matched as a glob and whose prefix also matches the
+    URL. The host is lowercased first; a URL without a host matches nothing.
+    """
     host = (urlsplit(url).hostname or "").lower()
     for pattern in patterns or ():
         pattern = str(pattern)
@@ -1074,6 +1276,21 @@ def _host_allowed(url: str, patterns) -> bool:
 
 
 def _http_get(source, ctx: SourceContext) -> SourceResult:
+    """Fetch one declared URL and bind what came back.
+
+    The source must name an absolute http(s) URL and its own allowlist, and the
+    plugin must also hold a granted network permission matching the host; missing
+    either is a blank, not a request. The timeout is clamped to 0.1 seconds up to
+    the module cap, the body is capped at ``maxBytes`` (never above the module
+    cap), and redirects and error statuses are reported as blanks rather than
+    followed.
+
+    The body is hashed and the hash stored per URL in the plugin's data directory,
+    so ``changed`` says whether this body differs from the previous one and
+    ``direction`` compares the new value with the old. A body that parses as JSON
+    binds its value and rows; anything else binds the first 200 characters of
+    text. An unwritable state file costs the comparison, never the read.
+    """
     url = str(source.get("url", ""))
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -1209,6 +1426,13 @@ def _http_get(source, ctx: SourceContext) -> SourceResult:
 # ---- pipeline-backed sources (delegate to the runner's existing code) ----
 
 def _pipeline(source, ctx: SourceContext) -> SourceResult:
+    """Read a pipeline-backed source through the runner's existing status callback.
+
+    Four types (calendar-read, mail-digest, outlook-brief, research-brief) keep
+    their original code path: the host hands the reader the same ``(status,
+    bindings)`` pair it already produced. A status other than ``fresh`` becomes a
+    blank carrying the pipeline's own reason and cause.
+    """
     source_type = str(source.get("type", ""))
     if ctx.pipeline_status is None:
         return _blank("pipeline-unavailable",

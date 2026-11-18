@@ -33,6 +33,7 @@ WORKBOOK_PATH_KEY = "workbook_path"
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the snapshot tables if they are missing."""
     conn.executescript(SCHEMA)
     conn.commit()
 
@@ -76,6 +77,7 @@ def load_reference(conn: sqlite3.Connection, source: str, now: float, window_s: 
 
 
 def snapshot_count(conn: sqlite3.Connection, source: str) -> int:
+    """Count how many distinct polls have been recorded for a source."""
     row = conn.execute(
         "SELECT COUNT(DISTINCT poll_ts) FROM snapshots WHERE source = ?", (source,)
     ).fetchone()
@@ -83,6 +85,7 @@ def snapshot_count(conn: sqlite3.Connection, source: str) -> int:
 
 
 def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    """Store a metadata value, replacing whatever the key held before."""
     with conn:
         conn.execute(
             "INSERT INTO meta (key, value) VALUES (?, ?)"
@@ -92,5 +95,6 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    """Return the stored value for a metadata key, or None when unset."""
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row[0] if row else None

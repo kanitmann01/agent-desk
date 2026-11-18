@@ -143,12 +143,24 @@ def match_strength(mention: str, target: str) -> str | None:
 
 
 def is_leading_name(shorter: list[str], longer: list[str]) -> bool:
+    """True when shorter is a strict token-for-token prefix of longer.
+
+    Both arguments are normalized token lists, so this is positional: "maya"
+    leads "maya chen", "chen" does not. Equal lengths are never a leading
+    name, which is what keeps a two-token name from matching itself weakly.
+    """
     if not shorter or len(shorter) >= len(longer):
         return False
     return all(longer[index] == token for index, token in enumerate(shorter))
 
 
 def strength_rank(strength: str) -> int:
+    """Compare match tiers: exact 3, typo 2, everything else 1.
+
+    A candidate keeps the best tier it reached across its canonical name and
+    aliases, so this ordering is what lets an exact alias hit outrank a typo
+    on the canonical.
+    """
     if strength == "exact":
         return 3
     if strength == "typo":
@@ -157,6 +169,12 @@ def strength_rank(strength: str) -> int:
 
 
 def types_compatible(incoming: str, existing: str) -> bool:
+    """Whether two entity types may name the same entity.
+
+    "other" matches any type in either direction: it is both the extractor's
+    default and its escape hatch for a name it could not classify, so treating
+    it as a mismatch would split one entity in two.
+    """
     return incoming == existing or incoming == "other" or existing == "other"
 
 
@@ -196,18 +214,50 @@ class EntityRepo:
     """
 
     def load(self) -> list[StoredEntity]:
+        """Every entity row, in id order.
+
+        Resolution scans this list rather than querying per mention, so a plain
+        list is the whole cost per pass; id order is what keeps a run
+        deterministic when two rows would answer a mention the same way.
+        """
         raise NotImplementedError
 
     def save(self, entity_id: int, canonical: str, aliases, entity_type: str) -> None:
+        """Replace one entity's canonical name, aliases and type wholesale.
+
+        The alias set passed in is complete and already deduped against the
+        canonical form, so an implementation stores it as given: there is no
+        merge with what the row held before.
+        """
         raise NotImplementedError
 
     def create(self, name: str, entity_type: str) -> int:
+        """Insert one entity and return the id it was stored under.
+
+        The id is the only handle the caller then has for saves and fact links,
+        so an implementation must return the row's real id; the name arrives
+        already display-folded and is stored as given.
+        """
         raise NotImplementedError
 
     def linked_fact_ids(self, entity_ids) -> dict[int, set[int]]:
+        """The fact ids each of these entities is mentioned in.
+
+        The map may leave out an id with no mentions — the co-occurrence winner
+        reads it with an empty-set default — so an implementation need not
+        materialize empty sets, and a missing key means "no links", never
+        "unknown".
+        """
         raise NotImplementedError
 
     def exact_ids(self, name: str) -> list[int] | None:
+        """Ids whose indexed names equal this one, or None when there is no index.
+
+        None is an answer, not a failure: it tells the create-entity guard to
+        consider every loaded entity, the only option a plaintext bank has. An
+        empty list claims the opposite — that no row matches — and means the
+        caller may skip the scan.
+        """
         return None
 
 

@@ -14,6 +14,7 @@ class ConsentStore:
     """The (plugin, scope) allow set; injectable, inert by nature."""
 
     def __init__(self) -> None:
+        """Start with nothing allowed; a pair only becomes allowed through `allow`."""
         self._allowed: set[tuple[str, str]] = set()
 
     def allow(self, plugin_id: str, scope: str) -> None:

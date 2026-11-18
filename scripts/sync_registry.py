@@ -26,6 +26,11 @@ from agentdesk.registry.install import tree_digest  # noqa: E402
 
 
 def _manifest(plugin_dir: Path) -> dict:
+    """Read one plugin folder's manifest as a dict, tolerating a broken one.
+
+    Folders with no readable manifest still get an index entry: id and name
+    default to the directory name, and the version defaults to 0.1.0.
+    """
     try:
         return json.loads((plugin_dir / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -33,6 +38,13 @@ def _manifest(plugin_dir: Path) -> dict:
 
 
 def _risk(manifest: dict) -> str:
+    """Classify a plugin by whether its manifest asks for network access.
+
+    Returns "medium" when the permissions block allows any network host and
+    "low" otherwise; a missing or malformed permissions block counts as no
+    network. It never returns the higher levels, which need a reviewed
+    manifest rather than one derived here.
+    """
     permissions = manifest.get("permissions", {})
     network = permissions.get("network", {}).get("allow", []) if isinstance(permissions, dict) else []
     if network:
@@ -41,6 +53,15 @@ def _risk(manifest: dict) -> str:
 
 
 def sync(registry_root: Path | str) -> dict:
+    """Rewrite registry/index.json from the plugin folders and return it.
+
+    Idempotent and in place. Display metadata is refreshed from each manifest;
+    a version the index does not carry appends a local release with the
+    current tree digest, an existing local release has its digest updated,
+    and an entry whose folder is gone is dropped. Releases from other sources
+    keep their pinned digest, so a client's pin survives a resync. The index
+    must already exist; a missing or unparseable one raises.
+    """
     root = Path(registry_root)
     plugins_dir = root / "plugins"
     index_path = root / "index.json"
@@ -95,6 +116,11 @@ def sync(registry_root: Path | str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Sync one registry root in place and print the plugin count.
+
+    --registry defaults to the checkout's registry/. Writes that registry's
+    index.json and returns 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", default=str(REPO_ROOT / "registry"))
     args = parser.parse_args(argv)

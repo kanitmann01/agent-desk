@@ -72,6 +72,11 @@ def render_elements(schema: dict, bindings: dict) -> list[dict]:
 
 
 def _string(value) -> str:
+    """Coerce a scalar binding value to display text.
+
+    None renders as an empty string, booleans as "true"/"false", and structured
+    values (dict/list) as an empty string: a widget shows text, not a payload.
+    """
     if value is None:
         return ""
     if isinstance(value, bool):
@@ -82,6 +87,12 @@ def _string(value) -> str:
 
 
 def _number(value):
+    """Coerce a numeric-looking value to an int or float.
+
+    Returns None when no number can be read, including for booleans, which
+    Python would otherwise accept as ints. Integer-looking strings become int so
+    whole counts keep their exact digits.
+    """
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
@@ -100,16 +111,30 @@ def _number(value):
 
 
 def _direction(value) -> str:
+    """Normalise a direction word to one of DIRECTIONS.
+
+    Anything unrecognised renders as "flat" rather than failing the element.
+    """
     text = _string(value).lower()
     return text if text in DIRECTIONS else "flat"
 
 
 def _tone(value) -> str:
+    """Normalise a tone word to one of TONES.
+
+    Anything unrecognised renders as "ok" rather than failing the element.
+    """
     text = _string(value).lower()
     return text if text in TONES else "ok"
 
 
 def _boolean(value) -> bool:
+    """Coerce a checklist flag to bool.
+
+    Strings count as true for "1", "true", "yes", "done" and "on", and numbers
+    count as true when nonzero. Everything else, including None, is false, so an
+    absent flag reads as not done.
+    """
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -120,6 +145,11 @@ def _boolean(value) -> bool:
 
 
 def _binding_name(element, key: str = "binding") -> str:
+    """Return the element's binding name, or an empty string when it has none.
+
+    The empty string is the sentinel for "unbound" downstream, which is why a
+    non-string value is dropped instead of being stringified.
+    """
     name = element.get(key)
     return name if isinstance(name, str) else ""
 
@@ -135,6 +165,12 @@ def _lookup(bindings: dict, name: str):
 
 
 def _with_optional(target: dict, element: dict, key: str) -> dict:
+    """Copy an optional string field from the schema element into the DTO.
+
+    The field is only emitted when the element declares it, so absent optional
+    fields stay absent instead of becoming empty ones. Returns the target so the
+    caller can keep building the same dict.
+    """
     if key in element:
         target[key] = _string(element.get(key))
     return target
@@ -146,6 +182,12 @@ def _with_optional(target: dict, element: dict, key: str) -> dict:
 
 
 def _render_metric(element, bindings) -> dict:
+    """Render one labelled value.
+
+    A bound value renders as state "ok"; a missing binding renders the label
+    with an empty value, state "blank" and a reason, so the card can show why it
+    is empty instead of claiming zero.
+    """
     name = _binding_name(element)
     value, found = _lookup(bindings, name)
     dto = {"kind": "metric"}
@@ -161,6 +203,11 @@ def _render_metric(element, bindings) -> dict:
 
 
 def _render_text(element, bindings) -> dict:
+    """Render literal text, or the value of a binding.
+
+    The presence of the "binding" key selects the bound form, even when the name
+    is unusable: an element that points at nothing is blank, not literal.
+    """
     if "binding" in element:
         name = _binding_name(element)
         value, found = _lookup(bindings, name)
@@ -182,6 +229,12 @@ def _render_text(element, bindings) -> dict:
 
 
 def _render_delta(element, bindings) -> dict:
+    """Render a change value together with its direction and window.
+
+    The direction is read from directionBinding when that resolves and otherwise
+    stays "flat"; window is the schema's free-text period label, passed through
+    as written.
+    """
     name = _binding_name(element)
     value, found = _lookup(bindings, name)
     dto = {"kind": "delta"}
@@ -201,6 +254,13 @@ def _render_delta(element, bindings) -> dict:
 
 
 def _render_progress(element, bindings) -> dict:
+    """Render progress toward a target.
+
+    Both value and target are emitted as numbers: the target comes from
+    targetBinding when declared, else from the literal target attribute. The
+    state is "ok" only when both exist; one missing side is "blank", and the
+    reason names which side is missing.
+    """
     name = _binding_name(element)
     raw_value, value_found = _lookup(bindings, name)
     value = _number(raw_value) if value_found else None
@@ -246,6 +306,12 @@ def _render_progress(element, bindings) -> dict:
 
 
 def _render_list(element, bindings) -> dict:
+    """Render rows of primary/secondary/meta items.
+
+    A row may be a dict or a bare string, which becomes the primary column. Any
+    other row type blanks the whole element, because dropping just that row would
+    silently misrepresent the data.
+    """
     name = _binding_name(element, "rowsBinding")
     rows, found = _lookup(bindings, name)
     dto = {"kind": "list"}
@@ -284,6 +350,12 @@ def _render_list(element, bindings) -> dict:
 
 
 def _render_table(element, bindings) -> dict:
+    """Render a column heading list and its cell rows.
+
+    Columns are echoed as text. Rows may be dicts, read as primary/secondary/
+    meta columns, or sequences, kept cell for cell; a malformed row blanks the
+    whole table.
+    """
     columns = element.get("columns")
     name = _binding_name(element, "rowsBinding")
     rows, found = _lookup(bindings, name)
@@ -331,6 +403,12 @@ def _render_table(element, bindings) -> dict:
 
 
 def _render_sparkline(element, bindings) -> dict:
+    """Render a nonempty numeric series with its minimum and maximum.
+
+    The bounds are computed over the points themselves. One non-numeric point
+    blanks the element rather than shortening the series, since a partial series
+    would show a shape the data does not have.
+    """
     name = _binding_name(element, "pointsBinding")
     points, found = _lookup(bindings, name)
     dto = {"kind": "sparkline"}
@@ -369,6 +447,11 @@ def _render_sparkline(element, bindings) -> dict:
 
 
 def _render_status(element, bindings) -> dict:
+    """Render a status line with its tone.
+
+    The tone comes from toneBinding when that resolves, and otherwise from the
+    literal tone attribute, defaulting to "ok".
+    """
     name = _binding_name(element)
     value, found = _lookup(bindings, name)
     dto = {"kind": "status"}
@@ -387,6 +470,11 @@ def _render_status(element, bindings) -> dict:
 
 
 def _render_timeline(element, bindings) -> dict:
+    """Render time/title/meta timeline items in binding order.
+
+    The order is the data's own order and is not sorted here; an item that is not
+    an object blanks the whole element.
+    """
     name = _binding_name(element, "itemsBinding")
     items, found = _lookup(bindings, name)
     dto = {"kind": "timeline"}
@@ -422,6 +510,11 @@ def _render_timeline(element, bindings) -> dict:
 
 
 def _render_checklist(element, bindings) -> dict:
+    """Render text/done/due checklist items.
+
+    done goes through the boolean coercion, so "yes", "done" and 1 all render as
+    ticked; due is free text and is not parsed as a date.
+    """
     name = _binding_name(element, "itemsBinding")
     items, found = _lookup(bindings, name)
     dto = {"kind": "checklist"}
@@ -562,6 +655,12 @@ def _contained(base: Path, relative: str) -> Path:
 
 
 def _load_json_object(path: Path, label: str) -> dict:
+    """Parse a file as a JSON object, raising PluginRenderError on any failure.
+
+    label names the document in the error message, which is the manifest-relative
+    name rather than the resolved path. A UTF-8 BOM is tolerated; a non-object
+    document is rejected, not coerced.
+    """
     try:
         text = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
@@ -576,6 +675,12 @@ def _load_json_object(path: Path, label: str) -> dict:
 
 
 def _first_ui_schema(base: Path, manifest: dict) -> dict:
+    """Return the first ui-schema document the manifest's widgets contribute.
+
+    Widgets are inspected in manifest order and non ui-schema renders are
+    skipped. The document path goes through the containment check, so a manifest
+    cannot point the renderer outside its own plugin directory.
+    """
     contributes = manifest.get("contributes")
     widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
     if isinstance(widgets, list):

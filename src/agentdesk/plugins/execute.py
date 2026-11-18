@@ -109,6 +109,12 @@ RESEARCH_WINDOW_NOTE = (
 
 
 def _delta_summary(delta: dict | None) -> str:
+    """Describe the snapshot delta as the one sentence a card shows.
+
+    None means there is no earlier snapshot yet, which is not the same as no
+    change: the first read says that changes show on the next refresh. Zero added
+    and zero removed is reported as no change in the last 24 hours.
+    """
     if delta is None:
         return "First snapshot taken; changes show on the next refresh."
     added = len(delta.get("added", []))
@@ -124,12 +130,22 @@ def _delta_summary(delta: dict | None) -> str:
 
 
 def _window_note(delta: dict | None) -> str:
+    """Say what the delta was compared against, as the card's footnote.
+
+    None means this snapshot is the baseline, so the note explains that the next
+    poll is the one that diffs.
+    """
     if delta is None:
         return "The first snapshot is the baseline; the next poll diffs against it."
     return "Compared with the snapshot from about 24 hours ago."
 
 
 def _iso(ts: float | None) -> str:
+    """Format a timestamp for a card as local ISO 8601 at whole seconds.
+
+    None formats the current time: the caller is stamping a read that is happening
+    now rather than reporting a time it does not have.
+    """
     if ts is None:
         return datetime.now().isoformat(timespec="seconds")
     return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
@@ -178,6 +194,7 @@ def _column_index(columns, name: str):
 
 
 def _cell(row, index):
+    """Return one cell of a row by column index, or None when the row has no such cell."""
     if index is None or index < 0 or index >= len(row):
         return None
     return row[index]
@@ -196,6 +213,12 @@ def _bucket_labels(bounds):
 
 
 def _bucket_index(days, bounds):
+    """Return the index of the first aging bound the age does not exceed.
+
+    An age above the last bound returns that bound's own index, so with the labels
+    ``_bucket_labels`` produces, the overflow rows count into the last closed
+    bucket and the open-ended final label stays empty.
+    """
     for index, bound in enumerate(bounds):
         if days <= bound:
             return index
@@ -222,6 +245,16 @@ class PluginWidgetRunner:
                  http_transport=None,
                  desk_state=None,
                  dependencies=None) -> None:
+        """Wire a runner to the workspace whose files the plugins read.
+
+        The collaborators are injection seams: ``adapters`` supplies the clock and the
+        Excel read seams, ``calendar``/``mail``/``research`` are the shared pipelines the
+        dashboard's own cards use, and ``http_transport``, ``desk_state`` and
+        ``dependencies`` stand in for the network, the host callbacks and the installed
+        manifests. Leaving any of them None is honest rather than broken: the affected
+        source reads blank and its card names what is missing. Nothing is attached,
+        polled or written here; that starts at ``attach``.
+        """
         self.workspace_dir = Path(workspace_dir)
         self._adapters = adapters
         self._interval_s = interval_s
@@ -315,6 +348,13 @@ class PluginWidgetRunner:
         return self._status_dict(self._read_pair(plugin_id)[0])
 
     def detach(self, plugin_id: str) -> None:
+        """Forget one plugin: stop its poller, close its store, drop its state.
+
+        Safe for a plugin that never attached. Closing the SQLite connection is
+        best-effort, because a detach runs on the way out of an uninstall and must not
+        raise; the plugin's data directory is left in place, since purging it is the
+        runtime's decision, not the runner's.
+        """
         watch = self._watches.pop(plugin_id, None)
         if watch is not None:
             watch.stop_polling()
@@ -341,6 +381,13 @@ class PluginWidgetRunner:
     # ---- observation ----
 
     def attached(self, plugin_id: str) -> bool:
+        """Report whether the runner holds any state for the plugin.
+
+        Any of the three registries counts: a polled watch, a pipeline-backed source, or
+        a declared source read through ``read_source``. An ``excel-watch`` whose file is
+        missing binds nothing and holds no entry, so it reports as not attached rather
+        than as a blank read.
+        """
         return (plugin_id in self._watches or plugin_id in self._pipelines
                 or plugin_id in self._sources)
 
@@ -398,6 +445,12 @@ class PluginWidgetRunner:
     # ---- source reads ----
 
     def _read_pair(self, plugin_id: str) -> "tuple":
+        """Read the plugin's declared source once and return ``(result, bindings)``.
+
+        The bindings are copied out of the result, so a caller cannot mutate the state
+        the result was built from. A plugin with no declared source reads an empty
+        declaration, which the reader answers as a blank rather than an error.
+        """
         source = self._sources.get(plugin_id) or {}
         result = self._read_source_for(plugin_id, source)
         return result, dict(result.bindings)
@@ -424,6 +477,12 @@ class PluginWidgetRunner:
         )
 
     def _read_globs(self, plugin_id: str) -> tuple:
+        """Return the manifest's declared read globs as a tuple of strings.
+
+        Only ``permissions.filesystem.read`` is consulted. An absent entry, or anything
+        there other than a list of strings, yields an empty tuple, which the reader
+        takes as no declared access and refuses paths accordingly.
+        """
         manifest = self._manifests.get(plugin_id) or {}
         permissions = manifest.get("permissions")
         filesystem = (permissions.get("filesystem")
@@ -435,21 +494,45 @@ class PluginWidgetRunner:
         return tuple(item for item in read_globs if isinstance(item, str))
 
     def _read_source_for(self, plugin_id: str, source: dict):
+        """Run one declared data source for a plugin under that plugin's own context.
+
+        Every read builds a fresh context, so the permission globs, data directory,
+        shared pipelines, desk callbacks and network allowlist all belong to this
+        plugin. The source type is copied into the result's detail so a card can name
+        the type even when the read comes back blank.
+        """
         source_type = str(source.get("type", ""))
         result = read_source(source, self._source_context(plugin_id))
         result.detail.setdefault("type", source_type)
         return result
 
     def _now(self) -> datetime:
+        """Return the runner's clock: the injected adapters' clock when there are adapters.
+
+        Reads that compare a row's date against a declared window go through this, so a
+        test can place the runner in time without patching ``datetime``.
+        """
         if self._adapters is not None:
             return datetime.fromtimestamp(self._adapters.clock())
         return datetime.now()
 
     def _excel_pair(self, plugin_id: str):
+        """Return the excel binding callback for a plugin, or None when it has no watch.
+
+        The returned callable takes a source declaration and returns ``(status,
+        bindings)``. It reads the watch's live status first, so the declared columns are
+        only interpreted for a fresh read.
+        """
         if plugin_id not in self._watches:
             return None
 
         def pair(source):
+            """Read the watch and bind the workbook, or report why it cannot be bound.
+
+            ``status`` is the probe-shaped dict here, not a ``SourceResult``; a status other
+            than fresh returns it with no bindings, so an amber card cannot show numbers
+            left over from an older read.
+            """
             raw = self._watches[plugin_id].status()
             status = self._status_from_raw(raw)
             if status["status"] != "fresh":
@@ -460,6 +543,12 @@ class PluginWidgetRunner:
         return pair
 
     def _excel_attention(self, reason: str, cause: str, raw: dict) -> dict:
+        """Build the attention status for a workbook the runner cannot bind.
+
+        ``reason`` is the machine-facing state and ``cause`` the sentence the user
+        reads. ``checked_at`` comes from the watch's last successful poll, so an
+        unbindable workbook still shows when it was last good.
+        """
         return {
             "status": "attention",
             "cause": cause,
@@ -630,11 +719,24 @@ class PluginWidgetRunner:
         return status, base
 
     def _pipeline_pair(self, plugin_id: str):
+        """Return the pipeline status callback for a plugin, or None when it backs none.
+
+        The callback ignores the source it is handed and reads the plugin's pipeline
+        live; ``read_source`` calls it once per read, which is what keeps a card's
+        status and its values from describing two different reads.
+        """
         if plugin_id not in self._pipelines:
             return None
         return lambda source_type: self._pipeline_status(plugin_id)
 
     def _dependency_map(self) -> dict:
+        """Return the installed-manifest map that aggregate sources read through.
+
+        ``dependencies`` may be a mapping or a callable returning one, so the runner can
+        follow manifests that change while it runs. A callable that raises, or a value
+        that is not a dict, reads as no dependencies: the aggregate then reports its
+        dependency as missing instead of the runner failing.
+        """
         provider = self._dependency_provider
         if callable(provider):
             try:
@@ -645,6 +747,12 @@ class PluginWidgetRunner:
         return provider if isinstance(provider, dict) else {}
 
     def _network_allow(self, plugin_id: str) -> "tuple":
+        """Return the host allowlist a plugin was granted for outbound reads.
+
+        It comes from the manifest's ``optionalPermissions.network.allow``, present only
+        when the user accepted that permission. Without it the tuple is empty and an
+        ``http-get`` source reads blank instead of making a request.
+        """
         manifest = self._manifests.get(plugin_id) or {}
         optional = manifest.get("optionalPermissions")
         network = optional.get("network") if isinstance(optional, dict) else None
@@ -653,6 +761,14 @@ class PluginWidgetRunner:
                      if isinstance(item, str))
 
     def _status_dict(self, result) -> dict:
+        """Convert a source result into the probe-shaped status dict.
+
+        Blank is the only state that becomes ``attention``: stale, coarse and partial
+        reads are still shown, with their state kept in ``state`` so the card can say
+        what is wrong with them. ``checked_at`` falls back to now when the read
+        recorded no time, and ``file`` is the first matched file's name rather than
+        its path, because the status is what a card displays.
+        """
         status = "attention" if result.state == "blank" else "fresh"
         out = {
             "status": status,
@@ -668,6 +784,12 @@ class PluginWidgetRunner:
         return out
 
     def _source_envelope(self, plugin_id: str, result) -> dict:
+        """Say where a payload's values came from, beside the values themselves.
+
+        The envelope carries the source type, the bound ``value``, the read time, the
+        state and reason, and the files read, so a rendered element can be traced to
+        the read behind it even when the card is showing stale or coarse data.
+        """
         source = self._sources.get(plugin_id) or {}
         return {
             "type": str(source.get("type", result.detail.get("type", ""))),
@@ -681,15 +803,31 @@ class PluginWidgetRunner:
         }
 
     def start_polling(self, plugin_id: str) -> None:
+        """Start the plugin's background poller, when it has one.
+
+        Pipeline-backed and declared-file sources have no poller, so this does nothing
+        for them: their values are read on demand.
+        """
         watch = self._watches.get(plugin_id)
         if watch is not None:
             watch.start_polling()
 
     def start_all_polling(self) -> None:
+        """Start the poller of every attached watch.
+
+        Only ``excel-watch`` sources have one, so the on-demand sources are untouched.
+        Calling this after per-plugin ``start_polling`` starts the same pollers again.
+        """
         for watch in self._watches.values():
             watch.start_polling()
 
     def stop_all(self) -> None:
+        """Detach every attached plugin, stopping pollers and closing their stores.
+
+        The registry is copied first, so detaching while iterating is safe. Plugin data
+        directories are left on disk: this stops the runner reading them, it does not
+        remove what a plugin wrote.
+        """
         for plugin_id in list(self._watches):
             self.detach(plugin_id)
 
@@ -738,6 +876,12 @@ class PluginWidgetRunner:
                 "source": self._source_envelope(plugin_id, result)}
 
     def _load_ui_schema(self, base: Path, render: dict) -> dict | None:
+        """Load the widget's ui-schema document out of the plugin's version directory.
+
+        Only a ``.json`` file is read. A missing, unreadable or non-object document
+        returns None, which the runtime reads as nothing to render rather than as an
+        error.
+        """
         name = str(render.get("file", ""))
         if not name.endswith(".json"):
             return None
@@ -748,6 +892,13 @@ class PluginWidgetRunner:
         return document if isinstance(document, dict) else None
 
     def _bindings(self, status: dict) -> dict:
+        """Return the binding values every excel card carries before any column is mapped.
+
+        Counts come from the watch's delta and ``direction`` compares added with
+        removed, so a card can speak of change without arithmetic of its own. ``value``
+        and ``rowsSeen`` start as the row count and are replaced by the column-mapped
+        read when the manifest declares columns.
+        """
         delta = status.get("delta")
         file_name = status.get("file", "")
         added = len(delta.get("added", [])) if delta else 0
@@ -1002,6 +1153,14 @@ class PluginWidgetRunner:
                 "checked_at": _iso(None)}, values
 
     def _status_from_raw(self, raw: dict) -> dict:
+        """Convert a watch's raw status into the probe-shaped status dict.
+
+        Only ``healthy`` and ``first`` count as fresh; anything else becomes attention
+        carrying the watch's cause, falling back to the state name and then to a
+        generic sentence, so a card is never silent about why. ``path`` is reduced to a
+        file name, and ``delta`` is passed through only when present, because an absent
+        delta and an empty one mean different things.
+        """
         state = str(raw.get("state", ""))
         fresh = state in ("healthy", "first")
         cause = ""
@@ -1022,7 +1181,17 @@ class PluginWidgetRunner:
         return out
 
     def _watch_status(self, plugin_id: str) -> dict:
+        """Return the probe-shaped status of an attached watch.
+
+        Raises ``KeyError`` when the plugin has no watch, so it is only for plugins that
+        ``attached`` accepted.
+        """
         return self._status_from_raw(self._watches[plugin_id].status())
 
     def _attention(self, cause: str) -> dict:
+        """Build a not-yet-run status whose ``cause`` is the reason the user is shown.
+
+        No ``state`` is reported: this describes the runner's own refusal, not a state
+        the data source produced.
+        """
         return {"status": "attention", "cause": cause, "checked_at": _iso(None)}

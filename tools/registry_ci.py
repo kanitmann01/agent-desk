@@ -21,6 +21,14 @@ from agentdesk.registry.ci import review_registry_changes  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Review a PR's changed registry plugins and return the CI exit code.
+
+    --plugins is a comma-separated list of directories and may be empty;
+    --base-index is optional, and a path that does not exist is treated as no
+    base, which skips the append-only history check instead of failing the
+    run. Prints one "FAIL <reason>" line per rejection, then a final verdict:
+    0 for REGISTRY-CI PASS, 1 when any check failed.
+    """
     parser = argparse.ArgumentParser(prog="registry-ci")
     parser.add_argument("--registry", required=True, type=Path,
                         help="registry root (holds index.json)")

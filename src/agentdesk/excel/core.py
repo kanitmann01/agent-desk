@@ -59,9 +59,15 @@ class Delta:
 
     @property
     def is_empty(self) -> bool:
+        """Report whether the poll found no added and no removed rows."""
         return not self.added and not self.removed
 
     def to_json(self) -> dict:
+        """Render the delta as the payload the API returns.
+
+        Added and removed are lists of row hashes, while unchanged is the count of
+        rows that stayed the same, not a list of them.
+        """
         return {
             "added": self.added,
             "removed": self.removed,
@@ -108,10 +114,16 @@ class PollResult:
     rows_seen: int = 0
 
     def __post_init__(self) -> None:
+        """Reject a poll state that is not one of the known ones.
+
+        Raises:
+            ValueError: the state is not in POLL_STATES.
+        """
         if self.state not in POLL_STATES:
             raise ValueError(f"unknown poll state: {self.state!r}")
 
     def to_json(self) -> dict:
+        """Render the poll result as JSON, including the delta when there is one."""
         return {
             "state": self.state,
             "cause": self.cause,

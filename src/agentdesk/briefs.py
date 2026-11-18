@@ -21,6 +21,11 @@ LEAD_HOURS = 1.0
 
 
 def _match(names: tuple[str, ...], text: str) -> bool:
+    """Return True when any of the names appears in text, ignoring case.
+
+    Names of two characters or fewer are skipped: a substring that short
+    matches ordinary prose and would connect a meeting to unrelated text.
+    """
     lowered = text.lower()
     return any(name.lower() in lowered for name in names if len(name) > 2)
 
@@ -58,6 +63,11 @@ def _followups(conn, names: tuple[str, ...]) -> list[str]:
 
 
 def _research_lines(activity: ActivityLog, names: tuple[str, ...]) -> list[str]:
+    """Return "You asked:" lines for research turns that name an attendee.
+
+    Only the newest 200 activity entries are searched, oldest first, and each
+    line appears once.
+    """
     out: list[str] = []
     for entry in activity.entries(200):
         if entry["kind"] not in ("research", "assistant"):
@@ -110,6 +120,12 @@ def generate_briefs(bridge, inbox: InboxStore, activity: ActivityLog, clock, lea
 
 
 def _has_brief(inbox: InboxStore, meeting_id: str) -> bool:
+    """Return True when a card already carries this meeting's id.
+
+    Meta is free-form, so the test is a substring search of the serialized
+    meta rather than a field read. Snoozed and dismissed cards count: hiding
+    a brief for an hour must not mint a twin of it.
+    """
     needle = f'"meetingId": "{meeting_id}"'
     # Snoozed briefs included: hiding one for an hour must not mint a twin.
     for card in inbox.waiting(include_snoozed=True) + inbox.dismissed():

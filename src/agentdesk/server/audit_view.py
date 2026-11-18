@@ -47,6 +47,11 @@ def word_for(action: str) -> str:
 
 
 def when_text(ts: float) -> str:
+    """A stored audit timestamp as local wall-clock time, to the second.
+
+    The store keeps epoch seconds; the display is local because a reader compares the
+    trail against their own clock.
+    """
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -71,6 +76,11 @@ def kind_counts(entries: list[dict]) -> str:
 
 
 def _rows(entries: list[dict]) -> str:
+    """The trail table for one page of entries, in the order given.
+
+    Every dynamic value is escaped and detail is cut at 200 characters. There is no
+    empty state: the caller decides what to render when the list is empty.
+    """
     body = []
     for entry in entries:
         action = str(entry.get("action", ""))
@@ -107,6 +117,11 @@ def _rows(entries: list[dict]) -> str:
 
 
 def _questions(questions: list[dict]) -> str:
+    """The questions table, newest first, or a one-line empty state.
+
+    The activity log returns its rows oldest first, so the list is reversed here. The
+    empty state keeps the caller's section renderable before anything has been asked.
+    """
     if not questions:
         return (
             "<p class='empty'>Nothing asked yet. Research and assistant "

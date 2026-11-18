@@ -183,6 +183,13 @@ def normalize_extracted_facts(value) -> list[CandidateFact]:
 
 
 def _normalize_fact(item) -> CandidateFact:
+    """One validated candidate: trimmed text, checked kind, parsed occurrence.
+
+    Raises ExtractionFailed, and therefore writes nothing, for a non-object, a
+    missing or blank text, a text over MAX_FACT_CHARS, a kind outside
+    world/experience, a non-string occurrenceTime, or a bad entity list. An
+    absent occurrenceTime stays None rather than defaulting to now.
+    """
     if not isinstance(item, dict):
         raise ExtractionFailed("Each fact must be an object. Nothing was written.")
     text = item.get("text")
@@ -231,6 +238,13 @@ def _parse_occurrence(value: str) -> float:
 
 
 def _normalize_entities(value) -> tuple[tuple[str, str], ...]:
+    """Validated (name, type) pairs, in the order the reply listed them.
+
+    None means no entities and yields an empty tuple; any other non-list, or a
+    list holding something without a non-blank name and a type from
+    ENTITY_TYPES, raises ExtractionFailed before anything is written. Names are
+    trimmed; duplicates are kept as given rather than folded.
+    """
     if value is None:
         return ()
     if not isinstance(value, list):
@@ -325,6 +339,11 @@ class EndpointExtractor:
     """
 
     def __init__(self, llm) -> None:
+        """Bind the prompt-to-text callable; nothing is called here.
+
+        last_request_bytes starts at zero and only means anything once an
+        extract call has set it.
+        """
         self._llm = llm
         self.last_request_bytes = 0
 
@@ -335,6 +354,15 @@ class EndpointExtractor:
         context: str = "",
         mentioned_at: str | None = None,
     ) -> list[CandidateFact]:
+        """One extraction call: the system prompt, then the donor's user message.
+
+        Returns candidates that still need the retain filters applied; this
+        method writes nothing. Raises ExtractorUnavailable when the callable
+        fails at all (LlmUnavailable keeps its pinned cause, any other exception
+        becomes the generic one) and ExtractionFailed when the reply cannot be
+        parsed or validated. last_request_bytes is set before the call, so a
+        failed call still reports the prompt size it sent.
+        """
         prompt = EXTRACTION_SYSTEM_PROMPT + "\n\n" + extraction_user_message(
             content, speaker=speaker, context=context, mentioned_at=mentioned_at
         )

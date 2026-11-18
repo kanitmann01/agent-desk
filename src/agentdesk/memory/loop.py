@@ -77,9 +77,21 @@ class CaptureSettings:
     channels: frozenset[str] = frozenset(channel for channel, _l, _k in CHANNELS)
 
     def captures(self, channel: str) -> bool:
+        """Whether capture runs on this channel: the master switch and the
+        channel's own switch both on.
+
+        An id outside CHANNELS is off, because only those ids can ever be in
+        the set.
+        """
         return self.enabled and channel in self.channels
 
     def to_json(self) -> dict:
+        """The Memory page's shape: the two switches and one row per channel.
+
+        Every channel in CHANNELS is listed even when the master switch is off,
+        so the page can draw the per-channel switches without knowing the
+        roster; the keys are the camelCase ones the client reads.
+        """
         return {
             "enabled": self.enabled,
             "autoApprove": self.auto_approve,
@@ -157,6 +169,12 @@ def _names_in(sentence: str) -> tuple[tuple[str, str], ...]:
     run: list[str] = []
 
     def flush() -> None:
+        """Close the current capitalized run as one name, if it is one.
+
+        The run is trimmed of trailing periods, refused when it is a common
+        word (pronoun, month, weekday, filler), typed "org" when it ends like a
+        company name, and skipped when that name is already in the list.
+        """
         if run:
             name = " ".join(run).strip(".")
             if name and name.lower() not in _NOT_NAMES:
@@ -289,19 +307,42 @@ class SummaryFailed(Exception):
 
 
 def _when(fact: Fact) -> float:
+    """The instant a fact is ordered by: its occurrence, else its creation.
+
+    A dated fact sorts by when the thing happened and an undated one by when it
+    was recorded, so "we met Tuesday" does not outrank a fact written just now
+    simply because it was extracted later.
+    """
     return fact.occurrence_ts if fact.occurrence_ts is not None else fact.created_ts
 
 
 def newest_first(facts: Iterable[Fact]) -> list[Fact]:
+    """The facts newest first by occurrence-or-creation, then creation, then id.
+
+    The id tiebreak makes the order total, so two facts sharing an instant
+    always sort alike and an observation's text does not depend on the order the
+    rows happened to arrive in.
+    """
     return sorted(facts, key=lambda fact: (_when(fact), fact.created_ts, fact.id), reverse=True)
 
 
 def _day(fact: Fact) -> str:
+    """The fact's date as "Nov 18", in the process's local time zone.
+
+    Local rather than UTC because this is display text for the reader, and it is
+    never compared or stored.
+    """
     moment = datetime.fromtimestamp(_when(fact))
     return f"{moment:%b} {moment.day}"
 
 
 def _sentence(text: str) -> str:
+    """The text as one line that ends in sentence punctuation.
+
+    Whitespace is collapsed, trailing separators dropped, and a period appended
+    when the text ended in none, so a fact pasted into a summary never runs into
+    the next sentence.
+    """
     text = " ".join(text.split()).rstrip(";,: ")
     return text if text.endswith((".", "!", "?")) else text + "."
 
@@ -345,11 +386,23 @@ class EndpointSummarizer:
     `last_request_bytes` and `calls` feed the audit row."""
 
     def __init__(self, llm) -> None:
+        """Bind the prompt-to-text callable; no call is made here.
+
+        Both counters start at zero and accumulate for the life of the object:
+        calls counts requests, last_request_bytes the prompt bytes sent in
+        total, which is what the audit row reports as the cost of a pass.
+        """
         self._llm = llm
         self.last_request_bytes = 0
         self.calls = 0
 
     def prompt(self, name: str, facts: list[Fact]) -> str:
+        """The summary prompt for one entity, one "id | date | text" line per fact.
+
+        The facts are rendered in the order given: no ordering happens here, so
+        the caller is responsible for the newest-first list the instructions
+        assume.
+        """
         lines = "\n".join(
             f"{fact.id} | {_day(fact)} | {' '.join(fact.text.split())}"
             for fact in facts
@@ -357,6 +410,15 @@ class EndpointSummarizer:
         return SUMMARY_PROMPT.format(name=name, lines=lines)
 
     def __call__(self, name: str, facts: list[Fact]) -> Summary:
+        """One summarizer call: a Summary, or SummaryFailed and nothing written.
+
+        The prompt shows at most MAX_SUMMARY_INPUT_FACTS facts while the basis
+        records the newer MAX_CONSOLIDATED_FACTS, so a cited id must be one of
+        the shown facts; ids outside that set are dropped, and a reply citing
+        none falls back to the whole basis. Any endpoint exception, empty text or
+        text over MAX_SUMMARY_CHARS raises, and the caller writes the rules'
+        observation instead.
+        """
         ordered = newest_first(facts)
         basis = ordered[:MAX_CONSOLIDATED_FACTS]
         shown = ordered[:MAX_SUMMARY_INPUT_FACTS]
@@ -394,6 +456,12 @@ Summarize = Callable[[str, list[Fact]], Summary]
 
 
 def entity_scope(entity_id: int) -> str:
+    """The observation scope string for an entity: "entity:<id>".
+
+    Observations are looked up by scope, so this prefix is the namespace that
+    keeps an entity-derived observation apart from every other scope a write
+    might use.
+    """
     return f"{ENTITY_SCOPE_PREFIX}{int(entity_id)}"
 
 
@@ -405,10 +473,21 @@ class EntityBasis:
 
     @property
     def scope(self) -> str:
+        """The observation scope this entity's observation is stored under.
+
+        In phase 4 the scope is the observation's identity: an entity keeps at
+        most one observation, and this string is how a later run finds it again.
+        """
         return entity_scope(self.entity_id)
 
     @property
     def basis(self) -> frozenset[int]:
+        """The standing fact ids the observation is built from.
+
+        A frozenset rather than a list because freshness compares it by value:
+        the same facts in another order are the same basis, so a reordering does
+        not rewrite the observation.
+        """
         return frozenset(fact.id for fact in self.facts)
 
 
@@ -474,6 +553,13 @@ def _observation_state(memory, kept: list[EntityBasis], all_ids: list[int]):
 
 
 def _is_fresh(entry: EntityBasis, by_scope, marks, stale) -> tuple[bool, str | None]:
+    """(fresh, method) for one entity in phase 4: whether its observation stands.
+
+    Fresh requires exactly one observation at the entity's scope, that
+    observation not flagged stale, and the basis recorded for it equal to
+    entry.basis. The second element is the method that observation was written
+    with, None when there is no observation to read one from.
+    """
     existing = by_scope.get(entry.scope, [])
     if len(existing) != 1 or existing[0] in stale:
         return False, None
@@ -735,6 +821,12 @@ MAX_WORKBOOK_COLUMNS = 3
 
 
 def _cell(value) -> str:
+    """One workbook cell as display text: blank for None, an integral float
+    without its trailing ".0", and runs of whitespace collapsed.
+
+    The text is quoted into a fact verbatim, so a cell that reads "3" and not
+    "3.0" is the difference between a sentence and a number dump.
+    """
     if value is None:
         return ""
     if isinstance(value, float) and value.is_integer():
@@ -752,12 +844,25 @@ def workbook_candidates(header: list, added: list, removed: list) -> list[Candid
     head_key = [cell.lower() for cell in columns]
 
     def is_header(row) -> bool:
+        """True when the row's cells equal the header's, case-insensitively.
+
+        A delta list can repeat the header row; read as data it would become a
+        row named after the first column title.
+        """
         return [_cell(cell).lower() for cell in row] == head_key
 
     def name_of(row) -> str:
+        """The row's name: its first cell, blank for an empty row.
+
+        The name is the fact's subject and the entity it is filed under, so a
+        row without one is skipped instead of becoming a fact about nothing.
+        """
         return _cell(row[0]) if row else ""
 
     def column(index: int) -> str:
+        """The header label for a column, or "Column N" when the header is
+        shorter than the row or that cell is blank.
+        """
         return columns[index] if index < len(columns) and columns[index] else f"Column {index + 1}"
 
     old_rows = {name_of(row): row for row in removed if row and not is_header(row) and name_of(row)}
@@ -844,17 +949,32 @@ class RemovalPlan:
         return {scope: summary for scope, summary in self.after.values()}
 
     def to_json(self, memory) -> dict:
+        """The removal dialog's preview payload, in the keys the client reads.
+
+        Rows are looked up in memory at call time, so an id that has since gone
+        is silently omitted instead of breaking the preview. This is display
+        data only: what executes is the plan itself, not this dict.
+        """
         facts = {fact.id: fact for fact in memory.all()}
         observations = {obs.id: obs for obs in memory.observations()}
         entities = {entity.id: entity for entity in memory.entities()}
 
         def fact_rows(ids):
+            """id-and-text rows for the facts that still exist."""
             return [{"id": i, "text": facts[i].text} for i in ids if i in facts]
 
         def obs_rows(ids):
+            """id-and-text rows for the observations that still exist."""
             return [{"id": i, "text": observations[i].text} for i in ids if i in observations]
 
         def updated_rows(ids):
+            """Rows for observations that change, with the previewed text.
+
+            "after" and "afterMethod" come from the plan's own preview and stay
+            None when it holds no rewritten text for that id, which is how the
+            dialog separates "will be rewritten when it is removed" from "the
+            new wording is known".
+            """
             rows = []
             for i in ids:
                 if i not in observations:
@@ -868,6 +988,7 @@ class RemovalPlan:
             return rows
 
         def entity_rows(ids):
+            """id-and-name rows for the entities that still exist."""
             return [{"id": i, "name": entities[i].canonical_name} for i in ids if i in entities]
 
         return {
@@ -1013,6 +1134,11 @@ class RemovalResult:
     created_observation_ids: tuple[int, ...] = ()
 
     def to_json(self) -> dict:
+        """The removal's effect as the route reports it: ids only, per category.
+
+        No text and no dump: the snapshot that makes undo possible stays on the
+        object and is never serialized to the client.
+        """
         return {
             "facts": list(self.fact_ids),
             "observationsRemoved": list(self.observations_removed),
@@ -1074,17 +1200,29 @@ class UndoBuffer:
     the removed text is gone for good."""
 
     def __init__(self, clock: Callable[[], float], window_s: float = UNDO_WINDOW_S) -> None:
+        """Take the clock that ages entries and the undo window, in seconds.
+
+        The clock is injected so a test can expire an entry without sleeping.
+        Held removals live in this process only, so a restart loses every undo.
+        """
         self.clock = clock
         self.window_s = window_s
         self._held: dict[str, _Held] = {}
         self._lock = threading.Lock()
 
     def _expire(self) -> None:
+        """Drop every entry whose window has closed. The caller holds the lock."""
         now = self.clock()
         for token in [t for t, held in self._held.items() if held.expires_ts <= now]:
             del self._held[token]
 
     def hold(self, result: RemovalResult, label: str) -> tuple[str, float]:
+        """Keep one removal for undo; returns (token, expiry in epoch seconds).
+
+        Expired entries are swept first, so the buffer holds no more than the
+        removals made inside one window. The token is random and is the only
+        handle to the dump: it cannot be reconstructed from the removal.
+        """
         with self._lock:
             self._expire()
             token = secrets.token_urlsafe(12)
@@ -1093,6 +1231,11 @@ class UndoBuffer:
             return token, expires
 
     def take(self, token: str) -> _Held | None:
+        """Remove and return the held removal, or None when unknown or expired.
+
+        Popping makes an undo single-use: taking the same token twice cannot
+        restore the same rows again.
+        """
         with self._lock:
             self._expire()
             return self._held.pop(token, None)
@@ -1111,16 +1254,31 @@ class PreviewCache:
     endpoint is not asked twice for the same facts). Process memory only."""
 
     def __init__(self, clock: Callable[[], float], ttl_s: float = 300.0) -> None:
+        """Take the clock that ages entries and how long a preview stays usable.
+
+        One entry per (target type, target id), in process memory only: a restart
+        means the next removal simply writes the rules' text.
+        """
         self.clock = clock
         self.ttl_s = ttl_s
         self._plans: dict[tuple[str, int], tuple[float, dict[str, Summary]]] = {}
         self._lock = threading.Lock()
 
     def put(self, plan: RemovalPlan) -> None:
+        """Record this plan's previewed texts under its target.
+
+        A later plan for the same target replaces the earlier one, so the removal
+        always writes the text the user read last.
+        """
         with self._lock:
             self._plans[(plan.target_type, plan.target_id)] = (self.clock(), plan.planned())
 
     def take(self, target_type: str, target_id: int) -> dict[str, Summary] | None:
+        """Consume the preview for this target, or None when there is none.
+
+        Single-use: the entry is popped, and one older than ttl_s counts as
+        absent. Expired entries are swept on the way out.
+        """
         with self._lock:
             entry = self._plans.pop((target_type, int(target_id)), None)
             now = self.clock()

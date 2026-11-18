@@ -21,6 +21,13 @@ _MAX_ROWS = 5
 
 
 def build_suggestion_request(*, job, sheet, headers, rows, headers_only, path) -> tuple[dict, str]:
+    """Build the suggestion payload and the disclosure sentence that goes with it.
+
+    The file path is dropped on purpose: only the job, the sheet name, the headers and
+    at most five rows travel, and rows are popped from the end until the encoded
+    request fits in 8 KiB. ``headers_only`` empties the rows and pairs the request with
+    the headers-only sentence, so the disclosure always matches what was kept.
+    """
     del path  # the path is never part of the request
     kept = [] if headers_only else [list(row) for row in list(rows or [])[:_MAX_ROWS]]
     request = {
@@ -78,6 +85,11 @@ def heuristic(headers: list, rows: list) -> dict:
 
 
 def _number(value):
+    """Parse a cell as a float for the variance scoring, or None when it is not a number.
+
+    Booleans are rejected before the numeric branch so a flag cell does not read as 1;
+    strings lose their separators and a leading dollar sign first.
+    """
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
@@ -92,6 +104,11 @@ def _number(value):
 
 
 def _variance(values: list) -> float:
+    """Population variance of the values, and 0.0 for fewer than two.
+
+    The divisor is the count, not count minus one, so columns with different numbers
+    of readable cells stay comparable.
+    """
     if len(values) < 2:
         return 0.0
     mean = sum(values) / len(values)
@@ -99,6 +116,12 @@ def _variance(values: list) -> float:
 
 
 def _label_index(headers, rows, value_index: int) -> int:
+    """Pick the column that names rows: the one with the fewest distinct texts.
+
+    The value column is skipped, and a column whose cells parse as numbers does not
+    count as text. When no column has any text left, the fallback is the first column
+    that is not the value column.
+    """
     best = None
     best_count = None
     for index, _header in enumerate(headers):
@@ -253,6 +276,13 @@ def _validated_recommendation(rec, request: dict):
 
 
 def propose_columns(request: dict, complete) -> dict:
+    """Ask the model which columns to track.
+
+    Every failure — an endpoint that raises, an answer with no JSON object, or a
+    column name that was not in the request — raises ``config:suggest-failed`` so the
+    picker can keep the user's own choice. An unknown aggregate falls back to sum, and
+    a missing row list means every row that was sampled.
+    """
     prompt = (
         "Choose which columns to track. Reply with one JSON object and nothing else, "
         "with keys labelColumn, valueColumn, and aggregate (sum, count, latest, min, or max). "

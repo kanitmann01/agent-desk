@@ -379,6 +379,13 @@ def parse_time_window(query: str, now: float) -> Window | None:
     hits: list[tuple[int, int, Window]] = []
 
     def consider(index: int, length: int, window: Window | None) -> None:
+        """Keep one candidate, unless its cue was absent or its date unreal.
+
+        index is the cue's offset and length its width; the leftmost-then-
+        longest tie-break later sorts on exactly those two. -1 means the
+        pattern never matched and None means the date it named does not exist,
+        so both are dropped here rather than filtered by the caller.
+        """
         if window is None or index < 0:
             return
         hits.append((index, length, window))
@@ -449,11 +456,21 @@ def passes_window(when: float | None, window: Window | None) -> bool:
 
 
 def _cue_index(text: str, pattern) -> int:
+    """Offset of the cue's first occurrence, or -1 when the text lacks it.
+
+    -1 rather than None is what makes the result directly comparable with a
+    regex match's start, which is the value it competes with.
+    """
     match = pattern.search(text)
     return match.start() if match else -1
 
 
 def _month_index(word: str) -> int | None:
+    """The zero-based month of a month name, or None if it is not one.
+
+    Keyed on the first three letters alone, so "January", "Jan" and a
+    fully-spelled name from any of the patterns all resolve alike.
+    """
     return _MONTH_INDEX.get(word[:3])
 
 
@@ -468,6 +485,13 @@ def _year_for_month(month: int, now: float, explicit: int | None) -> int:
 
 
 def _year_for_day(month: int, day: int, now: float, explicit: int | None) -> int:
+    """The year a bare month/day means: this one if it has started, else last.
+
+    An explicit year wins outright. The rollover test asks whether the date's
+    first instant is at or before now, so today's date stays in this year, and a
+    date still ahead of now reads as last year. An impossible date such as
+    February 30 still gets a year here; _utc_day_window refuses it afterwards.
+    """
     if explicit is not None:
         return explicit
     year = _utc_year(now)
@@ -476,6 +500,7 @@ def _year_for_day(month: int, day: int, now: float, explicit: int | None) -> int
 
 
 def _utc_year(now: float) -> int:
+    """The calendar year holding this epoch instant, read in UTC."""
     return datetime.fromtimestamp(now, tz=UTC).year
 
 
@@ -508,6 +533,12 @@ def _utc_day_window(year: int, month: int, day: int) -> Window | None:
 
 
 def _utc_month_window(year: int, month: int) -> Window | None:
+    """A whole month as [first instant, first of the next month), or None.
+
+    month is zero-based, so 11 (December) ends at the next year's January 1.
+    None when the month is out of range or either boundary falls outside
+    Python's calendar.
+    """
     if month < 0 or month > 11:
         return None
     start = _rolled_utc_epoch(year, month, 1)
@@ -518,6 +549,7 @@ def _utc_month_window(year: int, month: int) -> Window | None:
 
 
 def _start_of_utc_day(now: float) -> float:
+    """Midnight UTC of the day containing now, as epoch seconds."""
     moment = datetime.fromtimestamp(now, tz=UTC)
     return datetime(moment.year, moment.month, moment.day, tzinfo=UTC).timestamp()
 
@@ -532,6 +564,11 @@ def _start_of_utc_week(now: float) -> float:
 
 
 def _shift_days(start: float, offset_days: int, length_days: int) -> Window:
+    """A window of whole days beginning offset_days from start.
+
+    Both counts are multiples of 86_400 seconds, so every boundary this returns
+    is a UTC midnight and no local DST rule can shorten or lengthen the window.
+    """
     begin = start + offset_days * DAY_SECONDS
     return (begin, begin + length_days * DAY_SECONDS)
 

@@ -318,6 +318,11 @@ def spa_index_path() -> Path:
 
 
 def _greeting(now: datetime) -> str:
+    """The time-of-day greeting for a timestamp.
+
+    The boundaries are the timestamp's own hours: before 12 is morning, before 18
+    afternoon, otherwise evening.
+    """
     if now.hour < 12:
         return "Good morning"
     if now.hour < 18:
@@ -326,6 +331,7 @@ def _greeting(now: datetime) -> str:
 
 
 def _local_now() -> datetime:
+    """The current time as a timezone-aware datetime in the machine's local zone."""
     return datetime.now().astimezone()
 
 
@@ -570,19 +576,39 @@ class _AuditedEmbedder:
     port's."""
 
     def __init__(self, inner, base_url: str, audit_conn) -> None:
+        """Wrap the client, naming the endpoint its audit rows will carry and the
+        connection to write them to.
+
+        An audit_conn of None turns the audit off for this instance and leaves the
+        embedding path untouched.
+        """
         self._inner = inner
         self._base_url = base_url
         self._audit_conn = audit_conn
 
     @property
     def model(self) -> str:
+        """The wrapped client's model name, passed straight through.
+
+        It is copied onto every audit row, so the log names the model that answered.
+        """
         return self._inner.model
 
     @property
     def last_request_bytes(self) -> int:
+        """The byte count of the wrapped client's last call, or 0 when it reports none.
+
+        Read with getattr because the port does not require the attribute.
+        """
         return int(getattr(self._inner, "last_request_bytes", 0) or 0)
 
     def embed(self, text: str):
+        """Embed one text, auditing the attempt even when it fails.
+
+        Success writes one row; either failure writes a row with the exception type or
+        message cut to 200 characters and then re-raises, so every endpoint call leaves
+        exactly one llm.embeddings row.
+        """
         request_bytes = len(text.encode("utf-8"))
         try:
             vector = self._inner.embed(text)
@@ -596,6 +622,11 @@ class _AuditedEmbedder:
         return vector
 
     def _record(self, status: str, request_bytes: int, detail: str = "") -> None:
+        """Write one llm.embeddings row, or nothing when no audit connection was injected.
+
+        Only sizes and status are recorded; the text being embedded never reaches the
+        log.
+        """
         if self._audit_conn is None:
             return
         audit_store.record(
@@ -724,6 +755,17 @@ class AgentDeskServer(ThreadingHTTPServer):
         reflector=None,
         announce_port: int | None = None,
     ) -> None:
+        """Bind the ports the handler set shares, then start listening on address.
+
+        An omitted argument usually disables a feature rather than selecting a real
+        fallback (no calendar bridge, no mail watcher, no layout store, no peer store),
+        which is why so many attributes are allowed to stay None. llm is the exception:
+        None builds the environment client and raises llm_defaulted_to_env so callers
+        that only want nicer copy can take their deterministic path instead.
+        Constructing the gate runners probes nothing, discovery stays unstarted until
+        the peers surface is opened, and an empty registry_root forces the honest
+        unavailable state.
+        """
         self.sessions = sessions
         self.excel = excel
         self.pick_workbook = pick_workbook
@@ -824,6 +866,11 @@ class AgentDeskServer(ThreadingHTTPServer):
 
     @property
     def port(self) -> int:
+        """The port the socket actually bound.
+
+        It differs from the address passed to the constructor when port 0 asked the OS
+        to pick one.
+        """
         return self.server_address[1]
 
     def ensure_peer_discovery(self) -> DiscoveryService | None:
@@ -867,6 +914,10 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     """
 
     def state(connected: bool) -> str:
+        """The status word for one source, connected or not.
+
+        Both /health and the dashboard read the same words from this function.
+        """
         return STATUS_CONNECTED if connected else STATUS_NOT_CONNECTED
 
     excel = server.excel
@@ -930,6 +981,11 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     settings = server.settings
 
     def allowed(key: str) -> bool:
+        """Whether a settings-gated source may appear on the payload.
+
+        A missing settings store reads as allowed, so a desk whose store never opened
+        still describes its default arrangement instead of an empty one.
+        """
         return settings is None or bool(settings.get(key))
 
     excel = server.excel
@@ -1068,11 +1124,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
     sys_version = ""  # never advertise the interpreter behind the app
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        """Send http.server's per-request line to the debug log instead of stderr.
+
+        The signature follows BaseHTTPRequestHandler: format is a %-style template and
+        args its operands.
+        """
         LOG.debug("http %s", format % args)
 
     # -- entry points: no exception may drop a connection silently -------
 
     def do_GET(self) -> None:  # noqa: N802 (http.server contract)
+        """Dispatch one GET, answering 500 rather than dropping the connection on an
+        unexpected error.
+
+        _responded is reset before routing so _fail_safe can tell whether the client
+        already has an answer.
+        """
         self._responded = False
         try:
             self._route_get()
@@ -1081,6 +1148,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._fail_safe(500, "Something broke", "The dashboard hit an error handling that. Nothing was changed.")
 
     def do_POST(self) -> None:  # noqa: N802 (http.server contract)
+        """Dispatch one POST, answering 500 rather than dropping the connection on an
+        unexpected error.
+
+        _responded and _close_with_response are reset before routing, so a handler that
+        already answered is never answered twice.
+        """
         self._responded = False
         self._close_with_response = False
         try:
@@ -1090,6 +1163,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._fail_safe(500, "Something broke", "That action did not go through. Try again; if it repeats, restart the app.")
 
     def _fail_safe(self, status: int, title: str, message: str) -> None:
+        """Send the 500 page only when nothing has been written yet.
+
+        Writing a second response over a completed one raises inside http.server, so
+        this is the difference between a page and a traceback.
+        """
         if not self._responded:
             self._send_error_page(status, title, message)
 
@@ -1169,6 +1247,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- GET -------------------------------------------------------------
 
     def _route_get(self) -> None:
+        """Dispatch one GET by path, after the peer exception, the auth exception and the
+        session gate.
+
+        /peer/ and /auth/ are settled first because neither can require what the gate
+        requires: a peer request carries a token rather than a cookie, and /auth/ exists
+        to create the session every other path needs. Past the gate the table is exact
+        paths, except /wizard, /api/marketplace/, /api/plugins/<id>/instances,
+        /static/spa/ and /marketplace/, which take prefixes; an unknown /marketplace/
+        path still gets the shell but with a 404 status, so a typo stays honest to
+        clients while the SPA renders.
+        """
         method = "GET"
         path, _, _query = self.path.partition("?")
         if path.startswith("/peer/"):
@@ -1305,6 +1394,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- POST ------------------------------------------------------------
 
     def _route_post(self) -> None:
+        """Dispatch one POST by path, after draining the body.
+
+        The body is drained before dispatch even for paths that ignore it, because an
+        unread body on a keep-alive connection would be parsed as the next request; the
+        peer branch drains before its own guard for that same reason. Source endpoints
+        consult their settings toggle first and answer 409 with a reconnect path, a
+        collaborator that was never built answers 503, and the assistant turn separates
+        the two clients: a form submit gets a 303 back to the page, a fetch gets the
+        answer as JSON.
+        """
         method = "POST"
         path, _, _query = self.path.partition("?")
         if path.startswith("/peer/"):
@@ -1601,9 +1700,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_error_page(404, "Nothing here", "No action lives at this address.")
 
     def _is_form_submit(self) -> bool:
+        """Whether this POST came from a plain HTML form rather than fetch.
+
+        The test is the urlencoded media type appearing in Content-Type; the branches
+        that choose between a redirect and JSON consult it.
+        """
         return "application/x-www-form-urlencoded" in (self.headers.get("Content-Type") or "")
 
     def _ask_question_from_body(self) -> str | None:
+        """The trimmed question field of the JSON body, or None.
+
+        None covers a missing body as well as a blank or non-string question, which
+        callers turn into a 400 naming the shape they wanted.
+        """
         body = self._read_json_body()
         question = (body or {}).get("question")
         return question.strip() if isinstance(question, str) and question.strip() else None
@@ -1630,6 +1739,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return answers
 
     def _run_llm_turn(self, question: str, *, summary_mode: bool):
+        """Answer one question, degraded rather than broken when the endpoint is off.
+
+        A disabled endpoint setting short-circuits to a degraded answer carrying the
+        explanation and makes no call at all. Otherwise the context is built from the
+        live Excel and calendar status, with recalled facts attached to assistant turns
+        and left out of research turns. The research variant also saves a successful
+        summary for the plugin card that reads it later; a failed attempt is not stored,
+        because the store holds what research concluded, never what it tried.
+        """
         server = self.server  # type: ignore[attr-defined]
         if not self._source_allowed("endpoint_enabled"):
             from agentdesk.assistant.loop import Answer, STATUS_DEGRADED
@@ -1729,6 +1847,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length)  # stash
 
     def _read_json_body(self) -> dict | None:
+        """The request body as a dict, or None when nothing usable arrived.
+
+        A form-encoded post is decoded as its fields; anything else is parsed as JSON,
+        and an empty, undecodable, unparsable or non-object body yields None so each
+        caller can answer 400 with the shape it expected.
+        """
         raw = getattr(self, "_raw_body", b"")
         if not raw:
             return None
@@ -1743,10 +1867,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- helpers ----------------------------------------------------------
 
     def _authenticated(self) -> bool:
+        """Whether the request carries a session cookie the store still accepts.
+
+        Only the cookie is consulted here; the Host and Origin guard is enforced
+        separately by the gate.
+        """
         store: SessionStore = self.server.sessions  # type: ignore[attr-defined]
         return store.validate(session_id_from_cookie(self.headers.get("Cookie")))
 
     def _handle_auth(self, token: str) -> None:
+        """Redeem a start-link token for a session cookie.
+
+        A token the store will not exchange gets the 403 page; a good one sets the
+        cookie and redirects 303 to the dashboard, so the token does not stay in the
+        address bar.
+        """
         store: SessionStore = self.server.sessions  # type: ignore[attr-defined]
         sid = store.exchange(token)
         if sid is None:
@@ -1789,6 +1924,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, candidate.read_bytes(), mime)
 
     def _send_dashboard(self) -> None:
+        """Render the dashboard: one widget per source, in the page's fixed order.
+
+        Each source resolves to exactly one card however it is doing, so a source that
+        is off, unconfigured, unavailable or live still takes its slot and the layout
+        never shifts. The research card reads the newest successful llm.research stamp —
+        that exact action name is what the writer records — and plugin cards come from
+        the runtime's own widget list, which is where an enabled plugin's pilot view is
+        spent.
+        """
         now = datetime.now()
         widgets: list = []
         excel = self.server.excel  # type: ignore[attr-defined]
@@ -1832,6 +1976,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _send_sales_status(self) -> None:
+        """The sales widget's status as JSON, straight from the Excel watcher.
+
+        503 when no watcher exists: the widget's shape belongs to the watcher, and
+        inventing an empty one here would look like a connected source with no data.
+        """
         excel = self.server.excel  # type: ignore[attr-defined]
         if excel is None:
             self._send_json(503, {"error": "the excel watch is not available"})
@@ -1839,6 +1988,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, excel.status())
 
     def _send_commitments_status(self) -> None:
+        """The commitments widget's status as JSON, from the calendar bridge.
+
+        503 when no bridge exists, since an unbuilt collaborator is not the same thing
+        as a source that happens to be empty.
+        """
         calendar = self.server.calendar  # type: ignore[attr-defined]
         if calendar is None:
             self._send_json(503, {"error": "the calendar bridge is not available"})
@@ -1846,6 +2000,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, calendar.status())
 
     def _send_assistant_page(self) -> None:
+        """Render the assistant page from the stored conversation.
+
+        The audit store holds every kind of action, so the turns come from the thread
+        log's own reader rather than from the raw table; without a store the page opens
+        empty instead of failing.
+        """
         turns = []
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             turns = threadlog.turns(self.server.audit_conn)  # type: ignore[attr-defined]
@@ -1854,12 +2014,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _send_audit_tail(self) -> None:
+        """The newest audit entries as JSON, for the settings page's live tail.
+
+        503 without a store: the tail is the store's data, and an empty list would claim
+        there was nothing to record.
+        """
         if self.server.audit_conn is None:  # type: ignore[attr-defined]
             self._send_json(503, {"error": "the audit store is not available"})
             return
         self._send_json(200, {"entries": audit_store.entries(self.server.audit_conn)})  # type: ignore[attr-defined]
 
     def _send_audit_csv(self) -> None:
+        """The whole audit trail as a CSV download.
+
+        The bytes are the store's own export rather than a re-rendering of its rows, so
+        the file carries exactly what the store holds; the content type tells a browser
+        to download it.
+        """
         if self.server.audit_conn is None:  # type: ignore[attr-defined]
             self._send_json(503, {"error": "the audit store is not available"})
             return
@@ -1875,6 +2046,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.server.activity_log.record(kind, text)  # type: ignore[attr-defined]
 
     def _send_settings_page(self) -> None:
+        """Render the settings page: sources, skills, endpoint, mail, registry, audit.
+
+        Every store is optional, so each block falls back to the empty form the page
+        renders when nothing opened. The audit block reads the newest 60 entries plus a
+        total count, because the page shows a sample and the true size side by side.
+        """
         server = self.server  # type: ignore[attr-defined]
         entries = server.activity_log.entries() if server.activity_log is not None else []
         skills = server.skills.active() if server.skills is not None else []
@@ -1943,6 +2120,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         }
 
     def _send_settings_values(self) -> None:
+        """The public settings values as JSON, for the page's widgets.
+
+        503 without a store; the values are the public subset the page is allowed to
+        see, never the raw store, so the widget route cannot become a second read
+        surface.
+        """
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             self._send_json(503, {"error": "settings are not available"})
@@ -2004,6 +2187,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True})
 
     def _settings_toggle(self) -> None:
+        """Flip one named switch and let the change take effect before answering.
+
+        Only the listed keys are accepted, so a typo is a 400 rather than a new setting
+        nobody reads. What the flip then means depends on the key: sample data seeds or
+        clears its fixtures, the semantic and memory-loop switches are re-read on the
+        next action, and every remaining key stops or starts its watcher. A form submit
+        goes back to the inbox — the one page that posts this without JavaScript.
+        """
         server = self.server  # type: ignore[attr-defined]
         if server.settings is None:
             self._send_json(503, {"error": "settings are not available"})
@@ -2130,6 +2321,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 server.plugins.runner.mail = server.mail if value else None
 
     def _source_allowed(self, key: str) -> bool:
+        """Whether a settings-keyed source is switched on, a missing store counting as on.
+
+        Read per request rather than cached, so flipping a switch takes effect on the
+        next page load.
+        """
         settings = self.server.settings  # type: ignore[attr-defined]
         return settings is None or bool(settings.get(key))
 
@@ -2141,6 +2337,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return {"quiet_hours": settings.get("quiet_hours"), "cap": settings.get("daily_cap")}
 
     def _skill_run(self, skill_id: int) -> None:
+        """Run one active skill as a sourced research prompt.
+
+        503 without a skills store. An endpoint switched off answers 200 with a degraded
+        status, because that is a settings choice rather than a failed request, while an
+        unknown or inactive skill is a 409. The body is the answer's own JSON, so a
+        degraded turn still explains itself.
+        """
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
             self._send_json(503, {"error": "skills are not available"})
@@ -2164,6 +2367,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, answer.to_json())
 
     def _skill_undo(self, skill_id: int) -> None:
+        """Deactivate a skill — this surface's only undo.
+
+        A SkillError means the store cannot name that skill and answers 404; on success
+        the body is the store's own record of the deactivation.
+        """
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
             self._send_json(503, {"error": "skills are not available"})
@@ -2174,6 +2382,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": str(exc)})
 
     def _send_skill_markdown(self, skill_id: int) -> None:
+        """One skill's prompt as plain markdown, for copying out of the app.
+
+        404 when the store cannot name it. text/plain is deliberate: a browser then
+        shows the text instead of rendering it as a page.
+        """
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
             self._send_json(503, {"error": "skills are not available"})
@@ -2186,6 +2399,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, markdown.encode("utf-8"), "text/plain; charset=utf-8")
 
     def _send_touches_page(self) -> None:
+        """Render the what-this-touches page from the actions the audit store has seen.
+
+        An unopened store yields an empty observation set, so the page still explains
+        what the app can touch without claiming it has not touched anything.
+        """
         observed: set[str] = set()
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             observed = audit_store.observed_actions(self.server.audit_conn)  # type: ignore[attr-defined]
@@ -2203,6 +2421,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 LOG.exception("brief generation failed")
 
     def _send_inbox_page(self) -> None:
+        """Render the inbox: waiting cards, dismissed ones and the sample-data switch.
+
+        Two passes run first, briefs then the evaluator, so a card whose window opened
+        while the page was away is already waiting. The clock is the store's own, like
+        every payload, so a card never ages by two different clocks.
+        """
         inbox = self.server.inbox  # type: ignore[attr-defined]
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
@@ -2230,6 +2454,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return len(inbox.waiting())
 
     def _send_inbox_count(self) -> None:
+        """The three counts the badge needs: waiting, notified and dismissed.
+
+        The brief and evaluator passes run first, for the same reason the page runs
+        them; notified counts waiting cards that have been announced, so the badge does
+        not double-count a card that already asked for attention.
+        """
         inbox = self.server.inbox  # type: ignore[attr-defined]
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
@@ -2244,6 +2474,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         })
 
     def _inbox_decide(self, card_id: str, decision: str) -> None:
+        """Accept or dismiss one card, at most once.
+
+        A card that is no longer waiting is refused: JSON gets a 409 carrying the card's
+        current state, while a replayed form post redirects to the inbox, which is what
+        a double-click means. A mail draft's file is written before the acceptance is
+        recorded, so a failed write leaves the card waiting for a retry instead of an
+        accepted card that wrote nothing. Acceptance then runs the card's kind-specific
+        follow-up and the fact-carried hook, and both decisions are audited under
+        inbox.approved or inbox.denied.
+        """
         inbox = self.server.inbox  # type: ignore[attr-defined]
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
@@ -2495,6 +2735,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._memory_response(_fact_json(outcome.fact), status=201)
 
     def _memory_edit(self, fact_id: int | None) -> None:
+        """Rewrite one fact's text.
+
+        404 for an id that names no fact and 400 for a body with no text. An edit whose
+        new text matches another fact merges into it: a form post re-renders the page
+        with the merge notice, while JSON returns the surviving fact with
+        mergedIntoExisting set, so neither client has to guess which fact it now holds.
+        """
         if fact_id is None:
             self._send_error_page(404, "Nothing here", "No fact lives at this address.")
             return
@@ -2523,6 +2770,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._memory_response(payload)
 
     def _memory_delete(self, fact_id: int | None) -> None:
+        """Remove one fact, holding it for undo.
+
+        The plan and the apply both receive the pending source ids, so a removal that
+        keeps some sources keeps the same set at both stages. The removal is audited by
+        count and followed by an observation pass; the answer names the deleted id.
+        """
         if fact_id is None:
             self._send_error_page(404, "Nothing here", "No fact lives at this address.")
             return
@@ -2629,6 +2882,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         extract = extractor.extract if extractor is not None else None
 
         def job() -> None:
+            """The capture itself, on the background runner's thread.
+
+            The lock is what keeps captures to one at a time. A failure is logged and
+            swallowed, because capture must never break the turn that triggered it. The
+            llm.retain row is written only when an extractor ran, so a rules-only
+            capture adds no model noise. The observation pass is scheduled after the
+            lock is released, so the next pass waits on the lock rather than on this
+            job.
+            """
             with server.memory_capture_lock:
                 try:
                     self._configure_memory_embeddings()
@@ -2691,6 +2953,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _observe_audit(self, summarizer, endpoint: str, model: str, written: int,
                        failure: str) -> None:
+        """Record what an observation pass did: llm.observe with the count written.
+
+        The detail always names the written count and appends the first 160 characters
+        of the failure when there was one. A failed pass still writes a row, so a pass
+        that wrote nothing cannot look like a pass that never ran.
+        """
         self._model_audit(
             "llm.observe", endpoint or "", model or "", self._port_bytes(summarizer),
             status="error" if failure else "ok",
@@ -2713,6 +2981,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server.memory_observe_pending = True
 
         def job() -> None:
+            """One coalesced observation pass, on the background runner's thread.
+
+            The pending flag is cleared first, so a change that arrives during the pass
+            schedules the next one instead of being lost. A failure is logged and leaves
+            the rules' text in place. The audit row is written only when the summarizer
+            reports calls, so a pass that needed no endpoint call is not recorded as
+            one.
+            """
             server.memory_observe_pending = False
             with server.memory_capture_lock:
                 try:
@@ -2780,6 +3056,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return None, "", ""
 
     def _extractor_status(self) -> dict:
+        """Which extraction method capture will use, with the reason, for the memory page.
+
+        A disabled endpoint or none saved means the built-in rules, each with its own
+        sentence; a configured endpoint means the model, naming it and warning that the
+        rules take over when it does not answer.
+        """
         if not self._source_allowed("endpoint_enabled"):
             return {"mode": memory_loop.METHOD_RULES,
                     "detail": "Endpoint calls are off in Settings, so capture uses the built-in rules on your own words."}
@@ -2791,6 +3073,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "detail": "No endpoint is saved in Settings, so capture uses the built-in rules on your own words."}
 
     def _memory_loop_json(self) -> None:
+        """The memory loop's state as JSON, and a chance to re-offer rule-built
+        observations.
+
+        423 when the store is locked, carrying the store's own cause. When any
+        observation still carries the rules' mark — the bank predates the endpoint, or a
+        pass ran while it was down — one pass is scheduled, at most once a minute while
+        the page stays open, so looking at the page is what improves it.
+        """
         server = self.server  # type: ignore[attr-defined]
         memory = server.memory
         if memory is None:
@@ -2815,6 +3105,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         ))
 
     def _memory_target(self, body: dict) -> tuple[str, int] | None:
+        """The (kind, id) a request names, or None when it names neither properly.
+
+        The id must be a true int: a bool is refused even though Python would accept it
+        as one, because a JSON true is not an id. A body without a target field falls
+        back to the body itself, so a flat request means what a nested one means.
+        """
         target = body.get("target") if isinstance(body.get("target"), dict) else body
         kind = target.get("type")
         raw = target.get("id")
@@ -2880,6 +3176,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         })
 
     def _memory_undo(self) -> None:
+        """Undo a removal inside its window.
+
+        The token is taken out of the buffer, so a second undo with the same token finds
+        nothing and answers 410 with the window message. A ValueError means the data
+        moved on since the preview and answers 409. A successful undo is audited and
+        followed by an observation pass.
+        """
         server = self.server  # type: ignore[attr-defined]
         memory = self._memory_available()
         if memory is None:
@@ -3865,6 +4168,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         logged as pending, never a silent reappearance."""
 
         def on_return(card) -> None:
+            """Audit a snooze whose window has come back.
+
+            The evaluator calls this for each returning card, so the trail shows a
+            return as pending instead of the card reappearing with no history.
+            """
             self._audit("inbox.pending", target=card.id,
                         detail=f"{card.title} snooze returned")
 
@@ -3898,6 +4206,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 server.consolidator.dismiss_cooldown(pattern)
 
     def _inbox_restore(self, card_id: str) -> None:
+        """Put a dismissed card back in the waiting list.
+
+        The store reports "no such card" and "past its 30-day window" through the same
+        exception, so the answer distinguishes them: 404 for a card that never existed,
+        410 for one that is gone for good. A restore is audited like every other
+        decision, so a card cannot reappear with no history.
+        """
         inbox = self.server.inbox  # type: ignore[attr-defined]
         if inbox is None:
             self._send_json(503, {"error": "the inbox is not available"})
@@ -3918,6 +4233,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, card.to_json(inbox.now_ts()))
 
     def _plugin_setup_get(self, path: str) -> None:
+        """Serve the two plugin-setup views that answer GET: the instance list and one
+        preview.
+
+        The path is read as segments rather than matched whole, because the same prefix
+        carries a four-segment listing and a six-segment preview. A PluginError answers
+        with its own status and code, any other failure goes through the setup envelope
+        so it still names itself, and a path matching neither shape is a 404 quoting it.
+        """
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             self._send_json(503, {"error": "plugins are not available"})
@@ -3999,6 +4322,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         }
 
     def _plugin_setup_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
+        """Run one plugin setup step and answer with its result.
+
+        The segment count selects the step: four segments create an instance from the
+        posted name, which is slugged down to an id, while a longer path names one and
+        then its action — pick, stage, suggest, evaluate, confirm or outside. Suggest
+        and evaluate let a request override the saved headers-only and completion
+        settings, since the flow's next question is usually the answer. A ConfigError
+        answers 400 with its own code, anything else through the setup envelope, and an
+        unknown action is a 404 quoting the path.
+        """
         from ..plugins.config import ConfigError
         from ..plugins.setup_flow import (
             accept_outside, confirm, ensure_instance, evaluate, pick, stage, store_for, suggest,
@@ -4074,6 +4407,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "not-found", "message": path})
 
     def _instance_cap(self) -> int:
+        """The plugin-instance cap the setup flow enforces.
+
+        A missing store, or a stored value that is not an integer, yields 6: the cap
+        guards an allocation, so it must be a number even when the settings file cannot
+        supply one.
+        """
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             return 6
@@ -4083,6 +4422,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return 6
 
     def _headers_only(self) -> bool:
+        """Whether header suggestions should skip reading data rows.
+
+        A missing store or missing key reads as off, so the fuller suggestion is what a
+        desk does before anyone chooses otherwise.
+        """
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             return False
@@ -4092,15 +4436,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return False
 
     def _suggestion_complete(self):
+        """The completion callable an endpoint-backed suggestion gets, or None.
+
+        None means no client or no endpoint, which is how the setup flow is told to use
+        its deterministic heuristics instead of waiting on a call that would fail.
+        """
         server = self.server  # type: ignore[attr-defined]
         if server.llm is None or not server.llm_endpoint:
             return None
 
         def complete(prompt: str) -> str:
+            """One prompt in, one answer out, in the shape the flow expects.
+
+            It is a closure so the flow receives a plain callable and never the handler
+            or the server.
+            """
             return server.llm(prompt)
         return complete
 
     def _setup_error(self, exc: Exception) -> None:
+        """Answer a failed setup step in the envelope the setup client reads.
+
+        A ConfigError keeps its own code and message at 400; anything else becomes
+        config:failed with the exception's text, so an unexpected failure names itself
+        rather than arriving as a bare 500.
+        """
         from ..plugins.config import ConfigError
         if isinstance(exc, ConfigError):
             self._send_json(400, {"error": exc.code, "message": exc.message})
@@ -4274,6 +4634,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return record
 
     def server_plugins_widget_records(self) -> list[dict]:
+        """The plugin records the SPA's plugin list consumes, one per installed plugin.
+
+        Uninstalled records are dropped: with no active version there is no card for a
+        view to render. A pending update is reduced to the version and the scopes it
+        would add, which is exactly what an update would widen, and pilot marks a record
+        that is enabled with pilot views left — the flag means a view can still be
+        spent, so a disabled plugin never carries it.
+        """
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             return []
@@ -4328,6 +4696,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return listing
 
     def _send_plugins_page(self, notice: str = "") -> None:
+        """Render the plugins page from the runtime's records and the registry listing.
+
+        The listing's origin is passed as a word the page can branch on, and the peer
+        counts come from the peer store when it opened. Without a plugin runtime the
+        records are empty and the page still renders, which is the honest way to show a
+        desk that has no plugin surface.
+        """
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         records = plugins.list_records() if plugins is not None else []
         listing = self._registry_listing_for_request()
@@ -4488,6 +4863,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _registry_install_refused(self, code: str, message: str,
                                   status: int = 409) -> None:
+        """Report a refused registry install to whichever client asked.
+
+        A form post goes back to the plugins page with the message as a notice, because
+        a browser form has nowhere else to put it; a fetch gets the code and message as
+        JSON, at 409 unless the caller names another status.
+        """
         if self._is_form_submit():
             self._send_redirect(f"/plugins?notice={quote(message)}")
             return
@@ -4539,6 +4920,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _publish_refused(self, code: str, message: str,
                          status: int = 409) -> None:
+        """Report a refused publish, in the same shape as a refused install.
+
+        A form post gets the notice redirect and a fetch gets code and message as JSON
+        at 409, so the two refusal routes of the marketplace cannot drift into different
+        contracts.
+        """
         if self._is_form_submit():
             self._send_redirect(f"/plugins?notice={quote(message)}")
             return
@@ -4604,6 +4991,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return ""
 
     def _route_peer_get(self, path: str) -> None:
+        """Serve one peer GET, gated for a paired desk rather than a browser session.
+
+        The guard weighs Host, Origin and the pairing token together, and a request
+        failing it gets a peer:blocked 403 with the reason. The three read paths —
+        /peer/info, a plugin's manifest and its bundle — each check the token again
+        before answering, because the guard's token test is also what a desk without a
+        token fails. Every read is audited as peer.read, so another desk's access shows
+        up in this desk's trail.
+        """
         token = self._peer_bearer_token()
         store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
         token_ok = bool(store is not None and token
@@ -4656,6 +5052,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return False
 
     def _route_peer_post(self, path: str) -> None:
+        """Handle the one peer POST that exists, pairing, and refuse everything else.
+
+        Pairing has no token to present — its code is the gate — so it takes the plain
+        Host and Origin guard. Any other peer POST is a 405 explaining that the surface
+        reads and pairs and changes nothing else.
+        """
         if path == "/peer/pair":
             # The pairing path has no token (its code is the gate), so
             # it takes the plain guard, unchanged.
@@ -4736,6 +5138,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return out
 
     def _peer_info_payload(self) -> dict:
+        """What this desk tells a paired peer: its identity and the plugins it shares.
+
+        A missing store still yields the same shape with an empty identity, so the
+        guard, not the payload, is what refuses an unpaired reader.
+        """
         store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
         desk = store.desk() if store is not None else {"peer_id": "",
                                                        "name": ""}
@@ -4760,6 +5167,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return record
 
     def _peer_serve_manifest(self, plugin_id: str) -> None:
+        """Serve one shared plugin's manifest.json.
+
+        An unknown plugin and a manifest that cannot be read answer the same 404,
+        because from the other desk both mean there is nothing to install; a successful
+        read is audited as peer.read.
+        """
         record = self._peer_plugin_record(plugin_id)
         if record is None:
             self._send_json(404, {"error": "peer:unknown-plugin",
@@ -4778,6 +5191,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, manifest)
 
     def _peer_serve_bundle(self, plugin_id: str) -> None:
+        """Zip one shared plugin's active version and serve it.
+
+        The archive is built in memory from that version directory, with entry names
+        relative to it, so the other desk can install exactly the files this desk holds.
+        An unknown plugin is a 404 and the transfer is audited as peer.read.
+        """
         record = self._peer_plugin_record(plugin_id)
         if record is None:
             self._send_json(404, {"error": "peer:unknown-plugin",
@@ -4797,6 +5216,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- the peers page and its flows ---------------------------------------
 
     def _send_peers_page(self, notice: str = "") -> None:
+        """Render the peers page, starting discovery first if it never started.
+
+        Discovery is lazy by design: a desk that never opens this page announces
+        nothing, so the page rather than the constructor is where announcing begins.
+        """
         self.server.ensure_peer_discovery()  # type: ignore[attr-defined]
         page = render_peers_page(
             self._peers_catalog(), agentdesk.__version__, notice=notice,
@@ -4869,6 +5293,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         }
 
     def _peers_redirect(self, message: str) -> None:
+        """Send the browser back to the peers page carrying a notice.
+
+        Every peer action posted as a form answers this way, so a client without
+        JavaScript sees the outcome as text on the page it came from.
+        """
         self._send_redirect(f"/peers?notice={quote(message)}")
 
     def _peers_refuse(self, code: str, message: str,
@@ -4881,6 +5310,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(status, {"error": code, "message": message})
 
     def _peers_code_generate(self) -> None:
+        """Mint a single-use pairing code and tell the user what it is.
+
+        The store gives it a ten-minute life and one redemption; a form post redirects
+        with the code in the notice, while a fetch gets the store's own JSON. Both are
+        audited, because minting a code is the moment this desk offers another desk
+        access.
+        """
         store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
         if store is None:
             self._peers_refuse("peers:unavailable",
@@ -4966,6 +5402,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return True
 
     def _peers_refresh(self) -> None:
+        """Ask every paired desk for its current listing, then report how many answered.
+
+        Each peer is refreshed on its own, so one unreachable desk does not stop the
+        rest; the notice counts reached against total and, when any failed, points at
+        the per-peer causes the page lists.
+        """
         store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
         if store is None:
             self._peers_refuse("peers:unavailable",
@@ -5116,6 +5558,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return (store, self.server.plugins, peer, plugin_id, names_ok)  # type: ignore[attr-defined]
 
     def _peer_flow_names_ok(self, peer_id: str, plugin_id: str) -> bool:
+        """Whether the peer and plugin ids of a flow are safe to place in a path.
+
+        An unsafe name is refused with a 400 and a quoted, shortened excerpt rather than
+        silently sanitised, so the answer tells the truth about what was rejected. An
+        empty name passes: whether one is required is the next check's business, not
+        this one's.
+        """
         for name, what in ((peer_id, "peer id"), (plugin_id, "plugin id")):
             if name and not _PEER_SAFE_NAME.match(name):
                 self._peers_refuse(
@@ -5268,6 +5717,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         conn = server.audit_conn
 
         def audited_llm(prompt: str) -> str:
+            """The wizard's prompt call, recorded as llm.wizard.
+
+            Endpoint and model are those resolved when the compiler was built, so the
+            row names the client that actually answered. A failure records the error
+            text and re-raises, leaving the wizard's own error handling intact.
+            """
             try:
                 result = inner(prompt)
             except Exception as exc:  # noqa: BLE001 - audit then re-raise
@@ -5383,6 +5838,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                               "summary": summary, "install": result})
 
     def _wizard_escalate(self, session_id: str, reason: str) -> None:
+        """End a wizard session as escalated and send the user back to its page.
+
+        The session is loaded first, so the escalation is recorded against a real one;
+        the redirect lands on the page that reads the new state.
+        """
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
         session = wizard.get(session_id)
         self._escalate(session, WizardError("wizard:escalated", reason, 422))
@@ -5414,6 +5874,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
 
     def _send_wizard_page(self, session_id: str) -> None:
+        """Render one wizard session.
+
+        404 when the store cannot load it. The payload is the session's JSON with the
+        draft reshaped for the view: the draft itself is the manifest, because the
+        approval summary reads permissions from it, while the ui schema and a fixed
+        sample ride top-level so the view can show a shape before real data exists. The
+        installed record is passed through, since the approved screen's publish step
+        needs the plugin id.
+        """
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
         try:
             session = wizard.get(session_id)
@@ -5473,6 +5942,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "The marketplace interface is not built in this checkout.")
 
     def _send_redirect_302(self, location: str) -> None:
+        """Redirect with 302, for an address that has moved.
+
+        _responded is set first, so a later failure in the same request will not try to
+        answer over this one.
+        """
         self._responded = True
         self.send_response(302)
         self.send_header("Location", location)
@@ -5481,6 +5955,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_redirect(self, location: str) -> None:
+        """Redirect with 303, for a form post that has been handled.
+
+        303 is what makes the browser follow with a GET, so a reload repeats the page
+        rather than the action.
+        """
         self.send_response(303)
         self.send_header("Location", location)
         self._common_headers()
@@ -5488,6 +5967,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_health(self) -> None:
+        """The health payload as indented JSON.
+
+        Built from the live source table and the process start time, so each source's
+        state and the uptime are read at request time rather than remembered from boot.
+        """
         payload = health_payload(
             agentdesk.__version__,
             live_sources(self.server),  # type: ignore[attr-defined]
@@ -5500,6 +5984,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _send_json(self, status: int, payload: dict) -> None:
+        """Send one JSON body with the given status.
+
+        Indented output is deliberate, because these endpoints are also read by eye; the
+        content type carries the charset so a non-ASCII message survives the trip.
+        """
         self._send_bytes(
             status,
             json.dumps(payload, indent=2).encode("utf-8"),
@@ -5507,6 +5996,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _send_error_page(self, status: int, title: str, message: str) -> None:
+        """Send one HTML error page with the given status.
+
+        The page carries a title and a message and nothing else, so a refusal can be
+        specific without a traceback reaching the browser.
+        """
         self._send_bytes(
             status,
             pages.render_error_page(title, message).encode("utf-8"),
@@ -5515,6 +6009,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_bytes(self, status: int, body: bytes, content_type: str,
                     headers: dict | None = None) -> None:
+        """Send one response body and mark the request answered.
+
+        Content-Length is the body's own length, and every response path — page, JSON,
+        file, error — goes through here, so the security headers cannot be forgotten on
+        one of them. extra headers precede the common set, which is where a caller adds
+        one rather than where it overrides the defaults.
+        """
         self._responded = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -5526,6 +6027,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _common_headers(self) -> None:
+        """The headers every response carries.
+
+        The security set comes first; the Connection close follows only when the request
+        left the connection unusable — its body was past the drain cap, or refused
+        before the drain. Naming it here is what actually closes, because http.server
+        flips close_connection when it sees that header.
+        """
         for name, value in SECURITY_HEADERS:
             self.send_header(name, value)
         if getattr(self, "_close_with_response", False):
@@ -5651,6 +6159,12 @@ def create_server(
         peer_store = _default_peer_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
+        """Build the server bound to one port, everything else fixed.
+
+        The enclosing factory calls this once for the preferred port and again with 0
+        when that port is taken, so only the port may differ between the two attempts;
+        all the stores were resolved before it, which is what makes the retry cheap.
+        """
         return AgentDeskServer(
             (resolved, bind_port),
             sessions=sessions,
@@ -5709,6 +6223,11 @@ def _wire_audit(server: AgentDeskServer) -> None:
     conn = server.audit_conn
 
     def hook(action: str, target: str, status: str = "ok") -> None:
+        """Record one action from a watcher into the shared audit store.
+
+        The store connection is captured by the enclosing wiring, so a watcher only
+        names the action, the target and whether it worked.
+        """
         audit_store.record(conn, action, target=target, status=status)
 
     if server.excel is not None:
@@ -5720,6 +6239,14 @@ def _wire_audit(server: AgentDeskServer) -> None:
         inner_llm = server.calendar.llm
 
         def audited_llm(prompt: str) -> str:
+            """Wrap the calendar's breakdown client so each call is recorded as
+            llm.breakdown.
+
+            The endpoint is resolved per call with the same settings-over-environment
+            order the inner client uses, so the row names what was really hit. The
+            failure path records the error text and re-raises, so the caller still sees
+            the real exception.
+            """
             endpoint, _key, model = effective_llm_config(server.settings)
             try:
                 result = inner_llm(prompt)
@@ -6047,6 +6574,11 @@ def start_background_polls(server: AgentDeskServer) -> None:
     """
 
     def allowed(key: str) -> bool:
+        """Whether a settings-keyed poll may run, a missing store counting as on.
+
+        Read at each poll rather than captured once, so a switch flipped in the page
+        takes effect without a restart.
+        """
         settings = server.settings
         return settings is None or bool(settings.get(key))
 

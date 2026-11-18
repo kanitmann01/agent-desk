@@ -67,6 +67,7 @@ class PolicyBundleError(TrustError):
     """A TrustError raised for a policy bundle check."""
 
     def __init__(self, code: str, message: str, details=None):
+        """Keep the rejection code and the details a caller may forward."""
         super().__init__(code, message)
         self.details = dict(details or {})
 
@@ -155,6 +156,7 @@ def looks_signed(bundle) -> bool:
 
 
 def _bad(message: str, details=None):
+    """A policy:bad-signature rejection, the code every shape failure carries."""
     return PolicyBundleError("policy:bad-signature", message, details)
 
 
@@ -350,12 +352,14 @@ def policy_diff(before: Policy, after: Policy) -> list[dict]:
 
 
 def _marketplace_dir(workspace_dir) -> Path | None:
+    """This desk's marketplace state folder, or None when there is no workspace."""
     if workspace_dir is None:
         return None
     return Path(workspace_dir) / "marketplace"
 
 
 def _read_json(path: Path, fallback):
+    """Parse a JSON file, returning the fallback for any read or parse failure."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -363,6 +367,7 @@ def _read_json(path: Path, fallback):
 
 
 def _write_json(path: Path, document) -> None:
+    """Write a document as pretty, key-sorted JSON, creating parent folders."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")

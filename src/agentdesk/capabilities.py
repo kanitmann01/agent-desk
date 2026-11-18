@@ -61,6 +61,7 @@ GateRunners = dict[str, Callable[[], GateResult]]
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the capability tables if they are missing."""
     conn.executescript(SCHEMA)
     conn.commit()
 
@@ -89,6 +90,7 @@ class CapabilitiesCache:
     """Gate results in SQLite. Reading never probes anything."""
 
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float]) -> None:
+        """Bind the cache to a connection and clock, creating its schema first."""
         self.conn = conn
         self.clock = clock
         ensure_schema(conn)

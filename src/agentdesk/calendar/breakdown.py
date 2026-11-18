@@ -37,6 +37,11 @@ def env_llm_adapter(
     model = model or cfg_model
 
     def complete(prompt: str) -> str:
+        """Send one prompt to the endpoint this adapter was built with.
+
+        The configuration is resolved once by env_llm_adapter, so the closure
+        keeps calling the same endpoint even if the environment changes later.
+        """
         return chat(base_url, api_key, model, prompt)
 
     return complete

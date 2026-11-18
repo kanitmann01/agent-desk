@@ -12,10 +12,26 @@ from agentdesk.plugins.preview import preview_table
 
 
 def pace_line(spent: float, elapsed: float, plan: float, period: float) -> str:
+    """Compare the reading's daily rate against the plan's daily rate in one line.
+
+    Both sides divide by their day count; ``elapsed`` and ``period`` arrive
+    strictly positive because the config validation refuses anything else.
+    """
     return f"{spent / elapsed:.2f} per day against {plan / period:.2f} per day"
 
 
 def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict:
+    """Read a confirmed tracker's file and return its value, history and provenance.
+
+    Only the granted file is opened, and only its first 500 data rows are read; the
+    configured row selection then indexes those rows, so row numbers are positions
+    in the preview rather than in the sheet. The value is reduced with the configured
+    aggregate and appended to the instance's ``history.json`` when it differs from
+    the previous reading; the newest 30 values come back as ``points``, with ``delta``
+    and ``direction`` comparing the last two. ``sample`` is true when the file sits
+    under a ``sample`` folder, which is the shipped demo fixture rather than a file
+    the user connected.
+    """
     document = store.read(plugin_id, instance_id)
     path = store.granted_file(plugin_id, instance_id)
     tracking = document.get("tracking") or {}
@@ -69,6 +85,9 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
 
 
 def _index(headers, name):
+    """Return a header's position, matched case- and whitespace-insensitively, or None
+    when the row no longer has that column.
+    """
     wanted = str(name or "").strip().lower()
     if wanted in headers:
         return headers.index(wanted)
@@ -76,6 +95,9 @@ def _index(headers, name):
 
 
 def _number(value):
+    """Parse a cell into a float, tolerating thousands separators and a leading dollar
+    sign; None when the cell holds nothing numeric.
+    """
     try:
         return float(str(value).replace(",", "").replace("$", ""))
     except (TypeError, ValueError):
@@ -83,6 +105,12 @@ def _number(value):
 
 
 def _aggregate(numbers, mode) -> float:
+    """Reduce the collected numbers with the configured mode.
+
+    ``count`` counts the numbers, not the rows, so a row whose value cell is unparsable
+    is not counted; ``latest`` is the last number in file order, not the largest. An
+    empty selection reads 0.0.
+    """
     if mode == "count":
         return float(len(numbers))
     if not numbers:
@@ -97,6 +125,12 @@ def _aggregate(numbers, mode) -> float:
 
 
 def _remember(store: InstanceStore, plugin_id: str, instance_id: str, value: float) -> list:
+    """Append a reading to the instance's history file and return the trimmed history.
+
+    A value equal to the last one is not appended, so ``delta`` measures change
+    rather than a re-read; the newest 30 values are kept and the file is rewritten on
+    every read.
+    """
     path = store._instance_dir(plugin_id, instance_id) / "history.json"
     history = []
     if path.is_file():
@@ -114,6 +148,11 @@ def _remember(store: InstanceStore, plugin_id: str, instance_id: str, value: flo
 
 
 def _signed(change: float) -> str:
+    """Format a change with an explicit sign for the card.
+
+    Whole changes print as integers and the rest with two decimals; the minus is
+    U+2212 so it matches the other numbers rather than reading as a hyphen.
+    """
     number = abs(change)
     text = str(int(number)) if float(number).is_integer() else f"{number:.2f}"
     if change > 0:
@@ -124,6 +163,11 @@ def _signed(change: float) -> str:
 
 
 def _delta(history: list) -> tuple[str, str]:
+    """Return the formatted change since the previous reading and its direction.
+
+    A single reading has nothing to compare with, so it reports "First reading" and
+    a flat direction.
+    """
     if len(history) < 2:
         return "First reading", "flat"
     return _signed(history[-1] - history[-2]), (

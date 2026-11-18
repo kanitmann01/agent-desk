@@ -10,10 +10,22 @@ import json
 
 
 def _file_name(path: str) -> str:
+    """Return the last path segment, accepting either separator.
+
+    Only the file name reaches the prompt, never the user's directory
+    layout; an empty path, or one ending in a separator, reads as
+    "workbook".
+    """
     return str(path).replace("\\", "/").rsplit("/", 1)[-1] or "workbook"
 
 
 def _excel_lines(excel_status: dict | None) -> list[str]:
+    """Describe the watched workbook as prompt lines.
+
+    Empty unless the widget is configured. A delta is summarised by count
+    with at most three added and three removed rows; before the first delta
+    the stored example rows stand in. Each row is one compact JSON line.
+    """
     if not excel_status or not excel_status.get("configured"):
         return []
     lines = [f"Sales workbook watched: {_file_name(excel_status.get('path', ''))}"]
@@ -37,6 +49,12 @@ def _excel_lines(excel_status: dict | None) -> list[str]:
 
 
 def _calendar_lines(calendar_status: dict | None) -> list[str]:
+    """Describe the calendar widget as prompt lines.
+
+    Empty unless configured. With a key event the line names it and its
+    start; without one only the widget state, so the prompt still says the
+    calendar was read.
+    """
     if not calendar_status or not calendar_status.get("configured"):
         return []
     event = calendar_status.get("keyEvent")

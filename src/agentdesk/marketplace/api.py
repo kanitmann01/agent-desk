@@ -94,6 +94,7 @@ class MarketplaceError(Exception):
 
     def __init__(self, status: int, code: str, message: str,
                  details: dict | None = None) -> None:
+        """Bind the status, code, message and details carried to the error envelope."""
         super().__init__(message)
         self.status = status
         self.code = code
@@ -102,25 +103,35 @@ class MarketplaceError(Exception):
 
 
 def _now() -> str:
+    """The local wall clock as a second-precision ISO 8601 string.
+
+    Audit and pending records carry local time with no offset."""
     return datetime.now().isoformat(timespec="seconds")
 
 
 class _API:
     def __init__(self, handler) -> None:
+        """Hold the live request handler for one request; no desk state is read yet."""
         self.handler = handler
 
     # -- shared plumbing -------------------------------------------------
 
     @property
     def server(self):
+        """The HTTP server the request arrived on, which owns the desk's runtimes."""
         return self.handler.server
 
     @property
     def plugins(self):
+        """The desk's plugin runtime, or None when the server was built without one."""
         return getattr(self.server, "plugins", None)
 
     @property
     def workspace(self) -> Path:
+        """The desk's workspace folder; a temp folder when the server has no runtime.
+
+        Marketplace state lives under this folder, so one desk's catalogs and
+        audit never mix with another's."""
         runtime = self.plugins
         if runtime is not None:
             workspace = getattr(runtime, "workspace_dir", None)
@@ -132,17 +143,24 @@ class _API:
         return Path(tempfile.gettempdir()) / "agentdesk-marketplace"
 
     def marketplace_dir(self, *parts: str) -> Path:
+        """A path inside this desk's marketplace state folder, joined per part."""
         return self.workspace.joinpath("marketplace", *parts)
 
     def send(self, status: int, payload: dict) -> None:
+        """Write one JSON response through the handler's own sender."""
         self.handler._send_json(status, payload)
 
     def fail(self, status: int, code: str, message: str,
              details: dict | None = None) -> None:
+        """Send the stable error envelope for a status the route chose itself."""
         self.send(status, {"error": code, "message": message,
                            "details": details or {}})
 
     def body(self) -> dict:
+        """The request body parsed as a JSON object.
+
+        A body that is absent or not an object raises the 400 envelope; the
+        details name the path without its query string."""
         parsed = self.handler._read_json_body()
         if parsed is None:
             raise MarketplaceError(
@@ -152,6 +170,10 @@ class _API:
         return parsed
 
     def _registry_root(self):
+        """The registry checkout this request resolves to, or None for offline mode.
+
+        The handler may have no resolver, and a resolver that raises means the
+        registry is unavailable; both read as a missing registry, not an error."""
         resolver = getattr(self.handler, "_registry_root_for_request", None)
         if resolver is None:
             return None
@@ -162,6 +184,11 @@ class _API:
         return root
 
     def _trust_store_status(self) -> dict:
+        """Describe the trust anchor at the registry root for the Trust Center.
+
+        A present anchor.json is reported as configured, but this build does not
+        re-verify release signatures against it; the note says that instead of
+        implying a check that never happens."""
         root = self._registry_root()
         if root is None:
             return {"configured": False, "path": None,
@@ -178,6 +205,12 @@ class _API:
     # -- catalog ---------------------------------------------------------
 
     def _entries(self, policy=None):
+        """Every catalog entry this desk can see, with policy eligibility applied.
+
+        Org, bundled and peer catalogs merge in that precedence by plugin id; the
+        governance overlay then marks a version, and evaluate() sets eligible and
+        ineligibleReasons. Returns the entries and the policy they were judged by,
+        so a caller can render the policy banner without a second load."""
         if policy is None:
             policy, _verification = load_effective_policy(self.workspace)
         root = self._registry_root()
@@ -201,6 +234,13 @@ class _API:
         return entries, policy
 
     def _apply_governance(self, entry: dict, governance: dict) -> dict:
+        """Overlay the administrator's governance record onto one catalog entry.
+
+        A quarantine, yank or deprecation record applies only to the version it
+        names, so another release of the same plugin keeps its status. A
+        quarantine also carries a deprecation block, because the card has one
+        place to explain why a plugin is refused. Returns a copy; the input entry
+        is not mutated."""
         entry = dict(entry)
         plugins = governance.get("plugins") if isinstance(governance, dict) else None
         record = plugins.get(entry.get("id")) if isinstance(plugins, dict) else None
@@ -231,6 +271,10 @@ class _API:
         return entry
 
     def _record(self, plugin_id: str):
+        """The runtime's install record for one plugin id, or None when unknown.
+
+        A runtime that does not know the id raises PluginError; a failed lookup
+        reads as not installed, so a catalog listing still renders."""
         if self.plugins is None or not plugin_id:
             return None
         try:
@@ -239,6 +283,12 @@ class _API:
             return None
 
     def _find_entry(self, plugin_id: str):
+        """Resolve one requested id to its entry, the entry list and the policy.
+
+        An id with no catalog entry still resolves from a live install record, so
+        a locally built plugin has a detail page; the catalog listing itself stays
+        catalog-only. Raises 404 when the id names neither a catalog entry nor a
+        live install."""
         entries, policy = self._entries()
         for entry in entries:
             if entry.get("id") == plugin_id:
@@ -311,6 +361,11 @@ class _API:
         return document if isinstance(document, dict) else {}
 
     def _installed_summary(self, record: dict) -> dict:
+        """The installed-plugin DTO the Installed surface renders.
+
+        Pending update, live data-source status and the shared flag come from the
+        runtime record; a configured peer store is the authority on sharing, and a
+        broken store reads as not shared. dataDirSize counts bytes on disk."""
         pending = record.get("pending_update")
         data_source = record.get("data_source")
         if not isinstance(data_source, dict):
@@ -351,6 +406,10 @@ class _API:
 
     @staticmethod
     def _dir_size(path) -> int:
+        """Total bytes of the regular files under a plugin's data directory.
+
+        Unreadable entries are skipped and a missing path is zero bytes, so the
+        result is a measurement rather than a failure."""
         total = 0
         if not path:
             return total
@@ -368,6 +427,10 @@ class _API:
     # -- GET routes ------------------------------------------------------
 
     def get(self, path: str, query: dict) -> None:
+        """Dispatch a GET under the marketplace prefix to its route.
+
+        An unknown route answers 404 in the error envelope instead of raising out
+        of the handler."""
         route = path[len(PREFIX):]
         if route == "/catalog":
             self.get_catalog(query)
@@ -394,6 +457,11 @@ class _API:
                       f"no marketplace route at {path}", {"path": path})
 
     def get_catalog(self, query: dict) -> None:
+        """The filtered catalog listing, with per-source counts and the policy banner.
+
+        Filters are the q, category, source, risk and eligible query parameters;
+        risk is a ceiling, so a T2 filter keeps T0 through T2. Counts are taken
+        before filtering, so every source chip shows its unfiltered total."""
         entries, policy = self._entries()
         counts: dict[str, int] = {}
         for entry in entries:
@@ -419,6 +487,13 @@ class _API:
         })
 
     def get_plugin(self, plugin_id: str, query: dict) -> None:
+        """One plugin's detail payload: detail, installed state, versions and sample.
+
+        A version query must name a version the entry lists, and a missing one is a
+        404 rather than a silent fallback to the current release. Alternatives are
+        up to five other entries in the same category. An entry that carries no
+        stored sample has one rendered from its plugin folder; a broken fixture
+        stays null."""
         entry, entries, policy = self._find_entry(plugin_id)
         requested = query.get("version", "")
         versions = self._versions(entry)
@@ -458,6 +533,11 @@ class _API:
         })
 
     def _versions(self, entry: dict) -> list:
+        """Every known version of an entry, the current release first.
+
+        The current version leads with the entry's digest and yank flag; declared
+        versions follow in order with repeats dropped. An entry with no version
+        still yields one row, so a detail page always has a version to show."""
         versions = [{"version": entry.get("version", ""),
                      "digest": entry.get("digest", ""),
                      "yanked": bool(entry.get("yanked"))}]
@@ -475,6 +555,10 @@ class _API:
         return versions
 
     def get_installed(self) -> None:
+        """Every installed plugin, sorted by id, with the policy banner.
+
+        Without a plugin runtime the route answers 503 rather than an empty list,
+        because an empty list would claim nothing is installed."""
         if self.plugins is None:
             raise MarketplaceError(503, "marketplace:unavailable",
                                    "no plugin runtime is configured")
@@ -487,6 +571,11 @@ class _API:
         })
 
     def _rendered_sample(self, entry: dict):
+        """Render a plugin's sample card from its folder, or None when it fails.
+
+        The bundled catalog is built from manifests and carries no rendered
+        fixture, so the detail page renders one; a broken fixture stays an honest
+        null."""
         plugin_dir = self._plugin_dir(entry)
         if plugin_dir is None:
             return None
@@ -496,6 +585,7 @@ class _API:
             return None
 
     def _pack_document(self) -> dict:
+        """The registry's packs.json, or an empty document without a registry root."""
         root = self._registry_root()
         if root is None:
             return {"schemaVersion": 1, "packs": []}
@@ -503,6 +593,7 @@ class _API:
         return document if isinstance(document, dict) else {"schemaVersion": 1, "packs": []}
 
     def get_packs(self) -> None:
+        """Every pack the registry declares, resolved against the visible catalog."""
         entries, policy = self._entries()
         by_id = {entry.get("id"): entry for entry in entries}
         document = self._pack_document()
@@ -520,6 +611,12 @@ class _API:
         })
 
     def _pack_payload(self, raw: dict, by_id: dict) -> dict:
+        """The pack DTO: member cards, member scopes and the first blocking member.
+
+        A member the catalog does not carry stays in the list as ineligible with a
+        catalog:not-found reason, so the pack page explains the gap instead of
+        dropping the member. blockedMember and blockedReason name the first
+        failure, and eligible is false when there is one."""
         members = []
         cards = []
         blocked = None
@@ -573,6 +670,10 @@ class _API:
         }
 
     def _member_scopes(self, entry: dict) -> list:
+        """The scopes a pack member asks for, preferring the staged manifest.
+
+        A plugin whose files are not on this desk falls back to the permissions the
+        catalog declared."""
         plugin_dir = self._plugin_dir(entry)
         if plugin_dir is not None:
             scopes = self._manifest_scopes(plugin_dir)
@@ -581,6 +682,11 @@ class _API:
         return list((entry.get("capabilities") or {}).get("permissions") or [])
 
     def get_publisher(self, name: str) -> None:
+        """A publisher page: their entries, verification, proof and first sighting.
+
+        The name match is case-insensitive. verified is true when any entry carries
+        publisherVerified, proof is the first non-empty proof, and firstSeen is the
+        earliest entry date, empty when none is known."""
         entries, _policy = self._entries()
         matches = [entry for entry in entries
                    if str(entry.get("publisher", "")).lower() == name.lower()]
@@ -603,10 +709,16 @@ class _API:
         })
 
     def get_policy(self) -> None:
+        """The effective policy with its verification block, as JSON."""
         policy, verification = load_effective_policy(self.workspace)
         self.send(200, policy_payload(policy, verification))
 
     def get_audit(self, query: dict) -> None:
+        """One page of audit events after a cursor.
+
+        since is an index into the store and limit is clamped to 1..200; next is
+        the cursor for the following page, or null at the end. Malformed
+        parameters fall back to the first page."""
         events = self._audit_events()
         try:
             since = max(int(query.get("since", 0) or 0), 0)
@@ -628,6 +740,7 @@ class _API:
         return os.environ.get(ADMIN_ENV, "").strip() == "1"
 
     def _require_admin(self) -> None:
+        """Refuse the request unless the admin environment switch is on."""
         if not self.admin_enabled():
             raise MarketplaceError(
                 403, "admin:disabled",
@@ -636,6 +749,10 @@ class _API:
                 {"env": ADMIN_ENV})
 
     def get_admin(self) -> None:
+        """The admin snapshot: policy posture, anchor, pending work and inventory.
+
+        Requires admin mode. The policy block reports the verification verdict, not
+        the policy body, which /policy already serves."""
         self._require_admin()
         policy, verification = load_effective_policy(self.workspace)
         self.send(200, {
@@ -665,6 +782,10 @@ class _API:
         })
 
     def get_trust(self) -> None:
+        """The Trust Center snapshot: anchor, policy, last validation and the copy.
+
+        The guarantee list is static server text with the live trust-store note
+        appended, so the page never claims a check this build does not run."""
         policy, verification = load_effective_policy(self.workspace)
         trust_store = self._trust_store_status()
         self.send(200, {
@@ -679,6 +800,10 @@ class _API:
         })
 
     def get_audit_export(self) -> None:
+        """Download the audit store as NDJSON.
+
+        Admin only. Each line carries the five evidence columns (time, action,
+        plugin, actor, outcome) and no message body, note or reason."""
         self._require_admin()
         lines = []
         for event in self._audit_events():
@@ -693,6 +818,8 @@ class _API:
              'attachment; filename="marketplace-audit.jsonl"'})
 
     def _catalog_source(self) -> str:
+        """Name the catalog the desk serves from: 'org' when an org entry exists,
+        otherwise 'bundled'."""
         document = self._read_json(self.marketplace_dir(ORG_CATALOG_FILE), None)
         plugins = document.get("plugins") if isinstance(document, dict) else None
         if isinstance(plugins, list) and any(
@@ -701,6 +828,10 @@ class _API:
         return "bundled"
 
     def _manifest_of(self, record: dict) -> dict:
+        """A pending publication's manifest: the inline copy, else the staged one.
+
+        The staged copy is read from the record's folder; a missing or unreadable
+        manifest.json reads as an empty mapping."""
         manifest = record.get("manifest")
         if isinstance(manifest, dict) and manifest:
             return manifest
@@ -711,6 +842,10 @@ class _API:
         return document if isinstance(document, dict) else {}
 
     def _pending_publications(self) -> list:
+        """Publications waiting for an admin decision, ordered by pending file name.
+
+        The id is the record's pendingId, falling back to the file name; the plugin
+        id, version and publisher come from the manifest, which may be missing."""
         directory = self.marketplace_dir(PENDING_DIR)
         if not directory.is_dir():
             return []
@@ -732,6 +867,10 @@ class _API:
         return items
 
     def _revoked_entries(self) -> list:
+        """Quarantine and yank records as admin rows, stamped with the policy epoch.
+
+        Deprecation is advisory and stays out of this list; the epoch is the one the
+        active policy enforces, not the record's own."""
         policy, _verification = load_effective_policy(self.workspace)
         governance = self._governance()
         plugins = governance.get("plugins") if isinstance(governance, dict) else None
@@ -756,6 +895,10 @@ class _API:
         return items
 
     def _inventory(self, policy) -> list:
+        """One row per installed plugin: version, digest, enabled and eligibility.
+
+        An installed plugin with no catalog entry is judged from its id alone, so
+        the source rule refuses it instead of it disappearing from the list."""
         entries, _policy = self._entries(policy)
         by_id = {entry.get("id", ""): entry for entry in entries}
         records = self.plugins.list_records() if self.plugins is not None else []
@@ -778,6 +921,7 @@ class _API:
         return items
 
     def _record_validation(self, validation: dict, scope: str, subject: str) -> None:
+        """Persist the last validator verdict the Trust Center reports."""
         self._write_json(self.marketplace_dir(VALIDATION_FILE), {
             "at": _now(),
             "ok": bool(validation.get("ok")),
@@ -788,6 +932,7 @@ class _API:
         })
 
     def _last_validator_run(self) -> dict:
+        """The last recorded validator verdict, or an all-null block when none ran."""
         document = self._read_json(self.marketplace_dir(VALIDATION_FILE), None)
         if not isinstance(document, dict):
             return {"at": None, "ok": None, "failures": [], "scope": None}
@@ -803,27 +948,34 @@ class _API:
     # -- file-backed state ----------------------------------------------
 
     def _read_json(self, path: Path, fallback):
+        """Parse a JSON file, returning the fallback for any read or parse failure."""
         try:
             return json.loads(Path(path).read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return fallback
 
     def _write_json(self, path: Path, document) -> None:
+        """Write a document as pretty, key-sorted JSON, creating parent folders."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n",
                         encoding="utf-8")
 
     def _governance(self) -> dict:
+        """The admin governance record; a missing or broken file is empty."""
         document = self._read_json(self.marketplace_dir(GOVERNANCE_FILE), {})
         return document if isinstance(document, dict) else {}
 
     def _audit_events(self) -> list:
+        """The local audit store's rows, dropping anything that is not an object."""
         document = self._read_json(self.marketplace_dir(AUDIT_FILE), [])
         return [item for item in document if isinstance(item, dict)] if isinstance(
             document, list) else []
 
     def audit(self, action: str, plugin_id: str, outcome: str, detail_text: str = "") -> None:
+        """Append one admin action to the local audit store.
+
+        The store keeps the most recent 1000 events; older rows are dropped."""
         events = self._audit_events()
         events.append({"at": _now(), "action": action, "pluginId": plugin_id,
                        "actor": "local-admin", "outcome": outcome,
@@ -831,6 +983,9 @@ class _API:
         self._write_json(self.marketplace_dir(AUDIT_FILE), events[-1000:])
 
     def _deny(self, decision: dict) -> None:
+        """Raise the first policy reason as a 403, carrying every reason in details.
+
+        A decision with no reasons still refuses, under policy:source-not-enabled."""
         reasons = decision.get("reasons") or []
         first = reasons[0] if reasons else {
             "code": "policy:source-not-enabled", "message": "the entry is not eligible"}
@@ -842,6 +997,11 @@ class _API:
     # -- install/update helpers -----------------------------------------
 
     def _plugin_dir(self, entry: dict):
+        """Locate a catalog entry's plugin folder on this desk, or None.
+
+        Candidates are the entry's own path, the registry checkout, then a staged
+        copy under the marketplace folder; only a folder holding manifest.json
+        counts."""
         candidates = []
         raw = entry.get("path")
         if raw:
@@ -864,6 +1024,12 @@ class _API:
         items: set = set()
 
         def walk(prefix: str, node) -> None:
+            """Flatten one permission block into 'path: value' leaves.
+
+            A list reuses its key as the prefix, so several values for one permission
+            become several leaves. None, false, an empty string and 'none' are
+            skipped, so dropping a permission narrows the set instead of changing a
+            value."""
             if isinstance(node, dict):
                 for key, value in node.items():
                     walk(f"{prefix}.{key}" if prefix else key, value)
@@ -878,6 +1044,10 @@ class _API:
         return items
 
     def _manifest_scopes(self, plugin_dir: Path) -> list:
+        """Sorted 'path: value' scopes granted by a plugin folder's manifest.
+
+        An unreadable or absent manifest grants nothing, which is the safe answer
+        for a widening check."""
         try:
             manifest = json.loads(
                 (Path(plugin_dir) / "manifest.json").read_text(encoding="utf-8"))
@@ -886,6 +1056,10 @@ class _API:
         return sorted(self._granted_scopes(manifest))
 
     def _zip_dir(self, plugin_dir: Path) -> Path:
+        """Zip a plugin folder into a temporary archive and return its path.
+
+        Member names are POSIX and relative to the plugin root; the caller owns the
+        file and must delete it."""
         handle = tempfile.NamedTemporaryFile(
             suffix=".zip", prefix="marketplace-", delete=False)
         handle.close()
@@ -897,12 +1071,18 @@ class _API:
         return target
 
     def _runtime(self):
+        """The plugin runtime, or the 503 every mutating route raises without one."""
         if self.plugins is None:
             raise MarketplaceError(503, "marketplace:unavailable",
                                    "no plugin runtime is configured")
         return self.plugins
 
     def _entry_for_install(self, plugin_id: str):
+        """Resolve the entry to install and the folder its files come from.
+
+        Eligibility is re-decided for a fresh install, so an installed record
+        cannot excuse a policy the entry now fails; a refusal is audited before it
+        is raised. Raises 409 when the entry names no readable plugin folder."""
         entry, _entries, policy = self._find_entry(plugin_id)
         decision = evaluate(entry, policy)
         if not decision["eligible"]:
@@ -944,6 +1124,11 @@ class _API:
     # -- POST routes -----------------------------------------------------
 
     def post(self, path: str) -> None:
+        """Dispatch a POST under the marketplace prefix to its route.
+
+        Publication decisions are matched first because their route carries the
+        pending id; every other route is an exact match. An unknown route raises
+        the same 404 the envelope renders."""
         route = path[len(PREFIX):]
         if route.startswith("/admin/publications/") and route.endswith(
                 _PUBLISH_ACTION_SUFFIXES):
@@ -982,6 +1167,7 @@ class _API:
 
     @staticmethod
     def _required_id(body: dict) -> str:
+        """The trimmed plugin id from a request body, or a 400 naming the field."""
         plugin_id = body.get("id")
         if not isinstance(plugin_id, str) or not plugin_id.strip():
             raise MarketplaceError(
@@ -990,6 +1176,12 @@ class _API:
         return plugin_id.strip()
 
     def post_install(self, body: dict) -> None:
+        """Install one catalog entry onto this desk.
+
+        The body may pin source, version and digest, and each must agree with the
+        entry; only the entry's current release is installable. The staged tree
+        must hash to the catalog pin before the runtime sees it, and a refusal is
+        audited. A fresh install widens nothing, so widening is always empty."""
         plugin_id = self._required_id(body)
         entry, plugin_dir = self._entry_for_install(plugin_id)
         source = body.get("source")
@@ -1030,6 +1222,10 @@ class _API:
     # -- packs and studio validation -------------------------------------
 
     def _inline_manifest(self, body: dict) -> dict:
+        """The request's manifest object, accepting its JSON string form.
+
+        Studio posts the manifest as an object or as its JSON text; anything else is
+        a 400 naming the manifest field."""
         manifest = body.get("manifest")
         if isinstance(manifest, str):
             try:
@@ -1047,6 +1243,11 @@ class _API:
 
     @staticmethod
     def _inline_name(manifest: dict, kind: str) -> str:
+        """Pick the in-tree file name for an inline widget UI or sample document.
+
+        The manifest may name the file, but only a relative path inside the plugin
+        folder is honoured: an absolute or traversing name falls back to
+        widget.ui.json or sample.json."""
         name = ""
         if kind == "widget":
             contributes = manifest.get("contributes")
@@ -1064,6 +1265,11 @@ class _API:
         return name
 
     def _write_inline_plugin(self, folder: Path, body: dict) -> dict:
+        """Write an inline manifest, widget UI and sample into a plugin folder.
+
+        The widget UI and sample are written at the relative names the manifest
+        declares, as text when given text and as pretty JSON otherwise. Returns the
+        parsed manifest."""
         manifest = self._inline_manifest(body)
         folder.mkdir(parents=True, exist_ok=True)
         files = {"manifest.json": json.dumps(manifest, indent=2)}
@@ -1083,6 +1289,7 @@ class _API:
 
     @staticmethod
     def _studio_manual_source(manifest: dict) -> dict | None:
+        """The first widget's manual-metric data source, or None for any other kind."""
         contributes = manifest.get("contributes")
         widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
         if not (isinstance(widgets, list) and widgets and isinstance(widgets[0], dict)):
@@ -1181,6 +1388,11 @@ class _API:
         })
 
     def post_validate(self, body: dict) -> None:
+        """Validate an inline draft without installing it.
+
+        The draft is written to a temporary folder and handed to the same validator
+        installs use; an unreadable staging folder is a failed verdict with a 200,
+        not a crash."""
         self._inline_manifest(body)
         with tempfile.TemporaryDirectory(prefix="marketplace-validate-") as tmp:
             self._write_inline_plugin(Path(tmp), body)
@@ -1193,6 +1405,12 @@ class _API:
         self.send(200, verdict.as_dict())
 
     def post_pack_install(self, body: dict) -> None:
+        """Install every member of a pack, or none of them.
+
+        All members are checked first (presence, eligibility, folder, digest), so a
+        blocked pack changes nothing and the error names the blocking member. A
+        runtime failure during the installs unwinds the members this request
+        installed; members already present are reported and left alone."""
         pack_id = self._required_id(body)
         document = self._pack_document()
         pack = next((item for item in document.get("packs") or []
@@ -1287,6 +1505,12 @@ class _API:
         })
 
     def post_update(self, body: dict) -> None:
+        """Update an installed plugin to the catalog's current release.
+
+        The staged tree must match the catalog pin. A widened scope set is held for
+        the user's consent; a narrowing or equal set is accepted at once, because
+        fewer permissions never need a new approval. The response names the added
+        and removed scopes."""
         plugin_id = self._required_id(body)
         runtime = self._runtime()
         try:
@@ -1361,6 +1585,10 @@ class _API:
         })
 
     def post_consent(self, body: dict) -> None:
+        """Accept or reject a pending update's widened scopes.
+
+        decision is 'accept' or 'reject'; rejecting also names the version the
+        update would have installed. The decision is audited either way."""
         plugin_id = self._required_id(body)
         decision = body.get("decision")
         if decision not in ("accept", "reject"):
@@ -1389,6 +1617,10 @@ class _API:
         self.send(200, {"id": plugin_id, "version": version, "status": status})
 
     def post_rollback(self, body: dict) -> None:
+        """Roll an installed plugin back to an earlier version.
+
+        toVersion is optional; without it the runtime picks. The response names the
+        version that was active before and the one now active."""
         plugin_id = self._required_id(body)
         runtime = self._runtime()
         requested = body.get("toVersion")
@@ -1412,6 +1644,11 @@ class _API:
                         "to": to_version, "status": "rolled-back"})
 
     def _lifecycle(self, body: dict, action: str) -> None:
+        """Run one runtime lifecycle action and answer with its result plus ok.
+
+        action must name a PluginRuntime method; purge_data is the only one that
+        takes the body's confirmation token. A runtime failure becomes a
+        MarketplaceError, and the action is audited only after it succeeds."""
         plugin_id = self._required_id(body)
         runtime = self._runtime()
         method = getattr(runtime, action)
@@ -1430,18 +1667,23 @@ class _API:
         self.send(200, payload)
 
     def post_uninstall(self, body: dict) -> None:
+        """Uninstall a plugin; the runtime keeps its data directory and says where."""
         self._lifecycle(body, "uninstall")
 
     def post_enable(self, body: dict) -> None:
+        """Start a disabled plugin again, re-attaching its data source."""
         self._lifecycle(body, "enable")
 
     def post_disable(self, body: dict) -> None:
+        """Stop a plugin without removing it: the runtime detaches its data source."""
         self._lifecycle(body, "disable")
 
     def post_retest(self, body: dict) -> None:
+        """Re-probe an installed plugin's data source and store the new status."""
         self._lifecycle(body, "retest")
 
     def post_purge_data(self, body: dict) -> None:
+        """Delete an installed plugin's stored data after the confirmation token."""
         self._lifecycle(body, "purge_data")
 
     def _set_shared(self, body: dict, shared: bool) -> None:
@@ -1468,6 +1710,10 @@ class _API:
         self.send(200, {"id": plugin_id, "shared": shared, "paired": paired})
 
     def post_report(self, body: dict) -> None:
+        """Record a local problem report against a plugin.
+
+        Reports stay in this desk's marketplace folder (most recent 1000) and are
+        never sent anywhere. The reason is required; the note is optional."""
         plugin_id = self._required_id(body)
         reason = body.get("reason")
         if not isinstance(reason, str) or not reason.strip():
@@ -1486,6 +1732,12 @@ class _API:
         self.send(200, {"ok": True, "report": report})
 
     def post_publish(self, body: dict) -> None:
+        """Queue a plugin for review: an inline draft or an existing folder.
+
+        An inline body needs a changelog, an explicit license grant and an SPDX
+        license in the manifest. The validator runs at submission and its verdict
+        is stored with the pending record; a failed verdict still queues, and
+        approval re-validates. Answers 202 with the pending id."""
         folder = body.get("folder")
         inline = not (isinstance(folder, str) and folder.strip())
         if inline:
@@ -1542,6 +1794,12 @@ class _API:
     # -- admin mutations (T13) -------------------------------------------
 
     def post_policy_import(self, body: dict) -> None:
+        """Verify a signed policy bundle and, with confirm, make it the policy.
+
+        Admin only. Without confirm the route returns the field diff and the
+        verification block and writes nothing. With it, the bundle is re-verified
+        against the anchor as it stands now, then written, the anchor advanced and
+        the validation recorded; a rejection leaves the current policy in force."""
         self._require_admin()
         bundle = body.get("bundle")
         if not isinstance(bundle, dict):
@@ -1598,6 +1856,11 @@ class _API:
                         "applied": True})
 
     def post_kill_switch(self, body: dict) -> None:
+        """Turn the administrator kill switch on or off for one plugin.
+
+        Admin only. The overlay is stored apart from the signed policy, so the
+        switch keeps working while a bundle is active; the response lists every
+        disabled id."""
         self._require_admin()
         plugin_id = body.get("pluginId")
         if not isinstance(plugin_id, str) or not plugin_id.strip():
@@ -1619,6 +1882,13 @@ class _API:
 
     def post_publication_decision(self, pending_id: str, action: str,
                                   body: dict) -> None:
+        """Approve or reject one pending publication.
+
+        Admin only. Rejecting needs a reason and only drops the pending record.
+        Approving re-validates the staged folder, copies it to a stable org
+        location and pins its tree digest, then replaces that plugin's org catalog
+        entry, so the release is as installable and digest-checked as a bundled
+        one."""
         self._require_admin()
         pending_id = pending_id.strip().strip("/")
         path = self.marketplace_dir(PENDING_DIR, f"{pending_id}.json")
@@ -1688,6 +1958,10 @@ class _API:
                         "catalogSource": "org", "validation": validation})
 
     def _validate_pending(self, folder: Path) -> dict:
+        """Validate a staged publication folder and return the verdict document.
+
+        A folder the validator cannot read at all still yields a failed verdict
+        with a publish:unreadable failure rather than raising."""
         try:
             return validate_plugin(folder).as_dict()
         except Exception as exc:  # noqa: BLE001 - an unreadable folder is a verdict
@@ -1696,6 +1970,12 @@ class _API:
 
     def _approved_release(self, manifest: dict, folder: Path, body: dict,
                           record: dict, version: str) -> dict:
+        """Build the org catalog release an approved publication becomes.
+
+        The risk tier comes from the approval body, else the manifest, else T1
+        rather than a guessed higher tier. Permissions, optional permissions and
+        widget contributes are copied only when the manifest declares them as
+        objects; the caller stamps path and digest afterwards."""
         requested = body.get("riskTier")
         if not isinstance(requested, str) or not requested.strip():
             requested = manifest.get("riskTier")
@@ -1733,6 +2013,10 @@ class _API:
         return release
 
     def _remove_pending(self, path: Path, record: dict) -> None:
+        """Drop a decided publication's record and its staged tree.
+
+        Only a folder inside the pending directory is removed, so a record pointing
+        elsewhere cannot delete it."""
         try:
             Path(path).unlink()
         except OSError:
@@ -1749,6 +2033,11 @@ class _API:
             pass
 
     def post_governance(self, action: str, body: dict) -> None:
+        """Record a quarantine, yank or deprecation for one plugin version.
+
+        Admin only. The record is keyed by plugin then action, so re-issuing an
+        action replaces its version, reason and timestamp. A replacement version,
+        when given, becomes the advisory text."""
         self._require_admin()
         plugin_id = self._required_id(body)
         version = body.get("version")
@@ -1792,6 +2081,10 @@ def _safe_component(value: str, field: str) -> str:
 
 
 def _query_dict(query: str) -> dict:
+    """Parse a URL query string into a flat dict.
+
+    Keys and values are percent- and plus-decoded; a repeated key keeps its last
+    value."""
     values: dict[str, str] = {}
     for pair in query.split("&"):
         if not pair:
@@ -1803,6 +2096,11 @@ def _query_dict(query: str) -> dict:
 
 
 def _run(handler, method: str):
+    """Run one request and always answer, turning failures into the envelope.
+
+    MarketplaceError keeps its status and code, a runtime failure keeps its own,
+    and anything else becomes a 500 without dropping the connection. A failed
+    POST is audited with the route as its subject."""
     path, _, query = handler.path.partition("?")
     api = _API(handler)
     try:

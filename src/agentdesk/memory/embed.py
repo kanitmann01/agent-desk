@@ -110,6 +110,11 @@ def decode_embedding(blob, dim) -> list[float] | None:
 
 
 def _is_number(value) -> bool:
+    """True for int and float, the two types a vector entry may be.
+
+    bool passes this test too, since it subclasses int; every caller that has
+    to refuse a boolean checks for one separately before asking.
+    """
     return isinstance(value, (int, float))
 
 
@@ -168,6 +173,11 @@ def vector_from_payload(payload) -> list[float] | None:
 
 
 def _finite_numbers(value) -> list[float] | None:
+    """The list's entries as floats, or None if any of them is not a finite number.
+
+    None for an empty or non-list value as well, so a caller never gets a
+    vector with a hole; ints come back as floats.
+    """
     if not isinstance(value, list) or not value:
         return None
     numbers: list[float] = []
@@ -238,12 +248,24 @@ class EndpointEmbedder:
     out, for the audit row."""
 
     def __init__(self, base_url: str, api_key: str, model: str) -> None:
+        """Bind one endpoint triple; nothing is contacted here.
+
+        The values are stored verbatim: the base URL is checked per call, so a
+        bad one surfaces as EmbedderUnavailable on the first embed rather than
+        at construction.
+        """
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
         self.last_request_bytes = 0
 
     def embed(self, text: str) -> list[float]:
+        """One embeddings request for this text; the vector it answered.
+
+        Raises EmbedderUnavailable with a plain-language cause on any failure.
+        last_request_bytes is set before the request, so it reports the size
+        that was sent even when the call then fails.
+        """
         self.last_request_bytes = len(text.encode("utf-8"))
         return _post_embeddings(self.base_url, self.api_key, self.model, text)
 
@@ -256,11 +278,22 @@ class SettingsEmbedder:
     without a restart."""
 
     def __init__(self, settings_store=None) -> None:
+        """Hold the settings store to consult on each call, never read it now.
+
+        A None store means the effective llm config comes from the process
+        environment; either way the endpoint is resolved at embed time, so a
+        store written later in the session still applies.
+        """
         self._settings = settings_store
         self.last_request_bytes = 0
 
     @property
     def model(self) -> str:
+        """The configured embeddings model, re-read on every access.
+
+        DEFAULT_EMBED_MODEL when no store is bound or the row is unset or
+        empty, so clearing the setting restores the default.
+        """
         if self._settings is not None:
             saved = self._settings.get("embeddings_model")
             if saved:
@@ -268,6 +301,14 @@ class SettingsEmbedder:
         return DEFAULT_EMBED_MODEL
 
     def embed(self, text: str) -> list[float]:
+        """Resolve the endpoint and model now, then make one embeddings request.
+
+        The base URL and key come from the effective llm config, the model from
+        this object's model property, so a newly saved endpoint or model is
+        picked up by the next call without rebuilding the embedder.
+        last_request_bytes is set before the request, so a failed call still
+        reports its size.
+        """
         base, key, _chat_model = effective_llm_config(self._settings)
         self.last_request_bytes = len(text.encode("utf-8"))
         return _post_embeddings(base, key, self.model, text)

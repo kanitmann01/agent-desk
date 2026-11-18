@@ -24,6 +24,12 @@ from agentdesk.registry.install import tree_digest  # noqa: E402
 
 
 def _manifest(plugin_dir: Path) -> dict:
+    """Read one plugin folder's manifest as a dict.
+
+    A missing or unparseable manifest reads as an empty mapping, so the
+    folder still gets a catalog entry (named after the directory, with empty
+    placeholders) instead of dropping out of the catalog without a trace.
+    """
     try:
         return json.loads((plugin_dir / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -31,6 +37,12 @@ def _manifest(plugin_dir: Path) -> dict:
 
 
 def _release_statement(trust_dir: Path, plugin_id: str, version: str) -> dict:
+    """Read the detached release statement for one plugin version, or {}.
+
+    Trust data is optional. When it is absent the catalog entry carries an
+    empty signature, and changelog and minHost fall back to the index release
+    when the index has one and to the payload's own fields otherwise.
+    """
     path = trust_dir / "releases" / plugin_id / f"{version}.json"
     if not path.is_file():
         return {}
@@ -95,6 +107,14 @@ def build_catalog(registry_root: Path | str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Write the bundled catalog for one registry root and report it.
+
+    Reads --registry (default registry/) and overwrites --out (default
+    build/catalog.json), creating the parent directory; the file is written
+    with sorted keys and a trailing newline so reruns diff cleanly. Exits 0
+    after printing the plugin count. A registry with no plugins/ directory
+    raises before --out is touched, and argparse exits 2 on bad usage.
+    """
     parser = argparse.ArgumentParser(description="Build the bundled plugin catalog")
     parser.add_argument("--registry", default=str(REPO_ROOT / "registry"))
     parser.add_argument("--out", default=str(REPO_ROOT / "build" / "catalog.json"))

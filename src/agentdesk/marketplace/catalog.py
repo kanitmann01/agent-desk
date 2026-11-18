@@ -25,6 +25,8 @@ _BUILD_CACHE: dict[str, tuple] = {}
 
 
 def _build_script() -> Path:
+    """Path of scripts/build_catalog.py beside the checkout, whether or not it
+    exists."""
     return Path(__file__).resolve().parents[3] / "scripts" / "build_catalog.py"
 
 
@@ -47,6 +49,7 @@ def _load_build_callable():
 
 
 def _read_json(path: Path):
+    """Parse a JSON file, or None when it is missing or malformed."""
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -54,6 +57,7 @@ def _read_json(path: Path):
 
 
 def _plugins_of(catalog) -> list:
+    """The plugin list of a catalog document, empty when the shape is wrong."""
     if isinstance(catalog, dict):
         plugins = catalog.get("plugins")
     elif isinstance(catalog, list):
@@ -64,6 +68,9 @@ def _plugins_of(catalog) -> list:
 
 
 def _risk_label(value) -> str:
+    """Map a registry risk label onto a tier, or an empty string when unknown.
+
+    A value already in tier form is kept as it is."""
     text = str(value or "").strip()
     if text in RISK_TIERS:
         return text
@@ -75,6 +82,10 @@ def _scope_items(permissions) -> set[str]:
     items: set[str] = set()
 
     def walk(prefix: str, node) -> None:
+        """Flatten one permission node into 'path: value' leaves.
+
+        A list reuses its key as the prefix, so several values for one permission
+        become several comparable scopes."""
         if isinstance(node, dict):
             for key, value in node.items():
                 walk(f"{prefix}.{key}" if prefix else key, value)
@@ -89,12 +100,18 @@ def _scope_items(permissions) -> set[str]:
 
 
 def _strings(value) -> list:
+    """The non-empty strings of a list, and an empty list for any other value."""
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if isinstance(item, str) and item.strip()]
 
 
 def _signature(raw, source: str) -> dict:
+    """Normalize an entry's signature into the DTO shape.
+
+    A bare string is the signer fingerprint of a signed release. An absent
+    signature is 'bundled' for the bundle's own entries and 'missing' for
+    anything else, which is what the policy's signature rule reads."""
     if isinstance(raw, dict):
         status = str(raw.get("status") or "").strip()
         return {
@@ -111,6 +128,12 @@ def _signature(raw, source: str) -> dict:
 
 
 def _capabilities(raw) -> dict:
+    """The capability summary a card and detail page draw from.
+
+    A precomputed capabilities block wins over facts derived from the raw
+    manifest, so the builder's output is not second-guessed; otherwise
+    sources, filesystem paths and network hosts come from the permission
+    trees, with hosts deduplicated and scopes sorted."""
     existing = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
     permissions = raw.get("permissions") if isinstance(raw.get("permissions"), dict) else {}
     optional = (raw.get("optionalPermissions")
@@ -154,6 +177,10 @@ def _capabilities(raw) -> dict:
 
 
 def _changelog(raw, version: str) -> dict:
+    """Normalize a changelog entry from either a string or an object.
+
+    A plain string is the notes for the entry's own version; a missing one
+    yields empty notes rather than a made-up entry."""
     raw_log = raw.get("changelog")
     if isinstance(raw_log, dict):
         return {

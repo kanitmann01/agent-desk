@@ -38,6 +38,11 @@ class SessionStore:
         max_age: int = SESSION_MAX_AGE,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        """Start the store with one freshly minted bootstrap token and no sessions.
+
+        max_age and clock are per-instance so a test can freeze or advance time; the
+        real process keeps the 12-hour session lifetime.
+        """
         self._max_age = max_age
         self._clock = clock
         self._bootstrap_token = _new_token()
@@ -45,6 +50,11 @@ class SessionStore:
         self._lock = threading.Lock()
 
     def bootstrap_token(self) -> str:
+        """The token the auth URL carries for the whole process lifetime.
+
+        It is never rotated and never expires: reopening auth_path is the only recovery
+        when the cookie is lost, so the token has to outlive every session it mints.
+        """
         return self._bootstrap_token
 
     def auth_path(self) -> str:

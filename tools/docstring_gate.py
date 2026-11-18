@@ -42,6 +42,7 @@ SKIP_DIRS = {
 
 TS_SKIP_SUFFIXES = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", ".d.ts")
 TS_SKIP_NAMES = {"routeTree.gen.ts"}
+TS_SKIP_PREFIXES = ("frontend/src/test/",)
 TS_KEYWORDS = {
     "if", "for", "while", "switch", "catch", "return", "else", "do", "try",
     "function", "constructor", "new", "typeof", "case", "await", "yield",
@@ -176,6 +177,8 @@ def collect_typescript() -> list[str]:
                 continue
             if path.name in TS_SKIP_NAMES or path.name.endswith(TS_SKIP_SUFFIXES):
                 continue
+            if _rel(path).startswith(TS_SKIP_PREFIXES):
+                continue
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except OSError:
@@ -219,6 +222,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write-baseline", action="store_true", help="record today's gap")
     parser.add_argument("--no-typescript", action="store_true", help="skip frontend/src")
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="drop keys under this path prefix (repeatable)",
+    )
+    parser.add_argument(
         "--ignore-baseline",
         action="store_true",
         help="report only undocumented functions in scope; used while a batch is open",
@@ -235,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     missing, broken = collect(include_typescript=not args.no_typescript)
     if args.scope:
         missing = [key for key in missing if key.startswith(tuple(args.scope))]
+    if args.exclude:
+        missing = [key for key in missing if not key.startswith(tuple(args.exclude))]
 
     if args.write_baseline:
         write_baseline(missing)

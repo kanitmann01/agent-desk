@@ -24,6 +24,11 @@ REVIEW_KINDS = (KIND_MEMORY_DRAFT, KIND_MEMORY_REFLECTION)
 
 
 def _bounded(text: str, limit: int) -> str:
+    """One value collapsed onto one line and cut to a character budget.
+
+    An over-long value keeps limit - 1 characters plus an ellipsis, so the result never
+    exceeds the budget.
+    """
     flat = " ".join(str(text).split())
     return flat if len(flat) <= limit else flat[: limit - 1] + "\u2026"
 
@@ -55,6 +60,11 @@ def origin_of(source: str, card, excerpt) -> dict:
 
 
 def _card_for(inbox, source: str):
+    """The inbox card a fact's source names, or None.
+
+    A source reads "inbox card <id>"; any other source, or a card that has since been
+    deleted, yields None rather than an error.
+    """
     if inbox is None or not source.startswith("inbox card "):
         return None
     try:
@@ -105,6 +115,12 @@ def candidate_json(card, excerpts: dict, facts_by_id: dict) -> dict:
 
 def build_loop_state(memory, inbox, capture: dict, extractor: dict,
                      last_capture: dict | None, undo_window_s: float) -> dict:
+    """The loop page's whole view model, assembled from the memory store and the inbox.
+
+    Every list is newest first, ordered by timestamp and then id, and excerpt text is
+    bounded at EXCERPT_CHARS. counts.standing excludes replaced facts, candidates are
+    the waiting cards of a review kind, and an absent inbox yields no candidates at all.
+    """
     facts = memory.all()
     facts_by_id = {fact.id: fact for fact in facts}
     excerpts = {excerpt.id: excerpt for excerpt in memory.sources()}

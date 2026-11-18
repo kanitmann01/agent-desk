@@ -153,6 +153,14 @@ GATES = [
 
 
 def main() -> int:
+    """Run every gate in GATES and return 0 only when all of them pass.
+
+    Runs under PINNED_ENV plus a fresh temporary AGENTDESK_DATA directory that
+    is removed afterwards; npm ci runs first when frontend/node_modules is
+    missing. A gate that raises counts as failed instead of aborting the run.
+    Prints one line per gate with its duration and detail, then the tally and
+    "CI PASS", or the names of the failed gates and exit 1.
+    """
     started = time.time()
     data_dir = tempfile.mkdtemp(prefix="agentdesk-ci-")
     env = {**os.environ, **PINNED_ENV, "AGENTDESK_DATA": data_dir}

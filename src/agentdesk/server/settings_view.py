@@ -119,6 +119,12 @@ def _endpoint_form(status: dict) -> str:
 
 
 def _toggle_button(key: str, value) -> str:
+    """One settings row: its label and a button showing the current value.
+
+    daily_cap is shown as a named level, plugin_instance_cap as a plain count, and every
+    other key as On or Off, so the button text reads as the state the next click
+    changes. data-setting names the key the client posts back.
+    """
     label = _LABELS.get(key, key)
     if key == "daily_cap":
         shown = {3: "3 (normal)", 1: "1 (quiet)", 0: "0 (inbox only)"}[value]

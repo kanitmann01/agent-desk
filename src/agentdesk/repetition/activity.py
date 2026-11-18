@@ -20,17 +20,20 @@ CREATE TABLE IF NOT EXISTS activity (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the activity table if missing; commits, so it is safe to call again."""
     conn.executescript(SCHEMA)
     conn.commit()
 
 
 class ActivityLog:
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time) -> None:
+        """Bind the log to a connection and make sure its table exists."""
         self.conn = conn
         self.clock = clock
         ensure_schema(conn)
 
     def record(self, kind: str, text: str) -> None:
+        """Append one entry stamped with the injected clock and commit it."""
         with self.conn:
             self.conn.execute(
                 "INSERT INTO activity (ts, kind, text) VALUES (?, ?, ?)",
@@ -38,6 +41,7 @@ class ActivityLog:
             )
 
     def entries(self, limit: int = 200) -> list[dict]:
+        """The newest `limit` entries, oldest first."""
         rows = self.conn.execute(
             "SELECT ts, kind, text FROM (SELECT * FROM activity ORDER BY id DESC LIMIT ?)"
             " ORDER BY id ASC",

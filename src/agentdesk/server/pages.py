@@ -819,6 +819,13 @@ def _stamp_html(widget: Widget) -> str:
 
 
 def _widget_html(widget: Widget) -> str:
+    """One dashboard widget's article markup, header chrome included.
+
+    body_html, foot_html and the column class are inserted as the widget rendered them;
+    the id, title and badge are escaped here. The widget id appears again as a data
+    attribute for the client's sparkline and freshness code, which reads the freshness
+    status off the same element.
+    """
     badge = f'<span class="badge-pilot">{html.escape(widget.badge)}</span>' if widget.badge else ""
     extra = f" {widget.extra_classes}" if widget.extra_classes else ""
     return (
@@ -847,6 +854,14 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     )
 
     def entry(href: str, icon: str, label: str, extra: str = "") -> str:
+        """The markup for one rail link, including the name the collapsed rail still
+        announces.
+
+        The visible label hides when the rail narrows, so every link carries its own
+        aria-label (the Inbox link adding its waiting count) and a single-letter mark
+        for the collapsed state; aria-current marks the page being viewed. The icon
+        argument is accepted and ignored, since the rail is words.
+        """
         current = ' aria-current="page"' if href == active else ""
         # The accessible name survives collapse: the visible label hides
         # with the wide rail, so every link carries its own aria-label,

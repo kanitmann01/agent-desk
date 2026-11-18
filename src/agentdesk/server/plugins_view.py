@@ -26,6 +26,14 @@ _CLASS_NOTE = {
 
 def _installed_block(record: dict, shared_ids: set[str] | None = None,
                      peers_paired: int = 0) -> str:
+    """One plugin card: identity, version, source, data freshness, actions and any pending
+    update.
+
+    An uninstalled record returns early with its purge form, because its data is still
+    on disk and purging is gated on the typed confirmation delete-data:<id>. Every
+    action posts to /plugins/<id>/<action>, and the id is escaped into the paths and the
+    element ids.
+    """
     shared_ids = shared_ids or set()
     plugin_id = html.escape(str(record["id"]))
     name = html.escape(str(record.get("name", record["id"])))
@@ -128,6 +136,11 @@ def _installed_block(record: dict, shared_ids: set[str] | None = None,
 
 
 def _registry_block(entry: dict, installed_ids: set[str]) -> str:
+    """One catalog entry as a card, with the install control its state allows.
+
+    The install form pins the entry's latest version. A plugin installed from this desk,
+    or one whose releases are all yanked, gets a sentence instead of a button.
+    """
     plugin_id = html.escape(str(entry["id"]))
     publisher = html.escape(str(entry["publisher"]))
     latest = html.escape(str(entry["latest"]))
@@ -160,6 +173,12 @@ def render_plugins_page(records: list[dict], listing: dict, origin: str,
                         inbox_count: int = 0,
                         shared_ids: set[str] | None = None,
                         peers_paired: int = 0) -> str:
+    """The full plugins page: installed cards, the registry listing, then the removed-but-
+    kept section.
+
+    A listing that failed to load renders the registry's message and the settings hint
+    instead of entries, so a broken registry path never reads as an empty registry.
+    """
     installed = [record for record in records
                  if record.get("state") != "uninstalled"]
     uninstalled = [record for record in records

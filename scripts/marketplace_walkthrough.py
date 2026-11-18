@@ -39,6 +39,11 @@ class Handler:
     """The slice of DashboardHandler the marketplace router needs."""
 
     def __init__(self, server, registry_root: Path) -> None:
+        """Record the fake server and the registry root the router will resolve.
+
+        The rest of the instance is response state that _send_json and _send_bytes
+        fill in; reset clears it before each router call.
+        """
         self.server = server
         self.registry_root = registry_root
         self.path = PREFIX + "/"
@@ -50,6 +55,11 @@ class Handler:
         self.headers = {}
 
     def reset(self, path: str, body=None) -> None:
+        """Clear the response state and point the handler at one request.
+
+        path is relative to the marketplace prefix and is prefixed here, so a
+        caller passes "/catalog"; body becomes the request body the router reads.
+        """
         self.path = PREFIX + path
         self.body = body
         self.status = 0
@@ -59,35 +69,71 @@ class Handler:
         self.headers = {}
 
     def _send_json(self, status: int, payload: dict) -> None:
+        """Record what the router would have sent as a JSON response.
+
+        Status and payload stay on the instance for the caller to assert on; no
+        socket is touched.
+        """
         self.status = status
         self.payload = payload
 
     def _read_json_body(self):
+        """Return the body installed by reset, standing in for a parsed request body.
+
+        The body is handed back unchanged rather than parsed, so a malformed body
+        reaches the router exactly as the caller built it.
+        """
         return self.body
 
     def _send_bytes(self, status: int, body: bytes, content_type: str,
                     headers: dict | None = None) -> None:
+        """Record what the router would have sent as a raw byte response.
+
+        This is the shape the audit export takes, since JSONL is not one JSON
+        object; headers default to an empty mapping.
+        """
         self.status = status
         self.bytes = body
         self.content_type = content_type
         self.headers = headers or {}
 
     def _registry_root_for_request(self):
+        """Answer the registry lookup with the bundled root and its origin label.
+
+        The real handler may serve an org or a downloaded registry; the
+        walkthrough exercises only the bundled one, so it always reports
+        "bundled".
+        """
         return self.registry_root, "bundled"
 
 
 def call(handler: Handler, method: str, path: str, body=None) -> Handler:
+    """Drive one router call through the fake handler and return the handler.
+
+    Resets first, so the response fields describe this call alone; the caller
+    reads status and then payload or bytes.
+    """
     handler.reset(path, body)
     _run(handler, method)
     return handler
 
 
 def check(condition, message: str) -> None:
+    """Fail the current step unless condition is true.
+
+    Raises WalkthroughFailure, which main reports with the step number and
+    turns into exit code 1.
+    """
     if not condition:
         raise WalkthroughFailure(message)
 
 
 def payload(handler: Handler) -> dict:
+    """Return the handler's JSON payload, failing the step when there is none.
+
+    A raw-bytes response leaves payload as None, so calling this after one
+    fails the step instead of raising AttributeError later.
+    """
     check(isinstance(handler.payload, dict),
           f"expected a JSON object, got {type(handler.payload).__name__}")
     return handler.payload
@@ -95,6 +141,14 @@ def payload(handler: Handler) -> dict:
 
 def make_plugin(folder: Path, plugin_id: str, version: str,
                 write_scope: str = "") -> dict:
+    """Write a minimal declarative plugin into folder and return its manifest.
+
+    Everything is fixed except the id, the version and an optional single
+    filesystem write scope, which is what drives the update-consent step:
+    1.0.0 writes nothing, 1.1.0 adds one scope. Creates the folder and writes
+    manifest.json, widget.json, sample.json and data.json, overwriting any of
+    them that already exist.
+    """
     folder.mkdir(parents=True, exist_ok=True)
     writes = [write_scope] if write_scope else []
     manifest = {
@@ -137,6 +191,12 @@ def make_plugin(folder: Path, plugin_id: str, version: str,
 
 
 def catalog_entry(folder: Path, plugin_id: str, version: str) -> dict:
+    """Build the org-catalog entry that makes folder installable.
+
+    The digest is taken from the folder as it is now, so the entry is only
+    usable while that tree is unchanged; the signature is a local-admin one
+    because the walkthrough never verifies trust.
+    """
     return {
         "id": plugin_id,
         "name": "Walkthrough Recon",
@@ -157,6 +217,12 @@ def catalog_entry(folder: Path, plugin_id: str, version: str) -> dict:
 
 
 def write_org_catalog(workspace: Path, entries: list[dict]) -> None:
+    """Replace the workspace's org catalog with entries.
+
+    The router reads <workspace>/marketplace/org-catalog.json, so each call
+    rewrites the whole file: a later step's catalog replaces the previous one
+    rather than adding to it.
+    """
     folder = workspace / "marketplace"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "org-catalog.json").write_text(json.dumps(
@@ -164,6 +230,16 @@ def write_org_catalog(workspace: Path, entries: list[dict]) -> None:
 
 
 def main() -> int:
+    """Run the walkthrough and return its exit code.
+
+    Needs a bundled registry resolvable from this checkout, and sets ADMIN_ENV
+    so the admin routes are reachable. Everything else lives under a temporary
+    directory - plugins, their data, the workspace, the publication sources -
+    which is removed on the way out, so the repository and any installed app
+    are untouched. Prints one numbered line per step and "walkthrough: PASS";
+    a failed check or an unexpected exception reports the step number and
+    returns 1.
+    """
     registry = resolve_registry_root(None)
     check(registry is not None, "no registry root resolved from the repository")
     os.environ[ADMIN_ENV] = "1"

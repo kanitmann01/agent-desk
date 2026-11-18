@@ -118,10 +118,14 @@ def read_explicit_calendar(path_text: str):
 
 
 def default_adapters() -> Adapters:
+    """Build the adapters used outside tests: the real calendar reader and the
+    system clock.
+    """
     return Adapters(read_calendar=default_read_calendar, clock=time.time)
 
 
 def _now_from_clock(clock: Callable[[], float]) -> datetime:
+    """Return the adapter clock's current time in the machine's local time zone."""
     return datetime.fromtimestamp(clock()).astimezone()
 
 
@@ -136,6 +140,14 @@ class CalendarBridge:
         stale_s: float = DEFAULT_STALE_S,
         audit_hook: Callable[[str, str, str], None] | None = None,
     ) -> None:
+        """Bind the bridge to a connection, its adapters and the LLM, and create the
+        tables it needs.
+
+        Whenever adapters or an LLM are omitted, the production ones are built: the
+        SwiftBar folder reader, the system clock and the env-configured adapter. The
+        lock is re-entrant on purpose, because poll, status and retest call each other
+        while holding it.
+        """
         self.conn = conn
         self.adapters = adapters if adapters is not None else default_adapters()
         self.llm = llm if llm is not None else env_llm_adapter()
@@ -166,6 +178,13 @@ class CalendarBridge:
             return self._poll_locked(breakdown=breakdown)
 
     def _poll_locked(self, breakdown: bool = True) -> dict:
+        """Re-read the calendar file and return the status that re-reading produced.
+
+        Every read ends in exactly one of the empty, unreadable, stale, clear or
+        healthy states and returns the payload describing it, so a caller never sees a
+        half-updated bridge. Callers must hold the lock. Reading on the first healthy
+        poll records when that happened, and each outcome is audited.
+        """
         now_dt = _now_from_clock(self.adapters.clock)
         now = self.adapters.clock()
         found = None
@@ -238,6 +257,9 @@ class CalendarBridge:
             return self._upcoming_locked(now, within_hours)
 
     def _upcoming_locked(self, now: datetime, within_hours: float = 1.0) -> list:
+        """Return the events that start between now and within_hours from now, earliest
+        first.
+        """
         if self._document is None:
             return []
         horizon = now + timedelta(hours=within_hours)
@@ -252,6 +274,13 @@ class CalendarBridge:
             return self._status_locked()
 
     def _status_locked(self, breakdown: bool = True) -> dict:
+        """Render the current state as the payload the settings screen reads.
+
+        A bridge that is not healthy, or that has no document, answers with state,
+        cause and path only; everything else stays absent rather than misleading. The
+        breakdown and per-event checks are gathered only when asked for, because
+        producing a breakdown can cost an LLM call.
+        """
         now_dt = _now_from_clock(self.adapters.clock)
         payload = {
             "configured": True,
@@ -364,6 +393,13 @@ class CalendarBridge:
         )
 
     def _breakdown_for(self, key) -> dict:
+        """Return the breakdown for one key event, generating it the first time.
+
+        The cache key carries the event's start time, so moving an event produces a
+        fresh breakdown instead of the old one. A failing or unparsable LLM answer
+        degrades to the generic breakdown rather than raising, and whichever answer is
+        used is cached for the same event.
+        """
         cache_key = f"{key.id}:{key.start.isoformat()}"
         cached = store.cached_breakdown(self.conn, cache_key)
         if cached is not None:
@@ -392,6 +428,7 @@ class CalendarBridge:
             LOG.exception("audit hook failed")
 
     def retest(self) -> dict:
+        """Re-read the calendar on demand and return the resulting status."""
         return self.poll()
 
     def start_polling(self, interval_s: float = 1800.0) -> None:
@@ -403,6 +440,11 @@ class CalendarBridge:
         self._timer.start()
 
     def _loop(self, interval_s: float) -> None:
+        """Poll once, then schedule the next poll on a timer unless polling was stopped.
+
+        A poll that raises is logged and swallowed: the loop is what keeps the bridge
+        fresh, so nothing it does may end it.
+        """
         if self._stop.is_set():
             return
         try:
@@ -415,6 +457,7 @@ class CalendarBridge:
             self._timer.start()
 
     def stop_polling(self) -> None:
+        """Stop the background loop and cancel the timer it was waiting on."""
         stop = getattr(self, "_stop", None)
         if stop is not None:
             stop.set()

@@ -512,6 +512,11 @@ def _locked(method):
     serializes them safely against one writer."""
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        """Run the method with the store's write lock held.
+
+        An RLock because a locked method may call another one; reads skip it,
+        since SQLite serializes them against a single writer.
+        """
         with self._lock:
             return method(self, *args, **kwargs)
     return wrapper
@@ -558,6 +563,15 @@ class MemoryStore:
         embedder=None,
         embeddings_active: bool = False,
     ) -> None:
+        """Open the store: ensure the schema, then bind the key.
+
+        With no marker and no key the bank stays plaintext. A marker plus a
+        usable key seals it; a marker without a key, a key the marker rejects, or
+        a key offered to a populated plaintext bank leaves the store locked with
+        locked_cause set rather than raising here, and every later operation
+        raises that cause through _guard. A key that is not 32 bytes raises
+        ValueError before any binding happens.
+        """
         self.conn = conn
         self.clock = clock
         # One lock around every write (see _locked): the connection is
@@ -975,6 +989,13 @@ class MemoryStore:
 
     @_locked
     def delete(self, fact_id: int) -> None:
+        """Delete one fact and its observation citations, in one transaction.
+
+        The id must exist: a missing fact raises UnknownFact before anything is
+        removed, so a mis-typed delete cannot pass silently. Orphaned statements
+        are pruned in the same transaction; the observations and entities that
+        mentioned the fact stay.
+        """
         self._guard()
         self.get(fact_id)
         with self.conn:
@@ -1185,6 +1206,12 @@ class MemoryStore:
 
     def _seal_observation_text(self, observation_id: int, text: str,
                                normalized: str) -> None:
+        """Write one observation's ciphertext and blind index in the caller's
+        transaction.
+
+        A no-op on a plaintext bank. The index is the normalized text, so the
+        sealed duplicate lookup finds the same rows the plaintext scan would.
+        """
         if self._box is None:
             return
         self.conn.execute(
@@ -1311,6 +1338,11 @@ class MemoryStore:
         return int(cursor.rowcount or 0)
 
     def _citation_ids(self, observation_id) -> tuple[int, ...]:
+        """The ids of the facts an observation cites, ascending by fact id.
+
+        The order comes from the table, not from the order the citations were
+        written, so a rebuilt Observation reads the same on every load.
+        """
         rows = self.conn.execute(
             "SELECT fact_id FROM observation_sources WHERE observation_id = ?"
             " ORDER BY fact_id ASC",
@@ -1536,6 +1568,12 @@ class MemoryStore:
         return {"fields": fields}
 
     def _encrypt_sources(self, box: CryptoBox) -> None:
+        """Seal every source row: blank the three plaintext columns, store the
+        ciphertext in the _enc ones.
+
+        Runs inside encrypt_all's transaction and never commits, so a failure
+        leaves the bank entirely plaintext.
+        """
         rows = self.conn.execute(
             "SELECT id, text, speaker, context FROM sources"
         ).fetchall()
@@ -1552,6 +1590,13 @@ class MemoryStore:
             )
 
     def _encrypt_entities(self, box: CryptoBox) -> None:
+        """Seal every entity's canonical name and aliases, and rebuild its index
+        rows.
+
+        aliases_json is blanked to "[]" and aliases_enc left NULL when the entity
+        has no aliases, so an empty alias list is empty in both representations.
+        Runs inside encrypt_all's transaction.
+        """
         rows = self.conn.execute(
             "SELECT id, canonical_name, aliases_json FROM entities"
         ).fetchall()
@@ -1572,6 +1617,13 @@ class MemoryStore:
             self._sync_name_index(box, row_id, canonical_name, aliases)
 
     def _encrypt_facts(self, box: CryptoBox) -> None:
+        """Seal every fact's text and, where one exists, its embedding blob.
+
+        The blob is sealed under the facts/embedding destination bound to the row
+        id, so a sealed bank's vectors are as unreadable as its text, and the
+        text_idx blind keeps duplicate detection working. Runs inside
+        encrypt_all's transaction.
+        """
         # Ticket #95: an existing plain embedding blob re-seals under the
         # facts|embedding aad in the same conversion, like the donor's
         # encrypt-bank does.
@@ -1593,6 +1645,13 @@ class MemoryStore:
             )
 
     def _encrypt_observations(self, box: CryptoBox) -> None:
+        """Seal every observation's text and blinded scope key.
+
+        The scope key is replaced by its blind rather than blanked, because the
+        scope index is how a sealed bank finds an observation by scope; text_idx
+        carries the normalized text for the duplicate lookup. Runs inside
+        encrypt_all's transaction.
+        """
         rows = self.conn.execute(
             "SELECT id, scope_key, text FROM observations"
         ).fetchall()
@@ -1609,6 +1668,11 @@ class MemoryStore:
             )
 
     def _write_marker(self, key: bytes) -> None:
+        """Insert the schema_meta row that marks the bank sealed.
+
+        No commit of its own: the marker belongs to the caller's transaction, so
+        it lands together with the ciphertext it vouches for.
+        """
         self.conn.execute(
             "INSERT INTO schema_meta (key, value) VALUES ('encryption', ?)",
             (make_marker(key),),
@@ -1622,6 +1686,12 @@ class MemoryStore:
         return value if self._box is None else ""
 
     def _seal_fact_text(self, fact_id: int, text: str) -> None:
+        """Write one fact's ciphertext and blind text index in the caller's
+        transaction.
+
+        A no-op on a plaintext bank. A sealed read requires text_enc, so a write
+        that skipped this would leave a row nothing can read back.
+        """
         if self._box is None:
             return
         self.conn.execute(
@@ -1651,11 +1721,21 @@ class MemoryStore:
             )
 
     def _entity_repo(self) -> "_EntityRepo":
+        """A resolution seam over this store's connection, clock and crypto box.
+
+        A fresh repo per call: it carries no state of its own, and its writes
+        join whatever transaction the caller has open.
+        """
         return _EntityRepo(self.conn, self.clock, self._box)
 
     # -- reads ------------------------------------------------------------
 
     def get(self, fact_id: int) -> Fact:
+        """One fact by id, decrypted through the store's own bindings.
+
+        Raises UnknownFact for an id that is not stored, so "no such fact" stays
+        distinct from "a fact whose text is empty".
+        """
         self._guard()
         row = self.conn.execute(
             f"SELECT {_COLUMNS}, text_enc FROM facts WHERE id = ?", (fact_id,)
@@ -1782,6 +1862,12 @@ class MemoryStore:
         return decode_embedding(raw, dim)
 
     def _fact_from_row(self, row) -> Fact:
+        """Build a Fact from one _COLUMNS row followed by its text_enc.
+
+        Index 7 is the ciphertext: a sealed bank reads the text from it and
+        raises MemoryEncryptedError when it is missing, so a row without
+        ciphertext is never served as its blank plaintext column.
+        """
         text = row[1]
         if self._box is not None:
             if row[7] is None:
@@ -1987,6 +2073,11 @@ class MemoryStore:
         return present
 
     def fact_ids_for_entity(self, entity_id: int) -> list[int]:
+        """The ids of the facts linked to an entity, ascending.
+
+        An unknown entity raises UnknownEntity instead of returning an empty
+        list, so "no such entity" cannot be read as "an entity with no facts".
+        """
         self._guard()
         if self.conn.execute(
             "SELECT 1 FROM entities WHERE id = ?", (int(entity_id),)
@@ -2000,6 +2091,11 @@ class MemoryStore:
         ]
 
     def fact_ids_for_sources(self, source_ids) -> list[int]:
+        """The ids of the facts naming one of these sources, ascending.
+
+        A read: ids that match no fact are simply absent from the result, and an
+        empty input answers [] without querying.
+        """
         self._guard()
         ids = [int(value) for value in source_ids]
         if not ids:
@@ -2012,6 +2108,11 @@ class MemoryStore:
         ]
 
     def source_exists(self, source_id: int) -> bool:
+        """True when a source row with this id exists.
+
+        A locked store raises rather than answering, like every other operation,
+        so a caller cannot validate a pointer against a bank it may not read.
+        """
         self._guard()
         return self.conn.execute(
             "SELECT 1 FROM sources WHERE id = ?", (int(source_id),)
@@ -2217,11 +2318,25 @@ class _EntityRepo(EntityRepo):
 
     def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float],
                  box: CryptoBox | None = None) -> None:
+        """Bind the connection, clock and crypto box the repo reads and writes
+        through.
+
+        Nothing is loaded here, and no transaction is opened: the box decides
+        whether the plaintext or the sealed column set is used, and the caller
+        owns the transaction.
+        """
         self.conn = conn
         self.clock = clock
         self.box = box
 
     def load(self) -> list[StoredEntity]:
+        """Every entity in id order, decrypted on a sealed bank.
+
+        Id order is the donor's insertion order, which keeps a resolution run
+        deterministic when two entities answer a mention equally well. A sealed
+        row missing canonical-name ciphertext raises MemoryEncryptedError; an
+        entity with no aliases loads with ().
+        """
         if self.box is None:
             rows = self.conn.execute(
                 "SELECT id, canonical_name, aliases_json, type FROM entities"
@@ -2261,6 +2376,12 @@ class _EntityRepo(EntityRepo):
         return stored
 
     def save(self, entity_id: int, canonical: str, aliases, entity_type: str) -> None:
+        """Replace one entity's names and type wholesale.
+
+        aliases is the entity's complete alias set, not a delta, so an empty one
+        clears them. Sealed: the plaintext columns blank, name_idx blinded, and
+        the entity's index rows rebuilt. Joins the caller's transaction.
+        """
         if self.box is None:
             self.conn.execute(
                 "UPDATE entities SET canonical_name = ?, aliases_json = ?, type = ?"
@@ -2287,6 +2408,13 @@ class _EntityRepo(EntityRepo):
         self._sync_name_index(entity_id, canonical, aliases)
 
     def create(self, name: str, entity_type: str) -> int:
+        """Insert an entity and return the id the database assigned.
+
+        That id is the handle later saves and edges use. Sealed: the row is
+        inserted with NULL ciphertext and a second statement seals the name
+        against the new id, since the ciphertext binds a row id the insert cannot
+        know beforehand. Joins the caller's transaction.
+        """
         if self.box is None:
             cursor = self.conn.execute(
                 "INSERT INTO entities (canonical_name, aliases_json, type, created_ts)"
@@ -2343,6 +2471,13 @@ class _EntityRepo(EntityRepo):
         return [int(row[0]) for row in rows]
 
     def _sync_name_index(self, entity_id: int, canonical: str, aliases) -> None:
+        """Rebuild this entity's rows in entity_name_index: one blind per
+        distinct normalized name.
+
+        A no-op on a plaintext bank, which keeps no index. The canonical name
+        comes first, then the aliases; duplicates collapse because equal names
+        blind to the same value. Joins the caller's transaction.
+        """
         if self.box is None:
             return
         self.conn.execute(

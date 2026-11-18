@@ -22,6 +22,16 @@ from excel_fixtures import make_xlsx  # noqa: E402
 
 
 def main() -> int:
+    """Run the end-to-end registry install smoke and return the exit code.
+
+    Boots the real server on an ephemeral port over a temporary AGENTDESK_DATA
+    directory, seeds workspace/reports/sales.xlsx, installs sales-delta-widget
+    from this checkout's registry over HTTP, and checks that the dashboard
+    card binds a fresh payload. Prints the registry, install, card and record
+    lines, then "SMOKE PASS". An unmet assertion or an HTTP error exits
+    nonzero with its traceback; the temporary directory is removed either
+    way, so the checkout keeps nothing.
+    """
     # ignore_cleanup_errors: the app's audit store holds its sqlite file
     # open until process exit (shutdown does not close it); Windows then
     # refuses the temp-dir delete. The check is done by then.
@@ -47,6 +57,12 @@ def main() -> int:
         opener.open(f"{base}/auth/{token}", timeout=5)
 
         def post(path: str, payload: dict) -> dict:
+            """POST a JSON payload as the bootstrapped session and return the reply.
+
+            Goes through the same cookie jar as the token exchange, so it is
+            authenticated; a non-2xx answer raises urllib.error.HTTPError rather than
+            being inspected.
+            """
             request = urllib.request.Request(
                 base + path, data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"}, method="POST")
@@ -54,6 +70,11 @@ def main() -> int:
                 return json.loads(response.read().decode("utf-8"))
 
         def get(path: str) -> dict:
+            """GET one JSON document as the bootstrapped session and decode it.
+
+            Shares the cookie jar created after the token exchange; a non-2xx answer
+            raises, so the assertions live at the call sites.
+            """
             with opener.open(base + path, timeout=60) as response:
                 return json.loads(response.read().decode("utf-8"))
 

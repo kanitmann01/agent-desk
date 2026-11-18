@@ -53,6 +53,13 @@ def is_assistant_knowledge_gap(text: str) -> bool:
 
 
 def placeholder_reason(text: str) -> str | None:
+    """Classify a text as empty or a bare placeholder, else None.
+
+    "empty" covers whitespace and anything left with fewer than two
+    alphanumerics ("..."); "unknown" covers the literal fillers (unknown,
+    n/a, none, tbd, null ...), matched after lowercasing and dropping the
+    trailing sentence punctuation, so "TBD." is still a filler.
+    """
     trimmed = text.strip()
     if not trimmed:
         return "empty"
@@ -66,6 +73,13 @@ def placeholder_reason(text: str) -> str | None:
 
 
 def sentence_reason(sentence: str) -> str | None:
+    """The junk reason for one sentence, or None when it reads as fact.
+
+    The order is the precedence: inability, then knowledge-gap, then
+    session-narration, because an inability predicate also satisfies the gap
+    test. A session narrative counts only when it names no past event — "I
+    opened the article yesterday" describes the world, so it stays.
+    """
     predicate = assistant_predicate(sentence)
     if predicate is None:
         return None
@@ -79,6 +93,13 @@ def sentence_reason(sentence: str) -> str | None:
 
 
 def normalize(text: str) -> str:
+    """Fold case, contractions and whitespace into the form predicates match.
+
+    Curly quotes become straight, "can't"/"won't" become "cannot"/"will not",
+    the other "n't" forms lose the contraction, and runs of whitespace become
+    one space. The predicate regexes are written against this form, so a
+    contraction this function leaves alone will not match them.
+    """
     text = text.lower()
     text = re.sub(r"[\u2018\u2019\u201a\u0060]", "'", text)
     text = re.sub(r"\bcan't\b", "cannot", text)
@@ -93,6 +114,14 @@ def normalize(text: str) -> str:
 
 
 def sentences_of(text: str) -> list[str]:
+    """Split text on runs of . ! ? into non-empty fragments.
+
+    Surrounding quote characters are stripped from each fragment. The split is
+    punctuation-blind, so an abbreviation yields two fragments ("Dr" and
+    "Smith went home"); that is harmless because each fragment is judged on its
+    own, and the reason returned for a multi-sentence text is a precedence
+    choice rather than a per-sentence verdict.
+    """
     parts = [part.strip("\"'").strip() for part in re.split(r"[.!?]+", text)]
     return [part for part in parts if part]
 
@@ -122,6 +151,15 @@ _KNOWLEDGE = f"(?:{_ADJECTIVE}\\s+)*{_NOUN}"
 
 
 def assistant_predicate(sentence: str) -> str | None:
+    """The predicate of an assistant self-statement, or None if it is not one.
+
+    Strips the conversational lead-ins ("unfortunately", "based on this
+    conversation") and then the self-reference subject ("I", "the assistant",
+    "the model"), plus any filler adverbs between them. Returns None when no
+    subject matches, when nothing follows it, or when the remainder carries a
+    contrast ("but", "however") or a semicolon: such a sentence says something
+    else as well, and dropping it would discard that.
+    """
     rest = _LEAD.sub("", sentence).strip()
     subject = _SELF.match(rest)
     if not subject:
@@ -186,6 +224,14 @@ _SESSION_TARGET = (
 
 
 def is_session_predicate(predicate: str) -> bool:
+    """True when the predicate narrates the assistant's own tool use.
+
+    Redirecting, looking up, searching and clicking/pressing count on the verb
+    alone. Opening, visiting, navigating, browsing, loading and the
+    approve/deny/refuse/stop family need a session object too (page, tab, link,
+    query, search ...), which is what separates "I opened the article" from a
+    claim about the world.
+    """
     if re.search(rf"^{_SESSION_PREFIX}re-?direct(?:s|ed|ing)?\b", predicate):
         return True
     if re.search(
@@ -220,6 +266,13 @@ def is_session_predicate(predicate: str) -> bool:
 
 
 def is_gap_predicate(predicate: str) -> bool:
+    """True when the predicate admits not knowing something.
+
+    Includes the unsure and unfamiliar forms and plain inability, plus the
+    explicit not-know / no-knowledge / never-heard-of / cannot-find shapes. The
+    noun may carry any run of filler adjectives, so "no specific stored
+    information" matches where "no information" does.
+    """
     if is_unsure(predicate) or is_unfamiliar(predicate) or is_inability(predicate):
         return True
     patterns = [
@@ -248,6 +301,13 @@ _RESTRICTION = r"\bdue to (?:a |the )?(?:restrictions?|polic(?:y|ies)|guidelines
 
 
 def is_inability(predicate: str) -> bool:
+    """True when the predicate declines on grounds of access or policy.
+
+    A refusal verb alone is not enough: unable/cannot/not-allowed/denied must
+    be aimed at information or a question ("cannot share the details"), or the
+    predicate must cite a restriction or guideline. "I cannot do that" is an
+    ordinary statement, not a knowledge gap.
+    """
     about_info = bool(re.search(_INFO_WORD, predicate))
     restricted = bool(re.search(_RESTRICTION, predicate))
     inform_verb = bool(re.search(rf"\b{_INFORM_VERB}\b", predicate))
@@ -280,6 +340,12 @@ def is_inability(predicate: str) -> bool:
 
 
 def is_unsure(predicate: str) -> bool:
+    """True when the predicate doubts an identity rather than a plan.
+
+    Both word orders are accepted ("am not sure", "unsure"), and the tail
+    decides: "not sure who that is" is a gap, "not sure we should ship it" is
+    not, because the doubt is about a course of action.
+    """
     sure = re.search(rf"^(?:am not|is not|not) {_HEDGE}(?:sure|certain)\b\s*(.*)$", predicate)
     if sure:
         return identity_tail(sure.group(1) or "")
@@ -290,6 +356,12 @@ def is_unsure(predicate: str) -> bool:
 
 
 def is_unfamiliar(predicate: str) -> bool:
+    """True when the predicate disclaims familiarity or awareness.
+
+    Unlike is_unsure, the tail is never inspected: unfamiliarity is already a
+    gap about the thing named, and the four phrasings ("not familiar",
+    "not aware", "unfamiliar", "unaware") cover both word orders.
+    """
     return bool(
         re.search(r"^(?:am not|is not|not) familiar\b", predicate)
         or re.search(r"^(?:am not|is not|not) aware\b", predicate)
@@ -299,6 +371,12 @@ def is_unfamiliar(predicate: str) -> bool:
 
 
 def identity_tail(tail: str) -> bool:
+    """True when what follows an unsure predicate names a person or thing.
+
+    An empty tail counts ("I am not sure."), as do the who/what/which/whom
+    forms and "about|of" plus a pronoun or person. Any other tail — a plan, a
+    time, an action — is not an identity question and returns False.
+    """
     rest = tail.strip()
     if rest == "":
         return True

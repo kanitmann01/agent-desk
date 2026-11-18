@@ -37,6 +37,12 @@ def freshness_for(state: str, generated_at: datetime | None, now: datetime) -> F
 
 
 def _check_line(idx: int, text: str, checked: bool, event_id: str) -> str:
+    """One breakdown subtask as a toggleable check row.
+
+    The data-check, data-event and data-idx attributes are the handles the page script
+    toggles and posts back; idx is the subtask's position in its breakdown, and text is
+    escaped here.
+    """
     return (
         f'<div class="check" role="checkbox" aria-checked="{"true" if checked else "false"}" '
         f'tabindex="0" data-check data-event="{html.escape(event_id)}" data-idx="{idx}">'
@@ -45,6 +51,12 @@ def _check_line(idx: int, text: str, checked: bool, event_id: str) -> str:
 
 
 def _healthy_body(status: dict) -> str:
+    """Body HTML for a healthy bridge: the key event, its breakdown and follow-ups.
+
+    start and end are parsed as ISO datetimes and rendered as two times in one cell.
+    Subtasks become check rows keyed by their stringified index, which is the key checks
+    uses; each follow-up carries its deadline when it has one.
+    """
     event = status["keyEvent"]
     start = datetime.fromisoformat(event["start"])
     end = datetime.fromisoformat(event["end"])

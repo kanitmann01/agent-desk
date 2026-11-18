@@ -19,18 +19,34 @@ _SUFFIXES = {".xlsx", ".xlsm", ".csv", ".json"}
 
 class ConfigError(Exception):
     def __init__(self, code: str, message: str) -> None:
+        """Keep the stable code beside the human-readable message.
+
+        ``code`` is the token clients branch on; ``message`` is the sentence a person
+        reads, and is also what ``str(exc)`` returns.
+        """
         super().__init__(message)
         self.code = code
         self.message = message
 
 
 def _safe(value: str, what: str) -> str:
+    """Return ``value`` after proving it is a single safe path segment.
+
+    Rejects anything that does not start with a letter or digit, carries a
+    character outside ``[A-Za-z0-9._-]``, or contains ``..``, so the result cannot
+    climb out of the directory it is joined to. ``what`` names the field in the
+    ``config:unsafe-name`` error.
+    """
     if not isinstance(value, str) or not _SAFE.match(value) or ".." in value:
         raise ConfigError("config:unsafe-name", f"{what} is not a safe name.")
     return value
 
 
 def _now() -> str:
+    """Return the current UTC time as an ISO 8601 string, truncated to whole seconds.
+
+    This is the shape stored in ``confirmedAt``.
+    """
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
@@ -38,6 +54,12 @@ class InstanceStore:
     """One plugin's instances. ``root`` is that plugin's data directory."""
 
     def __init__(self, root: Path, workspace: Path, cap: int = MAX_INSTANCE_CAP) -> None:
+        """Bind the store to one plugin's data root and to the workspace files may live in.
+
+        ``cap`` is coerced to an integer and clamped into ``1..MAX_INSTANCE_CAP``, and
+        an unusable value falls back to ``MAX_INSTANCE_CAP``: a malformed setting cannot
+        raise the limit.
+        """
         self.root = Path(root)
         self.workspace = Path(workspace).resolve()
         try:
@@ -47,15 +69,29 @@ class InstanceStore:
         self.cap = max(1, min(MAX_INSTANCE_CAP, number))
 
     def _instance_dir(self, plugin_id: str, instance_id: str) -> Path:
+        """Return one instance's folder, with both ids validated as safe segments.
+
+        Nothing is created; the path only becomes real when a document is written.
+        """
         return self.root / _safe(plugin_id, "plugin id") / "instances" / _safe(instance_id, "instance id")
 
     def _config_path(self, plugin_id: str, instance_id: str) -> Path:
+        """Locate the file holding one instance's confirmed settings.
+        """
         return self._instance_dir(plugin_id, instance_id) / "config.json"
 
     def _grant_path(self, plugin_id: str, instance_id: str) -> Path:
+        """Locate the grant file recording which file the user picked and whether its
+        location outside the workspace was accepted.
+        """
         return self._instance_dir(plugin_id, instance_id) / "grant.json"
 
     def list(self, plugin_id: str) -> list[dict]:
+        """Return every stored instance config for one plugin, ordered by instance id.
+
+        Folders without a ``config.json`` are skipped, and a plugin with no folder yet
+        lists as empty rather than raising.
+        """
         folder = self.root / _safe(plugin_id, "plugin id") / "instances"
         if not folder.is_dir():
             return []
@@ -67,12 +103,23 @@ class InstanceStore:
         return found
 
     def read(self, plugin_id: str, instance_id: str) -> dict:
+        """Return one instance's config document as stored on disk.
+
+        Raises ``config:missing`` when the instance has not been created.
+        """
         path = self._config_path(plugin_id, instance_id)
         if not path.is_file():
             raise ConfigError("config:missing", "That instance has no config yet.")
         return json.loads(path.read_text(encoding="utf-8"))
 
     def create(self, plugin_id: str, instance_id: str, name: str, *, good: str = "up") -> dict:
+        """Create an instance config document and return it.
+
+        Refuses with ``config:cap`` once the plugin already holds ``cap`` instances and
+        with ``config:exists`` when the folder has a config. The new document has no
+        source and no ``confirmedAt``, so it cannot be read from until a file is staged
+        and confirmed; ``good`` picks which direction counts as good, defaulting to up.
+        """
         if len(self.list(plugin_id)) >= self.cap:
             raise ConfigError(
                 "config:cap",
@@ -95,6 +142,13 @@ class InstanceStore:
         return document
 
     def stage_file(self, plugin_id: str, instance_id: str, path) -> dict:
+        """Point an instance at a file and drop any previous confirmation.
+
+        The path is expanded and resolved, must exist, and must end in .xlsx, .xlsm,
+        .csv or .json; the sheet, header row and range restart at their defaults. The
+        grant is rewritten too, so a file outside the workspace needs
+        ``accept_outside`` again before it can be confirmed.
+        """
         candidate = Path(path).expanduser().resolve()
         if not candidate.is_file():
             raise ConfigError("config:missing-file", f"That file does not exist: {candidate}")
@@ -119,6 +173,11 @@ class InstanceStore:
         return document
 
     def accept_outside(self, plugin_id: str, instance_id: str) -> dict:
+        """Record that the user accepted the staged file living outside the workspace.
+
+        This grant is what ``confirm`` and ``assert_can_read`` check, it is per
+        instance, and the next ``stage_file`` clears it.
+        """
         path = self._grant_path(plugin_id, instance_id)
         if not path.is_file():
             raise ConfigError("config:missing", "Stage a file before accepting a path.")
@@ -128,6 +187,15 @@ class InstanceStore:
         return grant
 
     def confirm(self, plugin_id: str, instance_id: str, tracking: dict, *, suggested: bool = False) -> dict:
+        """Validate the chosen columns against the staged file and mark the instance confirmed.
+
+        Refuses when no file is staged (``config:missing-file``), when the file lies
+        outside the workspace without an accepted grant (``config:outside-workspace``),
+        when the columns are unusable (``config:bad-tracking``), and when the row
+        selection names rows the file does not have (``config:not-granted``). Success
+        writes ``confirmedAt`` plus the normalised tracking, which is what later reads
+        are held to.
+        """
         document = self.read(plugin_id, instance_id)
         source = document.get("source") or {}
         raw = source.get("path")
@@ -144,6 +212,12 @@ class InstanceStore:
         return document
 
     def assert_can_read(self, plugin_id: str, instance_id: str, path) -> Path:
+        """Return the resolved path once it is proved to be the file the user confirmed.
+
+        An unconfirmed instance raises ``config:not-confirmed``, any path other than the
+        granted one raises ``config:not-granted``, and an unaccepted location outside the
+        workspace raises ``config:outside-workspace``.
+        """
         document = self.read(plugin_id, instance_id)
         if not document.get("confirmedAt"):
             raise ConfigError("config:not-confirmed", "Confirm the file before it is read.")
@@ -155,12 +229,18 @@ class InstanceStore:
         return candidate
 
     def granted_file(self, plugin_id: str, instance_id: str) -> Path:
+        """Return the confirmed file's path: the only file this instance may read.
+        """
         document = self.read(plugin_id, instance_id)
         if not document.get("confirmedAt"):
             raise ConfigError("config:not-confirmed", "Confirm the file before it is read.")
         return self.assert_can_read(plugin_id, instance_id, document["source"]["path"])
 
     def _granted(self, plugin_id: str, instance_id: str) -> Path:
+        """Return the resolved path recorded when a file was staged.
+
+        Raises ``config:not-granted`` when no grant exists or it carries no path.
+        """
         path = self._grant_path(plugin_id, instance_id)
         if not path.is_file():
             raise ConfigError("config:not-granted", "No file has been granted.")
@@ -171,6 +251,10 @@ class InstanceStore:
         return Path(raw).resolve()
 
     def _require_inside_or_accepted(self, plugin_id: str, instance_id: str, candidate: Path) -> None:
+        """Refuse a path outside the workspace unless this instance's grant accepted it.
+
+        A path under the workspace passes without consulting the grant.
+        """
         try:
             candidate.resolve().relative_to(self.workspace)
             return
@@ -187,6 +271,11 @@ class InstanceStore:
             )
 
     def _write(self, path: Path, document: dict) -> None:
+        """Write one JSON document, creating its folder first.
+
+        The file is overwritten in place, not swapped atomically, and is pretty-printed
+        with a two-space indent.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document, indent=2), encoding="utf-8")
 
@@ -217,6 +306,14 @@ def _require_rows_in_file(candidate: Path, source: dict, clean: dict) -> None:
 
 
 def _tracking(incoming: dict, previous: dict) -> dict:
+    """Validate a column choice and return it in the stored shape.
+
+    ``labelColumn`` and ``valueColumn`` are required; ``aggregate`` defaults to sum
+    and must be sum, count, latest, min or max; ``good`` is carried over from
+    ``previous`` when the incoming choice omits it; ``unit`` falls back to the goal's
+    unit; ``rows`` is a list of non-negative row numbers or None meaning every row.
+    Anything else raises ``config:bad-tracking``.
+    """
     if not isinstance(incoming, dict):
         raise ConfigError("config:bad-tracking", "The column choice is missing.")
     label = str(incoming.get("labelColumn") or "").strip()
@@ -248,6 +345,11 @@ def _tracking(incoming: dict, previous: dict) -> dict:
 
 
 def _goal(value):
+    """Normalise an optional ``{value, unit, good}`` goal, or None when there is none.
+
+    The value is coerced to float so a stored goal always holds a number; a goal
+    that is not a dict or has no numeric value raises ``config:bad-tracking``.
+    """
     if not value:
         return None
     if not isinstance(value, dict):
@@ -264,6 +366,11 @@ def _goal(value):
 
 
 def _pace(value):
+    """Normalise an optional ``{plan, periodDays, elapsedDays}`` pace entry, or None.
+
+    All three become floats and must survive a per-day rate: plan may be zero, but
+    period and elapsed must be strictly positive.
+    """
     if not value:
         return None
     if not isinstance(value, dict):
