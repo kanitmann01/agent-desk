@@ -39,6 +39,19 @@ Honest gaps in the marketplace branch as of 2026-11-16. Each item is verified in
 - Studio does not edit an existing published plugin. There is no draft list and no resubmission flow for the same plugin id beyond publishing again and replacing the org catalog release on approval.
 - The approval risk tier defaults to `T1` when neither the request nor the manifest sets one.
 
+
+## Coupled intelligence
+
+- The six preferences in Settings are the only ones the readings use, and they are never inferred. There is no autopilot, no learned preference and no reset action on the save route (`PreferenceStore.reset()` exists but is unexposed).
+- A workbook reading looks only at the rows the tracker already selected: at most 10 columns and 60 rows, and only the first five suggested row indices are exposed. It names a chart shape; it does not draw one.
+- Digest readings and reply drafts work from message headers and the first line only. No message body is read, so a thread that buried its question is not recognised.
+- A drafted reply is a skeleton or a single model output. It is never sent, never saved to the draft folder, and it carries no recipient, so the user must open it in the reply writer.
+- No surface draws the press button yet. `payload["insight"]["press"]` carries the offer and `POST /api/insight/draft` answers it, but the dashboard and the SPA do not render a control for it.
+- The built SPA's tracker card renders its own figure and ignores appended elements, so the workbook reading appears on the server-rendered dashboard only.
+- Research suggestions are keyword-anchored: a focus topic named once in the stored answer counts as covered. The reading cannot judge depth, so it says "not named" rather than "not answered".
+- The insight readings never write memory. Recall is read-only and a sealed or empty bank degrades to one sentence naming what was not consulted.
+- The next meeting's reading knows its title, time and prep items, not its attendees, so no prompt names a person.
+
 ## Accessibility and UI
 
 - The consent sheet traps Tab and Shift+Tab, closes on Escape and restores focus to its trigger. Initial focus lands on the close button, not the confirm button, so the first keypress cannot accidentally accept a widening.

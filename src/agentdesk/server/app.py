@@ -59,6 +59,13 @@ from agentdesk.inbox.core import (
     STATUS_WAITING,
     UnknownCard,
 )
+# Aliased: agentdesk.assistant.context.build_context already owns this
+# name in this module, and it is the one the model turn calls.
+from agentdesk.insight.context import build_context as build_insight_context
+from agentdesk.insight.preferences import PreferenceStore, PreferencesError, changed
+from agentdesk.insight.press import draft_reply
+from agentdesk.insight.service import attach_cards
+from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
 from agentdesk.layout import (
@@ -967,6 +974,169 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     ]
 
 
+def _plugin_element_html(element: dict) -> str:
+    """One payload element as authored HTML, escaped at this boundary.
+
+    A declarative card names metric, text, list, checklist or status; the
+    coupled reading appends only those, so this is the whole vocabulary the
+    rendered dashboard draws. Anything else belongs to the SPA's own
+    renderer and is left to it rather than half-drawn here.
+    """
+    kind = element.get("kind")
+    if kind == "metric":
+        parts = [
+            '<p class="w-big">' + html.escape(str(element.get("value", ""))) + "</p>"
+        ]
+        label = str(element.get("label", "")).strip()
+        if label:
+            parts.append('<p class="w-note">' + html.escape(label) + "</p>")
+        return "".join(parts)
+    if kind == "text":
+        return '<p class="w-note">' + html.escape(str(element.get("text", ""))) + "</p>"
+    if kind == "status":
+        return '<p class="w-note">' + html.escape(str(element.get("text") or "")) + "</p>"
+    if kind == "list":
+        lines = []
+        title = str(element.get("title") or "").strip()
+        if title:
+            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
+        for row in element.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            text = " · ".join(
+                str(row.get(key) or "").strip()
+                for key in ("primary", "secondary", "meta")
+                if str(row.get(key) or "").strip()
+            )
+            if text:
+                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
+        return "".join(lines)
+    if kind == "checklist":
+        lines = []
+        title = str(element.get("title") or "").strip()
+        if title:
+            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
+        for item in element.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if text:
+                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
+        return "".join(lines)
+    return ""
+
+
+# How a receipt reads: the seam names preference keys and input names,
+# and this is the only place a key becomes a phrase a person would say.
+# An unknown name draws nothing rather than a raw identifier, so the line
+# can never read like a changelog.
+_RECEIPT_PHRASES = {
+    "chart": "your chart preference",
+    "replyTone": "your reply tone",
+    "replyLength": "your reply length",
+    "insightDensity": "your density setting",
+    "focusTopics": "your focus topics",
+    "prepMinutes": "your prep window",
+}
+_INPUT_PHRASES = {
+    "rows": "this card's rows",
+    "memory": "memory",
+    "calendar": "this calendar",
+}
+_DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows."
+
+# The press page's heading, taken from the label the card carried, so the
+# page a press lands on repeats the sentence the person just pressed.
+_PRESS_LABELS = {"reply-draft": "Draft a reply", "explain-range": "Explain this range"}
+
+
+def _receipt_line(payload: dict) -> str:
+    """One reading's receipts as a quiet line under its card."""
+    insight = payload.get("insight")
+    receipts = insight.get("receipts") if isinstance(insight, dict) else None
+    if not isinstance(receipts, dict):
+        return ""
+    chosen: list[str] = []
+    for key in receipts.get("preferences") or []:
+        phrase = _RECEIPT_PHRASES.get(str(key))
+        if phrase:
+            chosen.append(phrase)
+    counts = receipts.get("counts") if isinstance(receipts.get("counts"), dict) else {}
+    notes = counts.get("memory")
+    read: list[str] = []
+    for name in receipts.get("inputs") or []:
+        phrase = _INPUT_PHRASES.get(str(name))
+        if not phrase:
+            continue
+        if name == "memory" and isinstance(notes, int) and notes > 0:
+            phrase = f"memory ({notes} note)" if notes == 1 else f"memory ({notes} notes)"
+        read.append(phrase)
+    # The phrases are the server's own, so the only escaping needed is for
+    # the ampersand-and-angle shapes; the apostrophe in "this card's rows"
+    # is copy, and escaping it would print an entity where a person reads.
+    if chosen:
+        return '<p class="w-note">Used: ' + html.escape(" · ".join(chosen + read), quote=False) + ".</p>"
+    # A reading that read nothing at all says nothing: a receipt line under
+    # an empty card would invent a consultation that did not happen.
+    if not read:
+        return ""
+    if read == ["this card's rows"]:
+        return '<p class="w-note">' + _DEFAULTS_RECEIPT + "</p>"
+    return '<p class="w-note">Used the defaults; read ' + html.escape(" and ".join(read), quote=False) + ".</p>"
+
+
+def _press_form(card: dict, press: object) -> str:
+    """A card's press as a real control: a plain form, no script.
+
+    The hidden fields are the whole request, so what the page posts is
+    exactly what the press promised to send. The card's identity rides
+    along so the answer can name the card that was pressed.
+    """
+    if not isinstance(press, dict):
+        return ""
+    label = str(press.get("label") or "").strip()
+    kind = str(press.get("kind") or "").strip()
+    if not label or not kind:
+        return ""
+    # A card's press nests the thread's facts (the digest family does), and
+    # the pressed page posts them flat, so both shapes are read here: what
+    # travels is what the press promised to send, not less.
+    facts = press.get("thread") if isinstance(press.get("thread"), dict) else {}
+    hidden = {
+        "kind": kind,
+        "text": press.get("text"),
+        "subject": press.get("subject") or facts.get("subject"),
+        "sender": press.get("sender") or facts.get("sender"),
+        "last": press.get("last") or facts.get("last"),
+        "pluginId": card.get("pluginId") or card.get("id"),
+        "instanceId": card.get("instanceId"),
+    }
+    fields = "".join(
+        '<input type="hidden" name="' + name + '" value="' + html.escape(str(value)) + '">'
+        for name, value in hidden.items()
+        if isinstance(value, str) and value.strip()
+    )
+    return (
+        '<form method="post" action="/insight/press" class="cardform">'
+        + fields
+        + '<button class="btn btn-secondary" type="submit">' + html.escape(label) + "</button>"
+        + "</form>"
+    )
+
+
+def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
+    """Attach the coupled reading to cards as whichever surface renders them.
+
+    Both surfaces call this, so a reading is never JSON-only: the same
+    sentence arrives through the API payload and through the authored HTML.
+    """
+    attach_cards(
+        cards,
+        build_insight_context(server, PreferenceStore(default_data_dir()).read()),
+    )
+    return cards
+
+
 def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
     """The plugin ids whose cards exist right now, in listing order.
 
@@ -1025,6 +1195,10 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
 
     skills = server.skills.active() if server.skills is not None else []  # type: ignore[attr-defined]
     plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
+    # One reading per card, from the preferences the user set and the memory
+    # the desk already holds. Appended here so every client of this payload
+    # sees the same reading, and the cards themselves stay the plugin's own.
+    with_insight(server, plugin_cards)
     sources = live_sources(server)
     inbox = server.inbox  # type: ignore[attr-defined]
     # The layout the dashboard renders in: hidden cards are omitted from
@@ -1334,6 +1508,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._peers_catalog())
         elif path == "/api/dashboard":
             self._send_json(200, dashboard_payload(self.server))
+        elif path == "/api/preferences":
+            self._send_json(200, PreferenceStore(default_data_dir()).read())
         elif path == "/api/layout":
             # The full layout, hidden cards included: the recoverable
             # truth behind the payload's visible-only listing.
@@ -1395,6 +1571,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/sources/calendar-bridge") and not self._source_allowed("calendar_enabled"):
             self._send_json(409, {"error": "Calendar reading is off in settings.", "reconnect": "/settings"})
+            return
+        if path == "/api/preferences":
+            try:
+                self._send_json(200, PreferenceStore(default_data_dir()).write(self._read_json_body()))
+            except PreferencesError as exc:
+                self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+            return
+        if path == "/api/insight/draft":
+            try:
+                answer = draft_reply(
+                    self.server,
+                    self._read_json_body(),
+                    preferences=PreferenceStore(default_data_dir()).read(),
+                    complete=self._insight_complete(),
+                )
+            except InsightError as exc:
+                self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+                return
+            self._send_json(200, answer)
+            return
+        if path == "/insight/press":
+            self._insight_press_page()
             return
         if path == "/sources/excel-watch/pick":
             if excel is None:
@@ -1597,6 +1795,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._endpoint_test()
         elif path == "/settings/mail/folder":
             self._mail_folder_save()
+        elif path == "/settings/preferences":
+            self._preferences_save()
         elif path == "/settings/registry/path":
             self._registry_path_save()
         elif path == "/settings/hosts/save":
@@ -1886,7 +2086,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         connected = sum(1 for s in live_sources(self.server) if s.status == STATUS_CONNECTED)
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is not None:
-            widgets += [self._plugin_widget(card) for card in plugins.widget_cards()]
+            widgets += [
+                self._plugin_widget(card)
+                for card in with_insight(self.server, plugins.widget_cards())
+            ]
         inbox = self.server.inbox  # type: ignore[attr-defined]
         skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
         page = pages.render_dashboard(
@@ -1943,6 +2146,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.server.activity_log is not None:  # type: ignore[attr-defined]
             self.server.activity_log.record(kind, text)  # type: ignore[attr-defined]
 
+    def _preference_notice(self) -> str:
+        """The store's own words after a save, or its confirmation.
+
+        The save route answers with a 303 carrying the outcome in the
+        query, so the page shows what the store decided rather than
+        re-deciding it here.
+        """
+        query = parse_qs(self.path.partition("?")[2])
+        refusal = query.get("preferences_error", [""])[0]
+        if refusal:
+            return refusal
+        if "preferences_saved" in query:
+            return "Saved. The card below reads back what the store now holds."
+        return ""
+
     def _send_settings_page(self) -> None:
         server = self.server  # type: ignore[attr-defined]
         entries = server.activity_log.entries() if server.activity_log is not None else []
@@ -1968,6 +2186,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             inbox_count=self._inbox_waiting_count(),
             audit_entries=audit_entries,
             audit_total=audit_total,
+            preference_notice=self._preference_notice(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3901,6 +4120,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
 
+    def _preferences_save(self) -> None:
+        """The settings form for what the desk knows about this person.
+
+        A form post arrives as strings while the store wants a list of
+        topics and a whole number of minutes, so this route converts
+        before the store validates; nothing is clamped or guessed. An
+        emptied field means "none": no topics, zero preparation minutes.
+        """
+        body = self._read_json_body() or {}
+        form = self._is_form_submit()
+        patch: dict = {}
+        for key in ("chart", "replyTone", "replyLength", "insightDensity"):
+            if key in body:
+                patch[key] = str(body[key]).strip()
+        if form or "focusTopics" in body:
+            raw_topics = str(body.get("focusTopics", ""))
+            patch["focusTopics"] = [
+                line.strip() for line in raw_topics.splitlines() if line.strip()
+            ]
+        if form or "prepMinutes" in body:
+            typed = str(body.get("prepMinutes", "")).strip()
+            if not typed:
+                patch["prepMinutes"] = 0
+            else:
+                try:
+                    patch["prepMinutes"] = int(typed)
+                except ValueError:
+                    self._send_redirect(
+                        "/settings?preferences_error=" + quote(
+                            "Preparation minutes must be a whole number from 0 to 120."))
+                    return
+        try:
+            document = PreferenceStore(default_data_dir()).write(patch)
+        except PreferencesError as exc:
+            if form:
+                self._send_redirect(
+                    "/settings?preferences_error=" + quote(exc.message))
+                return
+            self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+            return
+        self._audit("settings.preferences", target="preferences",
+                    detail=",".join(changed(document)) or "none")
+        if form:
+            self._send_redirect("/settings?preferences_saved=1")
+            return
+        self._send_json(200, document)
+
     def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
         """Accepting applies the held update; the "for this plugin"
         choice also records the (plugin, scope) allow so an identical
@@ -4186,6 +4452,115 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return server.llm(prompt)
         return complete
 
+    def _insight_press_page(self) -> None:
+        """A pressed card's answer as a page: what would be sent, then the
+        sentence or the draft, then the one stage form that may follow.
+
+        A refusal keeps the page and repeats the sentence the JSON route
+        would have sent, because a person who pressed a button asked a
+        question and deserves the answer on the same screen.
+        """
+        body = self._read_json_body() or {}
+        kind = str(body.get("kind") or "").strip()
+        request: dict = {"kind": kind}
+        for key in ("text", "subject", "sender", "last"):
+            value = body.get(key)
+            if isinstance(value, str) and value.strip():
+                request[key] = value.strip()
+        if str(body.get("stage") or "").strip() not in ("", "0", "false", "False"):
+            request["stage"] = True
+        label = _PRESS_LABELS.get(kind, "Ask the model")
+        try:
+            answer = draft_reply(
+                self.server,
+                request,
+                preferences=PreferenceStore(default_data_dir()).read(),
+                complete=self._insight_complete(),
+            )
+        except InsightError as exc:
+            self._audit("insight.press", target=kind or "press", detail=exc.code)
+            page = pages.render_press_page(
+                label, [], agentdesk.__version__, refusal=exc.message
+            )
+            self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            return
+        thread = answer.get("thread") if isinstance(answer.get("thread"), dict) else None
+        staged = str(answer.get("cardId") or "") if answer.get("staged") else ""
+        stage_html = ""
+        if thread is not None and not staged and answer.get("text"):
+            stage_html = self._press_stage_form(
+                thread,
+                str(request.get("sender") or ""),
+                str(answer["text"]),
+                str(request.get("last") or ""),
+            )
+        # The audit names the thread and the source, never the words: a
+        # draft is the user's to send, so the log records the act alone.
+        self._audit(
+            "insight.press",
+            target=str(thread.get("id")) if thread is not None else (kind or "press"),
+            detail=kind + ":" + str(answer.get("source") or "none")
+            + (": staged " + staged if staged else ""),
+        )
+        if staged:
+            # The card exists now, so the inbox badge and any notification
+            # follow it, exactly as a hand-typed reply draft does.
+            self._evaluate_inbox(self.server.inbox)
+        page = pages.render_press_page(
+            label,
+            [str(line) for line in answer.get("disclosure") or []],
+            agentdesk.__version__,
+            text=str(answer.get("text") or ""),
+            source=str(answer.get("source") or ""),
+            note=str(answer.get("note") or ""),
+            stage_html=stage_html,
+            staged_id=staged,
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    @staticmethod
+    def _press_stage_form(thread: dict, sender: str, text: str, last: str = "") -> str:
+        """The one form that may turn a draft into an inbox card.
+
+        It posts the same press again with `stage`, so there is a single
+        composer and a single route: what travels the second time is
+        exactly what this page already showed.
+        """
+        hidden = {
+            "kind": "reply-draft",
+            "subject": str(thread.get("subject") or ""),
+            "sender": sender,
+            "last": last,
+            "text": text,
+            "stage": "1",
+        }
+        fields = "".join(
+            '<input type="hidden" name="' + name + '" value="' + html.escape(value) + '">'
+            for name, value in hidden.items()
+            if value
+        )
+        return (
+            '<form method="post" action="/insight/press" class="cardform">'
+            + fields
+            + '<button class="btn btn-primary" type="submit">Stage as a reply card</button>'
+            + "</form>"
+        )
+
+    def _insight_complete(self):
+        """The one model call a reading may offer, or None when this desk
+        has no endpoint or the user turned model calls off. A reading that
+        gets None keeps its local elements and offers no press."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.llm is None or not server.llm_endpoint:
+            return None
+        if not self._source_allowed("endpoint_enabled"):
+            return None
+
+        def complete(prompt: str) -> str:
+            return server.llm(prompt)
+
+        return complete
+
     def _setup_error(self, exc: Exception) -> None:
         from ..plugins.config import ConfigError
         if isinstance(exc, ConfigError):
@@ -4295,22 +4670,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         payload = card.get("payload") or {}
         elements = payload.get("elements") if isinstance(payload, dict) else None
         if status == FRESH and elements:
-            parts = []
-            for element in elements:
-                if not isinstance(element, dict):
-                    continue
-                if element.get("kind") == "metric":
-                    parts.append('<p class="w-big">'
-                                 + html.escape(str(element.get("value", "")))
-                                 + "</p>")
-                    label = str(element.get("label", "")).strip()
-                    if label:
-                        parts.append('<p class="w-note">'
-                                     + html.escape(label) + "</p>")
-                elif element.get("kind") == "text":
-                    parts.append('<p class="w-note">'
-                                 + html.escape(str(element.get("text", "")))
-                                 + "</p>")
+            parts = [
+                _plugin_element_html(element)
+                for element in elements
+                if isinstance(element, dict)
+            ]
             body = "".join(parts) or (
                 '<p class="w-big">' + version + '</p><p class="w-note">'
                 "reading " + file_name + "</p>")
@@ -4327,6 +4691,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "probe does the same for every plugin.</p></div>"
             )
             extra = "amber"
+        if status == FRESH:
+            # The reading's receipts and its press belong on the card, so
+            # the rendered dashboard is never a poorer version of the API.
+            insight = payload.get("insight")
+            body += _receipt_line(payload)
+            body += _press_form(card, insight.get("press") if isinstance(insight, dict) else None)
         freshness = Freshness(
             status=status,
             stamp="Re-test available" if status == ATTENTION else "live",

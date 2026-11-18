@@ -60,6 +60,12 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
         "labelColumn": tracking.get("labelColumn"),
         "valueColumn": tracking.get("valueColumn"),
         "rowsSeen": len(body),
+        # The same rows the value came from, as cells: the reading a
+        # relationship needs, capped so one card stays one small payload.
+        "table": {
+            "headers": [str(cell) for cell in preview["headers"][:10]],
+            "rows": [[str(cell) for cell in row[:10]] for row in body[:60]],
+        },
         # Provenance: the card says when this reading happened, and whether
         # the source is the app's own sample folder (demo fixture) rather
         # than a file the user connected.
