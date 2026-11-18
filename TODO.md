@@ -26,12 +26,12 @@ audit trail; every surface the demo touches proven in a real browser.
 
 ## Verification on 2026-11-17
 
-- pytest full suite: 2148 passed, 14 failed, 1 skipped. One failure was mine
-  (the trimmed endpoint hint lost the Anthropic URL and the clear-key sentence);
-  the copy is restored and the affected files pass 58/58. The remaining 13 are
-  the pre-existing bundled-registry pin drift in issue #115 (deferred by Ken), so
-  ci_local is **not** green and cannot be claimed green until #115 lands.
-- Frontend: tsc --noEmit clean; vitest 21 files / 242 tests passed.
+- pytest full suite after merging origin/main: 2198 passed, 13 failed, 1 skipped.
+  All 13 failures are the pre-existing bundled-registry pin drift in issue #115
+  (deferred by Ken), so ci_local is **not** green and cannot be claimed green
+  until #115 lands.
+- Frontend: tsc --noEmit clean; vitest 22 files / 260 tests passed (after merging
+  origin/main #132 memory loop into the branch).
 - Browser: 11 paths at 1280 and 1600 px return 200, render the seven-link rail,
   have no horizontal overflow and log no console errors. Audit kind filter shows
   model calls and hides the questions table.
