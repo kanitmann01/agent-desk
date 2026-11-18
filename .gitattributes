@@ -21,6 +21,10 @@
 *.eml text eol=lf
 # Upstream licence texts are byte-pinned: THIRD-PARTY-NOTICES.md and
 # licenses/third-party/README.md publish their sha256 and byte counts,
-# so every checkout must see the LF bytes exactly as committed.
+# so every checkout must see the LF bytes exactly as committed. The
+# build copies frontend/public/licenses into the committed spa tree, so
+# those copies pin too: a Windows rebuild must match the committed
+# bundle byte for byte.
 licenses/third-party/*.txt text eol=lf
 frontend/public/licenses/*.txt text eol=lf
+src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
