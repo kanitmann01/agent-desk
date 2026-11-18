@@ -40,9 +40,11 @@ branch passed (or overrode) its own checks; the combined result did not:
 
 ## Verification
 
-- `pytest`: full suite green at the repaired head (2522 passed, 1 skipped at
-  the time of the final run; the docstring gate passes with no insight
-  entries and no stale lines).
+- `pytest`: 2535 passed, 1 skipped, and one failure that is a pre-existing
+  full-suite ordering flake (`test_server_mail_api.py::test_toggle_on_polls_the_folder_and_files_cards`):
+  it passes in isolation and in its own file on this branch, and fails the
+  same way in a full run of unmodified main. The docstring gate passes with
+  no insight entries and no stale lines.
 - Frontend: 282 vitest tests green (281 + the new nested-thread press test),
   `tsc --noEmit` clean, and a fresh `npm ci && npm run build` produces a
   byte-identical tree to the committed bundle.
