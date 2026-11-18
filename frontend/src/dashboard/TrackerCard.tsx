@@ -1,9 +1,12 @@
 // The workbook tracker on the desk. Live: the tracker pattern (name,
 // figure, signed change, trend line, pace to the goal, file). Not set
 // up: the dotted wireframe with one Set up action. The setup sheet is
-// separate and opens over the desk.
+// separate and opens over the desk, and it opens from every card shape:
+// the server's setup card, a live tracker's Edit, and the amber card of
+// a confirmed tracker whose workbook moved (that one carries only the
+// cause, no payload at all).
 import { useState } from 'react';
-import type { PluginCard } from '../types';
+import type { PluginCard, PluginSetup } from '../types';
 import Button from '../components/Button';
 import TrackerSetup from './TrackerSetup';
 import { TrackerFigure, WireState } from './cells';
@@ -19,6 +22,19 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
   const tracker = card.payload?.tracker;
   const setup = card.payload?.setup;
   const live = Boolean(tracker) && card.freshness === 'fresh';
+  // Never gate the sheet on the payload: an attention card (workbook
+  // missing, locked, or unreadable) sends no setup step, and the click
+  // used to do nothing at all. Fall back to the card's own ids so the
+  // sheet always opens onto the instance it belongs to.
+  const sheet: PluginSetup = setup ?? {
+    pluginId: card.pluginId || 'excel-report',
+    instanceId: card.instanceId || 'main',
+    name: tracker?.name || card.title || 'Workbook tracker',
+    step: '',
+  };
+  const line = card.cause
+    ? card.cause
+    : 'Pick a workbook and the column to follow. Nothing is read until you confirm.';
 
   return (
     <div className="tracker-card">
@@ -31,26 +47,16 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
         <>
           <h3 className="cell-title">{card.title || 'Workbook tracker'}</h3>
           <WireState
-            line="Pick a workbook and the column to follow. Nothing is read until you confirm."
+            line={line}
             action={<Button tone="primary" className="btn-sm" onClick={() => setOpen(true)}>Set up</Button>}
           />
         </>
       )}
-      {open && setup ? (
+      {open ? (
         <TrackerSetup
-          pluginId={setup.pluginId}
-          instanceId={setup.instanceId}
-          name={setup.name}
-          onDone={onRefetch}
-          onClose={() => setOpen(false)}
-          onExpired={onExpired}
-        />
-      ) : null}
-      {open && !setup && tracker ? (
-        <TrackerSetup
-          pluginId={card.pluginId || 'excel-report'}
-          instanceId={card.instanceId || 'main'}
-          name={tracker.name}
+          pluginId={sheet.pluginId}
+          instanceId={sheet.instanceId}
+          name={sheet.name}
           onDone={onRefetch}
           onClose={() => setOpen(false)}
           onExpired={onExpired}

@@ -155,4 +155,44 @@ describe('tracker setup sheet', () => {
     expect(outsideCalls.length).toBe(1);
     expect(outsideCalls[0]).toContain('/instances/main/outside');
   });
+  it('opens the sheet from an amber card whose workbook went missing (no setup step on the card)', async () => {
+    const user = userEvent.setup();
+    const pickCalls: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (String(url).endsWith('/pick')) {
+        pickCalls.push(String(url));
+        return jsonResponse({
+          preview: { sheet: 'Data', headers: ['Region', 'Booked'], rows: [['East', '10']] },
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    // A confirmed tracker whose file moved: the server sends the cause
+    // and no payload at all, so the card has no setup step to render.
+    const card: PluginCard = {
+      id: 'excel-report~main',
+      title: 'Q4 bookings',
+      version: '0.1.0',
+      pilot: false,
+      state: 'enabled',
+      freshness: 'attention',
+      cause: 'no workbook matches reports/*.xlsx',
+      pluginId: 'excel-report',
+      instanceId: 'main',
+      payload: null,
+    };
+    render(<TrackerCard card={card} onRefetch={async () => {}} onExpired={() => {}} />);
+    expect(screen.getByText('no workbook matches reports/*.xlsx')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+
+    expect(screen.getByRole('dialog', { name: 'Set up this tracker' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    await waitFor(() => expect(pickCalls.length).toBe(1));
+    expect(pickCalls[0]).toContain('/api/plugins/excel-report/instances/main/pick');
+  });
 });
