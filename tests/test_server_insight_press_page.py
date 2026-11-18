@@ -125,3 +125,26 @@ def test_an_unknown_kind_is_refused_on_the_page(tmp_path, monkeypatch):
     assert status == 200
     assert "write-a-poem is not something the desk drafts." in page
     assert "Stage as a reply card" not in page
+
+def test_an_explanation_page_shows_the_disclosure_then_the_answer(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    from tests.server_harness import Booted
+
+    booted = Booted(llm=lambda prompt: "Booked falls while Margin rises; check the discount line.", llm_endpoint="http://llm.test/v1")
+    try:
+        booted.server.settings.set("endpoint_enabled", True)
+        auth = booted.exchange()
+        status, _headers, body = _post_form(
+            booted, auth,
+            {"kind": "explain-range", "text": "Booked falls as Margin rises."},
+        )
+    finally:
+        booted.close()
+    page = body.decode("utf-8")
+    assert status == 200
+    disclosure = "Sends: the one sentence this card already shows"
+    assert disclosure in page
+    assert page.index(disclosure) < page.index("Booked falls while Margin rises")
+    assert "Source: <span class=\"mono\">model</span>" in page
+    # An explanation has no thread, so nothing can be staged from it.
+    assert "Stage as a reply card" not in page
