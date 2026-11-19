@@ -130,6 +130,17 @@ def test_the_receipt_names_exactly_the_facts_that_fit():
     assert all(row["text"].startswith("revenue") for row in receipt)
 
 
+def test_a_fact_that_spans_lines_still_earns_its_receipt():
+    # A fact whose text contains a newline renders as one entry with
+    # continuation lines in the block; the receipt must still name it,
+    # or a run that used it could print "used nothing".
+    ranked = _ranked("Dana prefers concise slides\nwith fewer bullets",
+                     "revenue is up")
+    block, receipt = runner.recall_block(ranked)
+    assert [row["id"] for row in receipt] == [1, 2]
+    assert receipt[0]["text"].startswith("Dana prefers")
+
+
 def test_no_recall_means_no_block_and_an_empty_receipt():
     block, receipt = runner.recall_block([])
     assert block == ""

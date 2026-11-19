@@ -81,20 +81,32 @@ def recall_block(ranked: list) -> tuple[str, list]:
     The block is memory/service's own (at most five facts, five hundred
     characters, whole facts only); the receipt is derived from the
     finished block, so the two can never disagree about what the run
-    used. No recall, no block, empty receipt: silence is the designed
-    empty, not a hidden failure.
+    used. Matching is on whitespace-collapsed text, because a fact whose
+    text spans lines renders as several block lines and must still earn
+    its receipt. No recall, no block, empty receipt: silence is the
+    designed empty, not a hidden failure.
     """
     block = build_facts_block(ranked)
     if not block:
         return "", []
-    carried: dict[str, int] = {}
+    # An entry starts at a "- " line and owns every continuation line
+    # after it (a fact whose text spans lines renders that way), so the
+    # block's own format says where each carried fact ends.
+    entries: list[str] = []
     for line in block.splitlines()[1:]:
-        carried[line] = carried.get(line, 0) + 1
+        if line.startswith("- "):
+            entries.append(line[2:])
+        elif line.strip() and entries:
+            entries[-1] += "\n" + line
+    carried: dict[str, int] = {}
+    for entry in entries:
+        key = " ".join(entry.split())
+        carried[key] = carried.get(key, 0) + 1
     receipt = []
     for _score, fact in ranked[:MAX_FACTS]:
-        line = f"- {fact.text}"
-        if carried.get(line, 0) > 0:
-            carried[line] -= 1
+        key = " ".join(fact.text.split())
+        if carried.get(key, 0) > 0:
+            carried[key] -= 1
             receipt.append({"id": fact.id, "text": fact.text})
     return block, receipt
 

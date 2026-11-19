@@ -183,11 +183,18 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    """Parse the port, serve until interrupted."""
+    """Parse the port, serve until interrupted.
+
+    The bind is loopback only, the same rule the desk itself enforces:
+    the mock echoes prompt text back to whoever called it, so it has no
+    business being reachable from another machine.
+    """
     parser = argparse.ArgumentParser(description="The desk's local mock BYOK endpoint")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
     args = parser.parse_args()
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        parser.error(f"refusing to bind {args.host}: the mock is loopback only")
     server = ThreadingHTTPServer((args.host, args.port), MockEndpointHandler)
     print(f"mock endpoint listening on http://{args.host}:{args.port}/v1", flush=True)
     try:
