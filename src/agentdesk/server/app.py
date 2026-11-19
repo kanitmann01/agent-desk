@@ -5053,6 +5053,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return None
 
         def complete(prompt: str) -> str:
+            """One model call over the desk's endpoint, raw.
+
+            A failing endpoint raises: each caller decides its own
+            fallback, so the same adapter serves drafts that fall back to
+            the template and explanations that refuse.
+            """
             return server.llm(prompt)
 
         return complete

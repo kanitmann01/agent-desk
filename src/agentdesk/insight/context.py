@@ -17,6 +17,12 @@ RECALL_LIMIT = 3
 def build_context(
     server: Any, preferences: dict, *, now: float | None = None
 ) -> InsightContext:
+    """Resolve one context from the bridges the server already holds.
+
+    Nothing here raises: a missing, locked or unreadable source becomes a
+    note on the context, so every family reads the same absence the same
+    way instead of each deciding what an error means.
+    """
     recall, note = _memory(server)
     agenda, agenda_note = _agenda(server)
     return InsightContext(
@@ -70,6 +76,12 @@ def _memory(server: Any) -> tuple[Any, str]:
         return None, "Memory is locked, so nothing was recalled."
 
     def recall(subject: str, limit: int = RECALL_LIMIT) -> list[dict]:
+        """The adapter every family reads memory through: rows of
+        {"text", "source"}, at most `limit`.
+
+        A locked bank or a failing one reads as no facts, because a
+        reading must not take a card down over memory.
+        """
         try:
             found = memory.recall(subject)
         except MemoryEncryptedError:

@@ -188,6 +188,14 @@ class InstanceStore:
         return grant
 
     def store_upload(self, plugin_id: str, instance_id: str, filename: str, raw: bytes) -> Path:
+        """Write uploaded bytes under the instance's uploads folder and
+        return where they landed.
+
+        Only the file's name comes from the wire, so a name that could
+        escape the folder is refused (``config:unsafe-name``), and the
+        suffix, emptiness and size are checked here so the copy on disk is
+        one the store would have staged.
+        """
         if not filename or filename in {".", ".."} or "/" in filename or "\\" in filename:
             raise ConfigError(
                 "config:unsafe-name",

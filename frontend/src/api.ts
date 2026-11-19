@@ -25,6 +25,10 @@ export async function postJson(url: string, body?: unknown): Promise<ApiResult> 
   return { ok: response.ok, status: response.status, data };
 }
 
+/**
+ * Post a file as raw bytes: the file is the whole body, not multipart,
+ * and the answer is still JSON.
+ */
 export async function postFile(url: string, file: File): Promise<ApiResult> {
   const response = await fetch(url, {
     method: 'POST',
@@ -55,6 +59,10 @@ export interface PressResult {
   data: Partial<InsightAnswer & InsightRefusal>;
 }
 
+/**
+ * Send one press and narrow its result to the reading's own shapes, so
+ * callers branch on `ok` alone and never cast the data themselves.
+ */
 export async function pressReading(route: string, body: PressBody): Promise<PressResult> {
   const result = await postJson(route, body);
   const data = (typeof result.data === 'object' && result.data !== null ? result.data : {}) as Partial<

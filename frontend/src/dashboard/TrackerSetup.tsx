@@ -103,8 +103,11 @@ export default function TrackerSetup({
     setSuggested(false);
   }
 
-  // One tail for every way in: the dialog's pick, a typed path and an
-  // uploaded file all land on the same preview grid.
+  /**
+   * One tail for every way in: the dialog's pick, a typed path and an
+   * uploaded file all land on the same preview grid. Returns false after
+   * setting the error, so the caller knows the grid did not move.
+   */
   function applyOpen(res: ApiResult): boolean {
     if (res.status === 200) {
       const next = (res.data as { preview: Preview }).preview;
@@ -126,6 +129,10 @@ export default function TrackerSetup({
     return false;
   }
 
+  /**
+   * Run one open request with the busy flag held and the expired session
+   * handled; the result lands on the one tail every way in shares.
+   */
   async function runOpen(request: () => Promise<ApiResult>) {
     setBusy(true);
     setError('');

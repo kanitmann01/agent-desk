@@ -347,6 +347,8 @@ def _senders(messages: list) -> str:
 
 
 def _missing_thread(subject: str) -> str:
+    """The refusal when no message in the folder carries this subject from
+    that sender, so there is no thread to answer."""
     return (
         f'Nothing was drafted: the mail folder has no message with the subject '
         f'"{subject}" from that sender, so there is no thread to answer.'
@@ -354,6 +356,8 @@ def _missing_thread(subject: str) -> str:
 
 
 def _unstageable(subject: str) -> str:
+    """The refusal when staging was asked without naming who the thread is
+    from: a card with no message to write into could only be refused later."""
     return (
         f'Nothing was staged: the request does not say who the thread '
         f'"{subject}" is from, so there is no thread to put a card on.'
@@ -361,6 +365,12 @@ def _unstageable(subject: str) -> str:
 
 
 def _ambiguous_thread(subject: str, messages: list) -> str:
+    """The refusal when more than one message answers this description.
+
+    The senders are named (at most three, then a count, as _senders shapes
+    it) so the user can say which thread they meant by pressing again with
+    the sender spelled out.
+    """
     return (
         f'Nothing was drafted: more than one message has the subject "{subject}" '
         f"({_senders(messages)}), so the desk cannot tell which thread to answer."
@@ -368,6 +378,8 @@ def _ambiguous_thread(subject: str, messages: list) -> str:
 
 
 def _unreplyable(subject: str) -> str:
+    """The refusal when every address on the thread is this own desk, so
+    there is nobody to reply to."""
     return (
         f'Nothing was drafted: every address on "{subject}" belongs to this '
         f"desk, so there is nobody to reply to."

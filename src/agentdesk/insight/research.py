@@ -173,6 +173,11 @@ def _answered_at(payload: dict) -> datetime | None:
 
 
 def _printed_time(text: str) -> datetime:
+    """Parse the card's own "answered at" stamp, YYYY-MM-DD HH:MM.
+
+    Raises ValueError when the text is not that shape; the caller falls
+    back to ISO parsing, so this stays a parser and not a gate.
+    """
     return datetime.strptime(text, ANSWERED_FORMAT)
 
 
@@ -194,6 +199,12 @@ def _meeting(context: InsightContext) -> dict | None:
 
 
 def _iso(value: object) -> datetime | None:
+    """An ISO timestamp as a naive datetime, or None when it is not one.
+
+    A timezone-aware value is stripped to its wall time, because the
+    answer and the meeting are compared as they were printed, not as
+    instants.
+    """
     if not isinstance(value, str) or not value.strip():
         return None
     try:
@@ -204,6 +215,11 @@ def _iso(value: object) -> datetime | None:
 
 
 def _older_than(answered: datetime | None, start: datetime | None) -> bool:
+    """Whether the stored answer predates the meeting.
+
+    Either time missing reads as no, because a time the card did not say
+    cannot order anything.
+    """
     if answered is None or start is None:
         return False
     return answered < start
@@ -310,6 +326,8 @@ def _closest(topics: list[str], answer_words: set[str]) -> str:
 
 
 def _topics(preferences: object) -> list[str]:
+    """The focus topics as typed, trimmed and empties dropped; anything
+    but a list of lines reads as no topics."""
     if not isinstance(preferences, dict):
         return []
     raw = preferences.get("focusTopics")
@@ -319,6 +337,8 @@ def _topics(preferences: object) -> list[str]:
 
 
 def _elements(payload: dict) -> list[dict]:
+    """The payload's rendered elements, only the dicts; anything else a
+    payload carried instead reads as no elements."""
     raw = payload.get("elements")
     if not isinstance(raw, list):
         return []
@@ -326,6 +346,11 @@ def _elements(payload: dict) -> list[dict]:
 
 
 def _labelled(elements: list[dict], label: str) -> str:
+    """The text of the first element wearing this label, or "".
+
+    The comparison is on the trimmed, lowercased label, because the
+    widget's schema spells labels in its own case.
+    """
     for element in elements:
         if str(element.get("label") or "").strip().lower() != label:
             continue
@@ -336,6 +361,8 @@ def _labelled(elements: list[dict], label: str) -> str:
 
 
 def _keywords(text: str) -> set[str]:
+    """The words that can carry a subject: three letters or more, with the
+    stopwords out, lowercased."""
     return {
         word
         for word in _WORD.findall(text.lower())
@@ -361,10 +388,13 @@ def _overlap(one: set[str], other: set[str]) -> int:
 
 
 def _line(text: str) -> str:
+    """The text on one line: runs of whitespace folded to single spaces."""
     return " ".join(text.split())
 
 
 def _trim(text: str, limit: int = FACT_CHARS) -> str:
+    """At most `limit` characters, cut on a word boundary when one falls in
+    the back half, and marked with an ellipsis so the cut says itself."""
     if len(text) <= limit:
         return text
     cut = text[:limit]

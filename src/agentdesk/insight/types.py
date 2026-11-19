@@ -37,11 +37,15 @@ class InsightContext:
 
     @property
     def density(self) -> str:
+        """The density preference, or "normal" when the stored value is not
+        one of the three words."""
         value = str(self.preferences.get("insightDensity") or "normal")
         return value if value in ("quiet", "normal", "chatty") else "normal"
 
     @property
     def max_elements(self) -> int:
+        """How many elements a reading may add under this density: one when
+        quiet, three normally, four when chatty."""
         return {"quiet": 1, "normal": 3, "chatty": MAX_ELEMENTS}[self.density]
 
 
@@ -83,6 +87,8 @@ class InsightError(Exception):
     message is written for the person reading it, never for a log."""
 
     def __init__(self, code: str, message: str, status: int = 400) -> None:
+        """Bind the stable code, the sentence, and the HTTP status a client
+        answers with; refusing without all three is not an option."""
         super().__init__(message)
         self.code = code
         self.message = message

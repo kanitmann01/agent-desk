@@ -102,7 +102,6 @@ frontend/src/dashboard/TrackerSetup.tsx:checkChoice
 frontend/src/dashboard/TrackerSetup.tsx:chooseRows
 frontend/src/dashboard/TrackerSetup.tsx:confirm
 frontend/src/dashboard/TrackerSetup.tsx:keepMine
-frontend/src/dashboard/TrackerSetup.tsx:openFile
 frontend/src/dashboard/TrackerSetup.tsx:suggest
 frontend/src/dashboard/TrackerSetup.tsx:useRecommendation
 frontend/src/dashboard/briefModel.ts:amountOf
@@ -174,7 +173,6 @@ frontend/src/marketplace/InstanceSetupSheet.tsx:confirm
 frontend/src/marketplace/InstanceSetupSheet.tsx:create
 frontend/src/marketplace/InstanceSetupSheet.tsx:fail
 frontend/src/marketplace/InstanceSetupSheet.tsx:instanceFileName
-frontend/src/marketplace/InstanceSetupSheet.tsx:openWorkbook
 frontend/src/marketplace/MarketGrid.tsx:MarketCardView
 frontend/src/marketplace/MarketGrid.tsx:MarketGrid
 frontend/src/marketplace/MarketGrid.tsx:Miniature
