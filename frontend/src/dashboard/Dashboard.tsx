@@ -369,6 +369,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             key={key}
             span={researchSpan}
             title={title}
+            enabled={data.research.enabled}
             lastAnsweredTs={data.research.lastAnsweredTs}
             answer={answer}
             answerSeq={answerSeq}
@@ -451,7 +452,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             <p className="cust-note" role="status">{customizeNote}</p>
           </section>
         ) : null}
-        <CommandBar busy={researchBusy} onAsk={ask} />
+        <CommandBar busy={researchBusy} disabled={!data.research.enabled} onAsk={ask} />
         {!customizing && statusText ? (
           <p className="research-status command-status" role="status">{statusText}</p>
         ) : null}

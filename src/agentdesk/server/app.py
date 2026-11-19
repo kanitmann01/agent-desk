@@ -135,7 +135,6 @@ from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
 from agentdesk.server.memory_loop_api import build_loop_state
-from agentdesk.plugins.cards import card_to_api
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
@@ -163,6 +162,7 @@ from agentdesk.server.commitments import (
     render_commitments_unavailable,
     render_commitments_widget,
 )
+from agentdesk.server.dashboard_state import build_dashboard_state
 from agentdesk.server.graph_view import parse_graph_query, render_graph_page
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
@@ -173,6 +173,7 @@ from agentdesk.server.peers_view import render_peers_page
 from agentdesk.server.research import (
     RETAIN_EXCERPT_MAX_CHARS,
     render_assistant_page,
+    render_research_disabled,
     render_research_widget,
 )
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
@@ -190,7 +191,6 @@ from agentdesk.server.core import (
     SRC_CALENDAR,
     SRC_EXCEL,
     SRC_RESEARCH,
-    SOURCE_IDS,
     STATUS_CONNECTED,
     STATUS_NOT_CONNECTED,
     Freshness,
@@ -1187,10 +1187,11 @@ def _press_form(card: dict, press: object) -> str:
 
 
 def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
-    """Attach the coupled reading to cards as whichever surface renders them.
+    """Attach the coupled reading to cards as the dashboard state is built.
 
-    Both surfaces call this, so a reading is never JSON-only: the same
-    sentence arrives through the API payload and through the authored HTML.
+    build_dashboard_state calls this once, so a reading is never JSON-only:
+    the same sentence arrives through the API payload and through the
+    authored HTML.
     """
     attach_cards(
         cards,
@@ -1204,7 +1205,7 @@ def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
 
     Only enabled plugins render a card (the same filter widget_cards
     applies), so those are the layout's plugin universe. This call is
-    read-only: unlike widget_cards it never spends a pilot view.
+    read-only: it never spends a pilot view.
     """
     plugins = server.plugins
     if plugins is None:
@@ -1219,117 +1220,15 @@ def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
 
 def dashboard_payload(server: AgentDeskServer) -> dict:
     """Everything the dashboard shows, as data: one JSON payload for the
-    SPA shell (and any later client). The same source-state branches the
-    server-rendered cards apply live here as modes, so there is exactly
-    one place where dashboard state is decided; the renderers and the SPA
-    both follow it. Plugin cards are data (the same widget_cards() call
-    the rendered dashboard makes, so a dashboard view still spends one
-    pilot view), never server HTML.
+    SPA shell (and any later client).
+
+    The payload is one projection of build_dashboard_state, the same state
+    the server-rendered cards are built from, so the two surfaces cannot
+    disagree about a source's mode, research availability or the layout.
+    Plugin cards are data, never server HTML, and building the state is a
+    pure read: a GET never spends a plugin's pilot view.
     """
-    settings = server.settings
-
-    def allowed(key: str) -> bool:
-        """Whether a settings-gated source may appear on the payload.
-
-        A missing settings store reads as allowed, so a desk whose store never opened
-        still describes its default arrangement instead of an empty one.
-        """
-        return settings is None or bool(settings.get(key))
-
-    excel = server.excel
-    sales_status = excel.status() if excel is not None else None
-    if not allowed("excel_enabled"):
-        sales_mode = "disabled"
-    elif sales_status is not None and sales_status.get("configured"):
-        sales_mode = "live"
-    else:
-        sales_mode = "unconfigured"
-
-    calendar = server.calendar
-    if not allowed("calendar_enabled"):
-        commitments_mode, commitments_status = "disabled", None
-    elif calendar is None:
-        commitments_mode, commitments_status = "unavailable", None
-    else:
-        commitments_mode, commitments_status = "live", calendar.status()
-
-    # The writer records the action as "llm.research" (assistant/loop.py);
-    # querying anything else makes the stamp never show the last answer.
-    audit_conn = server.audit_conn
-    last_answer = (
-        audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
-    )
-
-    skills = server.skills.active() if server.skills is not None else []  # type: ignore[attr-defined]
-    plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
-    # One reading per card, from the preferences the user set and the memory
-    # the desk already holds. Appended here so every client of this payload
-    # sees the same reading, and the cards themselves stay the plugin's own.
-    with_insight(server, plugin_cards)
-    sources = live_sources(server)
-    inbox = server.inbox  # type: ignore[attr-defined]
-    # The layout the dashboard renders in: hidden cards are omitted from
-    # this listing (GET /api/layout still lists them, so hiding is always
-    # recoverable) and custom titles ride each entry; a plugin's custom
-    # title also overrides its card title below, so the layout and the
-    # card data can never disagree.
-    layout_entries = resolved_layout(server.layout, enabled_plugin_ids(server))
-    custom_titles = {
-        entry["key"]: entry["title"]
-        for entry in layout_entries if entry["title"]
-    }
-    return {
-        "version": agentdesk.__version__,
-        # The Sample data switch: the desk tags each cell that shows
-        # sample content once, in the cell header.
-        "sample": bool(settings.get("sample_data")) if settings is not None else False,
-        "flags": {
-            "excelEnabled": allowed("excel_enabled"),
-            "calendarEnabled": allowed("calendar_enabled"),
-            "endpointEnabled": allowed("endpoint_enabled"),
-        },
-        "sources": {
-            "connected": sum(1 for s in sources if s.status == STATUS_CONNECTED),
-            "total": len(SOURCE_IDS),
-            "items": [
-                {"id": s.id, "status": s.status, "detail": s.detail} for s in sources
-            ],
-        },
-        "sales": {
-            "enabled": allowed("excel_enabled"),
-            "mode": sales_mode,
-            "status": sales_status,
-        },
-        "commitments": {
-            "enabled": allowed("calendar_enabled"),
-            "mode": commitments_mode,
-            "status": commitments_status,
-        },
-        "research": {
-            "enabled": allowed("endpoint_enabled"),
-            "lastAnsweredTs": last_answer,
-        },
-        "inbox": {"waiting": len(inbox.waiting()) if inbox is not None else 0},
-        "skills": [
-            {"id": s["id"], "name": s["name"], "description": s["description"]}
-            for s in skills
-        ],
-        "layout": {
-            "cards": [
-                {"key": entry["key"], "title": entry["title"]}
-                for entry in layout_entries if not entry["hidden"]
-            ],
-        },
-        "plugins": {
-            # One serializer owns the card's API shape (camelCase, the
-            # layout's rename applied), so the payload cannot drift from
-            # the cards the runtime's factory builds.
-            "cards": [
-                card_to_api(c, custom_titles.get(c["id"]))
-                for c in plugin_cards
-            ],
-        },
-    }
+    return build_dashboard_state(server).payload()
 
 
 def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
@@ -1892,6 +1791,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._settings_toggle()
         elif path == "/api/layout":
             self._layout_save()
+        elif path == "/api/dashboard/view":
+            plugins = self.server.plugins  # type: ignore[attr-defined]
+            spent = plugins.record_dashboard_view() if plugins is not None else 0
+            self._send_json(200, {"spent": spent})
         elif path == "/settings/endpoint/save":
             self._endpoint_save()
         elif path == "/settings/endpoint/test":
@@ -2205,53 +2108,42 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         Each source resolves to exactly one card however it is doing, so a source that
         is off, unconfigured, unavailable or live still takes its slot and the layout
-        never shifts. The research card reads the newest successful llm.research stamp —
-        that exact action name is what the writer records — and plugin cards come from
-        the runtime's own widget list, which is where an enabled plugin's pilot view is
-        spent.
+        never shifts. Every mode comes from build_dashboard_state, the same state the
+        JSON payload projects, and plugin cards ride along already carrying their
+        insight reading. Rendering is a pure read, so a page view never spends a
+        plugin's pilot view.
         """
-        now = datetime.now()
+        state = build_dashboard_state(self.server)
+        now = state.now
         widgets: list = []
-        excel = self.server.excel  # type: ignore[attr-defined]
-        sales_status = excel.status() if excel is not None else None
-        if not self._source_allowed("excel_enabled"):
+        if state.sales.mode == "disabled":
             widgets.append(render_sales_disabled(now))
-        elif sales_status is not None and sales_status.get("configured"):
-            widgets.append(render_sales_widget(sales_status))
+        elif state.sales.mode == "live" and state.sales.status is not None:
+            widgets.append(render_sales_widget(state.sales.status))
         else:
             widgets.append(render_sales_unconfigured(now))
-        calendar = self.server.calendar  # type: ignore[attr-defined]
-        if not self._source_allowed("calendar_enabled"):
+        if state.commitments.mode == "disabled":
             widgets.append(render_commitments_widget({"state": "disabled"}, now))
-        elif calendar is not None:
-            commitments = render_commitments_widget(calendar.status(), now)
+        elif state.commitments.mode == "live" and state.commitments.status is not None:
+            commitments = render_commitments_widget(state.commitments.status, now)
             widgets.append(
                 commitments if commitments is not None else render_commitments_unavailable(now)
             )
         else:
             widgets.append(render_commitments_unavailable(now))
-        audit_conn = self.server.audit_conn  # type: ignore[attr-defined]
-        # The writer records the action as "llm.research" (assistant/loop.py);
-        # querying anything else makes the stamp never show the last answer.
-        last_answer = audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
-        widgets.append(render_research_widget(last_answer, now))
-        connected = sum(1 for s in live_sources(self.server) if s.status == STATUS_CONNECTED)
-        plugins = self.server.plugins  # type: ignore[attr-defined]
-        if plugins is not None:
-            widgets += [
-                self._plugin_widget(card)
-                for card in with_insight(self.server, plugins.widget_cards())
-            ]
-        inbox = self.server.inbox  # type: ignore[attr-defined]
-        skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
+        if state.research.enabled:
+            widgets.append(render_research_widget(state.research.last_answered_ts, now))
+        else:
+            widgets.append(render_research_disabled(now))
+        widgets += [self._plugin_widget(card) for card in state.plugin_cards]
         page = pages.render_dashboard(
             widgets,
-            agentdesk.__version__,
+            state.version,
             _greeting(now),
             now.strftime("%A, %d %B, %H:%M. "),
-            inbox_count=len(inbox.waiting()) if inbox is not None else 0,
-            skills=skills,
-            connected_sources=connected,
+            inbox_count=state.inbox_waiting,
+            skills=list(state.skills),
+            connected_sources=state.sources_connected,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
