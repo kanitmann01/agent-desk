@@ -169,6 +169,35 @@ def test_registry_root_document_is_seeded():
         assert release.sha256 == tree_digest(plugin_dir), entry.id
 
 
+def test_tree_digest_walks_in_posix_string_order(tmp_path):
+    """The digest's walk order is the case-sensitive posix relpath order
+    on every platform. Windows pathlib compares case-insensitively, so
+    sorting Path objects walks manifest.json before README.md there and
+    the same tree hashes differently across machines: a Windows checkout
+    failed every pinned install of a mixed-case tree with
+    install:hash-mismatch while the pins verified on posix machines."""
+    import hashlib
+
+    from agentdesk.registry.install import tree_digest
+
+    plugin_dir = tmp_path / "plugin"
+    (plugin_dir / "skills" / "recap").mkdir(parents=True)
+    (plugin_dir / "README.md").write_text("# plugin\n", encoding="utf-8")
+    (plugin_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    (plugin_dir / "skills" / "recap" / "SKILL.md").write_text("x\n",
+                                                             encoding="utf-8")
+    # String order, which is the pin's order: README.md sorts before
+    # manifest.json, and a case-insensitive walk would flip the pair.
+    names = sorted(["README.md", "manifest.json",
+                    "skills/recap/SKILL.md"])
+    assert names[0] == "README.md"
+    digest = hashlib.sha256()
+    for name in names:
+        digest.update(name.encode("utf-8") + b"\n")
+        digest.update((plugin_dir / name).read_bytes())
+    assert tree_digest(plugin_dir) == digest.hexdigest()
+
+
 def test_empty_base_index_means_nothing_published_yet(tmp_path):
     """The workflow writes {} when the base branch has no index: that is
     the clean first-publish case, not a broken base."""

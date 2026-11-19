@@ -37,11 +37,18 @@ class Pin:
 
 
 def tree_digest(plugin_dir: Path) -> str:
-    """sha256 over sorted relpaths and file bytes: the release pin."""
+    """sha256 over sorted relpaths and file bytes: the release pin.
+
+    The sort key is the posix relpath string, not the Path object:
+    pathlib compares case-insensitively on Windows, so a Path sort walks
+    a mixed-case tree (README.md after manifest.json) in a different
+    order there, and the same tree hashes differently across machines.
+    A pin that only verifies on the machine that made it is not a pin.
+    """
     digest = hashlib.sha256()
-    for path in sorted(Path(plugin_dir).rglob("*")):
-        if not path.is_file():
-            continue
+    files = [path for path in Path(plugin_dir).rglob("*") if path.is_file()]
+    files.sort(key=lambda path: path.relative_to(plugin_dir).as_posix())
+    for path in files:
         rel = path.relative_to(plugin_dir).as_posix()
         digest.update(rel.encode("utf-8") + b"\n")
         digest.update(path.read_bytes())

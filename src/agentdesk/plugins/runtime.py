@@ -88,11 +88,16 @@ def _tree_digest(plugin_dir: Path) -> str:
     Each file contributes its relative POSIX path and then its bytes, in sorted
     order, so content edits and renames both move the digest while empty
     directories contribute nothing. The lockfile pins this value at install time.
+    The sort key is the posix relpath string, not the Path object: pathlib
+    compares case-insensitively on Windows, so a Path sort walks a mixed-case
+    tree in a different order there and the same tree hashes differently
+    across machines, which a peer install checking the publisher's digest
+    would read as tampering.
     """
     digest = hashlib.sha256()
-    for path in sorted(Path(plugin_dir).rglob("*")):
-        if not path.is_file():
-            continue
+    files = [path for path in Path(plugin_dir).rglob("*") if path.is_file()]
+    files.sort(key=lambda path: path.relative_to(plugin_dir).as_posix())
+    for path in files:
         digest.update(path.relative_to(plugin_dir).as_posix().encode("utf-8") + b"\n")
         digest.update(path.read_bytes())
     return digest.hexdigest()
