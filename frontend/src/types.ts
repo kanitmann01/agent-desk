@@ -129,16 +129,16 @@ export interface InsightReceipts {
 
 // The one model call a reading may offer. Nothing is spent until the
 // person presses the button the label sits on, so the label says what the
-// press does rather than what the card is.
+// press does rather than what the card is. The payload is the request: it
+// travels to the route verbatim, minus the label and the route themselves.
 export interface InsightPress {
   label: string;
   route: string;
   kind: 'reply-draft' | 'explain-range';
+  /** The thread a reply drafts from, nested as the digest family emits it. */
+  thread?: { subject: string; sender?: string; last?: string };
+  /** The one sentence an explanation explains, as the workbook emits it. */
   text?: string;
-  subject?: string;
-  sender?: string;
-  /** The digest family nests the thread facts; the draft route reads either shape. */
-  thread?: { subject: string; sender: string };
 }
 
 // payload.insight: the reading behind a card's extra elements, the line

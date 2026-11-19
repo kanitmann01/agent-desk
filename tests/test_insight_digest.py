@@ -34,6 +34,12 @@ THREAD = {
     "age": "2 h ago",
 }
 
+# The thread a press drafts from on a desk with no mail view to consult:
+# a subject and a last line, no sender to resolve, so the model path is
+# what the press tests stand on alone. Resolution from a nested sender is
+# covered where the mail view is modelled (tests/test_insight_press.py).
+PRESS_THREAD = {"subject": THREAD["subject"], "last": THREAD["last"]}
+
 
 def context(**kwargs) -> InsightContext:
     preferences = kwargs.pop("preferences", {})
@@ -289,7 +295,7 @@ def test_press_refuses_to_dress_a_skeleton_as_a_draft():
     with pytest.raises(InsightError) as caught:
         press.draft_reply(
             None,
-            {"kind": "reply-draft", "thread": THREAD},
+            {"kind": "reply-draft", "thread": PRESS_THREAD},
             preferences={"replyTone": "direct"},
         )
     assert caught.value.status == 409
@@ -306,7 +312,7 @@ def test_press_falls_back_to_a_labelled_skeleton_when_the_model_fails():
 
     reply = press.draft_reply(
         None,
-        {"kind": "reply-draft", "thread": THREAD},
+        {"kind": "reply-draft", "thread": PRESS_THREAD},
         preferences={"replyTone": "direct"},
         complete=complete,
     )
@@ -320,7 +326,7 @@ def test_press_falls_back_to_a_labelled_skeleton_when_the_model_fails():
 def test_press_passes_a_model_answer_through_unchanged():
     reply = press.draft_reply(
         None,
-        {"kind": "reply-draft", "thread": THREAD},
+        {"kind": "reply-draft", "thread": PRESS_THREAD},
         preferences={},
         complete=lambda prompt: "Confirmed.",
     )
@@ -365,7 +371,7 @@ def test_the_draft_route_refuses_with_409_when_the_model_is_off(booted):
     auth = booted.exchange()
 
     status, _headers, body = booted.post_json(
-        "/api/insight/draft", {"kind": "reply-draft", "thread": THREAD}, auth
+        "/api/insight/draft", {"kind": "reply-draft", "thread": PRESS_THREAD}, auth
     )
 
     payload = json.loads(body)
@@ -383,7 +389,7 @@ def test_the_draft_route_returns_a_model_draft_when_one_is_injected(booted, monk
     auth = booted.exchange()
 
     status, _headers, body = booted.post_json(
-        "/api/insight/draft", {"kind": "reply-draft", "thread": THREAD}, auth
+        "/api/insight/draft", {"kind": "reply-draft", "thread": PRESS_THREAD}, auth
     )
 
     payload = json.loads(body)
