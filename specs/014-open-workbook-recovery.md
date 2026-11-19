@@ -1,4 +1,4 @@
-# Spec 009: Open the workbook when the file dialog cannot open
+# Spec 014: Open the workbook when the file dialog cannot open
 
 Status: ready-for-agent (2026-11-18). File this as the spec issue with the
 ready-for-agent label; once filed, the issue body is the live copy when the two disagree.
