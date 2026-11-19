@@ -135,8 +135,8 @@ def _registry_gate(env: dict) -> tuple[bool, str]:
     """Registry CI over every committed plugin directory."""
     plugin_dirs = sorted(p.name for p in (ROOT / "registry" / "plugins").iterdir() if p.is_dir())
     args = [PYTHON, "tools/registry_ci.py", "--registry", "registry"]
-    for name in plugin_dirs:
-        args += ["--plugins", f"registry/plugins/{name}"]
+    if plugin_dirs:
+        args += ["--plugins", ",".join(f"registry/plugins/{name}" for name in plugin_dirs)]
     proc = subprocess.run(args, cwd=ROOT, env=env, capture_output=True, text=True)
     tail = (proc.stdout or "").strip().splitlines()
     return proc.returncode == 0, tail[-1][:160] if tail else f"exit {proc.returncode}"
