@@ -42,6 +42,13 @@ interface TrackerSetupProps {
   onExpired: () => void;
 }
 
+/**
+ * The three-step setup sheet: open a workbook, choose the columns and rows on a
+ * preview grid, then name the instance.
+ *
+ * onDone runs once the server has saved the choice and before the sheet closes;
+ * onClose dismisses it; onExpired hands a 401 back to the desk.
+ */
 export default function TrackerSetup({
   pluginId, instanceId, name, onDone, onClose, onExpired,
 }: TrackerSetupProps) {
@@ -88,6 +95,10 @@ export default function TrackerSetup({
   // before routing, so an encoded name is the only place it survives.
   const uploadUrl = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}/upload/`;
 
+  /**
+   * Give a clicked header the role the toggle names and drop any pending
+   * suggestion or review; the choice then counts as the user's own.
+   */
   function assign(header: string) {
     if (role === 'value') setValueColumn(header);
     else setLabelColumn(header);
@@ -96,6 +107,10 @@ export default function TrackerSetup({
     setSuggested(false);
   }
 
+  /**
+   * Replace the picked rows and drop any pending suggestion or review; the choice
+   * then counts as the user's own.
+   */
   function chooseRows(rows: number[]) {
     setPicked(rows);
     setProposal(null);
@@ -145,6 +160,13 @@ export default function TrackerSetup({
     }
   }
 
+  /**
+   * Ask for a suggestion and adopt its columns and rows as a proposal awaiting
+   * Accept or Adjust.
+   *
+   * A refused call or an answer without a proposal leaves the choice untouched
+   * and puts the server's message in the error note.
+   */
   async function suggest() {
     setBusy(true);
     setError('');
@@ -163,6 +185,7 @@ export default function TrackerSetup({
     setSuggested(true);
   }
 
+  /** Keep the suggestion as it stands and move to the naming step. */
   function acceptSuggestion() {
     setProposal(null);
     setSuggested(true);
@@ -173,6 +196,13 @@ export default function TrackerSetup({
   // columns and rows. A missing endpoint, a bad response, or a verdict
   // with nothing to change lets the choice straight through; only a real
   // recommendation holds the sheet open.
+  /**
+   * Run the one check on the chosen columns and rows before the naming step.
+   *
+   * The sheet stays open only for a recommendation with something to change; an
+   * unreachable endpoint, a refused answer or a verdict that offers nothing lets
+   * the choice through to step 3.
+   */
   async function checkChoice() {
     setBusy(true);
     setError('');
@@ -198,6 +228,10 @@ export default function TrackerSetup({
     if (!next.recommendation) setStep(3);
   }
 
+  /**
+   * Adopt the checker's recommendation, keeping the picked rows unless it names
+   * its own, and move to the naming step.
+   */
   function useRecommendation(recommendation: Proposal) {
     setLabelColumn(recommendation.labelColumn);
     setValueColumn(recommendation.valueColumn);
@@ -208,11 +242,20 @@ export default function TrackerSetup({
     setStep(3);
   }
 
+  /** Keep the chosen columns and rows, dismiss the review and move to the naming step. */
   function keepMine() {
     setReview(null);
     setStep(3);
   }
 
+  /**
+   * Save the instance and reload the desk; the sheet closes only after the save
+   * is accepted.
+   *
+   * A workbook outside the workspace folder is not an error but the accept-once
+   * choice: outside turns on and the save waits. Any other refusal lands in the
+   * error note.
+   */
   async function confirm() {
     setBusy(true);
     setError('');
@@ -246,6 +289,7 @@ export default function TrackerSetup({
     onClose();
   }
 
+  /** Accept the outside-workspace file once, then retry the save it refused. */
   async function acceptOutside() {
     setBusy(true);
     setError('');

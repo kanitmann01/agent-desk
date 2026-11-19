@@ -23,6 +23,12 @@ interface CachedCatalog {
   data: CatalogResponse;
 }
 
+/**
+ * Read the catalog saved for offline use.
+ *
+ * Anything unparseable, or a payload without an entries array, counts as
+ * absent, so a half-written or outdated cache can never be rendered as fact.
+ */
 function readCatalogCache(): CachedCatalog | null {
   try {
     const raw = window.localStorage.getItem(CATALOG_CACHE_KEY);
@@ -36,6 +42,13 @@ function readCatalogCache(): CachedCatalog | null {
   }
 }
 
+/**
+ * Save the unfiltered catalog as the offline fallback, stamped with today's
+ * time.
+ *
+ * A browser that refuses storage is swallowed: it still gets the live
+ * catalog, only without the fallback.
+ */
 function saveCatalogCache(data: CatalogResponse): void {
   try {
     window.localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({
@@ -46,11 +59,26 @@ function saveCatalogCache(data: CatalogResponse): void {
   }
 }
 
+/**
+ * Turn a cache timestamp into the phrase the offline banner shows.
+ *
+ * A value that is not a date reads as "at an unknown time" rather than
+ * "Invalid Date".
+ */
 function savedLabel(savedAt: string): string {
   const date = new Date(savedAt);
   return Number.isNaN(date.getTime()) ? 'at an unknown time' : `on ${date.toLocaleString()}`;
 }
 
+/**
+ * Render the discover, search and category surface, which share one catalog
+ * and one grid.
+ *
+ * The question lives in the route and the filters in local state; changing
+ * either refetches, and a stale response is dropped rather than painted. Only
+ * the unfiltered catalog is cached, and that cache is replayed when such a
+ * fetch fails so the page can say it is showing something older.
+ */
 export function CatalogPage({ route }: { route: { name: string; params: Record<string, string> } }) {
   const { navigate } = useMarketplaceNav();
   const onSearch = route.name === 'search';
@@ -103,6 +131,12 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
     navigate(trimmed ? `/marketplace/search?q=${encodeURIComponent(trimmed)}` : '/marketplace');
   }, [q, navigate]);
 
+  /**
+   * Reset the local filters, and leave a category or search route for the
+   * unfiltered catalog.
+   *
+   * On Discover there is no route to leave, so the query field is untouched.
+   */
   const clearFilters = () => {
     setSource('');
     setRisk('');

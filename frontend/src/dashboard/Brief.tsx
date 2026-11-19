@@ -216,6 +216,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
 
   // ---- desk health ----------------------------------------------------
   const commitments = data.commitments.status;
+  /**
+   * A source's status word from the dashboard payload, or "" when no source
+   * carries that id.
+   */
   const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
   const healthRows: HealthRow[] = [
     {

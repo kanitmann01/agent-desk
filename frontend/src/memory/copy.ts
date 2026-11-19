@@ -23,6 +23,9 @@ export const STEP_GLYPH: Record<StepId, GlyphKind> = {
 
 /** The count and noun under a pipeline step; extract also reports waiting rows. */
 export function stepUnit(step: StepId, count: number, waiting = 0): string {
+  /**
+   * The step's count with its noun, singular at exactly one.
+   */
   const plural = (noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
   switch (step) {
     case 'retain':

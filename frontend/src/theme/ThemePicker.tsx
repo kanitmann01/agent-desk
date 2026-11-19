@@ -9,9 +9,16 @@ interface ThemePickerProps {
   compact?: boolean;
 }
 
+/**
+ * The current theme and a setter that applies it.
+ *
+ * The value follows the agentdesk:theme event, so every mounted picker and any
+ * other control that applies a theme stays in step.
+ */
 export function useTheme(): [ThemeId, (id: ThemeId) => void] {
   const [theme, setTheme] = useState<ThemeId>(() => currentTheme());
   useEffect(() => {
+    /** Follow a theme applied anywhere in the page, not only by this picker. */
     const onChange = (event: Event) => setTheme((event as CustomEvent<ThemeId>).detail);
     window.addEventListener('agentdesk:theme', onChange);
     return () => window.removeEventListener('agentdesk:theme', onChange);
@@ -19,10 +26,17 @@ export function useTheme(): [ThemeId, (id: ThemeId) => void] {
   return [theme, (id: ThemeId) => { applyTheme(id); setTheme(id); }];
 }
 
+/**
+ * The theme control: tiles in Settings, a strip of swatches in the rail.
+ *
+ * One radio group in both sizes: arrow keys move and wrap, and only the
+ * selected option is in the tab order.
+ */
 export default function ThemePicker({ compact = false }: ThemePickerProps) {
   const [theme, choose] = useTheme();
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
 
+  /** Move the choice one option in the arrow's direction, wrapping at both ends. */
   function onKey(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;

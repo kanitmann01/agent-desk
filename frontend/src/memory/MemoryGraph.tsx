@@ -42,6 +42,13 @@ export interface MemoryGraphProps {
   onRemove?: (node: GraphNode) => void;
 }
 
+/**
+ * The provenance graph: read the store's rows, then draw them or say why not.
+ *
+ * One read per endpoint and reloadKey; loading and failure each replace the
+ * picture with a single quiet line, so the section always has something to
+ * show.
+ */
 export default function MemoryGraph({
   endpoint = '/api/memory/graph',
   mode = 'page',
@@ -96,6 +103,12 @@ export default function MemoryGraph({
   );
 }
 
+/**
+ * The graph once its rows are in: header, pipeline strip, then the picture.
+ *
+ * A bank with no facts or observations shows EmptyGraph in the picture's place;
+ * with chrome off the enclosing page draws the header and pipeline itself.
+ */
 function Ready({
   data,
   mode,
@@ -163,10 +176,12 @@ function Ready({
   );
 }
 
+/** A number with its noun, pluralised unless it is exactly one. */
 function count(n: number, noun: string, plural = `${noun}s`): string {
   return `${n} ${n === 1 ? noun : plural}`;
 }
 
+/** The zero state: a ghost of the four columns beside what to do about it. */
 function EmptyGraph() {
   return (
     <div className="mg-empty">
@@ -191,12 +206,19 @@ function EmptyGraph() {
   );
 }
 
+/**
+ * The content width of the element the returned ref is attached to.
+ *
+ * Measured once after mount and again on every resize, never counting padding
+ * as canvas; initial skips measuring, which is how tests pin a width.
+ */
 function useWidth(initial?: number) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(initial ?? 0);
   useEffect(() => {
     const element = ref.current;
     if (!element || initial) return;
+    /** Set the width to the element's content box, so padding never counts. */
     const measure = () => {
       const style = getComputedStyle(element);
       const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
@@ -213,6 +235,12 @@ function useWidth(initial?: number) {
 // The picture and the provenance panel side by side; below the list
 // breakpoint the picture becomes a list and the panel opens under the
 // selected row, where the reader's eye already is.
+/**
+ * The picture or the list, with the provenance panel beside or below it.
+ *
+ * Below LIST_BREAKPOINT the picture becomes a list and the panel opens under
+ * the selected row; nothing renders until the first width is known.
+ */
 function Body({
   data,
   selected,
@@ -244,6 +272,14 @@ function Body({
   );
 }
 
+/**
+ * Return the SVG path for one edge.
+ *
+ * The provenance edges leave the earlier column on its right and arrive at the
+ * later column's left. Temporal and semantic edges bulge from one pill's own
+ * side instead, negative for temporal and positive for semantic, so the two
+ * kinds never lie on top of each other.
+ */
 function edgePath(a: Placed, b: Placed, edge: GraphEdge): string {
   if (edge.type === 'temporal' || edge.type === 'semantic') {
     const side = edge.type === 'temporal' ? a.x : a.x + a.width;
@@ -265,6 +301,14 @@ function edgePath(a: Placed, b: Placed, edge: GraphEdge): string {
 // widths, then heights); a late font load re-renders and measures again.
 const LABEL_X = 25;
 
+/**
+ * The measured pill heights and widest entity label, as layout options.
+ *
+ * Measured after paint, with state replaced only when a measurement moved, so a
+ * stable picture stops re-rendering after the second pass. Attach the returned
+ * ref to each node's label; a node with no measured height is absent from the
+ * map, and the layout falls back to one line for it.
+ */
 function useLabelMeasure() {
   const boxes = useRef(new Map<string, { el: HTMLDivElement; kind: GraphNode['kind'] }>());
   const [options, setOptions] = useState<{ heights: Map<string, number>; entityText?: number }>(() => ({ heights: new Map() }));
@@ -302,6 +346,13 @@ function useLabelMeasure() {
   return { options, ref };
 }
 
+/**
+ * The SVG picture: column titles, edges, pills and the link key beneath.
+ *
+ * The picture is one tab stop that remembers the last focused node; Enter and
+ * Space toggle the selection, Escape clears it, and the arrow keys walk the
+ * layout.
+ */
 function GraphPicture({
   data,
   width,
@@ -335,6 +386,7 @@ function GraphPicture({
     nodeRefs.current.get(id)?.focus();
   }, []);
 
+  /** Enter and Space toggle the selection, Escape clears it, arrows move. */
   function onKey(event: KeyboardEvent<SVGGElement>, id: string) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -428,10 +480,17 @@ function GraphPicture({
   );
 }
 
+/** True for the edges that record how a point was made, not mere likeness. */
 function isProvenance(edge: GraphEdge): boolean {
   return edge.type === 'wrote' || edge.type === 'extracted' || edge.type === 'mentions' || edge.type === 'cites';
 }
 
+/**
+ * The link legend: one row per edge type the picture actually contains.
+ *
+ * With no semantic edge present the key says why from the store's semantic
+ * flag, rather than listing a link the reader cannot see.
+ */
 function EdgeKey({ data }: { data: MemoryGraphData }) {
   const present = new Set(data.edges.map((edge) => edge.type));
   const rows: { type: GraphEdge['type']; label: string }[] = [
@@ -463,6 +522,12 @@ function EdgeKey({ data }: { data: MemoryGraphData }) {
   );
 }
 
+/**
+ * The graph as sections of rows, one per column, for narrow screens.
+ *
+ * A row toggles the selection and opens the provenance panel inline beneath
+ * itself, so the picture and its explanation stay in one column.
+ */
 function GraphList({
   data,
   selected,
@@ -505,6 +570,13 @@ function GraphList({
   );
 }
 
+/**
+ * How the selected point was made: its text, moments, steps and links.
+ *
+ * With no selection the panel explains the five kinds instead. Connected points
+ * are grouped by the relation read from the selection, and only the removable
+ * kinds offer onRemove.
+ */
 function Provenance({
   node,
   data,

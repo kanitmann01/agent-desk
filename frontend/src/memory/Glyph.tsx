@@ -5,6 +5,12 @@ import type { NodeKind } from './types';
 
 export type GlyphKind = NodeKind | 'experience' | 'candidate';
 
+/**
+ * The mark for one kind, drawn inside the -6..6 box of a 12px glyph.
+ *
+ * Shape alone carries the kind so the marks stay apart without colour; the
+ * enclosing frame and the theme's tint come from Glyph.
+ */
 export function GlyphShape({ kind }: { kind: GlyphKind }) {
   switch (kind) {
     case 'origin':
@@ -34,6 +40,7 @@ export function GlyphShape({ kind }: { kind: GlyphKind }) {
   }
 }
 
+/** A 12px decorative mark for one kind, hidden from assistive technology. */
 export function Glyph({ kind }: { kind: GlyphKind }) {
   return (
     <svg className="mg-glyph-box" width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">

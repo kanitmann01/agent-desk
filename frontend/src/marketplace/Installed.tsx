@@ -21,6 +21,13 @@ type Confirm =
   | { kind: 'uninstall'; record: InstalledSummary }
   | null;
 
+/**
+ * Render the typed confirmation that deletes a plugin's data and install
+ * record.
+ *
+ * The confirm button stays disabled until the input matches
+ * `delete-data:<id>` exactly, because there is no undo.
+ */
 function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
   record: InstalledSummary;
   busy: boolean;
@@ -60,6 +67,15 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
   );
 }
 
+/**
+ * Render the installed list with each plugin's update, sharing and lifecycle
+ * controls.
+ *
+ * Every control posts once and then re-reads the list, so a row never changes
+ * before the server answers. An update that leaves a permission change
+ * pending opens the review on the refreshed record, which is what makes the
+ * sheet show the staged scopes rather than a guess.
+ */
 export function InstalledPage() {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -85,6 +101,13 @@ export function InstalledPage() {
 
   useEffect(() => { void loadList(); }, [loadList, attempt]);
 
+  /**
+   * Run one mutation for a record, show the note it returns, then re-read the
+   * list.
+   *
+   * The record's id stays busy for the duration, and a failure replaces the
+   * note with the server's message; nothing is re-read in that case.
+   */
   const run = async (record: InstalledSummary, fn: () => Promise<string>) => {
     setBusyId(record.id);
     setError('');
@@ -100,12 +123,20 @@ export function InstalledPage() {
     }
   };
 
+  /** Enable or disable one plugin, reporting the state the server settled on. */
   const toggle = (record: InstalledSummary) => run(record, async () => {
     const action = record.enabled ? 'disable' : 'enable';
     const res = await postMarket<{ state?: string }>(`/api/marketplace/${action}`, { id: record.id });
     return `${record.name} is now ${res.state ?? (record.enabled ? 'disabled' : 'enabled')}.`;
   });
 
+  /**
+   * Share one plugin with paired desks, or stop sharing it.
+   *
+   * Sharing with no desk paired still succeeds and says so: the plugin is
+   * shared before any peer exists, and the note points at where pairing
+   * happens.
+   */
   const toggleShare = (record: InstalledSummary) => run(record, async () => {
     const sharing = !record.shared;
     const res = await postMarket<{ paired?: number }>(
@@ -116,6 +147,13 @@ export function InstalledPage() {
       : `${record.name} is shared, but no desks are paired yet. Pair a desk under Peers.`;
   });
 
+  /**
+   * Apply the staged update, then open the permission review when the new
+   * version left one pending.
+   *
+   * The refreshed list is what decides that, so the sheet describes the
+   * scopes the server staged.
+   */
   const reviewUpdate = async (record: InstalledSummary) => {
     setBusyId(record.id);
     setError('');
@@ -139,6 +177,12 @@ export function InstalledPage() {
     }
   };
 
+  /**
+   * Accept the staged update's new scopes, name the version now running and
+   * close the sheet.
+   *
+   * A failure keeps the sheet open with the server's message.
+   */
   const acceptConsent = async () => {
     if (!consentRecord) return;
     setBusyId(consentRecord.id);
@@ -156,6 +200,12 @@ export function InstalledPage() {
     }
   };
 
+  /**
+   * Refuse the staged update's new scopes, leaving the installed version in
+   * place.
+   *
+   * The note names the version the plugin stays on.
+   */
   const declineConsent = async (record: InstalledSummary) => {
     setBusyId(record.id);
     setSheetError('');
@@ -172,6 +222,11 @@ export function InstalledPage() {
     }
   };
 
+  /**
+   * Close the pending confirmation and run the action it named.
+   *
+   * Uninstall keeps the plugin's data folder; only a purge deletes it.
+   */
   const doConfirm = () => {
     if (!confirm) return;
     const { kind, record } = confirm;
@@ -189,6 +244,12 @@ export function InstalledPage() {
     }
   };
 
+  /**
+   * Delete the plugin's data and install record, then close the dialog.
+   *
+   * The literal `delete-data:<id>` is sent as the confirmation token; a
+   * refusal keeps the dialog open with the server's message.
+   */
   const doPurge = async () => {
     if (!purgeRecord) return;
     setBusyId(purgeRecord.id);

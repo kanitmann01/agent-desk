@@ -9,10 +9,18 @@ import type {
 } from './types';
 import './admin-trust.css';
 
+/** Join a policy list for a facts row, showing `empty` when nothing is listed. */
 function listText(values: string[], empty = 'Any'): string {
   return values.length ? values.join(', ') : empty;
 }
 
+/**
+ * Render one policy value as plain text for the diff table.
+ *
+ * Null, an empty list and an empty string all read as "none", so an absent
+ * rule stays visible instead of leaving a blank cell; booleans read as
+ * "yes"/"no" and anything else falls back to JSON.
+ */
 function valueText(value: unknown): string {
   if (value === null || value === undefined) return 'none';
   if (Array.isArray(value)) return value.length ? value.join(', ') : 'none';
@@ -21,10 +29,17 @@ function valueText(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Name a pending publication by its plugin id, falling back to the record id. */
 function pendingLabel(item: PendingPublication): string {
   return item.pluginId || item.id;
 }
 
+/**
+ * Read a chosen file as UTF-8 text.
+ *
+ * Rejects with the reader's own error when the browser cannot read it, so the
+ * caller can tell a read failure apart from a parse failure.
+ */
 function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,6 +49,13 @@ function readFileText(file: File): Promise<string> {
   });
 }
 
+/**
+ * Render the field-by-field difference a signed bundle would make.
+ *
+ * An empty diff is not the same as no effect: confirming still pins the
+ * signer fingerprint and advances the revocation epoch, so that case says so
+ * instead of rendering an empty table.
+ */
 function DiffTable({ rows }: { rows: PolicyDiffEntry[] }) {
   if (rows.length === 0) {
     return (
@@ -66,6 +88,15 @@ function DiffTable({ rows }: { rows: PolicyDiffEntry[] }) {
   );
 }
 
+/**
+ * Render the governance surface: posture, anchor, signed-policy import, kill
+ * switch, revocations, pending publications, inventory and the audit export.
+ *
+ * An `admin:disabled` refusal replaces the whole page with the instructions
+ * for turning admin mode on; every other failure keeps the page and offers a
+ * retry. Import is deliberately two POSTs — one to compute the diff, one to
+ * apply it — so no file pick can change policy on its own.
+ */
 export default function AdminPage() {
   const [snapshot, setSnapshot] = useState<AdminSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +134,13 @@ export default function AdminPage() {
     void load();
   }, [load]);
 
+  /**
+   * Parse a chosen bundle and have the server verify it without applying
+   * anything, so the diff can be read first.
+   *
+   * A file that does not parse, or that is not a JSON object, is refused here
+   * with its own message; a server refusal lands in the same slot.
+   */
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     setImportError('');
@@ -133,6 +171,13 @@ export default function AdminPage() {
     }
   };
 
+  /**
+   * Apply the bundle already previewed, then reload the governance snapshot.
+   *
+   * The same bundle is posted again with `confirm` true, so the server re-runs
+   * verification instead of trusting the preview. The preview and the chosen
+   * file are dropped only once that succeeds.
+   */
   const confirmImport = async () => {
     if (!bundle) return;
     setApplying(true);
@@ -153,6 +198,12 @@ export default function AdminPage() {
     }
   };
 
+  /**
+   * Approve or reject one pending publication, then reload the snapshot.
+   *
+   * A rejection sends the reason typed for that item and is refused locally
+   * when the reason is blank; the field is cleared once the server accepts it.
+   */
   const decide = async (item: PendingPublication, action: 'approve' | 'reject') => {
     const label = pendingLabel(item);
     const reason = (reasons[item.id] ?? '').trim();
@@ -185,6 +236,13 @@ export default function AdminPage() {
     }
   };
 
+  /**
+   * Block a plugin at the kill switch, or restore one that is blocked, then
+   * reload the snapshot.
+   *
+   * Blocking clears the id that was typed into the form, since it is now in
+   * the list of blocked plugins.
+   */
   const setKill = async (pluginId: string, enabled: boolean) => {
     setBusy(`kill:${pluginId}`);
     setActionError('');

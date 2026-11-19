@@ -83,6 +83,12 @@ export async function postUpload<T>(pluginId: string, tail: string, file: File):
   return res.data as T;
 }
 
+/**
+ * Turn any thrown marketplace failure into a sentence fit to show a person.
+ *
+ * A MarketApiError carries the server's own message; anything else means the
+ * request never reached the server.
+ */
 export function marketErrorText(err: unknown): string {
   if (err instanceof MarketApiError) return err.message;
   return 'The marketplace could not reach its own server. Try again.';
