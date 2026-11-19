@@ -39,6 +39,8 @@ class PreferencesError(Exception):
     is the sentence shown next to the Settings field."""
 
     def __init__(self, code: str, message: str, status: int = 400) -> None:
+        """Carry the stable code a client branches on, the sentence shown
+        beside the Settings field, and the HTTP status to answer with."""
         super().__init__(message)
         self.code = code
         self.message = message
@@ -104,9 +106,16 @@ class PreferenceStore:
     """Reads and writes <data>/preferences.json. One file, one user."""
 
     def __init__(self, root: str | Path) -> None:
+        """Bind the store to <root>/preferences.json; nothing is read yet."""
         self.path = Path(root) / "preferences.json"
 
     def read(self) -> dict:
+        """The stored document over defaults, judged field by field.
+
+        A missing, unparsable or non-object file reads as pure defaults,
+        and one field the vocabulary refuses is skipped rather than
+        refusing the document, so a half-written file still yields a
+        complete preference set."""
         document = defaults()
         try:
             stored = json.loads(self.path.read_text(encoding="utf-8"))
@@ -167,6 +176,11 @@ class PreferenceStore:
         return document
 
     def _save(self, document: dict) -> None:
+        """Write the document atomically: a .tmp sibling, then os.replace.
+
+        A reader mid-write sees either the whole previous file or the
+        whole new one, never a truncated mix; keys are sorted so the
+        file's own history stays diffable."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(self.path.name + ".tmp")
         temporary.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")

@@ -263,6 +263,9 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
     if (press.text !== undefined) body.text = press.text;
     if (press.subject !== undefined) body.subject = press.subject;
     if (press.sender !== undefined) body.sender = press.sender;
+    // The digest family nests the thread under "thread"; the route reads
+    // either shape, so it rides along untouched rather than being dropped.
+    if (press.thread !== undefined) body.thread = press.thread;
     if (stage) body.stage = true;
     let result;
     try {

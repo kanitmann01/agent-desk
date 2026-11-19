@@ -137,6 +137,8 @@ export interface InsightPress {
   text?: string;
   subject?: string;
   sender?: string;
+  /** The digest family nests the thread facts; the draft route reads either shape. */
+  thread?: { subject: string; sender: string };
 }
 
 // payload.insight: the reading behind a card's extra elements, the line

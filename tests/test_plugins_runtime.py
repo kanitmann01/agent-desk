@@ -222,3 +222,18 @@ def test_widget_payload_detects_in_place_tampering(tmp_path):
     fresh.install(zip_file(tmp_path / "fresh.zip"), source="zip")
     assert fresh.widget_payload("sales-delta-widget") is None
 
+
+
+def test_a_widget_card_names_its_plugin_for_the_reading_seam(runtime, tmp_path):
+    """The coupled-intelligence seam keys off pluginId (#165).
+
+    A single-instance card used to leave pluginId empty, so the digest,
+    calendar and research families never attached their reading or press
+    to the cards the dashboard actually serves. Every card shape (setup,
+    config-backed instance, live single-instance) must name its plugin.
+    """
+    runtime.install(zip_file(tmp_path / "plugin.zip"), source="zip")
+    cards = runtime.widget_cards()
+    assert len(cards) == 1
+    assert cards[0]["pluginId"] == "sales-delta-widget", cards[0]
+    assert cards[0]["instanceId"] == "main", cards[0]

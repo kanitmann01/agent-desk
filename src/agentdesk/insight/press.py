@@ -96,7 +96,7 @@ def draft_reply(
     preferences: dict,
     complete: Callable[[str], str] | None = None,
 ) -> dict:
-    """Compose one draft — a reply, or an explanation — or say why not.
+    """Compose one draft (a reply, or an explanation), or say why not.
 
     A reply body carries the thread it answers two ways, and they are not
     the same request. A card's press nests the facts under "thread": that is
@@ -347,6 +347,10 @@ def _senders(messages: list) -> str:
 
 
 def _missing_thread(subject: str) -> str:
+    """The refusal when the folder holds no message of that subject from
+    that sender: what did not happen, and why. _say appends the
+    disclosure of what would have travelled, keeping the refusal and the
+    promise one sentence."""
     return (
         f'Nothing was drafted: the mail folder has no message with the subject '
         f'"{subject}" from that sender, so there is no thread to answer.'
@@ -354,6 +358,9 @@ def _missing_thread(subject: str) -> str:
 
 
 def _unstageable(subject: str) -> str:
+    """The refusal when staging was asked for without a sender to resolve
+    the thread by: there is nothing to look up, so nothing to put a card
+    on."""
     return (
         f'Nothing was staged: the request does not say who the thread '
         f'"{subject}" is from, so there is no thread to put a card on.'
@@ -361,6 +368,9 @@ def _unstageable(subject: str) -> str:
 
 
 def _ambiguous_thread(subject: str, messages: list) -> str:
+    """The refusal when more than one message answers the same name, with
+    the senders named (_senders) so the user can see the choice the desk
+    refused to make for them."""
     return (
         f'Nothing was drafted: more than one message has the subject "{subject}" '
         f"({_senders(messages)}), so the desk cannot tell which thread to answer."
@@ -368,6 +378,8 @@ def _ambiguous_thread(subject: str, messages: list) -> str:
 
 
 def _unreplyable(subject: str) -> str:
+    """The refusal when every address on the thread is this desk's own:
+    a reply would go nowhere, so none is drafted."""
     return (
         f'Nothing was drafted: every address on "{subject}" belongs to this '
         f"desk, so there is nobody to reply to."

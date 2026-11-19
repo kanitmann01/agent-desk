@@ -113,6 +113,12 @@ def _component_table(
             # host. Keep the committed notice stable and point to the
             # manifest/SBOM for the exact version.
             version = "bundled"
+        if str(component.get("purl") or "").startswith("pkg:pypi/"):
+            # A Python dependency's version is resolved from the build host's
+            # environment, exactly like the CPython patch level, so printing
+            # it would churn the committed file on every upgrade. The SBOM
+            # row carries the exact version.
+            version = "resolved (see SBOM)"
         licences = ", ".join(_licences(component))
         text_path = _property(component, LICENSE_FILE_PROPERTY)
         if text_path:
@@ -191,8 +197,8 @@ def render(sbom: dict[str, Any], root: Path) -> tuple[str, list[str]]:
             "",
             "### Fonts",
             "",
-            "The dashboard uses IBM Plex Mono, Source Serif 4 and Source Sans 3 through",
-            "`@fontsource` packages. Both are SIL Open Font License 1.1. The",
+            "The dashboard uses Geist, Geist Mono and Montserrat through",
+            "`@fontsource` packages. All are SIL Open Font License 1.1. The",
             "licence text and copyright notice ship with the font files in",
             "`frontend/public/licenses/` and are copied into the bundle.",
             "",
@@ -202,11 +208,16 @@ def render(sbom: dict[str, Any], root: Path) -> tuple[str, list[str]]:
             "licence (PSF-2.0) is included in `dist/agent-desk/licenses/`. The",
             "exact CPython version is recorded in `manifest.json` and the SBOM;",
             "the table above says `bundled` so this file is stable across build",
-            "interpreters. The",
-            "application declares no third-party Python runtime dependencies",
-            "(`pyproject.toml` `[project].dependencies` is empty). Nuitka is a",
-            "build tool and is not redistributed; its own AGPL-3.0 licence has a",
-            "runtime exception that does not reach the compiled output.",
+            "interpreters. Python dependencies declared in `pyproject.toml` each",
+            "get a row above, licensed from `[tool.agent-desk-licenses]`; their",
+            "version column says `resolved (see SBOM)` because the installed",
+            "version follows the build environment, like the CPython patch",
+            "level. `cryptography` (memory encryption at rest, Apache-2.0 OR",
+            "BSD-3-Clause) is the dependency shipped today, and its licence",
+            "text travels in `licenses/third-party/cryptography-LICENSE.txt`.",
+            "Nuitka is a build tool and is not redistributed; its own AGPL-3.0",
+            "licence has a runtime exception that does not reach the compiled",
+            "output.",
             "",
             "## Build-only components",
             "",

@@ -18,6 +18,15 @@ MEMORY_TITLE = "From memory"
 
 
 def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading:
+    """The calendar family's reading: prep sized to the user, memory added.
+
+    No next meeting is an empty reading carrying the context's own reason,
+    never an invented one. Quiet density folds the checklist into its
+    sizing line and drops the memory list, because quiet keeps one
+    element, and the reason memory stayed quiet then rides the note
+    instead of a status line that would be dropped. The card's own prep
+    text is skipped, so the reading adds to the card rather than repeats
+    it."""
     row = context.agenda if isinstance(context.agenda, dict) else None
     title = str((row or {}).get("title") or "").strip()
     if not row or not title:

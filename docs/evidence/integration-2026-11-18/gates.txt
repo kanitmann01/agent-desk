@@ -1,0 +1,31 @@
+== gates.txt: recorded 2026-11-18T23:39Z on fix/spec-011-land-the-last-two-days, SOURCE_DATE_EPOCH pinned from git as CI does ==
+
+== docstring gate ==
+known gap (baseline or newly found): 408
+new gaps: 0
+stale baseline lines: 0
+exit=0
+
+== sbom build ==
+sbom: wrote D:\20-projects\Personal Agents\agent-desk\build\sbom.cdx.json (218 components; required=8, excluded=210)
+sbom: serial urn:uuid:bbe67ed9-c8b6-57bd-8d99-753b91945b56
+
+== sbom determinism ==
+sbom: wrote D:\20-projects\Personal Agents\agent-desk\build\sbom.cdx.json (218 components; required=8, excluded=210)
+sbom: serial urn:uuid:bbe67ed9-c8b6-57bd-8d99-753b91945b56
+byte-identical: YES
+
+== license gate ==
+
+RESULT: PASS
+exit=0
+
+== third-party notices ==
+notices: D:\20-projects\Personal Agents\agent-desk\THIRD-PARTY-NOTICES.md is up to date
+exit=0
+
+== cryptography component ==
+pkg:pypi/cryptography@48.0.0 [{'expression': 'Apache-2.0 OR BSD-3-Clause'}]
+
+== committed bundle vs fresh build ==
+byte-identical: YES

@@ -259,3 +259,43 @@ describe('the press on a card', () => {
     expect(screen.queryByText(/could not answer|went wrong/i)).toBeNull();
   });
 });
+
+describe('the press on a nested-thread card (ticket 07)', () => {
+  it('posts the thread the payload nests, as the digest family emits it', async () => {
+    const user = userEvent.setup();
+    const calls: PressCall[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        calls.push({ url, body: JSON.parse(init?.body ?? '{}') as Record<string, unknown> });
+        return jsonResponse(DRAFT);
+      }),
+    );
+    // The backend nests the facts under "thread"; the SPA must not drop them.
+    const nestedCard: PluginCard = {
+      ...DIGEST_CARD,
+      payload: {
+        ...DIGEST_CARD.payload!,
+        insight: {
+          ...DIGEST_CARD.payload!.insight!,
+          press: {
+            label: 'Draft the reply',
+            route: '/api/insight/draft',
+            kind: 'reply-draft',
+            thread: { subject: 'Q4 plan', sender: 'sender@example.com' },
+          },
+        },
+      },
+    };
+    render(<PluginCardView card={nestedCard} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Draft the reply' }));
+    expect(await screen.findByText(DRAFT.text)).toBeInTheDocument();
+    expect(calls).toHaveLength(1);
+    const body = calls[0].body;
+    const namesThread =
+      (body.thread as { subject?: string } | undefined)?.subject === 'Q4 plan' ||
+      body.subject === 'Q4 plan';
+    expect(namesThread).toBe(true);
+  });
+});

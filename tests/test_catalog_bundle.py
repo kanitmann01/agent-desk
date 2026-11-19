@@ -98,3 +98,19 @@ def test_catalog_cli_writes_the_bundle(tmp_path):
     document = json.loads(out.read_text(encoding="utf-8"))
     assert document["schemaVersion"] == 2
     assert len(document["plugins"]) >= 5
+
+
+def test_the_downloads_flag_lands_after_nuitka_not_between_m_and_nuitka():
+    """The CI build passes --allow-downloads, so its flag position is CI load-bearing.
+
+    python -m nuitka --assume-yes-for-downloads ... is the command; an insert
+    at the wrong index turns it into "No module named
+    --assume-yes-for-downloads" and fails every CI build.
+    """
+    from scripts.build_bundle import _build_command
+
+    cmd = _build_command(Path("."), allow_downloads=True)
+    assert cmd[1:4] == ["-m", "nuitka", "--assume-yes-for-downloads"], cmd[:5]
+    without = _build_command(Path("."), allow_downloads=False)
+    assert without[1:3] == ["-m", "nuitka"]
+    assert "--assume-yes-for-downloads" not in without
