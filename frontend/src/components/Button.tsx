@@ -13,6 +13,13 @@ type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & 
   className?: string;
 };
 
+/**
+ * Button for the desk's surfaces: primary is the one solid-green action,
+ * secondary the quiet one.
+ *
+ * `href` renders an anchor styled as the button; every other prop goes to
+ * the button element, so form and ARIA semantics stay with the caller.
+ */
 export default function Button({ children, tone = 'secondary', href, className, disabled, ...rest }: ButtonProps) {
   const cls = `btn btn-${tone}${className ? ` ${className}` : ''}`;
   if (href !== undefined) {

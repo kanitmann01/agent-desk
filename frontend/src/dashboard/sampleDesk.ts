@@ -29,6 +29,7 @@ export interface WatchView {
   history: number[];
 }
 
+/** A copy of now moved by the given number of hours, floored to the minute. */
 function hoursFrom(now: Date, hours: number): Date {
   const at = new Date(now.getTime() + hours * 3600_000);
   at.setSeconds(0, 0);

@@ -23,6 +23,10 @@ export interface MarketRoute {
   params: Record<string, string>;
 }
 
+/**
+ * Decode one path segment, returning it unchanged when it holds a malformed
+ * escape rather than failing the whole route.
+ */
 function decode(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -31,6 +35,7 @@ function decode(value: string): string {
   }
 }
 
+/** Build the catch-all route, keeping the unparsed path for display. */
 function notFound(path: string): MarketRoute {
   return { name: 'notfound', params: { path } };
 }
@@ -85,6 +90,10 @@ export function parseRoute(input: string): MarketRoute {
   return notFound(path);
 }
 
+/**
+ * Return the document title for a route, filling in the name or category its
+ * params carry where the route name alone is too generic.
+ */
 export function routeTitle(route: MarketRoute): string {
   switch (route.name) {
     case 'discover': return 'Marketplace';
@@ -103,14 +112,28 @@ export function routeTitle(route: MarketRoute): string {
   }
 }
 
+/**
+ * Read the address bar's path and query.
+ *
+ * Without a window (server rendering, tests) it answers the discover path so
+ * the hook has a usable location before the first effect runs.
+ */
 function currentLocation(): string {
   if (typeof window === 'undefined') return '/marketplace';
   return window.location.pathname + window.location.search;
 }
 
+/**
+ * Track the current location and expose a navigate that writes history.
+ *
+ * Popstate keeps back, forward and a deep-link refresh in sync. Navigating to
+ * the location already shown is a no-op, so a repeated click adds no history
+ * entry.
+ */
 export function useMarketplaceRouter() {
   const [path, setPath] = useState(currentLocation);
   useEffect(() => {
+    /** Follow the browser through history so back, forward and a refresh keep the path in sync. */
     const onPop = () => setPath(currentLocation());
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);

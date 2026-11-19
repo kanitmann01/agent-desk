@@ -15,10 +15,17 @@ import { StudioPage } from './Studio';
 import TrustPage from './Trust';
 import './marketplace.css';
 
+/** Render one section tab as a marketplace link that marks the active page. */
 function Tab({ to, current, children }: { to: string; current: boolean; children: string }) {
   return <MarketLink to={to} current={current} className="mkt-tab">{children}</MarketLink>;
 }
 
+/**
+ * Render the section tabs, lighting the one that owns the current route.
+ *
+ * Search and category results belong to Discover, and the manage view belongs
+ * to Installed, so those routes keep their parent tab marked.
+ */
 function Tabs({ route }: { route: MarketRoute }) {
   const discover = ['discover', 'search', 'category'].includes(route.name);
   return (
@@ -31,6 +38,7 @@ function Tabs({ route }: { route: MarketRoute }) {
   );
 }
 
+/** Render the 404 page for a path the route parser did not recognise. */
 function NotFound({ path }: { path: string }) {
   return (
     <div className="mkt-page">
@@ -44,6 +52,12 @@ function NotFound({ path }: { path: string }) {
   );
 }
 
+/**
+ * Render the page component for a parsed route.
+ *
+ * An unrecognised route falls through to the 404 page with its path intact,
+ * so the message can name what was requested.
+ */
 function Page({ route }: { route: MarketRoute }) {
   switch (route.name) {
     case 'discover':
@@ -73,6 +87,13 @@ function Page({ route }: { route: MarketRoute }) {
   }
 }
 
+/**
+ * Render the marketplace shell: rail, section tabs, the page for the current
+ * route, and a polite announcement of that route's title.
+ *
+ * The announcement is what tells a screen reader that navigation happened;
+ * the document itself is never reloaded.
+ */
 export default function MarketplaceApp() {
   const { path, route, navigate } = useMarketplaceRouter();
   const [announcement, setAnnouncement] = useState('');

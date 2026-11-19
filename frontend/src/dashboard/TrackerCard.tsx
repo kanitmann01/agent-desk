@@ -20,6 +20,12 @@ interface TrackerCardProps {
   onExpired: () => void;
 }
 
+/**
+ * The workbook tracker: the live figure with its Edit action, or the setup prompt.
+ *
+ * The setup sheet opens from either shape, falling back to the card's own ids when the
+ * payload carries no setup step.
+ */
 export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardProps) {
   const [open, setOpen] = useState(false);
   const tracker = card.payload?.tracker;

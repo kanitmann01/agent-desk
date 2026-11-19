@@ -5,6 +5,13 @@ import type { ReactNode } from 'react';
 import WidgetCard from '../components/WidgetCard';
 import type { MarketElement, MarketSample } from './types';
 
+/**
+ * Format one sample value for display.
+ *
+ * Numbers are rounded to two decimals, a missing value reads as an empty
+ * string rather than "null" so callers can test it as false, and anything
+ * structured falls back to JSON.
+ */
 function display(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'number') {
@@ -14,12 +21,14 @@ function display(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Build the sentence shown for a missing value, appending the element's reason to its state. */
 function missingText(state: string | undefined, reason: string | undefined, fallback: string): string {
   const stateText = state?.trim() || fallback;
   const reasonText = reason?.trim();
   return reasonText ? `${stateText}. ${reasonText}` : stateText;
 }
 
+/** Render the placeholder that stands in for a value the sample did not report. */
 function Missing({ element, fallback }: { element: MarketElement; fallback: string }) {
   return (
     <span className="mkt-sample-missing">
@@ -28,6 +37,13 @@ function Missing({ element, fallback }: { element: MarketElement; fallback: stri
   );
 }
 
+/**
+ * Render a trend line from the sample's points.
+ *
+ * Points that are not finite are dropped, and fewer than two left reports the
+ * element as missing instead of drawing a flat line. The path is normalised
+ * to the points' own minimum and maximum, so only the shape is meaningful.
+ */
 function Sparkline({ points, label, element }: { points: number[]; label: string; element: MarketElement }) {
   const values = points.filter((p) => Number.isFinite(p));
   if (values.length < 2) {
@@ -60,6 +76,14 @@ function Sparkline({ points, label, element }: { points: number[]; label: string
   );
 }
 
+/**
+ * Render one sample element according to its kind, treating an unknown kind
+ * as text.
+ *
+ * Each kind renders the element's own missing state rather than a blank, so a
+ * sample that ships no data still says what it was meant to show and why it
+ * is absent.
+ */
 export function SampleElement({ element }: { element: MarketElement }) {
   const kind = element.kind || 'text';
   switch (kind) {
@@ -241,10 +265,19 @@ export function SampleElement({ element }: { element: MarketElement }) {
   }
 }
 
+/** Lay the sample elements out on the dashboard's widget grid. */
 function Grid({ children }: { children: ReactNode }) {
   return <div className="mkt-sample-grid">{children}</div>;
 }
 
+/**
+ * Render a plugin's bundled sample through the same widget surface the
+ * dashboard uses.
+ *
+ * A plugin with no sample gets one explanatory line instead of an empty card,
+ * and a sample that is not fresh is stamped as such and carries its cause, so
+ * stale data never reads as live.
+ */
 export function SamplePreview({ sample, title }: { sample: MarketSample | null; title: string }) {
   if (!sample) {
     return (

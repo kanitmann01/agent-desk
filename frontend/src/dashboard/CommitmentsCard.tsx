@@ -30,9 +30,11 @@ const CHECK_ON_SVG = (
   </span>
 );
 
+/** The key event's times, subject, location and attendee count. */
 function KeyEventBlock({ event }: { event: KeyEvent }) {
   const start = new Date(event.start);
   const end = new Date(event.end);
+  /** A date as a zero-padded 24-hour HH:MM clock time. */
   const fmt = (date: Date) =>
     `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   const whereParts: string[] = [];
@@ -49,8 +51,13 @@ function KeyEventBlock({ event }: { event: KeyEvent }) {
   );
 }
 
+/**
+ * One persisted subtask check, drawn as a checkbox and toggled by click, Space or
+ * Enter.
+ */
 function CheckLine(props: { eventId: string; idx: number; text: string; checked: boolean; onToggle: () => void }) {
   const { eventId, idx, text, checked, onToggle } = props;
+  /** Toggle the check when Space or Enter is pressed. */
   function onKey(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === ' ' || event.key === 'Enter') {
       event.preventDefault();
@@ -74,6 +81,14 @@ function CheckLine(props: { eventId: string; idx: number; text: string; checked:
   );
 }
 
+/**
+  * The calendar commitments card: the key event with its checks and follow-ups, or the
+  * clear, empty, stale, unreadable, paused and unavailable branches.
+ *
+  * A click flips its box before the refetch answers, and the flip is dropped again when
+  * the save fails. retest re-reads the calendar bridge; onExpired hands a 401 back to
+  * the caller.
+ */
 export default function CommitmentsCard({ commitments, title, onRefetch, onExpired }: CommitmentsCardProps) {
   const status = commitments.status;
   const heading = title ?? "Today's key commitment";
@@ -85,6 +100,7 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
   const [pendingNote, setPendingNote] = useState('');
   const [busy, setBusy] = useState(false);
 
+  /** Re-test the calendar bridge and reload the dashboard. */
   async function retest() {
     setBusy(true);
     let res;
@@ -100,6 +116,10 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
     await onRefetch();
   }
 
+  /**
+   * Persist a check, answering the click locally first and dropping the flip when the
+   * save fails.
+   */
   function toggleCheck(eventId: string, idx: number, next: boolean) {
     // The click is the truth; the app persists it. No await: the flip is
     // instant, exactly like the server-rendered card.
@@ -170,6 +190,10 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
     const breakdown = status.breakdown ?? { subtasks: [], followups: [] };
     const checks = status.checks ?? {};
     const eventId = status.keyEvent.id;
+    /**
+     * The box state for a subtask: the local flip when there is one, else the server's
+     * payload.
+     */
     const isChecked = (idx: number) => flips[`${eventId}:${idx}`] ?? Boolean(checks[String(idx)]);
     return (
       <WidgetCard

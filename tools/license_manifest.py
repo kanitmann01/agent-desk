@@ -50,6 +50,13 @@ def check_dependencies(annotations: dict[str, str]) -> list[str]:
 
 
 def render_manifest(annotations: dict[str, str], version: str) -> str:
+    """Render the third-party license manifest as the Markdown text to commit.
+
+    The result is the whole Markdown file: the dependency table (or the
+    zero-dependency record when annotations is empty), the fixed allowlist
+    paragraph and the SPA section. It ends in exactly one newline, so
+    regenerating an unchanged manifest leaves no diff.
+    """
     lines = [
         "# Third-party license manifest",
         "",
@@ -210,14 +217,25 @@ def _parse_toml_subset(text: str, source: str) -> dict:
     pos, line, end = 0, 1, len(text)
 
     def err(detail: str) -> ValueError:
+        """Return the ValueError for the cursor's current line.
+
+        The caller must raise it: the message names source:line, and the line
+        is the one the cursor has already advanced to.
+        """
         return ValueError(f"{source}:{line}: {detail}")
 
     def skip_in_line() -> None:
+        """Advance the cursor past spaces, tabs and carriage returns."""
         nonlocal pos
         while pos < end and text[pos] in " \t\r":
             pos += 1
 
     def skip_blank() -> None:
+        """Skip the trivia between statements, keeping the line count current.
+
+        Stops on the first character that can start a statement, or at the
+        end of the text; a comment runs to the end of its line.
+        """
         # Whitespace, newlines and comments between statements.
         nonlocal pos, line
         while pos < end:
@@ -234,6 +252,11 @@ def _parse_toml_subset(text: str, source: str) -> dict:
                 break
 
     def expect_line_end() -> None:
+        """Reject anything but a comment or the end of the line.
+
+        Consumes the comment when there is one; the newline itself stays for
+        skip_blank to take.
+        """
         nonlocal pos
         skip_in_line()
         if pos < end and text[pos] == "#":
@@ -243,6 +266,11 @@ def _parse_toml_subset(text: str, source: str) -> dict:
             raise err(f"expected a comment or end of line, found {text[pos]!r}")
 
     def read_key() -> str:
+        """Consume a run of bare-key characters and return it.
+
+        An empty string means no key starts at the cursor. Quoted keys are
+        outside the supported subset, so the caller decides what that means.
+        """
         nonlocal pos
         start = pos
         while pos < end and text[pos] in _BARE_KEY_CHARS:
@@ -250,6 +278,12 @@ def _parse_toml_subset(text: str, source: str) -> dict:
         return text[start:pos]
 
     def read_table_header() -> dict:
+        """Consume a bracketed table header and return the table it names.
+
+        Intermediate tables are created as the path is walked. Raises on a
+        quoted key, an unterminated header, a repeated header, or a key that
+        already holds a value.
+        """
         # The opening '[' is already consumed; quoted keys are refused
         # with the dotted ones below, as bare keys cover every table
         # this tool reads.
@@ -288,6 +322,12 @@ def _parse_toml_subset(text: str, source: str) -> dict:
         return table
 
     def read_basic_string() -> str:
+        """Consume a double-quoted string and return its unescaped value.
+
+        Only the pyproject subset of escapes is accepted: the short ones plus
+        the Unicode escapes with four or eight hex digits. Any other escape,
+        and a newline before the closing quote, raises.
+        """
         nonlocal pos
         pos += 1  # the opening quote
         out = []
@@ -326,6 +366,10 @@ def _parse_toml_subset(text: str, source: str) -> dict:
                 pos += 1
 
     def read_literal_string() -> str:
+        """Consume a single-quoted literal string and return it unchanged.
+
+        No escapes are processed; a newline before the closing quote raises.
+        """
         nonlocal pos
         pos += 1  # the opening quote
         start = pos
@@ -339,6 +383,12 @@ def _parse_toml_subset(text: str, source: str) -> dict:
             pos += 1
 
     def read_number(token: str):
+        """Turn one gathered numeric token into an int or a float.
+
+        Underscore separators are accepted in both forms and stripped before
+        conversion. Any other token raises ValueError, so a caller either
+        gets a number or an error naming the text.
+        """
         # Dates, times, hex and their kin gather into the token and
         # then fail both patterns, so they are rejected as a unit.
         plain = token.replace("_", "")
@@ -349,6 +399,12 @@ def _parse_toml_subset(text: str, source: str) -> dict:
         raise err(f"value {token!r} is not supported by the fallback TOML reader")
 
     def read_value():
+        """Consume one TOML value and return it.
+
+        Multiline strings, inline tables and every syntax outside the
+        supported subset raise instead of being approximated, so an untaught
+        pyproject fails the gate instead of passing on a guess.
+        """
         nonlocal pos
         if text.startswith('"""', pos):
             raise err("multiline strings are not supported by the fallback TOML reader")
@@ -376,6 +432,11 @@ def _parse_toml_subset(text: str, source: str) -> dict:
         raise err(f"expected a value, found {char!r}")
 
     def read_array() -> list:
+        """Consume a bracketed array and return its items.
+
+        Arrays may span lines and a trailing comma is accepted; each element
+        goes through read_value, so the same subset applies inside.
+        """
         nonlocal pos
         pos += 1  # the opening bracket
         items = []
@@ -427,6 +488,12 @@ def _parse_toml_subset(text: str, source: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Write THIRD-PARTY-LICENSES.md and return the process exit code.
+
+    0 means the manifest was written; 1 means the violations were printed
+    to stderr and the committed file was left untouched. argv is accepted
+    for symmetry with the other tools and is ignored.
+    """
     repo = Path(__file__).resolve().parents[1]
     pyproject = repo / "pyproject.toml"
     data = _load_toml(pyproject)
@@ -457,6 +524,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _requirement_name(requirement: str) -> str:
+    """Return the distribution name of one PEP 508 requirement.
+
+    Extras, version specifiers and environment markers are discarded, so
+    a requirement naming a version range answers just the name.
+    """
     return requirement.split(";")[0].split("(")[0].strip().split(" ")[0].split(">")[0].split("<")[0].split("=")[0].split("[")[0]
 
 

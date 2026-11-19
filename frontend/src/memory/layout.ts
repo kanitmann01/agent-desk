@@ -56,6 +56,13 @@ export interface Layout {
   width: number;
 }
 
+/**
+ * Return the instant a fact is placed by: when it happened, else when it was
+ * recorded.
+ *
+ * An undated fact reads as 0, so it keeps the top of the rail rather than
+ * ordering itself somewhere else on each read.
+ */
 function factTime(node: GraphNode): number {
   return node.occurredTs ?? node.createdTs ?? 0;
 }
@@ -67,7 +74,17 @@ export interface LayoutOptions {
   entityText?: number;
 }
 
+/**
+ * Place every node in its column and return the picture's geometry.
+ *
+ * Pure: the same nodes, edges and width lay out the same way. A column exists
+ * only when its kinds are present, facts run down the rail in time order, and
+ * every other column is ordered once by the average height of the nodes it is
+ * linked to. heights are measured pill heights (an unmeasured node is one
+ * line) and entityText is the widest entity label, which sizes that column.
+ */
 export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: number, options: LayoutOptions = {}): Layout {
+  /** A node's pill height, clamped to one or two lines once it has been measured. */
   const heightOf = (id: string) => Math.min(Math.max(options.heights?.get(id) ?? PILL, PILL), PILL_MAX);
   const present = COLUMNS.filter((column) => nodes.some((node) => column.kinds.includes(node.kind)));
   const usable = Math.max(width - GAP * Math.max(present.length - 1, 0), 120);
@@ -135,6 +152,10 @@ export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: numbe
 // Provenance runs one way: writer and excerpt make a fact, a fact makes
 // the entity links it carries, facts make the observations that cite
 // them. upstream(n) is everything n was made from.
+/**
+ * Return the ids id was made from: the writer and excerpt behind a fact, the
+ * entities a fact mentions, or the facts an observation cites.
+ */
 function upstreamOf(id: string, edges: GraphEdge[]): string[] {
   const out: string[] = [];
   for (const edge of edges) {
@@ -149,6 +170,13 @@ function upstreamOf(id: string, edges: GraphEdge[]): string[] {
 
 // The selection's lineage: the node, everything upstream of it (how it
 // was made), and its direct neighbours of any kind (what it touches).
+/**
+ * Return the node, everything upstream of it, and its direct neighbours of any
+ * kind.
+ *
+ * The node itself is always in the set, so membership can be tested for every
+ * point the picture draws.
+ */
 export function lineage(id: string, edges: GraphEdge[]): Set<string> {
   const seen = new Set<string>([id]);
   const queue = [id];
@@ -170,6 +198,12 @@ export function lineage(id: string, edges: GraphEdge[]): Set<string> {
 
 // Keyboard travel: up and down within a column, left and right to the
 // nearest node by height in the neighbouring column that has any.
+/**
+ * Return the node one arrow key away, or null at the edge of the picture.
+ *
+ * Up and down walk the node's own column; left and right take the nearest node
+ * by height in the next column that holds any, skipping the empty ones.
+ */
 export function neighbourFor(
   layout: Layout,
   fromId: string,
@@ -198,6 +232,12 @@ export function neighbourFor(
 // A one-line label for the provenance panel's chips: about 6.2px a
 // character at 12px Geist, less the glyph and padding. Graph pills wrap
 // instead (see MemoryGraph's label measure).
+/**
+ * Cut a one-line label to fit width, ending it with an ellipsis when it was cut.
+ *
+ * Widths are estimated at 6.2px a character at 12px Geist less the glyph and
+ * padding, with room kept for at least four characters.
+ */
 export function fitLabel(label: string, width: number): string {
   const room = Math.max(Math.floor((width - 32) / 6.2), 4);
   return label.length <= room ? label : `${label.slice(0, room - 1).trimEnd()}\u2026`;

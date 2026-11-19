@@ -34,6 +34,12 @@ const ICON_DOTS = (
 // a menu of real items that takes focus when it opens and walks with
 // the arrow keys, Escape and outside-click to leave, and the focus
 // handed back to the trigger on the way out.
+/**
+ * Overflow menu for a card header: a labelled trigger and its items.
+ *
+ * The menu takes focus when it opens and gives it back to the trigger on
+ * every way out, so the header needs no other focus handling.
+ */
 function CardMenu({ title, items }: { title: string; items: CardMenuItem[] }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -45,12 +51,14 @@ function CardMenu({ title, items }: { title: string; items: CardMenuItem[] }) {
     // The menu takes focus when it opens, so the arrow keys work
     // immediately and the screen reader lands inside the list.
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    /** Close the menu on a press outside it. */
     function onPointerDown(event: PointerEvent) {
       if (wrapRef.current && event.target instanceof Node && wrapRef.current.contains(event.target)) {
         return;
       }
       setOpen(false);
     }
+    /** Close on Escape and hand focus back to the trigger. */
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setOpen(false);
@@ -65,6 +73,12 @@ function CardMenu({ title, items }: { title: string; items: CardMenuItem[] }) {
     };
   }, [open]);
 
+  /**
+   * Move focus through the menu items, wrapping at both ends.
+   *
+   * `first` and `last` jump; `1` and `-1` step, from the trigger when
+   * nothing inside the menu holds focus yet.
+   */
   function walkItems(direction: 1 | -1 | 'first' | 'last') {
     const menuItems = Array.from(
       menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
@@ -80,6 +94,7 @@ function CardMenu({ title, items }: { title: string; items: CardMenuItem[] }) {
     menuItems[next]?.focus();
   }
 
+  /** Arrow, Home and End walk the open menu; Tab closes it and moves on. */
   function onMenuKeyDown(event: ReactKeyboardEvent) {
     switch (event.key) {
       case 'ArrowDown': event.preventDefault(); walkItems(1); break;
@@ -168,6 +183,14 @@ interface WidgetCardProps {
   children: ReactNode;
 }
 
+/**
+ * One bento cell: header with title, optional badge, stamp and overflow
+ * menu, then the body and foot.
+ *
+ * `sparse` centers a near-empty body, `amber` switches the card to the
+ * alert pair, and `footLines` reserves the foot height cards in a row share
+ * so their dividers line up. No menu items means no dots.
+ */
 export default function WidgetCard({
   title, span, stamp, badge, amber, sparse = false, footLines = 1, menuItems, foot, children,
 }: WidgetCardProps) {

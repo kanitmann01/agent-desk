@@ -131,6 +131,10 @@ def validate_schema(manifest) -> list[Failure]:
 
 
 def _is_v2(manifest) -> bool:
+    """Whether the manifest declares schema version 2.
+
+    bool is an int in Python, so True is excluded rather than read as 2.
+    """
     version = manifest.get("schemaVersion")
     return isinstance(version, int) and not isinstance(version, bool) and version == 2
 

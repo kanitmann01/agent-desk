@@ -29,6 +29,7 @@ export const MOVER_CAP = 5;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+/** A workbook date cell as "27 Jan", or "" when the value is not an ISO date. */
 function shortDate(value: unknown): string {
   if (typeof value !== 'string') return '';
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -37,20 +38,28 @@ function shortDate(value: unknown): string {
   return month ? `${Number(match[3])} ${month}` : '';
 }
 
+/**
+ * The deal name with its close date, e.g. "Acme, 27 Jan".
+ *
+ * An empty name cell reads as "Row".
+ */
 export function dealName(row: unknown[]): string {
   const base = String(row[0] ?? '').replace(ROW_INDEX, '').trim() || 'Row';
   const when = shortDate(row[4]);
   return when ? `${base}, ${when}` : base;
 }
 
+/** The deal name alone, without the sample workbook's trailing row index. */
 export function dealBase(row: unknown[]): string {
   return String(row[0] ?? '').replace(ROW_INDEX, '').trim() || 'Row';
 }
 
+/** A workbook cell as trimmed text; null and undefined become an empty string. */
 function cellText(value: unknown): string {
   return value == null ? '' : String(value).trim();
 }
 
+/** The deal, close, region and stage columns of a mover row, normalised for display. */
 function rowFields(row: unknown[]) {
   return {
     deal: dealBase(row),
@@ -60,6 +69,7 @@ function rowFields(row: unknown[]) {
   };
 }
 
+/** Region and stage joined with a middle dot, skipping the cells that are empty. */
 export function dealMeta(row: unknown[]): string {
   return [row[1], row[2]]
     .map((cell) => (cell == null ? '' : String(cell).trim()))
@@ -67,15 +77,23 @@ export function dealMeta(row: unknown[]): string {
     .join(' · ');
 }
 
+/** The amount cell as a finite number, or null when the cell holds anything else. */
 function amountOf(row: unknown[]): number | null {
   const value = row[3];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** The name cell as trimmed text, before the row index is stripped. */
 function rawName(row: unknown[]): string {
   return String(row[0] ?? '').trim();
 }
 
+/**
+ * A changed mover built from a row's new and previous values.
+ *
+ * The delta counts an absent amount as zero, and the previous name is kept
+ * only when the visible name changed.
+ */
 function pair(next: unknown[], prev: unknown[]): Mover {
   const oldAmount = amountOf(prev);
   const newAmount = amountOf(next);
@@ -99,6 +117,11 @@ export function moversFromDelta(delta: DeltaPayload): Mover[] {
   const used = new Set<number>();
   const movers: Mover[] = [];
 
+  /**
+   * The index of the first unpaired removed row matching the predicate.
+   *
+   * The row is marked as paired so a later call cannot match it again.
+   */
   function take(match: (row: unknown[]) => boolean): number {
     const index = removed.findIndex((row, i) => !used.has(i) && match(row));
     if (index >= 0) used.add(index);
@@ -147,11 +170,13 @@ export function moversFromDelta(delta: DeltaPayload): Mover[] {
 
 /** Added amounts minus removed amounts: the pipeline change, not a row count. */
 export function netPipeline(delta: DeltaPayload): number {
+  /** The total of these rows' amount cells, counting absent amounts as zero. */
   const sum = (rows: unknown[][] | undefined) =>
     (rows ?? []).reduce((total, row) => total + (amountOf(row) ?? 0), 0);
   return sum(delta.added) - sum(delta.removed);
 }
 
+/** A change rounded and grouped for display, with a + or − sign and "0" for zero. */
 export function formatSigned(value: number): string {
   const body = Math.abs(Math.round(value)).toLocaleString('en-US');
   if (value > 0) return `+${body}`;
@@ -159,6 +184,7 @@ export function formatSigned(value: number): string {
   return '0';
 }
 
+/** An amount rounded and grouped for display, or "" when it is absent. */
 export function formatAmount(value: number | null): string {
   if (value == null) return '';
   return Math.round(value).toLocaleString('en-US');

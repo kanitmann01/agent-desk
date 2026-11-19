@@ -14,17 +14,25 @@ import Button from './Button';
 const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 const AMOUNT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
+/**
+ * Preview cell as display text, plus whether it reads as an amount.
+ *
+ * Amounts are grouped with separators; anything else is trimmed and shown
+ * exactly as the sheet has it.
+ */
 function cellView(value: string | undefined): { text: string; numeric: boolean } {
   const raw = (value ?? '').trim();
   if (NUMBER.test(raw)) return { text: AMOUNT.format(Number(raw)), numeric: true };
   return { text: raw, numeric: false };
 }
 
+/** True when every filled cell of a column is a plain number; blanks are skipped. */
 function numericColumn(rows: string[][], column: number): boolean {
   const filled = rows.map((row) => (row[column] ?? '').trim()).filter(Boolean);
   return filled.length > 0 && filled.every((value) => NUMBER.test(value));
 }
 
+/** Selection as ascending indexes, the form `selected` is held in. */
 function ordered(values: Set<number>): number[] {
   return [...values].sort((a, b) => a - b);
 }
@@ -54,6 +62,14 @@ interface Sweep {
   base: number[];
 }
 
+/**
+ * Preview grid with row picking: a click toggles, a drag sweeps, and a
+ * shift-click fills the range from the last anchor.
+ *
+ * `selected` is controlled and `onSelectedChange` reports ascending indexes;
+ * `onAssignHeader` turns the headers into buttons, and `valueColumn` and
+ * `labelColumn` mark the two columns a data kind reads.
+ */
 export default function RowSelectGrid({
   preview, selected, onSelectedChange, onAssignHeader, valueColumn = '', labelColumn = '',
 }: RowSelectGridProps) {
@@ -63,6 +79,7 @@ export default function RowSelectGrid({
 
   useEffect(() => {
     if (!dragging) return undefined;
+    /** End the sweep when the pointer is released or cancelled. */
     const end = () => {
       sweep.current = null;
       setDragging(false);
@@ -75,8 +92,15 @@ export default function RowSelectGrid({
     };
   }, [dragging]);
 
+  /** True when the row is part of the tracked selection. */
   const isSelected = (index: number) => selected.includes(index);
 
+  /**
+   * Extend the live sweep from its anchor to this row.
+   *
+   * Rows outside the span go back to the snapshot taken when the sweep
+   * started, so backing up mid-drag deselects honestly.
+   */
   function sweepTo(index: number) {
     const session = sweep.current;
     if (!session) return;
@@ -88,6 +112,7 @@ export default function RowSelectGrid({
     onSelectedChange(ordered(next));
   }
 
+  /** Toggle one row, ending any sweep and making it the new anchor. */
   function toggleOne(index: number) {
     sweep.current = null;
     setDragging(false);
@@ -97,6 +122,12 @@ export default function RowSelectGrid({
     setAnchor(index);
   }
 
+  /**
+   * Apply the inclusive range from the anchor to this row.
+   *
+   * The range selects when this row is unselected and clears when it is
+   * selected; the anchor then moves here.
+   */
   function fillRange(index: number) {
     const from = anchor ?? index;
     const add = !isSelected(index);
@@ -109,6 +140,13 @@ export default function RowSelectGrid({
     setAnchor(index);
   }
 
+  /**
+   * Start a sweep on this row, or fill a range when shift is held.
+   *
+   * Only the primary button starts a sweep, and presses on the row's own
+   * checkbox or links belong to those controls; the sweep's mode follows
+   * whether the anchor was already selected.
+   */
   function onRowPointerDown(event: ReactPointerEvent<HTMLTableRowElement>, index: number) {
     if (event.shiftKey) {
       sweep.current = null;

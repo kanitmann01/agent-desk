@@ -20,6 +20,14 @@ export interface ConsentSheetProps {
   children?: ReactNode;
 }
 
+/**
+ * Render the permission review shared by installs, updates and packs.
+ *
+ * While open it moves focus to the close button, keeps Tab inside the dialog
+ * and closes on Escape; closing returns focus to whatever had it before. Only
+ * positive scopes are listed, and a scope in `addedScopes` is marked as new in
+ * text as well as colour.
+ */
 export function ConsentSheet({
   open, title, intro, scopes, addedScopes = [], removedScopes = [],
   canNever, confirmLabel, busy = false, error = '', onCancel, onConfirm, children,
@@ -35,6 +43,10 @@ export function ConsentSheet({
     const previous = document.activeElement;
     if (previous instanceof HTMLElement) restoreRef.current = previous;
     closeRef.current?.focus();
+    /**
+     * Keep the keyboard inside the open sheet: Escape cancels, and Tab wraps at
+     * either end. With nothing focusable inside, focus stays on the sheet.
+     */
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();
