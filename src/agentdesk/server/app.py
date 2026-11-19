@@ -125,6 +125,7 @@ from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
 from agentdesk.server.memory_loop_api import build_loop_state
+from agentdesk.plugins.cards import card_to_api
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
@@ -1310,20 +1311,11 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
             ],
         },
         "plugins": {
+            # One serializer owns the card's API shape (camelCase, the
+            # layout's rename applied), so the payload cannot drift from
+            # the cards the runtime's factory builds.
             "cards": [
-                {
-                    "id": c["id"],
-                    "title": custom_titles.get(c["id"], c["title"]),
-                    "version": c["version"],
-                    "pilot": c["pilot"],
-                    "state": c["state"],
-                    "freshness": c["freshness"],
-                    "cause": c["cause"],
-                    "checkedAt": c.get("checked_at", ""),
-                    "pluginId": c.get("pluginId", ""),
-                    "instanceId": c.get("instanceId", ""),
-                    "payload": c.get("payload"),
-                }
+                card_to_api(c, custom_titles.get(c["id"]))
                 for c in plugin_cards
             ],
         },
