@@ -57,6 +57,11 @@ was produced by a command on this checkout, not by a ticket's self-report.
   **4/6 gates passed in 406 s** — py-grammar 302 files, frontend-check exit 0,
   frontend-tests 272 passed, licenses clean; **pytest 13 failed, 2492 passed,
   1 skipped**, **registry-ci REGISTRY-CI FAILED (2)**.
+- **Re-verified 2026-11-19 at `c8b27bf`, after PR #181 re-pinned the
+  registry digests: 6/6 gates passed in 478 s** — pytest 2617 passed, 1 skipped;
+  frontend-check clean, frontend-tests 285 passed, licenses clean, registry-ci
+  PASS. The two failures above were drift, now fixed; none of them was ever
+  attributable to this work.
 - Both failing gates are pre-existing drift, not this branch. A detached worktree
   at base `daaa8d6` fails the same registry set with identical counts
   (16 failed, 71 passed, 6 errors on the seven registry/auth/ui files), and
@@ -67,8 +72,8 @@ was produced by a command on this checkout, not by a ticket's self-report.
 - `tools/ci_local.py` itself has a defect worth fixing separately: it appends
   `--plugins <one path>` once per plugin, and argparse keeps only the last value,
   so the registry gate checks `waiting-on-you` alone. Fixed, the gate would check
-  all six plugins; it is not fixed here because that is outside this spec and the
-  gate is already red for the drift above.
+  all six plugins; it is not fixed here because that is outside this spec. The
+  gate passes today only because the one plugin it checks is pinned correctly.
 - This machine exports `NODE_ENV=production`. Vitest then loads React's
   production build and every render test throws `React.act is not a function`;
   `NODE_ENV=test` is required locally and is what the numbers above use. The CI
