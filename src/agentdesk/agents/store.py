@@ -106,6 +106,20 @@ class AgentRunStore:
         )
         return rows[0] if rows else None
 
+    def set_feedback(self, run_id: int, feedback: str) -> bool:
+        """Record one run's feedback with its own timestamp.
+
+        The timestamp is the moment the feedback landed, not the run's.
+        A repost overwrites, so a run carries one record, the latest.
+        Returns False when no row carries the id, writing nothing.
+        """
+        with self._lock, self.conn:
+            cursor = self.conn.execute(
+                "UPDATE agent_runs SET feedback = ?, feedback_ts = ? WHERE id = ?",
+                (feedback, self.clock(), run_id),
+            )
+            return cursor.rowcount > 0
+
     def _rows(self, sql: str, params: tuple) -> list[dict]:
         """Run a select and shape every row the way the page reads it.
 

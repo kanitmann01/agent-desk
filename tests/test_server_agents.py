@@ -12,6 +12,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -281,6 +282,182 @@ def test_the_agents_routes_require_a_session(env):
     assert status == 401
     status, _h, _b = env.request("GET", "/agents", env.host_header())
     assert status == 401
+
+
+# -- feedback: how a run landed becomes a reviewable memory fact ------------
+
+# A declarative sentence the deterministic rules retain (it names Dana),
+# so the capture tests never depend on an endpoint answering.
+FEEDBACK = "My manager Dana prefers concise slide decks."
+
+
+def _post_feedback(env, auth, run_id, text):
+    return env.post_json(f"/agents/runs/{run_id}/feedback", {"feedback": text}, auth)
+
+
+def _loop(env, auth):
+    status, _h, body = env.request("GET", "/api/memory/loop", auth)
+    assert status == 200
+    return json.loads(body)
+
+
+def test_posting_feedback_stages_one_agents_channel_card_built_from_the_own_words(env, auth):
+    _run(env, auth)  # an ok run, so the transcript carries a real artifact
+    run_id = _runs(env)[0]["id"]
+    env.server.settings.set("endpoint_enabled", False)  # the rules read the feedback
+    status, _h, body = _post_feedback(env, auth, run_id, FEEDBACK)
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["feedback"] == FEEDBACK and payload["feedbackTs"] is not None
+    state = _loop(env, auth)
+    [candidate] = state["candidates"]
+    assert candidate["channel"] == "agents" and candidate["channelLabel"] == "Agents"
+    assert candidate["method"] == "rules" and candidate["text"] == FEEDBACK
+    # The excerpt is the run transcript: agent, brief, artifact, feedback.
+    excerpt = candidate["excerpt"]["text"]
+    assert "the Q3 review should cover revenue" in excerpt
+    assert "Q3 Review" in excerpt
+    assert FEEDBACK in excerpt
+    # The card's own origin copy names the channel, like every other origin.
+    [card] = env.server.inbox.waiting()
+    assert "Agents" in card.origin
+    # The feedback is stored on the run, timestamped.
+    stored = _runs(env)[0]
+    assert stored["feedback"] == FEEDBACK and stored["feedbackTs"] is not None
+
+
+def test_feedback_becomes_a_fact_the_next_run_recalls(env, auth):
+    _run(env, auth, brief="a deck for the Q3 business review")
+    run_id = _runs(env)[0]["id"]
+    env.server.settings.set("endpoint_enabled", False)
+    status, _h, _b = _post_feedback(env, auth, run_id, FEEDBACK)
+    assert status == 200
+    env.server.settings.set("endpoint_enabled", True)
+    [candidate] = _loop(env, auth)["candidates"]
+    status, _h, _b = env.post_json(
+        f"/inbox/cards/{candidate['cardId']}/accept", {}, auth
+    )
+    assert status == 200
+    state = _loop(env, auth)
+    [fact] = state["facts"]
+    assert fact["text"] == FEEDBACK
+    assert fact["origin"]["id"] == "review:agents"
+    assert fact["origin"]["label"] == "Agents"
+    # The next brief overlaps the feedback, and the receipt names the fact.
+    status, _h, body = _run(env, auth, brief="my manager wants the Q3 deck kept concise")
+    payload = json.loads(body)
+    assert payload["status"] == "ok"
+    assert [row["text"] for row in payload["facts"]] == [FEEDBACK]
+
+
+def test_without_an_endpoint_the_rules_still_stage_a_candidate(env, auth):
+    env.server.llm = chat_client("", "k", "m")  # nothing configured
+    _run(env, auth)
+    run_id = _runs(env)[0]["id"]
+    status, _h, _b = _post_feedback(env, auth, run_id, FEEDBACK)
+    assert status == 200
+    state = _loop(env, auth)
+    [candidate] = state["candidates"]
+    assert candidate["channel"] == "agents"
+    # The endpoint could not be asked, so the candidate is the user's own
+    # words read by the deterministic rules.
+    assert candidate["text"] == FEEDBACK and candidate["method"] == "rules"
+
+
+def test_the_agents_channel_has_its_own_switch_and_the_master_switch_stops_it(env, auth):
+    _run(env, auth)
+    run_id = _runs(env)[0]["id"]
+    channels = {c["id"]: c for c in _loop(env, auth)["capture"]["channels"]}
+    assert channels["agents"] == {
+        "id": "agents", "label": "Agents",
+        "setting": "memory_capture_agents", "on": True,
+    }
+    # The switch itself flips through the settings route.
+    status, _h, body = env.post_json(
+        "/settings/toggle", {"key": "memory_capture_agents"}, auth
+    )
+    assert status == 200
+    assert json.loads(body) == {"key": "memory_capture_agents", "value": False}
+    _post_feedback(env, auth, run_id, FEEDBACK)
+    assert _loop(env, auth)["candidates"] == []
+    # The master switch off stops every channel, agents included.
+    status, _h, _b = env.post_json(
+        "/settings/toggle", {"key": "memory_capture_agents"}, auth
+    )
+    env.server.settings.set("memory_capture", False)
+    _post_feedback(env, auth, run_id, FEEDBACK)
+    assert _loop(env, auth)["candidates"] == []
+    assert _loop(env, auth)["capture"]["enabled"] is False
+
+
+def test_rejecting_the_card_leaves_nothing_stored(env, auth):
+    env.server.settings.set("endpoint_enabled", False)
+    _run(env, auth)
+    run_id = _runs(env)[0]["id"]
+    _post_feedback(env, auth, run_id, FEEDBACK)
+    [candidate] = _loop(env, auth)["candidates"]
+    status, _h, _b = env.post_json(
+        f"/inbox/cards/{candidate['cardId']}/dismiss", {}, auth
+    )
+    assert status == 200
+    state = _loop(env, auth)
+    assert state["candidates"] == [] and state["facts"] == []
+    # The dismissed words are not re-proposed: the inbox keeps the
+    # rejection for its thirty-day window, like every other channel.
+    _post_feedback(env, auth, run_id, FEEDBACK)
+    assert _loop(env, auth)["candidates"] == []
+
+
+def test_a_form_feedback_post_redirects_back_and_the_page_shows_it(env, auth):
+    _run(env, auth)
+    run_id = _runs(env)[0]["id"]
+    body = f"feedback={quote(FEEDBACK)}".encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+        **auth,
+    }
+    status, headers_out, _b = env.request(
+        "POST", f"/agents/runs/{run_id}/feedback", headers, body
+    )
+    assert status == 303
+    assert headers_out["Location"] == "/agents"
+    status, _h, page = env.request("GET", "/agents", auth)
+    text = page.decode("utf-8")
+    assert status == 200
+    assert FEEDBACK in text
+    assert "Feedback (" in text  # the record carries its timestamp
+
+
+def test_blank_and_oversize_feedback_are_refused_with_named_errors(env, auth):
+    _run(env, auth)
+    run_id = _runs(env)[0]["id"]
+    status, _h, body = _post_feedback(env, auth, run_id, "   ")
+    assert status == 400
+    assert "feedback" in json.loads(body)["error"]
+    status, _h, body = _post_feedback(env, auth, run_id, "x" * 4001)
+    assert status == 400
+    assert "4000" in json.loads(body)["error"]
+    assert _runs(env)[0]["feedback"] == ""
+
+
+def test_feedback_on_an_unknown_run_is_a_404(env, auth):
+    status, _h, body = _post_feedback(env, auth, 99, FEEDBACK)
+    assert status == 404
+    assert "run" in json.loads(body)["error"]
+
+
+def test_each_feedback_writes_one_agents_feedback_audit_row(env, auth):
+    env.server.settings.set("endpoint_enabled", False)
+    _run(env, auth)
+    run_id = _runs(env)[0]["id"]
+    _post_feedback(env, auth, run_id, FEEDBACK)
+    rows = _audit_rows(env, "agents.feedback")
+    assert len(rows) == 1
+    assert rows[0]["target"] == "presentation"
+    # Counts and ids only, never the feedback's words.
+    assert "Dana" not in rows[0]["detail"]
+    assert f"run {run_id}" in rows[0]["detail"]
 
 
 # -- the audit row and the hermetic default ---------------------------------

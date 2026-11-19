@@ -84,6 +84,26 @@ def test_get_returns_the_one_row_or_none():
     assert store.get(run_id + 100) is None
 
 
+def test_set_feedback_records_the_text_with_its_own_timestamp():
+    store, clock = _store()
+    run_id = store.record("presentation", "brief", "ok")
+    assert store.set_feedback(run_id, "my manager liked it") is True
+    clock.advance(10)
+    row = store.get(run_id)
+    assert row["feedback"] == "my manager liked it"
+    assert row["feedbackTs"] == 100.0  # the moment it landed, not the run's
+    # A repost overwrites: the run carries one feedback record, the latest.
+    assert store.set_feedback(run_id, "second thoughts") is True
+    assert store.get(run_id)["feedback"] == "second thoughts"
+    assert store.get(run_id)["feedbackTs"] == 110.0
+
+
+def test_set_feedback_on_an_unknown_run_writes_nothing():
+    store, _clock = _store()
+    assert store.set_feedback(4, "nothing") is False
+    assert store.recent() == []
+
+
 def test_the_store_needs_no_default_clock_argument():
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     store = AgentRunStore(conn)

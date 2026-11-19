@@ -32,8 +32,10 @@ import agentdesk
 from agentdesk.agents.registry import ROSTER, find_agent
 from agentdesk.agents.runner import (
     BRIEF_MAX_CHARS,
+    FEEDBACK_MAX_CHARS,
     STATUS_OK as AGENT_STATUS_OK,
     endpoint_off_run,
+    feedback_transcript,
     run_agent,
 )
 from agentdesk.agents.store import AgentRunStore
@@ -1983,6 +1985,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(200, answer.to_json())
         elif path == "/agents/run":
             self._agents_run()
+        elif path.startswith("/agents/runs/") and path.endswith("/feedback"):
+            self._agents_feedback(path[len("/agents/runs/"):-len("/feedback")])
         else:
             self._send_error_page(404, "Nothing here", "No action lives at this address.")
 
@@ -2405,6 +2409,78 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "facts": result.facts,
             })
 
+    def _agents_feedback(self, run_id_text: str) -> None:
+        """Record how one run landed and offer it to the memory loop.
+
+        The named refusals come first (blank or oversize feedback), then
+        the unknown run, so nothing is stored or captured that the page
+        would not own. The text lands on the run row with its own
+        timestamp, one audit row names the run and the length (never the
+        words), and the run's transcript is offered to capture on the
+        agents channel with the feedback as the user's own words. A form
+        submit lands back on the page; JSON returns the record.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        body = self._read_json_body()
+        feedback = body.get("feedback") if body is not None else None
+        if not isinstance(feedback, str) or not feedback.strip():
+            self._send_json(
+                400,
+                {"error": "the feedback is blank; say a few words about how"
+                          " the run landed"},
+            )
+            return
+        feedback = feedback.strip()
+        if len(feedback) > FEEDBACK_MAX_CHARS:
+            self._send_json(
+                400,
+                {"error": f"the feedback is longer than {FEEDBACK_MAX_CHARS}"
+                          " characters; shorten it"},
+            )
+            return
+        if server.agents is None:
+            self._send_json(503, {"error": "the agents store is not available"})
+            return
+        try:
+            run_id = int(str(run_id_text).strip())
+        except ValueError:
+            run_id = -1
+        run = server.agents.get(run_id) if run_id > 0 else None
+        if run is None:
+            self._send_json(
+                404,
+                {"error": "no run with that id; the /agents page lists the"
+                          " runs this desk has recorded"},
+            )
+            return
+        server.agents.set_feedback(run_id, feedback)
+        agent = find_agent(run.get("agentId", ""))
+        agent_name = agent.name if agent is not None else run.get("agentId", "")
+        self._audit(
+            "agents.feedback", target=str(run.get("agentId", "")),
+            detail=f"run {run_id}; {len(feedback)} characters",
+        )
+        self._capture_memory(
+            "agents",
+            feedback_transcript(agent_name, run, feedback),
+            feedback,
+            use_model=True,
+        )
+        if self._is_form_submit():
+            self.send_response(303)
+            self.send_header("Location", "/agents")
+            self._common_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        else:
+            stored = server.agents.get(run_id)
+            self._send_json(200, {
+                "id": run_id,
+                "agent": run.get("agentId", ""),
+                "feedback": feedback,
+                "feedbackTs": stored["feedbackTs"] if stored else None,
+            })
+
     def _agent_fact_ranks(self, kind, brief: str) -> list:
         """The ranked recall for one agent run: the agent's name joined
         to the brief is the query, the same hybrid recall and embedding
@@ -2626,7 +2702,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         key = body.get("key")
         if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "suggest_headers_only", "plugin_instance_cap",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
-                       "memory_capture_research", "memory_capture_workbook"):
+                       "memory_capture_research", "memory_capture_workbook",
+                       "memory_capture_agents"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)

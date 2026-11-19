@@ -221,3 +221,37 @@ def test_run_agent_degrades_with_the_standing_line_on_unexpected_errors():
 
 def test_the_brief_bound_is_a_few_hundred_characters():
     assert runner.BRIEF_MAX_CHARS == 400
+
+
+# -- the feedback transcript -------------------------------------------------
+
+
+def test_the_transcript_carries_agent_brief_artifact_and_feedback():
+    run = {
+        "brief": "the Q3 review",
+        "artifact": {"kind": "slides", "title": "Q3 Review",
+                     "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}]},
+    }
+    text = runner.feedback_transcript("Presentation", run, "My manager liked it.")
+    assert "Presentation" in text
+    assert "the Q3 review" in text
+    assert "Q3 Review" in text and "1 slide" in text
+    assert text.endswith("My manager liked it.")
+
+
+def test_the_transcript_of_a_degraded_run_names_the_honest_empty():
+    run = {"brief": "the Q3 review", "artifact": None}
+    text = runner.feedback_transcript("Presentation", run, "It never ran.")
+    assert "no artifact" in text
+    assert "It never ran." in text
+
+
+def test_the_transcript_of_an_outline_artifact_keeps_it_short():
+    run = {"brief": "b", "artifact": {"kind": "outline", "text": "word " * 100}}
+    text = runner.feedback_transcript("Presentation", run, "fine")
+    summary = text.split("What it produced: ", 1)[1].splitlines()[0]
+    assert len(summary) <= 140
+
+
+def test_the_feedback_bound_is_the_retain_excerpt_spirit():
+    assert runner.FEEDBACK_MAX_CHARS == 4000

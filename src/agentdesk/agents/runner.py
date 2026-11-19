@@ -40,6 +40,10 @@ DEGRADED_CAUSE = (
 # blank refused by the route, so one prompt stays one screen of intent.
 BRIEF_MAX_CHARS = 400
 
+# The feedback bound rides the retain excerpt's own ceiling, so a run's
+# "how did it land?" can never out-grow the excerpt it is offered as.
+FEEDBACK_MAX_CHARS = 4000
+
 # The artifact's own bounds: the parse keeps a deck's worth of slides
 # and bullets, because the model sometimes answers with a wall.
 MAX_SLIDES = 12
@@ -184,6 +188,44 @@ def endpoint_off_run() -> AgentRun:
     the pinned sentence every surface shows for the switch.
     """
     return AgentRun(status=STATUS_DEGRADED, cause=ENDPOINT_OFF_CAUSE)
+
+
+# The artifact summary's own bound: one line naming what the run made,
+# because the transcript is provenance, not a second copy of the reply.
+ARTIFACT_SUMMARY_CHARS = 120
+
+
+def artifact_summary(run: dict) -> str:
+    """One line naming what a run produced, for the feedback transcript.
+
+    A degraded run says so in so many words; a deck is named by title
+    and slide count; anything else keeps the first line of the outline.
+    """
+    artifact = run.get("artifact") if run else None
+    if not artifact:
+        return "no artifact (the run did not complete)"
+    if artifact.get("kind") == "slides":
+        count = len(artifact.get("slides") or [])
+        slides = f"{count} slide" + ("" if count == 1 else "s")
+        title = artifact.get("title") or "untitled"
+        return f'a slide outline, "{title}" ({slides})'
+    text = " ".join(str(artifact.get("text", "")).split())
+    return f"an outline: {text[:ARTIFACT_SUMMARY_CHARS]}"
+
+
+def feedback_transcript(agent_name: str, run: dict, feedback: str) -> str:
+    """The excerpt feedback offers the memory loop: the whole run as one
+    transcript, agent and brief and artifact and the user's words, so a
+    fact accepted from it carries provenance that reads like the run.
+    """
+    return "\n".join(
+        [
+            f"{agent_name} agent, one run.",
+            f"The brief: {run.get('brief', '')}",
+            f"What it produced: {artifact_summary(run)}",
+            f"How it landed (the user's own words): {feedback}",
+        ]
+    )
 
 
 def run_agent(agent: AgentKind, brief: str, llm,

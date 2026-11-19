@@ -71,10 +71,33 @@ def _artifact_html(run: dict) -> str:
     return f"<pre>{_esc(artifact.get('text', ''))}</pre>"
 
 
+def _feedback_html(run: dict) -> str:
+    """The run's "how did it land?" form, or the feedback once it landed.
+
+    A plain form POST per run, so the page keeps the no-JavaScript
+    promise; a recorded feedback renders with its own timestamp and the
+    form steps aside, because the run carries one record, the latest.
+    """
+    run_id = run["id"]
+    if run.get("feedback"):
+        when = datetime.fromtimestamp(run["feedbackTs"]).strftime("%Y-%m-%d %H:%M")
+        return (
+            f'<p class="empty">Feedback ({when}): {_esc(run["feedback"])}</p>'
+        )
+    return (
+        f'<form method="post" action="/agents/runs/{run_id}/feedback" class="cardform">'
+        f'<label class="empty" for="feedback-{run_id}">How did it land?</label>'
+        f'<textarea id="feedback-{run_id}" name="feedback" rows="2" required '
+        f'placeholder="e.g. my manager liked it and wants it concise"></textarea>'
+        f'<button class="btn" type="submit">Send feedback</button>'
+        "</form>"
+    )
+
+
 def _run_html(run: dict) -> str:
     """One run row of the history: what was asked, what happened, what
-    it used, and what it produced. A degraded run keeps its cause and
-    renders no artifact, because none existed."""
+    it used, what it produced, and how it landed. A degraded run keeps
+    its cause and renders no artifact, because none existed."""
     agent = find_agent(run.get("agentId", ""))
     agent_name = agent.name if agent is not None else run.get("agentId", "")
     ran_at = datetime.fromtimestamp(run["createdTs"]).strftime("%Y-%m-%d %H:%M")
@@ -89,6 +112,7 @@ def _run_html(run: dict) -> str:
         f"<p>Brief: {_esc(run['brief'])}</p>"
         f"{_receipt_html(run)}"
         f"{_artifact_html(run)}"
+        f"{_feedback_html(run)}"
         "</article>"
     )
 
