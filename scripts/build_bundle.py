@@ -127,7 +127,9 @@ def _build_command(root: Path, *, allow_downloads: bool) -> list[str]:
         "scripts/agent_desk_entry.py",
     ]
     if allow_downloads:
-        cmd.insert(2, "--assume-yes-for-downloads")
+        # After "nuitka", not between -m and it: the flag names a Nuitka
+        # option, and python -m reads the slot right after it as the module.
+        cmd.insert(3, "--assume-yes-for-downloads")
     return cmd
 
 

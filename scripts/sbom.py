@@ -2,7 +2,9 @@
 """Generate the Agent Desk CycloneDX 1.6 SBOM.
 
 Sources of truth:
-  * pyproject.toml   Python runtime dependency set (currently empty)
+  * pyproject.toml   declared Python runtime dependencies, licensed via
+                      [tool.agent-desk-licenses] and version-resolved from
+                      the installed environment
   * package-lock.json frontend dependency tree with pinned versions and
                       npm integrity hashes
   * the interpreter running this script for the CPython runtime component
@@ -24,6 +26,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import importlib.metadata
 import json
 import os
 import platform
@@ -67,25 +70,31 @@ LOCAL_LICENSE_FILES = {
     "pkg:npm/react@19.3.1": "licenses/third-party/react-19.3.1-LICENSE.txt",
     "pkg:npm/react-dom@19.3.1": "licenses/third-party/react-dom-19.3.1-LICENSE.txt",
     "pkg:npm/scheduler@0.28.0": "licenses/third-party/scheduler-0.28.0-LICENSE.txt",
-    "pkg:npm/%40fontsource-variable/source-serif-4@5.3.1": (
-        "frontend/public/licenses/OFL-SourceSerif4.txt"
+    "pkg:npm/%40fontsource/geist@5.2.8": "frontend/public/licenses/OFL-Geist.txt",
+    "pkg:npm/%40fontsource/geist-mono@5.2.7": (
+        "frontend/public/licenses/OFL-GeistMono.txt"
     ),
-    "pkg:npm/%40fontsource-variable/source-sans-3@5.3.1": (
-        "frontend/public/licenses/OFL-SourceSans3.txt"
-    ),
-    "pkg:npm/%40fontsource/ibm-plex-mono@5.3.0": (
-        "frontend/public/licenses/OFL-IBMPlexMono.txt"
+    "pkg:npm/%40fontsource/montserrat@5.3.0": (
+        "frontend/public/licenses/OFL-Montserrat.txt"
     ),
     "pkg:generic/cpython": "licenses/third-party/python-LICENSE.txt",
+}
+
+# Python runtime dependencies and the upstream licence texts that travel
+# with them in the bundle. Keyed by name rather than purl because the
+# version is resolved from the installed environment at build time, so a
+# purl key would silently stop matching after an upgrade.
+PYTHON_LICENSE_FILES = {
+    "cryptography": "licenses/third-party/cryptography-LICENSE.txt",
 }
 
 # Only these non-allowlist licences are excepted, and only for the
 # components listed here. Keep in sync with scripts/license_gate.py.
 LICENSE_EXCEPTIONS = {
     "pkg:generic/cpython": "PSF-2.0",
-    "pkg:npm/%40fontsource-variable/source-serif-4@5.3.1": "OFL-1.1",
-    "pkg:npm/%40fontsource-variable/source-sans-3@5.3.1": "OFL-1.1",
-    "pkg:npm/%40fontsource/ibm-plex-mono@5.3.0": "OFL-1.1",
+    "pkg:npm/%40fontsource/geist@5.2.8": "OFL-1.1",
+    "pkg:npm/%40fontsource/geist-mono@5.2.7": "OFL-1.1",
+    "pkg:npm/%40fontsource/montserrat@5.3.0": "OFL-1.1",
     "pkg:npm/%40csstools/color-helpers@5.1.0": "MIT-0",
     "pkg:npm/caniuse-lite@1.0.30001826": "CC-BY-4.0",
 }
@@ -170,6 +179,42 @@ def _licence_object(licence: str) -> dict:
     if licence in SPDX_LICENSE_IDS:
         return {"license": {"id": licence}}
     return {"license": {"name": licence}}
+
+
+# An SPDX licence expression operator, matched the same way the licence
+# gate splits expressions, so what is emitted here is what is checked there.
+_SPDX_OPERATOR = re.compile(r"\s+(?:OR|AND|WITH)\s+", re.IGNORECASE)
+
+
+def _python_licences(licence: str) -> list[dict]:
+    """Wrap one [tool.agent-desk-licenses] value for a component.
+
+    A value carrying an SPDX operator, such as cryptography's
+    "Apache-2.0 OR BSD-3-Clause", is kept as one expression so the licence
+    gate can check every alternative; a single identifier goes through
+    _licence_object like the npm licences do.
+    """
+    if _SPDX_OPERATOR.search(licence):
+        return [{"expression": licence}]
+    return [_licence_object(licence)]
+
+
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)")
+
+
+def _requirement_name(requirement: str) -> str:
+    """Return the bare distribution name from a PEP 508 requirement string.
+
+    Entries in [project].dependencies arrive as strings like
+    "cryptography>=44", "requests[security]>=2.31" or
+    "pywin32; sys_platform == 'win32'". The name is whatever precedes the
+    first specifier, extra or marker, which the anchored pattern captures
+    without a full PEP 508 parser.
+    """
+    match = _REQUIREMENT_NAME.match(requirement)
+    if not match:
+        raise SystemExit(f"sbom: cannot read a package name in {requirement!r}")
+    return match.group(1)
 
 
 def _component(
@@ -291,12 +336,16 @@ def _npm_components(lock_path: Path) -> list[dict]:
 
 
 def _python_components(pyproject: dict) -> list[dict]:
-    """Return the CPython component, refusing a project with runtime deps.
+    """Return the CPython component plus one per declared runtime dependency.
 
     The interpreter running this script is the one Nuitka embeds, so its
-    version is what the document records. A non-empty [project].dependencies
-    exits on purpose: a runtime dependency is a licensing decision, and this
-    generator cannot resolve or licence one.
+    version is what the document records. Each entry in
+    [project].dependencies is resolved the same disciplined way: the name
+    before any specifier must carry a licence in [tool.agent-desk-licenses]
+    and must be installed in this environment. A dependency the generator
+    cannot licence or resolve refuses the build, because a runtime
+    dependency is a licensing decision and a guessed version would be
+    worse than no document at all.
     """
     project = pyproject.get("project")
     if not isinstance(project, dict):
@@ -304,14 +353,9 @@ def _python_components(pyproject: dict) -> list[dict]:
     dependencies = project.get("dependencies") or []
     if not isinstance(dependencies, list):
         raise SystemExit("sbom: [project].dependencies must be an array")
-    if dependencies:
-        # Deliberately refuse rather than silently omitting packages. Adding
-        # a runtime dependency is a licensing decision, so make it explicit.
-        raise SystemExit(
-            "sbom: pyproject declares runtime dependencies; teach scripts/sbom.py "
-            "how to resolve and license them before shipping: "
-            + ", ".join(str(item) for item in dependencies)
-        )
+    licence_table = (pyproject.get("tool") or {}).get("agent-desk-licenses") or {}
+    if not isinstance(licence_table, dict):
+        raise SystemExit("sbom: [tool.agent-desk-licenses] must be a table")
     runtime_version = platform.python_version()
     licence_file = "licenses/third-party/python-LICENSE.txt"
     component = _component(
@@ -325,12 +369,56 @@ def _python_components(pyproject: dict) -> list[dict]:
             {"name": LICENSE_FILE_PROPERTY, "value": licence_file},
             {"name": EXCEPTION_PROPERTY, "value": "PSF-2.0"},
             {"name": "agentdesk:stdlib-note", "value": (
-                "CPython standard library, PSF-2.0; bundled by Nuitka; no "
-                "third-party Python runtime dependencies"
+                "CPython standard library, PSF-2.0; bundled by Nuitka; "
+                "third-party Python dependencies are emitted as their own "
+                "pkg:pypi components"
             )},
         ],
     )
-    return [component]
+    components = [component]
+    seen: set[str] = set()
+    for requirement in dependencies:
+        name = _requirement_name(str(requirement))
+        licence = licence_table.get(name)
+        if not isinstance(licence, str) or not licence:
+            # Refuse rather than emitting the component without licences:
+            # the annotation is the licensing decision, so make it explicit.
+            raise SystemExit(
+                f"sbom: no licence recorded for runtime dependency {name!r}; "
+                "add it to [tool.agent-desk-licenses] in pyproject.toml "
+                "before shipping"
+            )
+        try:
+            version = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError as exc:
+            raise SystemExit(
+                f"sbom: runtime dependency {name!r} is not installed; "
+                "install the project dependencies so the SBOM can record "
+                "a real version"
+            ) from exc
+        # The purl uses the canonical PyPI form (lowercase, underscores to
+        # hyphens); the component keeps the name as declared in pyproject.
+        purl_name = name.lower().replace("_", "-")
+        purl = f"pkg:pypi/{quote(purl_name, safe='')}@{quote(version, safe='')}"
+        if purl in seen:
+            continue
+        seen.add(purl)
+        properties = []
+        license_file = PYTHON_LICENSE_FILES.get(name)
+        if license_file:
+            properties.append({"name": LICENSE_FILE_PROPERTY, "value": license_file})
+        components.append(
+            _component(
+                bom_ref=purl,
+                name=name,
+                version=version,
+                ctype="library",
+                purl=purl,
+                licenses=_python_licences(licence),
+                properties=properties,
+            )
+        )
+    return components
 
 
 def build_sbom(root: Path = REPO_ROOT) -> dict:
@@ -351,6 +439,13 @@ def build_sbom(root: Path = REPO_ROOT) -> dict:
     lock_sha = _sha256(lock_bytes)
     components = _npm_components(lock_path) + _python_components(pyproject)
     components.sort(key=lambda item: item["bom-ref"])
+    python_deps = ", ".join(
+        f"{component['name']} {component['version']}"
+        for component in sorted(
+            (c for c in components if str(c.get("purl", "")).startswith("pkg:pypi/")),
+            key=lambda item: item["name"],
+        )
+    ) or "none"
 
     app_ref = f"pkg:generic/{APP_NAME}@{app_version}"
     app_licence = "LicenseRef-Proprietary"
@@ -387,7 +482,7 @@ def build_sbom(root: Path = REPO_ROOT) -> dict:
             "component": metadata_component,
             "properties": [
                 {"name": "agentdesk:bundle", "value": "Nuitka standalone one-folder (dist/agent-desk)"},
-                {"name": "agentdesk:python-runtime-dependencies", "value": "none"},
+                {"name": "agentdesk:python-runtime-dependencies", "value": python_deps},
                 {
                     "name": "agentdesk:frontend-lockfile",
                     "value": "frontend/package-lock.json",

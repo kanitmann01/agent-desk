@@ -1,8 +1,8 @@
 """The digest family: what the inbox is really asking of this person.
 
-The two cards already rank their own threads — outlook-digest picks the one
-message worth opening and waiting-on-you flags inbound threads older than
-the threshold — so nothing here scores a message again. What this family
+The two cards already rank their own threads (outlook-digest picks the one
+message worth opening, waiting-on-you flags inbound threads older than
+the threshold), so nothing here scores a message again. What this family
 adds is the coupling: which of the threads the card already names touches a
 focus topic or a fact the desk already holds, and one press that turns the
 thread's own lines into a draft in the user's stated tone.
@@ -41,13 +41,14 @@ DRAFT_KEYS = ("replyTone", "replyLength")
 
 
 def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading:
-    """The one thread worth a reading, and the press that would draft it.
+    """The digest family's reading: the first thread that concerns this person.
 
-    The first thread touching a focus topic or a remembered fact is the
-    thread; when none does, the press still offers a draft from the first
-    one, because the tone and length that shape it are receipts even
-    without an element.
-    """
+    Threads are taken in the card's own order, and its ranking is never
+    redone here; the first thread a focus topic or a remembered fact
+    touches becomes the reading, with that thread's further facts as a
+    list. When nothing matches, the reading is empty but the press still
+    stands on the first thread, so the tone and length that would shape a
+    draft stay on the receipt."""
     threads = thread_facts(payload)
     if not threads:
         # Nothing on the card names a subject, so there is nothing to match
@@ -188,12 +189,11 @@ def thread_facts(payload: dict) -> list[dict]:
 
 
 def _thread(primary: object, secondary: object, meta: object) -> dict | None:
-    """One card row as thread facts, or None when it names no subject.
+    """One list row as a thread, or None when the row has no subject.
 
-    The secondary line carries both who sent it and how long ago, so it is
-    split here; the row's meta is the age when the secondary line does not
-    say one.
-    """
+    The secondary line carries sender and age together; whatever it does
+    not supply falls back to the row's meta, each at the length a thread
+    keeps."""
     subject = truncate(primary, 200)
     if not subject:
         return None
@@ -258,8 +258,7 @@ def _finding_text(
 
 
 def _sentence(text: str) -> str:
-    """One sentence: the text trimmed, with a terminal period added only
-    when it does not already end one."""
+    """The text as a closed sentence, or "" when there is nothing to close."""
     value = str(text or "").strip()
     if not value:
         return ""
@@ -267,8 +266,7 @@ def _sentence(text: str) -> str:
 
 
 def _joined(items: list[str]) -> str:
-    """A list as one line, with "and" before the last item and commas
-    between the rest; empties are dropped first."""
+    """A list read aloud: two joined by and, three by commas and a final and."""
     lines = [str(item) for item in items if str(item).strip()]
     if len(lines) <= 1:
         return "".join(lines)
@@ -325,13 +323,11 @@ def compose_draft(
 
 
 def _facts(thread: object) -> dict | None:
-    """The bounded facts a draft builds from, or None when there is no
-    draft to build.
+    """The bounded facts a draft is built from, or None when none are.
 
-    A subject alone is not enough: without a sender or a last line there
-    is nobody to address and nothing to answer, which every caller reads
-    as "not draftable" rather than as an error.
-    """
+    A thread needs a subject and at least one of a sender or a last line
+    before anything is drafted: with neither there is nobody to address
+    and nothing to answer."""
     if not isinstance(thread, dict):
         return None
     facts = {
@@ -345,33 +341,23 @@ def _facts(thread: object) -> dict | None:
 
 
 def _tone(preferences: dict) -> str:
-    """The stored reply tone, falling back to "direct".
-
-    A value outside the vocabulary reads as the default rather than as an
-    error, so a hand-edited preferences file cannot change a draft's
-    voice, only lose the user's choice of it.
-    """
+    """The reply tone to draft in, or "direct" when none valid is stored."""
     value = str((preferences or {}).get("replyTone") or "direct")
     return value if value in REPLY_TONES else "direct"
 
 
 def _length(preferences: dict) -> str:
-    """The stored reply length, falling back to "short".
-
-    As elsewhere in the reading, a value outside the vocabulary reads as
-    the default rather than as an error.
-    """
+    """The reply length to draft to, or "short" when none valid is stored."""
     value = str((preferences or {}).get("replyLength") or "short")
     return value if value in REPLY_LENGTHS else "short"
 
 
 def _given_name(sender: str) -> str:
-    """The first name to greet, pulled from a display name or an address.
+    """The first name of a sender, for the greeting a draft opens with.
 
-    A bare address keeps its local part, punctuation and ranks are
-    stripped, and a sender with nothing readable returns "", which the
-    template turns into a nameless greeting.
-    """
+    An address yields the first word of its local part, a display name its
+    first token; punctuation is stripped and 40 characters is the cap, so
+    whatever the header carried cannot walk into the greeting whole."""
     if not sender:
         return ""
     local = sender.split("@")[0] if "@" in sender else sender

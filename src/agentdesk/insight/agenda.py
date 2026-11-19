@@ -102,13 +102,11 @@ def focus_overlap(agenda_row: dict, preferences: dict) -> list[str]:
 
 
 def _minutes(preferences: dict) -> int:
-    """The prep window in minutes, or the default when nothing usable is
-    stored.
+    """The prep window the user set, inside its allowed range.
 
-    A hand-edited file can hold any value, so a window outside its range
-    reads as the default rather than raising: the checklist is sized
-    either way, and a reading never fails over a preference.
-    """
+    A missing value, a bool, or anything outside PREP_MINUTES reads as the
+    15-minute default, so a broken preference file cannot size the
+    checklist to nonsense."""
     low, high = PREP_MINUTES
     value = (preferences or {}).get("prepMinutes")
     if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high:
@@ -117,12 +115,11 @@ def _minutes(preferences: dict) -> int:
 
 
 def _sizing_line(minutes: int, topics: list[str]) -> str:
-    """The checklist's first line: how long to set aside, and for what.
+    """The checklist's first line: how long to prepare, aimed at what.
 
-    A window of zero says no prep time is set, which is a choice the user
-    made and not an omission to hide. The focus topics ride the same line
-    so a quiet card can drop the checklist and still carry both facts.
-    """
+    Zero minutes is a set preference, not a missing one, so it gets its own
+    sentence rather than silence; the focus topics ride the same line
+    because a quiet reading keeps one element for all of this."""
     if minutes <= 0:
         line = "No prep window is set."
     else:

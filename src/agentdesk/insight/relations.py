@@ -175,12 +175,10 @@ def parse_date(cell: object) -> _Date | None:
 
 
 def _date(year: int, month: int, day: int) -> _Date | None:
-    """A calendar date, or None when it cannot be one.
+    """A calendar date inside the workbook-plausible years, or None.
 
-    The 1900-2200 window keeps a misread number (a quantity like 21021)
-    from becoming a calendar claim, and an impossible day like 31 February
-    reads as no date rather than as an error.
-    """
+    Years outside 1900 to 2200 and impossible month/day combinations read
+    as not a date, so a serial number or a typo cannot pose as one."""
     if not 1900 <= year <= 2200:
         return None
     try:
@@ -194,6 +192,11 @@ def _date(year: int, month: int, day: int) -> _Date | None:
 
 @dataclass(frozen=True)
 class Column:
+    """One column of the bounded table, with the kind it was classified as.
+
+    `percent` records that most of the column's numbers wore a % sign, so
+    display can add the unit the cells carried without re-reading them."""
+
     index: int
     name: str
     kind: str
@@ -202,6 +205,9 @@ class Column:
 
 @dataclass(frozen=True)
 class Table:
+    """The table a tracker card carries, bounded and already classified:
+    headers, string cells, and one Column per header."""
+
     headers: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
     columns: tuple[Column, ...]
@@ -253,13 +259,12 @@ def read_table(value: object) -> Table | None:
 
 
 def _classify(headers: tuple[str, ...], rows: list[tuple[str, ...]], index: int) -> Column:
-    """One column's kind, decided by its own cells rather than its header.
+    """One column's kind: date, number, percent-flagged number, or text.
 
-    A column is a date or a number only when 60 per cent of its filled
-    cells read as one, so a stray date in a notes column cannot recast it;
-    everything else is text, which is also the answer for a column with
-    almost nothing in it.
-    """
+    A kind asks for 60 percent of the filled cells (two at the least), so
+    a stray number in a notes column does not turn it numeric. Dates are
+    tried before numbers, and a numeric column is percent when most of
+    its numbers wore a % sign."""
     name = headers[index] or f"column {index + 1}"
     cells = [row[index] for row in rows]
     filled = sum(1 for cell in cells if cell.strip())
@@ -293,22 +298,21 @@ def _classify(headers: tuple[str, ...], rows: list[tuple[str, ...]], index: int)
 
 
 def _number_text(value: float) -> str:
-    """A number as the findings print it: thousands separated, and no
-    trailing zeros after the decimal point."""
+    """A number as findings print it: thousands separated, and no trailing
+    zeros after a decimal point."""
     if float(value).is_integer():
         return f"{int(value):,}"
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
 def _with_unit(value: float, column: Column) -> str:
-    """A number plus its column's unit: "%" only when the column holds
-    percentages, so a share is never printed next to a bare count."""
+    """A number in prose, with the % carried back when the column wore one."""
     return _number_text(value) + ("%" if column.percent else "")
 
 
 def _percent_text(share: float) -> str:
-    """A fraction as percent text, with only the precision its size earns:
-    no decimal from ten points up, one from one, two below that."""
+    """A fraction as a percentage, gaining a decimal as it shrinks, so a
+    4 percent share is not rounded away to nothing."""
     points = share * 100
     if points >= 10:
         return f"{points:.0f}%"
@@ -318,19 +322,19 @@ def _percent_text(share: float) -> str:
 
 
 def _prose_date(day: _Date) -> str:
-    """A date as the findings spell it: YYYY-MM-DD, unambiguous inside a
-    sentence that also carries numbers."""
+    """A date as the findings spell it: 2024-06-01, no locale between the
+    numbers and the reader."""
     return f"{day.year}-{day.month:02d}-{day.day:02d}"
 
 
 def _pearson(xs: list[float], ys: list[float]) -> float | None:
-    """The Pearson coefficient of two same-length lists, or None when it is
-    undefined.
+    """The Pearson coefficient of two equal-length runs, or None when it
+    is undefined.
 
-    Fewer than two pairs, a column with no spread, or an arithmetic
-    overflow all read as no relationship rather than as an error, and a
-    rounding excursion past 1 is clamped back inside.
-    """
+    Fewer than two pairs, or no spread on either side, has no coefficient
+    to compute. Sums run through fsum and the result is clamped to the
+    interval from -1 to 1, so float drift cannot push a correlation past
+    its own bounds."""
     count = len(xs)
     if count < 2:
         return None
@@ -349,8 +353,8 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
 
 
 def _band(coefficient: float) -> str:
-    """The coefficient's strength as the word a finding prints, at the
-    thresholds the findings have always used."""
+    """The strength word a correlation's text carries: very strong, strong
+    or moderate, judged on the absolute value."""
     strength = abs(coefficient)
     if strength >= 0.85:
         return "very strong"
@@ -360,27 +364,27 @@ def _band(coefficient: float) -> str:
 
 
 def _categorical(groups: int, rows: int) -> bool:
-    """Whether a label column can act as categories in a finding.
+    """Whether a text column is a set of categories rather than identifiers.
 
-    At least two groups, and no more than half the rows (three allowed):
-    a column where nearly every row is its own label is an identifier, and
-    a near-tie between two rows of an identifier is not a finding.
-    """
+    Two groups at the least, and never more than half the rows (three
+    always allowed): a column where nearly every row is its own label
+    names rows, not groups, and a near-tie between two of them would not
+    be a finding."""
     return groups >= 2 and groups <= max(3, rows // 2)
 
 
 def _numeric(table: Table) -> list[Column]:
-    """The table's numeric columns, in the order they stand in."""
+    """The columns that read as numbers."""
     return [column for column in table.columns if column.kind == "number"]
 
 
 def _dated(table: Table) -> list[Column]:
-    """The table's date columns, in the order they stand in."""
+    """The columns that read as dates."""
     return [column for column in table.columns if column.kind == "date"]
 
 
 def _textual(table: Table) -> list[Column]:
-    """The table's text columns, in the order they stand in."""
+    """The columns that read as text."""
     return [column for column in table.columns if column.kind == "text"]
 
 
@@ -581,12 +585,11 @@ def ratios(table: Table) -> list[Finding]:
 
 
 def _row_name(table: Table, index: int, label_column: str | None) -> str:
-    """What to call one row in a finding.
+    """The name an outlier's row goes by in its finding.
 
-    The tracker's stated label column wins when its cell is filled;
-    otherwise the first non-numeric column with text in it stands in, and a
-    row with nothing readable anywhere is its number.
-    """
+    The tracker's chosen label column wins; otherwise the row's first
+    non-numeric cell, and only when the row is nothing but numbers does
+    the finding fall back to \"row N\"."""
     if label_column:
         for column in table.columns:
             if column.name.lower() == label_column.strip().lower():

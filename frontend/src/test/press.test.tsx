@@ -3,10 +3,15 @@
 // a refusal is the desk's sentence — never a status code dressed as one.
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PluginCardView from '../dashboard/PluginCardView';
 import TrackerCard from '../dashboard/TrackerCard';
 import type { PluginCard } from '../types';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 afterEach(() => {
   cleanup();
@@ -98,8 +103,7 @@ const DIGEST_CARD: PluginCard = {
         label: 'Draft the reply',
         route: '/api/insight/draft',
         kind: 'reply-draft',
-        subject: 'Q4 forecast',
-        sender: 'Dana Whitfield',
+        thread: { subject: 'Q4 forecast', sender: 'Dana Whitfield' },
       },
       receipts: { preferences: ['replyTone'], inputs: ['memory'], counts: { memory: 1 } },
     },
@@ -190,12 +194,11 @@ describe('the press on a card', () => {
       await screen.findByText('Staged as a card: card-42. Open the inbox to accept or edit it.'),
     ).toBeInTheDocument();
     expect(calls).toHaveLength(2);
-    expect(calls[1].body).toEqual({
-      kind: 'reply-draft',
-      subject: 'Q4 forecast',
-      sender: 'Dana Whitfield',
-      stage: true,
-    });
+    // The press travels verbatim, the thread nested as the card carried it;
+    // stage is the one field a second press adds.
+    const { label: _label, route: _route, ...verbatim } = DIGEST_CARD.payload!.insight!.press!;
+    expect(calls[0].body).toEqual(verbatim);
+    expect(calls[1].body).toEqual({ ...verbatim, stage: true });
     // Nothing was re-drafted: the draft the person read is still there.
     expect(screen.getByText(DRAFT.text)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Stage as a reply card' })).toBeNull();
@@ -257,5 +260,57 @@ describe('the press on a card', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(noThread);
     expect(screen.queryByRole('button', { name: 'Stage as a reply card' })).toBeNull();
     expect(screen.queryByText(/could not answer|went wrong/i)).toBeNull();
+  });
+});
+
+// The wire shape has one owner (the server's press payload), so the SPA
+// must post the press object verbatim, never re-assemble it field by field.
+// This reads the component's source (the devproxy tests' convention): a
+// hand-built body is exactly where the two encodings drifted apart, and no
+// behavioural assertion can tell a copy of every field from a spread.
+describe('the body the SPA posts (ticket 08)', () => {
+  const source = readFileSync(resolve(here, '..', 'dashboard', 'PluginCardView.tsx'), 'utf8');
+
+  it('assembles no press body field by field', () => {
+    expect(source).not.toMatch(/body\.(?:kind|text|subject|sender|last|thread|stage)\s*=/);
+  });
+});
+
+describe('the press on a nested-thread card (ticket 07)', () => {
+  it('posts the press object verbatim, thread nested as the digest family emits it', async () => {
+    const user = userEvent.setup();
+    const calls: PressCall[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        calls.push({ url, body: JSON.parse(init?.body ?? '{}') as Record<string, unknown> });
+        return jsonResponse(DRAFT);
+      }),
+    );
+    const press = {
+      label: 'Draft the reply',
+      route: '/api/insight/draft',
+      kind: 'reply-draft' as const,
+      thread: { subject: 'Q4 plan', sender: 'sender@example.com', last: 'Numbers attached.' },
+    };
+    const nestedCard: PluginCard = {
+      ...DIGEST_CARD,
+      payload: {
+        ...DIGEST_CARD.payload!,
+        insight: {
+          ...DIGEST_CARD.payload!.insight!,
+          press,
+        },
+      },
+    };
+    render(<PluginCardView card={nestedCard} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Draft the reply' }));
+    expect(await screen.findByText(DRAFT.text)).toBeInTheDocument();
+    expect(calls).toHaveLength(1);
+    // Verbatim means verbatim: the body is the press object without its
+    // label and route, nothing assembled field by field, nothing dropped.
+    const { label: _label, route: _route, ...verbatim } = press;
+    expect(calls[0].body).toEqual(verbatim);
   });
 });

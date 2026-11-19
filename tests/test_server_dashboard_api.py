@@ -26,6 +26,7 @@ from agentdesk.calendar.watcher import CalendarBridge
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.excel.xlsx import parse_workbook_bytes
+from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginRuntime
 from plugins_fixtures import valid_zip
 from excel_fixtures import base_workbook, make_xlsx
@@ -306,6 +307,135 @@ def test_plugin_cards_are_data_not_html(booted, auth, tmp_path):
     assert card["freshness"] in ("fresh", "attention")
     assert isinstance(card["cause"], str)
     assert "<" not in json.dumps(cards)  # never server HTML inside the JSON
+
+
+def _card_runtime(tmp_path: Path, workspace: Path) -> PluginRuntime:
+    """A runtime whose runner parses through a fake, for payload pinning.
+
+    The workbook bytes come from the fixture, so a pinned card's only
+    machine-dependent values are the file paths the test itself names
+    and the honest clock stamps, which the pinning tests capture and
+    assert apart instead of freezing.
+    """
+    adapters = ExcelAdapters(
+        copy_shadow=lambda p: Path(p),
+        parse_workbook=lambda p: parse_workbook_bytes(Path(p).read_bytes()),
+        clock=lambda: 1_000_000.0,
+    )
+    return PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "data",
+        workspace_dir=workspace,
+        now="2026-11-11T16:00:00",
+        runner=PluginWidgetRunner(workspace, adapters=adapters),
+    )
+
+
+def _install_plugin(booted, auth, tmp_path) -> None:
+    """Install the sales fixture plugin over the API, as the desk does."""
+    status, _h, out = booted.post_json(
+        "/api/plugins/install",
+        {"zip_path": str(valid_zip(tmp_path / "plugin.zip")), "source": "zip"},
+        auth)
+    assert status == 200, out
+
+
+CARD_KEY_ORDER = [
+    "id", "title", "version", "pilot", "state", "freshness", "cause",
+    "checkedAt", "pluginId", "instanceId", "payload",
+]
+
+
+def test_the_dashboard_card_payload_is_pinned_for_an_attention_card(
+        booted, auth, tmp_path):
+    """The attention card the API serves, field for field (#177).
+
+    The serializer refactor must keep this JSON byte-for-byte: the honest
+    cause, no payload, the identity both seams key off. checkedAt is
+    captured and asserted apart because it is the one honest clock
+    reading, not part of the shape.
+    """
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True)
+    booted.server.plugins = _card_runtime(tmp_path, workspace)
+    _install_plugin(booted, auth, tmp_path)
+
+    payload = get_dashboard(booted, auth)
+    (card,) = payload["plugins"]["cards"]
+    assert list(card) == CARD_KEY_ORDER
+    stamp = card.pop("checkedAt")
+    assert stamp, card
+    assert card == {
+        "id": "sales-delta-widget",
+        "title": "Sales 24h Delta",
+        "version": "1.2.0",
+        "pilot": True,
+        "state": "enabled",
+        "freshness": "attention",
+        "cause": "no file matches ${workspace}/reports/*.xlsx",
+        "pluginId": "sales-delta-widget",
+        "instanceId": "main",
+        "payload": None,
+    }
+
+
+def test_the_dashboard_card_payload_is_pinned_for_a_live_card(
+        booted, auth, tmp_path):
+    """The live card the API serves, payload and all (#177).
+
+    The bound ui-schema payload rides along verbatim, the workbook's own
+    paths are the only paths in it, and the three clock stamps (the
+    card's checkedAt, the payload's checked_at and the source's asOf)
+    are one reading, asserted equal rather than frozen.
+    """
+    workspace = tmp_path / "workspace"
+    reports = workspace / "reports"
+    reports.mkdir(parents=True)
+    workbook = reports / "q4.xlsx"
+    workbook.write_bytes(make_xlsx([["Region", "Sales"], ["North", 10]]))
+    booted.server.plugins = _card_runtime(tmp_path, workspace)
+    _install_plugin(booted, auth, tmp_path)
+
+    payload = get_dashboard(booted, auth)
+    (card,) = payload["plugins"]["cards"]
+    assert list(card) == CARD_KEY_ORDER
+    stamp = card.pop("checkedAt")
+    assert stamp, card
+    source = card["payload"]["source"]
+    assert card["payload"]["checked_at"] == stamp
+    assert source["asOf"] == stamp
+    assert card == {
+        "id": "sales-delta-widget",
+        "title": "Sales 24h Delta",
+        "version": "1.2.0",
+        "pilot": True,
+        "state": "enabled",
+        "freshness": "fresh",
+        "cause": "",
+        "pluginId": "sales-delta-widget",
+        "instanceId": "main",
+        "payload": {
+            "elements": [
+                {"kind": "text", "text": "Change over the last 24 hours"},
+                {"kind": "metric",
+                 "value": "First snapshot taken; changes show on the next refresh.",
+                 "label": ""},
+            ],
+            "status": "fresh",
+            "cause": "",
+            "checked_at": stamp,
+            "source": {
+                "type": "excel-watch",
+                "value": 2,
+                "asOf": stamp,
+                "source": str(workbook),
+                "state": "ok",
+                "reason": "ok",
+                "human": f"Read the workbook {workbook}.",
+                "files": [str(workbook)],
+            },
+        },
+    }
 
 
 @pytest.fixture()

@@ -20,6 +20,12 @@ from datetime import datetime
 from glob import glob
 from pathlib import Path
 
+from agentdesk.plugins.cards import (
+    attention_card,
+    setup_card,
+    tracker_card,
+    widget_card,
+)
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.validator.core import validate_plugin
 
@@ -39,19 +45,6 @@ def _alias_id(name: str) -> str:
     """
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-")
     return cleaned or "instance"
-
-
-def _format_number(value) -> str:
-    """Format a number for a card label.
-
-    Whole values print without a decimal point, everything else with two
-    decimals. The value is converted through float, so a non-numeric argument
-    raises instead of rendering an empty label.
-    """
-    number = float(value)
-    if number.is_integer():
-        return str(int(number))
-    return f"{number:.2f}"
 
 
 def _require_safe_name(value: str, what: str) -> None:
@@ -785,100 +778,31 @@ class PluginRuntime:
         pilot = bool(entry and entry.get("pilot_views_left", 0) > 0)
         plugin_name = str(entry.get("name") or plugin_id) if entry else plugin_id
         if not instances:
-            return [self._instance_setup_card(plugin_id, "main", plugin_name, version, pilot, "source")]
+            return [setup_card(plugin_id, "main", title=plugin_name,
+                               version=version, pilot=pilot, step="source")]
         cards = []
         for item in instances:
             instance_id = item["instanceId"]
             title = str(item.get("name") or instance_id)
             if not item.get("confirmedAt"):
                 step = "columns" if (item.get("source") or {}).get("path") else "source"
-                cards.append(self._instance_setup_card(plugin_id, instance_id, title, version, pilot, step))
+                cards.append(setup_card(plugin_id, instance_id, title=title,
+                                        version=version, pilot=pilot, step=step))
                 continue
-            card = self._instance_setup_card(plugin_id, instance_id, title, version, pilot, "done")
             try:
                 reading = read_tracker(store, plugin_id, instance_id)
             except ConfigError as exc:
-                card["freshness"] = "attention"
-                card["cause"] = exc.message
-                card["payload"] = None
-                cards.append(card)
+                # A reading that cannot be produced becomes an attention
+                # card carrying the reason instead of a stale value.
+                cards.append(attention_card(
+                    plugin_id, instance_id,
+                    card_id=f"{plugin_id}~{instance_id}", title=title,
+                    version=version, pilot=pilot, cause=exc.message))
                 continue
-            elements = [
-                {"kind": "metric", "label": "Value", "value": _format_number(reading["value"])},
-                {"kind": "delta", "label": "Change", "value": reading["delta"],
-                 "direction": reading["direction"]},
-                {"kind": "text", "label": "Workbook", "text": reading["file"]},
-            ]
-            if reading.get("paceNote"):
-                elements.append({"kind": "text", "label": "Pace", "text": reading["paceNote"]})
-            points = reading.get("points") or []
-            if len(points) >= 2:
-                elements.append({"kind": "sparkline", "label": "History", "points": points})
-            goal = reading.get("goal") if isinstance(reading.get("goal"), dict) else None
-            card["title"] = title
-            card["freshness"] = "fresh"
-            card["cause"] = ""
-            card["pilot"] = pilot
-            card["payload"] = {
-                "elements": elements,
-                "status": "fresh",
-                "tracker": {
-                    "name": title,
-                    "value": _format_number(reading["value"]),
-                    "unit": reading.get("unit") or "",
-                    "delta": reading["delta"],
-                    "direction": reading["direction"],
-                    "points": points,
-                    "file": reading["file"],
-                    "rowsSeen": reading.get("rowsSeen", 0),
-                    "labelColumn": reading.get("labelColumn") or "",
-                    "valueColumn": reading.get("valueColumn") or "",
-                    "table": reading.get("table") or {"headers": [], "rows": []},
-                    "readAt": reading.get("readAt", 0),
-                    "sample": bool(reading.get("sample")),
-                    "paceNote": reading.get("paceNote") or "",
-                    "goal": None if not goal else {
-                        "value": _format_number(goal.get("value")),
-                        "unit": goal.get("unit") or "",
-                    },
-                },
-            }
-            cards.append(card)
+            cards.append(tracker_card(plugin_id, instance_id, title=title,
+                                      version=version, pilot=pilot,
+                                      reading=reading))
         return cards
-
-    def _instance_setup_card(self, plugin_id: str, instance_id: str, title: str, version: str,
-                             pilot: bool, step: str) -> dict:
-        """Build the card for an instance that is not yet showing live values.
-
-        The step is the wizard step the card should resume at. The card is keyed by
-        the bare plugin id only for an unconfirmed main instance, matching the layout
-        key, and by "<plugin>~<instance>" everywhere else.
-        """
-        card_id = plugin_id if instance_id == "main" and step != "done" else f"{plugin_id}~{instance_id}"
-        return {
-            "id": card_id,
-            "title": title,
-            "version": version,
-            # The badge tells the truth about the install (T6): a wizard
-            # plugin runs in pilot mode, and its cards say so instead of
-            # hiding the badge while the views are spent.
-            "pilot": bool(pilot),
-            "state": "enabled",
-            "freshness": "setup",
-            "cause": "",
-            "checked_at": "",
-            "pluginId": plugin_id,
-            "instanceId": instance_id,
-            "payload": {
-                "elements": [],
-                "setup": {
-                    "pluginId": plugin_id,
-                    "instanceId": instance_id,
-                    "name": title,
-                    "step": step,
-                },
-            },
-        }
 
     def _materialize_alias(self, manifest: dict) -> None:
         """Create the instance an alias plugin points at on its target.
@@ -945,18 +869,15 @@ class PluginRuntime:
                 try:
                     self._verify_installed(entry)
                 except PluginError as exc:
-                    cards.append({
-                        "id": entry["id"],
-                        "title": entry.get("name", entry["id"]),
-                        "version": entry.get("active_version", ""),
-                        "pilot": entry.get("pilot_views_left", 0) > 0,
-                        "state": entry["state"],
-                        "freshness": "attention",
-                        "cause": str(exc),
-                        "checked_at": "",
-                        "manifest": manifest,
-                        "payload": None,
-                    })
+                    # A tampered tree never executes: the card says so and
+                    # carries no payload from it.
+                    cards.append(attention_card(
+                        plugin_id, "main", card_id=entry["id"],
+                        title=entry.get("name", entry["id"]),
+                        version=entry.get("active_version", ""),
+                        pilot=entry.get("pilot_views_left", 0) > 0,
+                        state=entry["state"], cause=str(exc),
+                        manifest=manifest))
                     continue
                 self._attach_runner(entry["id"], entry)
             if self.runner.attached(entry["id"]):
@@ -969,18 +890,11 @@ class PluginRuntime:
             else:
                 data = entry.get("data_source") or {}
                 payload = None
-            cards.append({
-                "id": entry["id"],
-                "title": entry.get("name", entry["id"]),
-                "version": entry["active_version"],
-                "pilot": entry["pilot_views_left"] > 0,
-                "state": entry["state"],
-                "freshness": data.get("status", "attention"),
-                "cause": data.get("cause", ""),
-                "checked_at": data.get("checked_at", ""),
-                "manifest": manifest,
-                "payload": payload,
-            })
+            cards.append(widget_card(
+                plugin_id, "main", title=entry.get("name", entry["id"]),
+                version=entry["active_version"],
+                pilot=entry["pilot_views_left"] > 0, state=entry["state"],
+                data=data, payload=payload, manifest=manifest))
             if entry["pilot_views_left"] > 0:
                 entry["pilot_views_left"] -= 1
                 dirty = True

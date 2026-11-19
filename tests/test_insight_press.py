@@ -144,6 +144,53 @@ def test_an_unknown_kind_is_named_back():
     assert "rewrite-the-sheet" in caught.value.message
 
 
+# -- one request shape -----------------------------------------------------
+
+
+def test_a_flat_thread_answers_a_named_refusal():
+    with pytest.raises(InsightError) as caught:
+        _answer(_server(None), {"kind": "reply-draft", "subject": "Budget",
+                                "sender": "priya@example.com"})
+    assert caught.value.status == 400
+    assert caught.value.code == "insight:flat-thread"
+    assert 'nested under "thread"' in caught.value.message
+    # The refusal repeats what would have travelled, like every refusal here.
+    assert press.DISCLOSURE[0] in caught.value.message
+
+
+def test_a_word_for_stage_answers_a_named_refusal():
+    with pytest.raises(InsightError) as caught:
+        _answer(None, {"kind": "reply-draft",
+                       "thread": {"subject": "Budget", "sender": "Priya Raman"},
+                       "stage": "true"})
+    assert caught.value.status == 400
+    assert caught.value.code == "insight:stage-spelling"
+    assert '"stage": true' in caught.value.message
+
+
+def test_the_form_pair_carries_the_press_unchanged():
+    payload = {
+        "label": "Draft a reply",
+        "route": "/api/insight/draft",
+        "kind": "reply-draft",
+        "thread": {"subject": "Budget", "sender": "Priya Raman", "last": "Numbers?"},
+    }
+    fields = press.press_to_fields(payload)
+    assert fields == {"kind": "reply-draft", "subject": "Budget",
+                      "sender": "Priya Raman", "last": "Numbers?"}
+    # What the form posts re-parses into the request the route parses, so
+    # the flat spelling exists only between the two halves of the pair.
+    assert press.press_from_form(dict(fields, stage="1")) == {
+        "kind": "reply-draft",
+        "thread": {"subject": "Budget", "sender": "Priya Raman", "last": "Numbers?"},
+        "stage": True,
+    }
+    assert press.press_from_form({"kind": "explain-range", "text": "Booked falls."}) == {
+        "kind": "explain-range",
+        "text": "Booked falls.",
+    }
+
+
 # -- which thread a draft answers -----------------------------------------
 
 
@@ -154,8 +201,7 @@ def test_one_thread_resolves_and_echoes_recipients():
     ))
     answer = _answer(server, {
         "kind": "reply-draft",
-        "subject": "  budget ",
-        "sender": "priya raman",
+        "thread": {"subject": "  budget ", "sender": "priya raman"},
     })
     assert answer["thread"] == {
         "id": "<m1@example.com>",
@@ -169,8 +215,9 @@ def test_one_thread_resolves_and_echoes_recipients():
 
 def test_a_reply_subject_resolves_the_thread_it_belongs_to():
     server = _server(_Mail(_eml("<m1@example.com>", "Budget", "priya@example.com")))
-    answer = _answer(server, {"kind": "reply-draft", "subject": "Re: Budget",
-                              "sender": "priya@example.com"})
+    answer = _answer(server, {"kind": "reply-draft",
+                              "thread": {"subject": "Re: Budget",
+                                         "sender": "priya@example.com"}})
     assert answer["thread"]["id"] == "<m1@example.com>"
     assert answer["thread"]["subject"] == "Re: Budget"
 
@@ -182,8 +229,9 @@ def test_two_threads_with_one_subject_refuse_and_name_the_senders():
         _eml("<b@example.com>", "Budget", "priya@example.com"),
     ), inbox)
     with pytest.raises(InsightError) as caught:
-        _answer(server, {"kind": "reply-draft", "subject": "Budget",
-                         "sender": "priya@example.com", "stage": True})
+        _answer(server, {"kind": "reply-draft",
+                         "thread": {"subject": "Budget", "sender": "priya@example.com"},
+                         "stage": True})
     assert caught.value.code == "insight:thread-ambiguous"
     assert caught.value.status == 409
     message = caught.value.message
@@ -197,8 +245,9 @@ def test_a_thread_that_is_not_there_is_named_back():
     inbox = _inbox()
     server = _server(_Mail(_eml("<m1@example.com>", "Budget", "priya@example.com")), inbox)
     with pytest.raises(InsightError) as caught:
-        _answer(server, {"kind": "reply-draft", "subject": "Q3 plan",
-                         "sender": "priya@example.com", "stage": True})
+        _answer(server, {"kind": "reply-draft",
+                         "thread": {"subject": "Q3 plan", "sender": "priya@example.com"},
+                         "stage": True})
     assert caught.value.code == "insight:thread-missing"
     assert caught.value.status == 404
     assert '"Q3 plan"' in caught.value.message
@@ -208,8 +257,9 @@ def test_a_thread_that_is_not_there_is_named_back():
 
 def test_mail_off_refuses_and_says_what_would_have_travelled():
     with pytest.raises(InsightError) as caught:
-        _answer(_server(None), {"kind": "reply-draft", "subject": "Budget",
-                                "sender": "priya@example.com"})
+        _answer(_server(None), {"kind": "reply-draft",
+                                "thread": {"subject": "Budget",
+                                           "sender": "priya@example.com"}})
     assert caught.value.code == "insight:mail-off"
     assert caught.value.status == 503
     assert "mail digest is off on this desk" in caught.value.message
@@ -220,8 +270,9 @@ def test_mail_off_refuses_and_says_what_would_have_travelled():
 def test_a_desk_without_a_mail_folder_names_the_setting_to_fix():
     server = _server(_Mail(state="unconfigured"))
     with pytest.raises(InsightError) as caught:
-        _answer(server, {"kind": "reply-draft", "subject": "Budget",
-                         "sender": "priya@example.com"})
+        _answer(server, {"kind": "reply-draft",
+                         "thread": {"subject": "Budget",
+                                    "sender": "priya@example.com"}})
     assert caught.value.code == "insight:mail-off"
     assert caught.value.status == 503
     assert "no mail folder has been chosen yet" in caught.value.message
@@ -242,8 +293,9 @@ def test_staging_adds_one_card_and_a_repeat_press_adds_nothing():
     server = _server(
         _Mail(_eml("<m1@example.com>", "Budget", "Priya Raman <priya@example.com>")), inbox
     )
-    body = {"kind": "reply-draft", "subject": "Budget",
-            "sender": "priya@example.com", "stage": True}
+    body = {"kind": "reply-draft",
+            "thread": {"subject": "Budget", "sender": "priya@example.com"},
+            "stage": True}
     first = _answer(server, body)
     assert first["staged"] is True
     card = inbox.waiting()[0]
@@ -274,8 +326,10 @@ def test_a_skeleton_says_it_is_not_a_model_draft():
 
     inbox = _inbox()
     server = _server(_Mail(_eml("<m1@example.com>", "Budget", "priya@example.com")), inbox)
-    answer = _answer(server, {"kind": "reply-draft", "subject": "Budget",
-                              "sender": "priya@example.com", "stage": True},
+    answer = _answer(server, {"kind": "reply-draft",
+                              "thread": {"subject": "Budget",
+                                         "sender": "priya@example.com"},
+                              "stage": True},
                      complete=complete)
     assert answer["source"] == "template"
     assert answer["staged"] is True
@@ -288,7 +342,8 @@ def test_a_stage_request_without_a_sender_stages_nothing():
     inbox = _inbox()
     with pytest.raises(InsightError) as caught:
         _answer(_server(_Mail(), inbox),
-                {"kind": "reply-draft", "subject": "Budget", "stage": True})
+                {"kind": "reply-draft", "thread": {"subject": "Budget"},
+                 "stage": True})
     assert caught.value.code == "insight:thread-missing"
     assert caught.value.status == 404
     assert "does not say who the thread" in caught.value.message

@@ -47,9 +47,10 @@ async function safeJson(response: Response): Promise<unknown> {
 }
 
 // The reading's press: one model call, sent only when the person presses
-// the button. The route and the body come from the press the card already
-// carried, so the SPA never invents what travels, and `stage` is the one
-// field pressing a second button adds.
+// the button. The body is the press the card carried, verbatim minus its
+// label and route, and `stage` is the one field pressing a second button
+// adds; the wire shape is the server's, so the SPA never re-assembly-lines
+// it field by field.
 export type PressBody = Omit<InsightPress, 'label' | 'route'> & { stage?: boolean };
 
 export interface PressResult {
