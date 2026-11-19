@@ -25,6 +25,9 @@ interface SalesCardProps {
   onExpired: () => void;
 }
 
+/**
+ * The added and removed rows of the delta, capped, with a count of the rows left out.
+ */
 function DeltaRows({ delta }: { delta: DeltaPayload }) {
   const added = delta.added ?? [];
   const removed = delta.removed ?? [];
@@ -50,6 +53,13 @@ function DeltaRows({ delta }: { delta: DeltaPayload }) {
   );
 }
 
+/**
+ * The sales card: the 24-hour row-hash diff, or the paused, unconfigured, first-
+ * snapshot, stale and unreadable states.
+ *
+ * Every action refetches the dashboard rather than reloading the page; onExpired hands
+ * a 401 back to the caller.
+ */
 export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesCardProps) {
   const [note, setNote] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
@@ -57,8 +67,13 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
   const [busy, setBusy] = useState(false);
   const heading = title ?? 'Sales, last 24 hours';
 
+  /** Put a message in the card's status line. */
   const show = (text: string) => setNote(text);
 
+  /**
+   * Run a request with the busy flag set, returning its result or null when the server
+   * could not be reached.
+   */
   async function guard<T>(run: () => Promise<T>): Promise<T | null> {
     setBusy(true);
     try {
@@ -70,6 +85,10 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     }
   }
 
+  /**
+   * Connect a workbook by path and reload the dashboard; a note says why nothing
+   * changed.
+   */
   async function connect(path: string) {
     const res = await guard(() => postJson('/sources/excel-watch', { path }));
     if (res === null) {
@@ -88,6 +107,10 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     await onRefetch();
   }
 
+  /**
+   * Open the file dialog and connect the chosen workbook; a dialog that never opened
+   * falls back to the manual path input.
+   */
   async function pick() {
     const res = await guard(() => postJson('/sources/excel-watch/pick'));
     if (res === null) {
@@ -104,6 +127,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     await connect(data.path);
   }
 
+  /** Connect the typed path, or say that the field is empty. */
   function manual() {
     const path = pathInput.trim();
     if (!path) {
@@ -113,6 +137,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     void connect(path);
   }
 
+  /** Connect on Enter in the path field. */
   function onInputKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -120,6 +145,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     }
   }
 
+  /** Re-test the workbook read and reload the dashboard. */
   async function retest() {
     const res = await guard(() => postJson('/sources/excel-watch/retest'));
     if (res === null) {
