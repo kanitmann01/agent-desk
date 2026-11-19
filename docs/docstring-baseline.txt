@@ -75,7 +75,6 @@ frontend/src/dashboard/Dashboard.tsx:resyncLayout
 frontend/src/dashboard/Dashboard.tsx:runSkill
 frontend/src/dashboard/Dashboard.tsx:saveLayout
 frontend/src/dashboard/Dashboard.tsx:showAnswer
-frontend/src/dashboard/PluginCardView.tsx:ElementView
 frontend/src/dashboard/PluginCardView.tsx:PluginCardView
 frontend/src/dashboard/PluginCardView.tsx:retest
 frontend/src/dashboard/Rail.tsx:Rail
@@ -215,13 +214,6 @@ frontend/src/marketplace/Publishers.tsx:PublishersPage
 frontend/src/marketplace/Publishers.tsx:groupByPublisher
 frontend/src/marketplace/Publishers.tsx:proofText
 frontend/src/marketplace/Publishers.tsx:submit
-frontend/src/marketplace/Sample.tsx:Grid
-frontend/src/marketplace/Sample.tsx:Missing
-frontend/src/marketplace/Sample.tsx:SampleElement
-frontend/src/marketplace/Sample.tsx:SamplePreview
-frontend/src/marketplace/Sample.tsx:Sparkline
-frontend/src/marketplace/Sample.tsx:display
-frontend/src/marketplace/Sample.tsx:missingText
 frontend/src/marketplace/StatusChip.tsx:SignatureChip
 frontend/src/marketplace/StatusChip.tsx:StatusChip
 frontend/src/marketplace/Studio.tsx:StudioPage

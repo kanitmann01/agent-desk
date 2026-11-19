@@ -69,7 +69,7 @@ def test_a_card_string_is_escaped_at_the_boundary():
 
 
 def test_an_unknown_kind_draws_nothing():
-    assert app._plugin_element_html({"kind": "sparkline", "points": [1, 2]}) == ""
+    assert app._plugin_element_html({"kind": "hologram", "points": [1, 2]}) == ""
 
 
 def test_the_rendered_card_carries_the_reading(monkeypatch):

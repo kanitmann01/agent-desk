@@ -17,6 +17,7 @@ import type {
   PluginListRow,
   PluginTimelineItem,
 } from '../types';
+import { knownKind } from '../plugins/vocabulary';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
 import TrackerCard from './TrackerCard';
 import Button from '../components/Button';
@@ -28,7 +29,21 @@ interface PluginCardViewProps {
   onExpired: () => void;
 }
 
+/**
+ * Draw one element inside a wrapper carrying its kind. The data attribute is
+ * the hook a test uses to prove every vocabulary kind reaches the SPA, and it
+ * gives one element a stable styling boundary.
+ */
 export function ElementView({ element }: { element: PluginElement }) {
+  return (
+    <div className="w-element" data-element-kind={element.kind}>
+      <ElementBody element={element} />
+    </div>
+  );
+}
+
+/** Draw one element's body; ElementView owns the kind wrapper. */
+function ElementBody({ element }: { element: PluginElement }) {
   const blank = element.reason ? <p className="w-note">{element.reason}</p> : null;
   if (element.kind === 'metric') {
     return (
@@ -219,29 +234,13 @@ export function receiptLine(receipts: InsightReceipts): string {
   return `Used the defaults; read ${read.join(' and ')}.`;
 }
 
-// The kinds ElementView draws. A reading that appends anything else — a
-// newer server, a family this build has no view for — draws nothing rather
-// than an empty box.
-const DRAWN_KINDS: readonly string[] = [
-  'metric',
-  'text',
-  'delta',
-  'progress',
-  'list',
-  'table',
-  'sparkline',
-  'status',
-  'timeline',
-  'checklist',
-];
-
 /**
  * The elements this build knows how to draw. A reading that appends
  * anything else draws nothing rather than an empty box, so a newer server
  * degrades quietly.
  */
 export function drawableElements(elements: PluginElement[] | undefined): PluginElement[] {
-  return (elements ?? []).filter((element) => DRAWN_KINDS.includes(element.kind));
+  return (elements ?? []).filter((element) => knownKind(element.kind));
 }
 
 interface PressOfferProps {

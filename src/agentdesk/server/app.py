@@ -138,6 +138,7 @@ from agentdesk.server.memory_loop_api import build_loop_state
 from agentdesk.plugins.cards import card_to_api
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
+from agentdesk.plugins.html import element_html
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
 from agentdesk.registry.index import RegistryIndexError
@@ -1043,55 +1044,13 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
 
 
 def _plugin_element_html(element: dict) -> str:
-    """One payload element as authored HTML, escaped at this boundary.
+    """One payload element as authored HTML, drawn by the plugin renderer.
 
-    A declarative card names metric, text, list, checklist or status; the
-    coupled reading appends only those, so this is the whole vocabulary the
-    rendered dashboard draws. Anything else belongs to the SPA's own
-    renderer and is left to it rather than half-drawn here.
+    The dashboard's no-JS card and the SPA draw the same ten element kinds;
+    the markup is owned by agentdesk.plugins.html so the two surfaces cannot
+    grow separate vocabularies. Text arrives already escaped from there.
     """
-    kind = element.get("kind")
-    if kind == "metric":
-        parts = [
-            '<p class="w-big">' + html.escape(str(element.get("value", ""))) + "</p>"
-        ]
-        label = str(element.get("label", "")).strip()
-        if label:
-            parts.append('<p class="w-note">' + html.escape(label) + "</p>")
-        return "".join(parts)
-    if kind == "text":
-        return '<p class="w-note">' + html.escape(str(element.get("text", ""))) + "</p>"
-    if kind == "status":
-        return '<p class="w-note">' + html.escape(str(element.get("text") or "")) + "</p>"
-    if kind == "list":
-        lines = []
-        title = str(element.get("title") or "").strip()
-        if title:
-            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
-        for row in element.get("rows") or []:
-            if not isinstance(row, dict):
-                continue
-            text = " · ".join(
-                str(row.get(key) or "").strip()
-                for key in ("primary", "secondary", "meta")
-                if str(row.get(key) or "").strip()
-            )
-            if text:
-                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
-        return "".join(lines)
-    if kind == "checklist":
-        lines = []
-        title = str(element.get("title") or "").strip()
-        if title:
-            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
-        for item in element.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            text = str(item.get("text") or "").strip()
-            if text:
-                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
-        return "".join(lines)
-    return ""
+    return element_html(element)
 
 
 # How a receipt reads: the seam names preference keys and input names,
