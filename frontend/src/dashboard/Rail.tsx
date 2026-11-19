@@ -1,9 +1,10 @@
 // The rail: brand, the entries, the inbox count badge, the collapse
-// control and the user line. Dashboard, Inbox, Assistant and Settings
-// are real server pages (GET /inbox, /assistant, /settings); so are the
-// four consolidation pages (GET /activity, /memory, /mail,
-// /capabilities), the plugins page (GET /plugins) and the peers page
-// (GET /peers). Drawn as the system's full-height Input Well column;
+// control and the user line. Dashboard, Inbox, Assistant, Agents and
+// Settings are real server pages (GET /inbox, /assistant, /agents,
+// /settings); so are the four consolidation pages (GET /activity,
+// /memory, /mail, /capabilities), the plugins page (GET /plugins) and
+// the peers page (GET /peers). Drawn as the system's full-height
+// Input Well column;
 // the brand is plain text in the ink. Each entry's label rides in a
 // .rail-label span so collapse can drop the words and keep the marks.
 // The collapsed state persists in localStorage and mirrors the
@@ -33,6 +34,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   const sectionName = active.startsWith('/marketplace') ? 'Marketplace'
     : active === '/inbox' ? 'Inbox'
     : active === '/assistant' ? 'Assistant'
+    : active === '/agents' ? 'Agents'
     : active === '/settings' ? 'Settings'
     : 'Dashboard';
   // The accessible name survives collapse: the visible label hides with
@@ -81,6 +83,10 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
       <a href="/" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
       <a href="/inbox" aria-label={inboxName}><span className="rail-mark" aria-hidden="true">I</span><span className="rail-label">Inbox</span>{badge}</a>
       <a href="/assistant" aria-label="Assistant"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Assistant</span></a>
+      {/* Agents beside Assistant: both are host surfaces over the one
+          endpoint, one per question, one per task. A server page like
+          Assistant, so the SPA rail never marks it current. */}
+      <a href="/agents" aria-label="Agents"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Agents</span></a>
       <a href="/memory" aria-label="Memory"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Memory</span></a>
       <a href="/mail" aria-label="Mail"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Mail</span></a>
       <a href="/marketplace" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Marketplace"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Marketplace</span></a>

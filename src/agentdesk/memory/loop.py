@@ -60,6 +60,10 @@ CHANNELS: tuple[tuple[str, str, str], ...] = (
     # poll delta): structured, so the facts are written from the cells
     # directly, no extraction call.
     ("workbook", "Workbook tracker", "memory_capture_workbook"),
+    # Run feedback (the agents page's "how did it land?" form): the run's
+    # transcript is offered with the user's feedback as their own words,
+    # so what one run learned the next one recalls.
+    ("agents", "Agents", "memory_capture_agents"),
 )
 CHANNEL_LABELS = {channel: label for channel, label, _key in CHANNELS}
 METHOD_MODEL = "model"

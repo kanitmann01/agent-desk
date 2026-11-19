@@ -82,6 +82,13 @@ def stage(runtime, cap: int, instance_id: str, name: str, path: str,
 
 def upload(runtime, cap: int, instance_id: str, name: str, raw: bytes, filename: str,
            plugin_id: str) -> dict:
+    """Store an uploaded copy of the file and stage it, with no dialog and
+    no typed path.
+
+    The copy lands under the plugin's own data dir, which is outside the
+    workspace, so the outside-workspace grant is accepted here: the user
+    chose the file, and the desk itself moved it.
+    """
     store = store_for(runtime, cap)
     ensure_instance(store, instance_id, name, plugin_id=plugin_id)
     path = store.store_upload(plugin_id, instance_id, filename, raw)

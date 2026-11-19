@@ -112,13 +112,14 @@ class RailScan(HTMLParser):
 def test_rail_links_the_daily_surfaces(page):
     scan = RailScan()
     scan.feed(page)
-    # Dashboard, inbox, assistant, then the four pages the consolidation
-    # shipped (activity, memory, mail, capabilities), then the plugins
-    # page, then the peers page (ticket #67), then settings: the rail
-    # matches the SPA's entries, so Assistant, Plugins and Peers are on
-    # every page too.
+    # Dashboard, inbox, assistant, then the agents surface (spec 012),
+    # then the four pages the consolidation shipped (activity, memory,
+    # mail, capabilities), then the plugins page, then the peers page
+    # (ticket #67), then settings: the shared rail carries every
+    # server-rendered surface, so Assistant, Agents, Marketplace and
+    # Settings are on every page too.
     assert scan.hrefs == [
-        "/", "/inbox", "/assistant", "/memory", "/mail",
+        "/", "/inbox", "/assistant", "/agents", "/memory", "/mail",
         "/marketplace", "/settings",
     ]
 

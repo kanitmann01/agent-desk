@@ -115,6 +115,10 @@ class MailWatch:
         self._unparsed = 0
         self._digest: list[str] = []
         self._follow_ups: list[str] = []
+        # One poll at a time, whoever asked: the timer, a boot poll and a
+        # manual retest all pass through here, and two overlapping polls
+        # would race their check-then-file deltas into duplicate cards.
+        self._poll_lock = threading.Lock()
 
     # -- the poll ---------------------------------------------------------
 
@@ -122,7 +126,17 @@ class MailWatch:
         """One poll: resolve the folder, read it, compute the deltas,
         file the new cards. Every outcome returns the same shape: the
         status dict plus `created`, so callers never branch on which
-        path answered."""
+        path answered.
+
+        Polls never overlap: a poll that arrives while one is running
+        waits for it, so a manual retest answers only once the watch has
+        settled and the two never interleave their reads and filings.
+        """
+        with self._poll_lock:
+            return self._poll_locked()
+
+    def _poll_locked(self) -> dict:
+        """The poll's body; the caller already holds the poll lock."""
         folder = resolve_folder(self.folder_provider())
         if folder is None:
             self._state, self._cause = STATE_UNCONFIGURED, ""

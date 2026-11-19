@@ -49,7 +49,7 @@ function pinClock() {
 }
 
 describe('the rail', () => {
-  it('renders the brand as plain text and the seven daily entries', () => {
+  it('renders the brand as plain text and the eight daily entries', () => {
     render(<Rail inboxWaiting={2} />);
     // The brand carries no gradient: a plain span in the ink.
     const brand = document.querySelector<HTMLElement>('.brand-name');
@@ -59,6 +59,7 @@ describe('the rail', () => {
     expect(nav).toHaveTextContent('Dashboard');
     expect(nav).toHaveTextContent('Inbox');
     expect(nav).toHaveTextContent('Assistant');
+    expect(nav).toHaveTextContent('Agents');
     expect(nav).toHaveTextContent('Settings');
     // The marketplace replaced the legacy Plugins tab: it is one SPA
     // surface with a deep-linkable route, not a server page.
@@ -90,6 +91,21 @@ describe('the rail', () => {
       expect(link).toHaveAttribute('href', href);
       expect(nav).toContainElement(link);
     }
+  });
+
+  it('carries Agents beside Assistant as a server page', () => {
+    render(<Rail inboxWaiting={0} />);
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    const link = screen.getByRole('link', { name: 'Agents' });
+    expect(link).toHaveAttribute('href', '/agents');
+    expect(nav).toContainElement(link);
+    // The entry sits directly after its neighbour Assistant, keeps the
+    // single-letter mark the collapsed rail shows, and like Assistant
+    // is a server page: the SPA never marks it current.
+    const assistant = screen.getByRole('link', { name: 'Assistant' });
+    expect(link.previousElementSibling).toBe(assistant);
+    expect(link.querySelector('.rail-mark')).toHaveTextContent('A');
+    expect(link).not.toHaveAttribute('aria-current');
   });
 
   it('carries a collapse control that announces its state', () => {

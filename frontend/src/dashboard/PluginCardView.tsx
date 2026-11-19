@@ -189,6 +189,11 @@ const INPUT_PHRASES: Record<string, string> = {
 
 const DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows.";
 
+/**
+ * The one-line receipt under a reading: which preferences shaped it and
+ * what it read, in phrases this build chose. Returns "" when nothing was
+ * read, so a receipt can never invent a consultation.
+ */
 export function receiptLine(receipts: InsightReceipts): string {
   const notes = receipts.counts?.memory ?? 0;
   const chosen: string[] = [];
@@ -230,6 +235,11 @@ const DRAWN_KINDS: readonly string[] = [
   'checklist',
 ];
 
+/**
+ * The elements this build knows how to draw. A reading that appends
+ * anything else draws nothing rather than an empty box, so a newer server
+ * degrades quietly.
+ */
 export function drawableElements(elements: PluginElement[] | undefined): PluginElement[] {
   return (elements ?? []).filter((element) => DRAWN_KINDS.includes(element.kind));
 }
@@ -240,10 +250,12 @@ interface PressOfferProps {
   onExpired: () => void;
 }
 
-// The reading's press: one model call, offered under the reading and spent
-// only when it is pressed. The disclosure arrives with the answer and is
-// drawn above the draft, so no stage action is ever offered before it; a
-// refusal is the desk's own sentence and offers nothing beside it.
+/**
+ * The reading's press: one model call, offered under the reading and spent
+ * only when it is pressed. The disclosure arrives with the answer and is
+ * drawn above the draft, so no stage action is ever offered before it; a
+ * refusal is the desk's own sentence and offers nothing beside it.
+ */
 export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<Partial<InsightAnswer> | null>(null);
@@ -251,6 +263,11 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
   const [staged, setStaged] = useState<'' | 'staged' | 'existing'>('');
   const [stagedCard, setStagedCard] = useState('');
 
+  /**
+   * Spend the press: post it once and keep whichever of the answer, the
+   * refusal or the staged card came back, clearing whatever the previous
+   * press left showing.
+   */
   async function send(stage: boolean) {
     setBusy(true);
     setRefusal('');

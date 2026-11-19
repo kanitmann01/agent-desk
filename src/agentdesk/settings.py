@@ -45,6 +45,8 @@ TOGGLES = {
     "memory_capture_assistant": True,
     "memory_capture_research": True,
     "memory_capture_workbook": True,
+    # Run feedback on the agents page captures on its own channel (#170).
+    "memory_capture_agents": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only

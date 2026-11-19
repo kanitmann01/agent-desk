@@ -158,8 +158,11 @@ def test_capture_settings_read_the_settings_store():
     settings.set("memory_auto_approve", True)
     settings.set("memory_capture_research", False)
     read = loop.capture_settings(settings)
-    assert read.auto_approve and read.channels == frozenset({"assistant", "workbook"})
+    assert read.auto_approve and read.channels == frozenset(
+        {"assistant", "workbook", "agents"}
+    )
     settings.set("memory_capture_workbook", False)
+    settings.set("memory_capture_agents", False)
     assert loop.capture_settings(settings).channels == frozenset({"assistant"})
 
 

@@ -61,6 +61,11 @@ export async function postInstance<T>(pluginId: string, tail: string, body?: unk
   return res.data as T;
 }
 
+/**
+ * Post one file to an instance route as raw bytes, unwrapping a failure
+ * the same way the JSON calls do, so a refused upload arrives as a
+ * sentence instead of a status code.
+ */
 export async function postUpload<T>(pluginId: string, tail: string, file: File): Promise<T> {
   const res = await postFile(`/api/plugins/${encodeURIComponent(pluginId)}/instances${tail}`, file);
   if (!res.ok) unwrap(res.status, res.data);
