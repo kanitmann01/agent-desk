@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-11-18T08:17:00.557248+00:00",
+  "generatedAt": "2026-11-18T20:13:12.755661+00:00",
   "plugins": [
     {
       "category": "finance",
       "changelog": "",
-      "digest": "5f1b0aa1d25fc8e9eef469bae3fd8b19fa3dfcc23df138948a2a233dbb49b05a",
+      "digest": "22d536381e2e939b3b07e5725f7455fe6264abf81fb8efde317324769b72f9f6",
       "id": "ar-aging",
       "latest": "0.2.0",
       "minHost": "",
@@ -22,7 +22,7 @@
     {
       "category": "operations",
       "changelog": "",
-      "digest": "6324330724abba90cbe41a9bc0f687cccba1e55dade901df985ede65f74a2d33",
+      "digest": "db89087a66962a2a44febabfc0b3add2472d4b0e60eed0c226741683411e107f",
       "id": "audit-digest",
       "latest": "0.1.0",
       "minHost": "",
@@ -41,7 +41,7 @@
     {
       "category": "finance",
       "changelog": "",
-      "digest": "aae2dd9f16b90d52ffa3b06dc1009885b30a12f86dbd2df7be13e25746b3cc36",
+      "digest": "c173b27d1577fb38560c97ad2d13742e1483d61991520af0051d1fce80de8338",
       "id": "budget-burn",
       "latest": "0.2.0",
       "minHost": "",
@@ -59,7 +59,7 @@
     {
       "category": "time",
       "changelog": "",
-      "digest": "302e98e69b49d3c375abda5148bfe720cdbc8aa0c2e42f4c81c7a2c5c82095e0",
+      "digest": "f380be19945c6d22ff59672e66429f74bd52f28a57f1110b51e8351451d24f2e",
       "id": "calendar-today",
       "latest": "0.2.0",
       "minHost": "",
@@ -77,7 +77,7 @@
     {
       "category": "research",
       "changelog": "",
-      "digest": "806de249257251efebf4186ced1283eef0f5d31a26ab44c9ec4c2f7a7c633faf",
+      "digest": "1f4cc1e76744f0976b41d37c584e125b27ca7382ced0c6e52e421cb72d2c1b18",
       "id": "competitor-watch",
       "latest": "0.1.0",
       "minHost": "",
@@ -95,7 +95,7 @@
     {
       "category": "operations",
       "changelog": "",
-      "digest": "2c5654fd566e384f4119f0b586eb7193cbd9dbe77b2047080b62e3e39d4aff73",
+      "digest": "036f5a0f7f740af3f66d5fd06760be52643c536dd8fff344cb03d86fa1fb1c47",
       "id": "compliance-posture",
       "latest": "0.1.0",
       "minHost": "",
@@ -132,7 +132,7 @@
     {
       "category": "time",
       "changelog": "",
-      "digest": "1c5e3e461017d265aaa1bbe3204996d8abc11a6b787a1ed77280ca5eca447c3b",
+      "digest": "9a989e5313626f0d92208216b9400eedc76bca232615dcc3a50de50ea6b2ec40",
       "id": "follow-up-watch",
       "latest": "0.1.0",
       "minHost": "",
@@ -150,7 +150,7 @@
     {
       "category": "finance",
       "changelog": "",
-      "digest": "086879ca32990ff91c320fd3dd9167cadf4f4b2bea7673bef1c44927f3024cf7",
+      "digest": "55616a8d2a4bb742bd555571329b184f3695bb36fe32842082c0f536a4f56865",
       "id": "kpi-scorecard",
       "latest": "0.2.0",
       "minHost": "",
@@ -168,7 +168,7 @@
     {
       "category": "time",
       "changelog": "",
-      "digest": "323db971a694aea763b8ecfbaf791c32536621ccf7e087bd9278d7dae6c9c1bf",
+      "digest": "5151673fb043fa0c0680f416b31d22c03491016613a134f73f8e77b7398f0820",
       "id": "meeting-prep",
       "latest": "0.1.0",
       "minHost": "",
@@ -186,7 +186,7 @@
     {
       "category": "command",
       "changelog": "",
-      "digest": "b10779c016ca8e5f1a78b17cc6dd2813fc0d4546e8c3be6022dc904ffa4735d6",
+      "digest": "f2d81ebbffdb29e3f69e9b89ecfa099876933f938d787daa7d74523569489c2c",
       "id": "morning-brief",
       "latest": "0.1.0",
       "minHost": "",
@@ -204,7 +204,7 @@
     {
       "category": "research",
       "changelog": "",
-      "digest": "7ebcfb70c97deda65b9d65fc08684e046c869d78e0315352b76e9e64e5d36550",
+      "digest": "ef579ed398bd1d12b958bf55d10f1967ef6d7774e836becb26089988066e234c",
       "id": "notes-actions",
       "latest": "0.1.0",
       "minHost": "",
@@ -222,7 +222,7 @@
     {
       "category": "communication",
       "changelog": "",
-      "digest": "714cbf8433f4d1435ac12ed14ff64d9533ca33d73f7ad2f8facac8b3f8b51eda",
+      "digest": "e06896b5df20a437036efccc00807bada2a9e8f400b4260ffa482aca3ff16bbc",
       "id": "outlook-digest",
       "latest": "0.3.0",
       "minHost": "",
@@ -240,7 +240,7 @@
     {
       "category": "operations",
       "changelog": "",
-      "digest": "4ec6124c929286db2a958aed45872ca06df3b5ad2963a8db831a3928fd58943f",
+      "digest": "2c8c3ff69967101bbd5bb58dab538b61aed1fa508a8f0960005b3fd290880e20",
       "id": "plugin-health",
       "latest": "0.1.0",
       "minHost": "",
@@ -259,7 +259,7 @@
     {
       "category": "finance",
       "changelog": "",
-      "digest": "5de734605542f8d197010cab001b5be4cf15fa63b69bc7939c0f49b508379f26",
+      "digest": "d027e0c404c51d5a93109f215ce33237147fe56f1f2eb79578c9a129d011a891",
       "id": "reconciliation-watch",
       "latest": "0.2.0",
       "minHost": "",
@@ -277,7 +277,7 @@
     {
       "category": "time",
       "changelog": "",
-      "digest": "27bc93e9c8071502bed7626a750179cad63284c37ac6e7026a17163fb46d9bdc",
+      "digest": "cf11645a33ebb87fb0ceb36a3e66e70fd09ef14baed15f6f773b111cedeae4e5",
       "id": "renewal-radar",
       "latest": "0.1.0",
       "minHost": "",
@@ -295,7 +295,7 @@
     {
       "category": "research",
       "changelog": "",
-      "digest": "e53efb1fb99a326b82e74476b3efc46dd14829cb652e7a055c1650d6ed1ff3cb",
+      "digest": "e0a9e77147fe789b29cd31233c7618e40713a079b2f910c5cb17d50fc07be7be",
       "id": "research-brief",
       "latest": "0.2.0",
       "minHost": "",
@@ -313,7 +313,7 @@
     {
       "category": "finance",
       "changelog": "",
-      "digest": "85a0f4551d302d140ac17d3b080d54724840679c2613b2289a84102a165d1263",
+      "digest": "bb129a5886d21980df435cede0464e7422389f56821e0b5e8c27d51ece83d62c",
       "id": "revenue-vs-target",
       "latest": "0.2.0",
       "minHost": "",
@@ -331,7 +331,7 @@
     {
       "category": "finance",
       "changelog": "",
-      "digest": "373f0ab93fa31cd91d25734fc0deff6a7c1716d2ce4e4601cf943795bf0a7e3a",
+      "digest": "cb1716f3c096da160f8107842d67b87bf3a3d14322cc6075e94fd8b3ba9eb2f8",
       "id": "sales-delta-widget",
       "latest": "0.2.0",
       "minHost": "",
@@ -349,7 +349,7 @@
     {
       "category": "research",
       "changelog": "",
-      "digest": "76c2fcbaeaa2e7b58b1698a925d92fee7da2c52388a88963677bc6ac54395096",
+      "digest": "8355c8cd2d036ea3003853e6d97b928b0181afe05ceaa73d69ee9819eff422b7",
       "id": "source-ledger",
       "latest": "0.1.0",
       "minHost": "",
@@ -367,7 +367,7 @@
     {
       "category": "operations",
       "changelog": "",
-      "digest": "a1adf272ca2b6ec01a321471493eae6d8064937b6424c3f00d6e35715153c0ca",
+      "digest": "097e85aeb0d4bc8791fffc86dd6a5f3096bde289dfe4fb2d37b62ecbfd52956e",
       "id": "update-radar",
       "latest": "0.1.0",
       "minHost": "",
@@ -386,7 +386,7 @@
     {
       "category": "communication",
       "changelog": "",
-      "digest": "3839f243842ca5150041153a0279ff0dbcf15c2d60d1341fc3cef6889264808a",
+      "digest": "c0c63ccbfa9fb99dcf80af879c368d7a68646194504f5cefd4caf6db94146bc5",
       "id": "vip-watch",
       "latest": "0.1.0",
       "minHost": "",
@@ -404,7 +404,7 @@
     {
       "category": "communication",
       "changelog": "",
-      "digest": "a024135b80d92967ba47abf58d53b988e990233961dc87534802720c11c63d4c",
+      "digest": "ff9bf11f5e1737d6490ee874bdd34ae8539feedd7dcc693c32d381e1609f0629",
       "id": "waiting-on-you",
       "latest": "0.1.0",
       "minHost": "",
@@ -422,7 +422,7 @@
     {
       "category": "time",
       "changelog": "",
-      "digest": "f331bc030c5b73c7ae55e497acf10439562c3b055529bb8c7ef5a990b9e7fc0b",
+      "digest": "ddc7eeb7ad93c80965a94ade0032da44ba683bb9f31ab2d751cdbfc09da6f7b4",
       "id": "week-load",
       "latest": "0.1.0",
       "minHost": "",
@@ -440,7 +440,7 @@
     {
       "category": "command",
       "changelog": "",
-      "digest": "0b7c7ee4040d9e185d1d8df9c627dda121e531714ece11389c65dd1873388c42",
+      "digest": "86d65eef3d5272717387237b4a9b58201212af1f73b02d43f143184cf16a859d",
       "id": "weekly-review",
       "latest": "0.1.0",
       "minHost": "",
