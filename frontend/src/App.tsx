@@ -11,6 +11,12 @@ import Button from './components/Button';
 
 // The centered card every non-dashboard state shares. Loading is a polite
 // status; a failure is an alert so the recovery is announced.
+/**
+ * Centered card wrapper for the shell's own messages.
+ *
+ * `role` picks the live-region semantics for the card and `busy` sets
+ * `aria-busy`, so a wait is announced politely and a failure as an alert.
+ */
 function Centered({
   children,
   role,
@@ -34,10 +40,15 @@ function Centered({
   );
 }
 
+/** True for `/marketplace` and every path below it. */
 export function isMarketplacePath(pathname: string): boolean {
   return pathname === '/marketplace' || pathname.startsWith('/marketplace/');
 }
 
+/**
+ * Dashboard route: fetch `/api/dashboard` once and render the loading state,
+ * the expired-session notice, a failure with retry, or the dashboard.
+ */
 function DashboardApp() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [expired, setExpired] = useState(false);
@@ -111,9 +122,14 @@ function DashboardApp() {
   );
 }
 
+/**
+ * Root component: pick the marketplace or the dashboard from the current
+ * path, and follow `popstate` so Back leaves the marketplace without a reload.
+ */
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   useEffect(() => {
+    /** Track a back/forward navigation by re-reading the current path. */
     const onPop = () => setPathname(window.location.pathname);
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);

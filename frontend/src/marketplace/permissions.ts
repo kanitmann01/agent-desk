@@ -10,6 +10,12 @@ export interface ScopeSentence {
   positive: boolean;
 }
 
+/**
+ * Turn one scope leaf's value into the phrase a person reads.
+ *
+ * A workspace-relative path is named as "your workspace", surrounding list
+ * brackets are dropped, and an empty value reads as "nothing".
+ */
 function valueText(value: string): string {
   const raw = value.replace(/^${workspace}/, 'your workspace');
   return raw.replace(/^\[|\]$/g, '') || 'nothing';
@@ -22,6 +28,14 @@ function isNegative(prefix: string, value: string): boolean {
   return v === 'false' || v === 'none' || v === '[]' || v === 'null';
 }
 
+/**
+ * Turn one `prefix:value` scope leaf into the sentence shown beside a plugin.
+ *
+ * The prefix selects the setting it belongs under; an unknown prefix falls
+ * back to a generic settings sentence. Severity is not lost either: a scope
+ * that refuses something comes back with `positive` false, which is what
+ * `visibleScopes` filters on.
+ */
 export function describeScope(scope: string): ScopeSentence {
   const at = scope.indexOf(':');
   const prefix = (at >= 0 ? scope.slice(0, at) : scope).trim();
@@ -52,6 +66,13 @@ export function visibleScopes(scopes: string[]): string[] {
   return scopes.filter((scope) => describeScope(scope).positive);
 }
 
+/**
+ * State the promises a plugin's declared capabilities imply.
+ *
+ * An empty filesystem or network list is a true absence, so the wording
+ * changes from "outside the paths above" to "no file at all" instead of
+ * implying a limit that was never declared.
+ */
 export function canNever(capabilities: MarketCapabilities): string[] {
   const lines: string[] = [];
   lines.push(capabilities.filesystem.length === 0
@@ -79,6 +100,12 @@ export function canNeverFromScopes(scopes: string[]): string[] {
   ];
 }
 
+/**
+ * Show the leading characters of a digest for display beside a plugin.
+ *
+ * The `sha256:` prefix is dropped before truncating, and an empty digest
+ * reads as "no digest" rather than as a match.
+ */
 export function shortDigest(digest: string, length = 12): string {
   if (!digest) return 'no digest';
   const clean = digest.startsWith('sha256:') ? digest.slice(7) : digest;
@@ -91,6 +118,12 @@ export function pilotBudget(pilot: { views: number; remaining: number } | null |
   return `${pilot.remaining} of ${pilot.views} views left`;
 }
 
+/**
+ * Format a byte count for a person, in B, KB or MB.
+ *
+ * Counts that are not finite or not positive read as "0 B"; everything above
+ * a kilobyte keeps one decimal.
+ */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
@@ -98,6 +131,12 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Format an ISO timestamp as a short local date.
+ *
+ * An empty value reads as "not recorded", and a value `Date` cannot parse is
+ * returned unchanged rather than shown as "Invalid Date".
+ */
 export function formatDate(value: string): string {
   if (!value) return 'not recorded';
   const date = new Date(value);

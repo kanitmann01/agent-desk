@@ -15,6 +15,12 @@ interface PublisherSummary {
   plugins: MarketCard[];
 }
 
+/**
+ * Group catalog cards by publisher, sorted by name.
+ *
+ * A publisher counts as verified only when every one of its cards is, so a
+ * single unverified release is enough to drop the mark.
+ */
 function groupByPublisher(cards: MarketCard[]): PublisherSummary[] {
   const map = new Map<string, PublisherSummary>();
   for (const card of cards) {
@@ -33,6 +39,14 @@ function groupByPublisher(cards: MarketCard[]): PublisherSummary[] {
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Render every publisher the catalog knows, with its verification mark and
+ * plugin count.
+ *
+ * The list is derived from the catalog cards rather than a separate
+ * directory, so a publisher appears here only while it has a plugin in the
+ * catalog.
+ */
 export function PublishersPage() {
   const [cards, setCards] = useState<MarketCard[] | null>(null);
   const [error, setError] = useState('');
@@ -103,6 +117,13 @@ export function PublishersPage() {
   );
 }
 
+/**
+ * Render a publisher proof as one short phrase.
+ *
+ * The declared type (or kind, or method) is preferred over the whole record;
+ * an object with none of those still reads as a proof on file rather than as
+ * a blank, and an absent proof says so.
+ */
 function proofText(proof: unknown): string {
   if (!proof) return 'No proof on file';
   if (typeof proof === 'string') return proof;
@@ -115,6 +136,12 @@ function proofText(proof: unknown): string {
   return String(proof);
 }
 
+/**
+ * Render the report form for one publisher, closed until it is asked for.
+ *
+ * A filed report closes the form and hands its message to the page; a refusal
+ * keeps the form open with the server's message so the text is not lost.
+ */
 function PublisherReport({ name, onDone }: { name: string; onDone: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('Spam or misleading listing');
@@ -122,6 +149,12 @@ function PublisherReport({ name, onDone }: { name: string; onDone: (message: str
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   if (!open) return <Button tone="secondary" onClick={() => setOpen(true)}>Report this publisher</Button>;
+  /**
+   * File the report once with the chosen reason and note.
+   *
+   * On success the form closes and the page is told; on failure the server's
+   * message stays beside the fields.
+   */
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -161,6 +194,15 @@ function PublisherReport({ name, onDone }: { name: string; onDone: (message: str
   );
 }
 
+/**
+ * Render one publisher: its proof, whether it is verified, and the plugins it
+ * published.
+ *
+ * The proof endpoint is the only source, so a refusal is shown as "publisher
+ * not found" with both a retry and the way back to the list. Filing a report
+ * only sets the page's status message; it changes nothing about the
+ * publisher.
+ */
 export function PublisherPage({ name }: { name: string }) {
   const [data, setData] = useState<PublisherResponse | null>(null);
   const [error, setError] = useState('');

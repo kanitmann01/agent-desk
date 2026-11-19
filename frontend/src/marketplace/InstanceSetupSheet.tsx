@@ -28,6 +28,13 @@ interface InstanceSetupSheetProps {
   onChanged?: () => void;
 }
 
+/**
+ * Name the file an instance reads, marking one whose setup was never
+ * confirmed.
+ *
+ * Only the final path segment is shown, and an instance with no source path
+ * reads as "Not set up" rather than as an empty name.
+ */
 export function instanceFileName(item: InstanceDocument): string {
   const raw = item.source?.path || '';
   if (!raw) return 'Not set up';
@@ -35,6 +42,7 @@ export function instanceFileName(item: InstanceDocument): string {
   return item.confirmedAt ? base : `${base} (not confirmed)`;
 }
 
+/** Return the last segment of an instance's source path, or the path itself. */
 function baseName(item: InstanceDocument): string {
   const raw = item.source?.path || '';
   return raw.split(/[\\/]/).pop() || raw;
@@ -45,6 +53,15 @@ type Phase = 'name' | 'open' | 'choose' | 'confirm';
 const CREATE_STEPS = ['Name the instance', 'Open the workbook', 'Choose what to track'] as const;
 const EDIT_STEPS = ['Open the workbook', 'Choose what to track', 'Confirm'] as const;
 
+/**
+ * Render the walk that names, opens and confirms one plugin instance.
+ *
+ * Creating starts at the naming step and editing at opening the workbook;
+ * both then assign columns, pick rows and confirm. A staged file outside the
+ * workspace folder turns the refusal into a one-time acceptance instead of a
+ * dead end, and a picker that cannot open reveals the typed-path and upload
+ * ways in, since the sheet's note about a file dialog would no longer be true.
+ */
 export function InstanceSetupSheet({
   title, pluginName, setupPluginId, target, onCancel, onDone, onChanged,
 }: InstanceSetupSheetProps) {
@@ -79,10 +96,17 @@ export function InstanceSetupSheet({
     ? (phase === 'name' ? 1 : phase === 'open' ? 2 : 3)
     : (phase === 'open' ? 1 : phase === 'choose' ? 2 : 3);
 
+  /** Show a failure, preferring the server's own message over the generic one. */
   const fail = (err: unknown) => {
     setError(err instanceof MarketApiError ? err.message : marketErrorText(err));
   };
 
+  /**
+   * Create the instance on the server and continue at the open step.
+   *
+   * The server's name is adopted, so a trimmed or generated name replaces what
+   * was typed; a failure leaves the walk where it was.
+   */
   const create = async () => {
     setBusy(true);
     setError('');
@@ -140,11 +164,20 @@ export function InstanceSetupSheet({
     }
   }
 
+  /** Assign a clicked column header to whichever role the toolbar selects now. */
   function assign(header: string) {
     if (role === 'value') setValueColumn(header);
     else setLabelColumn(header);
   }
 
+  /**
+   * Confirm the instance with the current name, columns and picked rows, then
+   * report what it now reads.
+   *
+   * A file outside the workspace folder is not an error to show: it flips the
+   * sheet into the acceptance choice. Every other refusal surfaces the
+   * server's message.
+   */
   const confirm = async () => {
     if (!instance) return;
     setBusy(true);
@@ -181,6 +214,13 @@ export function InstanceSetupSheet({
     }
   };
 
+  /**
+   * Accept a file outside the workspace folder once, then retry the confirm
+   * that was blocked.
+   *
+   * The acceptance is posted first; when it fails the sheet stays on the
+   * choice with the error, rather than confirming anyway.
+   */
   const acceptOutside = async () => {
     if (!instance) return;
     setBusy(true);

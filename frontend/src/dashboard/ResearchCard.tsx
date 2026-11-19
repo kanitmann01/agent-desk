@@ -34,6 +34,13 @@ interface ResearchCardProps {
   statusText: string;
 }
 
+/**
+  * The research answer area: the question asked, its sourced summary, the status line
+  * and the last-answered stamp.
+ *
+  * span sets the card's width in the layout; answerSeq keys the answer block so asking
+  * the same question twice still remounts it.
+ */
 export default function ResearchCard({
   span, title, enabled, lastAnsweredTs, answer, answerSeq, statusText,
 }: ResearchCardProps) {

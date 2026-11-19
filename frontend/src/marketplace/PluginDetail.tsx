@@ -32,6 +32,11 @@ const REASONS = [
   'Other',
 ];
 
+/**
+ * Render the page's one status line, as an alert when it reports a failure.
+ *
+ * Nothing is rendered while both slots are empty, so the slot leaves no gap.
+ */
 function ActionMessage({ error, message }: { error: string; message: string }) {
   if (!error && !message) return null;
   return (
@@ -41,8 +46,15 @@ function ActionMessage({ error, message }: { error: string; message: string }) {
   );
 }
 
+/**
+ * Show a shortened digest with a button that copies the full value.
+ *
+ * A clipboard refusal leaves the idle label in place instead of claiming the
+ * copy worked, and the copied state clears itself after two seconds.
+ */
 function Digest({ digest }: { digest: string }) {
   const [copied, setCopied] = useState(false);
+  /** Copy the full digest, marking the button copied only if the clipboard accepts it. */
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(digest);
@@ -68,6 +80,14 @@ function Digest({ digest }: { digest: string }) {
   );
 }
 
+/**
+ * Render the action row: an install button while the plugin is absent, the
+ * lifecycle controls once it is installed.
+ *
+ * A staged update that widens permissions replaces the update button with a
+ * consent review, so no widening runs unread. Every control is disabled while
+ * one action is in flight.
+ */
 function PluginActions({
   detail, installed, busy, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
 }: {
@@ -117,6 +137,12 @@ function PluginActions({
   );
 }
 
+/**
+ * Render the modal that gates deleting a plugin's data behind a typed phrase.
+ *
+ * Confirming stays disabled until `delete-data:<id>` is typed exactly, and a
+ * refusal is reported inside the dialog so the typed phrase is not lost.
+ */
 function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
   id: string;
   busy: boolean;
@@ -156,6 +182,12 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
   );
 }
 
+/**
+ * Render the report form for one plugin, closed until it is asked for.
+ *
+ * A filed report closes the form and hands its message to the page; a refusal
+ * keeps the form open with the text still in it.
+ */
 function ReportForm({ id, onDone }: { id: string; onDone: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(REASONS[0]);
@@ -165,6 +197,7 @@ function ReportForm({ id, onDone }: { id: string; onDone: (message: string) => v
   if (!open) {
     return <Button tone="secondary" onClick={() => setOpen(true)}>Report this plugin</Button>;
   }
+  /** File the report with the chosen reason and note, handing the outcome to the page. */
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -201,6 +234,15 @@ function ReportForm({ id, onDone }: { id: string; onDone: (message: string) => v
   );
 }
 
+/**
+ * Render one plugin's detail page, plus its actions and instances when the
+ * manage view is asked for.
+ *
+ * A 404 becomes "plugin not found" with no retry, because retrying cannot
+ * help; every other failure offers one. Each mutating action re-reads the
+ * record afterwards, so the page shows what the server accepted rather than
+ * what was sent.
+ */
 export function PluginDetailPage({ id, manage = false }: { id: string; manage?: boolean }) {
   const { navigate } = useMarketplaceNav();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
@@ -270,6 +312,13 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     return () => { cancelled = true; };
   }, [id, manage, load, instanceAttempt]);
 
+  /**
+   * Run one mutating action: show its note on success or the server's message
+   * on failure, then re-read the record.
+   *
+   * The previous note and error are cleared first, so a stale result cannot
+   * sit beside a new one, and busy stays set until the re-read finishes.
+   */
   const run = async (fn: () => Promise<string>) => {
     setBusy(true);
     setError('');
@@ -319,8 +368,11 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const never = canNever(plugin.capabilities);
   const title = manage ? `Manage ${plugin.name}` : plugin.name;
 
+  /** Open the consent sheet for a first install, dropping the previous sheet's error. */
   const openInstall = () => { setSheetError(''); setConsent({ kind: 'install' }); };
+  /** Open the consent sheet for a staged update, dropping the previous sheet's error. */
   const openUpdate = () => { setSheetError(''); setConsent({ kind: 'update' }); };
+  /** Open the sheet that reviews a staged update's permission change, dropping the previous error. */
   const openConsent = () => { setSheetError(''); setConsent({ kind: 'consent' }); };
 
   const sheetScopes = consent?.kind === 'update'
@@ -334,6 +386,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       ? (installed?.update?.widening ?? [])
       : [];
 
+  /**
+   * Apply whichever decision the open sheet was showing, then re-read the
+   * record.
+   *
+   * One branch per decision: install posts the pinned version, update posts
+   * the id alone, and accept posts the consent decision. A refusal stays in
+   * the sheet, so the scopes being agreed to are still on screen.
+   */
   const confirmConsent = async () => {
     if (!consent) return;
     const kind = consent.kind;
@@ -370,12 +430,20 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     }
   };
 
+  /** Reject the staged update and report the version the plugin stays on. */
   const declineUpdate = () => run(async () => {
     const res = await postMarket<{ version: string }>('/api/marketplace/consent',
       { id: plugin.id, decision: 'reject' });
     return `Update declined. Still on ${res.version}.`;
   });
 
+  /**
+   * Dispatch one lifecycle action.
+   *
+   * Enable, disable and re-test run immediately and report the resulting
+   * state; rollback and uninstall only open their confirmation dialog, so
+   * nothing irreversible happens from a single click.
+   */
   const lifecycle = (action: 'enable' | 'disable' | 'retest' | 'rollback' | 'uninstall') => {
     if (action === 'rollback') { doRollback(); return; }
     if (action === 'uninstall') {
@@ -391,22 +459,32 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     });
   };
 
+  /** Open the confirmation dialog for a rollback without performing it. */
   const doRollback = () => {
     setConfirmAction({ action: 'rollback', title: 'Roll back plugin',
       body: 'The previous installed version becomes active. The current version stays available in history.' });
   };
 
+  /** Roll back to the previously installed version, reporting both ends of the move. */
   const confirmRollback = () => run(async () => {
     const res = await postMarket<{ from: string; to: string }>('/api/marketplace/rollback', { id: plugin.id });
     return `Rolled back from ${res.from} to ${res.to}.`;
   });
 
+  /** Uninstall the plugin and leave for the installed list; the data folder stays until purged. */
   const confirmUninstall = () => run(async () => {
     await postMarket('/api/marketplace/uninstall', { id: plugin.id });
     navigate('/marketplace/installed');
     return 'Uninstalled.';
   });
 
+  /**
+   * Delete the plugin's data folder and install record, then leave for the
+   * installed list.
+   *
+   * A refusal keeps the dialog open with the server's message, since closing
+   * it would throw away the typed confirmation.
+   */
   const confirmPurge = async () => {
     setBusy(true);
     setPurgeError('');

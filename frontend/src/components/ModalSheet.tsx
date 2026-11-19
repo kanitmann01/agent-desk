@@ -13,6 +13,13 @@ export interface ModalSheetProps {
   children: ReactNode;
 }
 
+/**
+ * Dialog shell for the desk: scrim, dialog role, Escape and a Tab trap.
+ *
+ * Focus moves to Close on open and returns to the previously focused
+ * element on close; `busy` marks the dialog as working and `error` renders
+ * as its alert line.
+ */
 export default function ModalSheet({ open, title, onClose, busy = false, error = '', children }: ModalSheetProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -26,6 +33,7 @@ export default function ModalSheet({ open, title, onClose, busy = false, error =
     const previous = document.activeElement;
     if (previous instanceof HTMLElement) restoreRef.current = previous;
     closeRef.current?.focus();
+    /** Close on Escape and keep Tab cycling inside the dialog. */
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();

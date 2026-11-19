@@ -21,7 +21,11 @@ export const STEP_GLYPH: Record<StepId, GlyphKind> = {
   reflect: 'observation',
 };
 
+/** The count and noun under a pipeline step; extract also reports waiting rows. */
 export function stepUnit(step: StepId, count: number, waiting = 0): string {
+  /**
+   * The step's count with its noun, singular at exactly one.
+   */
   const plural = (noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
   switch (step) {
     case 'retain':
@@ -39,11 +43,13 @@ export function stepUnit(step: StepId, count: number, waiting = 0): string {
   }
 }
 
+/** The glyph for a node: experience facts draw their own, every other node its kind. */
 export function glyphFor(node: GraphNode): GlyphKind {
   if (node.kind === 'fact' && node.factKind === 'experience') return 'experience';
   return node.kind;
 }
 
+/** The kind label for a node, with entity type or confidence appended. */
 export function kindWord(node: GraphNode): string {
   switch (node.kind) {
     case 'origin':
@@ -61,6 +67,7 @@ export function kindWord(node: GraphNode): string {
 
 // How a neighbour relates to the selected node, read from the edge's
 // direction.
+/** The edge label as read from the selected node, in the active or passive voice. */
 export function relation(type: EdgeType, selectedIsSource: boolean): string {
   switch (type) {
     case 'wrote':
@@ -85,6 +92,11 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 });
 
+/**
+ * The moment as "27 Jan, 14:05" in the viewer's locale, or "" when it is absent.
+ *
+ * ts is epoch seconds, not milliseconds.
+ */
 export function when(ts: number | null | undefined): string {
   if (ts === null || ts === undefined) return '';
   return formatter.format(new Date(ts * 1000));

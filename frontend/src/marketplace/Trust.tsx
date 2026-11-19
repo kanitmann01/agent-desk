@@ -5,6 +5,14 @@ import { MarketLink } from './context';
 import type { TrustSnapshot } from './types';
 import './admin-trust.css';
 
+/**
+ * Render the trust center: the anchor, the policy signature, the last
+ * validator run, and the promises that bound a plugin.
+ *
+ * The snapshot is fetched once on mount. A failed fetch keeps the page on the
+ * server's message with a retry; a validator run with no recorded time reads
+ * as never checked rather than as a pass.
+ */
 export default function TrustPage() {
   const [snapshot, setSnapshot] = useState<TrustSnapshot | null>(null);
   const [loading, setLoading] = useState(true);

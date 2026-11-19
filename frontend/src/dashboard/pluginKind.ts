@@ -12,6 +12,11 @@ const HEALTH = new Set([
   'plugin-health', 'compliance-posture', 'audit-digest', 'update-radar',
 ]);
 
+/**
+ * The cell kind for a plugin id, ignoring a ~variant suffix.
+ *
+ * A plugin that names no known kind is a digest.
+ */
 export function pluginKind(id: string): CellKind {
   const base = id.split('~')[0];
   if (TRACKER.has(base)) return 'tracker';
@@ -20,6 +25,7 @@ export function pluginKind(id: string): CellKind {
   return 'digest';
 }
 
+/** The short uppercase tag a cell of this kind carries. */
 export function kindTag(kind: CellKind): string {
   if (kind === 'tracker') return 'TRACKING';
   if (kind === 'watch') return 'WATCH';

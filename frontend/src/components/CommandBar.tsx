@@ -25,6 +25,13 @@ const ICON_SEND = (
   </svg>
 );
 
+/**
+ * Research command bar: the question field with the one send control.
+ *
+ * Enter asks and Shift+Enter inserts a newline; `onAsk` resolves true when
+ * the question was answered, which is what clears the field. A paused
+ * research source disables the bar instead of accepting a question.
+ */
 export default function CommandBar({ busy, disabled = false, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -37,6 +44,11 @@ export default function CommandBar({ busy, disabled = false, onAsk }: CommandBar
     field.style.height = `${Math.min(field.scrollHeight, MAX_FIELD_HEIGHT)}px`;
   }, [question]);
 
+  /**
+   * Ask the trimmed question and clear the field when it was answered.
+   *
+   * A blank field or a busy bar does nothing.
+   */
   async function ask() {
     const trimmed = question.trim();
     if (!trimmed || busy || disabled) return;
@@ -44,6 +56,7 @@ export default function CommandBar({ busy, disabled = false, onAsk }: CommandBar
     if (answered) setQuestion('');
   }
 
+  /** Submit on Enter; Shift+Enter keeps the newline in the field. */
   function onInputKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();

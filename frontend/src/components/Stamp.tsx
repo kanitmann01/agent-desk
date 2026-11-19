@@ -9,6 +9,11 @@ export interface StampProps {
   text: string;
 }
 
+/**
+ * Status dot with its stamp text: green when fresh, amber when not.
+ *
+ * The dot is decoration only, so the text alone carries the message.
+ */
 export default function Stamp({ fresh, text }: StampProps) {
   return (
     <span className={fresh ? 'stamp' : 'stamp amber'}>

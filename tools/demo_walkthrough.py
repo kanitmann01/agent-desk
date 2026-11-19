@@ -68,6 +68,11 @@ class WalkthroughError(Exception):
 
 
 def check(condition, message: str) -> None:
+    """Raise WalkthroughError carrying the message unless the condition holds.
+
+    The message becomes the reason on the step's FAIL line, so it should
+    name both the expected value and the observed one.
+    """
     if not condition:
         raise WalkthroughError(message)
 
@@ -76,6 +81,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Stops at the 303 so the walkthrough can assert the redirect."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        """Decline the redirect so the caller can assert on the 303 itself."""
         return None
 
 
@@ -84,6 +90,11 @@ class _LoginStubHandler(http.server.BaseHTTPRequestHandler):
     worst real-world shape (an SSO front door, not an API)."""
 
     def do_POST(self) -> None:  # noqa: N802 (http.server contract)
+        """Answer any POST with the HTML login page an SSO front door returns.
+
+        The request body is read and discarded: the stub cares about the shape
+        of the answer, not the question.
+        """
         length = int(self.headers.get("Content-Length", "0"))
         if length:
             self.rfile.read(length)
@@ -95,11 +106,17 @@ class _LoginStubHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format, *args) -> None:  # noqa: A002
+        """Discard the stub's request log line so step output stays readable."""
         pass
 
 
 class LoginStub:
     def __init__(self) -> None:
+        """Start the HTML-only stub on an ephemeral loopback port.
+
+        base_url already carries the version suffix, so it can be pasted into
+        the endpoint form exactly as a user would type a base.
+        """
         self._httpd = http.server.HTTPServer(("127.0.0.1", 0), _LoginStubHandler)
         self.port = self._httpd.server_address[1]
         self.base_url = f"http://127.0.0.1:{self.port}/v1"
@@ -108,12 +125,19 @@ class LoginStub:
         self._thread.start()
 
     def close(self) -> None:
+        """Stop the stub server and wait up to five seconds for its thread."""
         self._httpd.shutdown()
         self._httpd.server_close()
         self._thread.join(timeout=5)
 
 
 def _free_udp_port() -> int:
+    """Return a loopback UDP port that is free right now.
+
+    The socket is closed before the number is returned, so the port is
+    probed rather than reserved: another process may take it before the
+    announcement uses it.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
@@ -125,6 +149,12 @@ class _StubChat(BaseHTTPRequestHandler):
     """One OpenAI-shaped answer, the corporate gateway's stand-in."""
 
     def do_POST(self):
+        """Answer any POST with a fixed OpenAI-shaped chat completion.
+
+        The request body is discarded. The answer quotes the stub snippet, so
+        the research step can prove the card bound this text rather than
+        anything it composed itself.
+        """
         self.rfile.read(int(self.headers.get("Content-Length", 0)))
         body = json.dumps({"choices": [{"message": {"content":
             "EU pricing rose 3% this quarter; two partners flagged the "
@@ -137,6 +167,7 @@ class _StubChat(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, *args):
+        """Discard the stub's request log line so step output stays readable."""
         pass
 
 class Desk:
@@ -147,6 +178,14 @@ class Desk:
 
     def __init__(self, name: str, data_dir: Path, announce_port: int,
                  pick_workbook=None):
+        """Boot one real server on an ephemeral port over a temp data dir.
+
+        AGENTDESK_DATA is set process-wide so the server resolves this data
+        dir, and it is not restored here: a second Desk overwrites it for the
+        process. Both openers share one cookie jar, so follow chases redirects
+        like a browser while direct stops at the first one. pick_workbook
+        stands in for the native file dialog, which cannot open headless.
+        """
         from agentdesk.server import app as server_app
 
         os.environ["AGENTDESK_DATA"] = str(data_dir)
@@ -169,6 +208,12 @@ class Desk:
     # -- the session bootstrap, exactly as the launcher drives it ------
 
     def exchange(self) -> None:
+        """Drive the bootstrap token exchange and assert the 303 and the cookie.
+
+        The same token is used twice: once through the no-redirect opener, to
+        read the 303 and its Set-Cookie, and once through the following
+        opener, which is the path a browser takes.
+        """
         token = self.server.sessions.bootstrap_token()
         status, headers, _body = self.raw_get(f"/auth/{token}", {})
         check(status == 303, f"/auth/<token> answered {status}, expected 303")
@@ -184,6 +229,11 @@ class Desk:
     # -- request helpers -----------------------------------------------
 
     def _open(self, opener, request, timeout: int = 60):
+        """Run one request and return the status, headers and body.
+
+        An HTTP error status is a result, not an exception, so a step can
+        assert on a 4xx payload the same way it asserts on a 200.
+        """
         try:
             with opener.open(request, timeout=timeout) as response:
                 return response.status, dict(response.headers), response.read()
@@ -191,10 +241,20 @@ class Desk:
             return exc.code, dict(exc.headers or {}), exc.read()
 
     def get(self, path: str):
+        """GET a path with the redirect-following opener.
+
+        Returns the status, headers and body; the session cookie rides along
+        from the shared jar.
+        """
         request = urllib.request.Request(self.base + path)
         return self._open(self.follow, request)
 
     def get_json(self, path: str) -> dict:
+        """GET a path that must answer 200 JSON and return the decoded body.
+
+        Raises WalkthroughError naming the path, the status and a prefix of the
+        body when either half is wrong.
+        """
         status, _headers, body = self.get(path)
         check(status == 200, f"GET {path} answered {status}: {body[:200]!r}")
         try:
@@ -203,6 +263,11 @@ class Desk:
             raise WalkthroughError(f"GET {path} did not answer JSON: {exc}") from exc
 
     def post_json(self, path: str, payload: dict):
+        """POST a JSON payload and return the status, headers and body.
+
+        A refusal comes back like any other answer, so the caller can assert on
+        a 400 the way it asserts on a 200.
+        """
         data = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             self.base + path, data=data, method="POST",
@@ -210,6 +275,11 @@ class Desk:
         return self._open(self.follow, request)
 
     def post_json_ok(self, path: str, payload: dict) -> dict:
+        """POST a JSON payload that must answer 200 and return the decoded body.
+
+        Raises WalkthroughError naming the path, the status and a prefix of the
+        body on any other answer.
+        """
         status, _headers, body = self.post_json(path, payload)
         check(status == 200, f"POST {path} answered {status}: {body[:300]!r}")
         return json.loads(body.decode("utf-8"))
@@ -234,6 +304,11 @@ class Desk:
     # -- teardown -------------------------------------------------------
 
     def close(self) -> None:
+        """Stop the server and its thread, swallowing every teardown error.
+
+        Teardown runs in a finally block, so a raise here would mask the check
+        that actually failed.
+        """
         try:
             self.server.shutdown()
             self.server.server_close()
@@ -246,6 +321,12 @@ class Walkthrough:
     """Runs the named steps in order, one PASS/FAIL line each."""
 
     def __init__(self) -> None:
+        """Start an empty run: no desks, no temp root, and the ids the steps share.
+
+        a, b and root stay None until the boot steps fill them. The wizard and
+        plugin ids are set by the step that installs them and read by every
+        later peer step.
+        """
         self.results: list[tuple[str, bool, str]] = []
         self.desks: list[Desk] = []
         self.a: Desk | None = None
@@ -255,6 +336,12 @@ class Walkthrough:
         self.excel_plugin = "excel-report"
 
     def run_step(self, name: str, fn) -> None:
+        """Run one step and print and record its single PASS/FAIL line.
+
+        Any exception is recorded as a failure and re-raised as a
+        WalkthroughError afterwards, so the run stops at the first failing
+        step. The elapsed time is monotonic and reported, never asserted.
+        """
         started = time.monotonic()
         try:
             fn()
@@ -273,6 +360,7 @@ class Walkthrough:
     # -- the steps ------------------------------------------------------
 
     def step_boot(self) -> None:
+        """Boot Desk A and check the fresh dashboard, layout order and empty inbox."""
         # The picker stands in for the native file dialog (it opens on
         # the server, so a headless script injects the choice): it hands
         # back the seeded sample workbook, the demo's stand-in for "the
@@ -296,6 +384,11 @@ class Walkthrough:
               "a fresh desk must have an empty inbox")
 
     def step_rail(self) -> None:
+        """Check every rail page answers 200 with the heading it must carry.
+
+        The entries with no expected heading accept the SPA shell instead,
+        because the committed build owns those surfaces.
+        """
         desk = self.a
         for path, h1 in RAIL_PAGES:
             status, _headers, body = desk.get(path)
@@ -309,6 +402,7 @@ class Walkthrough:
                       "/ must answer with the SPA shell or the rendered dashboard")
 
     def step_wizard_start_form(self) -> None:
+        """Check /wizard serves the describe box and posts to /wizard/new/answer."""
         status, _headers, body = self.a.get("/wizard")
         check(status == 200, f"GET /wizard answered {status}")
         page = body.decode("utf-8")
@@ -318,6 +412,11 @@ class Walkthrough:
               "the start form must post to /wizard/new/answer")
 
     def step_sample_data_on(self) -> None:
+        """Check the sample-data switch flips, seeds the labelled cards and the workbook.
+
+        The switch must read as off on a fresh desk, stick after the toggle,
+        and the sample workbook must exist on disk afterwards.
+        """
         desk = self.a
         values = desk.get_json("/widgets/settings")
         check(values.get("sample_data") is False,
@@ -339,6 +438,12 @@ class Walkthrough:
         check(workbook.is_file(), "the sample workbook was not seeded")
 
     def step_inbox_actions(self) -> None:
+        """Drive every inbox card action once and check the state each leaves.
+
+        Accept clears the card, an edit keeps it waiting, snooze for an hour
+        pins now plus 3600 inside a 200 s window, more-info ends the snooze,
+        and a dismissed card restores to waiting.
+        """
         desk = self.a
         # accept the update card
         out = desk.post_json_ok("/inbox/cards/sample-update/accept", {})
@@ -372,6 +477,11 @@ class Walkthrough:
         check(out["status"] == "waiting", "restore did not bring the card back")
 
     def step_audit_and_activity(self) -> None:
+        """Check the audit tail and the activity page name every action taken.
+
+        The pending action is deliberately not expected: it belongs to the
+        snooze return path, which needs the wall clock to reach it.
+        """
         desk = self.a
         tail = desk.get_json("/audit/tail")
         actions = {entry["action"] for entry in tail["entries"]}
@@ -393,6 +503,11 @@ class Walkthrough:
             check(word in page, f"the activity page does not name {word!r}")
 
     def step_endpoint_strict_save(self) -> None:
+        """Check the endpoint save refuses mistyped fields and stores nothing.
+
+        The refusal must name both the rejected fields and the accepted ones,
+        and a refused save must leave the stored base and key empty.
+        """
         desk = self.a
         status, _headers, body = desk.post_json("/settings/endpoint/save", {
             "base_url": "https://llm.corp.example/v1",
@@ -410,6 +525,11 @@ class Walkthrough:
               "a refused save must save nothing")
 
     def step_endpoint_test_cause(self) -> None:
+        """Check Test connection names the login-page cause and saves nothing.
+
+        The stub answers every POST with an HTML sign-in page, the worst
+        real-world shape an endpoint can take.
+        """
         desk = self.a
         stub = LoginStub()
         try:
@@ -425,6 +545,12 @@ class Walkthrough:
             stub.close()
 
     def step_wizard_create(self) -> None:
+        """Take the wizard from English to an installed, enabled pilot plugin.
+
+        Every question is answered with its default, which is the
+        deterministic no-endpoint path. The install must land as pilot, with an
+        id carrying the wizard prefix.
+        """
         desk = self.a
         status, _headers, body = desk.post_json("/wizard/start",
                                                 {"description": CANONICAL})
@@ -460,6 +586,11 @@ class Walkthrough:
               "the wizard plugin must be installed and enabled")
 
     def step_wizard_card_on_dashboard(self) -> None:
+        """Check the wizard card reaches the dashboard as a pilot setup card.
+
+        A workbook ask installs config-backed, so the honest freshness is setup
+        with no elements bound, not an amber guess about a glob.
+        """
         payload = self.a.get_json("/api/dashboard")
         cards = {c["id"]: c for c in payload["plugins"]["cards"]}
         check(self.wizard_id in cards,
@@ -541,6 +672,12 @@ class Walkthrough:
               f"the bound workbook is {workbook['text']!r}")
 
     def step_publish(self) -> None:
+        """Publish the wizard plugin to a temp copy of this checkout's registry.
+
+        The copy keeps the real registry untouched. Clearing the setting must
+        bring the listing back to the checkout origin, which proves both the
+        save and the clear took effect.
+        """
         desk = self.a
         # a temp registry root: a copy of this checkout's registry
         registry_copy = self.root / "registry-copy"
@@ -568,6 +705,11 @@ class Walkthrough:
               f"after clearing the setting the origin is {listing.get('origin')}")
 
     def step_registry_install(self) -> None:
+        """Install the shipped excel-report plugin and check its setup card.
+
+        No workbook has been granted yet, so both the record and the card must
+        report setup with no cause.
+        """
         desk = self.a
         out = desk.post_json_ok("/api/registry/install",
                                 {"id": self.excel_plugin})
@@ -590,6 +732,12 @@ class Walkthrough:
               "the tracker starts at the source step")
 
     def step_connect_workbook(self) -> None:
+        """Connect the sample workbook to the sales card and to a tracker instance.
+
+        The outside-workspace refusal comes first, then the acceptance, then
+        the bind: the tracked first row alone must total 19920 and the card must
+        name the workbook.
+        """
         desk = self.a
         sample = desk.data_dir / "sample" / "sample-sales.xlsx"
         check(sample.is_file(), "the seeded sample workbook is gone")
@@ -709,6 +857,7 @@ class Walkthrough:
 
 
     def step_boot_desk_b(self) -> None:
+        """Boot Desk B on its own data dir and check its peers page renders."""
         desk = Desk("B", self.root / "desk-b", _free_udp_port())
         self.desks.append(desk)
         self.b = desk
@@ -718,6 +867,11 @@ class Walkthrough:
               "Desk B's peers page did not render")
 
     def step_pair(self) -> None:
+        """Share the wizard plugin from A, pair B with the code, and check B's catalog.
+
+        B must list A as paired, see the shared plugin, and report it neither
+        installed nor updatable before the install step runs.
+        """
         a, b = self.a, self.b
         a.post_form("/plugins/%s/share" % self.wizard_id, {})
         shared = a.server.peer_store.shared_ids()
@@ -739,6 +893,11 @@ class Walkthrough:
         check(entry["update_available"] is False, "no update can exist yet")
 
     def step_peer_install(self) -> None:
+        """Install A's shared plugin on B and check B runs it from the peer.
+
+        The lockfile source must carry the peer prefix, which is what
+        distinguishes a peer install from a registry one.
+        """
         a, b = self.a, self.b
         peer_id = a.server.peer_store.desk()["peer_id"]
         b.post_form("/peers/install",
@@ -753,6 +912,11 @@ class Walkthrough:
         check(self.wizard_id in cards, "the shared plugin's card does not render on B")
 
     def step_wrong_token(self) -> None:
+        """Check /peer/info refuses a made-up bearer token by name.
+
+        The refusal must be a 403 carrying the token-unknown code rather than a
+        generic body.
+        """
         a = self.a
         status, _headers, body = a.raw_get(
             "/peer/info", {"Host": f"127.0.0.1:{a.server.port}",
@@ -763,6 +927,12 @@ class Walkthrough:
               f"the refusal is {payload.get('error')!r}, expected peer:token-unknown")
 
     def step_peer_update(self) -> None:
+        """Bump A's plugin, refresh B, and check update-available plus one click.
+
+        The bump is a rezip of the installed tree with only the manifest
+        version changed, so the update flows through the same path a real
+        release would.
+        """
         a, b = self.a, self.b
         # A publishes 0.0.2 of the wizard plugin through the update flow
         record = a.get_json(f"/api/plugins/{self.wizard_id}")
@@ -804,6 +974,12 @@ class Walkthrough:
               f"the one-click update left B at v{record['active_version']}")
 
     def step_customize(self) -> None:
+        """Save a layout with research first and sales hidden, then restore it.
+
+        A hidden card must stay in the listed layout marked hidden, which is
+        what Restore reads, while the dashboard payload omits it; restoring
+        must return the exact key order.
+        """
         desk = self.a
         listed = desk.get_json("/api/layout")["cards"]
         keys = [c["key"] for c in listed]
@@ -839,6 +1015,13 @@ class Walkthrough:
     # -- the run ----------------------------------------------------------
 
     def main(self) -> int:
+        """Run every step over one temp dir and return the process exit code.
+
+        0 means every step passed; 1 means the first failure was printed and
+        the remaining steps never ran. The temp dir is removed and the desks
+        stopped even on failure, and AGENTDESK_DATA goes back to what the
+        caller had.
+        """
         original_data = os.environ.get("AGENTDESK_DATA")
         # Hermetic and unconfigured: no endpoint, no registry override,
         # no calendar file, and empty strings block ~/.agent-desk/config.env.

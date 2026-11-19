@@ -28,6 +28,13 @@ interface PluginCardViewProps {
   onExpired: () => void;
 }
 
+/**
+ * One ui-schema element drawn in its own shape: metric, text, delta, progress,
+ * list, table, sparkline, status, timeline or checklist.
+ *
+ * A reason on the element prints as the note beneath the value; a kind this
+ * view does not know falls back to its text.
+ */
 export function ElementView({ element }: { element: PluginElement }) {
   const blank = element.reason ? <p className="w-note">{element.reason}</p> : null;
   if (element.kind === 'metric') {
@@ -355,6 +362,11 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
   );
 }
 
+/**
+ * Choose the card's presentation: a tracker card and a setup card both hand
+ * off to TrackerCard, an unconfigured install shows the wireframe and its setup
+ * link, and a ready card renders its elements, insight and receipt actions.
+ */
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -380,6 +392,12 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
   const insight = fresh ? card.payload?.insight : undefined;
   const receipt = insight?.receipts ? receiptLine(insight.receipts) : '';
 
+  /**
+   * Ask the server to run the plugin again, then refresh the card.
+   *
+   * A 401 expires the session; an unreachable server leaves a note instead of
+   * a stale card.
+   */
   async function retest() {
     setBusy(true);
     let res;

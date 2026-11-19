@@ -121,13 +121,17 @@ jobs:
           fi
           echo "No vendored Commons Clause or react-bits source."
       - name: Run gate and surface tests
-        # Subset: the new gate tests, the local-CI contract, and the
-        # IT-facing surface that pins LICENSE/NOTICE behaviour.
+        # Subset: the new gate tests, the local-CI contract, the
+        # IT-facing surface that pins LICENSE/NOTICE behaviour, and the
+        # registry hardening suite, whose digest-order tripwire (the
+        # posix string walk) must run on CI so a regression to a
+        # pathlib sort fails here, not only on a Windows desk.
         run: >-
           python -m pytest -q
           tests/test_license_gate.py
           tests/test_ci_local_tool.py
           tests/test_server_it_surface.py
+          tests/test_registry_hardening.py
 
   nuitka-probe:
     name: Probe Nuitka availability

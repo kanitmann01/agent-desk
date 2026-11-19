@@ -42,6 +42,14 @@ def test_the_environment_is_pinned_for_determinism():
     assert "tempfile.mkdtemp" in source and "shutil.rmtree" in source
 
 
+def test_the_registry_gate_checks_every_plugin_in_one_call():
+    source = _source()
+    # registry_ci takes one comma-separated --plugins value; a repeated flag
+    # keeps only the last path, which silently shrank the gate to one plugin
+    assert '",".join(' in source
+    assert 'args += ["--plugins", f"registry/plugins/{name}"]' not in source
+
+
 def test_a_missing_check_is_a_failure_never_a_skip():
     source = _source()
     # the gate runner turns every exception into a FAIL line

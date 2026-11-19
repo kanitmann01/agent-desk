@@ -46,6 +46,11 @@ def _write_json_bytes(payload: bytes) -> None:
 
 
 def main(argv=None) -> int:
+    """Validate the plugin named on the command line and return the exit code.
+
+    Returns 0 when the plugin passes, 1 when validation fails, and 2 for a
+    usage or IO error; --json prints the verdict as deterministic bytes.
+    """
     _reconfigure_output_streams()
     parser = argparse.ArgumentParser(
         prog="agentdesk-validator",
