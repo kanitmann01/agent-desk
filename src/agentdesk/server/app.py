@@ -2809,9 +2809,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if server.mail is not None:
                 if value:
                     server.mail.start_polling()
-                    threading.Thread(
-                        target=_poll_mail_once, args=(server.mail,), daemon=True
-                    ).start()
+                    # The first poll runs inside the response, not on a
+                    # stray thread: the folder read is local and quick, a
+                    # toggle that returns before its watch has run leaves
+                    # every reader guessing, and the folder-save handler
+                    # already polls synchronously. _poll_mail_once keeps
+                    # its guard, so a failing read logs instead of
+                    # failing the toggle.
+                    _poll_mail_once(server.mail)
                 else:
                     server.mail.stop_polling()
             # The plugin runner's mail-digest binding follows the watcher
@@ -5130,6 +5135,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return None
 
         def complete(prompt: str) -> str:
+            """One model call over the desk's endpoint, raw.
+
+            A failing endpoint raises: each caller decides its own
+            fallback, so the same adapter serves drafts that fall back to
+            the template and explanations that refuse.
+            """
             return server.llm(prompt)
 
         return complete

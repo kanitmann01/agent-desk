@@ -13,7 +13,21 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from agentdesk import config
 from agentdesk.server import cli
+
+
+def _no_personal_config(monkeypatch, tmp_path):
+    """Point the config-file loader at a file this test owns (absent).
+
+    The real loader writes ~/.agent-desk/config.env into os.environ for
+    the rest of the process, so a developer whose config sets
+    AGENTDESK_MAIL_FOLDER would leak it into every later test: the mail
+    watcher's folder fallback reads it, and a toggle-on poll would file
+    cards from the developer's own sample folder. An absent file is the
+    loader's own no-op path, so main still runs its real wiring.
+    """
+    monkeypatch.setattr(config, "DEFAULT_PATH", tmp_path / "no-config.env")
 
 
 def test_defaults_open_the_browser_and_pick_the_port():
@@ -28,7 +42,8 @@ def test_port_and_no_browser_flags_parse():
     assert args.no_browser is True
 
 
-def test_main_builds_a_loopback_server_and_honors_no_browser(monkeypatch):
+def test_main_builds_a_loopback_server_and_honors_no_browser(monkeypatch, tmp_path):
+    _no_personal_config(monkeypatch, tmp_path)
     calls = {}
 
     def fake_create_server(*args, **kwargs):
@@ -51,7 +66,8 @@ def test_main_builds_a_loopback_server_and_honors_no_browser(monkeypatch):
     assert calls["open_browser"] is False
 
 
-def test_main_defaults_to_opening_the_browser(monkeypatch):
+def test_main_defaults_to_opening_the_browser(monkeypatch, tmp_path):
+    _no_personal_config(monkeypatch, tmp_path)
     calls = {}
 
     def fake_create_server(*args, **kwargs):

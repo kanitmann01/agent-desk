@@ -18,6 +18,12 @@ MEMORY_TITLE = "From memory"
 
 
 def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading:
+    """The prep the next meeting earns, or the context's reason there is none.
+
+    Quiet density keeps one element, so the checklist folds into its own
+    sizing line and a quiet memory's reason rides the note instead of a
+    status element that would be dropped.
+    """
     row = context.agenda if isinstance(context.agenda, dict) else None
     title = str((row or {}).get("title") or "").strip()
     if not row or not title:

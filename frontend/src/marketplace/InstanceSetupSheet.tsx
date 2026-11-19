@@ -99,8 +99,11 @@ export function InstanceSetupSheet({
     }
   };
 
-  // One tail for every way in: the dialog's pick, a typed path and an
-  // uploaded file all land on the same preview grid.
+  /**
+   * One tail for every way in: the dialog's pick, a typed path and an
+   * uploaded file all land on the same preview grid, starting from every
+   * row picked and no column assigned.
+   */
   function applyOpen(res: { instance: InstanceDocument; preview: GridPreview }) {
     setInstance(res.instance);
     const next = res.preview;
@@ -116,8 +119,11 @@ export function InstanceSetupSheet({
     setPhase('choose');
   }
 
-  // The pick's "the dialog could not open" answer keeps the server's
-  // sentence in the error slot and opens the recovery block.
+  /**
+   * Run one open request with the busy flag held, routing the pick's
+   * "the dialog could not open" answer to the recovery block; the result
+   * lands on the one tail every way in shares.
+   */
   async function runOpen(request: () => Promise<{ instance: InstanceDocument; preview: GridPreview }>) {
     setBusy(true);
     setError('');

@@ -83,10 +83,13 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
 
 
 def _note(message: str) -> InsightReading:
+    """A reading that is one honest sentence and no elements."""
     return InsightReading(note=message)
 
 
 def _label_column(tracker: dict) -> str | None:
+    """The tracker's stated label column, trimmed, or None when it does not
+    say one, which lets the detectors choose their own row names."""
     name = tracker.get("labelColumn")
     if isinstance(name, str) and name.strip():
         return name.strip()
@@ -94,6 +97,8 @@ def _label_column(tracker: dict) -> str | None:
 
 
 def _chart_preference(context: InsightContext) -> str:
+    """The stored chart setting, or "auto" when the value is not one of the
+    three shapes, so only a real choice becomes a receipt."""
     value = context.preferences.get("chart")
     return value if value in _CHART_PREFERENCES else "auto"
 
@@ -120,6 +125,8 @@ def _checklist(table: relations.Table, found: list[relations.Finding]) -> dict |
 
 
 def _row_label(table: relations.Table, index: int) -> str:
+    """What to call one row on the checklist: the first column that is not
+    a number and has text in it, else the row's number."""
     for column in table.columns:
         if column.kind == "number":
             continue

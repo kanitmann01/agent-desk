@@ -41,6 +41,13 @@ DRAFT_KEYS = ("replyTone", "replyLength")
 
 
 def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading:
+    """The one thread worth a reading, and the press that would draft it.
+
+    The first thread touching a focus topic or a remembered fact is the
+    thread; when none does, the press still offers a draft from the first
+    one, because the tone and length that shape it are receipts even
+    without an element.
+    """
     threads = thread_facts(payload)
     if not threads:
         # Nothing on the card names a subject, so there is nothing to match
@@ -181,6 +188,12 @@ def thread_facts(payload: dict) -> list[dict]:
 
 
 def _thread(primary: object, secondary: object, meta: object) -> dict | None:
+    """One card row as thread facts, or None when it names no subject.
+
+    The secondary line carries both who sent it and how long ago, so it is
+    split here; the row's meta is the age when the secondary line does not
+    say one.
+    """
     subject = truncate(primary, 200)
     if not subject:
         return None
@@ -245,6 +258,8 @@ def _finding_text(
 
 
 def _sentence(text: str) -> str:
+    """One sentence: the text trimmed, with a terminal period added only
+    when it does not already end one."""
     value = str(text or "").strip()
     if not value:
         return ""
@@ -252,6 +267,8 @@ def _sentence(text: str) -> str:
 
 
 def _joined(items: list[str]) -> str:
+    """A list as one line, with "and" before the last item and commas
+    between the rest; empties are dropped first."""
     lines = [str(item) for item in items if str(item).strip()]
     if len(lines) <= 1:
         return "".join(lines)
@@ -308,6 +325,13 @@ def compose_draft(
 
 
 def _facts(thread: object) -> dict | None:
+    """The bounded facts a draft builds from, or None when there is no
+    draft to build.
+
+    A subject alone is not enough: without a sender or a last line there
+    is nobody to address and nothing to answer, which every caller reads
+    as "not draftable" rather than as an error.
+    """
     if not isinstance(thread, dict):
         return None
     facts = {
@@ -321,16 +345,33 @@ def _facts(thread: object) -> dict | None:
 
 
 def _tone(preferences: dict) -> str:
+    """The stored reply tone, falling back to "direct".
+
+    A value outside the vocabulary reads as the default rather than as an
+    error, so a hand-edited preferences file cannot change a draft's
+    voice, only lose the user's choice of it.
+    """
     value = str((preferences or {}).get("replyTone") or "direct")
     return value if value in REPLY_TONES else "direct"
 
 
 def _length(preferences: dict) -> str:
+    """The stored reply length, falling back to "short".
+
+    As elsewhere in the reading, a value outside the vocabulary reads as
+    the default rather than as an error.
+    """
     value = str((preferences or {}).get("replyLength") or "short")
     return value if value in REPLY_LENGTHS else "short"
 
 
 def _given_name(sender: str) -> str:
+    """The first name to greet, pulled from a display name or an address.
+
+    A bare address keeps its local part, punctuation and ranks are
+    stripped, and a sender with nothing readable returns "", which the
+    template turns into a nameless greeting.
+    """
     if not sender:
         return ""
     local = sender.split("@")[0] if "@" in sender else sender

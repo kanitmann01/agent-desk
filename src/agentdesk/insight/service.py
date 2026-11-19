@@ -49,6 +49,12 @@ def _attach(
     payload: dict,
     context: InsightContext,
 ) -> None:
+    """Attach one family's reading to one card, whatever the family returns.
+
+    An exception, or a return that is not a reading, becomes a note and an
+    "unavailable" status: the card keeps its own payload either way, and
+    only elements the renderer knows reach it.
+    """
     try:
         reading = family(card, payload, context)
     except InsightError as exc:
