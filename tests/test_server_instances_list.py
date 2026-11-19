@@ -66,10 +66,44 @@ def test_a_config_backed_plugin_lists_the_instances_it_was_given(booted):
     assert by_id["pipeline"]["source"] is None
 
 
+def _write_alias_plugin(tmp_path):
+    """A config-backed alias plugin built from the surviving workbook plugin.
+
+    The retired sales-delta-widget was such an alias. Building the fixture
+    here keeps the alias contract testable without shipping the retired tree.
+    """
+    import shutil
+
+    source = REGISTRY / "excel-report"
+    directory = tmp_path / "sales-delta-widget"
+    shutil.copytree(source, directory)
+    manifest = json.loads((directory / "manifest.json").read_text(
+        encoding="utf-8"))
+    manifest.update({
+        "id": "sales-delta-widget",
+        "name": "Sales 24h Delta",
+        "category": "finance",
+        "config": {
+            "kinds": ["workbook"],
+            "aliasOf": "excel-report",
+            "instanceName": "Sales",
+            "good": "up",
+        },
+        "tags": ["sales", "pipeline", "daily-delta"],
+        "icon": "chart",
+    })
+    widget = manifest["contributes"]["widgets"][0]
+    widget["id"] = "sales-delta"
+    manifest["activationEvents"] = ["onWidget:sales-delta"]
+    (directory / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return directory
+
+
 def test_an_alias_lists_the_target_instance_it_resolves_to(booted, tmp_path):
     server = booted
     runtime = server.server.plugins
-    runtime.install(REGISTRY / "sales-delta-widget", source="dir")
+    runtime.install(_write_alias_plugin(tmp_path), source="dir")
 
     status, listing = get_listing(server, "sales-delta-widget")
     assert status == 200, listing
@@ -88,11 +122,11 @@ def test_an_alias_lists_the_target_instance_it_resolves_to(booted, tmp_path):
 def test_a_plain_plugin_answers_an_empty_list(booted, tmp_path):
     server = booted
     runtime = server.server.plugins
-    runtime.install(REGISTRY / "ar-aging", source="dir")
+    runtime.install(REGISTRY / "competitor-watch", source="dir")
 
-    status, listing = get_listing(server, "ar-aging")
+    status, listing = get_listing(server, "competitor-watch")
     assert status == 200, listing
-    assert listing["pluginId"] == "ar-aging"
+    assert listing["pluginId"] == "competitor-watch"
     assert listing["configBacked"] is False
     assert listing["aliasOf"] is None
     assert listing["instances"] == []

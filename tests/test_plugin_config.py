@@ -212,7 +212,41 @@ def test_propose_columns_uses_the_model_reply_and_ignores_a_failure(tmp_path):
         )
 
 
-def test_a_sales_install_becomes_a_tracker_instance(tmp_path):
+def _alias_fixture(tmp_path, plugin_id, name, instance_name):
+    """An alias plugin built from the surviving workbook plugin.
+
+    The retired sales-delta-widget and budget-burn were such aliases. The
+    fixture keeps the tracker-instance expansion testable without the
+    retired trees, while excel-report stays the one shipped workbook card.
+    """
+    import shutil
+
+    root = Path(__file__).resolve().parents[1] / "registry" / "plugins"
+    directory = tmp_path / plugin_id
+    shutil.copytree(root / "excel-report", directory)
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    manifest.update({
+        "id": plugin_id,
+        "name": name,
+        "category": "finance",
+        "config": {
+            "kinds": ["workbook"],
+            "aliasOf": "excel-report",
+            "instanceName": instance_name,
+            "good": "up",
+        },
+        "tags": ["workbook", "instance"],
+        "icon": "chart",
+    })
+    widget = manifest["contributes"]["widgets"][0]
+    widget["id"] = plugin_id
+    manifest["activationEvents"] = [f"onWidget:{plugin_id}"]
+    (directory / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return directory
+
+
+def test_two_aliases_expand_to_their_tracker_instances(tmp_path):
     from agentdesk.plugins.execute import PluginWidgetRunner
     from agentdesk.plugins.runtime import PluginRuntime
 
@@ -226,13 +260,13 @@ def test_a_sales_install_becomes_a_tracker_instance(tmp_path):
     )
     root = Path(__file__).resolve().parents[1] / "registry" / "plugins"
     runtime.install(root / "excel-report", source="dir")
-    runtime.install(root / "sales-delta-widget", source="dir")
-    runtime.install(root / "budget-burn", source="dir")
+    runtime.install(_alias_fixture(tmp_path, "sales-alias", "Sales 24h Delta", "Sales"), source="dir")
+    runtime.install(_alias_fixture(tmp_path, "budget-alias", "Budget 24h Delta", "Budget"), source="dir")
     cards = runtime.widget_cards()
     titles = {card["title"] for card in cards}
     assert titles == {"Sales", "Budget"}
-    assert all(card["id"] != "sales-delta-widget" for card in cards)
-    assert all(card["id"] != "budget-burn" for card in cards)
+    assert all(card["id"] != "sales-alias" for card in cards)
+    assert all(card["id"] != "budget-alias" for card in cards)
     budget = next(card for card in cards if card["title"] == "Budget")
     assert budget["freshness"] == "setup"
 
