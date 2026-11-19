@@ -375,8 +375,6 @@ tools/demo_walkthrough.py:Walkthrough.step_wrong_token
 tools/demo_walkthrough.py:_LoginStubHandler.do_POST
 tools/demo_walkthrough.py:_LoginStubHandler.log_message
 tools/demo_walkthrough.py:_NoRedirect.redirect_request
-tools/demo_walkthrough.py:_StubChat.do_POST
-tools/demo_walkthrough.py:_StubChat.log_message
 tools/demo_walkthrough.py:_free_udp_port
 tools/demo_walkthrough.py:check
 tools/license_manifest.py:_parse_toml_subset.err
