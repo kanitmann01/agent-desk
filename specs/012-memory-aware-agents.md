@@ -1,6 +1,7 @@
 # 012: Memory-aware agents: one recall-and-feedback layer for every task
 
-**Status:** building (2026-11-18)
+**Status:** done (2026-11-18); evidence in `docs/evidence/2026-11-18-agents-memory/`
+**GitHub:** issue #167; its six tickets are #168, #169, #170, #171, #172, #173
 **Worktree:** `.worktrees/agents-memory`, branch `feat/agents-memory`
 **Builds on:** spec 002 (the memory bank port), spec 010 (receipts and the press)
 
