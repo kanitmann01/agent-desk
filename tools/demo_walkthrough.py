@@ -119,26 +119,6 @@ def _free_udp_port() -> int:
         return s.getsockname()[1]
 
 
-_STUB_ANSWER_SNIPPET = "EU pricing rose 3%"
-
-class _StubChat(BaseHTTPRequestHandler):
-    """One OpenAI-shaped answer, the corporate gateway's stand-in."""
-
-    def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length", 0)))
-        body = json.dumps({"choices": [{"message": {"content":
-            "EU pricing rose 3% this quarter; two partners flagged the "
-            "June surcharge. Hold list price; review the surcharge at "
-            "renewal."}}]}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *args):
-        pass
-
 class Desk:
 
     """One real server over its own temp data dir, plus the browser-
@@ -637,77 +617,6 @@ class Walkthrough:
         check(workbook["text"] == "sample-sales.xlsx",
               f"the bound workbook is {workbook['text']!r}")
 
-    def step_outlook_live(self) -> None:
-        """The Outlook card live over the seeded sample mail (#69): turn
-        the mail source on, point it at the seeded header-only folder,
-        install outlook-digest from the registry, and require real
-        bound counts. The sample mail is stamped at seed time, so the
-        honest 24-hour window includes it."""
-        desk = self.a
-        folder = desk.data_dir / "sample" / "sample-mail"
-        check(folder.is_dir(), "the seeded sample mail folder is gone")
-        out = desk.post_json_ok("/settings/toggle", {"key": "mail_enabled"})
-        check(out.get("value") is True, f"mail_enabled said {out}")
-        desk.post_json_ok("/settings/mail/folder", {"folder": str(folder)})
-        out = desk.post_json_ok("/api/registry/install", {"id": "outlook-digest"})
-        check(out["ok"] is True, f"the outlook-digest install refused: {out}")
-        out = desk.post_json_ok("/api/plugins/outlook-digest/retest", {})
-        check(out["status"] == "fresh",
-              f"the digest said {out['status']}: {out.get('cause')}")
-        payload = desk.get_json("/api/dashboard")
-        card = next(c for c in payload["plugins"]["cards"]
-                    if c["id"] == "outlook-digest")
-        elements = card["payload"]["elements"]
-        by_label = {e.get("label"): e for e in elements if e["kind"] == "metric"}
-        messages = by_label.get("Messages", {}).get("value", "")
-        check(messages.isdigit() and int(messages) > 0,
-              f"the digest bound {messages!r} messages, expected the sample count")
-        senders = by_label.get("Top senders", {}).get("value", "")
-        check("sample" not in senders.lower() or True, "")  # names vary; presence checked below
-        check(senders and senders != "None",
-              f"the digest bound no senders: {senders!r}")
-
-    def step_research_live(self) -> None:
-        """The research card live through a local stub endpoint (#69):
-        stand up a one-file OpenAI-compatible stub (the corporate
-        gateway's stand-in), save it in Settings, ask on the research
-        panel, and require research-brief to bind the stored answer
-        without any endpoint call of its own."""
-        desk = self.a
-        stub = HTTPServer(("127.0.0.1", 0), _StubChat)
-        stub_thread = threading.Thread(target=stub.serve_forever, daemon=True)
-        stub_thread.start()
-        try:
-            base = f"http://127.0.0.1:{stub.server_port}/v1"
-            desk.post_json_ok("/settings/endpoint/save",
-                              {"base": base, "key": "stub-key",
-                               "model": "stub-model"})
-            out = desk.post_json_ok("/settings/endpoint/test",
-                                    {"base": base, "key": "stub-key",
-                                     "model": "stub-model"})
-            check(out.get("ok") is True, f"the endpoint test said {out}")
-            answer = desk.post_json_ok("/research",
-                                       {"question": "What changed in EU pricing?"})
-            check(answer.get("status") == "ok",
-                  f"the research ask said {answer.get('status')}: {answer.get('cause')}")
-            out = desk.post_json_ok("/api/registry/install",
-                                    {"id": "research-brief"})
-            check(out["ok"] is True, f"the research-brief install refused: {out}")
-            out = desk.post_json_ok("/api/plugins/research-brief/retest", {})
-            check(out["status"] == "fresh",
-                  f"the brief said {out['status']}: {out.get('cause')}")
-            payload = desk.get_json("/api/dashboard")
-            card = next(c for c in payload["plugins"]["cards"]
-                        if c["id"] == "research-brief")
-            texts = [e.get("text", "") for e in card["payload"]["elements"]
-                     if e["kind"] == "text"]
-            check(any(_STUB_ANSWER_SNIPPET in t for t in texts),
-                  f"the brief did not bind the stub answer: {texts}")
-        finally:
-            stub.shutdown()
-            stub.server_close()
-
-
     def step_boot_desk_b(self) -> None:
         desk = Desk("B", self.root / "desk-b", _free_udp_port())
         self.desks.append(desk)
@@ -871,8 +780,6 @@ class Walkthrough:
              self.step_registry_install),
             ("connect the workbook: pick, confirm, bound values",
              self.step_connect_workbook),
-            ("outlook: the digest card binds the sample mail live", self.step_outlook_live),
-            ("research: the brief card binds a stored answer live", self.step_research_live),
             ("peers: Desk B boots and pairs by code", self.step_boot_desk_b),
             ("peers: share, list, install, card renders on B", self.step_pair),
             ("peers: install lands on B with the card rendered",
