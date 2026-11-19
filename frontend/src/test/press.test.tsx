@@ -76,8 +76,8 @@ const workbookCard: PluginCard = {
       status: 'ok',
       source: 'local',
       note: '',
+      blocks: [{ kind: 'receipts', text: "Used the defaults; read only this card's rows." }],
       press: EXPLAIN_PRESS,
-      receipts: { preferences: [], inputs: ['rows'] },
     },
   },
 };
@@ -105,7 +105,7 @@ const DIGEST_CARD: PluginCard = {
         kind: 'reply-draft',
         thread: { subject: 'Q4 forecast', sender: 'Dana Whitfield' },
       },
-      receipts: { preferences: ['replyTone'], inputs: ['memory'], counts: { memory: 1 } },
+      blocks: [{ kind: 'receipts', text: 'Used: your reply tone · memory (1 note).' }],
     },
   },
 };

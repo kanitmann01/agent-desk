@@ -1,7 +1,7 @@
 // The workbook tracker on the desk. Live: the tracker pattern (name,
 // figure, signed change, trend line, pace to the goal, file), then the
 // reading the server appended — its elements through the same view the
-// generic plugin card uses, the receipt line, and the press when the
+// generic plugin card uses, its resolved lines, and the press when the
 // workbook family offered one. Not set up: the dotted wireframe with one
 // Set up action. The setup sheet is separate and opens over the desk, and
 // it opens from every card shape: the server's setup card, a live
@@ -11,7 +11,7 @@ import { useState } from 'react';
 import type { PluginCard, PluginSetup } from '../types';
 import Button from '../components/Button';
 import TrackerSetup from './TrackerSetup';
-import { drawableElements, ElementView, PressOffer, receiptLine } from './PluginCardView';
+import { drawableElements, ElementView, PressOffer } from './PluginCardView';
 import { TrackerFigure, WireState } from './cells';
 
 interface TrackerCardProps {
@@ -45,7 +45,7 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
   const elements = live ? drawableElements(card.payload?.elements) : [];
   const insight = live ? card.payload?.insight : undefined;
   const press = insight?.press ?? null;
-  const receipt = insight?.receipts ? receiptLine(insight.receipts) : '';
+  const blocks = insight?.blocks ?? [];
 
   return (
     <div className="tracker-card">
@@ -66,7 +66,11 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
       {elements.map((element, i) => (
         <ElementView key={i} element={element} />
       ))}
-      {receipt ? <p className="w-note">{receipt}</p> : null}
+      {blocks.map((block, i) => (
+        <p className="w-note" key={i}>
+          {block.text}
+        </p>
+      ))}
       {press ? <PressOffer press={press} onRefetch={onRefetch} onExpired={onExpired} /> : null}
       {open ? (
         <TrackerSetup

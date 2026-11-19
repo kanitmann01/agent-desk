@@ -74,6 +74,7 @@ from agentdesk.inbox.core import (
 from agentdesk.insight.context import build_context as build_insight_context
 from agentdesk.insight.preferences import PreferenceStore, PreferencesError, changed
 from agentdesk.insight.press import draft_reply, press_from_form, press_to_fields
+from agentdesk.insight.reading import press_label
 from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
@@ -1053,63 +1054,30 @@ def _plugin_element_html(element: dict) -> str:
     return element_html(element)
 
 
-# How a receipt reads: the seam names preference keys and input names,
-# and this is the only place a key becomes a phrase a person would say.
-# An unknown name draws nothing rather than a raw identifier, so the line
-# can never read like a changelog.
-_RECEIPT_PHRASES = {
-    "chart": "your chart preference",
-    "replyTone": "your reply tone",
-    "replyLength": "your reply length",
-    "insightDensity": "your density setting",
-    "focusTopics": "your focus topics",
-    "prepMinutes": "your prep window",
-}
-_INPUT_PHRASES = {
-    "rows": "this card's rows",
-    "memory": "memory",
-    "calendar": "this calendar",
-}
-_DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows."
-
-# The press page's heading, taken from the label the card carried, so the
-# page a press lands on repeats the sentence the person just pressed.
-_PRESS_LABELS = {"reply-draft": "Draft a reply", "explain-range": "Explain this range"}
-
-
 def _receipt_line(payload: dict) -> str:
-    """One reading's receipts as a quiet line under its card."""
+    """The reading's resolved lines under its card, as quiet paragraphs.
+
+    The payload carries the lines already resolved and ordered
+    (agentdesk.insight.reading owns the phrases), so this only draws them:
+    escaping is the single job left, and the SPA prints the very same block
+    texts. A payload with no blocks, or one whose blocks hold no text, draws
+    nothing rather than an empty line.
+    """
     insight = payload.get("insight")
-    receipts = insight.get("receipts") if isinstance(insight, dict) else None
-    if not isinstance(receipts, dict):
+    blocks = insight.get("blocks") if isinstance(insight, dict) else None
+    if not isinstance(blocks, list):
         return ""
-    chosen: list[str] = []
-    for key in receipts.get("preferences") or []:
-        phrase = _RECEIPT_PHRASES.get(str(key))
-        if phrase:
-            chosen.append(phrase)
-    counts = receipts.get("counts") if isinstance(receipts.get("counts"), dict) else {}
-    notes = counts.get("memory")
-    read: list[str] = []
-    for name in receipts.get("inputs") or []:
-        phrase = _INPUT_PHRASES.get(str(name))
-        if not phrase:
+    lines: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
             continue
-        if name == "memory" and isinstance(notes, int) and notes > 0:
-            phrase = f"memory ({notes} note)" if notes == 1 else f"memory ({notes} notes)"
-        read.append(phrase)
-    # The phrases are the server's own, so the only escaping needed is for
-    # the ampersand-and-angle shapes; the apostrophe in "this card's rows"
-    # is copy, and escaping it would print an entity where a person reads.
-    if chosen:
-        return '<p class="w-note">Used: ' + html.escape(" · ".join(chosen + read), quote=False) + ".</p>"
-    # A reading that read nothing at all says nothing: a receipt line under
-    # an empty card would invent a consultation that did not happen.
-    if not read:
-        return ""
-    if read == ["this card's rows"]:
-        return '<p class="w-note">' + _DEFAULTS_RECEIPT + "</p>"
-    return '<p class="w-note">Used the defaults; read ' + html.escape(" and ".join(read), quote=False) + ".</p>"
+        text = str(block.get("text") or "").strip()
+        if text:
+            # The apostrophe in "this card's rows" is copy, so only the
+            # ampersand-and-angle shapes are escaped; a note's own text still
+            # cannot smuggle markup onto the page.
+            lines.append('<p class="w-note">' + html.escape(text, quote=False) + "</p>")
+    return "".join(lines)
 
 
 def _press_form(card: dict, press: object) -> str:
@@ -4988,7 +4956,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # and the SPA press the same press.
         request = press_from_form(self._read_json_body() or {})
         kind = str(request.get("kind") or "")
-        label = _PRESS_LABELS.get(kind, "Ask the model")
+        label = press_label(kind)
         try:
             answer = draft_reply(
                 self.server,
@@ -5214,7 +5182,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             extra = "amber"
         if status == FRESH:
-            # The reading's receipts and its press belong on the card, so
+            # The reading's resolved lines and its press belong on the card, so
             # the rendered dashboard is never a poorer version of the API.
             insight = payload.get("insight")
             body += _receipt_line(payload)

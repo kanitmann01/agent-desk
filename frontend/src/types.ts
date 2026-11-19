@@ -117,14 +117,13 @@ export interface TrackerView {
   goal?: { value: string; unit: string } | null;
 }
 
-// What the reading behind a card cost its reader: which of the person's
-// own settings changed it, and which inputs it consulted. The keys are the
-// server's, and the SPA keeps one table of phrases so both surfaces print
-// the same sentence.
-export interface InsightReceipts {
-  preferences: string[];
-  inputs: string[];
-  counts?: { memory?: number };
+// One line under a card's reading. The server resolved it from the names the
+// family declared (receipts from what the reading used, a note when it has
+// something to explain), so a surface prints the text as it came and never
+// keeps a phrase table of its own.
+export interface InsightBlock {
+  kind: 'receipts' | 'note';
+  text: string;
 }
 
 // The one model call a reading may offer. Nothing is spent until the
@@ -141,16 +140,17 @@ export interface InsightPress {
   text?: string;
 }
 
-// payload.insight: the reading behind a card's extra elements, the line
-// that says what it used, and the press when the family offered one.
+// payload.insight: the reading behind a card's extra elements, its resolved
+// lines, and the press when the family offered one.
 export interface InsightReading {
   status: 'ok' | 'empty' | 'unavailable';
   source: string;
   /** Keys of the person's own settings that changed this reading. */
   preferences?: string[];
   note?: string;
+  /** The lines under the card, already resolved and in print order. */
+  blocks?: InsightBlock[];
   press?: InsightPress | null;
-  receipts?: InsightReceipts;
 }
 
 // POST /api/insight/draft, answered. 'draft' covers both a drafted reply

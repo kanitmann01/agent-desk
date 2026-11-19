@@ -11,13 +11,10 @@ from __future__ import annotations
 from typing import Callable
 
 from agentdesk.insight import calendar, digest, research, workbook
-from agentdesk.insight.preferences import FIELDS, changed
+from agentdesk.insight import reading as insight_reading
+from agentdesk.insight.preferences import changed
 from agentdesk.insight.types import InsightContext, InsightError, InsightReading
 from agentdesk.plugins.render import ELEMENT_KINDS
-
-# The input names a receipt may carry, fixed so a surface prints a phrase it
-# already knows instead of echoing whatever a family wrote.
-INPUT_NAMES = ("rows", "memory", "calendar")
 
 FAMILIES: dict[str, Callable[[dict, dict, InsightContext], InsightReading]] = {
     "excel-report": workbook.derive,
@@ -55,7 +52,9 @@ def _attach(
     \"unavailable\" note on the card, never a broken payload. Elements are
     kept only in the kinds the renderer knows and capped at the density's
     maximum; payload[\"insight\"] always lands, even with nothing to say,
-    because the receipt is the card's record of what was attempted."""
+    because the card's record of what was attempted belongs on it. The lines
+    under the card and the press are resolved here, once, as blocks a surface
+    prints verbatim: no surface keeps its own phrase table."""
     try:
         reading = family(card, payload, context)
     except InsightError as exc:
@@ -83,37 +82,6 @@ def _attach(
         "source": "local",
         "preferences": changed(context.preferences),
         "note": reading.note,
-        "press": reading.press,
-        "suggested": [row for row in reading.suggested[:5] if isinstance(row, int)],
-        "receipts": _receipts(reading),
+        "blocks": insight_reading.blocks(reading),
+        "press": insight_reading.press(reading.press),
     }
-
-
-def _receipts(reading: InsightReading) -> dict:
-    """What this reading used, filtered to the vocabulary a surface prints.
-
-    A name outside the vocabulary is dropped rather than printed, and a
-    repeat survives once, in the order it was first declared, so a family
-    cannot turn the line into a changelog. Counts ride only on an input that
-    was declared: the card never says "memory (2 notes)" about a reading
-    that did not consult memory.
-    """
-    inputs = _named(reading.inputs, INPUT_NAMES)
-    receipts: dict = {
-        "preferences": _named(reading.used, FIELDS),
-        "inputs": inputs,
-    }
-    notes = reading.memory_notes
-    counted = isinstance(notes, int) and not isinstance(notes, bool) and notes > 0
-    if "memory" in inputs and counted:
-        receipts["counts"] = {"memory": notes}
-    return receipts
-
-
-def _named(names: tuple[str, ...], vocabulary: tuple[str, ...]) -> list[str]:
-    """The declared names the vocabulary holds, once each, in order."""
-    kept: list[str] = []
-    for name in names or ():
-        if name in vocabulary and name not in kept:
-            kept.append(name)
-    return kept
