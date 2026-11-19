@@ -233,7 +233,7 @@ export function InstalledPage() {
           action={<MarketLink className="btn btn-secondary" to="/marketplace">Browse the marketplace</MarketLink>}
         >
           <span>Nothing is installed yet.</span>
-          <span className="w-note mkt-empty-line">Packs and single plugins both install from the marketplace.</span>
+          <span className="w-note mkt-empty-line">Plugins install from the marketplace, one at a time.</span>
         </EmptyState>
       )}
       {load.kind === 'ready' && load.data.plugins.length > 0 && (

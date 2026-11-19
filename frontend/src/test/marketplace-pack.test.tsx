@@ -73,4 +73,34 @@ describe('pack install', () => {
     expect(await screen.findByText(/is blocked by the current policy/)).toBeInTheDocument();
     expect(screen.getByText('revenue-vs-target')).toBeInTheDocument();
   });
+
+  it('says packs were retired when the marketplace publishes none', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(packs([])));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<MarketplaceApp />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Packs are no longer offered' }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/This marketplace stopped publishing packs/)).toBeInTheDocument();
+    expect(screen.getByText('Nothing is bundled to install.')).toBeInTheDocument();
+    expect(screen.getByText(/The pack set was retired on purpose/)).toBeInTheDocument();
+    expect(screen.getByText(/The two plugins this desk still ships are on Discover/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Browse plugins' })).toHaveAttribute('href', '/marketplace');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /install/i })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/marketplace/packs');
+    expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST'))
+      .toHaveLength(0);
+  });
+
+  it('still answers for an unknown pack while packs exist', async () => {
+    window.history.replaceState({}, '', '/marketplace/pack/missing');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(packs())));
+    render(<MarketplaceApp />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pack not found' })).toBeInTheDocument();
+    expect(screen.getByText('No pack has the id “missing”.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
