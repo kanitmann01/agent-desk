@@ -21,6 +21,9 @@ interface ResearchCardProps {
   span: CardSpan;
   // The layout's custom title, when the user renamed the card.
   title?: string;
+  // The payload's research.enabled: when off, the card states the pause
+  // honestly instead of offering an ask surface that cannot run.
+  enabled: boolean;
   lastAnsweredTs: number | null;
   answer: ResearchAnswer | null;
   // Bumps on every new answer so the block remounts even when the same
@@ -32,11 +35,13 @@ interface ResearchCardProps {
 }
 
 export default function ResearchCard({
-  span, title, lastAnsweredTs, answer, answerSeq, statusText,
+  span, title, enabled, lastAnsweredTs, answer, answerSeq, statusText,
 }: ResearchCardProps) {
-  const stamp = lastAnsweredTs !== null
-    ? { fresh: true, text: `Answered ${hhmmFromTs(lastAnsweredTs)}` }
-    : { fresh: true, text: 'Ready' };
+  const stamp = !enabled
+    ? { fresh: false, text: 'Paused' }
+    : lastAnsweredTs !== null
+      ? { fresh: true, text: `Answered ${hhmmFromTs(lastAnsweredTs)}` }
+      : { fresh: true, text: 'Ready' };
 
   return (
     <WidgetCard
@@ -58,10 +63,15 @@ export default function ResearchCard({
           </div>
         </div>
       )}
-      {statusText ? (
+      {!enabled ? (
+        <p className="empty" data-research-disabled>
+          Research is turned off in settings. <a href="/settings">Turn it back on</a>.
+        </p>
+      ) : null}
+      {enabled && statusText ? (
         <p className="research-status" role="status">{statusText}</p>
       ) : null}
-      {!answer && !statusText ? (
+      {enabled && !answer && !statusText ? (
         <EmptyState icon={ICON_SEARCH}>
           No answer yet. Ask from the bar above and the sourced summary lands here.
         </EmptyState>

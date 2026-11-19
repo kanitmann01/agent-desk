@@ -209,6 +209,7 @@ describe('the research card', () => {
     render(
       <ResearchCard
         span="span-8"
+        enabled
         lastAnsweredTs={null}
         answer={{ question: 'Who sells to Meridian?', summary: 'Two reps named Meridian.', sources: ['crm', 'notes'] }}
         answerSeq={1}
@@ -225,6 +226,7 @@ describe('the research card', () => {
     render(
       <ResearchCard
         span="span-8"
+        enabled
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
@@ -233,6 +235,24 @@ describe('the research card', () => {
     );
     expect(screen.getByRole('status')).toHaveTextContent(RESEARCH_BUSY);
     expect(document.querySelector('.card canvas')).toBeNull();
+  });
+
+  it('states the pause and the way back when research is off', () => {
+    render(
+      <ResearchCard
+        span="span-8"
+        enabled={false}
+        lastAnsweredTs={null}
+        answer={null}
+        answerSeq={0}
+        statusText=""
+      />,
+    );
+    expect(screen.getByText('Paused')).toBeInTheDocument();
+    expect(screen.getByText(/Research is turned off in settings\./)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Turn it back on' })).toHaveAttribute('href', '/settings');
+    // Off is not an ask surface: no empty prompt suggesting one.
+    expect(screen.queryByText(/No answer yet/)).toBeNull();
   });
 });
 
@@ -468,6 +488,7 @@ describe('the card overflow menus', () => {
     render(
       <ResearchCard
         span="span-8"
+        enabled
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}

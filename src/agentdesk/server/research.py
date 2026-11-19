@@ -8,7 +8,7 @@ and progress is stated in words while the endpoint is being asked.
 import html
 from datetime import datetime
 
-from agentdesk.server.core import FRESH, Freshness
+from agentdesk.server.core import ATTENTION, FRESH, Freshness
 from agentdesk.server.pages import page_shell
 from agentdesk.server.demo import Widget
 
@@ -60,6 +60,23 @@ def render_research_widget(last_answered_ts: float | None, now: datetime) -> Wid
             f'<p class="empty" id="research-status" data-busy-text="{RESEARCH_BUSY}"></p>'
         ),
         foot_html="Searches run through the company endpoint. Every call is logged: what was asked, never file contents.",
+    )
+
+
+def render_research_disabled(now: datetime) -> Widget:
+    """The designed paused state: research is off in settings, so no ask
+    surface is offered and the reconnect path is one click away."""
+    return Widget(
+        id="research",
+        title="Research",
+        col="col-8",
+        freshness=Freshness(ATTENTION, "Paused", now.strftime("%Y-%m-%dT%H:%M:%S")),
+        body_html=(
+            '<div class="well"><p class="q">Research is turned off in settings. '
+            "Nothing is being asked of the company endpoint right now.</p></div>"
+            '<a class="btn btn-primary btn-start" href="/settings">Turn it back on</a>'
+        ),
+        foot_html="No endpoint calls while off. Nothing is sent anywhere.",
     )
 
 

@@ -103,6 +103,7 @@ EXPECTED_POST_ROUTES = (
     ("POST", "/skills/", "_skill_undo_rest", True, "rest", "/undo"),
     ("POST", "/settings/toggle", "_settings_toggle", False, "none", ""),
     ("POST", "/api/layout", "_layout_save", False, "none", ""),
+    ("POST", "/api/dashboard/view", "_dashboard_view_report", False, "none", ""),
     ("POST", "/settings/endpoint/save", "_endpoint_save", False, "none", ""),
     ("POST", "/settings/endpoint/test", "_endpoint_test", False, "none", ""),
     ("POST", "/settings/mail/folder", "_mail_folder_save", False, "none", ""),
@@ -179,6 +180,7 @@ EXPECTED_GET_STATUS = {
 
 EXPECTED_POST_STATUS = {
     "/agents/run": 400,
+    "/api/dashboard/view": 200,
     "/api/insight/draft": 400,
     "/api/layout": 400,
     "/api/memory/remove": 400,
