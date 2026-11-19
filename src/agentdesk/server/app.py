@@ -63,7 +63,7 @@ from agentdesk.inbox.core import (
 # name in this module, and it is the one the model turn calls.
 from agentdesk.insight.context import build_context as build_insight_context
 from agentdesk.insight.preferences import PreferenceStore, PreferencesError, changed
-from agentdesk.insight.press import draft_reply
+from agentdesk.insight.press import draft_reply, press_from_form, press_to_fields
 from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
@@ -125,6 +125,7 @@ from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
 from agentdesk.server.memory_loop_api import build_loop_state
+from agentdesk.plugins.cards import card_to_api
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
@@ -1139,9 +1140,10 @@ def _receipt_line(payload: dict) -> str:
 def _press_form(card: dict, press: object) -> str:
     """A card's press as a real control: a plain form, no script.
 
-    The hidden fields are the whole request, so what the page posts is
-    exactly what the press promised to send. The card's identity rides
-    along so the answer can name the card that was pressed.
+    The hidden fields are press_to_fields' spelling of the request, so what
+    the page posts re-parses into exactly the press the card carried. The
+    card's identity rides along so the answer can name the card that was
+    pressed.
     """
     if not isinstance(press, dict):
         return ""
@@ -1149,23 +1151,16 @@ def _press_form(card: dict, press: object) -> str:
     kind = str(press.get("kind") or "").strip()
     if not label or not kind:
         return ""
-    # A card's press nests the thread's facts (the digest family does), and
-    # the pressed page posts them flat, so both shapes are read here: what
-    # travels is what the press promised to send, not less.
-    facts = press.get("thread") if isinstance(press.get("thread"), dict) else {}
-    hidden = {
-        "kind": kind,
-        "text": press.get("text"),
-        "subject": press.get("subject") or facts.get("subject"),
-        "sender": press.get("sender") or facts.get("sender"),
-        "last": press.get("last") or facts.get("last"),
-        "pluginId": card.get("pluginId") or card.get("id"),
-        "instanceId": card.get("instanceId"),
-    }
+    hidden = press_to_fields(press)
+    for name, value in (
+        ("pluginId", card.get("pluginId") or card.get("id")),
+        ("instanceId", card.get("instanceId")),
+    ):
+        if isinstance(value, str) and value.strip():
+            hidden[name] = value
     fields = "".join(
-        '<input type="hidden" name="' + name + '" value="' + html.escape(str(value)) + '">'
+        '<input type="hidden" name="' + name + '" value="' + html.escape(value) + '">'
         for name, value in hidden.items()
-        if isinstance(value, str) and value.strip()
     )
     return (
         '<form method="post" action="/insight/press" class="cardform">'
@@ -1310,20 +1305,11 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
             ],
         },
         "plugins": {
+            # One serializer owns the card's API shape (camelCase, the
+            # layout's rename applied), so the payload cannot drift from
+            # the cards the runtime's factory builds.
             "cards": [
-                {
-                    "id": c["id"],
-                    "title": custom_titles.get(c["id"], c["title"]),
-                    "version": c["version"],
-                    "pilot": c["pilot"],
-                    "state": c["state"],
-                    "freshness": c["freshness"],
-                    "cause": c["cause"],
-                    "checkedAt": c.get("checked_at", ""),
-                    "pluginId": c.get("pluginId", ""),
-                    "instanceId": c.get("instanceId", ""),
-                    "payload": c.get("payload"),
-                }
+                card_to_api(c, custom_titles.get(c["id"]))
                 for c in plugin_cards
             ],
         },
@@ -4814,15 +4800,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         would have sent, because a person who pressed a button asked a
         question and deserves the answer on the same screen.
         """
-        body = self._read_json_body() or {}
-        kind = str(body.get("kind") or "").strip()
-        request: dict = {"kind": kind}
-        for key in ("text", "subject", "sender", "last"):
-            value = body.get(key)
-            if isinstance(value, str) and value.strip():
-                request[key] = value.strip()
-        if str(body.get("stage") or "").strip() not in ("", "0", "false", "False"):
-            request["stage"] = True
+        # The form posts the pair's flat spelling; press_from_form reads it
+        # back into the one request the route parses, so the no-JS surface
+        # and the SPA press the same press.
+        request = press_from_form(self._read_json_body() or {})
+        kind = str(request.get("kind") or "")
         label = _PRESS_LABELS.get(kind, "Ask the model")
         try:
             answer = draft_reply(
@@ -4842,12 +4824,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         staged = str(answer.get("cardId") or "") if answer.get("staged") else ""
         stage_html = ""
         if thread is not None and not staged and answer.get("text"):
-            stage_html = self._press_stage_form(
-                thread,
-                str(request.get("sender") or ""),
-                str(answer["text"]),
-                str(request.get("last") or ""),
-            )
+            stage_html = self._press_stage_form(request, thread, str(answer["text"]))
         # The audit names the thread and the source, never the words: a
         # draft is the user's to send, so the log records the act alone.
         self._audit(
@@ -4873,25 +4850,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     @staticmethod
-    def _press_stage_form(thread: dict, sender: str, text: str, last: str = "") -> str:
+    def _press_stage_form(request: dict, thread: dict, text: str) -> str:
         """The one form that may turn a draft into an inbox card.
 
-        It posts the same press again with `stage`, so there is a single
-        composer and a single route: what travels the second time is
-        exactly what this page already showed.
+        It posts the same press again with stage, so there is a single
+        composer and a single route: what travels the second time is exactly
+        what this page already showed, with the subject the resolved thread
+        carried, because that is the thread the page just named back.
         """
-        hidden = {
-            "kind": "reply-draft",
-            "subject": str(thread.get("subject") or ""),
-            "sender": sender,
-            "last": last,
-            "text": text,
-            "stage": "1",
-        }
+        facts = dict(request.get("thread") or {})
+        facts["subject"] = str(thread.get("subject") or "")
+        hidden = press_to_fields({"kind": request.get("kind"), "thread": facts, "text": text})
+        hidden["stage"] = "1"
         fields = "".join(
             '<input type="hidden" name="' + name + '" value="' + html.escape(value) + '">'
             for name, value in hidden.items()
-            if value
         )
         return (
             '<form method="post" action="/insight/press" class="cardform">'

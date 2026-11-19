@@ -7,8 +7,10 @@ without a press must keep today's markup exactly.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlencode
 
+from agentdesk.insight import press
 from agentdesk.server import app
 
 
@@ -25,8 +27,7 @@ def test_a_press_draws_a_form_with_every_hidden_field():
             "label": "Draft a reply",
             "route": "/api/insight/draft",
             "kind": "reply-draft",
-            "subject": "Q3 numbers",
-            "sender": "Ada Lovelace",
+            "thread": {"subject": "Q3 numbers", "sender": "Ada Lovelace"},
         },
     )
     assert 'method="post"' in html
@@ -46,7 +47,8 @@ def test_a_press_draws_a_form_with_every_hidden_field():
 def test_a_press_value_is_escaped_at_the_boundary():
     html = app._press_form(
         _card(),
-        {"label": "Draft", "kind": "reply-draft", "subject": "<script>alert(1)</script>"},
+        {"label": "Draft", "kind": "reply-draft",
+         "thread": {"subject": "<script>alert(1)</script>"}},
     )
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
@@ -151,21 +153,30 @@ def test_an_explanation_page_shows_the_disclosure_then_the_answer(tmp_path, monk
 
 
 def test_a_press_that_nests_its_thread_still_sends_flat_fields():
-    html = app._press_form(
-        _card(),
-        {
-            "label": "Draft a reply",
-            "route": "/api/insight/draft",
-            "kind": "reply-draft",
-            "thread": {"subject": "Budget", "sender": "Priya Raman", "last": "Here are the numbers."},
-        },
-    )
+    press_payload = {
+        "label": "Draft a reply",
+        "route": "/api/insight/draft",
+        "kind": "reply-draft",
+        "thread": {"subject": "Budget", "sender": "Priya Raman", "last": "Here are the numbers."},
+    }
+    html = app._press_form(_card(), press_payload)
     for name, value in (
         ("subject", "Budget"),
         ("sender", "Priya Raman"),
         ("last", "Here are the numbers."),
     ):
         assert f'name="{name}" value="{value}"' in html
+    # The form's spelling re-parses into the request the route parses, so
+    # the no-JS surface and the SPA press the same press.
+    fields = {
+        name: value
+        for name, value in re.findall(r'name="([^"]+)" value="([^"]*)"', html)
+    }
+    assert press.press_from_form(fields) == {
+        "kind": "reply-draft",
+        "thread": {"subject": "Budget", "sender": "Priya Raman",
+                   "last": "Here are the numbers."},
+    }
 
 
 def _stage_form_fields(page: str) -> dict[str, str]:

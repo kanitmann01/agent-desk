@@ -91,8 +91,9 @@ def _drafted(env) -> list:
 
 
 def test_a_press_stages_one_card_and_acceptance_writes_one_eml(env, auth):
-    body = {"kind": "reply-draft", "subject": "Budget",
-            "sender": "priya@example.com", "stage": True}
+    body = {"kind": "reply-draft",
+            "thread": {"subject": "Budget", "sender": "priya@example.com"},
+            "stage": True}
     status, answer = _post(env, auth, body)
     assert status == 200
     assert answer["staged"] is True
@@ -147,8 +148,9 @@ def test_a_press_stages_one_card_and_acceptance_writes_one_eml(env, auth):
 
 def test_a_press_that_names_no_thread_refuses_and_stages_nothing(env, auth):
     status, answer = _post(env, auth, {
-        "kind": "reply-draft", "subject": "Q3 plan",
-        "sender": "priya@example.com", "stage": True,
+        "kind": "reply-draft",
+        "thread": {"subject": "Q3 plan", "sender": "priya@example.com"},
+        "stage": True,
     })
     assert status == 404
     assert answer["code"] == "insight:thread-missing"

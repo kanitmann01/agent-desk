@@ -5,6 +5,14 @@ it validates the request, states exactly what would be sent, and only then
 delegates the composition. Nothing here writes memory, and the disclosure
 it returns is the sentence the user sees before pressing.
 
+The request has one shape, and this module owns it: a reply draft posts
+{"kind": "reply-draft", "thread": {"subject", "sender", "last"}, "stage":
+true} and an explanation posts {"kind": "explain-range", "text"}. The
+digest family's press payload is that request with a label and a route
+added, so a client posts what the card carried, unchanged. A form cannot
+nest, so press_to_fields and press_from_form are the one flat spelling a
+no-JS form may use, and it exists only between the two of them.
+
 A reply draft also resolves the thread it answers and may stage it as one
 inbox card. Resolution reads headers only, because headers are all the mail
 view keeps: there is no message body here that an answer could leak.
@@ -88,6 +96,20 @@ INBOX_OFF = (
     "nowhere to put the card."
 )
 
+# The two retired spellings, each named so a caller hears which convention
+# ended rather than a generic 400. Both keep the house voice: what did not
+# happen, then the one thing that fixes it.
+FLAT_THREAD = (
+    "Nothing was drafted: the thread a press answers travels nested under "
+    '"thread", so the flat "subject", "sender" and "last" fields are no '
+    "longer read. Post the press the card carried, which already nests them."
+)
+
+STAGE_SPELLING = (
+    'Nothing was drafted: stage is asked as a boolean, so "stage": true, '
+    "not a word or a number. Post the press again with the boolean."
+)
+
 
 def draft_reply(
     server: Any,
@@ -98,14 +120,13 @@ def draft_reply(
 ) -> dict:
     """Compose one draft (a reply, or an explanation), or say why not.
 
-    A reply body carries the thread it answers two ways, and they are not
-    the same request. A card's press nests the facts under "thread": that is
-    the draft's source, and it resolves nothing, because a dashboard card
-    must keep drafting on a desk where mail is off. A press's own flat
-    "subject" and "sender" name a message to find: a sender there resolves
-    that message against the mail view, and "stage": true asks for the draft
-    to be put in the inbox as one card. Either may refuse by name rather
-    than half answer.
+    A reply body carries the thread it answers nested under "thread",
+    exactly as a card's press payload does, so one shape is the whole
+    request: the thread is the draft's source, its sender resolves the
+    message against the mail view when there is one to find, and "stage":
+    true asks for the draft to be put in the inbox as one card. A body
+    using the retired flat spellings is refused by name rather than half
+    answered.
     """
     if not isinstance(body, dict):
         raise InsightError("insight:bad-request", "Expected a JSON object.")
@@ -114,14 +135,15 @@ def draft_reply(
         raise InsightError("insight:unknown-kind", f"{kind} is not something the desk drafts.")
     if kind == "explain-range":
         return _explain(body, complete)
-    facts = _thread_facts(body)
+    _refuse_retired_shape(body)
+    facts = body.get("thread") if isinstance(body.get("thread"), dict) else {}
     subject = str(facts.get("subject") or "").strip()
     if not subject:
         raise InsightError("insight:bad-request", "A draft needs the thread it answers.")
     if len(subject) > 200:
         raise InsightError("insight:bad-request", "That subject is too long to draft from.")
-    sender = str(body.get("sender") or "").strip()
-    stage = _wants_stage(body)
+    sender = str(facts.get("sender") or "").strip()
+    stage = _stage_flag(body)
     if stage and not sender:
         # Staging without a thread would be half a card: one with no message
         # to write into, which acceptance could only refuse later.
@@ -168,32 +190,78 @@ def draft_reply(
     return answer
 
 
-def _thread_facts(body: dict) -> dict:
-    """The thread a press names, read in either shape it is posted in.
+def _refuse_retired_shape(body: dict) -> None:
+    """Name the retired spellings of a reply request rather than half answer.
 
-    A card's press payload nests the facts under "thread"; the pressed page
-    posts the same facts as flat fields. One reading, so the flat fields win
-    wherever both appear.
+    The thread nests under "thread" and stage is a boolean; a caller using
+    the flat fields or a word for stage is told which convention ended,
+    because silently drafting from half a request is exactly how the two
+    shapes drifted apart.
     """
-    nested = body.get("thread")
-    facts = dict(nested) if isinstance(nested, dict) else {}
-    for key in ("subject", "sender", "last"):
-        value = body.get(key)
-        if value is not None and str(value).strip():
-            facts[key] = str(value).strip()
-    return facts
+    if any(key in body for key in ("subject", "sender", "last")):
+        raise InsightError("insight:flat-thread", _say(FLAT_THREAD), 400)
+    stage = body.get("stage")
+    if stage is not None and not isinstance(stage, bool):
+        raise InsightError("insight:stage-spelling", _say(STAGE_SPELLING), 400)
 
 
-def _wants_stage(body: dict) -> bool:
+def _stage_flag(body: dict) -> bool:
     """Whether the press asked for its draft to be staged as a card.
 
-    A JSON caller posts a boolean; the pressed page posts a form field, so
-    the two spellings of yes are read here and everything else means no.
+    Every spelling but a boolean was refused before this runs, so the flag
+    is read as one and there are no words to interpret here.
     """
-    stage = body.get("stage")
-    if isinstance(stage, bool):
-        return stage
-    return str(stage or "").strip().lower() in ("1", "true", "yes", "on")
+    return body.get("stage") is True
+
+
+# The keys of the thread a press names, and the one other field a reply
+# request may carry besides them. press_to_fields and press_from_form are
+# the pair that spells these the one way a form can carry them.
+_THREAD_KEYS = ("subject", "sender", "last")
+_TOP_KEYS = ("kind", "text")
+
+
+def press_to_fields(press: dict) -> dict[str, str]:
+    """One press payload as the flat fields a no-JS form carries.
+
+    A form cannot nest, so the thread's facts ride as the fields this pair
+    names, and the label and the route stay behind: what travels is the
+    request, not the offer of it.
+    """
+    fields: dict[str, str] = {}
+    for key in _TOP_KEYS:
+        value = str(press.get(key) or "").strip()
+        if value:
+            fields[key] = value
+    thread = press.get("thread") if isinstance(press.get("thread"), dict) else {}
+    for key in _THREAD_KEYS:
+        value = str(thread.get(key) or "").strip()
+        if value:
+            fields[key] = value
+    return fields
+
+
+def press_from_form(fields: dict) -> dict:
+    """The request the route parses, rebuilt from a no-JS form's fields.
+
+    press_to_fields' other half: the thread's facts nest again and the
+    stage field becomes the boolean the request carries, so the route reads
+    one shape whether the press arrived as JSON or as a form.
+    """
+    request: dict = {"kind": str(fields.get("kind") or "").strip()}
+    thread = {}
+    for key in _THREAD_KEYS:
+        value = str(fields.get(key) or "").strip()
+        if value:
+            thread[key] = value
+    if thread:
+        request["thread"] = thread
+    text = str(fields.get("text") or "").strip()
+    if text:
+        request["text"] = text
+    if str(fields.get("stage") or "").strip() not in ("", "0", "false", "False"):
+        request["stage"] = True
+    return request
 
 
 def _resolve(server: Any, subject: str, sender: str) -> tuple[dict, str]:

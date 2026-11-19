@@ -259,14 +259,11 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
       setStaged('');
       setStagedCard('');
     }
-    const body: PressBody = { kind: press.kind };
-    if (press.text !== undefined) body.text = press.text;
-    if (press.subject !== undefined) body.subject = press.subject;
-    if (press.sender !== undefined) body.sender = press.sender;
-    // The digest family nests the thread under "thread"; the route reads
-    // either shape, so it rides along untouched rather than being dropped.
-    if (press.thread !== undefined) body.thread = press.thread;
-    if (stage) body.stage = true;
+    // The press travels verbatim: the card's payload is the request, so the
+    // SPA spreads it rather than re-assembling it field by field, and stage
+    // is the one field a second press adds.
+    const { label: _label, route: _route, ...rest } = press;
+    const body: PressBody = stage ? { ...rest, stage: true } : rest;
     let result;
     try {
       result = await pressReading(press.route, body);
