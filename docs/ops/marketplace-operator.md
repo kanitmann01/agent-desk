@@ -1,6 +1,6 @@
 # Marketplace operator guide
 
-This is for the IT operator who runs Nexuus Bot for one person on a managed Windows laptop. It covers installs, publishing, packs, policy, audit, the kill switch and recovery. Authoring is in `docs/design/plugin-authoring-v2.md`, the build and AppLocker story is in `docs/ops/distribution.md`, and licensing is in `docs/licensing.md`.
+This is for the IT operator who runs Nexuus Bot for one person on a managed Windows laptop. It covers installs, publishing, policy, audit, the kill switch, the one-time retirement cleanup and recovery. Authoring is in `docs/design/plugin-authoring-v2.md`, the build and AppLocker story is in `docs/ops/distribution.md`, and licensing is in `docs/licensing.md`.
 
 Nexuus Bot is a single-user, loopback-only app. The marketplace runs in the same process, reads local catalog files, and makes no marketplace network requests of its own. Everything below happens inside one Windows user profile.
 
@@ -46,7 +46,7 @@ What admin mode unlocks: the snapshot at `GET /api/marketplace/admin`, approval 
 2. Open a plugin's page and choose Install. The consent sheet lists the scopes the plugin asks for. Accept to install, Cancel to stop.
 3. Check `/marketplace/installed` afterwards: pinned version, pinned digest, status, pilot views, data size and validated date.
 
-The server resolves the requested source and version against the catalog entry. If the request carries a SHA-256, it must match the catalog pin. Before anything is written it recomputes the staged tree digest and compares it to the catalog pin; a missing pin or a mismatch is `409 install:digest-mismatch`, and a pack is checked member by member before the first member installs. The install then runs the shared validator on the staged files and records their tree digest. Cryptographic publisher signatures are not re-verified at install: the signature status is a catalog label that policy checks. A refusal is a single policy reason, not a generic failure:
+The server resolves the requested source and version against the catalog entry. If the request carries a SHA-256, it must match the catalog pin. Before anything is written it recomputes the staged tree digest and compares it to the catalog pin; a missing pin or a mismatch is `409 install:digest-mismatch`. The install then runs the shared validator on the staged files and records their tree digest. Cryptographic publisher signatures are not re-verified at install: the signature status is a catalog label that policy checks. A refusal is a single policy reason, not a generic failure:
 
 | Code | Meaning |
 | --- | --- |
@@ -74,17 +74,11 @@ The server resolves the requested source and version against the catalog entry. 
 - "Uninstall" removes the plugin and keeps its data folder.
 - Disable and Enable stop and start the plugin without removing it.
 
-## Install a pack
+## Retired plugins and the one-time cleanup
 
-Packs are defined in `registry/packs.json` and appear at `/marketplace/pack/<id>`:
+The in-box catalog ships two plugins: `excel-report` (the Workbook tracker card) and `competitor-watch` (the Page watch card). The 23 plugins this desk used to carry are retired. Their trees are kept under `archive/plugins/` as a reference copy only; the app never reads that folder and it is not an import queue. No pack ships either: `registry/packs.json` carries an empty list, so there is no pack entry to open.
 
-| Id | Name | Members |
-| --- | --- | --- |
-| `manager` | Manager pack | calendar-today, week-load, meeting-prep, follow-up-watch, sales-delta-widget, outlook-digest, research-brief, morning-brief |
-| `cfo` | CFO pack | revenue-vs-target, ar-aging, budget-burn, kpi-scorecard, reconciliation-watch, renewal-radar, audit-digest, weekly-review |
-| `ops` | Ops pack | follow-up-watch, waiting-on-you, source-ledger, notes-actions, plugin-health, update-radar, compliance-posture, weekly-review |
-
-A pack install is all or nothing. One consent sheet covers the union of the members' scopes. If any member is blocked by policy, nothing installs and the page names the blocked member. The Manager pack deliberately excludes competitor-watch because that plugin uses the network.
+Nothing is removed automatically on upgrade. A desk set up before the retirement keeps its installed copies until the owner removes them: open `/marketplace/installed`, Uninstall each of the 23, and confirm. Uninstall keeps the plugin's data folder; Purge data deletes that folder only after the typed `delete-data:<plugin id>` confirmation, so do that only where the history is no longer needed. A fresh desk never sees the retired plugins, and no data or settings are migrated.
 
 ## Publish and review
 
@@ -111,7 +105,7 @@ Yank and quarantine block new installs and updates (`policy:yanked`, `policy:qua
 
 The kill switch is on the Admin page. Enter a plugin id and block it. The wildcard `*` blocks every plugin. The state is written to `kill-switch.json` and applied on top of whatever policy is active, so it survives a policy import, and it can be restored from the same page.
 
-The kill switch blocks new installs and pack members. It does not uninstall, disable or delete data for a plugin that is already installed. Do those from `/marketplace/installed`.
+The kill switch blocks new installs. It does not uninstall, disable or delete data for a plugin that is already installed. Do those from `/marketplace/installed`.
 
 ## Signed policy
 
@@ -190,16 +184,16 @@ Trust on first use is the important caveat. Importing a bundle accepts any well-
 With admin mode on, open `/marketplace/admin` and choose the audit log link, or request `GET /api/marketplace/audit/export`. The response is NDJSON with a `marketplace-audit.jsonl` attachment, one event per line, with exactly these fields:
 
 ```json
-{"at": "2026-11-16T00:00:00Z", "action": "install", "pluginId": "calendar-today", "actor": "local-admin", "outcome": "ok"}
+{"at": "2026-11-16T00:00:00Z", "action": "install", "pluginId": "excel-report", "actor": "local-admin", "outcome": "ok"}
 ```
 
 The export does not include the internal detail field, so changelogs, rejection reasons and report notes are not in it. The local log holds the last 1000 events. Download and archive it before a policy change or a cleanup; there is no automatic rotation.
 
 ## Offline behavior and the catalog
 
-The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json`. Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (25 plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
+The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json`. Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (two plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
 
-The packaged build ships the committed bundle but not the `registry` folder, so a copy with no registry checkout still shows those 25 plugins. An approved org release of a shipped id takes precedence over the bundled pin, so publish a version bump locally when you need to update one.
+The packaged build ships the committed bundle but not the `registry` folder, so a copy with no registry checkout still shows those two plugins. An approved org release of a shipped id takes precedence over the bundled pin, so publish a version bump locally when you need to update one.
 
 ## Troubleshooting
 
@@ -212,6 +206,6 @@ The packaged build ships the committed bundle but not the `registry` folder, so 
 | Install refused `policy:signature-required` | Bundled registry releases default to unsigned | Approve the release into the org catalog, or import a policy that does not require signatures. |
 | Policy import rejected | `policy:bad-signature`, `policy:expired`, `policy:stale-epoch` or `policy:unknown-key` | Re-sign with the pinned key, check the clock, raise the epoch. |
 | A yanked release is still offered | The catalog has not reloaded since the yank | Reload the catalog; yank and quarantine block installs and updates while deprecate warns only. |
-| Pack refuses to install | One member is blocked | The page names the member; fix that policy reason. |
+| A retired plugin is still installed | The desk was set up before the plugin set was retired; nothing migrates automatically | Uninstall it on `/marketplace/installed`; its data folder is kept until you purge it. |
 
 Known gaps, including the ones above, are listed in `docs/known-limitations.md`.

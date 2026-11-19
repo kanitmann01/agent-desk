@@ -151,7 +151,10 @@ card on `/` renders amber: `no file matches ${workspace}/reports/*.xlsx`.
 
 SAY: installs are pinned and verified (digest plus the shared
 validator), and a plugin whose truth is not available yet says so in
-amber with the precise cause.
+amber with the precise cause. The two shipped plugins are
+`excel-report` (this card) and `competitor-watch` (the Page watch
+card); `competitor-watch` reads an outside page through a network
+allowlist, so this demo leaves it out.
 
 IF IT FAILS: amber with a cause is the designed state; read the cause.
 
@@ -171,42 +174,6 @@ truth exists, the card shows it.
 
 IF IT FAILS: a locked or unreadable workbook stays amber with the
 cause; that honesty is the feature. Re-test is always one click.
-
-## Beat 7b: the Outlook digest card, live metadata only (1 minute)
-
-CLICKS: `/settings`: turn `Company mail digest` on, and in the mail
-section type this folder:
-`%AGENTDESK_DATA%\sample\sample-mail` (on a real install that is
-`C:\Users\<you>\.agent-desk\sample\sample-mail`). Then `/plugins`:
-find `outlook-digest` under `From the registry`, click `Install`, and
-on its card click the overflow menu `Re-test`. The card binds real
-counts from the sample headers: messages, threads, top senders by name.
-
-SAY: the agent reads message metadata, never bodies; that is the
-privacy posture in one card. The pipeline is the same one the real
-Outlook bridge feeds.
-
-IF IT FAILS: the card shows amber with its cause (mail off, or no
-folder chosen); turning the source on and choosing the sample folder
-above, then `Re-test`, is the whole recovery.
-
-## Beat 7c: the research brief card, live answer (1 minute)
-
-CLICKS: on the dashboard, type a question in the research bar
-(for example "What changed in EU pricing this quarter?") and press
-Enter. The sourced answer lands in the Research card. Then `/plugins`:
-install `research-brief`, and `Re-test` its card: it shows the same
-answer, the source count, and the time, with the line "showing it made
-no endpoint call".
-
-SAY: the plugin reuses what the agent already learned; widgets never
-call the model themselves, so a dashboard of ten cards costs one
-endpoint's worth of questions, not ten.
-
-IF IT FAILS: without the company endpoint the research bar says so in
-plain words (and Beat 10 shows exactly what it names). The brief card
-stays amber with "No research answer is stored yet" until one question
-is asked; ask, then `Re-test`.
 
 ## Beat 8: two desks, peer to peer (2 minutes)
 
