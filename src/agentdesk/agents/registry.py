@@ -54,7 +54,27 @@ PRESENTATION = AgentKind(
     context=CONTEXT_NONE,
 )
 
-ROSTER = (PRESENTATION,)
+WORKSHEET_BRIEF = AgentKind(
+    id="worksheet-brief",
+    name="Worksheet brief",
+    blurb=(
+        "A short briefing about the watched workbook, grounded in its "
+        "live status and what the desk already remembers about it."
+    ),
+    artifact_kind="outline",
+    instructions=(
+        "You write a short briefing about the watched sales workbook. "
+        "Ground every line in the connected workbook context and the "
+        "known facts; never invent rows, totals or file names. Reply "
+        "with plain text only: one headline sentence, then three to six "
+        "short bullet lines. When the context says no workbook is "
+        "connected, say plainly that nothing is watched and there is "
+        "nothing to brief on; a blank is never a zero."
+    ),
+    context=CONTEXT_WORKBOOK,
+)
+
+ROSTER = (PRESENTATION, WORKSHEET_BRIEF)
 
 
 def find_agent(agent_id: str) -> AgentKind | None:

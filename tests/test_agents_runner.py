@@ -61,6 +61,14 @@ def test_find_agent_returns_the_presentation_kind_by_id():
     assert agent.artifact_kind == "slides"
 
 
+def test_find_agent_returns_the_worksheet_brief_kind_by_id():
+    agent = find_agent("worksheet-brief")
+    assert agent is not None
+    assert agent.name == "Worksheet brief"
+    assert agent.context == CONTEXT_WORKBOOK
+    assert agent.artifact_kind == "outline"
+
+
 def test_find_agent_refuses_an_unknown_id():
     assert find_agent("worksheet") is None
     assert find_agent("") is None
@@ -70,6 +78,7 @@ def test_the_roster_carries_unique_ids():
     ids = [agent.id for agent in ROSTER]
     assert len(ids) == len(set(ids))
     assert "presentation" in ids
+    assert "worksheet-brief" in ids
 
 
 # -- prompt assembly ------------------------------------------------------
@@ -154,6 +163,42 @@ def test_a_none_kind_carries_no_widget_context():
     assert runner.workbook_context(agent, {"configured": True}) == ""
 
 
+def test_the_worksheet_brief_prompt_carries_workbook_lines_and_the_facts_block():
+    agent = find_agent("worksheet-brief")
+    excel_status = {
+        "configured": True,
+        "path": "C:/sales/q3.xlsx",
+        "state": "watching",
+        "delta": {"added": [{"region": "EMEA", "value": 10}], "removed": []},
+    }
+    facts_block, _receipt = runner.recall_block(
+        _ranked("the watched workbook tracks EMEA revenue")
+    )
+    prompt = runner.build_agent_prompt(
+        agent, "brief me",
+        context_block=runner.workbook_context(agent, excel_status),
+        facts_block=facts_block,
+    )
+    context_at = prompt.index("Sales workbook watched: q3.xlsx")
+    facts_at = prompt.index("Known facts about the user")
+    instructions_at = prompt.index(agent.instructions)
+    brief_at = prompt.index("brief me")
+    assert context_at < facts_at < instructions_at < brief_at
+    assert "- the watched workbook tracks EMEA revenue" in prompt
+
+
+def test_the_worksheet_brief_context_says_the_empty_honestly():
+    agent = find_agent("worksheet-brief")
+    prompt = runner.build_agent_prompt(
+        agent, "brief me",
+        context_block=runner.workbook_context(
+            agent, {"configured": False, "state": "not_configured"}
+        ),
+    )
+    assert "no sources connected yet" in prompt
+    assert "Sales workbook watched" not in prompt
+
+
 # -- the tolerant artifact parse -------------------------------------------
 
 
@@ -209,6 +254,24 @@ def test_run_agent_degrades_with_the_pinned_cause():
     assert result.status == runner.STATUS_DEGRADED
     assert result.cause == "no corporate endpoint configured"
     assert result.artifact is None
+
+
+def test_run_agent_gives_a_workbook_kind_its_live_status_lines():
+    agent = find_agent("worksheet-brief")
+    llm = ScriptLlm(reply="The EMEA rows are up; nothing else moved.")
+    result = runner.run_agent(
+        agent, "brief me", llm,
+        excel_status={
+            "configured": True,
+            "path": "C:/sales/q3.xlsx",
+            "state": "watching",
+            "delta": {"added": [{"region": "EMEA", "value": 10}], "removed": []},
+        },
+    )
+    assert result.status == runner.STATUS_OK
+    assert "Sales workbook watched: q3.xlsx" in llm.prompts[0]
+    assert result.artifact["kind"] == "outline"
+    assert result.artifact["text"] == "The EMEA rows are up; nothing else moved."
 
 
 def test_run_agent_degrades_with_the_standing_line_on_unexpected_errors():

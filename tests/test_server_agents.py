@@ -23,9 +23,13 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.assistant import audit as audit_store
+from agentdesk.excel.watcher import Adapters as ExcelAdapters
+from agentdesk.excel.watcher import ExcelWatch
+from agentdesk.excel.xlsx import parse_workbook_bytes
 from agentdesk.llm import LlmUnavailable, chat_client
 from agentdesk.memory.crypto import load_key
 from agentdesk.memory.store import MemoryStore
+from excel_fixtures import base_workbook
 
 
 class CaptureLlm:
@@ -42,6 +46,15 @@ class CaptureLlm:
 
 SLIDES_REPLY = json.dumps(
     {"title": "Q3 Review", "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}]}
+)
+
+# The briefing the fake endpoint returns for a worksheet-brief run: plain
+# text, grounded in the fixture workbook's own rows (164000 + 58000 +
+# 22500), so the double never invents a number either.
+WORKBOOK_BRIEFING = (
+    "Watched workbook: Q4-sales.xlsx, first snapshot taken.\n"
+    "- Revenue sits at 244500 across three product lines.\n"
+    "- Nothing has changed since the snapshot."
 )
 
 
@@ -75,6 +88,27 @@ def _runs(env):
 
 def _audit_rows(env, action):
     return [e for e in audit_store.entries(env.server.audit_conn) if e["action"] == action]
+
+
+def _watch_over(tmp_path) -> ExcelWatch:
+    """A real watch over the fixture workbook, registered and polled once.
+
+    The same adapters the excel suite injects, so the worksheet-brief
+    tests see the status a manager's registered workbook really yields
+    rather than a hand-written dict.
+    """
+    workbook = tmp_path / "Q4-sales.xlsx"
+    workbook.write_bytes(base_workbook())
+    watch = ExcelWatch(
+        sqlite3.connect(":memory:", check_same_thread=False),
+        ExcelAdapters(
+            copy_shadow=lambda p: Path(p),
+            parse_workbook=lambda p: parse_workbook_bytes(Path(p).read_bytes()),
+            clock=time.time,
+        ),
+    )
+    watch.register(str(workbook))
+    return watch
 
 
 # -- the run --------------------------------------------------------------
@@ -197,6 +231,77 @@ def test_the_empty_page_names_the_roster_and_honest_empties(env, auth):
     assert status == 200
     assert "No runs yet" in page
     assert "Presentation" in page
+
+
+# -- the worksheet-brief agent ----------------------------------------------
+
+
+def test_the_roster_lists_the_worksheet_brief_agent_with_its_own_form(env, auth):
+    status, _h, body = env.request("GET", "/agents", auth)
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "Worksheet brief" in page
+    assert 'value="worksheet-brief"' in page
+
+
+def test_a_worksheet_brief_run_is_grounded_in_the_workbook_and_the_facts_block(tmp_path):
+    watch = _watch_over(tmp_path)
+    booted = server_harness.Booted(excel=watch, llm=CaptureLlm(reply=WORKBOOK_BRIEFING))
+    try:
+        auth = booted.exchange()
+        _add_fact(booted, auth, "the watched workbook tracks EMEA revenue")
+        status, _h, body = booted.post_json(
+            "/agents/run",
+            {"agent": "worksheet-brief", "brief": "brief me on the watched workbook"},
+            auth,
+        )
+        assert status == 200
+        payload = json.loads(body)
+        assert payload["status"] == "ok"
+        assert payload["artifact"]["kind"] == "outline"
+        assert payload["artifact"]["text"] == WORKBOOK_BRIEFING
+        prompt = booted.server.llm.prompts[0]
+        assert "Sales workbook watched: Q4-sales.xlsx" in prompt
+        assert "Known facts about the user" in prompt
+        assert "- the watched workbook tracks EMEA revenue" in prompt
+        assert [row["text"] for row in payload["facts"]] == [
+            "the watched workbook tracks EMEA revenue"
+        ]
+    finally:
+        watch.stop_polling()
+        booted.close()
+
+
+def test_with_no_workbook_connected_the_run_reports_the_honest_empty(env, auth):
+    env.server.llm = CaptureLlm(
+        reply="No workbook is being watched, so there is nothing to brief on."
+    )
+    status, _h, body = _run(env, auth, brief="brief me on the workbook",
+                            agent="worksheet-brief")
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["status"] == "ok"
+    assert payload["artifact"]["kind"] == "outline"
+    assert "nothing to brief on" in payload["artifact"]["text"]
+    # The inert watch yields the honest context, never a fabricated one.
+    prompt = env.server.llm.prompts[0]
+    assert "no sources connected yet" in prompt
+    assert "Sales workbook watched" not in prompt
+    assert "Known facts about the user" not in prompt
+
+
+def test_a_stored_workbook_fact_ranks_into_the_receipt(env, auth):
+    _add_fact(env, auth, "the watched workbook tracks EMEA revenue")
+    env.server.llm = CaptureLlm(reply=WORKBOOK_BRIEFING)
+    status, _h, body = _run(env, auth, brief="brief me on the watched workbook",
+                            agent="worksheet-brief")
+    payload = json.loads(body)
+    assert status == 200
+    assert [row["text"] for row in payload["facts"]] == [
+        "the watched workbook tracks EMEA revenue"
+    ]
+    stored = _runs(env)
+    assert stored[0]["facts"] == payload["facts"]
 
 
 # -- the sealed bank -------------------------------------------------------
