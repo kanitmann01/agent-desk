@@ -9,7 +9,6 @@ scopes. Uninstall keeps plugin data until a separately named purge.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shutil
@@ -27,6 +26,7 @@ from agentdesk.plugins.cards import (
     widget_card,
 )
 from agentdesk.plugins.execute import PluginWidgetRunner
+from agentdesk.registry.install import tree_digest
 from agentdesk.validator.core import validate_plugin
 
 PILOT_VIEWS = 3
@@ -82,25 +82,12 @@ class ExtractedPlugin:
     sha256: str
 
 
-def _tree_digest(plugin_dir: Path) -> str:
-    """Hash a directory's file tree into one sha256 hex digest.
-
-    Each file contributes its relative POSIX path and then its bytes, in sorted
-    order, so content edits and renames both move the digest while empty
-    directories contribute nothing. The lockfile pins this value at install time.
-    The sort key is the posix relpath string, not the Path object: pathlib
-    compares case-insensitively on Windows, so a Path sort walks a mixed-case
-    tree in a different order there and the same tree hashes differently
-    across machines, which a peer install checking the publisher's digest
-    would read as tampering.
-    """
-    digest = hashlib.sha256()
-    files = [path for path in Path(plugin_dir).rglob("*") if path.is_file()]
-    files.sort(key=lambda path: path.relative_to(plugin_dir).as_posix())
-    for path in files:
-        digest.update(path.relative_to(plugin_dir).as_posix().encode("utf-8") + b"\n")
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
+# One digest implementation for every pin: the registry release walk in
+# registry/install.py. The plugin lockfile pins the same bytes the
+# registry index pins, so both verifiers must walk a tree in the same
+# order on every platform; that function's docstring records why the
+# order is the posix relpath string, never a pathlib object sort.
+_tree_digest = tree_digest
 
 
 def extract_plugin_zip(zip_path: Path, destination: Path) -> None:

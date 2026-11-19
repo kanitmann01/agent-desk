@@ -5,7 +5,6 @@ releases pinned by sha256 (over the plugin tree bytes) and git tags. These
 helpers build one deterministically for the public-API tests. Importing
 this module also makes the src/ package importable, like a conftest.
 """
-import hashlib
 import json
 import subprocess
 import sys
@@ -15,6 +14,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _src = REPO_ROOT / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
+
+# The fixture pins are made by the production walk in registry/install,
+# never by a copy of it: a copied walk that drifted (as the pathlib
+# object sort once did on Windows) would pin digests the installer
+# refuses, red only on the machines that disagree with the copy.
+from agentdesk.registry.install import tree_digest  # noqa: E402,F401
 
 FIXTURES = Path(__file__).resolve().parent
 PLUGIN_FIXTURE = FIXTURES / "fixtures" / "registry" / "plugins" / "sales-delta-widget"
@@ -35,18 +40,6 @@ REGISTRY_INDEX = {
         }
     ],
 }
-
-
-def tree_digest(plugin_dir: Path) -> str:
-    """sha256 over sorted relpaths and file bytes: the release pin."""
-    digest = hashlib.sha256()
-    for path in sorted(Path(plugin_dir).rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(plugin_dir).as_posix()
-        digest.update(rel.encode("utf-8") + b"\n")
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
 
 
 def git(repo: Path, *args: str, env_dates: dict | None = None) -> subprocess.CompletedProcess:

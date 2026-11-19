@@ -170,12 +170,18 @@ def test_registry_root_document_is_seeded():
 
 
 def test_tree_digest_walks_in_posix_string_order(tmp_path):
-    """The digest's walk order is the case-sensitive posix relpath order
-    on every platform. Windows pathlib compares case-insensitively, so
-    sorting Path objects walks manifest.json before README.md there and
-    the same tree hashes differently across machines: a Windows checkout
-    failed every pinned install of a mixed-case tree with
-    install:hash-mismatch while the pins verified on posix machines."""
+    """The digest's walk order is the case-sensitive posix relpath
+    string order on every platform. Two pathlib sort orders disagree
+    with it, each on its own platform: Windows compares
+    case-insensitively, walking manifest.json before README.md, and
+    posix tuple-compares path parts, walking skills/ before skills.zip
+    because "skills" < "skills.zip" where string order puts skills.zip
+    first ('.' sorts below '/'). The mixed-case pair is the Windows
+    failure this fix came from (pinned installs failing with
+    install:hash-mismatch while the pins verified on posix machines);
+    the skills pair keeps this test red on posix too, so CI on ubuntu
+    catches a regression back to a pathlib sort, not just a Windows
+    developer's local run."""
     import hashlib
 
     from agentdesk.registry.install import tree_digest
@@ -184,13 +190,17 @@ def test_tree_digest_walks_in_posix_string_order(tmp_path):
     (plugin_dir / "skills" / "recap").mkdir(parents=True)
     (plugin_dir / "README.md").write_text("# plugin\n", encoding="utf-8")
     (plugin_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    (plugin_dir / "skills.zip").write_text("zip\n", encoding="utf-8")
     (plugin_dir / "skills" / "recap" / "SKILL.md").write_text("x\n",
                                                              encoding="utf-8")
     # String order, which is the pin's order: README.md sorts before
-    # manifest.json, and a case-insensitive walk would flip the pair.
-    names = sorted(["README.md", "manifest.json",
+    # manifest.json (a case-insensitive walk flips the pair) and
+    # skills.zip sorts before skills/recap/SKILL.md (a pathlib
+    # part-tuple walk visits the directory first).
+    names = sorted(["README.md", "manifest.json", "skills.zip",
                     "skills/recap/SKILL.md"])
-    assert names[0] == "README.md"
+    assert names[:2] == ["README.md", "manifest.json"]
+    assert names[2:] == ["skills.zip", "skills/recap/SKILL.md"]
     digest = hashlib.sha256()
     for name in names:
         digest.update(name.encode("utf-8") + b"\n")
