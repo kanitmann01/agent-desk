@@ -100,6 +100,11 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("demo.seeded", "decision", "The Sample data switch was turned on: labelled sample cards and sample fixtures (a workbook, a calendar file, header-only mail files) were created under the app's sample folder. Everything is marked Sample; none of it is live."),
     ("demo.cleared", "decision", "The Sample data switch was turned off: the labelled sample cards and the sample folder were removed. Nothing you created yourself is touched."),
 
+    # The agents vocabulary (spec 012): one row per task run. The row
+    # names the agent, the outcome and how many recalled facts the run
+    # used, never the brief, the artifact or any fact's text.
+    ("agents.run", "decision", "You ran one of the desk's agents on a brief. The brief, at most five recalled facts and the agent's instructions were sent to the company LLM endpoint as one prompt; the row names the agent, whether the run succeeded and how many facts it used, never the brief or the artifact."),
+
     # The peer-to-peer vocabulary (ticket #67): sharing plugins between
     # desks with nothing centralized. Discovery announces on the local
     # network only and starts on the first peers page visit; reads are

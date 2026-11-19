@@ -29,6 +29,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote
 
 import agentdesk
+from agentdesk.agents.registry import ROSTER, find_agent
+from agentdesk.agents.runner import (
+    BRIEF_MAX_CHARS,
+    STATUS_OK as AGENT_STATUS_OK,
+    endpoint_off_run,
+    run_agent,
+)
+from agentdesk.agents.store import AgentRunStore
 from agentdesk.assistant import audit as audit_store
 from agentdesk.briefs import generate_briefs
 from agentdesk.assistant import threadlog
@@ -144,6 +152,7 @@ from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.audit_view import render_audit_page
 from agentdesk.server.activity_view import DECISIONS
+from agentdesk.server.agents_view import render_agents_page
 from agentdesk.server import pages
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.capabilities_view import render_capabilities_page
@@ -822,6 +831,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         mail: MailWatch | None = None,
         mail_store: MailStore | None = None,
         research_store: ResearchStore | None = None,
+        agents_store: AgentRunStore | None = None,
         outbox_dir=None,
         registry_root=None,
         peer_store: PeerStore | None = None,
@@ -912,6 +922,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         # research panel's own turns, read by plugin cards. None means
         # the store could not open, and the research card says so.
         self.research_store = research_store
+        # The agent runs store (spec 012): every task run lands here
+        # with its receipt. None means the store could not open, and
+        # the agents page says so while the roster still renders.
+        self.agents = agents_store
         self.outbox_dir = Path(outbox_dir) if outbox_dir is not None else _default_outbox_dir()
         self.consolidator = (
             Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
@@ -1538,6 +1552,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
         elif path == "/assistant":
             self._send_assistant_page()
+        elif path == "/agents":
+            self._send_agents_page()
         elif path == "/inbox":
             self._send_inbox_page()
         elif path == "/activity":
@@ -1965,6 +1981,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.end_headers()
             else:
                 self._send_json(200, answer.to_json())
+        elif path == "/agents/run":
+            self._agents_run()
         else:
             self._send_error_page(404, "Nothing here", "No action lives at this address.")
 
@@ -2284,6 +2302,123 @@ class DashboardHandler(BaseHTTPRequestHandler):
         page = render_assistant_page(turns, agentdesk.__version__,
                                      inbox_count=self._inbox_waiting_count())
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _send_agents_page(self) -> None:
+        """Render the agents page: the roster with a run form per agent,
+        and the run history with each run's receipt.
+
+        The history reads the store's newest-first rows; a store that
+        could not open renders the roster with the honest absent-history
+        note rather than an empty history that would claim no run ever
+        happened.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        runs = (
+            server.agents.recent() if server.agents is not None else []
+        )
+        page = render_agents_page(
+            ROSTER, runs, agentdesk.__version__,
+            inbox_count=self._inbox_waiting_count(),
+            history_available=server.agents is not None,
+        )
+        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _agents_run(self) -> None:
+        """Run one agent over one brief and record the run honestly.
+
+        The named refusals come first (unknown agent, blank or oversize
+        brief), so nothing reaches memory or the endpoint that the
+        roster would not own. A run is then recall, one prompt, one
+        call: the endpoint switched off short-circuits with the standing
+        cause and recalls nothing (no prompt was built), every other
+        failure is the runner's degraded outcome with the pinned cause.
+        A form submit lands back on the page; JSON returns the run.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        body = self._read_json_body()
+        agent_id = body.get("agent") if body is not None else None
+        brief = body.get("brief") if body is not None else None
+        kind = find_agent(agent_id) if isinstance(agent_id, str) else None
+        if kind is None:
+            self._send_json(
+                400,
+                {"error": "unknown agent id; the /agents page lists the agents"
+                          " this desk can run"},
+            )
+            return
+        if not isinstance(brief, str) or not brief.strip():
+            self._send_json(
+                400,
+                {"error": "expected {\"agent\": \"presentation\","
+                          " \"brief\": \"a short task brief\"}"},
+            )
+            return
+        brief = brief.strip()
+        if len(brief) > BRIEF_MAX_CHARS:
+            self._send_json(
+                400,
+                {"error": f"the brief is longer than {BRIEF_MAX_CHARS}"
+                          " characters; shorten it"},
+            )
+            return
+        if server.agents is None:
+            self._send_json(503, {"error": "the agents store is not available"})
+            return
+        if not self._source_allowed("endpoint_enabled"):
+            result = endpoint_off_run()
+        else:
+            result = run_agent(
+                kind, brief, self._effective_llm()[0],
+                ranked_facts=self._agent_fact_ranks(kind, brief),
+                excel_status=(
+                    server.excel.status() if server.excel is not None else None
+                ),
+            )
+        run_id = server.agents.record(
+            kind.id, brief, result.status, cause=result.cause,
+            reply=result.reply, artifact=result.artifact, facts=result.facts,
+        )
+        if result.facts:
+            count = len(result.facts)
+            used = f"used {count} recalled fact" + ("" if count == 1 else "s")
+        else:
+            used = "used nothing"
+        self._audit(
+            "agents.run", target=kind.id,
+            status="ok" if result.status == AGENT_STATUS_OK else "error",
+            detail=f"status {result.status}; {used}",
+        )
+        if self._is_form_submit():
+            self.send_response(303)
+            self.send_header("Location", "/agents")
+            self._common_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        else:
+            self._send_json(200, {
+                "id": run_id,
+                "agent": kind.id,
+                "status": result.status,
+                "cause": result.cause,
+                "reply": result.reply,
+                "artifact": result.artifact,
+                "facts": result.facts,
+            })
+
+    def _agent_fact_ranks(self, kind, brief: str) -> list:
+        """The ranked recall for one agent run: the agent's name joined
+        to the brief is the query, the same hybrid recall and embedding
+        derivation the assistant's turns use. A locked memory store
+        contributes nothing: the run keeps going, the bank is never read
+        in plaintext."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return []
+        self._configure_memory_embeddings()
+        try:
+            return memory.recall(f"{kind.name} {brief}")
+        except MemoryEncryptedError:
+            return []
 
     def _send_audit_tail(self) -> None:
         """The newest audit entries as JSON, for the settings page's live tail.
@@ -6532,6 +6667,7 @@ def create_server(
     mail: MailWatch | None = None,
     mail_store: MailStore | None = None,
     research_store: ResearchStore | None = None,
+    agents_store: AgentRunStore | None = None,
     outbox_dir=None,
     registry_root=None,
     peer_store: PeerStore | None = None,
@@ -6600,6 +6736,8 @@ def create_server(
         mail = _default_mail_watch(settings_store, inbox_store, mail_store)
     if research_store is None:
         research_store = _default_research_store()
+    if agents_store is None:
+        agents_store = _default_agents_store()
     if plugins is None:
         # After the mail block on purpose: the default runner's
         # pipeline bindings read the very objects built above, so a
@@ -6648,6 +6786,7 @@ def create_server(
             mail=mail,
             mail_store=mail_store,
             research_store=research_store,
+            agents_store=agents_store,
             outbox_dir=outbox_dir,
             registry_root=registry_root,
             peer_store=peer_store,
@@ -6915,6 +7054,20 @@ def _default_research_store() -> ResearchStore | None:
         return ResearchStore(conn, time.time)
     except (OSError, sqlite3.Error):
         LOG.exception("research store unavailable")
+        return None
+
+
+def _default_agents_store() -> AgentRunStore | None:
+    """The agent runs over the persistent store (they outlive a restart
+    by design: the history and its receipts are the record), or None
+    when it cannot open."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "agents.sqlite3", check_same_thread=False)
+        return AgentRunStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("agents store unavailable")
         return None
 
 

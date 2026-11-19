@@ -882,6 +882,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         "/": "Dashboard",
         "/inbox": "Inbox",
         "/assistant": "Assistant",
+        "/agents": "Agents",
         "/memory": "Memory",
         "/settings": "Settings",
         "/marketplace": "Marketplace",
@@ -901,6 +902,9 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         # the accessible name carries the waiting number.
         f'{entry("/inbox", _ICON_INBOX, "Inbox", badge)}'
         f'{entry("/assistant", _ICON_ASSISTANT, "Assistant")}'
+        # Agents beside Assistant: both are host surfaces over the one
+        # endpoint, one per question, one per task.
+        f'{entry("/agents", _ICON_ASSISTANT, "Agents")}'
         # Activity, Capabilities and Peers moved under Settings: the rail
         # carries the surfaces a person uses every day, not every URL the
         # server can render. Their routes still answer for deep links.
