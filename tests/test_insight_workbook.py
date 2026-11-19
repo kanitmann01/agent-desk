@@ -241,7 +241,9 @@ def test_suggested_rows_are_the_best_finding_capped_at_five():
     assert reading.suggested == (0, 1, 2, 3, 4)
 
     attach_cards([card], _context())
-    assert card["payload"]["insight"]["suggested"] == [0, 1, 2, 3, 4]
+    # The rows a family suggests drive no surface's rendering, so the wire
+    # carries none: only the resolved lines and the press travel.
+    assert "suggested" not in card["payload"]["insight"]
 
 
 def test_a_thin_table_suggests_no_rows():
@@ -250,4 +252,4 @@ def test_a_thin_table_suggests_no_rows():
     assert workbook.derive(card, payload, _context()).suggested == ()
 
     attach_cards([card], _context())
-    assert card["payload"]["insight"]["suggested"] == []
+    assert "suggested" not in card["payload"]["insight"]

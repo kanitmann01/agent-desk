@@ -69,7 +69,7 @@ def test_a_card_string_is_escaped_at_the_boundary():
 
 
 def test_an_unknown_kind_draws_nothing():
-    assert app._plugin_element_html({"kind": "sparkline", "points": [1, 2]}) == ""
+    assert app._plugin_element_html({"kind": "hologram", "points": [1, 2]}) == ""
 
 
 def test_the_rendered_card_carries_the_reading(monkeypatch):
@@ -89,58 +89,73 @@ def test_the_rendered_card_carries_the_reading(monkeypatch):
     widget = app.DashboardHandler._plugin_widget(None, cards[0])
     assert "Booked falls as Margin rises." in widget.body_html
 
-def _receipt_card(receipts: dict, elements: list[dict] | None = None) -> dict:
+def _reading_card(blocks: list[dict], elements: list[dict] | None = None) -> dict:
+    """A fresh widget card carrying one reading's resolved blocks."""
     card = _widget_card(elements or [{"kind": "text", "text": "Booked falls as Margin rises."}])
-    card["payload"]["insight"] = {"status": "ok", "source": "local", "preferences": [], "note": "", "press": None, "receipts": receipts}
+    card["payload"]["insight"] = {
+        "status": "ok",
+        "source": "local",
+        "preferences": [],
+        "note": "",
+        "blocks": blocks,
+        "press": None,
+    }
     return card
 
 
 def test_the_rendered_card_prints_what_the_reading_used():
     widget = app.DashboardHandler._plugin_widget(
         None,
-        _receipt_card({
-            "preferences": ["chart"],
-            "inputs": ["memory", "rows"],
-            "counts": {"memory": 2},
-        }),
+        _reading_card(
+            [{"kind": "receipts", "text": "Used: your chart preference · memory (2 notes) · this card's rows."}]
+        ),
     )
     assert "Used: your chart preference · memory (2 notes) · this card's rows." in widget.body_html
 
 
-def test_one_note_reads_in_the_singular():
-    line = app._receipt_line({
-        "insight": {"receipts": {"preferences": [], "inputs": ["memory"], "counts": {"memory": 1}}}
-    })
-    assert "memory (1 note)" in line
+def test_every_block_draws_its_own_quiet_line_in_order():
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _reading_card(
+            [
+                {"kind": "receipts", "text": "Used: your chart preference."},
+                {"kind": "note", "text": "Only the rows under the chart were looked at."},
+            ]
+        ),
+    )
+    body = widget.body_html
+    assert '<p class="w-note">Used: your chart preference.</p>' in body
+    assert '<p class="w-note">Only the rows under the chart were looked at.</p>' in body
+    assert body.index("Used: your chart preference.") < body.index("Only the rows under the chart")
 
 
-def test_a_reading_that_used_only_its_defaults_says_so():
-    only_rows = app._receipt_line({"insight": {"receipts": {"preferences": [], "inputs": ["rows"]}}})
-    assert only_rows == '<p class="w-note">Used the defaults; read only this card\'s rows.</p>'
-    with_memory = app._receipt_line({
-        "insight": {"receipts": {"preferences": [], "inputs": ["memory", "calendar"]}}
-    })
-    assert with_memory == '<p class="w-note">Used the defaults; read memory and this calendar.</p>'
+def test_a_block_is_escaped_at_the_boundary():
+    line = app._receipt_line(
+        {"insight": {"blocks": [{"kind": "note", "text": "<script>alert(1)</script>"}]}}
+    )
+    assert "<script>" not in line
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in line
 
 
-def test_a_reading_that_read_nothing_prints_no_receipt():
-    assert app._receipt_line({"insight": {"receipts": {"preferences": [], "inputs": []}}}) == ""
+def test_a_reading_that_says_nothing_prints_no_receipt():
+    assert app._receipt_line({"insight": {"blocks": []}}) == ""
+    assert app._receipt_line({"insight": {"blocks": [{"kind": "note", "text": "   "}]}}) == ""
 
 
-def test_an_unknown_receipt_name_draws_nothing():
-    line = app._receipt_line({
-        "insight": {"receipts": {"preferences": ["<b>chart</b>"], "inputs": ["sqlite", "rows"]}}
-    })
-    assert line == '<p class="w-note">Used the defaults; read only this card\'s rows.</p>'
-    assert "sqlite" not in line
+def test_malformed_blocks_are_skipped_rather_than_drawn():
+    line = app._receipt_line(
+        {"insight": {"blocks": ["not a block", {"kind": "note"}, {"kind": "note", "text": "Kept."}]}}
+    )
+    assert line == '<p class="w-note">Kept.</p>'
 
 
 def test_no_receipt_line_without_a_reading():
     assert app._receipt_line({"elements": []}) == ""
     assert app._receipt_line({"insight": {"status": "ok"}}) == ""
+    assert app._receipt_line({"insight": {"blocks": "not a list"}}) == ""
 
 def test_a_rendered_card_with_a_press_draws_a_form_and_escapes_it():
-    card = _receipt_card({})
+    card = _reading_card([])
     card["payload"]["insight"]["press"] = {
         "label": "Draft a reply",
         "route": "/api/insight/draft",
@@ -157,6 +172,6 @@ def test_a_rendered_card_with_a_press_draws_a_form_and_escapes_it():
 
 
 def test_a_rendered_card_without_a_press_draws_no_form():
-    widget = app.DashboardHandler._plugin_widget(None, _receipt_card({}))
+    widget = app.DashboardHandler._plugin_widget(None, _reading_card([]))
     assert "/insight/press" not in widget.body_html
 

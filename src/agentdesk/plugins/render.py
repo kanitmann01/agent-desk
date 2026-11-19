@@ -10,21 +10,9 @@ import json
 import re
 from pathlib import Path
 
-ELEMENT_KINDS = (
-    "metric",
-    "text",
-    "delta",
-    "progress",
-    "list",
-    "table",
-    "sparkline",
-    "status",
-    "timeline",
-    "checklist",
-)
-
-DIRECTIONS = ("up", "down", "flat")
-TONES = ("ok", "attention", "alarm")
+# The ten element kinds, their direction and tone words: one owner in
+# vocabulary, imported here so this module's renderers and the SPA agree.
+from agentdesk.plugins.vocabulary import DIRECTIONS, ELEMENT_KINDS, TONES
 
 _INTEGER_PATTERN = re.compile(r"^[+-]?\d+$")
 
