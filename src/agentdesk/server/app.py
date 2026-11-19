@@ -2631,6 +2631,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         status, because that is a settings choice rather than a failed request, while an
         unknown or inactive skill is a 409. The body is the answer's own JSON, so a
         degraded turn still explains itself.
+
+        The skill is the assistant's saved ask, so its run recalls facts
+        ranked against the skill's own prompt on the same terms the
+        assistant turn does: the bounded block rides through the shared
+        _facts_block helper, and a locked bank contributes nothing rather
+        than breaking the run.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
@@ -2646,6 +2652,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         context = build_context(
             server.excel.status() if server.excel is not None else None,
             server.calendar.status() if server.calendar is not None else None,
+            facts_block=self._facts_block(skill["prompt"]),
         )
         llm, endpoint, model = self._effective_llm()
         answer = research(
