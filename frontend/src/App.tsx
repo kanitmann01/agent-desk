@@ -2,8 +2,8 @@
 // it; every other path is the unchanged dashboard. The shell listens for
 // popstate only to cross that boundary, so browser Back from a marketplace
 // page lands on the dashboard without a reload.
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { getJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { getJson, postJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
 import type { DashboardData } from './types';
 import Dashboard from './dashboard/Dashboard';
 import MarketplaceApp from './marketplace/MarketplaceApp';
@@ -53,6 +53,9 @@ function DashboardApp() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [expired, setExpired] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  // The view report is a POST, so it must fire once per mount, after the
+  // first successful load, and never make rendering wait for it.
+  const reportedView = useRef(false);
 
   // Focus the failure heading as it mounts (it stays out of the tab
   // order) so Try again is the following keypress. A callback ref runs
@@ -72,6 +75,10 @@ function DashboardApp() {
       return;
     }
     setData(res.data as DashboardData);
+    if (!reportedView.current) {
+      reportedView.current = true;
+      void postJson('/api/dashboard/view').catch(() => {});
+    }
   }, []);
 
   useEffect(() => {

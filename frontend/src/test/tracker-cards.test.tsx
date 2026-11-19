@@ -54,15 +54,18 @@ const READING_CARD: PluginCard = {
       status: 'ok',
       source: 'local',
       preferences: ['chart'],
-      note: '',
+      note: 'Only the rows under the chart were looked at.',
+      blocks: [
+        { kind: 'receipts', text: "Used: your chart preference · memory (2 notes) · this card's rows." },
+        { kind: 'note', text: 'Only the rows under the chart were looked at.' },
+      ],
       press: null,
-      receipts: { preferences: ['chart'], inputs: ['memory', 'rows'], counts: { memory: 2 } },
     },
   },
 };
 
 describe('the workbook card draws the reading', () => {
-  it('renders the appended elements and the receipt line under the figure', () => {
+  it('renders the appended elements and the resolved lines under the figure', () => {
     render(<TrackerCard card={READING_CARD} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
 
     expect(screen.getByText('Booked is 18 rows behind last month, and West carries most of it.')).toBeInTheDocument();
@@ -73,11 +76,14 @@ describe('the workbook card draws the reading', () => {
     expect(
       screen.getByText("Used: your chart preference · memory (2 notes) · this card's rows."),
     ).toBeInTheDocument();
+    // A note block prints the server's sentence as it came; there is no
+    // second phrase table in this build to disagree with it.
+    expect(screen.getByText('Only the rows under the chart were looked at.')).toBeInTheDocument();
     // An unknown kind draws nothing rather than an empty box.
     expect(screen.queryByText('A kind this build does not draw.')).toBeNull();
   });
 
-  it('drops names it does not know, and says the defaults when no preference changed the reading', () => {
+  it('prints the defaults line the server resolved when no preference changed the reading', () => {
     const card: PluginCard = {
       ...READING_CARD,
       payload: {
@@ -87,8 +93,8 @@ describe('the workbook card draws the reading', () => {
           status: 'ok',
           source: 'local',
           note: '',
+          blocks: [{ kind: 'receipts', text: "Used the defaults; read only this card's rows." }],
           press: null,
-          receipts: { preferences: ['somethingNew'], inputs: ['rows'] },
         },
       },
     };
@@ -96,7 +102,9 @@ describe('the workbook card draws the reading', () => {
 
     expect(screen.getByText('Two regions carry the whole quarter.')).toBeInTheDocument();
     expect(screen.getByText("Used the defaults; read only this card's rows.")).toBeInTheDocument();
-    expect(screen.queryByText(/somethingNew/)).toBeNull();
+    // The server resolved the line; this build draws one paragraph per block
+    // and never a second line of its own.
+    expect(screen.getAllByText(/^Used/)).toHaveLength(1);
   });
 
   it('names every input the defaults read, and counts memory the way the server does', () => {
@@ -109,8 +117,8 @@ describe('the workbook card draws the reading', () => {
           status: 'ok',
           source: 'local',
           note: '',
+          blocks: [{ kind: 'receipts', text: 'Used the defaults; read memory (1 note) and this calendar.' }],
           press: null,
-          receipts: { preferences: [], inputs: ['memory', 'calendar'], counts: { memory: 1 } },
         },
       },
     };

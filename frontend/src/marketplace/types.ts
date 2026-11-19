@@ -1,6 +1,8 @@
 // The marketplace JSON DTOs, mirroring src/agentdesk/marketplace/catalog.py
 // and api.py exactly. Field names keep the server's spelling.
 
+import type { PluginElement } from '../types';
+
 export interface IneligibleReason {
   code: string;
   message: string;
@@ -192,6 +194,32 @@ export interface MarketElement {
   }[];
   state?: string;
   reason?: string;
+}
+
+/**
+ * Adapt one marketplace sample element to the dashboard's element shape.
+ *
+ * The server renders samples with the same ten kinds the dashboard draws, so
+ * this is only the structural widening the two DTOs need: the kind is
+ * narrowed to the known union and the sample-only fields are left behind.
+ */
+export function toPluginElement(element: MarketElement): PluginElement {
+  return {
+    kind: element.kind as PluginElement['kind'],
+    label: element.label,
+    title: element.title,
+    value: element.value,
+    text: element.text,
+    direction: element.direction,
+    points: element.points,
+    rows: element.rows,
+    columns: element.columns,
+    items: element.items,
+    target: element.target,
+    unit: element.unit,
+    tone: element.tone as PluginElement['tone'],
+    reason: element.reason,
+  };
 }
 
 export interface PackMember {

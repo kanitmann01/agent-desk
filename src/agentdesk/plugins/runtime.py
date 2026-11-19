@@ -821,15 +821,16 @@ class PluginRuntime:
 
     def widget_cards(self) -> list[dict]:
         """Widget card data for enabled, installed plugins, pilot and amber
-        included. One dashboard view spends one pilot view per plugin.
+        included.
 
-        An attached data source is read live (stale marking included);
-        the ui-schema render model rides along as ``payload`` for views
-        that can draw it.
+        Read-only: it never spends a pilot view and never writes the plugin
+        store, so both the JSON payload and the rendered page can call it
+        without a GET changing state. An attached data source is read live
+        (stale marking included); the ui-schema render model rides along as
+        ``payload`` for views that can draw it.
         """
         state = self._read()
         cards = []
-        dirty = False
         emitted: set[str] = set()
         for entry in state["plugins"].values():
             if entry["state"] != "enabled" or not entry["versions"]:
@@ -847,9 +848,6 @@ class PluginRuntime:
                                     else self._plugin_entry(state, target))
                     cards.extend(self._instance_cards(target, target_entry))
                     emitted.add(target)
-                if entry["pilot_views_left"] > 0:
-                    entry["pilot_views_left"] -= 1
-                    dirty = True
                 continue
             if not self.runner.attached(entry["id"]):
                 # A runtime is rebuilt on every server start and the
@@ -887,12 +885,54 @@ class PluginRuntime:
                 version=entry["active_version"],
                 pilot=entry["pilot_views_left"] > 0, state=entry["state"],
                 data=data, payload=payload, manifest=manifest))
+        return cards
+
+    def record_dashboard_view(self) -> int:
+        """Spend one pilot view per plugin target a dashboard view showed.
+
+        Mirrors the emission conditions of widget_cards: disabled plugins,
+        plugins without an installed version and a tampered tree that fails
+        verification spend nothing, and an alias or instance-capable plugin
+        spends for its target. Returns the number of pilot views spent; the
+        plugin store is written once, and only when a count actually changed,
+        so a view after the pilot has run out leaves the file untouched.
+        """
+        state = self._read()
+        dirty = False
+        spent = 0
+        emitted: set[str] = set()
+        for entry in state["plugins"].values():
+            if entry["state"] != "enabled" or not entry["versions"]:
+                continue
+            manifest = {}
+            manifest_path = self._active_version_dir(entry) / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+            plugin_id = entry["id"]
+            target = config.get("aliasOf") or plugin_id
+            if config.get("aliasOf") or self._is_instance_capable(manifest):
+                if target not in emitted:
+                    emitted.add(target)
+                    if entry["pilot_views_left"] > 0:
+                        entry["pilot_views_left"] -= 1
+                        dirty = True
+                        spent += 1
+                continue
+            if not self.runner.attached(plugin_id):
+                try:
+                    self._verify_installed(entry)
+                except PluginError:
+                    # widget_cards emits the tampered card without spending.
+                    continue
+                self._attach_runner(plugin_id, entry)
             if entry["pilot_views_left"] > 0:
                 entry["pilot_views_left"] -= 1
                 dirty = True
+                spent += 1
         if dirty:
             self._write(state)
-        return cards
+        return spent
 
     def widget_payload(self, plugin_id: str) -> dict | None:
         """The bound ui-schema render model for one plugin, or None."""

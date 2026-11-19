@@ -114,7 +114,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const calendarNeedsConnect = data.commitments.mode !== 'live'
     || data.commitments.status?.state === 'empty'
     || data.commitments.status == null;
-  const researchNeedsAsk = data.research.lastAnsweredTs == null;
+  // research.enabled is the same payload decision the server-rendered
+  // card follows; a disabled source is asked to be turned on, not asked.
+  const researchEnabled = data.research.enabled;
+  const researchNeedsAsk = researchEnabled && data.research.lastAnsweredTs == null;
 
   /**
    * Connect a sales workbook by path and reload the dashboard; a note says why nothing
@@ -204,6 +207,14 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       action: <Button tone="secondary" className="btn-sm" onClick={askFirst}>Ask</Button>,
     });
   }
+  if (!researchEnabled) {
+    decisions.push({
+      key: 'research-off',
+      title: 'Turn research back on',
+      why: 'Answers come from your company endpoint, and it is off in settings.',
+      action: <Button tone="secondary" className="btn-sm" href="/settings">Open settings</Button>,
+    });
+  }
   const connected = data.sources.connected;
   const total = data.sources.total;
 
@@ -238,8 +249,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     },
     {
       name: 'Research',
-      live: sourceStatus('research-endpoint') === 'connected',
-      status: sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
+      live: researchEnabled && sourceStatus('research-endpoint') === 'connected',
+      status: researchEnabled && sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
       lastRun: fromEpoch(data.research.lastAnsweredTs),
       items: '—',
     },
