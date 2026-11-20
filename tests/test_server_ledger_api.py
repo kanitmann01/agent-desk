@@ -17,6 +17,7 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 
 import server_harness
+from agentdesk.inbox.core import STATUS_DISMISSED, STATUS_WAITING
 from agentdesk.ledger import Ledger
 
 
@@ -163,3 +164,45 @@ def test_activity_page_lists_ledger_with_undo(env, auth) -> None:
     status, _headers, body = env.request("GET", "/settings", auth)
     assert status == 200
     assert "3 (normal)" in body.decode()
+
+
+def _card_capture(server, card) -> bytes:
+    return json.dumps(card.to_json(server.inbox.now_ts()), ensure_ascii=False).encode()
+
+
+def test_card_undo_kinds(env, auth) -> None:
+    server = env.server
+    inbox = server.inbox
+
+    # A card the desk added by itself is undone by dismissing it.
+    added = inbox.add("suggestion", "excel", "Try a pivot table")
+    entry = server.ledger.record(
+        actor="agent-desk",
+        action="inbox.add",
+        subject=f"card/{added.id}",
+        why="The desk added a suggestion card.",
+        undo_kind="card-added",
+        before=_card_capture(server, added),
+    )
+    status, _headers, body = env.post_json("/api/ledger/undo", {"id": entry.id}, auth)
+    assert status == 200, body
+    assert inbox.get(added.id).status == STATUS_DISMISSED
+    inverse = server.ledger.get(json.loads(body)["entry"])
+    assert inverse.undo_kind == "card-added"
+
+    # A card the desk dismissed by itself is undone by reopening it.
+    dismissed = inbox.add("suggestion", "excel", "Act on the plan")
+    dismissed = inbox.dismiss(dismissed.id)
+    entry = server.ledger.record(
+        actor="agent-desk",
+        action="inbox.dismiss",
+        subject=f"card/{dismissed.id}",
+        why="The desk dismissed a card nobody needed.",
+        undo_kind="card-dismissed",
+        before=_card_capture(server, dismissed),
+    )
+    status, _headers, body = env.post_json("/api/ledger/undo", {"id": entry.id}, auth)
+    assert status == 200, body
+    assert inbox.get(dismissed.id).status == STATUS_WAITING
+    inverse = server.ledger.get(json.loads(body)["entry"])
+    assert inverse.undo_kind == "card-dismissed"
