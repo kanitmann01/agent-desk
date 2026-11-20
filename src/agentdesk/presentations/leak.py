@@ -20,6 +20,10 @@ import zipfile
 from pathlib import Path
 
 TOKEN = re.compile(r"[a-z0-9]+")
+# A hostile package can declare a huge part. Past this, the scan refuses
+# the file instead of reading it.
+MAX_PART_BYTES = 8 * 1024 * 1024
+MAX_PACKAGE_BYTES = 32 * 1024 * 1024
 # A deck is a zip. Its outer bytes are fingerprinted, and so is every
 # part inside: XML is token-scanned, media is hashed as bytes.
 PACKAGE_SUFFIXES = {".pptx"}
@@ -100,20 +104,26 @@ def _package_hit(blob: bytes, hashes: set[str]) -> bool:
     """Whether any part of a .pptx hits the denylist.
 
     XML and other text parts are token-scanned. Media parts are matched
-    by the hash of their bytes. A package that is not a zip is ignored
+    by the hash of their bytes. A part or a package past the size cap is
+    refused rather than read. A package that is not a zip is ignored
     beyond the outer hash already checked.
     """
     try:
         archive = zipfile.ZipFile(io.BytesIO(blob))
     except zipfile.BadZipFile:
         return False
-    for name in archive.namelist():
+    total = 0
+    for info in archive.infolist():
+        total += max(info.file_size, 0)
+        if info.file_size > MAX_PART_BYTES or total > MAX_PACKAGE_BYTES:
+            return True
         try:
-            data = archive.read(name)
+            data = archive.read(info.filename)
         except zipfile.BadZipFile:
             continue
         if hashlib.sha256(data).hexdigest() in hashes:
             return True
+        name = info.filename
         suffix = Path(name).suffix.lower()
         if suffix in MEDIA_SUFFIXES or "/media/" in name.replace("\\", "/"):
             continue

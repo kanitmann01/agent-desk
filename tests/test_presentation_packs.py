@@ -18,6 +18,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.llm import NO_ENDPOINT_CAUSE
+from agentdesk.presentations import leak
 from agentdesk.presentations.leak import load_hashes, scan
 from agentdesk.presentations.ooxml import SAMPLE_TEXT, build_shell, read_parts
 from agentdesk.presentations.packs import load_packs
@@ -114,6 +115,17 @@ def test_a_token_inside_a_pptx_fails_the_leak_check(tmp_path):
     assert scan([deck], {hashlib.sha256(inner_png).hexdigest()}) == [str(deck)]
     # The committed list stays empty. The hash above exists only in this test.
     assert load_hashes(ROOT / "tools" / "brand_leak_hashes.txt") == set()
+
+
+def test_an_oversized_deck_part_is_refused_without_being_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(leak, "MAX_PART_BYTES", 32)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("ppt/slides/slide1.xml", b"<a:t>plain</a:t>" + b"x" * 64)
+    deck = tmp_path / "big.pptx"
+    deck.write_bytes(buf.getvalue())
+    # The hash set is unrelated. The part is over the cap, so the scan refuses it.
+    assert scan([deck], {"unrelated"}) == [str(deck)]
 
 
 def test_a_thumb_or_shell_outside_the_pack_is_not_served(tmp_path):
