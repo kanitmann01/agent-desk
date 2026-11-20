@@ -13,7 +13,7 @@ import html
 from datetime import datetime
 
 from agentdesk.agents.registry import AgentKind, find_agent
-from agentdesk.agents.runner import STATUS_DEGRADED
+from agentdesk.agents.runner import STATUS_DEGRADED, slides_text
 from agentdesk.server.pages import page_shell
 
 USED_NOTHING = "used nothing"
@@ -50,29 +50,6 @@ def _receipt_html(run: dict) -> str:
     return f"<p class='empty'>This run used these facts from memory:</p><ul>{lines}</ul>"
 
 
-def _slides_text(artifact: dict) -> str:
-    """An old slides artifact as plain lines, so history still reads.
-
-    The structured outline is gone; a stored deck is its title, then
-    each slide title and its bullets, one line each.
-    """
-    lines = []
-    title = str(artifact.get("title") or "").strip()
-    if title:
-        lines.append(title)
-    for slide in artifact.get("slides") or []:
-        if not isinstance(slide, dict):
-            continue
-        slide_title = str(slide.get("title") or "").strip()
-        if slide_title:
-            lines.append(slide_title)
-        for bullet in slide.get("bullets") or []:
-            text = str(bullet).strip()
-            if text:
-                lines.append(f"- {text}")
-    return "\n".join(lines)
-
-
 def _artifact_html(run: dict) -> str:
     """The artifact as text. Nothing the model returned is markup.
 
@@ -84,7 +61,7 @@ def _artifact_html(run: dict) -> str:
     if not artifact:
         return ""
     if artifact.get("kind") == "slides":
-        text = _slides_text(artifact)
+        text = slides_text(artifact)
     else:
         text = str(artifact.get("text", ""))
     if not text:

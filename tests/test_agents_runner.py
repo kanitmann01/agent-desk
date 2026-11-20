@@ -299,6 +299,22 @@ def test_the_transcript_carries_agent_brief_artifact_and_feedback():
     assert text.endswith("My manager liked it.")
 
 
+def test_an_old_slides_run_is_named_from_its_slides():
+    run = {
+        "brief": "the old deck",
+        "artifact": {
+            "kind": "slides",
+            "title": "Q3 Review",
+            "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}],
+        },
+    }
+    text = runner.artifact_summary(run)
+    assert text.startswith("an outline: Q3 Review")
+    assert "Revenue" in text
+    assert "revenue is 220" in text
+    assert text != "an outline: "
+
+
 def test_the_transcript_of_a_degraded_run_names_the_honest_empty():
     run = {"brief": "the Q3 review", "artifact": None}
     text = runner.feedback_transcript("Worksheet brief", run, "It never ran.")

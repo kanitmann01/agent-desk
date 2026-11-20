@@ -171,16 +171,44 @@ def endpoint_off_run() -> AgentRun:
 ARTIFACT_SUMMARY_CHARS = 120
 
 
+def slides_text(artifact: dict) -> str:
+    """An old slides artifact as plain lines.
+
+    Title, then each slide title and its bullets. The page and the
+    feedback summary both use this, so a stored deck is never a blank line.
+    """
+    lines = []
+    title = str(artifact.get("title") or "").strip()
+    if title:
+        lines.append(title)
+    for slide in artifact.get("slides") or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_title = str(slide.get("title") or "").strip()
+        if slide_title:
+            lines.append(slide_title)
+        for bullet in slide.get("bullets") or []:
+            text = str(bullet).strip()
+            if text:
+                lines.append(f"- {text}")
+    return "\n".join(lines)
+
+
 def artifact_summary(run: dict) -> str:
     """One line naming what a run produced, for the feedback transcript.
 
-    A degraded run says so in so many words; a finished run keeps the
-    first line of its text.
+    A degraded run says so in so many words. An old slides row is named
+    from its title and bullets. Anything else keeps the first line of
+    its text.
     """
     artifact = run.get("artifact") if run else None
     if not artifact:
         return "no artifact (the run did not complete)"
-    text = " ".join(str(artifact.get("text", "")).split())
+    if artifact.get("kind") == "slides":
+        raw = slides_text(artifact)
+    else:
+        raw = str(artifact.get("text", ""))
+    text = " ".join(raw.split())
     return f"an outline: {text[:ARTIFACT_SUMMARY_CHARS]}"
 
 
