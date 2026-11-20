@@ -2,6 +2,7 @@
 // agree. Plain labels; counts carry their own nouns.
 import type { RemovalDone, RemovalPlan } from './types';
 
+/** The number with its noun, pluralised unless the count is exactly one. */
 export function count(n: number, noun: string, plural = `${noun}s`): string {
   return `${n} ${n === 1 ? noun : plural}`;
 }
@@ -10,6 +11,11 @@ const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'nu
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
 // "12:04" today, "Nov 3" otherwise. The page shows when, never "ago".
+/**
+ * The time of a row: clock time for today, "Nov 3" otherwise, or "" when absent.
+ *
+ * Both arguments are epoch seconds; today is read from the local calendar date.
+ */
 export function stamp(ts: number | null | undefined, now = Date.now() / 1000): string {
   if (ts === null || ts === undefined) return '';
   const date = new Date(ts * 1000);
@@ -17,12 +23,14 @@ export function stamp(ts: number | null | undefined, now = Date.now() / 1000): s
   return date.toDateString() === today.toDateString() ? timeFormat.format(date) : dateFormat.format(date);
 }
 
+/** The capture channels as a readable list, or "no channel" when none are on. */
 export function channelList(labels: string[]): string {
   if (labels.length === 0) return 'no channel';
   if (labels.length === 1) return labels[0];
   return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
 }
 
+/** The user-facing name of an extraction method; unknown ones pass through. */
 export function methodLabel(method: string): string {
   return method === 'model' ? 'Endpoint' : method === 'rules' ? 'Rules' : method;
 }
@@ -35,6 +43,7 @@ export const TARGET_NOUN: Record<RemovalPlan['target']['type'], string> = {
 };
 
 // The confirm button says exactly what goes.
+/** The confirm button's text, naming exactly what the removal takes. */
 export function removeLabel(plan: RemovalPlan): string {
   if (plan.target.type === 'observation') return 'Remove observation';
   if (plan.facts.length === 0) return `Remove ${TARGET_NOUN[plan.target.type]}`;
@@ -42,6 +51,7 @@ export function removeLabel(plan: RemovalPlan): string {
 }
 
 // One line for the undo bar: what went, then what else changed.
+/** The undo bar's single line: what was removed, then what else changed. */
 export function removedSummary(done: RemovalDone): string {
   const parts: string[] = [];
   if (done.facts.length) parts.push(`Removed ${count(done.facts.length, 'fact')}`);
@@ -63,6 +73,7 @@ export const CHANNEL_HINT: Record<string, string> = {
 };
 
 // Who wrote an observation, in the row's meta line.
+/** Who produced an observation, for the row's meta line. */
 export function observationWriter(obs: { derived: string; method: string | null }): string {
   if (obs.derived !== 'consolidated') return 'Reflected by the endpoint';
   return obs.method === 'model' ? 'Summarized by the endpoint' : 'Built-in summary';

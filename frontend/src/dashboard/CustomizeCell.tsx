@@ -40,6 +40,13 @@ export interface CustomizeCellProps {
   children: ReactNode;
 }
 
+/**
+  * One card's customize bar, a drag handle, Move up and down, Rename and Hide, around
+  * the card itself.
+ *
+  * Renaming swaps the buttons for a title editor; the drag handlers only report keys,
+  * so the order lives in the dashboard.
+ */
 export default function CustomizeCell({
   cardKey, name, first, last, renaming, dragging, dragOver,
   onRenaming, onMove, onRename, onHide, onDragCard, onDragOverCard, onDropCard, onDragEnd,
@@ -47,6 +54,7 @@ export default function CustomizeCell({
 }: CustomizeCellProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /** Rename the card to the trimmed value of the editor. */
   function submitRename() {
     onRename(cardKey, (inputRef.current?.value ?? '').trim());
   }
@@ -54,12 +62,14 @@ export default function CustomizeCell({
   // Leaving the rename editor hands focus back to the card's grip: the
   // editor's own controls are about to unmount, and focus must not fall
   // to the body on the way out.
+  /** Leave the rename editor and hand focus back to the card's grip. */
   function closeRename() {
     const grip = document.querySelector<HTMLElement>(`[data-grip-key="${cardKey}"]`);
     onRenaming(null);
     grip?.focus();
   }
 
+  /** Commit the rename on Enter, cancel it on Escape. */
   function onRenameKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -69,6 +79,7 @@ export default function CustomizeCell({
     }
   }
 
+  /** Take a drop on this card, which moves the dragged card here. */
   function guardDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     onDropCard(cardKey);

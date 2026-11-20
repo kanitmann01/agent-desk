@@ -19,6 +19,13 @@ export class MarketApiError extends Error {
   }
 }
 
+/**
+ * Turn a failed response into the MarketApiError the surfaces catch.
+ *
+ * The server's `error`, `message` and `details` fields are used as sent; a
+ * body without that envelope falls back to a generic code and message, and
+ * a 401 always carries the session-expired text.
+ */
 function unwrap(status: number, data: unknown): never {
   const payload = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   const code = typeof payload.error === 'string' ? payload.error : 'marketplace:error';
@@ -33,12 +40,14 @@ function unwrap(status: number, data: unknown): never {
   throw new MarketApiError(status, code, message, details);
 }
 
+/** Read a marketplace endpoint, rejecting with MarketApiError on any refusal. */
 export async function getMarket<T>(path: string): Promise<T> {
   const res = await getJson(path);
   if (!res.ok) unwrap(res.status, res.data);
   return res.data as T;
 }
 
+/** Send to a marketplace endpoint, rejecting with MarketApiError on any refusal. */
 export async function postMarket<T>(path: string, body?: unknown): Promise<T> {
   const res = await postJson(path, body);
   if (!res.ok) unwrap(res.status, res.data);
@@ -49,12 +58,14 @@ export async function postMarket<T>(path: string, body?: unknown): Promise<T> {
 // drives the same per-instance endpoints the dashboard card uses. The
 // errors ride the same {error, message} envelope as the marketplace
 // calls, so a refusal surfaces with its server message.
+/** Read a plugin's instances; a refusal rejects with its server message. */
 export async function getInstances(pluginId: string): Promise<InstancesResponse> {
   const res = await getJson(`/api/plugins/${encodeURIComponent(pluginId)}/instances`);
   if (!res.ok) unwrap(res.status, res.data);
   return res.data as InstancesResponse;
 }
 
+/** Drive one per-instance endpoint, appending `tail` after `/instances`. */
 export async function postInstance<T>(pluginId: string, tail: string, body?: unknown): Promise<T> {
   const res = await postJson(`/api/plugins/${encodeURIComponent(pluginId)}/instances${tail}`, body);
   if (!res.ok) unwrap(res.status, res.data);
@@ -72,6 +83,12 @@ export async function postUpload<T>(pluginId: string, tail: string, file: File):
   return res.data as T;
 }
 
+/**
+ * Turn any thrown marketplace failure into a sentence fit to show a person.
+ *
+ * A MarketApiError carries the server's own message; anything else means the
+ * request never reached the server.
+ */
 export function marketErrorText(err: unknown): string {
   if (err instanceof MarketApiError) return err.message;
   return 'The marketplace could not reach its own server. Try again.';

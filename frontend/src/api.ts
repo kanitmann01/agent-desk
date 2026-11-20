@@ -9,12 +9,22 @@ export interface ApiResult<T = unknown> {
   data: T;
 }
 
+/**
+ * Fetch a JSON document over the session cookie and return the status with its
+ * parsed body, so callers branch on `ok` instead of catching.
+ */
 export async function getJson(url: string): Promise<ApiResult> {
   const response = await fetch(url, { headers: { Accept: 'application/json' } });
   const data = await safeJson(response);
   return { ok: response.ok, status: response.status, data };
 }
 
+/**
+ * Post a JSON body and return the status with the parsed answer.
+ *
+ * The body defaults to an empty object, which is what the routes taking no
+ * arguments expect.
+ */
 export async function postJson(url: string, body?: unknown): Promise<ApiResult> {
   const response = await fetch(url, {
     method: 'POST',
@@ -38,6 +48,11 @@ export async function postFile(url: string, file: File): Promise<ApiResult> {
   return { ok: response.ok, status: response.status, data: await safeJson(response) };
 }
 
+/**
+ * Parse a response body as JSON, yielding an empty object for anything else.
+ *
+ * Never throws, so callers read the status rather than catching.
+ */
 async function safeJson(response: Response): Promise<unknown> {
   try {
     return await response.json();

@@ -14,6 +14,7 @@ const ICON_RUN = (
   </svg>
 );
 
+/** One saved ask, as a row that runs it; clicks are ignored while a skill runs. */
 function SkillRow({ skill, busy, onRun }: { skill: DashboardData['skills'][number]; busy: boolean; onRun: (id: number) => void }): ReactNode {
   return (
     <li>
@@ -43,6 +44,12 @@ interface SkillsCardProps {
   onRun: (id: number) => void;
 }
 
+/**
+ * The saved asks as a slim card whose rows run their skill into the research answer
+ * area.
+ *
+ * busy holds off further runs while one is in flight.
+ */
 export default function SkillsCard({ skills, title, busy, onRun }: SkillsCardProps) {
   return (
     <WidgetCard

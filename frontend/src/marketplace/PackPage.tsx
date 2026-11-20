@@ -16,6 +16,15 @@ type Load =
   | { kind: 'error'; message: string }
   | { kind: 'ready'; pack: Pack | null; packCount: number };
 
+/**
+ * Render one pack: its members, their combined scopes, and the single review
+ * that installs all of them or none.
+ *
+ * The pack list is fetched once and the requested id looked up in it, so an
+ * unknown id renders as not found rather than as an error. A refusal that
+ * names a blocked member is reported as the pack refusing to install, quoting
+ * that member.
+ */
 export function PackPage({ id }: { id: string }) {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -103,6 +112,13 @@ export function PackPage({ id }: { id: string }) {
   const scopes = Array.from(new Set(pack.members.flatMap((member) => member.scopes))).sort();
   const blocked = pack.blockedMember;
 
+  /**
+   * Install every plugin in the pack, then close the sheet.
+   *
+   * Plugins already present are not installed twice, and a pack that was
+   * fully installed says so; a refusal caused by a blocked member names that
+   * member.
+   */
   const install = async () => {
     setBusy(true);
     setError('');

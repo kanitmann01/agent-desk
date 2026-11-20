@@ -11,6 +11,9 @@ const MAX_FIELD_HEIGHT = 152;
 
 interface CommandBarProps {
   busy: boolean;
+  // True when research is off in settings: the surface states the pause
+  // instead of accepting a question that cannot run.
+  disabled?: boolean;
   // True when the question was answered and the field should clear.
   onAsk: (question: string) => Promise<boolean>;
 }
@@ -22,7 +25,14 @@ const ICON_SEND = (
   </svg>
 );
 
-export default function CommandBar({ busy, onAsk }: CommandBarProps) {
+/**
+ * Research command bar: the question field with the one send control.
+ *
+ * Enter asks and Shift+Enter inserts a newline; `onAsk` resolves true when
+ * the question was answered, which is what clears the field. A paused
+ * research source disables the bar instead of accepting a question.
+ */
+export default function CommandBar({ busy, disabled = false, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
   const fieldRef = useRef<HTMLTextAreaElement>(null);
 
@@ -34,13 +44,19 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
     field.style.height = `${Math.min(field.scrollHeight, MAX_FIELD_HEIGHT)}px`;
   }, [question]);
 
+  /**
+   * Ask the trimmed question and clear the field when it was answered.
+   *
+   * A blank field or a busy bar does nothing.
+   */
   async function ask() {
     const trimmed = question.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || disabled) return;
     const answered = await onAsk(trimmed);
     if (answered) setQuestion('');
   }
 
+  /** Submit on Enter; Shift+Enter keeps the newline in the field. */
   function onInputKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -61,15 +77,15 @@ export default function CommandBar({ busy, onAsk }: CommandBarProps) {
           aria-label="Research question"
           autoComplete="off"
           value={question}
-          disabled={busy}
+          disabled={busy || disabled}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={onInputKey}
         />
         <span className="cmd-hint" aria-hidden="true">
-          <kbd>Enter</kbd> to ask
+          {disabled ? 'Research is turned off in settings.' : <><kbd>Enter</kbd> to ask</>}
         </span>
         <span className="cmd-magnet">
-          <button className="cmd-send" type="button" aria-label="Research" onClick={() => void ask()} disabled={busy}>
+          <button className="cmd-send" type="button" aria-label="Research" onClick={() => void ask()} disabled={busy || disabled}>
             <span className="cmd-send-label">Research</span> {ICON_SEND}
           </button>
         </span>

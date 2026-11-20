@@ -19,6 +19,7 @@ interface RailProps {
 
 const RAIL_KEY = 'agentdesk.railCollapsed';
 
+/** The persisted rail collapse state, false when storage is unavailable. */
 function storedCollapsed(): boolean {
   try {
     return localStorage.getItem(RAIL_KEY) === '1';
@@ -27,6 +28,13 @@ function storedCollapsed(): boolean {
   }
 }
 
+/**
+  * The main navigation rail: brand, entries, inbox badge, theme picker and collapse
+  * control.
+ *
+  * active is the current route, which drives aria-current and the phone bar's section
+  * name; inboxWaiting is the inbox count behind the badge.
+ */
 export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   const [collapsed, setCollapsed] = useState(storedCollapsed);
@@ -49,6 +57,10 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
     if (app) app.classList.toggle('rail-collapsed', collapsed);
   }, [collapsed]);
 
+  /**
+   * Flip the rail between collapsed and expanded, persisting the choice for the next
+   * page.
+   */
   function toggle() {
     setCollapsed((current) => {
       const next = !current;

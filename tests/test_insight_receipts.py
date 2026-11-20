@@ -1,10 +1,10 @@
 """Every reading says what it used.
 
 A reading carries two tuples: the preference keys whose stored value shaped
-it, and the inputs it consulted. The service turns them into the receipts a
-card prints, filtered to a fixed vocabulary so no surface has to look a name
-up, and so no value ever travels — a focus list cannot ride into a
-screenshot on the back of a receipt.
+it, and the inputs it consulted. The presentation turns them into the
+receipts a card prints, filtered to a fixed vocabulary so no surface has to
+look a name up, and so no value ever travels — a focus list cannot ride into
+a screenshot on the back of a receipt.
 
 The families are held to the narrow rules the ticket gives them:
 
@@ -28,6 +28,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentdesk.insight import reading as insight_reading
 from agentdesk.insight import service
 from agentdesk.insight.context import build_context
 from agentdesk.insight.preferences import FIELDS, defaults
@@ -66,10 +67,10 @@ def _card(plugin_id: str, payload: dict) -> dict:
 
 
 def _receipts(plugin_id: str, payload: dict, context: InsightContext) -> dict:
-    """The receipts the service writes for one card, as the card carries them."""
+    """The receipts the presentation prints for one card's reading."""
     card = _card(plugin_id, payload)
-    service.attach_cards([card], context)
-    return card["payload"]["insight"]["receipts"]
+    derived = service.FAMILIES[plugin_id](card, payload, context)
+    return insight_reading.receipts(derived)
 
 
 def _recall(subject: str, limit: int = 3) -> list[dict]:
@@ -150,15 +151,19 @@ def test_the_service_keeps_the_order_drops_unknown_names_and_dedupes(monkeypatch
 
 def test_a_count_rides_only_on_a_memory_input_that_was_declared():
     counted = InsightReading(inputs=("memory",), memory_notes=2)
-    assert service._receipts(counted) == {
+    assert insight_reading.receipts(counted) == {
         "preferences": [],
         "inputs": ["memory"],
         "counts": {"memory": 2},
     }
     # A count without the input it counts would print a number for a source
     # the reading never named, and zero has nothing to count.
-    assert "counts" not in service._receipts(InsightReading(inputs=("rows",), memory_notes=2))
-    assert "counts" not in service._receipts(InsightReading(inputs=("memory",), memory_notes=0))
+    assert "counts" not in insight_reading.receipts(
+        InsightReading(inputs=("rows",), memory_notes=2)
+    )
+    assert "counts" not in insight_reading.receipts(
+        InsightReading(inputs=("memory",), memory_notes=0)
+    )
 
 
 def test_a_reading_that_used_nothing_writes_empty_lists(monkeypatch):
@@ -179,8 +184,13 @@ def test_a_failing_family_degrades_and_declares_nothing(monkeypatch):
 
     service.attach_cards([card], _context(chart="bar"))
 
-    assert card["payload"]["insight"]["status"] == "unavailable"
-    assert card["payload"]["insight"]["receipts"] == EMPTY
+    insight = card["payload"]["insight"]
+    assert insight["status"] == "unavailable"
+    # The failure is the card's whole line: nothing was used, so the only
+    # block is the note that says the reading could not be worked out.
+    assert insight["blocks"] == [
+        {"kind": "note", "text": "This card's reading could not be worked out."}
+    ]
 
 
 # -- the workbook --------------------------------------------------------
@@ -363,4 +373,4 @@ def test_no_receipt_ever_carries_a_preference_value():
         assert value not in printed
     for receipt in receipts:
         assert set(receipt["preferences"]) <= set(FIELDS)
-        assert set(receipt["inputs"]) <= set(service.INPUT_NAMES)
+        assert set(receipt["inputs"]) <= set(insight_reading.INPUT_NAMES)

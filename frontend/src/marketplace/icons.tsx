@@ -66,11 +66,23 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
 };
 
+/**
+ * Coerce a manifest icon name to a glyph this module can draw.
+ *
+ * Anything unknown, including an absent name, becomes `generic`, so a
+ * manifest can never break the icon set.
+ */
 export function normalizeIcon(name: string | undefined): IconName {
   if (name && name in PATHS) return name as IconName;
   return 'generic';
 }
 
+/**
+ * Draw a plugin's glyph as inline SVG that inherits `currentColor`.
+ *
+ * The drawing is decorative: it is hidden from assistive technology, so the
+ * label beside it has to carry the meaning.
+ */
 export function PluginIcon({ name, size = 22 }: { name?: string; size?: number }) {
   return (
     <svg
@@ -91,6 +103,7 @@ export function PluginIcon({ name, size = 22 }: { name?: string; size?: number }
   );
 }
 
+/** Draw the decorative magnifier at its fixed 18px size. */
 export function SearchGlyph() {
   return (
     <svg className="mkt-search-glyph" width="18" height="18" viewBox="0 0 24 24"
@@ -101,6 +114,7 @@ export function SearchGlyph() {
   );
 }
 
+/** Draw the decorative copy-to-clipboard glyph at its fixed 14px size. */
 export function CopyGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -111,6 +125,7 @@ export function CopyGlyph() {
   );
 }
 
+/** Draw the decorative confirmation check at its fixed 14px size. */
 export function CheckGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none"

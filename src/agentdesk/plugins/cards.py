@@ -9,6 +9,8 @@ API's camelCase shape.
 """
 from __future__ import annotations
 
+from agentdesk.plugins.vocabulary import DELTA, METRIC, SPARKLINE, TEXT
+
 
 class CardError(Exception):
     """A card-construction refusal: ``code`` is the stable vocabulary."""
@@ -122,18 +124,18 @@ def _tracker_payload(title: str, reading: dict) -> dict:
     so a client can draw the card without re-reading the file.
     """
     elements = [
-        {"kind": "metric", "label": "Value",
+        {"kind": METRIC, "label": "Value",
          "value": _format_number(reading["value"])},
-        {"kind": "delta", "label": "Change", "value": reading["delta"],
+        {"kind": DELTA, "label": "Change", "value": reading["delta"],
          "direction": reading["direction"]},
-        {"kind": "text", "label": "Workbook", "text": reading["file"]},
+        {"kind": TEXT, "label": "Workbook", "text": reading["file"]},
     ]
     if reading.get("paceNote"):
-        elements.append({"kind": "text", "label": "Pace",
+        elements.append({"kind": TEXT, "label": "Pace",
                          "text": reading["paceNote"]})
     points = reading.get("points") or []
     if len(points) >= 2:
-        elements.append({"kind": "sparkline", "label": "History",
+        elements.append({"kind": SPARKLINE, "label": "History",
                          "points": points})
     goal = reading.get("goal") if isinstance(reading.get("goal"), dict) else None
     return {

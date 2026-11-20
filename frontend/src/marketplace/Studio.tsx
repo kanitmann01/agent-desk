@@ -30,6 +30,13 @@ interface Verdict {
   failures: { code: string; message: string }[];
 }
 
+/**
+ * Build the manifest the validator and the runtime see from the draft form.
+ *
+ * Blank id, name and version fall back to defaults and tags are trimmed,
+ * lowercased and capped at eight, so an untouched form still yields a
+ * complete manifest for the live preview.
+ */
 function buildManifest(draft: Draft) {
   const id = draft.id.trim() || 'untitled-plugin';
   const name = draft.name.trim() || 'Untitled plugin';
@@ -79,6 +86,12 @@ function buildManifest(draft: Draft) {
 // The widget.ui.json the validator and the runtime read: every element
 // names its kind in `type` (lint.py and plugins/render.py), never in
 // `kind`, which is only the preview's rendered shape.
+/**
+ * Build the widget.ui.json the validator and the runtime read.
+ *
+ * Elements name their kind in `type`, which is what the validator reads;
+ * `kind` is only the preview's rendered shape.
+ */
 function buildWidgetUi(manifest: ReturnType<typeof buildManifest>) {
   return {
     type: 'card',
@@ -92,6 +105,7 @@ function buildWidgetUi(manifest: ReturnType<typeof buildManifest>) {
 
 // The live preview: the same two elements in the rendered shape the
 // sample renderer takes.
+/** Build the live preview's elements in the rendered shape the sample renderer takes. */
 function previewElements(draft: Draft): MarketElement[] {
   return [
     { kind: 'metric', label: 'Value', value: '0' },
@@ -99,6 +113,7 @@ function previewElements(draft: Draft): MarketElement[] {
   ];
 }
 
+/** Build the sample bindings the declared widget reads, stamped with the current time. */
 function buildSample(): { bindings: Record<string, unknown>; state: string; checkedAt: string } {
   return {
     bindings: { value: 0, lastUpdated: 'Never' },
@@ -107,6 +122,16 @@ function buildSample(): { bindings: Record<string, unknown>; state: string; chec
   };
 }
 
+/**
+ * Render Plugin Studio: the form, its live manifest, the real validator, a
+ * personal install and an optional publish.
+ *
+ * Install and publish both stay locked until the validator passes, and
+ * publish also needs a changelog and the license grant. Publishing ends at
+ * "pending review" rather than claiming a catalog entry. A failed load of the
+ * installed list only replaces the "start from" options with a note, so the
+ * blank template still works.
+ */
 export function StudioPage() {
   const [draft, setDraft] = useState<Draft>(BLANK);
   const [installed, setInstalled] = useState<InstalledResponse['plugins']>([]);
@@ -140,10 +165,18 @@ export function StudioPage() {
     checked_at: sample.checkedAt,
   };
 
+  /** Return a change handler that writes one draft field from its input. */
   const set = (field: keyof Draft) => (
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) => setDraft((current) => ({ ...current, [field]: event.target.value }));
 
+  /**
+   * Fill the form from an installed plugin, or reset to the blank template
+   * when no id is given.
+   *
+   * Only descriptive fields are copied; permissions start empty, so a plugin
+   * derived from another does not inherit its access.
+   */
   const startFrom = async (id: string) => {
     if (!id) {
       setDraft(BLANK);
@@ -172,6 +205,13 @@ export function StudioPage() {
     }
   };
 
+  /**
+   * Run the server's validator over the current manifest, widget and sample,
+   * replacing any earlier verdict.
+   *
+   * A draft missing an id, name or version is refused here with a message
+   * rather than sent.
+   */
   const validate = async () => {
     setValidationError('');
     setValidation(null);
@@ -191,6 +231,13 @@ export function StudioPage() {
     }
   };
 
+  /**
+   * Install the validated plugin on this desk and report the created id and
+   * version.
+   *
+   * Refused unless the last verdict passed, so an unvalidated manifest never
+   * reaches the server.
+   */
   const install = async () => {
     setInstallError('');
     setCreated(null);
@@ -212,6 +259,14 @@ export function StudioPage() {
     }
   };
 
+  /**
+   * Submit the plugin for marketplace review.
+   *
+   * Three refusals happen here first — no passing verdict, an empty changelog,
+   * and no license grant — because each is something only the author can fix.
+   * Success stores the pending record, and the page reports review as pending
+   * rather than the plugin as published.
+   */
   const publish = async (event: FormEvent) => {
     event.preventDefault();
     if (!validation?.ok) {

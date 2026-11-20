@@ -12,10 +12,15 @@ import type { DigestItem, WatchView } from './sampleDesk';
 
 const TIME = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
+/** A local clock time in 24-hour "HH:MM", in the browser's locale. */
 export function clock(at: Date): string {
   return TIME.format(at);
 }
 
+/**
+ * A cell's header line: the tag as the cell's heading, an optional meta set to
+ * its right, and the sample-data tag once the cell is showing sample data.
+ */
 export function CellHead({ tag, sample = false, meta, id }: {
   tag: string;
   sample?: boolean;
@@ -33,6 +38,10 @@ export function CellHead({ tag, sample = false, meta, id }: {
 
 const STAGE_ORDER = ['Prospect', 'Qualify', 'Propose', 'Negotiate', 'Closed Won', 'Closed Lost'];
 
+/**
+ * A stage's place in pipeline order; a stage the order does not know sorts
+ * after every known one.
+ */
 function stageRank(stage: string): number {
   const index = STAGE_ORDER.indexOf(stage);
   return index < 0 ? STAGE_ORDER.length : index;
@@ -96,6 +105,13 @@ export function WireChart({ bars = 6, label }: { bars?: number; label?: string }
   );
 }
 
+/**
+ * A trend line over the readings, scaled to their own range and marked at the
+ * last point.
+ *
+ * Two readings are needed: the horizontal scale divides by one less than the
+ * count, so a single point has no place to sit.
+ */
 export function Sparkline({ points, label }: { points: number[]; label: string }) {
   const min = Math.min(...points);
   const max = Math.max(...points);
@@ -130,6 +146,12 @@ export function readAgo(at: number): string {
   return `${Math.round(seconds / 86400)} d ago`;
 }
 
+/**
+ * A displayed figure as a number, or null when nothing numeric is in it.
+ *
+ * Every character but digits, a decimal point and a minus sign is stripped
+ * first, so a currency symbol, a thousands separator or a unit suffix parses.
+ */
 function parseFigure(value: string): number | null {
   const n = Number(value.replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) && value.trim() !== '' ? n : null;
@@ -176,6 +198,10 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
   );
 }
 
+/**
+ * A digest as a timeline: each item's local time, source, title and detail, in
+ * the order given.
+ */
 export function DigestList({ items }: { items: DigestItem[] }) {
   return (
     <ol className="digest">
@@ -193,6 +219,12 @@ export function DigestList({ items }: { items: DigestItem[] }) {
   );
 }
 
+/**
+ * A watched page's latest diff, plus one bar per day of the last seven.
+ *
+ * Removed lines are struck through and added lines underlined; a day with no
+ * changes still draws a short stub, so the week reads as seven days.
+ */
 export function WatchDiff({ view }: { view: WatchView }) {
   const max = Math.max(1, ...view.history);
   return (
@@ -232,6 +264,13 @@ export interface HealthRow {
   items: string;
 }
 
+/**
+ * Desk health as one row per source: a live dot, its status word, the last run
+ * time and the item count.
+ *
+ * Every cell arrives as display text — the table formats nothing, so a value
+ * shows exactly as given.
+ */
 export function HealthMatrix({ rows }: { rows: HealthRow[] }) {
   return (
     <table className="matrix">

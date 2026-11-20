@@ -8,6 +8,14 @@ import json
 import re
 from fnmatch import fnmatch
 
+from agentdesk.plugins.vocabulary import (
+    ELEMENT_KINDS as KNOWN_ELEMENT_KINDS,
+    ROW_CAPS,
+    SAMPLE_MAX_BYTES,
+    SPARKLINE_MAX_POINTS,
+    SPARKLINE_MIN_POINTS,
+)
+
 from .model import Failure
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -56,24 +64,10 @@ FILE_READING_SOURCE_TYPES = (
 # matched directly rather than through Path.is_absolute().
 _ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/])")
 
-KNOWN_ELEMENT_KINDS = (
-    "metric",
-    "text",
-    "delta",
-    "progress",
-    "list",
-    "table",
-    "sparkline",
-    "status",
-    "timeline",
-    "checklist",
-)
-
-# Element-specific caps from the plugin marketplace design.
-ROW_CAPS = {"list": 8, "table": 20}
-SPARKLINE_MIN_POINTS = 12
-SPARKLINE_MAX_POINTS = 30
-SAMPLE_MAX_BYTES = 32768
+# Known kinds and the element-specific caps from the plugin marketplace
+# design all come from agentdesk.plugins.vocabulary; the names above are the
+# same objects the renderer and the generated SPA module use, so a cap can
+# never be enforced differently on the two surfaces.
 
 
 def validate_permission_lint(manifest, reader) -> list[Failure]:

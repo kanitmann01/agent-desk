@@ -54,7 +54,7 @@ def _card(plugin_id: str = "excel-report", elements=None) -> dict:
 def test_a_reading_is_appended_to_the_cards_own_elements(monkeypatch):
     reading = InsightReading(
         elements=[{"kind": "text", "label": "Reading", "text": "Revenue tracks headcount."}],
-        press={"label": "Explain this range", "route": "/api/insight/draft"},
+        press={"label": "Explain this range", "route": "/api/insight/draft", "kind": "explain-range"},
     )
     monkeypatch.setitem(service.FAMILIES, "excel-report", lambda card, payload, ctx: reading)
     card = _card(elements=[{"kind": "metric", "label": "Value", "value": "12"}])
@@ -68,9 +68,8 @@ def test_a_reading_is_appended_to_the_cards_own_elements(monkeypatch):
         "source": "local",
         "preferences": ["chart"],
         "note": "",
+        "blocks": [],
         "press": reading.press,
-        "suggested": [],
-        "receipts": {"preferences": [], "inputs": []},
     }
 
 

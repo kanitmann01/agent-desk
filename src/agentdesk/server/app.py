@@ -74,6 +74,7 @@ from agentdesk.inbox.core import (
 from agentdesk.insight.context import build_context as build_insight_context
 from agentdesk.insight.preferences import PreferenceStore, PreferencesError, changed
 from agentdesk.insight.press import draft_reply, press_from_form, press_to_fields
+from agentdesk.insight.reading import press_label
 from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
@@ -135,9 +136,9 @@ from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
 from agentdesk.server.memory_loop_api import build_loop_state
-from agentdesk.plugins.cards import card_to_api
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
+from agentdesk.plugins.html import element_html
 from agentdesk.plugins.runtime import PluginError, PluginRuntime
 from agentdesk.registry import source as registry_source
 from agentdesk.registry.index import RegistryIndexError
@@ -157,12 +158,14 @@ from agentdesk.server.audit_view import render_audit_page
 from agentdesk.server.activity_view import DECISIONS
 from agentdesk.server.agents_view import render_agents_page
 from agentdesk.server import pages
+from agentdesk.server import routes
 from agentdesk.server.auth import SessionStore, session_id_from_cookie
 from agentdesk.server.capabilities_view import render_capabilities_page
 from agentdesk.server.commitments import (
     render_commitments_unavailable,
     render_commitments_widget,
 )
+from agentdesk.server.dashboard_state import build_dashboard_state
 from agentdesk.server.graph_view import parse_graph_query, render_graph_page
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
@@ -173,6 +176,7 @@ from agentdesk.server.peers_view import render_peers_page
 from agentdesk.server.research import (
     RETAIN_EXCERPT_MAX_CHARS,
     render_assistant_page,
+    render_research_disabled,
     render_research_widget,
 )
 from agentdesk.server.settings_view import mask_llm_key, render_settings_page
@@ -190,7 +194,6 @@ from agentdesk.server.core import (
     SRC_CALENDAR,
     SRC_EXCEL,
     SRC_RESEARCH,
-    SOURCE_IDS,
     STATUS_CONNECTED,
     STATUS_NOT_CONNECTED,
     Freshness,
@@ -1043,114 +1046,39 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
 
 
 def _plugin_element_html(element: dict) -> str:
-    """One payload element as authored HTML, escaped at this boundary.
+    """One payload element as authored HTML, drawn by the plugin renderer.
 
-    A declarative card names metric, text, list, checklist or status; the
-    coupled reading appends only those, so this is the whole vocabulary the
-    rendered dashboard draws. Anything else belongs to the SPA's own
-    renderer and is left to it rather than half-drawn here.
+    The dashboard's no-JS card and the SPA draw the same ten element kinds;
+    the markup is owned by agentdesk.plugins.html so the two surfaces cannot
+    grow separate vocabularies. Text arrives already escaped from there.
     """
-    kind = element.get("kind")
-    if kind == "metric":
-        parts = [
-            '<p class="w-big">' + html.escape(str(element.get("value", ""))) + "</p>"
-        ]
-        label = str(element.get("label", "")).strip()
-        if label:
-            parts.append('<p class="w-note">' + html.escape(label) + "</p>")
-        return "".join(parts)
-    if kind == "text":
-        return '<p class="w-note">' + html.escape(str(element.get("text", ""))) + "</p>"
-    if kind == "status":
-        return '<p class="w-note">' + html.escape(str(element.get("text") or "")) + "</p>"
-    if kind == "list":
-        lines = []
-        title = str(element.get("title") or "").strip()
-        if title:
-            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
-        for row in element.get("rows") or []:
-            if not isinstance(row, dict):
-                continue
-            text = " · ".join(
-                str(row.get(key) or "").strip()
-                for key in ("primary", "secondary", "meta")
-                if str(row.get(key) or "").strip()
-            )
-            if text:
-                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
-        return "".join(lines)
-    if kind == "checklist":
-        lines = []
-        title = str(element.get("title") or "").strip()
-        if title:
-            lines.append('<p class="w-note">' + html.escape(title) + "</p>")
-        for item in element.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            text = str(item.get("text") or "").strip()
-            if text:
-                lines.append('<p class="w-note">' + html.escape(text) + "</p>")
-        return "".join(lines)
-    return ""
-
-
-# How a receipt reads: the seam names preference keys and input names,
-# and this is the only place a key becomes a phrase a person would say.
-# An unknown name draws nothing rather than a raw identifier, so the line
-# can never read like a changelog.
-_RECEIPT_PHRASES = {
-    "chart": "your chart preference",
-    "replyTone": "your reply tone",
-    "replyLength": "your reply length",
-    "insightDensity": "your density setting",
-    "focusTopics": "your focus topics",
-    "prepMinutes": "your prep window",
-}
-_INPUT_PHRASES = {
-    "rows": "this card's rows",
-    "memory": "memory",
-    "calendar": "this calendar",
-}
-_DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows."
-
-# The press page's heading, taken from the label the card carried, so the
-# page a press lands on repeats the sentence the person just pressed.
-_PRESS_LABELS = {"reply-draft": "Draft a reply", "explain-range": "Explain this range"}
+    return element_html(element)
 
 
 def _receipt_line(payload: dict) -> str:
-    """One reading's receipts as a quiet line under its card."""
+    """The reading's resolved lines under its card, as quiet paragraphs.
+
+    The payload carries the lines already resolved and ordered
+    (agentdesk.insight.reading owns the phrases), so this only draws them:
+    escaping is the single job left, and the SPA prints the very same block
+    texts. A payload with no blocks, or one whose blocks hold no text, draws
+    nothing rather than an empty line.
+    """
     insight = payload.get("insight")
-    receipts = insight.get("receipts") if isinstance(insight, dict) else None
-    if not isinstance(receipts, dict):
+    blocks = insight.get("blocks") if isinstance(insight, dict) else None
+    if not isinstance(blocks, list):
         return ""
-    chosen: list[str] = []
-    for key in receipts.get("preferences") or []:
-        phrase = _RECEIPT_PHRASES.get(str(key))
-        if phrase:
-            chosen.append(phrase)
-    counts = receipts.get("counts") if isinstance(receipts.get("counts"), dict) else {}
-    notes = counts.get("memory")
-    read: list[str] = []
-    for name in receipts.get("inputs") or []:
-        phrase = _INPUT_PHRASES.get(str(name))
-        if not phrase:
+    lines: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
             continue
-        if name == "memory" and isinstance(notes, int) and notes > 0:
-            phrase = f"memory ({notes} note)" if notes == 1 else f"memory ({notes} notes)"
-        read.append(phrase)
-    # The phrases are the server's own, so the only escaping needed is for
-    # the ampersand-and-angle shapes; the apostrophe in "this card's rows"
-    # is copy, and escaping it would print an entity where a person reads.
-    if chosen:
-        return '<p class="w-note">Used: ' + html.escape(" · ".join(chosen + read), quote=False) + ".</p>"
-    # A reading that read nothing at all says nothing: a receipt line under
-    # an empty card would invent a consultation that did not happen.
-    if not read:
-        return ""
-    if read == ["this card's rows"]:
-        return '<p class="w-note">' + _DEFAULTS_RECEIPT + "</p>"
-    return '<p class="w-note">Used the defaults; read ' + html.escape(" and ".join(read), quote=False) + ".</p>"
+        text = str(block.get("text") or "").strip()
+        if text:
+            # The apostrophe in "this card's rows" is copy, so only the
+            # ampersand-and-angle shapes are escaped; a note's own text still
+            # cannot smuggle markup onto the page.
+            lines.append('<p class="w-note">' + html.escape(text, quote=False) + "</p>")
+    return "".join(lines)
 
 
 def _press_form(card: dict, press: object) -> str:
@@ -1187,10 +1115,11 @@ def _press_form(card: dict, press: object) -> str:
 
 
 def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
-    """Attach the coupled reading to cards as whichever surface renders them.
+    """Attach the coupled reading to cards as the dashboard state is built.
 
-    Both surfaces call this, so a reading is never JSON-only: the same
-    sentence arrives through the API payload and through the authored HTML.
+    build_dashboard_state calls this once, so a reading is never JSON-only:
+    the same sentence arrives through the API payload and through the
+    authored HTML.
     """
     attach_cards(
         cards,
@@ -1204,7 +1133,7 @@ def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
 
     Only enabled plugins render a card (the same filter widget_cards
     applies), so those are the layout's plugin universe. This call is
-    read-only: unlike widget_cards it never spends a pilot view.
+    read-only: it never spends a pilot view.
     """
     plugins = server.plugins
     if plugins is None:
@@ -1219,117 +1148,15 @@ def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
 
 def dashboard_payload(server: AgentDeskServer) -> dict:
     """Everything the dashboard shows, as data: one JSON payload for the
-    SPA shell (and any later client). The same source-state branches the
-    server-rendered cards apply live here as modes, so there is exactly
-    one place where dashboard state is decided; the renderers and the SPA
-    both follow it. Plugin cards are data (the same widget_cards() call
-    the rendered dashboard makes, so a dashboard view still spends one
-    pilot view), never server HTML.
+    SPA shell (and any later client).
+
+    The payload is one projection of build_dashboard_state, the same state
+    the server-rendered cards are built from, so the two surfaces cannot
+    disagree about a source's mode, research availability or the layout.
+    Plugin cards are data, never server HTML, and building the state is a
+    pure read: a GET never spends a plugin's pilot view.
     """
-    settings = server.settings
-
-    def allowed(key: str) -> bool:
-        """Whether a settings-gated source may appear on the payload.
-
-        A missing settings store reads as allowed, so a desk whose store never opened
-        still describes its default arrangement instead of an empty one.
-        """
-        return settings is None or bool(settings.get(key))
-
-    excel = server.excel
-    sales_status = excel.status() if excel is not None else None
-    if not allowed("excel_enabled"):
-        sales_mode = "disabled"
-    elif sales_status is not None and sales_status.get("configured"):
-        sales_mode = "live"
-    else:
-        sales_mode = "unconfigured"
-
-    calendar = server.calendar
-    if not allowed("calendar_enabled"):
-        commitments_mode, commitments_status = "disabled", None
-    elif calendar is None:
-        commitments_mode, commitments_status = "unavailable", None
-    else:
-        commitments_mode, commitments_status = "live", calendar.status()
-
-    # The writer records the action as "llm.research" (assistant/loop.py);
-    # querying anything else makes the stamp never show the last answer.
-    audit_conn = server.audit_conn
-    last_answer = (
-        audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
-    )
-
-    skills = server.skills.active() if server.skills is not None else []  # type: ignore[attr-defined]
-    plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
-    # One reading per card, from the preferences the user set and the memory
-    # the desk already holds. Appended here so every client of this payload
-    # sees the same reading, and the cards themselves stay the plugin's own.
-    with_insight(server, plugin_cards)
-    sources = live_sources(server)
-    inbox = server.inbox  # type: ignore[attr-defined]
-    # The layout the dashboard renders in: hidden cards are omitted from
-    # this listing (GET /api/layout still lists them, so hiding is always
-    # recoverable) and custom titles ride each entry; a plugin's custom
-    # title also overrides its card title below, so the layout and the
-    # card data can never disagree.
-    layout_entries = resolved_layout(server.layout, enabled_plugin_ids(server))
-    custom_titles = {
-        entry["key"]: entry["title"]
-        for entry in layout_entries if entry["title"]
-    }
-    return {
-        "version": agentdesk.__version__,
-        # The Sample data switch: the desk tags each cell that shows
-        # sample content once, in the cell header.
-        "sample": bool(settings.get("sample_data")) if settings is not None else False,
-        "flags": {
-            "excelEnabled": allowed("excel_enabled"),
-            "calendarEnabled": allowed("calendar_enabled"),
-            "endpointEnabled": allowed("endpoint_enabled"),
-        },
-        "sources": {
-            "connected": sum(1 for s in sources if s.status == STATUS_CONNECTED),
-            "total": len(SOURCE_IDS),
-            "items": [
-                {"id": s.id, "status": s.status, "detail": s.detail} for s in sources
-            ],
-        },
-        "sales": {
-            "enabled": allowed("excel_enabled"),
-            "mode": sales_mode,
-            "status": sales_status,
-        },
-        "commitments": {
-            "enabled": allowed("calendar_enabled"),
-            "mode": commitments_mode,
-            "status": commitments_status,
-        },
-        "research": {
-            "enabled": allowed("endpoint_enabled"),
-            "lastAnsweredTs": last_answer,
-        },
-        "inbox": {"waiting": len(inbox.waiting()) if inbox is not None else 0},
-        "skills": [
-            {"id": s["id"], "name": s["name"], "description": s["description"]}
-            for s in skills
-        ],
-        "layout": {
-            "cards": [
-                {"key": entry["key"], "title": entry["title"]}
-                for entry in layout_entries if not entry["hidden"]
-            ],
-        },
-        "plugins": {
-            # One serializer owns the card's API shape (camelCase, the
-            # layout's rename applied), so the payload cannot drift from
-            # the cards the runtime's factory builds.
-            "cards": [
-                card_to_api(c, custom_titles.get(c["id"]))
-                for c in plugin_cards
-            ],
-        },
-    }
+    return build_dashboard_state(server).payload()
 
 
 def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
@@ -1490,18 +1317,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # -- GET -------------------------------------------------------------
 
     def _route_get(self) -> None:
-        """Dispatch one GET by path, after the peer exception, the auth exception and the
-        session gate.
+        """Dispatch one GET by the route table, after the peer exception, the auth
+        exception and the session gate.
 
         /peer/ and /auth/ are settled first because neither can require what the gate
         requires: a peer request carries a token rather than a cookie, and /auth/ exists
-        to create the session every other path needs. Past the gate the table is exact
-        paths, except /wizard, /api/marketplace/, /api/plugins/<id>/instances,
-        /static/spa/ and /marketplace/, which take prefixes; an unknown /marketplace/
-        path still gets the shell but with a 404 status, so a typo stays honest to
-        clients while the SPA renders.
+        to create the session every other path needs. Past the gate, routes.GET_ROUTES is
+        authoritative in its order; an unknown /marketplace/ path still gets the shell
+        but with a 404 status, so a typo stays honest to clients while the SPA renders.
         """
-        method = "GET"
         path, _, _query = self.path.partition("?")
         if path.startswith("/peer/"):
             # The peer surface: the guard with its token rule, never a
@@ -1519,129 +1343,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if not self._gate():
             return
-        if path == "/":
-            self._send_index_or_dashboard()
-        elif path == "/health":
-            self._send_health()
-        elif path == "/widgets/sales-24h":
-            self._send_sales_status()
-        elif path == "/widgets/commitments":
-            self._send_commitments_status()
-        elif path == "/walkthrough/calendar":
-            calendar = self.server.calendar  # type: ignore[attr-defined]
-            explicit = calendar.explicit_path() if calendar is not None else None
-            hint = default_calendar_hint(explicit)
-            self._send_bytes(
-                200,
-                pages.render_walkthrough(str(hint), explicit_path=explicit or "",
-                                        version=agentdesk.__version__,
-                                        inbox_count=self._inbox_waiting_count()).encode("utf-8"),
-                "text/html; charset=utf-8",
-            )
-        elif path == "/assistant":
-            self._send_assistant_page()
-        elif path == "/agents":
-            self._send_agents_page()
-        elif path == "/inbox":
-            self._send_inbox_page()
-        elif path == "/activity":
-            # The decision log became the activity trail inside Settings;
-            # the old address keeps answering for bookmarks and links.
-            self._send_redirect_302("/settings/activity")
-        elif path == "/memory":
-            self._send_memory_page()
-        elif path == "/memory/graph":
-            self._memory_graph_page()
-        elif path == "/api/memory/loop":
-            self._memory_loop_json()
-        elif path == "/api/memory/graph":
-            self._memory_graph_json()
-        elif path == "/memory/sweep":
-            self._memory_sweep_page()
-        elif path == "/memory/encrypt":
-            self._memory_encrypt_page()
-        elif path == "/mail":
-            self._send_mail_page()
-        elif path == "/capabilities":
-            self._send_capabilities_page()
-        elif path == "/plugins":
-            # One release of continuity: the legacy address names the new
-            # installed surface with a permanent-enough 302. The SPA route
-            # owns everything past this point.
-            self._send_redirect_302("/marketplace/installed")
-        elif path == "/peers":
-            _, _sep, query = self.path.partition("?")
-            notice = parse_qs(query).get("notice", [""])[0] if query else ""
-            self._send_peers_page(notice=notice)
-        elif path == "/widgets/inbox":
-            self._send_inbox_count()
-        elif path == "/settings/activity":
-            self._send_audit_page()
-        elif path == "/settings":
-            self._send_settings_page()
-        elif path.startswith("/skills/") and path.endswith("/skill.md"):
-            self._send_skill_markdown(int(path[len("/skills/"):-len("/skill.md")].strip("/")))
-        elif path == "/audit/tail":
-            self._send_audit_tail()
-        elif path == "/widgets/settings":
-            self._send_settings_values()
-        elif path.startswith("/wizard"):
-            self._route_wizard(method, path)
-            return
-        elif path.startswith("/api/marketplace/"):
-            # The marketplace router performs its own error envelopes; the
-            # session and Origin gates above have already run.
-            from ..marketplace.api import handle_get
-            handle_get(self)
-        elif path == "/api/plugins":
-            self._send_json(200, {"plugins": self.server_plugins_widget_records()})
-        elif path == "/api/registry":
-            self._send_json(200, self._registry_listing_for_request())
-        elif path == "/api/peers":
-            self._send_json(200, self._peers_catalog())
-        elif path == "/api/dashboard":
-            self._send_json(200, dashboard_payload(self.server))
-        elif path == "/api/preferences":
-            self._send_json(200, PreferenceStore(default_data_dir()).read())
-        elif path == "/api/layout":
-            # The full layout, hidden cards included: the recoverable
-            # truth behind the payload's visible-only listing.
-            self._send_json(200, {
-                "cards": resolved_layout(
-                    self.server.layout,  # type: ignore[attr-defined]
-                    enabled_plugin_ids(self.server)),
-            })
-        elif path.startswith("/api/plugins/") and "/instances" in path:
-            self._plugin_setup_get(path)
-        elif path.startswith("/api/plugins/"):
-            self._send_json(200, self._plugin_record_or_404(path[len("/api/plugins/"):]))
-        elif path == "/audit/export.csv":
-            self._send_audit_csv()
-        elif path == "/what-this-touches":
-            self._send_touches_page()
-        elif path == "/static/app.css":
-            self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
-        elif path == "/static/app.js":
-            self._send_bytes(200, pages.APP_JS.encode("utf-8"), "text/javascript; charset=utf-8")
-        elif path == "/static/theme-boot.js":
-            self._send_bytes(200, pages.THEME_BOOT_JS.encode("utf-8"), "text/javascript; charset=utf-8")
-        elif path.startswith("/static/spa/"):
-            self._send_spa_asset(path[len("/static/spa/"):])
-        elif path == "/marketplace" or path.startswith("/marketplace/"):
-            # Deep links are the SPA's routes, so the server hands the
-            # shell to every known marketplace GET after the session gate.
-            # An unknown marketplace path gets the same shell with a 404
-            # status, so a typo is honest to clients and crawlers; /api
-            # paths still answer 404 above and never the shell.
-            self._send_marketplace_shell(
-                200 if _known_marketplace_path(path) else 404)
-        else:
-            self._send_error_page(404, "Nothing here", "No page lives at this address.")
+        self._dispatch("GET", path, "No page lives at this address.")
+
 
     # -- POST ------------------------------------------------------------
 
     def _route_post(self) -> None:
-        """Dispatch one POST by path, after draining the body.
+        """Dispatch one POST by the route table, after draining the body.
 
         The body is drained before dispatch even for paths that ignore it, because an
         unread body on a keep-alive connection would be parsed as the next request; the
@@ -1649,9 +1357,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         consult their settings toggle first and answer 409 with a reconnect path, a
         collaborator that was never built answers 503, and the assistant turn separates
         the two clients: a form submit gets a 303 back to the page, a fetch gets the
-        answer as JSON.
+        answer as JSON. Past those guards, routes.POST_ROUTES is authoritative in its
+        order.
         """
-        method = "POST"
         path, _, _query = self.path.partition("?")
         if path.startswith("/peer/"):
             # Peer POSTs exist for pairing only; the surface is
@@ -1667,314 +1375,452 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # stashes up to its own cap instead of the 1 MiB JSON bound.
         limit = MAX_UPLOAD_BYTES if _PLUGIN_UPLOAD_PATH.match(path) else MAX_BODY_BYTES
         self._raw_body = self._drain_body(limit)
-        excel = self.server.excel  # type: ignore[attr-defined]
-        calendar = self.server.calendar  # type: ignore[attr-defined]
         if path.startswith("/sources/excel-watch") and not self._source_allowed("excel_enabled"):
             self._send_json(409, {"error": "Sales watching is off in settings.", "reconnect": "/settings"})
             return
         if path.startswith("/sources/calendar-bridge") and not self._source_allowed("calendar_enabled"):
             self._send_json(409, {"error": "Calendar reading is off in settings.", "reconnect": "/settings"})
             return
-        if path == "/api/preferences":
-            try:
-                self._send_json(200, PreferenceStore(default_data_dir()).write(self._read_json_body()))
-            except PreferencesError as exc:
-                self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+        self._dispatch("POST", path, "No action lives at this address.")
+
+    def _dispatch(self, method: str, path: str, missing_message: str) -> None:
+        """Answer one gated request from the route table.
+
+        path arrives without its query string, which the caller has already stripped;
+        missing_message is the 404 body's sentence for this method (the two clients word
+        it differently). A route with arg="rest" receives the matched remainder, every
+        other handler keeps its no-argument signature.
+        """
+        found = routes.match(method, path)
+        if found is None:
+            self._send_error_page(404, "Nothing here", missing_message)
             return
-        if path == "/api/insight/draft":
-            try:
-                answer = draft_reply(
-                    self.server,
-                    self._read_json_body(),
-                    preferences=PreferenceStore(default_data_dir()).read(),
-                    complete=self._insight_complete(),
-                )
-            except InsightError as exc:
-                self._send_json(exc.status, {"error": exc.message, "code": exc.code})
-                return
-            self._send_json(200, answer)
-            return
-        if path == "/insight/press":
-            self._insight_press_page()
-            return
-        if path == "/sources/excel-watch/pick":
-            if excel is None:
-                self._send_json(503, {"error": "the excel watch is not available"})
-                return
-            self._send_json(200, {"path": self.server.pick_workbook()})  # type: ignore[attr-defined]
-        elif path == "/sources/excel-watch":
-            if excel is None:
-                self._send_json(503, {"error": "the excel watch is not available"})
-                return
-            body = self._read_json_body()
-            if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
-                self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
-                return
-            # Reject nonsense before registering: the manual-path fallback
-            # lives on the card, so this error text is the feedback loop.
-            problem = workbook_path_problem(body["path"].strip())
-            if problem:
-                self._send_json(400, {"error": problem})
-                return
-            excel.register(body["path"].strip())
-            excel.start_polling()
-            self._send_json(200, excel.status())
-        elif path == "/sources/excel-watch/retest":
-            if excel is None:
-                self._send_json(503, {"error": "the excel watch is not available"})
-                return
-            excel.retest()
-            self._send_json(200, excel.status())
-        elif path == "/widgets/commitments/check":
-            if calendar is None:
-                self._send_json(503, {"error": "the calendar bridge is not available"})
-                return
-            body = self._read_json_body()
-            if body is None or not isinstance(body.get("eventId"), str):
-                self._send_json(400, {"error": "expected {\"eventId\": \"...\", \"idx\": n, \"checked\": bool}"})
-                return
-            calendar.toggle_check(
-                body["eventId"], int(body.get("idx", 0)), bool(body.get("checked"))
-            )
-            self._send_json(200, {"ok": True})
-        elif path == "/sources/calendar-bridge/retest":
-            if calendar is None:
-                self._send_json(503, {"error": "the calendar bridge is not available"})
-                return
-            calendar.retest()
-            self._maybe_briefs()
-            self._send_json(200, calendar.status())
-        elif path == "/sources/calendar-bridge/pick":
-            if calendar is None:
-                self._send_json(503, {"error": "the calendar bridge is not available"})
-                return
-            self._send_json(200, {"path": self.server.pick_calendar()})  # type: ignore[attr-defined]
-        elif path == "/sources/calendar-bridge/path":
-            if calendar is None:
-                self._send_json(503, {"error": "the calendar bridge is not available"})
-                return
-            body = self._read_json_body()
-            if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
-                self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
-                return
-            chosen = body["path"].strip()
-            problem = calendar_path_problem(chosen)
-            if problem:
-                self._send_json(400, {"error": problem})
-                return
-            # Stored before the poll so the choice survives restarts; the
-            # poll right now is the card's feedback that it took effect.
-            # Through the bridge so the write lands under its lock, like
-            # every other use of the shared connection.
-            calendar.set_explicit_path(chosen)
-            calendar.retest()
-            self._maybe_briefs()
-            self._send_json(200, calendar.status())
-        elif path == "/sources/calendar-bridge/upload":
-            if calendar is None:
-                self._send_json(503, {"error": "the calendar bridge is not available"})
-                return
-            raw = getattr(self, "_raw_body", b"")
-            declared = getattr(self, "_content_length", 0)
-            if declared > MAX_BODY_BYTES:
-                self._send_json(400, {"error": "The calendar file is larger than 1 MB. Trim the export, or point at the file by path instead."})
-                return
-            if not raw.strip():
-                self._send_json(400, {"error": "Send the calendar JSON as the request body."})
-                return
-            problem = calendar_document_problem(raw)
-            if problem:
-                self._send_json(400, {"error": problem})
-                return
-            target = default_data_dir() / "calendar_sync.json"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
-            calendar.set_explicit_path(str(target))
-            calendar.retest()
-            self._maybe_briefs()
-            self._send_json(200, calendar.status())
-        elif path == "/sources/calendar-bridge/reset":
-            if calendar is None:
-                self._send_json(503, {"error": "the calendar bridge is not available"})
-                return
-            calendar.clear_explicit_path()
-            calendar.retest()
-            self._maybe_briefs()
-            self._send_json(200, calendar.status())
-        elif path == "/research":
-            question = self._ask_question_from_body()
-            if not question:
-                self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
-                return
-            self._log_activity("research", question)
-            answer = self._run_llm_turn(question, summary_mode=True)
-            summary = getattr(answer, "summary", "") if answer.status == "ok" else ""
-            self._capture_memory(
-                "research",
-                f"Research question: {question}" + (f"\nSourced summary: {summary}" if summary else ""),
-                question,
-                use_model=answer.status == "ok",
-            )
-            self._send_json(200, answer.to_json())
-        elif path == "/inbox/cards":
-            if self.server.inbox is None:  # type: ignore[attr-defined]
-                self._send_json(503, {"error": "the inbox is not available"})
-                return
-            body = self._read_json_body() or {}
-            try:
-                card = self.server.inbox.add(  # type: ignore[attr-defined]
-                    kind=str(body.get("kind", "suggestion")),
-                    origin=str(body.get("origin", "")),
-                    title=str(body.get("title", "")),
-                    body=str(body.get("body", "")),
-                    action_label=str(body.get("actionLabel", "")),
-                    window_hours=body.get("windowHours"),
-                    meta=body.get("meta") or {},
-                    draft=str(body.get("draft", "")),
-                )
-            except (ValueError, TypeError) as exc:
-                self._send_json(400, {"error": str(exc)})
-                return
-            self._evaluate_inbox(self.server.inbox)  # type: ignore[attr-defined]
-            self._send_json(201, self.server.inbox.get(card.id).to_json(self.server.inbox.now_ts()))  # type: ignore[attr-defined]
-        elif path.startswith("/inbox/cards/") and path.endswith("/accept"):
-            self._inbox_decide(path[len("/inbox/cards/"):-len("/accept")], "accept")
-        elif path.startswith("/inbox/cards/") and path.endswith("/dismiss"):
-            self._inbox_decide(path[len("/inbox/cards/"):-len("/dismiss")], "dismiss")
-        elif path.startswith("/inbox/cards/") and path.endswith("/edit"):
-            self._inbox_edit(path[len("/inbox/cards/"):-len("/edit")])
-        elif path.startswith("/inbox/cards/") and path.endswith("/snooze"):
-            self._inbox_snooze(path[len("/inbox/cards/"):-len("/snooze")])
-        elif path.startswith("/inbox/cards/") and path.endswith("/more-info"):
-            self._inbox_more_info(path[len("/inbox/cards/"):-len("/more-info")])
-        elif path.startswith("/inbox/dismissed/") and path.endswith("/restore"):
-            self._inbox_restore(path[len("/inbox/dismissed/"):-len("/restore")])
-        elif path == "/memory/add":
-            self._memory_add()
-        elif path.startswith("/memory/") and path.endswith("/edit"):
-            self._memory_edit(_memory_id_from_path(path, "/edit"))
-        elif path.startswith("/memory/") and path.endswith("/delete"):
-            self._memory_delete(_memory_id_from_path(path, "/delete"))
-        elif path == "/memory/recall":
-            self._memory_recall()
-        elif path == "/memory/entities/merge":
-            self._memory_entities_merge()
-        elif path == "/memory/sweep":
-            self._memory_sweep()
-        elif path == "/memory/encrypt":
-            self._memory_encrypt()
-        elif path == "/memory/retain":
-            self._memory_retain()
-        elif path == "/memory/reflect":
-            self._memory_reflect()
-        elif path == "/memory/embeddings/backfill":
-            self._memory_embeddings_backfill()
-        elif path == "/api/memory/remove/preview":
-            self._memory_remove(preview=True)
-        elif path == "/api/memory/remove":
-            self._memory_remove(preview=False)
-        elif path == "/api/memory/undo":
-            self._memory_undo()
-        elif path.startswith("/api/memory/facts/") and path.endswith("/keep"):
-            self._memory_keep(path[len("/api/memory/facts/"):-len("/keep")])
-        elif path.startswith("/capabilities/") and path.endswith("/retest"):
-            self._capabilities_retest(path[len("/capabilities/"):-len("/retest")])
-        elif path == "/inbox/consolidate":
-            if self.server.consolidator is None:  # type: ignore[attr-defined]
-                self._send_json(503, {"error": "the repetition detector is not available"})
-                return
-            self._send_json(200, self.server.consolidator.consolidate())  # type: ignore[attr-defined]
-        elif path.startswith("/skills/") and path.endswith("/run"):
-            self._skill_run(int(path[len("/skills/"):-len("/run")].strip("/")))
-        elif path.startswith("/skills/") and path.endswith("/undo"):
-            self._skill_undo(int(path[len("/skills/"):-len("/undo")].strip("/")))
-        elif path == "/settings/toggle":
-            self._settings_toggle()
-        elif path == "/api/layout":
-            self._layout_save()
-        elif path == "/settings/endpoint/save":
-            self._endpoint_save()
-        elif path == "/settings/endpoint/test":
-            self._endpoint_test()
-        elif path == "/settings/mail/folder":
-            self._mail_folder_save()
-        elif path == "/settings/preferences":
-            self._preferences_save()
-        elif path == "/settings/registry/path":
-            self._registry_path_save()
-        elif path == "/settings/hosts/save":
-            self._extra_hosts_save()
-        elif path == "/api/registry/install":
-            self._registry_install()
-        elif path == "/plugins/registry-install":
-            self._registry_install()
-        elif path == "/peers/code":
-            self._peers_code_generate()
-        elif path == "/peers/pair":
-            self._peers_pair()
-        elif path == "/peers/refresh":
-            self._peers_refresh()
-        elif path == "/peers/install":
-            self._peers_install()
-        elif path == "/peers/update":
-            self._peers_update()
-        elif path.startswith("/plugins/") and path.count("/") == 3:
-            self._plugins_page_action(path)
-        elif path == "/mail/retest":
-            self._mail_retest()
-        elif path.startswith("/mail/") and path.endswith("/draft"):
-            if not self._source_allowed("mail_enabled"):
-                self._send_json(409, {"error": "Mail digest is off in settings.", "reconnect": "/settings"})
-                return
-            self._mail_draft(unquote(path[len("/mail/"):-len("/draft")]))
-        elif path.startswith("/wizard"):
-            self._route_wizard(method, path)
-            return
-        elif path.startswith("/api/marketplace/"):
-            from ..marketplace.api import handle_post
-            handle_post(self)
-        elif path.startswith("/api/plugins"):
-            plugins = self.server.plugins  # type: ignore[attr-defined]
-            if plugins is None:
-                self._send_json(503, {"error": "plugins:unavailable",
-                                      "message": "no plugin runtime is configured"})
-                return
-            try:
-                self._dispatch_plugin_post(plugins, path, self._read_json_body() or {})
-            except PluginError as exc:
-                self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
-        elif path == "/assistant/ask":
-            question = self._ask_question_from_body()
-            if not question:
-                self._send_json(400, {"error": "expected a question"})
-                return
-            self._log_activity("assistant", question)
-            answer = self._run_llm_turn(question, summary_mode=False)
-            reply = answer.reply if answer.status == "ok" else ""
-            self._capture_memory(
-                "assistant",
-                f"You: {question}" + (f"\nAssistant: {reply}" if reply else ""),
-                question,
-                use_model=answer.status == "ok",
-            )
-            if self.server.audit_conn is not None:  # type: ignore[attr-defined]
-                threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
-                text = answer.reply if answer.status == "ok" else f"[degraded] {answer.cause}"
-                threadlog.append(self.server.audit_conn, "assistant", text)  # type: ignore[attr-defined]
-            if self._is_form_submit():
-                self.send_response(303)
-                self.send_header("Location", "/assistant")
-                self._common_headers()
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-            else:
-                self._send_json(200, answer.to_json())
-        elif path == "/agents/run":
-            self._agents_run()
-        elif path.startswith("/agents/runs/") and path.endswith("/feedback"):
-            self._agents_feedback(path[len("/agents/runs/"):-len("/feedback")])
+        handler = getattr(self, found.route.handler)
+        if found.route.arg == "rest":
+            handler(found.argument)
         else:
-            self._send_error_page(404, "Nothing here", "No action lives at this address.")
+            handler()
+
+    # -- route handlers the table calls -----------------------------------
+
+    def _send_walkthrough_calendar(self) -> None:
+        """Serve the walkthrough page, hinting the calendar it should open."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        explicit = calendar.explicit_path() if calendar is not None else None
+        hint = default_calendar_hint(explicit)
+        self._send_bytes(
+            200,
+            pages.render_walkthrough(str(hint), explicit_path=explicit or "",
+                                    version=agentdesk.__version__,
+                                    inbox_count=self._inbox_waiting_count()).encode("utf-8"),
+            "text/html; charset=utf-8",
+        )
+
+    def _send_activity_redirect(self) -> None:
+        """Send the old /activity address to its Settings home.
+
+        The decision log became the activity trail inside Settings; the old address
+        keeps answering for bookmarks and links.
+        """
+        self._send_redirect_302("/settings/activity")
+
+    def _send_plugins_redirect(self) -> None:
+        """Send the legacy /plugins address to the installed marketplace surface.
+
+        One release of continuity: the legacy address names the new installed surface
+        with a permanent-enough 302. The SPA route owns everything past this point.
+        """
+        self._send_redirect_302("/marketplace/installed")
+
+    def _send_peers_page_request(self) -> None:
+        """Serve the peers page, carrying its optional notice query field."""
+        _, _sep, query = self.path.partition("?")
+        notice = parse_qs(query).get("notice", [""])[0] if query else ""
+        self._send_peers_page(notice=notice)
+
+    def _send_skill_markdown_rest(self, rest: str) -> None:
+        """Serve the generated markdown for the skill id in the path.
+
+        The table hands over the text between /skills/ and /skill.md; a non-numeric id
+        raises the ValueError the page always answered with.
+        """
+        self._send_skill_markdown(int(rest.strip("/")))
+
+    def _wizard_request(self) -> None:
+        """Hand a /wizard path to the wizard router, with its query string removed.
+
+        The prefix deliberately includes lookalikes such as /wizardx: the wizard router
+        answers its own 404 for a path it does not know, which is the honest response.
+        """
+        path, _, _query = self.path.partition("?")
+        self._route_wizard(self.command, path)
+
+    def _marketplace_api_get(self) -> None:
+        """Hand a marketplace API GET to the marketplace router.
+
+        The marketplace router performs its own error envelopes; the session and Origin
+        gates above have already run.
+        """
+        from ..marketplace.api import handle_get
+
+        handle_get(self)
+
+    def _marketplace_api_post(self) -> None:
+        """Hand a marketplace API POST to the marketplace router."""
+        from ..marketplace.api import handle_post
+
+        handle_post(self)
+
+    def _send_plugins_api_list(self) -> None:
+        """Serve the plugin records the widgets and the marketplace page read."""
+        self._send_json(200, {"plugins": self.server_plugins_widget_records()})
+
+    def _send_registry_listing(self) -> None:
+        """Serve the registry listing visible to this request."""
+        self._send_json(200, self._registry_listing_for_request())
+
+    def _send_peers_api(self) -> None:
+        """Serve the peer catalog as JSON."""
+        self._send_json(200, self._peers_catalog())
+
+    def _send_dashboard_api(self) -> None:
+        """Serve the dashboard payload as JSON."""
+        self._send_json(200, dashboard_payload(self.server))
+
+    def _send_preferences_values(self) -> None:
+        """Serve the stored insight preferences."""
+        self._send_json(200, PreferenceStore(default_data_dir()).read())
+
+    def _send_layout_api(self) -> None:
+        """Serve the full layout, hidden cards included.
+
+        That is the recoverable truth behind the payload's visible-only listing.
+        """
+        self._send_json(200, {
+            "cards": resolved_layout(
+                self.server.layout,  # type: ignore[attr-defined]
+                enabled_plugin_ids(self.server)),
+        })
+
+    def _plugin_setup_get_request(self) -> None:
+        """Read the plugin setup view a path under /api/plugins/ names with instances."""
+        path, _, _query = self.path.partition("?")
+        self._plugin_setup_get(path)
+
+    def _plugin_record_get(self, rest: str) -> None:
+        """Serve one plugin record envelope, or its not-found body."""
+        self._send_json(200, self._plugin_record_or_404(rest))
+
+    def _send_styles_asset(self) -> None:
+        """Serve the dashboard stylesheet."""
+        self._send_bytes(200, pages.STYLES.encode("utf-8"), "text/css; charset=utf-8")
+
+    def _send_app_js_asset(self) -> None:
+        """Serve the dashboard client script."""
+        self._send_bytes(200, pages.APP_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+
+    def _send_theme_boot_asset(self) -> None:
+        """Serve the script that applies the saved theme before paint."""
+        self._send_bytes(200, pages.THEME_BOOT_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+
+    def _send_marketplace_shell_request(self) -> None:
+        """Serve the SPA shell for a marketplace deep link.
+
+        Deep links are the SPA's routes, so the server hands the shell to every known
+        marketplace GET after the session gate. An unknown marketplace path gets the
+        same shell with a 404 status, so a typo is honest to clients and crawlers; /api
+        paths still answer 404 elsewhere and never the shell.
+        """
+        path, _, _query = self.path.partition("?")
+        self._send_marketplace_shell(200 if _known_marketplace_path(path) else 404)
+
+    def _preferences_write(self) -> None:
+        """Store the posted insight preferences, reporting a rejection as JSON."""
+        try:
+            self._send_json(200, PreferenceStore(default_data_dir()).write(self._read_json_body()))
+        except PreferencesError as exc:
+            self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+
+    def _insight_draft(self) -> None:
+        """Draft the press reply for the posted insight body."""
+        try:
+            answer = draft_reply(
+                self.server,
+                self._read_json_body(),
+                preferences=PreferenceStore(default_data_dir()).read(),
+                complete=self._insight_complete(),
+            )
+        except InsightError as exc:
+            self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+            return
+        self._send_json(200, answer)
+
+    def _excel_watch_pick(self) -> None:
+        """Open the workbook picker and return the chosen path."""
+        excel = self.server.excel  # type: ignore[attr-defined]
+        if excel is None:
+            self._send_json(503, {"error": "the excel watch is not available"})
+            return
+        self._send_json(200, {"path": self.server.pick_workbook()})  # type: ignore[attr-defined]
+
+    def _excel_watch_register(self) -> None:
+        """Validate and register the workbook path the card submitted."""
+        excel = self.server.excel  # type: ignore[attr-defined]
+        if excel is None:
+            self._send_json(503, {"error": "the excel watch is not available"})
+            return
+        body = self._read_json_body()
+        if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
+            self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
+            return
+        # Reject nonsense before registering: the manual-path fallback
+        # lives on the card, so this error text is the feedback loop.
+        problem = workbook_path_problem(body["path"].strip())
+        if problem:
+            self._send_json(400, {"error": problem})
+            return
+        excel.register(body["path"].strip())
+        excel.start_polling()
+        self._send_json(200, excel.status())
+
+    def _excel_watch_retest(self) -> None:
+        """Re-test the registered workbook and return the watch status."""
+        excel = self.server.excel  # type: ignore[attr-defined]
+        if excel is None:
+            self._send_json(503, {"error": "the excel watch is not available"})
+            return
+        excel.retest()
+        self._send_json(200, excel.status())
+
+    def _commitment_check(self) -> None:
+        """Toggle one commitment checkbox on the calendar bridge."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        body = self._read_json_body()
+        if body is None or not isinstance(body.get("eventId"), str):
+            self._send_json(400, {"error": "expected {\"eventId\": \"...\", \"idx\": n, \"checked\": bool}"})
+            return
+        calendar.toggle_check(
+            body["eventId"], int(body.get("idx", 0)), bool(body.get("checked"))
+        )
+        self._send_json(200, {"ok": True})
+
+    def _calendar_bridge_retest(self) -> None:
+        """Re-test the calendar bridge and return its status."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        calendar.retest()
+        self._maybe_briefs()
+        self._send_json(200, calendar.status())
+
+    def _calendar_bridge_pick(self) -> None:
+        """Open the calendar picker and return the chosen path."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        self._send_json(200, {"path": self.server.pick_calendar()})  # type: ignore[attr-defined]
+
+    def _calendar_bridge_path(self) -> None:
+        """Store the explicit calendar path the card submitted, then re-poll."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        body = self._read_json_body()
+        if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
+            self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
+            return
+        chosen = body["path"].strip()
+        problem = calendar_path_problem(chosen)
+        if problem:
+            self._send_json(400, {"error": problem})
+            return
+        # Stored before the poll so the choice survives restarts; the
+        # poll right now is the card's feedback that it took effect.
+        # Through the bridge so the write lands under its lock, like
+        # every other use of the shared connection.
+        calendar.set_explicit_path(chosen)
+        calendar.retest()
+        self._maybe_briefs()
+        self._send_json(200, calendar.status())
+
+    def _calendar_bridge_upload(self) -> None:
+        """Store the uploaded calendar document and point the bridge at it."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        raw = getattr(self, "_raw_body", b"")
+        declared = getattr(self, "_content_length", 0)
+        if declared > MAX_BODY_BYTES:
+            self._send_json(400, {"error": "The calendar file is larger than 1 MB. Trim the export, or point at the file by path instead."})
+            return
+        if not raw.strip():
+            self._send_json(400, {"error": "Send the calendar JSON as the request body."})
+            return
+        problem = calendar_document_problem(raw)
+        if problem:
+            self._send_json(400, {"error": problem})
+            return
+        target = default_data_dir() / "calendar_sync.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        calendar.set_explicit_path(str(target))
+        calendar.retest()
+        self._maybe_briefs()
+        self._send_json(200, calendar.status())
+
+    def _calendar_bridge_reset(self) -> None:
+        """Clear the explicit calendar path, re-poll and return the status."""
+        calendar = self.server.calendar  # type: ignore[attr-defined]
+        if calendar is None:
+            self._send_json(503, {"error": "the calendar bridge is not available"})
+            return
+        calendar.clear_explicit_path()
+        calendar.retest()
+        self._maybe_briefs()
+        self._send_json(200, calendar.status())
+
+    def _research_ask(self) -> None:
+        """Run one sourced research turn and store its transcript in memory."""
+        question = self._ask_question_from_body()
+        if not question:
+            self._send_json(400, {"error": "expected {\"question\": \"...\"}"})
+            return
+        self._log_activity("research", question)
+        answer = self._run_llm_turn(question, summary_mode=True)
+        summary = getattr(answer, "summary", "") if answer.status == "ok" else ""
+        self._capture_memory(
+            "research",
+            f"Research question: {question}" + (f"\nSourced summary: {summary}" if summary else ""),
+            question,
+            use_model=answer.status == "ok",
+        )
+        self._send_json(200, answer.to_json())
+
+    def _inbox_card_add(self) -> None:
+        """Add one inbox card from the posted body and return it."""
+        if self.server.inbox is None:  # type: ignore[attr-defined]
+            self._send_json(503, {"error": "the inbox is not available"})
+            return
+        body = self._read_json_body() or {}
+        try:
+            card = self.server.inbox.add(  # type: ignore[attr-defined]
+                kind=str(body.get("kind", "suggestion")),
+                origin=str(body.get("origin", "")),
+                title=str(body.get("title", "")),
+                body=str(body.get("body", "")),
+                action_label=str(body.get("actionLabel", "")),
+                window_hours=body.get("windowHours"),
+                meta=body.get("meta") or {},
+                draft=str(body.get("draft", "")),
+            )
+        except (ValueError, TypeError) as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        self._evaluate_inbox(self.server.inbox)  # type: ignore[attr-defined]
+        self._send_json(201, self.server.inbox.get(card.id).to_json(self.server.inbox.now_ts()))  # type: ignore[attr-defined]
+
+    def _inbox_accept(self, card_id: str) -> None:
+        """Accept the inbox card named in the path."""
+        self._inbox_decide(card_id, "accept")
+
+    def _inbox_dismiss(self, card_id: str) -> None:
+        """Dismiss the inbox card named in the path."""
+        self._inbox_decide(card_id, "dismiss")
+
+    def _memory_edit_rest(self, rest: str) -> None:
+        """Edit the fact whose id the path names between /memory/ and /edit."""
+        self._memory_edit(_memory_id_from_path("/memory/" + rest + "/edit", "/edit"))
+
+    def _memory_delete_rest(self, rest: str) -> None:
+        """Delete the fact whose id the path names between /memory/ and /delete."""
+        self._memory_delete(_memory_id_from_path("/memory/" + rest + "/delete", "/delete"))
+
+    def _memory_remove_preview(self) -> None:
+        """Preview which memory entries the posted removal would delete."""
+        self._memory_remove(preview=True)
+
+    def _memory_remove_apply(self) -> None:
+        """Delete the memory entries the posted body names."""
+        self._memory_remove(preview=False)
+
+    def _inbox_consolidate(self) -> None:
+        """Run the repetition detector and return its consolidated cards."""
+        if self.server.consolidator is None:  # type: ignore[attr-defined]
+            self._send_json(503, {"error": "the repetition detector is not available"})
+            return
+        self._send_json(200, self.server.consolidator.consolidate())  # type: ignore[attr-defined]
+
+    def _skill_run_rest(self, rest: str) -> None:
+        """Run the repetition skill whose id the path names."""
+        self._skill_run(int(rest.strip("/")))
+
+    def _skill_undo_rest(self, rest: str) -> None:
+        """Undo the last run of the repetition skill whose id the path names."""
+        self._skill_undo(int(rest.strip("/")))
+
+    def _plugins_page_action_request(self) -> None:
+        """Hand a two-segment /plugins/<id>/<action> POST to the plugins page.
+
+        The pattern row replaces the original slash-count test, which accepted exactly
+        this shape and nothing deeper.
+        """
+        path, _, _query = self.path.partition("?")
+        self._plugins_page_action(path)
+
+    def _mail_draft_rest(self, rest: str) -> None:
+        """Draft a reply for the mail message named in the path."""
+        if not self._source_allowed("mail_enabled"):
+            self._send_json(409, {"error": "Mail digest is off in settings.", "reconnect": "/settings"})
+            return
+        self._mail_draft(unquote(rest))
+
+    def _plugin_api_post(self) -> None:
+        """Hand a plugin runtime POST to the plugin dispatcher."""
+        path, _, _query = self.path.partition("?")
+        plugins = self.server.plugins  # type: ignore[attr-defined]
+        if plugins is None:
+            self._send_json(503, {"error": "plugins:unavailable",
+                                  "message": "no plugin runtime is configured"})
+            return
+        try:
+            self._dispatch_plugin_post(plugins, path, self._read_json_body() or {})
+        except PluginError as exc:
+            self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+
+    def _assistant_ask(self) -> None:
+        """Answer one assistant question, as JSON or a form redirect."""
+        question = self._ask_question_from_body()
+        if not question:
+            self._send_json(400, {"error": "expected a question"})
+            return
+        self._log_activity("assistant", question)
+        answer = self._run_llm_turn(question, summary_mode=False)
+        reply = answer.reply if answer.status == "ok" else ""
+        self._capture_memory(
+            "assistant",
+            f"You: {question}" + (f"\nAssistant: {reply}" if reply else ""),
+            question,
+            use_model=answer.status == "ok",
+        )
+        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
+            threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
+            text = answer.reply if answer.status == "ok" else f"[degraded] {answer.cause}"
+            threadlog.append(self.server.audit_conn, "assistant", text)  # type: ignore[attr-defined]
+        if self._is_form_submit():
+            self.send_response(303)
+            self.send_header("Location", "/assistant")
+            self._common_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        else:
+            self._send_json(200, answer.to_json())
 
     def _is_form_submit(self) -> bool:
         """Whether this POST came from a plain HTML form rather than fetch.
@@ -2205,53 +2051,42 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         Each source resolves to exactly one card however it is doing, so a source that
         is off, unconfigured, unavailable or live still takes its slot and the layout
-        never shifts. The research card reads the newest successful llm.research stamp —
-        that exact action name is what the writer records — and plugin cards come from
-        the runtime's own widget list, which is where an enabled plugin's pilot view is
-        spent.
+        never shifts. Every mode comes from build_dashboard_state, the same state the
+        JSON payload projects, and plugin cards ride along already carrying their
+        insight reading. Rendering is a pure read, so a page view never spends a
+        plugin's pilot view.
         """
-        now = datetime.now()
+        state = build_dashboard_state(self.server)
+        now = state.now
         widgets: list = []
-        excel = self.server.excel  # type: ignore[attr-defined]
-        sales_status = excel.status() if excel is not None else None
-        if not self._source_allowed("excel_enabled"):
+        if state.sales.mode == "disabled":
             widgets.append(render_sales_disabled(now))
-        elif sales_status is not None and sales_status.get("configured"):
-            widgets.append(render_sales_widget(sales_status))
+        elif state.sales.mode == "live" and state.sales.status is not None:
+            widgets.append(render_sales_widget(state.sales.status))
         else:
             widgets.append(render_sales_unconfigured(now))
-        calendar = self.server.calendar  # type: ignore[attr-defined]
-        if not self._source_allowed("calendar_enabled"):
+        if state.commitments.mode == "disabled":
             widgets.append(render_commitments_widget({"state": "disabled"}, now))
-        elif calendar is not None:
-            commitments = render_commitments_widget(calendar.status(), now)
+        elif state.commitments.mode == "live" and state.commitments.status is not None:
+            commitments = render_commitments_widget(state.commitments.status, now)
             widgets.append(
                 commitments if commitments is not None else render_commitments_unavailable(now)
             )
         else:
             widgets.append(render_commitments_unavailable(now))
-        audit_conn = self.server.audit_conn  # type: ignore[attr-defined]
-        # The writer records the action as "llm.research" (assistant/loop.py);
-        # querying anything else makes the stamp never show the last answer.
-        last_answer = audit_store.last_ok_ts(audit_conn, "llm.research") if audit_conn is not None else None
-        widgets.append(render_research_widget(last_answer, now))
-        connected = sum(1 for s in live_sources(self.server) if s.status == STATUS_CONNECTED)
-        plugins = self.server.plugins  # type: ignore[attr-defined]
-        if plugins is not None:
-            widgets += [
-                self._plugin_widget(card)
-                for card in with_insight(self.server, plugins.widget_cards())
-            ]
-        inbox = self.server.inbox  # type: ignore[attr-defined]
-        skills = self.server.skills.active() if self.server.skills is not None else []  # type: ignore[attr-defined]
+        if state.research.enabled:
+            widgets.append(render_research_widget(state.research.last_answered_ts, now))
+        else:
+            widgets.append(render_research_disabled(now))
+        widgets += [self._plugin_widget(card) for card in state.plugin_cards]
         page = pages.render_dashboard(
             widgets,
-            agentdesk.__version__,
+            state.version,
             _greeting(now),
             now.strftime("%A, %d %B, %H:%M. "),
-            inbox_count=len(inbox.waiting()) if inbox is not None else 0,
-            skills=skills,
-            connected_sources=connected,
+            inbox_count=state.inbox_waiting,
+            skills=list(state.skills),
+            connected_sources=state.sources_connected,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2764,6 +2599,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, {
             "cards": resolved_layout(server.layout, enabled_plugin_ids(server)),
         })
+
+    def _dashboard_view_report(self) -> None:
+        """Record that the page showed one dashboard, spending pilot views.
+
+        Reading the dashboard used to spend pilot views inside the GET; the
+        state builder made the read pure, so the page reports the view here
+        once after a successful load. The spend rules live in the runtime,
+        which keeps them identical to the cards the read emitted.
+        """
+        plugins = self.server.plugins  # type: ignore[attr-defined]
+        spent = plugins.record_dashboard_view() if plugins is not None else 0
+        self._send_json(200, {"spent": spent})
 
     def _apply_source_toggles(self, key: str, value) -> None:
         """Toggling a source off stops its ingestion immediately; on it
@@ -5029,7 +4876,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # and the SPA press the same press.
         request = press_from_form(self._read_json_body() or {})
         kind = str(request.get("kind") or "")
-        label = _PRESS_LABELS.get(kind, "Ask the model")
+        label = press_label(kind)
         try:
             answer = draft_reply(
                 self.server,
@@ -5255,7 +5102,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             extra = "amber"
         if status == FRESH:
-            # The reading's receipts and its press belong on the card, so
+            # The reading's resolved lines and its press belong on the card, so
             # the rendered dashboard is never a poorer version of the API.
             insight = payload.get("insight")
             body += _receipt_line(payload)

@@ -45,15 +45,20 @@ interface BriefProps {
   onExpired: () => void;
 }
 
+/** True when this plugin card is the workbook tracker, including its ~variant. */
 function isTracker(card: PluginCard): boolean {
   return card.id === 'excel-report' || card.id.startsWith('excel-report~');
 }
 
+/** A clock time for an epoch-seconds stamp, or an em dash when it is absent. */
 function fromEpoch(ts: number | null | undefined): string {
   if (ts == null || !Number.isFinite(ts)) return '—';
   return clock(new Date(ts * 1000));
 }
 
+/**
+ * A clock time for an ISO timestamp, or an em dash when it is missing or unreadable.
+ */
 function fromIso(value: string | null | undefined): string {
   if (!value) return '—';
   const at = new Date(value);
@@ -66,6 +71,7 @@ interface Lower {
   node: ReactNode;
 }
 
+/** Grid spans for the lower row: three across, one left over full width, two split. */
 function lowerSpans(count: number): number[] {
   const spans = Array.from({ length: count }, () => 4);
   const rest = count % 3;
@@ -74,6 +80,14 @@ function lowerSpans(count: number): number[] {
   return spans;
 }
 
+/**
+  * The dashboard's bento brief: the pipeline hero, the moves table, decisions, the
+  * digest, then the plugin cells.
+ *
+  * A cell with no real source shows the sample world while the Sample data switch is
+  * on. onRefetch reloads the dashboard once a source answers; onExpired hands a 401
+  * back to the caller.
+ */
 export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const [note, setNote] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
@@ -100,8 +114,15 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const calendarNeedsConnect = data.commitments.mode !== 'live'
     || data.commitments.status?.state === 'empty'
     || data.commitments.status == null;
-  const researchNeedsAsk = data.research.lastAnsweredTs == null;
+  // research.enabled is the same payload decision the server-rendered
+  // card follows; a disabled source is asked to be turned on, not asked.
+  const researchEnabled = data.research.enabled;
+  const researchNeedsAsk = researchEnabled && data.research.lastAnsweredTs == null;
 
+  /**
+   * Connect a sales workbook by path and reload the dashboard; a note says why nothing
+   * changed.
+   */
   async function connect(path: string) {
     setBusy(true);
     try {
@@ -123,6 +144,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     }
   }
 
+  /**
+   * Open the file dialog and connect the chosen workbook; a dialog that never opened
+   * falls back to the manual path input.
+   */
   async function pick() {
     setBusy(true);
     try {
@@ -142,6 +167,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     }
   }
 
+  /** Connect the typed workbook path when Enter is pressed. */
   function onPathKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -150,6 +176,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     }
   }
 
+  /** Focus the command bar so the user can ask a first research question. */
   function askFirst() {
     document.querySelector<HTMLTextAreaElement>('.cmd-field')?.focus();
   }
@@ -180,6 +207,14 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       action: <Button tone="secondary" className="btn-sm" onClick={askFirst}>Ask</Button>,
     });
   }
+  if (!researchEnabled) {
+    decisions.push({
+      key: 'research-off',
+      title: 'Turn research back on',
+      why: 'Answers come from your company endpoint, and it is off in settings.',
+      action: <Button tone="secondary" className="btn-sm" href="/settings">Open settings</Button>,
+    });
+  }
   const connected = data.sources.connected;
   const total = data.sources.total;
 
@@ -192,6 +227,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
 
   // ---- desk health ----------------------------------------------------
   const commitments = data.commitments.status;
+  /**
+   * A source's status word from the dashboard payload, or "" when no source
+   * carries that id.
+   */
   const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
   const healthRows: HealthRow[] = [
     {
@@ -210,8 +249,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     },
     {
       name: 'Research',
-      live: sourceStatus('research-endpoint') === 'connected',
-      status: sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
+      live: researchEnabled && sourceStatus('research-endpoint') === 'connected',
+      status: researchEnabled && sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
       lastRun: fromEpoch(data.research.lastAnsweredTs),
       items: '—',
     },
@@ -225,6 +264,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   ];
 
   const LIST = new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' });
+  /** The names as an English conjunction list, e.g. "A, B, and C". */
   const listJoin = (names: string[]) => LIST.format(names);
 
   // ---- the lower row ----------------------------------------------------

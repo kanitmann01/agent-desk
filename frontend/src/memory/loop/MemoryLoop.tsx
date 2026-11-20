@@ -43,12 +43,26 @@ export interface MemoryLoopProps {
   graphWidth?: number;
 }
 
+/**
+ * Return the message to show for a failed response.
+ *
+ * A 401 means the session's link expired and gets its own sentence; otherwise
+ * the server's error or cause is appended to fallback, so the reason a write
+ * failed is not lost.
+ */
 async function errorOf(res: { status: number; data: unknown }, fallback: string): Promise<string> {
   if (res.status === 401) return 'Your session ended. Open Nexuus Bot from its shortcut to get a fresh link.';
   const error = (res.data as { error?: string; cause?: string }).error ?? (res.data as { cause?: string }).cause;
   return error ? `${fallback} ${error}` : fallback;
 }
 
+/**
+ * The Memory page: capture, review, stored knowledge, the graph, and removal.
+ *
+ * Reads the loop endpoint on mount and, while the tab is visible, every pollMs;
+ * 0 turns the poll off. Writes go through the server's own routes, and
+ * graphWidth pins the width of the embedded graph.
+ */
 export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 8000, graphWidth }: MemoryLoopProps) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [graphKey, setGraphKey] = useState(0);
@@ -209,6 +223,7 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
 
 type Act = (url: string, body: unknown, failure: string) => Promise<unknown | null>;
 
+/** The page title with the standing counts and one line of capture state. */
 function Header({ data }: { data: LoopState }) {
   const on = data.capture.channels.filter((c) => c.on).map((c) => c.label);
   const capture = !data.capture.enabled || on.length === 0
@@ -226,6 +241,13 @@ function Header({ data }: { data: LoopState }) {
   );
 }
 
+/**
+ * The four-step strip: capture, store, process, remove.
+ *
+ * Each step links to the section that works it and reports state rather than
+ * instructions: the last capture, the standing counts, the window a removal can
+ * still be undone in.
+ */
 function Flow({ data, removedCount }: { data: LoopState; removedCount: number }) {
   const last = data.lastCapture;
   const lastLine = last
@@ -276,8 +298,21 @@ function Flow({ data, removedCount }: { data: LoopState; removedCount: number })
   );
 }
 
+/**
+ * The review queue, with "Approve all" once there is more than one candidate.
+ *
+ * Approve-all accepts the candidates in order and stays disabled while any
+ * decision is in flight.
+ */
 function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Approve or reject one candidate, saving an edited text first.
+   *
+   * A text that differs from the candidate's own is written through the card's
+   * edit route before the decision; a failed edit leaves the candidate undecided
+   * and the queue unchanged.
+   */
   const decide = async (candidate: Candidate, decision: 'accept' | 'dismiss', text?: string) => {
     setBusy(candidate.cardId);
     if (decision === 'accept' && text !== undefined && text.trim() && text.trim() !== candidate.text) {
@@ -288,6 +323,7 @@ function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged
     setBusy(null);
     onChanged();
   };
+  /** Accept every candidate in order, going on past one that fails. */
   const approveAll = async () => {
     setBusy('all');
     for (const candidate of data.candidates) {
@@ -327,6 +363,12 @@ function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged
   );
 }
 
+/**
+ * One review card: what was found, where it came from, and its actions.
+ *
+ * Only facts can be edited, and an edited text travels with the approval. The
+ * excerpt and the cited facts open in place.
+ */
 function CandidateItem({ candidate, busy, onDecide }: {
   candidate: Candidate;
   busy: boolean;
@@ -384,6 +426,12 @@ function CandidateItem({ candidate, busy, onDecide }: {
   );
 }
 
+/**
+ * A labelled on/off row: the label and optional hint, then the switch.
+ *
+ * The visible label is the button's accessible name; disabled marks the row as
+ * well as the button.
+ */
 function Switch({ id, label, hint, on, disabled, onToggle }: {
   id: string; label: string; hint?: string; on: boolean; disabled?: boolean; onToggle: () => void;
 }) {
@@ -401,7 +449,14 @@ function Switch({ id, label, hint, on, disabled, onToggle }: {
   );
 }
 
+/**
+ * Capture settings: what is read from, and whether a found fact waits.
+ *
+ * Each switch writes one setting and re-reads the page. The channel list and
+ * the review choice are disabled while capture itself is off.
+ */
 function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; onChanged: () => void }) {
+  /** Flip one setting, then re-read so the switches show the stored value. */
   const toggle = async (key: string) => {
     if (await act('/settings/toggle', { key }, 'The setting was not changed.')) onChanged();
   };
@@ -438,11 +493,18 @@ function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; 
   );
 }
 
+/**
+ * The "add a fact" form: one typed sentence, saved as written.
+ *
+ * An empty submit is refused in place and focuses the field; a saved fact
+ * clears the field and re-reads the page.
+ */
 function AddFact({ act, onChanged }: { act: Act; onChanged: () => void }) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [empty, setEmpty] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** Save the typed sentence, or mark the field when it is blank. */
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!text.trim()) {
@@ -482,10 +544,18 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'observations', label: 'Observations' },
 ];
 
+/** True when the row passes the filter; an empty filter passes everything. */
 function matches(text: string, filter: string): boolean {
   return !filter || text.toLowerCase().includes(filter.toLowerCase());
 }
 
+/**
+ * Stored knowledge as four tabs over one filter.
+ *
+ * Every list stops at LIST_CAP rows until "Show all", which lasts as long as
+ * the page is mounted. The observation tab also offers a reflect run, enabled
+ * only while the extractor is a working endpoint.
+ */
 function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKeep, onReflect }: {
   data: LoopState;
   tab: Tab;
@@ -510,6 +580,7 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
   const cap = <T,>(rows: T[]): T[] => (opened[tab] ? rows : rows.slice(0, LIST_CAP));
   let matched = 0;
   const factsById = useMemo(() => new Map(data.facts.map((f) => [f.id, f])), [data.facts]);
+  /** Walk the tabs with arrows, Home and End; every other key is left alone. */
   const onKeyDown = (event: ReactKeyboardEvent) => {
     const index = TABS.findIndex((t) => t.id === tab);
     const keys: Record<string, number> = {
@@ -604,10 +675,12 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
   );
 }
 
+/** The single line a filtered or empty list shows in place of rows. */
 function Empty({ filter, noun }: { filter: string; noun: string }) {
   return <p className="ml-quiet ml-pad">{filter ? `No ${noun} match “${filter}”.` : `No ${noun} yet.`}</p>;
 }
 
+/** A row's two actions: show it in the graph, and remove it. */
 function RowActions({ onShow, onRemove, removeText }: { onShow?: () => void; onRemove: () => void; removeText: string }) {
   return (
     <div className="ml-row-actions">
@@ -617,6 +690,12 @@ function RowActions({ onShow, onRemove, removeText }: { onShow?: () => void; onR
   );
 }
 
+/**
+ * One fact row: its text, where it came from, and what replaced it.
+ *
+ * A replaced fact stays visible and marked, with "Keep both" to put it back in
+ * recall, so nothing leaves the list without a trace.
+ */
 function FactItem({ fact, factsById, onRemove, onShow, onKeep, onEntity }: {
   fact: FactRow;
   factsById: Map<number, FactRow>;
@@ -659,6 +738,7 @@ function FactItem({ fact, factsById, onRemove, onShow, onKeep, onEntity }: {
   );
 }
 
+/** One entity row: its name, type, aliases and how many facts mention it. */
 function EntityItem({ entity, onRemove, onShow }: {
   entity: EntityRow; onRemove: (type: TargetType, id: number) => void; onShow: (nodeId: string) => void;
 }) {
@@ -677,6 +757,7 @@ function EntityItem({ entity, onRemove, onShow }: {
   );
 }
 
+/** One retained excerpt, quoted, with how many facts were taken from it. */
 function SourceItem({ source, onRemove, onShow }: {
   source: SourceRow; onRemove: (type: TargetType, id: number) => void; onShow: (nodeId: string) => void;
 }) {
@@ -695,6 +776,12 @@ function SourceItem({ source, onRemove, onShow }: {
   );
 }
 
+/**
+ * One observation row: its writer, the facts it cites and its confidence.
+ *
+ * An observation that lost a cited fact is flagged with the moment it happened
+ * and asks to be checked rather than being hidden.
+ */
 function ObservationItem({ obs, factsById, onRemove, onShow }: {
   obs: ObservationRow; factsById: Map<number, FactRow>; onRemove: (type: TargetType, id: number) => void; onShow: (nodeId: string) => void;
 }) {
@@ -718,6 +805,12 @@ function ObservationItem({ obs, factsById, onRemove, onShow }: {
   );
 }
 
+/**
+ * One group of a removal plan, showing its first five lines.
+ *
+ * An empty group renders nothing; a longer one ends with "and N more", so a
+ * plan stays readable however much the removal touches.
+ */
 function PlanList({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   const shown = items.slice(0, 5);
@@ -734,6 +827,12 @@ function PlanList({ title, items }: { title: string; items: string[] }) {
 
 // Each rewritten observation as it reads now (struck through) and as it
 // will read after the removal, so nothing changes unseen.
+/**
+ * The observations a removal rewrites, as they read now and after, up to three.
+ *
+ * A null after means the summary is rebuilt from the facts that remain rather
+ * than written at removal time.
+ */
 function RewriteList({ rows }: { rows: RemovalPlan['observationsUpdated'] }) {
   if (rows.length === 0) return null;
   const shown = rows.slice(0, 3);
@@ -758,6 +857,12 @@ function RewriteList({ rows }: { rows: RemovalPlan['observationsUpdated'] }) {
   );
 }
 
+/**
+ * The confirmation a removal opens: what goes, and what else changes.
+ *
+ * Escape and a click on the scrim cancel; Tab stays inside the dialog, and
+ * focus returns to whatever held it when the dialog opened.
+ */
 function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCancel: () => void; onConfirm: () => void }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -765,6 +870,7 @@ function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCanc
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     cancelRef.current?.focus();
+    /** Close on Escape, and keep Tab inside the dialog's buttons. */
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCancel();
       if (event.key !== 'Tab' || !dialogRef.current) return;
@@ -811,6 +917,12 @@ function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCanc
   );
 }
 
+/**
+ * The undo bar: what went, the window, and a countdown that expires it.
+ *
+ * The countdown reads the expiry against the wall clock once a second and calls
+ * onExpire at zero, so the bar goes away even if the tab slept.
+ */
 function UndoBar({ undo, onUndo, onExpire }: { undo: Undo; onUndo: () => void; onExpire: () => void }) {
   const [left, setLeft] = useState(() => Math.max(0, Math.round(undo.expiresTs - Date.now() / 1000)));
   useEffect(() => {

@@ -21,10 +21,17 @@ export const THEMES: readonly ThemeOption[] = [
   { id: 'momentuum', name: 'Momentuum blue', note: 'Light, brand blue' },
 ];
 
+/** True when a value is one of the theme ids the app ships. */
 export function isThemeId(value: unknown): value is ThemeId {
   return THEMES.some((theme) => theme.id === value);
 }
 
+/**
+ * Read the theme saved in this browser, or the default when none is saved.
+ *
+ * A stored id the app no longer ships and a storage that throws (private mode)
+ * both read as the default.
+ */
 export function storedTheme(): ThemeId {
   try {
     const value = localStorage.getItem(THEME_KEY);
@@ -34,6 +41,7 @@ export function storedTheme(): ThemeId {
   }
 }
 
+/** The theme the document is wearing, falling back to the stored one. */
 export function currentTheme(): ThemeId {
   const value = document.documentElement.dataset.theme;
   return isThemeId(value) ? value : storedTheme();

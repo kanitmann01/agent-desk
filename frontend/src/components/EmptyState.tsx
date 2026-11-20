@@ -11,6 +11,7 @@ interface EmptyStateProps {
   action?: ReactNode;
 }
 
+/** Wrap icon paths in the 22px stroke-only glyph every empty state shares. */
 const svg = (paths: ReactNode) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -39,6 +40,10 @@ export const ICON_SEARCH = svg(
   </>,
 );
 
+/**
+ * Composed empty state: the icon inline with the message and, when the
+ * caller has one, an action at the end of the same row.
+ */
 export default function EmptyState({ icon, children, action }: EmptyStateProps) {
   return (
     <div className="empty-state">

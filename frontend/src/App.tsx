@@ -2,8 +2,8 @@
 // it; every other path is the unchanged dashboard. The shell listens for
 // popstate only to cross that boundary, so browser Back from a marketplace
 // page lands on the dashboard without a reload.
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { getJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { getJson, postJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
 import type { DashboardData } from './types';
 import Dashboard from './dashboard/Dashboard';
 import MarketplaceApp from './marketplace/MarketplaceApp';
@@ -11,6 +11,12 @@ import Button from './components/Button';
 
 // The centered card every non-dashboard state shares. Loading is a polite
 // status; a failure is an alert so the recovery is announced.
+/**
+ * Centered card wrapper for the shell's own messages.
+ *
+ * `role` picks the live-region semantics for the card and `busy` sets
+ * `aria-busy`, so a wait is announced politely and a failure as an alert.
+ */
 function Centered({
   children,
   role,
@@ -34,14 +40,22 @@ function Centered({
   );
 }
 
+/** True for `/marketplace` and every path below it. */
 export function isMarketplacePath(pathname: string): boolean {
   return pathname === '/marketplace' || pathname.startsWith('/marketplace/');
 }
 
+/**
+ * Dashboard route: fetch `/api/dashboard` once and render the loading state,
+ * the expired-session notice, a failure with retry, or the dashboard.
+ */
 function DashboardApp() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [expired, setExpired] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  // The view report is a POST, so it must fire once per mount, after the
+  // first successful load, and never make rendering wait for it.
+  const reportedView = useRef(false);
 
   // Focus the failure heading as it mounts (it stays out of the tab
   // order) so Try again is the following keypress. A callback ref runs
@@ -61,6 +75,10 @@ function DashboardApp() {
       return;
     }
     setData(res.data as DashboardData);
+    if (!reportedView.current) {
+      reportedView.current = true;
+      void postJson('/api/dashboard/view').catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -104,9 +122,14 @@ function DashboardApp() {
   );
 }
 
+/**
+ * Root component: pick the marketplace or the dashboard from the current
+ * path, and follow `popstate` so Back leaves the marketplace without a reload.
+ */
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   useEffect(() => {
+    /** Track a back/forward navigation by re-reading the current path. */
     const onPop = () => setPathname(window.location.pathname);
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);

@@ -60,6 +60,14 @@ const DEFAULT_CARD_TITLES: Record<string, string> = {
 const SAVE_UNREACHABLE = 'The dashboard could not reach its own server; the layout was not saved.';
 const SAVE_REFUSED = 'The layout was not saved; the dashboard re-read the saved layout.';
 
+/**
+ * The composed dashboard: rail, hero, research bar, bento grid and footer, in the
+ * layout's saved order.
+ *
+ * Customize mode wraps every visible card in its toolbar and saves each change as it
+ * happens, so leaving the mode loses nothing. onRefetch reloads the payload; onExpired
+ * hands a 401 back to the caller.
+ */
 export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps) {
   // The skills strip and the research bar share one answer area and one
   // status line, exactly as the server-rendered page does.
@@ -98,12 +106,20 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   // skills to list; a card with nothing honest to say is not a card.
   const skillsShown = visible.some((c) => c.key === 'skills') && hasSkills;
 
+  /**
+   * The custom title for a layout key, from the customize copy first and the payload
+   * second; null keeps the default.
+   */
   function layoutTitle(key: string): string | null {
     const fromState = layoutState?.find((c) => c.key === key);
     if (fromState) return fromState.title;
     return visible.find((c) => c.key === key)?.title ?? null;
   }
 
+  /**
+   * The name a card is labelled with: its custom title, its default title, or the
+   * plugin's own.
+   */
   function cardName(key: string): string {
     const plugin = data.plugins.cards.find((c) => c.id === key);
     return layoutTitle(key) ?? DEFAULT_CARD_TITLES[key] ?? plugin?.title ?? key;
@@ -111,6 +127,10 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
 
   // Does this layout key render a card at all right now? (The skills
   // card needs skills; a plugin key needs its installed card.)
+  /**
+   * True when this layout key has something to render now: the skills card needs
+   * skills, a plugin key its installed card.
+   */
   function rendersCard(key: string): boolean {
     if (key === 'skills') return hasSkills;
     if (!(key in DEFAULT_CARD_TITLES)) {
@@ -119,11 +139,22 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     return true;
   }
 
+  /**
+   * Show a research answer, bumping the sequence so the block remounts even for a
+   * repeated question.
+   */
   function showAnswer(next: ResearchAnswer | null) {
     setAnswer(next);
     setAnswerSeq((seq) => seq + 1);
   }
 
+  /**
+   * Ask the research endpoint and show the answer, or its degraded cause; true when an
+   * answer arrived.
+   *
+   * A 401 goes to onExpired, and an answer refetches so the stamp moves to its answered
+   * time.
+   */
   async function ask(question: string): Promise<boolean> {
     setResearchBusy(true);
     setStatusText(RESEARCH_BUSY);
@@ -153,6 +184,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     return true;
   }
 
+  /** Run a saved ask and show its result in the shared answer area. */
   async function runSkill(id: number) {
     setSkillBusyId(id);
     setStatusText('Running the saved ask');
@@ -180,6 +212,9 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   // The layout read, guarded like every other call the cards make: a
   // rejected fetch answers null (the server is unreachable) instead of
   // escaping as an unhandled rejection.
+  /**
+   * The layout payload from /api/layout, or null when the server could not be reached.
+   */
   async function readLayout() {
     try {
       return await getJson('/api/layout');
@@ -188,6 +223,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     }
   }
 
+  /** Open customize mode on the full saved layout, hidden cards included. */
   async function enterCustomize() {
     const res = await readLayout();
     if (res !== null && res.status === 401) { onExpired(); return; }
@@ -206,6 +242,10 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     setCustomizing(true);
   }
 
+  /**
+   * Close customize mode and drop its transient state; every change saved itself
+   * already.
+   */
   function leaveCustomize() {
     setCustomizing(false);
     setRenaming(null);
@@ -214,6 +254,10 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     setCustomizeNote('');
   }
 
+  /**
+   * Re-read the saved layout and the payload, so the screen shows only what the server
+   * holds.
+   */
   async function resyncLayout() {
     const res = await readLayout();
     if (res === null) return; // unreachable: the screen keeps what it has
@@ -227,6 +271,13 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   // POST, then the server's listing wins and the payload refetches so
   // the bento follows. A failure re-reads the server's copy, so the
   // screen never shows an arrangement that was not saved.
+  /**
+   * Save the whole layout and show the note; a refused save re-reads the server's copy
+   * instead.
+   *
+   * The arrangement is applied before the POST, so the screen answers the click at
+   * once, and it is replaced by the saved one when the POST fails.
+   */
   async function saveLayout(next: LayoutCardState[], note: string) {
     setLayoutState(next);
     setCustomizeNote(note);
@@ -250,6 +301,12 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
 
   // Reorder within the sequence of cards that actually render; hidden
   // and empty cards keep their slots around them.
+  /**
+   * The layout with one rendered card moved among the cards that render, or undefined
+   * when the card cannot move.
+   *
+   * Hidden and empty cards keep their slots around it.
+   */
   function moveRendered(key: string, toIndex: number) {
     if (layoutState === null) return;
     const cards = layoutState;
@@ -268,6 +325,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     return rebuilt;
   }
 
+  /** Move a rendered card one place up or down and save the layout. */
   function moveCard(key: string, direction: -1 | 1) {
     if (layoutState === null) return;
     const movable = layoutState
@@ -279,6 +337,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     void saveLayout(next, `${cardName(key)} moved ${verb}`);
   }
 
+  /** Move the dragged card onto a target card and save the layout. */
   function dropCard(targetKey: string) {
     if (layoutState === null || dragKey === null || dragKey === targetKey) return;
     const movable = layoutState
@@ -290,6 +349,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     void saveLayout(next, `${cardName(dragKey)} moved`);
   }
 
+  /** Hide a card and save the layout, aiming focus at its Restore button. */
   function hideCard(key: string) {
     if (layoutState === null) return;
     focusPending.current = { kind: 'restore', key };
@@ -299,6 +359,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     );
   }
 
+  /** Restore a hidden card and save the layout, aiming focus at its grip. */
   function restoreCard(key: string) {
     if (layoutState === null) return;
     focusPending.current = { kind: 'grip', key };
@@ -308,6 +369,10 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     );
   }
 
+  /**
+   * Set a card's custom title and save the layout; a blank value returns it to the
+   * default name.
+   */
   function renameCard(key: string, value: string) {
     if (layoutState === null) return;
     const title = value || null; // blank means back to the default name
@@ -340,6 +405,10 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
 
   const researchSpan = skillsShown ? 'span-8' : 'span-12';
 
+  /**
+   * The card element for a layout key, or null when the key names nothing that renders
+   * right now.
+   */
   function cardNode(key: string) {
     const title = layoutTitle(key) ?? undefined;
     switch (key) {
@@ -369,6 +438,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             key={key}
             span={researchSpan}
             title={title}
+            enabled={data.research.enabled}
             lastAnsweredTs={data.research.lastAnsweredTs}
             answer={answer}
             answerSeq={answerSeq}
@@ -451,7 +521,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             <p className="cust-note" role="status">{customizeNote}</p>
           </section>
         ) : null}
-        <CommandBar busy={researchBusy} onAsk={ask} />
+        <CommandBar busy={researchBusy} disabled={!data.research.enabled} onAsk={ask} />
         {!customizing && statusText ? (
           <p className="research-status command-status" role="status">{statusText}</p>
         ) : null}

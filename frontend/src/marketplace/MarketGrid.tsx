@@ -24,18 +24,27 @@ const RISK_LABELS: Record<string, string> = {
   high: 'High risk',
 };
 
+/** Capitalise a category slug for display, leaving the rest of it alone. */
 export function categoryLabel(category: string): string {
   return category.charAt(0).toUpperCase() + category.slice(1);
 }
 
+/** Name a risk tier for a person, falling back to "<tier> risk" for one this build does not know. */
 export function riskLabel(tier: string): string {
   return RISK_LABELS[tier] ?? `${tier} risk`;
 }
 
+/** Name a card's source, falling back to the raw value for an unknown one. */
 export function sourceLabel(source: string): string {
   return SOURCE_LABELS[source] ?? source;
 }
 
+/**
+ * Show whether a publisher is verified, in words as well as with a check mark.
+ *
+ * Unverified is stated outright rather than left blank, so the absence of a
+ * mark cannot be mistaken for a pass.
+ */
 export function PublisherMark({ verified }: { verified: boolean }) {
   return verified ? (
     <span className="mkt-verified" title="Publisher verified">
@@ -50,6 +59,7 @@ export function PublisherMark({ verified }: { verified: boolean }) {
   );
 }
 
+/** Render the shared plugin grid as a list of cards, each linking to its detail page. */
 export function MarketGrid({ cards }: { cards: MarketCard[] }) {
   return (
     <ul className="mkt-grid" role="list">
@@ -58,6 +68,13 @@ export function MarketGrid({ cards }: { cards: MarketCard[] }) {
   );
 }
 
+/**
+ * Render one catalog card: identity, summary, category, risk and source, with
+ * the deprecation and yank flags when they apply.
+ *
+ * A blocked plugin keeps its link but carries the first ineligibility reason,
+ * so a person can read why before opening it.
+ */
 export function MarketCardView({ card }: { card: MarketCard }) {
   const reason = card.ineligibleReasons[0];
   return (
@@ -100,6 +117,14 @@ export function MarketCardView({ card }: { card: MarketCard }) {
 
 const QUIET_RISK = new Set(['low', 'internal', 't1']);
 
+/**
+ * True when a card is this desk's own bundled, verified plugin at a quiet risk
+ * tier.
+ *
+ * The grid treats those as the default and stops annotating them, so a page
+ * full of house plugins reads as one product rather than as a list of
+ * exceptions.
+ */
 function isHouseDefault(card: MarketCard): boolean {
   return card.publisher === 'agent-desk'
     && card.publisherVerified
@@ -109,6 +134,13 @@ function isHouseDefault(card: MarketCard): boolean {
 
 // What a shipped plugin draws on the desk, in miniature. Shapes, not
 // numbers: the catalog previews the cell, it does not report data.
+/**
+ * Draw the decorative miniature that stands in for a featured plugin's widget.
+ *
+ * The shape is chosen from the plugin's base id, with any variant suffix
+ * dropped, and reports no data: it is hidden from assistive technology
+ * because it is illustration, not evidence.
+ */
 function Miniature({ id }: { id: string }) {
   const base = id.split('~')[0];
   if (base === 'excel-report') {
@@ -136,6 +168,13 @@ function Miniature({ id }: { id: string }) {
   );
 }
 
+/**
+ * Render one catalog row.
+ *
+ * A house-default plugin is shown without the publisher, verification and
+ * source tags the default implies; everything else adds them. `featured` also
+ * prepends the miniature and promotes the row.
+ */
 function Row({ card, featured = false }: { card: MarketCard; featured?: boolean }) {
   const showMeta = !isHouseDefault(card);
   const extras: string[] = [];
@@ -206,6 +245,7 @@ export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
   );
 }
 
+/** Render placeholder cards for a grid that is still loading, hidden from assistive technology. */
 export function SkeletonGrid({ count = 6 }: { count?: number }) {
   return (
     <div className="mkt-grid mkt-grid-skeleton" aria-hidden="true">

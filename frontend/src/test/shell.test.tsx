@@ -2,7 +2,7 @@
 // research command bar and the centered app states, on the warm-paper
 // system. Rendering-level checks: the effects wrappers are gone, the
 // honest copy and the keyboard behaviors stay.
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -183,6 +183,16 @@ describe('the hero band', () => {
     expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', '/walkthrough/calendar');
     expect(screen.queryByText(/Not connected yet/)).toBeNull();
   });
+
+  it('asks to turn research on when the payload says it is off', () => {
+    pinClock();
+    const off = { ...DATA, research: { enabled: false, lastAnsweredTs: null } };
+    render(<Dashboard data={off} onRefetch={async () => {}} onExpired={() => {}} />);
+    const region = screen.getByRole('region', { name: 'Needs a decision' });
+    expect(region).toHaveTextContent('Turn research back on');
+    expect(region).toHaveTextContent('off in settings');
+    expect(screen.queryByText('Ask your first question')).toBeNull();
+  });
 });
 
 describe('the research command bar', () => {
@@ -229,6 +239,17 @@ describe('the research command bar', () => {
     render(<CommandBar busy onAsk={onAsk} />);
     expect(screen.getByRole('button', { name: /Research/i })).toBeDisabled();
     expect(document.querySelector('.cmd canvas')).toBeNull();
+  });
+
+  it('states the pause instead of inviting a question when research is off', () => {
+    const onAsk = vi.fn().mockResolvedValue(true);
+    render(<CommandBar busy={false} disabled onAsk={onAsk} />);
+    expect(screen.getByLabelText('Research question')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Research/i })).toBeDisabled();
+    expect(document.querySelector('.cmd-hint')).toHaveTextContent(
+      'Research is turned off in settings.',
+    );
+    expect(onAsk).not.toHaveBeenCalled();
   });
 });
 
@@ -283,5 +304,21 @@ describe('the centered app states', () => {
     expect(document.querySelector('.hero-title')).toHaveTextContent(
       greetingFor(new Date()),
     );
+  });
+
+  it('reports the dashboard view exactly once after the first load', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json(DATA));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    expect(await screen.findByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+    await waitFor(() => {
+      const reports = fetchMock.mock.calls.filter(
+        ([url]) => String(url) === '/api/dashboard/view',
+      );
+      expect(reports).toHaveLength(1);
+      expect(reports[0][1]?.method).toBe('POST');
+    });
+    // The report never blocks the surface: the dashboard is still on screen.
+    expect(document.querySelector('.hero-title')).toBeInTheDocument();
   });
 });
