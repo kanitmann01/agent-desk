@@ -10,14 +10,17 @@ from pathlib import Path
 
 from agentdesk.presentations.fit import fit_outline
 from agentdesk.presentations.render import render_deck
-from agentdesk.presentations.writer import write_deck
+from agentdesk.presentations.writer import content_point_size, write_deck
 
 
 def deliver_deck(shell: bytes, recipe: dict, outline: dict, sources: list,
                  folder: Path, shorten, timeout: float, runner=None) -> dict:
     """Fit the outline, write the package, and render previews into `folder`."""
     folder.mkdir(parents=True, exist_ok=True)
-    fitted, notes = fit_outline(outline, recipe, shorten, timeout, sources)
+    fitted, notes = fit_outline(
+        outline, recipe, shorten, timeout, sources,
+        min_pt=content_point_size(shell, recipe),
+    )
     blob = write_deck(shell, recipe, fitted)
     (folder / "deck.pptx").write_bytes(blob)
     rendered = render_deck(folder / "deck.pptx", folder / "preview", runner=runner)
