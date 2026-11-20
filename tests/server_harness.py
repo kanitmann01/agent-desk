@@ -230,11 +230,13 @@ class Booted:
         # Template packs the user installs live under AGENTDESK_TEMPLATES.
         # A boot that does not set it gets an empty temp dir, so the suite
         # never lists whatever happens to sit in the real home directory.
+        self._decks_root = tempfile.TemporaryDirectory(prefix="agentdesk-decks-")
         self._prev_templates = os.environ.get("AGENTDESK_TEMPLATES")
         if self._prev_templates is None:
             self._templates_root = tempfile.TemporaryDirectory(prefix="agentdesk-templates-")
             os.environ["AGENTDESK_TEMPLATES"] = self._templates_root.name
         self.server = server_app.create_server(port=0, **kwargs)
+        self.server.presentation_dir = Path(self._decks_root.name)
         # Memory captures run inline under test, so a request's capture
         # has landed by the time its response is read.
         self.server.memory_capture_runner = lambda job: job()
@@ -285,6 +287,9 @@ class Booted:
         outbox_root = getattr(self, "_outbox_root", None)
         if outbox_root is not None:
             outbox_root.cleanup()
+        decks_root = getattr(self, "_decks_root", None)
+        if decks_root is not None:
+            decks_root.cleanup()
         templates_root = getattr(self, "_templates_root", None)
         if templates_root is not None:
             templates_root.cleanup()

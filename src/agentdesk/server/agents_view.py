@@ -139,6 +139,10 @@ def _artifact_html(run: dict) -> str:
             f"({artifact.get('variant', '')}), "
             f"recipe {artifact.get('recipe', '')}."
         )
+        if artifact.get("file"):
+            text_html = f"<pre>{_esc(text)}</pre>"
+            href = f"/agents/runs/{run['id']}/download"
+            return text_html + f'<p><a href="{href}">Download .pptx</a></p>'
     else:
         text = str(artifact.get("text", ""))
     if not text:
