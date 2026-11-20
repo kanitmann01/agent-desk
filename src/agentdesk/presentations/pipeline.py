@@ -127,19 +127,26 @@ def guard_numbers(text: str, sources: list[dict], cited: list[int]) -> str:
         if source["id"] not in set(cited):
             continue
         for token in _DIGITS.findall(source["text"]):
-            digits = re.sub(r"\D", "", token)
-            if digits:
-                allowed.add(digits)
+            key = _number_key(token)
+            if key:
+                allowed.add(key)
 
     def replace(match: re.Match) -> str:
         """Keep a number only when a cited source has that same number."""
-        token = match.group(0)
-        digits = re.sub(r"\D", "", token)
-        if digits and digits in allowed:
-            return token
+        key = _number_key(match.group(0))
+        if key and key in allowed:
+            return match.group(0)
         return "[data needed]"
 
     return _DIGITS.sub(replace, text)
+
+
+def _number_key(token: str) -> str:
+    """The token to compare. Commas drop; the decimal point stays.
+
+    Dropping the point made 22.0 look like 220.
+    """
+    return token.replace(",", "").strip(".")
 
 
 def plan_prompt(brief: str, recipe: dict) -> str:
@@ -150,7 +157,9 @@ def plan_prompt(brief: str, recipe: dict) -> str:
     ]
     return (
         "Presentation plan. Reply with JSON only: "
-        '{"sections": [{"id": "the section id", "title": "the section title"}]}. '
+        '{"title": "A Short Deck Title", '
+        '"sections": [{"id": "the section id", "title": "the section title"}]}. '
+        "Write the title in title case, not as a copy of the topic. "
         "Use these sections, in this order, and do not add any.\n"
         f"Recipe: {recipe.get('id')}\n"
         f"Sections: {json.dumps(sections)}\n"
@@ -158,8 +167,8 @@ def plan_prompt(brief: str, recipe: dict) -> str:
     )
 
 
-def parse_plan(reply: str, recipe: dict) -> list[dict] | None:
-    """The recipe's sections, if the reply lists exactly those ids."""
+def parse_plan(reply: str, recipe: dict) -> tuple[str, list[dict]] | None:
+    """The deck title and the recipe's sections, if the reply lists those ids."""
     expected = [section for section in recipe.get("sections") or [] if section.get("id")]
     try:
         document = json.loads(_json_text(reply))
@@ -176,7 +185,8 @@ def parse_plan(reply: str, recipe: dict) -> list[dict] | None:
             "id": section["id"],
             "title": str(item.get("title") or section.get("title") or section["id"]),
         })
-    return planned
+    title = str(document.get("title") or "").strip()
+    return title, planned
 
 
 def fill_prompt(section: dict, sources: list[dict], brief: str) -> str:
@@ -188,20 +198,38 @@ def fill_prompt(section: dict, sources: list[dict], brief: str) -> str:
     block = "\n".join(lines) or "(no sources)"
     return (
         "Presentation fill. Reply with JSON only: "
-        '{"title": "slide title", "bullets": ["one point", "another"], '
-        '"citations": [1]}. Cite source ids. Do not invent numbers.\n'
+        '{"slides": [{"title": "slide title", "bullets": ["one point", "another"], '
+        '"citations": [1]}]}. '
+        "Return 2 to 4 slides for this section. Each slide needs 3 or 4 "
+        "full sentences, enough to use the body of the slide. "
+        "Cite source ids. Do not invent numbers.\n"
         f"Topic: {brief}\n"
         f"Section: {section['title']}\n"
         f"Sources:\n{block}"
     )
 
 
-def parse_fill(reply: str) -> dict | None:
-    """A fill object, or None when the reply is not that JSON."""
+def parse_fill(reply: str) -> list[dict] | None:
+    """The section's slides, or None when the reply is not that JSON.
+
+    A reply may be one slide object, or {"slides": [ ... ]} with 2 to 4.
+    """
     try:
         document = json.loads(_json_text(reply))
     except ValueError:
         return None
+    if not isinstance(document, dict):
+        return None
+    if isinstance(document.get("slides"), list):
+        slides = [_one_fill(item) for item in document["slides"]]
+        slides = [item for item in slides if item is not None]
+        return slides or None
+    one = _one_fill(document)
+    return [one] if one is not None else None
+
+
+def _one_fill(document: dict) -> dict | None:
+    """One slide object from a fill reply."""
     if not isinstance(document, dict):
         return None
     bullets = document.get("bullets")
@@ -220,32 +248,89 @@ def parse_fill(reply: str) -> dict | None:
 
 
 def outline_from_fill(brief: str, recipe: dict, planned: list[dict],
-                      filled: list[dict], sources: list[dict]) -> dict:
+                      filled: list, sources: list[dict], title: str = "") -> dict:
     """The writer's outline: title, a divider and content slides, closing.
 
-    Bullets have passed the digit guard. Notes list the cited sources.
+    A section becomes 2 to 4 content slides when the recipe asks for that
+    and the fill has the material. Bullets have passed the digit guard.
     """
-    title = " ".join(brief.split())[:60] or "Untitled"
-    slides = [{"role": "title", "title": title}]
-    for section, fill in zip(planned, filled):
-        cited = fill.get("citations") or []
+    deck_title = title.strip() or _proper_title(brief) or "Untitled"
+    slides = [{"role": "title", "title": deck_title[:60]}]
+    low, high = _repeat_bounds(recipe)
+    for section, fills in zip(planned, filled):
+        rows = fills if isinstance(fills, list) else [fills]
+        rows = _within_repeat([row for row in rows if isinstance(row, dict)], low, high)
+        cited = (rows[0].get("citations") or []) if rows else []
         slides.append({
             "role": "section",
             "title": guard_numbers(str(section["title"]), sources, cited)[:40],
         })
-        bullets = [
-            guard_numbers(bullet, sources, cited)[:110]
-            for bullet in (fill.get("bullets") or ["Prepared from the desk."])
-        ]
-        notes = _notes(cited, sources)
-        slides.append({
-            "role": "content",
-            "title": guard_numbers(fill.get("title") or section["title"], sources, cited)[:60],
-            "bullets": bullets[:5] or ["Prepared from the desk."],
-            "notes": notes,
-        })
+        for fill in rows:
+            cited = fill.get("citations") or []
+            bullets = [
+                guard_numbers(bullet, sources, cited)
+                for bullet in (fill.get("bullets") or ["Prepared from the desk."])
+            ]
+            slides.append({
+                "role": "content",
+                "title": guard_numbers(fill.get("title") or section["title"], sources, cited)[:60],
+                "bullets": bullets[:5] or ["Prepared from the desk."],
+                "notes": _notes(cited, sources),
+                "citations": list(cited),
+            })
     slides.append({"role": "closing"})
-    return {"title": title, "slides": slides}
+    return {"title": deck_title[:60], "slides": slides}
+
+
+def _proper_title(text: str) -> str:
+    """A title-cased line from a lowercase brief. Small words stay small."""
+    small = {"a", "an", "the", "of", "and", "for", "to", "in", "on"}
+    words = text.split()
+    if not words:
+        return ""
+    titled = []
+    for index, word in enumerate(words):
+        core = word.strip(".,:;").lower()
+        if core == "qbr":
+            titled.append("QBR")
+        elif index and core in small:
+            titled.append(core)
+        else:
+            titled.append(word[:1].upper() + word[1:])
+    return " ".join(titled)
+
+
+def _repeat_bounds(recipe: dict) -> tuple[int, int]:
+    """The content slide range the recipe names, or 1 to 4."""
+    rule = next(
+        (row for row in recipe.get("slides") or [] if isinstance(row, dict) and row.get("role") == "content"),
+        {},
+    )
+    match = re.search(r"(\d+)\s*-\s*(\d+)", str(rule.get("repeat") or ""))
+    if not match:
+        return 1, 4
+    return int(match.group(1)), int(match.group(2))
+
+
+def _within_repeat(rows: list[dict], low: int, high: int) -> list[dict]:
+    """Keep at most `high` slides, and split one long slide to reach `low`."""
+    slides = [row for row in rows if row.get("bullets") or row.get("title")][:high]
+    if len(slides) >= low or not slides:
+        return slides
+    bullets = list(slides[0].get("bullets") or [])
+    if len(bullets) < low:
+        return slides
+    size = max(1, (len(bullets) + low - 1) // low)
+    groups = [bullets[start:start + size] for start in range(0, len(bullets), size)]
+    groups = [group for group in groups if group][:high]
+    base = slides[0]
+    built = []
+    for index, group in enumerate(groups):
+        title = base.get("title") or ""
+        if index:
+            title = f"{title} ({index + 1})".strip()
+        built.append({**base, "title": title, "bullets": group})
+    return built or slides
 
 
 def receipt_lines(sources: list[dict]) -> list[dict]:
