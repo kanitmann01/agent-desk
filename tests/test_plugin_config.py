@@ -14,6 +14,7 @@ from agentdesk.plugins.suggest import (
     propose_columns,
 )
 from agentdesk.plugins.tracker import pace_line, read_tracker
+from tests.plugin_fixtures import write_alias_plugin
 
 
 def test_a_confirmed_file_is_the_only_path_that_can_be_read(tmp_path):
@@ -212,40 +213,6 @@ def test_propose_columns_uses_the_model_reply_and_ignores_a_failure(tmp_path):
         )
 
 
-def _alias_fixture(tmp_path, plugin_id, name, instance_name):
-    """An alias plugin built from the surviving workbook plugin.
-
-    The retired sales-delta-widget and budget-burn were such aliases. The
-    fixture keeps the tracker-instance expansion testable without the
-    retired trees, while excel-report stays the one shipped workbook card.
-    """
-    import shutil
-
-    root = Path(__file__).resolve().parents[1] / "registry" / "plugins"
-    directory = tmp_path / plugin_id
-    shutil.copytree(root / "excel-report", directory)
-    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    manifest.update({
-        "id": plugin_id,
-        "name": name,
-        "category": "finance",
-        "config": {
-            "kinds": ["workbook"],
-            "aliasOf": "excel-report",
-            "instanceName": instance_name,
-            "good": "up",
-        },
-        "tags": ["workbook", "instance"],
-        "icon": "chart",
-    })
-    widget = manifest["contributes"]["widgets"][0]
-    widget["id"] = plugin_id
-    manifest["activationEvents"] = [f"onWidget:{plugin_id}"]
-    (directory / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    return directory
-
-
 def test_two_aliases_expand_to_their_tracker_instances(tmp_path):
     from agentdesk.plugins.execute import PluginWidgetRunner
     from agentdesk.plugins.runtime import PluginRuntime
@@ -260,8 +227,12 @@ def test_two_aliases_expand_to_their_tracker_instances(tmp_path):
     )
     root = Path(__file__).resolve().parents[1] / "registry" / "plugins"
     runtime.install(root / "excel-report", source="dir")
-    runtime.install(_alias_fixture(tmp_path, "sales-alias", "Sales 24h Delta", "Sales"), source="dir")
-    runtime.install(_alias_fixture(tmp_path, "budget-alias", "Budget 24h Delta", "Budget"), source="dir")
+    runtime.install(write_alias_plugin(
+        tmp_path, "sales-alias", "Sales 24h Delta", "Sales"),
+        source="dir")
+    runtime.install(write_alias_plugin(
+        tmp_path, "budget-alias", "Budget 24h Delta", "Budget"),
+        source="dir")
     cards = runtime.widget_cards()
     titles = {card["title"] for card in cards}
     assert titles == {"Sales", "Budget"}

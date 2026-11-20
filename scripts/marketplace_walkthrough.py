@@ -287,7 +287,8 @@ def main() -> int:
                       f"installing {plugin_id} returned {response.status}: {result}")
                 installed_ids.append(plugin_id)
             print(f"{step}. install the two desk plugins: {len(installed_ids)} plugins")
-            check(len(installed_ids) == 2, "both desk plugins must install")
+            check(installed_ids == list(desk_plugins),
+                  f"installed {installed_ids}, expected both desk plugins")
 
             step += 1
             response = call(handler, "GET", "/installed")
@@ -295,6 +296,8 @@ def main() -> int:
             print(f"{step}. installed records: {len(installed)} with pinned digests")
             check(len(installed) == 2, f"expected 2 installed records, got {len(installed)}")
             records = {record["id"]: record for record in runtime.list_records()}
+            check(set(records) == set(desk_plugins),
+                  f"installed records {sorted(records)}, expected the two desk plugins")
             for record in installed:
                 pinned = record.get("pinned") or {}
                 lock = records[record["id"]]

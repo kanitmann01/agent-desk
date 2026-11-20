@@ -121,9 +121,12 @@ RETIRED_COUNT = 23
 
 
 def test_the_retired_plugins_are_archived_outside_the_registry():
-    """Spec 015: the 23 retired trees live in archive/plugins, outside the
-    registry scan, the bundled-catalog build and the packaged product, and
-    no shipped artifact names one of them."""
+    """Keep the 23 retired trees out of every shipped surface.
+
+    They live in archive/plugins, outside the registry scan, the
+    bundled-catalog build and the packaged product; no shipped artifact
+    names one of them.
+    """
     archived = sorted(path.name for path in ARCHIVE.iterdir() if path.is_dir())
     assert len(archived) == RETIRED_COUNT
     assert not ARCHIVE.is_relative_to(REGISTRY)

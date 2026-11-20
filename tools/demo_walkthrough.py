@@ -19,7 +19,6 @@ Stdlib only. Hermetic: it never touches the real ~/.agent-desk.
 import http.cookiejar
 import http.server
 import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import shutil
 import socket

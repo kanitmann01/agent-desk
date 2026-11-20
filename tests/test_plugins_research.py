@@ -145,6 +145,14 @@ def test_competitor_watch_is_the_only_network_plugin():
     assert manifest["optionalPermissions"]["network"]["allow"] == ["example.com"]
     assert manifest["optionalPermissions"]["network"]["userPrompt"].strip()
 
+    # No other shipped plugin asks for the network, even optionally.
+    for other in sorted(PLUGINS.iterdir()):
+        if other.name == "competitor-watch" or not other.is_dir():
+            continue
+        other_manifest = load_json(other / "manifest.json")
+        assert other_manifest["permissions"]["network"] == {"allow": []}, other.name
+        assert other_manifest.get("optionalPermissions", {}).get("network") is None, other.name
+
     readme = (plugin_dir("competitor-watch") / "README.md").read_text(encoding="utf-8")
     text = " ".join(readme.lower().split())
     assert "excluded from every pack" in text

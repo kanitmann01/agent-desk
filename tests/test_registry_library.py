@@ -84,8 +84,12 @@ def test_shared_validator_accepts_each_shipped_plugin(plugin_id):
 
 @pytest.mark.parametrize("plugin_id", LIBRARY)
 def test_every_plugin_stays_inside_the_declarative_vocabulary(plugin_id):
-    """No network, no shell, no LLM, no unscoped glob, no HTML: the
-    permission blocks are the deny shape the lint enforces."""
+    """Keep every shipped plugin declarative and deny-by-default.
+
+    No shell, no LLM, no unscoped glob, no HTML. The only network grant is
+    competitor-watch's host consent, declared as an optional permission
+    rather than a base one.
+    """
     manifest = _manifest(plugin_id)
     assert manifest["class"] == "declarative"
     permissions = manifest["permissions"]
@@ -248,7 +252,7 @@ def test_excel_report_with_no_workbook_asks_for_one(tmp_path):
 
 
 def test_the_packs_document_is_empty():
-    """Spec 015: the three packs retire with their plugins."""
+    """Retire the packs document to an empty list."""
     packs = json.loads((REGISTRY / "packs.json").read_text(encoding="utf-8"))
     assert packs == {"schemaVersion": 1, "packs": []}
 
