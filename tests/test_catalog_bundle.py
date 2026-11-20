@@ -147,3 +147,25 @@ def test_the_retired_plugins_are_archived_outside_the_registry():
 
     committed = json.loads(bundled_catalog_path().read_text(encoding="utf-8"))
     assert {entry["id"] for entry in committed["plugins"]} == shipped_dirs
+
+
+def test_the_packaged_inputs_carry_no_archived_plugin():
+    """Keep the archived ids out of the packaged build and its shipped UI.
+
+    The build packages src/agentdesk plus its static assets, and the bundled
+    catalog is the only plugin list that ships. The rebuilt SPA must not
+    still draw previews for trees that left the registry.
+    """
+    from scripts.build_bundle import _build_command
+
+    command = _build_command(REPO, allow_downloads=False)
+    assert not any("archive" in part for part in command), command
+
+    archived = sorted(path.name for path in ARCHIVE.iterdir() if path.is_dir())
+    static = REPO / "src" / "agentdesk" / "server" / "static"
+    for path in sorted(static.rglob("*")):
+        if not path.is_file() or path.suffix not in {".js", ".css", ".html"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        named = [plugin_id for plugin_id in archived if plugin_id in text]
+        assert not named, f"{path.relative_to(REPO)} still names {named}"
