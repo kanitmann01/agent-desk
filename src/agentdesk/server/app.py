@@ -10,6 +10,7 @@ session validation before handshake.
 
 import html
 import json
+import secrets
 import logging
 import os
 import re
@@ -110,6 +111,7 @@ from agentdesk.llm import (
 )
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.presentations.packs import load_packs
+from agentdesk.presentations.writer import outline_for, write_deck
 from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
     EmbedderUnavailable,
@@ -2262,7 +2264,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return True, ""
 
     def _presentation_run(self, body: dict) -> None:
-        """Record the template, variant and recipe. The file comes later.
+        """Record the template, variant and recipe, and write the deck.
 
         A run with the endpoint off or unconfigured is the named degraded
         row and no file. A run that names a pack the loader does not have
@@ -2313,6 +2315,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                           " /agents page"},
             )
             return
+        recipe_doc = pack.recipe(recipe)
+        shell_path = pack.shell_path(variant)
+        if recipe_doc is None or shell_path is None:
+            self._send_json(
+                400,
+                {"error": "that template has no shell for the chosen variant"},
+            )
+            return
+        try:
+            blob = write_deck(shell_path.read_bytes(), recipe_doc, outline_for(brief, recipe_doc))
+        except (OSError, ValueError) as exc:
+            self._send_json(400, {"error": f"the deck could not be written: {exc}"})
+            return
+        folder = self._presentation_dir() / secrets.token_hex(8)
+        folder.mkdir(parents=True)
+        (folder / "deck.pptx").write_bytes(blob)
         artifact = {
             "kind": "presentation",
             "templateId": pack.id,
@@ -2320,7 +2338,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "digest": pack.digest,
             "variant": variant,
             "recipe": recipe,
-            "phase": "selected",
+            "phase": "written",
+            "file": f"{folder.name}/deck.pptx",
         }
         run_id = server.agents.record(
             "presentation", brief, "ok", artifact=artifact,
@@ -2350,6 +2369,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "artifact": artifact,
             "facts": facts,
         })
+
+    def _presentation_dir(self):
+        """Where this process writes decks. Tests point it at a temp dir."""
+        server = self.server  # type: ignore[attr-defined]
+        path = getattr(server, "presentation_dir", None)
+        if path is None:
+            path = default_data_dir() / "presentation-runs"
+            server.presentation_dir = path
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _agents_download(self, rest: str) -> None:
+        """The .pptx one run wrote, and nothing else.
+
+        The stored name is a relative path under the presentation
+        directory. A name that climbs out of that directory is a 404,
+        the same answer as a run that never wrote a file.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        run_id_text = (rest or "").strip("/")
+        try:
+            run_id = int(run_id_text)
+        except ValueError:
+            run_id = -1
+        run = server.agents.get(run_id) if server.agents is not None and run_id > 0 else None
+        artifact = run.get("artifact") if run else None
+        rel = artifact.get("file") if isinstance(artifact, dict) else None
+        root = self._presentation_dir().resolve()
+        path = (root / rel).resolve() if isinstance(rel, str) and rel and ".." not in rel.split("/") else None
+        if path is None or root not in path.parents or not path.is_file():
+            self._send_json(404, {"error": "this run has no deck to download"})
+            return
+        self._audit(
+            "agents.download", target=str(run.get("agentId", "")),
+            detail=f"run {run_id}; pptx",
+        )
+        self._send_bytes(
+            200, path.read_bytes(),
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
 
     def _agents_template_thumb(self, rest: str) -> None:
         """One pack preview, and only a preview the pack itself names."""
