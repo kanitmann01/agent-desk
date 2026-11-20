@@ -116,3 +116,54 @@ def test_tool_passes_with_no_changes(tmp_path):
     r = run_tool("--registry", str(registry_root))
     assert r.returncode == 0, r.stdout + r.stderr
     assert "REGISTRY-CI PASS" in r.stdout
+
+
+def test_tool_allows_a_retirement_the_archive_accounts_for(tmp_path):
+    """A removed id is a truncation until the archive folder holds its tree.
+
+    The base carried two plugins; the reviewed index drops one. The removal
+    passes only when --archive names a folder whose tree has that id.
+    """
+    registry_root = write_registry(tmp_path, tree_digest(PLUGIN_FIXTURE))
+    base_index = tmp_path / "base-index.json"
+    document = json.loads((registry_root / "index.json").read_text(encoding="utf-8"))
+    document["plugins"].append({
+        "id": "retired-plugin",
+        "publisher": "acme-tools",
+        "latest": "0.1.0",
+        "risk": "low",
+        "class": "declarative",
+        "releases": [{"version": "0.1.0", "sha256": "a" * 64,
+                      "tag": "retired-plugin-0.1.0", "yanked": False}],
+    })
+    base_index.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+    # No archive stated: the drop reads as silent history truncation.
+    r = run_tool("--registry", str(registry_root),
+                 "--plugins", str(PLUGIN_FIXTURE),
+                 "--base-index", str(base_index))
+    assert r.returncode == 1
+    assert "FAIL registry-ci:history-truncated:retired-plugin" in r.stdout
+
+    # An archive folder that does not hold the retired id does not help.
+    unrelated = tmp_path / "archive"
+    (unrelated / "some-other-plugin").mkdir(parents=True)
+    (unrelated / "some-other-plugin" / "manifest.json").write_text(
+        json.dumps({"id": "some-other-plugin"}), encoding="utf-8")
+    r = run_tool("--registry", str(registry_root),
+                 "--plugins", str(PLUGIN_FIXTURE),
+                 "--base-index", str(base_index),
+                 "--archive", str(unrelated))
+    assert r.returncode == 1
+    assert "FAIL registry-ci:history-truncated:retired-plugin" in r.stdout
+
+    # The archive holds the retired tree: the retirement is deliberate.
+    (unrelated / "retired-plugin").mkdir()
+    (unrelated / "retired-plugin" / "manifest.json").write_text(
+        json.dumps({"id": "retired-plugin"}), encoding="utf-8")
+    r = run_tool("--registry", str(registry_root),
+                 "--plugins", str(PLUGIN_FIXTURE),
+                 "--base-index", str(base_index),
+                 "--archive", str(unrelated))
+    assert r.returncode == 0, r.stdout
+    assert "REGISTRY-CI PASS" in r.stdout

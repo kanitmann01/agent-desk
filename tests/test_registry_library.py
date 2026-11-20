@@ -103,14 +103,15 @@ def test_every_plugin_stays_inside_the_declarative_vocabulary(plugin_id):
     assert render["file"].endswith(".json")
 
 
-def test_registry_ci_passes_over_the_shipped_index():
-    """The same review CI runs passes over the two-entry shipped index."""
-    base = json.loads((REGISTRY / "index.json").read_text(encoding="utf-8"))
+def test_registry_ci_passes_over_the_shipped_plugin_trees():
+    """The shared review accepts both shipped trees against their own index.
+
+    No base is supplied here: the history leg is covered by the tool-level
+    tests and by the local CI gate, which reviews the branch's real base
+    with the archive exempting the retirements.
+    """
     result = review_registry_changes(
-        REGISTRY,
-        [PLUGINS / plugin_id for plugin_id in LIBRARY],
-        base_index_text=json.dumps(base),
-    )
+        REGISTRY, [PLUGINS / plugin_id for plugin_id in LIBRARY])
     assert result == {"ok": True, "reasons": []}, result["reasons"]
 
 

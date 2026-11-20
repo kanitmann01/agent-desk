@@ -91,12 +91,18 @@ def _local_release_reasons(index, registry_root: Path,
     return reasons
 
 
-def _history_reasons(new_index, base_index_text: str | None) -> list[str]:
+def _history_reasons(new_index, base_index_text: str | None,
+                    archived_ids: frozenset[str] = frozenset()) -> list[str]:
     """Return the reasons the new index lost something the base index carried.
 
     No base (None, empty, or an empty object) has no history to lose. Only
     removals are reported: appending a release and yanking one are exactly what
     the append-only rule permits.
+
+    Retiring a plugin removes it from the index on purpose, so a removal is
+    allowed only when the caller also names it in `archived_ids`, the ids the
+    archive folder actually holds. A plugin that simply disappeared from the
+    index without a tree in the archive is still a truncation.
     """
     if base_index_text is None:
         return []
@@ -111,6 +117,8 @@ def _history_reasons(new_index, base_index_text: str | None) -> list[str]:
     for old_plugin in base.plugins:
         new_plugin = new_index.plugin(old_plugin.id)
         if new_plugin is None:
+            if old_plugin.id in archived_ids:
+                continue
             reasons.append(f"registry-ci:history-truncated:{old_plugin.id}")
             continue
         old_versions = {r.version for r in old_plugin.releases}
@@ -123,8 +131,14 @@ def _history_reasons(new_index, base_index_text: str | None) -> list[str]:
 
 
 def review_registry_changes(registry_root: Path, plugin_dirs: list[Path],
-                            base_index_text: str | None = None) -> dict:
-    """Review one registry PR. Returns ok plus named reasons for every block."""
+                            base_index_text: str | None = None,
+                            archived_ids: frozenset[str] = frozenset()) -> dict:
+    """Review one registry PR. Returns ok plus named reasons for every block.
+
+    `archived_ids` are the retired plugin ids the archive folder holds; they
+    may leave the index without failing the append-only history check. All
+    other eligibility, hash, dependency and validator checks are unchanged.
+    """
     from agentdesk.validator.core import validate_plugin
 
     registry_root = Path(registry_root)
@@ -135,7 +149,7 @@ def review_registry_changes(registry_root: Path, plugin_dirs: list[Path],
     except Exception as exc:
         return {"ok": False, "reasons": [f"registry-ci:index-unreadable:{exc}"]}
 
-    reasons += _history_reasons(index, base_index_text)
+    reasons += _history_reasons(index, base_index_text, frozenset(archived_ids))
 
     reviewed_ids: set[str] = set()
     for plugin_dir in plugin_dirs:

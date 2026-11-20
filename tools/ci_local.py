@@ -22,8 +22,10 @@ Gates, in the workflow's order (a superset where local runs are free):
 6.  licenses         tools/license_manifest.py and the committed
                      manifest must be byte-current (git diff --exit-code)
 7.  registry-ci      tools/registry_ci.py over every plugin in
-                     registry/plugins/ (a superset of the hosted
-                     changed-plugins review)
+                     registry/plugins/, against the index at the
+                     branch's mainline merge-base, with archive/plugins
+                     exempting deliberate retirements (a superset of the
+                     hosted changed-plugins review)
 
 Determinism contract: the environment is pinned (fresh AGENTDESK_DATA,
 every AGENTDESK_* override emptied, explicit cwd), the gate list is the
@@ -131,13 +133,52 @@ def _license_gate(env: dict) -> tuple[bool, str]:
     return True, "manifest clean and current"
 
 
+def _registry_base_index(env: dict) -> Path | None:
+    """The mainline registry index for the append-only history check.
+
+    The retirement path is only trustworthy when CI actually compares the
+    new index to the branch's base, so the gate asks git for the merge-base
+    with the mainline and reads the index at that commit. A checkout without
+    git, without a mainline ref, or without the file returns None; the
+    registry review then skips the history leg instead of inventing one.
+    """
+    for ref in ("main", "origin/main"):
+        merge = subprocess.run(
+            ["git", "merge-base", "HEAD", ref], cwd=ROOT, env=env,
+            capture_output=True, text=True,
+        )
+        if merge.returncode != 0 or not merge.stdout.strip():
+            continue
+        show = subprocess.run(
+            ["git", "show", f"{merge.stdout.strip()}:registry/index.json"],
+            cwd=ROOT, env=env, capture_output=True, text=True,
+        )
+        if show.returncode != 0 or not show.stdout.strip():
+            continue
+        fd, name = tempfile.mkstemp(
+            prefix="agentdesk-base-index-", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(show.stdout)
+        return Path(name)
+    return None
+
+
 def _registry_gate(env: dict) -> tuple[bool, str]:
-    """Registry CI over every committed plugin directory."""
+    """Registry CI over every committed plugin directory and its base."""
     plugin_dirs = sorted(p.name for p in (ROOT / "registry" / "plugins").iterdir() if p.is_dir())
     args = [PYTHON, "tools/registry_ci.py", "--registry", "registry"]
     if plugin_dirs:
         args += ["--plugins", ",".join(f"registry/plugins/{name}" for name in plugin_dirs)]
-    proc = subprocess.run(args, cwd=ROOT, env=env, capture_output=True, text=True)
+    if (ROOT / "archive" / "plugins").is_dir():
+        args += ["--archive", "archive/plugins"]
+    base_index = _registry_base_index(env)
+    if base_index is not None:
+        args += ["--base-index", str(base_index)]
+    try:
+        proc = subprocess.run(args, cwd=ROOT, env=env, capture_output=True, text=True)
+    finally:
+        if base_index is not None:
+            base_index.unlink(missing_ok=True)
     tail = (proc.stdout or "").strip().splitlines()
     return proc.returncode == 0, tail[-1][:160] if tail else f"exit {proc.returncode}"
 
