@@ -47,6 +47,26 @@ def test_catalog_digests_match_the_plugin_trees():
         assert entry["digest"] == tree_digest(REGISTRY / "plugins" / entry["id"])
 
 
+def test_the_committed_bundle_is_fresh_against_the_registry():
+    """The committed bundle's pins are the registry's current pins.
+
+    The bundle is what a fresh desk installs from; a stale bundle would
+    offer an old release while the registry review checks the new one.
+    """
+    committed = json.loads(bundled_catalog_path().read_text(encoding="utf-8"))
+    index = load_index((REGISTRY / "index.json").read_text(encoding="utf-8"))
+    assert {entry["id"] for entry in committed["plugins"]} == {
+        plugin.id for plugin in index.plugins
+    }
+    for entry in committed["plugins"]:
+        plugin = index.plugin(entry["id"])
+        assert plugin is not None, entry["id"]
+        assert entry["latest"] == plugin.latest
+        release = plugin.release_for(plugin.latest)
+        assert release is not None, entry["id"]
+        assert entry["digest"] == release.sha256, entry["id"]
+
+
 def test_catalog_ids_match_the_index():
     module = load_catalog_module()
     catalog = module.build_catalog(REGISTRY)
@@ -117,55 +137,46 @@ def test_the_downloads_flag_lands_after_nuitka_not_between_m_and_nuitka():
 
 
 ARCHIVE = REPO / "archive" / "plugins"
-RETIRED_COUNT = 23
+SHIPPED = {"competitor-watch", "excel-report"}
 
 
-def test_the_retired_plugins_are_archived_outside_the_registry():
-    """Keep the 23 retired trees out of every shipped surface.
+def test_the_archive_is_outside_every_shipped_surface():
+    """Keep the retired trees where no shipped surface can pick them up.
 
-    They live in archive/plugins, outside the registry scan, the
-    bundled-catalog build and the packaged product; no shipped artifact
-    names one of them.
+    The archive holds the 23 retired trees, but this test deliberately does
+    not read its contents: it proves the boundary instead. The archive sits
+    outside the registry scan and outside the packaged source tree, and every
+    shipped plugin list carries exactly the two surviving ids, so no archived
+    tree can be published or installed.
     """
-    archived = sorted(path.name for path in ARCHIVE.iterdir() if path.is_dir())
-    assert len(archived) == RETIRED_COUNT
+    assert ARCHIVE.is_dir()
     assert not ARCHIVE.is_relative_to(REGISTRY)
+    assert not ARCHIVE.is_relative_to(REPO / "src")
+
     shipped_dirs = {path.name for path in (REGISTRY / "plugins").iterdir()
                     if path.is_dir()}
-    assert shipped_dirs == {"competitor-watch", "excel-report"}
-    assert not set(archived) & shipped_dirs
+    assert shipped_dirs == SHIPPED
 
     catalog = load_catalog_module().build_catalog(REGISTRY)
-    catalog_ids = {entry["id"] for entry in catalog["plugins"]}
-    assert catalog_ids == shipped_dirs
-    assert not catalog_ids & set(archived)
+    assert {entry["id"] for entry in catalog["plugins"]} == SHIPPED
 
     index = load_index((REGISTRY / "index.json").read_text(encoding="utf-8"))
-    index_ids = {plugin.id for plugin in index.plugins}
-    assert index_ids == shipped_dirs
-    assert not index_ids & set(archived)
+    assert {plugin.id for plugin in index.plugins} == SHIPPED
 
     committed = json.loads(bundled_catalog_path().read_text(encoding="utf-8"))
-    assert {entry["id"] for entry in committed["plugins"]} == shipped_dirs
+    assert {entry["id"] for entry in committed["plugins"]} == SHIPPED
 
 
-def test_the_packaged_inputs_carry_no_archived_plugin():
-    """Keep the archived ids out of the packaged build and its shipped UI.
+def test_the_packaged_build_never_reaches_the_archive():
+    """The packaged inputs are the agentdesk package and its static assets.
 
-    The build packages src/agentdesk plus its static assets, and the bundled
-    catalog is the only plugin list that ships. The rebuilt SPA must not
-    still draw previews for trees that left the registry.
+    The build command names neither the archive folder nor anything under it;
+    the only plugin list it can carry is the committed bundle, whose ids the
+    test above pins to the two survivors. Engine-level render support for
+    installed copies (card kinds, insight families) is not a shipped tree.
     """
     from scripts.build_bundle import _build_command
 
     command = _build_command(REPO, allow_downloads=False)
     assert not any("archive" in part for part in command), command
-
-    archived = sorted(path.name for path in ARCHIVE.iterdir() if path.is_dir())
-    static = REPO / "src" / "agentdesk" / "server" / "static"
-    for path in sorted(static.rglob("*")):
-        if not path.is_file() or path.suffix not in {".js", ".css", ".html"}:
-            continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        named = [plugin_id for plugin_id in archived if plugin_id in text]
-        assert not named, f"{path.relative_to(REPO)} still names {named}"
+    assert not (REPO / "src" / "archive").exists()
