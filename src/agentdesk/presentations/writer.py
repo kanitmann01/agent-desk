@@ -333,15 +333,21 @@ def _title_shape_for(title: str, role: str, layout_part: str, parts: dict) -> st
     found = _placeholder(parts[layout_part], wanted) or _placeholder(parts[layout_part], "title")
     ph = found["ph"] if found else f'<p:ph type="{wanted}"/>'
     xfrm = found["xfrm"] if found else ""
-    return _ph_shape(2, "Title", xfrm, _paragraph(_plain_run(title)), ph)
+    pt = found["pt"] if found else 14
+    return _ph_shape(2, "Title", xfrm, _paragraph(_plain_run(title, pt)), ph)
 
 
 def _body_from_layout(bullets: list[str], layout_part: str, parts: dict) -> str:
-    """The body placeholder the layout already defines, filled and not restyled."""
-    found = _placeholder(parts[layout_part], "body")
+    """The body placeholder the layout already defines, filled and not restyled.
+
+    A body is type body, type obj, or an untyped placeholder at idx 1.
+    Those are the shapes a Title and Content layout uses.
+    """
+    found = _body_placeholder(parts[layout_part])
     ph = found["ph"] if found else '<p:ph type="body" idx="1"/>'
     xfrm = found["xfrm"] if found else ""
-    return _ph_shape(3, "Body", xfrm, _bullet_paragraphs(bullets), ph)
+    pt = found["pt"] if found else 14
+    return _ph_shape(3, "Body", xfrm, _bullet_paragraphs(bullets, pt), ph)
 
 
 def _body_box(bullets: list[str], region: list) -> str:
@@ -349,31 +355,45 @@ def _body_box(bullets: list[str], region: list) -> str:
     x, y, w, h = region
     return _shape(
         3, "Body", emu(x), emu(y), emu(w), emu(h),
-        _bullet_paragraphs(bullets),
+        _bullet_paragraphs(bullets, 14),
     )
 
 
-def _bullet_paragraphs(bullets: list[str]) -> str:
-    """One bulleted paragraph per line, with no typeface of its own."""
+def _bullet_paragraphs(bullets: list[str], pt: int = 14) -> str:
+    """One bulleted paragraph per line, at least 14 pt, with no typeface of its own."""
     if not bullets:
-        return _paragraph(_plain_run(""))
+        return _paragraph(_plain_run("", pt))
     rows = []
     for bullet in bullets:
         rows.append(
-            '<a:p><a:pPr marL="342900" indent="-171450"><a:buChar char="•"/></a:pPr>'
-            + _plain_run(bullet) + "</a:p>"
+            '<a:p><a:pPr marL="342900" indent="-285750"><a:buChar char="•"/></a:pPr>'
+            + _plain_run(bullet, pt) + "</a:p>"
         )
     return "".join(rows)
 
 
-def _plain_run(text: str) -> str:
-    """A run with no colour and no typeface, so the placeholder's own win."""
-    return f'<a:r><a:rPr lang="en-US" dirty="0"/><a:t>{_xml_text(text)}</a:t></a:r>'
+def _plain_run(text: str, pt: int = 14) -> str:
+    """A run with no colour and no typeface. The size is explicit and at least 14 pt."""
+    size = max(14, int(pt))
+    return (
+        f'<a:r><a:rPr lang="en-US" sz="{size * 100}" dirty="0"/>'
+        f"<a:t>{_xml_text(text)}</a:t></a:r>"
+    )
 
 
 def _xml_text(value: str) -> str:
-    """Escape text for XML, dropping characters XML 1.0 forbids."""
-    return escape(_ILLEGAL_XML.sub("", str(value)))
+    """Escape text for XML, dropping characters XML 1.0 forbids.
+
+    A lone surrogate from a model reply cannot be encoded, so those
+    code points are dropped before escaping.
+    """
+    kept = []
+    for char in str(value):
+        code = ord(char)
+        if 0xD800 <= code <= 0xDFFF:
+            continue
+        kept.append(char)
+    return escape(_ILLEGAL_XML.sub("", "".join(kept)))
 
 
 def _ph_shape(shape_id: int, name: str, xfrm: str, paragraphs: str, placeholder: str) -> str:
@@ -404,16 +424,60 @@ def _slide_plain(shapes: str) -> bytes:
 
 
 def _placeholder(layout_xml: bytes, ph_type: str) -> dict | None:
-    """The layout shape of one placeholder type, with its transform."""
+    """The layout shape of one placeholder type, with its transform and size."""
+    for found in _shapes(layout_xml):
+        if f'type="{ph_type}"' in found["ph"]:
+            return found
+    return None
+
+
+def _body_placeholder(layout_xml: bytes) -> dict | None:
+    """The layout's body shape.
+
+    Title and Content layouts often omit the type and write only
+    `<p:ph idx="1"/>`, or they use `type="obj"`. Both are the body.
+    """
+    for found in _shapes(layout_xml):
+        if _is_body(found["ph"]):
+            return found
+    return None
+
+
+def _shapes(layout_xml: bytes) -> list[dict]:
+    """Each placeholder shape: its ph element, transform, and point size."""
     text = layout_xml.decode("utf-8", "replace")
+    found = []
     for match in re.finditer(r"<p:sp>.*?</p:sp>", text):
         block = match.group(0)
         ph = re.search(r"<p:ph\b[^>]*/>", block)
-        if not ph or f'type="{ph_type}"' not in ph.group(0):
+        if not ph:
             continue
         xfrm = re.search(r"<a:xfrm>.*?</a:xfrm>", block)
-        return {"ph": ph.group(0), "xfrm": xfrm.group(0) if xfrm else ""}
-    return None
+        size = re.search(r'\bsz="(\d+)"', block)
+        pt = max(14, int(size.group(1)) // 100) if size else 14
+        found.append({
+            "ph": ph.group(0),
+            "xfrm": xfrm.group(0) if xfrm else "",
+            "pt": pt,
+        })
+    return found
+
+
+def _is_body(tag: str) -> bool:
+    """Whether this placeholder element is the body, including obj and untyped idx 1."""
+    kind = _attr(tag, "type")
+    idx = _attr(tag, "idx")
+    if kind in ("title", "ctrtitle", "subtitle", "dt", "ftr", "sldnum"):
+        return False
+    if kind in ("body", "obj"):
+        return True
+    return idx == "1"
+
+
+def _attr(tag: str, name: str) -> str:
+    """One attribute of a placeholder tag, lower-cased, or empty."""
+    match = re.search(rf'\b{name}="([^"]*)"', tag)
+    return match.group(1).lower() if match else ""
 
 
 def _find_layout(parts: dict, wanted: str) -> str | None:
@@ -436,8 +500,26 @@ def _find_layout(parts: dict, wanted: str) -> str | None:
 
 def _layout_has_body(layout_part: str, parts: dict) -> bool:
     """Whether this layout already has a body placeholder."""
-    xml = parts[layout_part].decode("utf-8", "replace")
-    return 'type="body"' in xml
+    return _body_placeholder(parts[layout_part]) is not None
+
+
+def content_point_size(shell: bytes, recipe: dict) -> int:
+    """The body size a filled slide will use, never under 14 pt.
+
+    The size is the layout placeholder's own when it declares one, so a
+    fit check can budget for the text that will actually be drawn.
+    """
+    parts = read_parts(shell)
+    rule = next(
+        (row for row in recipe.get("slides") or [] if isinstance(row, dict) and row.get("role") == "content"),
+        {},
+    )
+    layout_name = str(rule.get("layout") or "Content")
+    layout_part = _find_layout(parts, layout_name)
+    if layout_part is None:
+        return 14
+    found = _body_placeholder(parts[layout_part])
+    return found["pt"] if found else 14
 
 
 def _region(rule: dict) -> list | None:

@@ -18,7 +18,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import server_harness
 from agentdesk.assistant import audit as audit_store
 from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
-from agentdesk.presentations.writer import outline_for, package_problems, slide_texts, write_deck
+from agentdesk.presentations.writer import (
+    content_point_size, outline_for, package_problems, slide_texts, write_deck,
+)
 
 PACK = ROOT / "registry" / "plugins" / "presentation-starter"
 RECIPE = json.loads((PACK / "recipes" / "briefing.json").read_text(encoding="utf-8"))
@@ -164,6 +166,37 @@ def test_package_problems_catches_duplicates_missing_types_and_skips_external_li
         archive.writestr("ppt/slides/slide1.xml", b"<p/>")
         archive.writestr("ppt/slides/slide1.xml", b"<p/>")
     assert any("duplicate" in item for item in package_problems(buf.getvalue()))
+
+
+def test_an_untyped_or_obj_placeholder_is_the_body_at_least_14_pt():
+    for ph in ('<p:ph idx="1"/>', '<p:ph type="obj" idx="1"/>'):
+        shell = _shell_with_body_tag(ph, "800")
+        outline = outline_for("a note", RECIPE)
+        outline["slides"][2]["bullets"] = ["Kept \ud800word"]
+        blob = write_deck(shell, RECIPE, outline)
+        assert package_problems(blob) == []
+        slide = read_parts(blob)["ppt/slides/slide3.xml"].decode("utf-8")
+        assert 'idx="1"' in slide
+        assert 'type="body"' not in slide
+        assert 'sz="1400"' in slide
+        assert 'indent="-285750"' in slide
+        assert "Kept word" in slide
+        assert "\ud800" not in slide
+        assert content_point_size(shell, RECIPE) == 14
+    larger = _shell_with_body_tag('<p:ph idx="1"/>', "1800")
+    assert content_point_size(larger, RECIPE) == 18
+    written = read_parts(write_deck(larger, RECIPE, outline_for("a note", RECIPE)))
+    assert 'sz="1800"' in written["ppt/slides/slide3.xml"].decode("utf-8")
+
+
+def _shell_with_body_tag(ph: str, hundredths: str) -> bytes:
+    """The starter shell with the content body placeholder rewritten."""
+    parts = read_parts(build_shell())
+    layout = parts["ppt/slideLayouts/slideLayout3.xml"].decode("utf-8")
+    layout = layout.replace('<p:ph type="body" idx="1"/>', ph)
+    layout = layout.replace('sz="1400"', f'sz="{hundredths}"')
+    parts["ppt/slideLayouts/slideLayout3.xml"] = layout.encode("utf-8")
+    return pack_zip(parts)
 
 
 def _dark_shell_with_art() -> bytes:
