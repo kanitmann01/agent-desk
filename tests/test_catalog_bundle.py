@@ -143,15 +143,20 @@ SHIPPED = {"competitor-watch", "excel-report"}
 def test_the_archive_is_outside_every_shipped_surface():
     """Keep the retired trees where no shipped surface can pick them up.
 
-    The archive holds the 23 retired trees, but this test deliberately does
-    not read its contents: it proves the boundary instead. The archive sits
-    outside the registry scan and outside the packaged source tree, and every
-    shipped plugin list carries exactly the two surviving ids, so no archived
-    tree can be published or installed.
+    The archive holds the 23 retired trees; this test counts their directories
+    and manifests but deliberately does not read their contents, so it proves
+    the boundary instead. The archive sits outside the registry scan and
+    outside the packaged source tree, and every shipped plugin list carries
+    exactly the two surviving ids, so no archived tree can be published or
+    installed.
     """
     assert ARCHIVE.is_dir()
     assert not ARCHIVE.is_relative_to(REGISTRY)
     assert not ARCHIVE.is_relative_to(REPO / "src")
+
+    archived = [path for path in ARCHIVE.iterdir() if path.is_dir()]
+    assert len(archived) == 23
+    assert sum((path / "manifest.json").is_file() for path in archived) == 23
 
     shipped_dirs = {path.name for path in (REGISTRY / "plugins").iterdir()
                     if path.is_dir()}
