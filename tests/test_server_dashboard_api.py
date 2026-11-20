@@ -112,8 +112,8 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
     payload = get_dashboard(booted, auth)
     # The whole contract: nothing missing, nothing extra.
     assert sorted(payload) == [
-        "commitments", "flags", "inbox", "layout", "plugins", "research",
-        "sales", "sample", "skills", "sources", "version",
+        "commitments", "deskCheck", "flags", "inbox", "layout", "plugins",
+        "research", "sales", "sample", "skills", "sources", "version",
     ]
     assert payload["version"]
     assert payload["flags"] == {

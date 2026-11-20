@@ -7,12 +7,14 @@ ledger is the budget's memory: how many were spent today.
 
 import functools
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Callable
 
 from agentdesk.inbox.budget import new_card_id
 from agentdesk.inbox.core import (
+    CARD_KINDS,
     RECOVERY_DAYS,
     STATUS_ACCEPTED,
     STATUS_DISMISSED,
@@ -20,6 +22,8 @@ from agentdesk.inbox.core import (
     Card,
     UnknownCard,
 )
+
+LOG = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cards (
@@ -52,6 +56,11 @@ _COLUMNS = (
     " window_hours, notified_ts, dismissed_ts, accepted_ts, draft,"
     " snoozed_until, meta"
 )
+_COLUMN_NAMES = tuple(part.strip() for part in _COLUMNS.split(","))
+
+# Row ids already reported as unreadable, so one unknown kind is one warning
+# per process rather than one per inbox read.
+_LOGGED_UNREADABLE: set[str] = set()
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -328,7 +337,9 @@ class InboxStore:
     def get(self, card_id: str) -> Card:
         """Read one card by id, with its meta decoded from the stored JSON.
 
-        Raises UnknownCard when no row carries the id.
+        Raises UnknownCard when no row carries the id, and when the row's
+        kind belongs to a build this one does not know: an unknown card is
+        not found here, never a crash.
         """
         row = self.conn.execute(
             f"SELECT {_COLUMNS} FROM cards WHERE id = ?",
@@ -336,13 +347,48 @@ class InboxStore:
         ).fetchone()
         if row is None:
             raise UnknownCard(f"no card {card_id}")
-        return Card(
-            id=row[0], kind=row[1], origin=row[2], title=row[3], body=row[4],
-            action_label=row[5], status=row[6], created_ts=row[7],
-            window_hours=row[8], notified_ts=row[9], dismissed_ts=row[10],
-            accepted_ts=row[11], draft=row[12], snoozed_until=row[13],
-            meta=json.loads(row[14]),
-        )
+        card = self._readable(row)
+        if card is None:
+            raise UnknownCard(f"card {card_id} is not readable in this version")
+        return card
+
+    def _readable(self, row: tuple) -> Card | None:
+        """One row as a card, or None when its kind is unknown.
+
+        A row written by another build is data, not an error: it is skipped
+        by every list read and reported once per id per process, so the rest
+        of the inbox (and every page under it) stays readable.
+        """
+        card_id = row[0]
+        try:
+            return Card(
+                id=card_id, kind=row[1], origin=row[2], title=row[3], body=row[4],
+                action_label=row[5], status=row[6], created_ts=row[7],
+                window_hours=row[8], notified_ts=row[9], dismissed_ts=row[10],
+                accepted_ts=row[11], draft=row[12], snoozed_until=row[13],
+                meta=json.loads(row[14]),
+            )
+        except ValueError as exc:
+            if card_id not in _LOGGED_UNREADABLE:
+                _LOGGED_UNREADABLE.add(card_id)
+                LOG.warning("skipping unreadable inbox row %s: %s", card_id, exc)
+            return None
+
+    @_serialized
+    def unreadable(self) -> list[dict]:
+        """Every raw row whose kind this build does not know, oldest first.
+
+        The rows come back exactly as stored, one dict per column, so a
+        later build (or the user's own look) can still see what is there
+        without this one having to understand it.
+        """
+        placeholders = ", ".join("?" for _ in CARD_KINDS)
+        rows = self.conn.execute(
+            f"SELECT {_COLUMNS} FROM cards WHERE kind NOT IN ({placeholders})"
+            " ORDER BY created_ts ASC",
+            CARD_KINDS,
+        ).fetchall()
+        return [dict(zip(_COLUMN_NAMES, row)) for row in rows]
 
     @_serialized
     def waiting(self, include_snoozed: bool = False) -> list[Card]:
@@ -368,18 +414,18 @@ class InboxStore:
         """Every card regardless of status, oldest first: the demo clear
         path walks this to find exactly what it seeded."""
         rows = self.conn.execute(
-            "SELECT id FROM cards ORDER BY created_ts ASC"
+            f"SELECT {_COLUMNS} FROM cards ORDER BY created_ts ASC"
         ).fetchall()
-        return [self.get(r[0]) for r in rows]
+        return [card for card in (self._readable(row) for row in rows) if card]
 
     @_serialized
     def _by_status(self, status: str) -> list[Card]:
         """Return every card in one status, ordered by creation time, oldest first."""
         rows = self.conn.execute(
-            "SELECT id FROM cards WHERE status = ? ORDER BY created_ts ASC",
+            f"SELECT {_COLUMNS} FROM cards WHERE status = ? ORDER BY created_ts ASC",
             (status,),
         ).fetchall()
-        return [self.get(r[0]) for r in rows]
+        return [card for card in (self._readable(row) for row in rows) if card]
 
     @_serialized
     def notified_today(self, now) -> int:

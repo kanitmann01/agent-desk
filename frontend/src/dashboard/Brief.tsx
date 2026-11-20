@@ -16,6 +16,7 @@ import PluginCardView from './PluginCardView';
 import { pluginKind, kindTag } from './pluginKind';
 import {
   MOVER_CAP,
+  deskCheckAlert,
   formatAmount,
   formatSigned,
   moversFromDelta,
@@ -288,6 +289,14 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
               : base;
           })()}
         </p>
+        {(() => {
+          const alert = deskCheckAlert(data.deskCheck);
+          return alert ? (
+            <p className="alert">
+              <a href={alert.href}>{alert.label}</a>
+            </p>
+          ) : null;
+        })()}
       </>
     ),
   });

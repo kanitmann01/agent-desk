@@ -1187,6 +1187,49 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     return build_dashboard_state(server).payload()
 
 
+def desk_check_context(server: AgentDeskServer) -> "DeskContext":
+    """The desk check's view of this server: live collaborators, read only.
+
+    The bundled catalog ids come from the committed catalog file the
+    marketplace ships, loaded the same way the catalog page loads it; the
+    ledger is whatever this build has (None until the ledger ticket lands).
+    """
+    from agentdesk.deskcheck import DeskContext
+    from agentdesk.marketplace.catalog import bundled_catalog_path, load_catalog_file
+
+    catalog = load_catalog_file(bundled_catalog_path(), "bundled")
+    return DeskContext(
+        settings=server.settings,
+        inbox=server.inbox,
+        excel=server.excel,
+        calendar=server.calendar,
+        plugins=server.plugins,
+        catalog_ids=frozenset(entry["id"] for entry in catalog),
+        data_dir=default_data_dir(),
+        ledger=getattr(server, "ledger", None),
+        clock=time.time,
+    )
+
+
+def desk_check_result(server: AgentDeskServer) -> "CheckResult":
+    """One run of every desk check: detection only, never a fix."""
+    from agentdesk.deskcheck import run_checks
+
+    return run_checks(desk_check_context(server))
+
+
+def desk_check_api_payload(server: AgentDeskServer) -> dict:
+    """GET /api/desk-check's JSON body: one read-only run of every check."""
+    from agentdesk.deskcheck import finding_to_api
+
+    result = desk_check_result(server)
+    return {
+        "ranTs": time.time(),
+        "findings": [finding_to_api(finding) for finding in result.findings],
+        "failed": dict(result.failed),
+    }
+
+
 def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
     """A handler with no request, for work that starts outside one (the
     workbook watch's poll thread). Only the helpers that read
@@ -1544,6 +1587,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }
             for entry in entries
         ]})
+
+    def _send_desk_check_api(self) -> None:
+        """Serve one read-only run of every desk check as JSON."""
+        self._send_json(200, desk_check_api_payload(self.server))
 
     def _send_preferences_values(self) -> None:
         """Serve the stored insight preferences."""
@@ -3007,6 +3054,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_entries=audit_entries,
             audit_total=audit_total,
             preference_notice=self._preference_notice(),
+            desk_check=desk_check_api_payload(server),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 

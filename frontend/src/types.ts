@@ -209,6 +209,28 @@ export interface LayoutCardState {
   title: string | null;
 }
 
+// What one desk check found, as GET /api/desk-check lists it. The
+// dashboard only needs the summary, but the settings section renders
+// every field the API sends.
+export interface DeskCheckFinding {
+  id: string;
+  title: string;
+  cause: string;
+  severity: 'info' | 'attention' | 'fatal';
+  confident: boolean;
+  fix: 'auto' | 'ask' | 'link' | 'none';
+  fixLabel: string;
+  href: string;
+  detail: Record<string, unknown>;
+}
+
+// The dashboard's read-only summary: how many findings want attention,
+// and the one the health cell names (the first fatal, else the first).
+export interface DeskCheckSummary {
+  attention: number;
+  top: DeskCheckFinding | null;
+}
+
 export interface DashboardData {
   sample?: boolean;
   version: string;
@@ -237,6 +259,7 @@ export interface DashboardData {
     lastAnsweredTs: number | null;
   };
   inbox: { waiting: number };
+  deskCheck?: DeskCheckSummary;
   skills: { id: number; name: string; description: string }[];
   layout: { cards: LayoutCard[] };
   plugins: { cards: PluginCard[] };
