@@ -36,9 +36,12 @@ class TemplatePack:
 
     def recipe(self, recipe_id: str) -> dict | None:
         """The recipe document whose id matches, or None."""
-        for path in self.recipes:
+        for rel in self.recipes:
+            path = _inside(self.root, rel)
+            if path is None:
+                continue
             try:
-                document = json.loads((self.root / path).read_text(encoding="utf-8"))
+                document = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
             if document.get("id") == recipe_id:
@@ -46,20 +49,30 @@ class TemplatePack:
         return None
 
     def shell_path(self, variant: str) -> Path | None:
-        """The shell file for one variant, or None when the pack has none."""
-        rel = self.variants.get(variant)
-        if not isinstance(rel, str):
-            return None
-        path = self.root / rel
-        return path if path.is_file() else None
+        """The shell file for one variant, or None when it escapes the pack."""
+        return _inside(self.root, self.variants.get(variant))
 
     def thumb_path(self, variant: str) -> Path | None:
-        """The preview image for one variant."""
-        rel = self.thumbs.get(variant)
-        if not isinstance(rel, str):
-            return None
-        path = self.root / rel
-        return path if path.is_file() else None
+        """The preview image for one variant, or None when it escapes the pack."""
+        return _inside(self.root, self.thumbs.get(variant))
+
+
+def _inside(root: Path, rel) -> Path | None:
+    """A file inside `root`, or None for absolute paths, `..`, or missing files.
+
+    Joining an absolute path onto a root would otherwise discard the root
+    and point at the absolute path.
+    """
+    if not isinstance(rel, str) or not rel.strip():
+        return None
+    relative = Path(rel)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    base = root.resolve()
+    path = (base / relative).resolve()
+    if path != base and base not in path.parents:
+        return None
+    return path if path.is_file() else None
 
 
 def user_templates_dir(environ: dict | None = None) -> Path:

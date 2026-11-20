@@ -5,8 +5,10 @@ list cannot be chosen, and a denylisted fingerprint fails the scan.
 """
 
 import hashlib
+import io
 import json
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,6 +98,47 @@ def test_the_leak_check_fails_a_denylisted_token_and_passes_the_starter():
         media.write_bytes(b"not-a-real-image")
         media_hash = hashlib.sha256(media.read_bytes()).hexdigest()
         assert scan([media], {media_hash}) == [str(media)]
+
+
+def test_a_token_inside_a_pptx_fails_the_leak_check(tmp_path):
+    token = "leakprobetoken"
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    inner_png = b"\x89PNG-inner"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("docProps/core.xml", f"<dc:title>{token}</dc:title>")
+        archive.writestr("ppt/media/mark.png", inner_png)
+    deck = tmp_path / "shell.pptx"
+    deck.write_bytes(buf.getvalue())
+    assert scan([deck], {digest}) == [str(deck)]
+    assert scan([deck], {hashlib.sha256(inner_png).hexdigest()}) == [str(deck)]
+    # The committed list stays empty. The hash above exists only in this test.
+    assert load_hashes(ROOT / "tools" / "brand_leak_hashes.txt") == set()
+
+
+def test_a_thumb_or_shell_outside_the_pack_is_not_served(tmp_path):
+    secret = tmp_path / "secret.png"
+    secret.write_bytes(b"\x89PNG-secret")
+    pack_dir = tmp_path / "templates" / "escape"
+    pack_dir.mkdir(parents=True)
+    (pack_dir / "manifest.json").write_text(json.dumps({
+        "id": "escape",
+        "version": "0.1.0",
+        "contributes": {"presentationTemplates": [{
+            "id": "escape",
+            "name": "Escape",
+            "variants": {"dark": str(secret), "light": "../secret.png"},
+            "recipes": ["../secret.png"],
+            "thumbs": {"dark": "../secret.png", "light": str(secret)},
+        }]},
+    }), encoding="utf-8")
+    pack = load_packs(ROOT / "registry", tmp_path / "templates")
+    escape = next(item for item in pack if item.id == "escape")
+    assert escape.thumb_path("dark") is None
+    assert escape.thumb_path("light") is None
+    assert escape.shell_path("dark") is None
+    assert escape.shell_path("light") is None
+    assert escape.recipe("secret") is None
 
 
 def test_the_picker_is_disabled_until_the_endpoint_is_configured():
