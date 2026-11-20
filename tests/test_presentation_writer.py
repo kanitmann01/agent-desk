@@ -27,6 +27,23 @@ RECIPE = json.loads((PACK / "recipes" / "briefing.json").read_text(encoding="utf
 PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
+def _scripted_llm():
+    """Plan and fill replies so the download test does not need a network."""
+    def llm(prompt, timeout=30):
+        if "Presentation plan" in prompt:
+            return json.dumps({"sections": [
+                {"id": "context", "title": "Context"},
+                {"id": "findings", "title": "Findings"},
+                {"id": "next", "title": "What we do next"},
+            ]})
+        return json.dumps({
+            "title": "From the mock",
+            "bullets": ["Prepared from the desk."],
+            "citations": [],
+        })
+    return llm
+
+
 def test_a_starter_deck_reopens_with_the_recipe_order_and_notes():
     shell = (PACK / "shells" / "starter-dark.pptx").read_bytes()
     before = read_parts(shell)
@@ -62,7 +79,8 @@ def test_the_download_serves_only_the_run_file(tmp_path):
     booted = server_harness.Booted()
     try:
         auth = booted.exchange()
-        booted.server.settings.set("llm_base", "http://127.0.0.1:9/v1")
+        booted.server.llm_endpoint = "http://127.0.0.1:9/v1"
+        booted.server.llm = _scripted_llm()
         status, _h, body = booted.post_json(
             "/agents/run",
             {"agent": "presentation", "brief": "the Q3 review",

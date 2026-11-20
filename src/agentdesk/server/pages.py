@@ -619,7 +619,8 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     return {
       base: (document.getElementById('llm-base') || {}).value || '',
       key: (document.getElementById('llm-key') || {}).value || '',
-      model: (document.getElementById('llm-model') || {}).value || ''
+      model: (document.getElementById('llm-model') || {}).value || '',
+      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30'
     };
   };
   save.addEventListener('click', function () {
