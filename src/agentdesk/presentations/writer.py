@@ -302,10 +302,12 @@ def _ensure_notes_master(parts: dict) -> None:
 
 
 def _notes_slide(text: str) -> bytes:
-    """A notes slide whose body is the speaker-note text."""
+    """A notes slide whose body is the speaker-note text, one paragraph per line."""
+    lines = str(text).splitlines() or [""]
+    paragraphs = "".join(_paragraph(_plain_run(line)) for line in lines)
     body = _shape(
         2, "Notes", emu(0.5), emu(1.2), emu(6), emu(5),
-        _paragraph(_plain_run(text)),
+        paragraphs,
         placeholder='<p:ph type="body" idx="1"/>',
     )
     return _xml(
