@@ -117,6 +117,7 @@ def _presentation_card(packs, endpoint_ready: bool, sentence: str) -> str:
         f'<label class="empty" for="recipe-presentation">Recipe</label>'
         f'<select id="recipe-presentation" name="recipe"{disabled}>{options}</select>'
         '<fieldset class="source-row"><legend class="empty">Use</legend>'
+        '<input type="hidden" name="sources_form" value="1">'
         f'<label><input type="checkbox" name="use_memory" value="1" checked{disabled}> Memory</label>'
         f'<label><input type="checkbox" name="use_workbook" value="1" checked{disabled}> Workbook tracker</label>'
         f'<label><input type="checkbox" name="use_watch" value="1" checked{disabled}> Page watch</label>'

@@ -6,9 +6,11 @@ Numbers that no kept source contains are replaced with a data-needed marker.
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import threading
+from pathlib import Path
 
 from agentdesk.llm import LlmUnavailable
 
@@ -30,33 +32,45 @@ def timeout_seconds(raw) -> float:
 def call_model(llm, prompt: str, timeout: float) -> str:
     """One model call bounded by `timeout` seconds.
 
-    The request thread waits at most that long. A callable that accepts
-    `timeout` is given it (the real client applies it to the socket).
-    A callable that only takes the prompt is run in a daemon thread and
-    abandoned if it overruns, so a hung call does not pin the request.
+    The request thread waits at most that long. A callable whose
+    signature accepts `timeout` is given it (the real client applies it
+    to the socket). Anything else is run in a daemon thread and abandoned
+    if it overruns. A TypeError raised by the call itself is that call's
+    failure, not a reason to try again.
     """
-    try:
+    if _accepts_timeout(llm):
         return llm(prompt, timeout=timeout)
-    except TypeError:
-        box: dict = {}
+    box: dict = {}
 
-        def run() -> None:
-            """The model call, off the request thread so a hang can be abandoned."""
-            try:
-                box["value"] = llm(prompt)
-            except Exception as exc:  # noqa: BLE001 - handed back to the caller
-                box["error"] = exc
+    def run() -> None:
+        """The model call, off the request thread so a hang can be abandoned."""
+        try:
+            box["value"] = llm(prompt)
+        except Exception as exc:  # noqa: BLE001 - handed back to the caller
+            box["error"] = exc
 
-        thread = threading.Thread(target=run, daemon=True)
-        thread.start()
-        thread.join(timeout)
-        if thread.is_alive():
-            raise LlmUnavailable(
-                f"the endpoint did not answer within {timeout:g} seconds (timeout)"
-            )
-        if "error" in box:
-            raise box["error"]
-        return box.get("value", "")
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise LlmUnavailable(
+            f"the endpoint did not answer within {timeout:g} seconds (timeout)"
+        )
+    if "error" in box:
+        raise box["error"]
+    return box.get("value", "")
+
+
+def _accepts_timeout(llm) -> bool:
+    """Whether `llm` can be called with a timeout keyword."""
+    try:
+        signature = inspect.signature(llm)
+    except (TypeError, ValueError):
+        return False
+    for param in signature.parameters.values():
+        if param.kind is inspect.Parameter.VAR_KEYWORD or param.name == "timeout":
+            return True
+    return False
 
 
 def gather(memory: list, excel: dict | None, watch: dict | None,
@@ -85,8 +99,9 @@ def gather(memory: list, excel: dict | None, watch: dict | None,
                 add("memory", "Memory", text)
     if "excel-report" in enabled and isinstance(excel, dict) and excel.get("configured"):
         bits = []
-        if excel.get("path"):
-            bits.append(f"workbook {excel['path']}")
+        path = str(excel.get("path") or "").strip()
+        if path:
+            bits.append(f"workbook {Path(path).name}")
         delta = excel.get("delta") or {}
         if isinstance(delta, dict):
             added = delta.get("added") or []
@@ -107,15 +122,20 @@ def guard_numbers(text: str, sources: list[dict], cited: list[int]) -> str:
 
     The replacement is the visible marker `[data needed]`.
     """
-    allowed = " ".join(
-        source["text"] for source in sources if source["id"] in set(cited)
-    )
+    allowed = set()
+    for source in sources:
+        if source["id"] not in set(cited):
+            continue
+        for token in _DIGITS.findall(source["text"]):
+            digits = re.sub(r"\D", "", token)
+            if digits:
+                allowed.add(digits)
 
     def replace(match: re.Match) -> str:
-        """Keep a number only when a cited source already contains those digits."""
+        """Keep a number only when a cited source has that same number."""
         token = match.group(0)
         digits = re.sub(r"\D", "", token)
-        if digits and digits in re.sub(r"\D", "", allowed):
+        if digits and digits in allowed:
             return token
         return "[data needed]"
 
@@ -208,8 +228,11 @@ def outline_from_fill(brief: str, recipe: dict, planned: list[dict],
     title = " ".join(brief.split())[:60] or "Untitled"
     slides = [{"role": "title", "title": title}]
     for section, fill in zip(planned, filled):
-        slides.append({"role": "section", "title": str(section["title"])[:40]})
         cited = fill.get("citations") or []
+        slides.append({
+            "role": "section",
+            "title": guard_numbers(str(section["title"]), sources, cited)[:40],
+        })
         bullets = [
             guard_numbers(bullet, sources, cited)[:110]
             for bullet in (fill.get("bullets") or ["Prepared from the desk."])
