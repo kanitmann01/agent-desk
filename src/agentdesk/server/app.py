@@ -2325,8 +2325,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             blob = write_deck(shell_path.read_bytes(), recipe_doc, outline_for(brief, recipe_doc))
-        except (OSError, ValueError) as exc:
-            self._send_json(400, {"error": f"the deck could not be written: {exc}"})
+        except (OSError, ValueError):
+            self._send_json(400, {"error": "the deck could not be written"})
             return
         folder = self._presentation_dir() / secrets.token_hex(8)
         folder.mkdir(parents=True)
@@ -2409,6 +2409,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(
             200, path.read_bytes(),
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            {"Content-Disposition": 'attachment; filename="deck.pptx"'},
         )
 
     def _agents_template_thumb(self, rest: str) -> None:

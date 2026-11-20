@@ -4,8 +4,10 @@ The seam is the package itself (slide text, notes, relationships) and the
 download route. A title-only shell is a synthetic fixture with no brand strings.
 """
 
+import io
 import json
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.assistant import audit as audit_store
-from agentdesk.presentations.ooxml import build_shell, read_parts
+from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
 from agentdesk.presentations.writer import outline_for, package_problems, slide_texts, write_deck
 
 PACK = ROOT / "registry" / "plugins" / "presentation-starter"
@@ -71,6 +73,7 @@ def test_the_download_serves_only_the_run_file(tmp_path):
         status, headers, blob = booted.request("GET", f"/agents/runs/{run_id}/download", auth)
         assert status == 200
         assert headers["Content-Type"] == PPTX
+        assert 'attachment; filename="deck.pptx"' in headers["Content-Disposition"]
         assert package_problems(blob) == []
         assert slide_texts(blob)[0]["texts"] == ["the Q3 review"]
         rows = [row for row in audit_store.entries(booted.server.audit_conn)
@@ -97,3 +100,124 @@ def test_the_download_serves_only_the_run_file(tmp_path):
         assert status == 404
     finally:
         booted.close()
+
+
+def test_a_dark_layout_keeps_its_art_footer_and_readable_text():
+    shell = _dark_shell_with_art()
+    before = read_parts(shell)
+    outline = outline_for("a launch note \x0bwith a break", RECIPE)
+    outline["slides"][0]["title"] = "Launch \x00note"
+    blob = write_deck(shell, RECIPE, outline)
+    assert package_problems(blob) == []
+    after = read_parts(blob)
+    for name, data in before.items():
+        if "slideLayout" in name or "slideMaster" in name or name == "ppt/media/art.png":
+            assert after[name] == data
+    slide = after["ppt/slides/slide1.xml"].decode("utf-8")
+    assert "Launch note" in slide
+    assert "\x00" not in slide and "\x0b" not in slide
+    assert "<p:bg>" not in slide
+    assert "1C1C1F" not in slide
+    assert "Arial" not in slide
+    assert 'name="Art"' not in slide
+    assert 'name="Footer"' not in slide
+    assert "Page footer" in after["ppt/slideLayouts/slideLayout1.xml"].decode("utf-8")
+    assert "SAMPLE NOTE LEAK" not in "\n".join(
+        data.decode("utf-8", "replace") for data in after.values()
+    )
+    assert "ppt/media/sample-only.png" not in after
+    assert "docProps/thumbnail.jpeg" not in after
+    notes_rels = after["ppt/notesMasters/_rels/notesMaster1.xml.rels"].decode("utf-8")
+    assert "relationships/theme" in notes_rels
+    assert b"KEEPNOTESMASTER" in after["ppt/notesMasters/notesMaster1.xml"]
+
+
+def test_an_unknown_layout_is_not_named_in_the_error():
+    recipe = {"id": "briefing", "slides": [{"role": "title", "layout": "Missing Layout"}]}
+    try:
+        write_deck(build_shell(), recipe, {"title": "x", "slides": [{"role": "title", "title": "x"}]})
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+    assert "Missing" not in message
+    assert "no layout named" not in message
+
+
+def test_package_problems_catches_duplicates_missing_types_and_skips_external_links():
+    good = write_deck(build_shell(), RECIPE, outline_for("a note", RECIPE))
+    parts = read_parts(good)
+    rels = parts["ppt/_rels/presentation.xml.rels"].decode("utf-8")
+    rels = rels.replace(
+        "</Relationships>",
+        '<Relationship Id="rIdExt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+        'Target="https://example.com/deck" TargetMode="External"/></Relationships>',
+    )
+    parts["ppt/_rels/presentation.xml.rels"] = rels.encode("utf-8")
+    assert package_problems(pack_zip(parts)) == []
+    broken = dict(parts)
+    broken["ppt/media/orphan.bin"] = b"not-typed"
+    problems = package_problems(pack_zip(broken))
+    assert any("no content type" in item for item in problems)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("ppt/slides/slide1.xml", b"<p/>")
+        archive.writestr("ppt/slides/slide1.xml", b"<p/>")
+    assert any("duplicate" in item for item in package_problems(buf.getvalue()))
+
+
+def _dark_shell_with_art() -> bytes:
+    """A dark layout with art and a footer. No brand names, no brand colours."""
+    parts = read_parts(build_shell(variant="dark"))
+    layout = parts["ppt/slideLayouts/slideLayout1.xml"].decode("utf-8")
+    art = (
+        '<p:sp><p:nvSpPr><p:cNvPr id="7" name="Art"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+        '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:sp>'
+        '<p:sp><p:nvSpPr><p:cNvPr id="8" name="Footer"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+        '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="40"/></a:xfrm></p:spPr>'
+        '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" dirty="0">'
+        '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>'
+        '<a:t>Page footer</a:t></a:r></a:p></p:txBody></p:sp>'
+    )
+    layout = layout.replace('val="1C1C1F"', 'val="111111"').replace("</p:spTree>", art + "</p:spTree>")
+    parts["ppt/slideLayouts/slideLayout1.xml"] = layout.encode("utf-8")
+    parts["ppt/slideLayouts/_rels/slideLayout1.xml.rels"] = (
+        parts["ppt/slideLayouts/_rels/slideLayout1.xml.rels"].decode("utf-8").replace(
+            "</Relationships>",
+            '<Relationship Id="rIdArt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+            'Target="../media/art.png"/></Relationships>',
+        )
+    ).encode("utf-8")
+    parts["ppt/media/art.png"] = b"\x89PNG-art"
+    parts["ppt/media/sample-only.png"] = b"\x89PNG-sample"
+    parts["ppt/slides/_rels/slide1.xml.rels"] = (
+        parts["ppt/slides/_rels/slide1.xml.rels"].decode("utf-8").replace(
+            "</Relationships>",
+            '<Relationship Id="rIdSample" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+            'Target="../media/sample-only.png"/>'
+            '<Relationship Id="rIdNotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" '
+            'Target="../notesSlides/notesSlide1.xml"/></Relationships>',
+        )
+    ).encode("utf-8")
+    parts["ppt/notesSlides/notesSlide1.xml"] = b'<p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><a xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>SAMPLE NOTE LEAK</a:t></a></p:spTree></p:cSld></p:notes>'
+    parts["ppt/notesSlides/_rels/notesSlide1.xml.rels"] = (
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+    )
+    parts["ppt/notesMasters/notesMaster1.xml"] = (
+        b'<p:notesMaster xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+        b"KEEPNOTESMASTER</p:notesMaster>"
+    )
+    parts["ppt/notesMasters/_rels/notesMaster1.xml.rels"] = (
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+    )
+    parts["docProps/thumbnail.jpeg"] = b"\xff\xd8\xff-thumb"
+    types = parts["[Content_Types].xml"].decode("utf-8")
+    if 'Extension="png"' not in types:
+        types = types.replace(
+            "</Types>",
+            '<Default Extension="png" ContentType="image/png"/>'
+            '<Default Extension="jpeg" ContentType="image/jpeg"/></Types>',
+        )
+    parts["[Content_Types].xml"] = types.encode("utf-8")
+    return pack_zip(parts)
