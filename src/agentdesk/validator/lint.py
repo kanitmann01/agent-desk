@@ -101,6 +101,7 @@ def validate_permission_lint(manifest, reader) -> list[Failure]:
     render_failures, ui_schemas = _validate_render(manifest, reader)
     failures.extend(render_failures)
     failures.extend(_validate_sample(manifest, reader, ui_schemas))
+    failures.extend(_validate_presentation_templates(manifest, reader))
 
     return failures
 
@@ -733,6 +734,54 @@ def _is_v2(manifest) -> bool:
     """
     version = manifest.get("schemaVersion")
     return isinstance(version, int) and not isinstance(version, bool) and version == 2
+
+
+def _validate_presentation_templates(manifest, reader) -> list[Failure]:
+    """A presentationTemplates contribution names shells, recipes and thumbs.
+
+    Absent means the plugin is not a template pack. Present means each
+    entry is an object and every path it names is a file in the pack.
+    """
+    contributes = manifest.get("contributes")
+    if not isinstance(contributes, dict):
+        return []
+    templates = contributes.get("presentationTemplates")
+    if templates is None:
+        return []
+    if not isinstance(templates, list) or not templates:
+        return [Failure("bad-schema", "contributes.presentationTemplates must be a non-empty list")]
+    failures: list[Failure] = []
+    for item in templates:
+        if not isinstance(item, dict):
+            failures.append(Failure("bad-schema", "each presentation template must be an object"))
+            continue
+        for key in ("id", "name", "variants", "recipes"):
+            if key not in item:
+                failures.append(Failure(
+                    "bad-schema", f"presentation template missing {key}"))
+        variants = item.get("variants")
+        if isinstance(variants, dict):
+            for label, path in variants.items():
+                if not isinstance(path, str) or reader.read_bytes(path) is None:
+                    failures.append(Failure(
+                        "missing-file", f"template variant {label} file not found: {path}"))
+        elif "variants" in item:
+            failures.append(Failure("bad-schema", "presentation template variants must be an object"))
+        recipes = item.get("recipes")
+        if isinstance(recipes, list):
+            for path in recipes:
+                if not isinstance(path, str) or reader.read_bytes(path) is None:
+                    failures.append(Failure("missing-file", f"template recipe not found: {path}"))
+        thumbs = item.get("thumbs")
+        if isinstance(thumbs, dict):
+            for label, path in thumbs.items():
+                if not isinstance(path, str) or reader.read_bytes(path) is None:
+                    failures.append(Failure(
+                        "missing-file", f"template thumb {label} file not found: {path}"))
+        guidance = item.get("guidance")
+        if isinstance(guidance, str) and reader.read_bytes(guidance) is None:
+            failures.append(Failure("missing-file", f"template guidance not found: {guidance}"))
+    return failures
 
 
 def _validate_sample(manifest, reader, ui_schemas) -> list[Failure]:

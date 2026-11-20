@@ -36,6 +36,23 @@
         "workbook"
       ],
       "yanked": false
+    },
+    {
+      "category": "communication",
+      "changelog": "",
+      "digest": "e3aeef94d01e99c4b5e17a97ebee6f5ed7984f2a3e7740f795e4961a72240c1f",
+      "id": "presentation-starter",
+      "latest": "0.1.0",
+      "minHost": "",
+      "name": "Presentation starter",
+      "publisher": "agent-desk",
+      "risk": "low",
+      "signature": "",
+      "tags": [
+        "presentation",
+        "template"
+      ],
+      "yanked": false
     }
   ],
   "schemaVersion": 2

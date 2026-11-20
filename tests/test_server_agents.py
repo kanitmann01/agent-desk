@@ -197,7 +197,9 @@ def test_the_agents_page_renders_roster_and_history_as_plain_forms(env, auth):
     assert status == 200
     page = body.decode("utf-8")
     assert "Worksheet brief" in page
-    assert "Presentation" not in page
+    assert "Presentation" in page
+    assert "no corporate endpoint configured" in page
+    assert 'class="template-tiles" disabled' in page
     assert 'action="/agents/run"' in page
     assert 'name="brief"' in page
     assert 'href="/agents"' in page
@@ -226,7 +228,8 @@ def test_the_empty_page_names_the_roster_and_honest_empties(env, auth):
     assert status == 200
     assert "No runs yet" in page
     assert "Worksheet brief" in page
-    assert "Presentation" not in page
+    assert "Presentation" in page
+    assert 'class="template-tiles" disabled' in page
 
 
 def test_a_stored_slides_run_renders_as_text(env, auth):
@@ -376,15 +379,19 @@ def test_an_unknown_agent_id_is_refused_with_a_named_error(env, auth):
     assert _runs(env) == []
 
 
-def test_the_removed_presentation_kind_is_refused(env, auth):
+def test_an_unconfigured_presentation_run_is_degraded_and_stores_no_file(env, auth):
     status, _h, body = env.post_json(
-        "/agents/run", {"agent": "presentation", "brief": "a deck"}, auth
+        "/agents/run",
+        {"agent": "presentation", "brief": "a deck", "template": "starter",
+         "variant": "dark", "recipe": "briefing"},
+        auth,
     )
-    assert status == 400
-    error = json.loads(body)["error"]
-    assert "unknown agent" in error
-    assert "presentation" not in error
-    assert _runs(env) == []
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["status"] == "degraded"
+    assert payload["cause"] == "no corporate endpoint configured"
+    assert payload["artifact"] is None
+    assert _runs(env)[0]["artifact"] is None
 
 
 def test_a_blank_brief_is_refused(env, auth):

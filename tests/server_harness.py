@@ -8,6 +8,7 @@ booted fixture) so no listener outlives a test.
 
 import http.client
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -226,6 +227,13 @@ class Booted:
         # no endpoint is configured, so tests never depend on this
         # machine's real AGENTDESK_LLM_BASE.
         kwargs.setdefault("llm_endpoint", "")
+        # Template packs the user installs live under AGENTDESK_TEMPLATES.
+        # A boot that does not set it gets an empty temp dir, so the suite
+        # never lists whatever happens to sit in the real home directory.
+        self._prev_templates = os.environ.get("AGENTDESK_TEMPLATES")
+        if self._prev_templates is None:
+            self._templates_root = tempfile.TemporaryDirectory(prefix="agentdesk-templates-")
+            os.environ["AGENTDESK_TEMPLATES"] = self._templates_root.name
         self.server = server_app.create_server(port=0, **kwargs)
         # Memory captures run inline under test, so a request's capture
         # has landed by the time its response is read.
@@ -277,3 +285,10 @@ class Booted:
         outbox_root = getattr(self, "_outbox_root", None)
         if outbox_root is not None:
             outbox_root.cleanup()
+        templates_root = getattr(self, "_templates_root", None)
+        if templates_root is not None:
+            templates_root.cleanup()
+        if getattr(self, "_prev_templates", None) is None:
+            os.environ.pop("AGENTDESK_TEMPLATES", None)
+        elif self._prev_templates is not None:
+            os.environ["AGENTDESK_TEMPLATES"] = self._prev_templates

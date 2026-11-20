@@ -33,6 +33,7 @@ from agentdesk.agents.registry import ROSTER, find_agent
 from agentdesk.agents.runner import (
     BRIEF_MAX_CHARS,
     FEEDBACK_MAX_CHARS,
+    ENDPOINT_OFF_CAUSE,
     STATUS_OK as AGENT_STATUS_OK,
     endpoint_off_run,
     feedback_transcript,
@@ -97,6 +98,7 @@ from agentdesk.mail.watcher import (
 from agentdesk.llm import (
     DEFAULT_MODEL,
     LlmUnavailable,
+    NO_ENDPOINT_CAUSE,
     REQUEST_TIMEOUT_S,
     base_url_problem,
     chat,
@@ -107,6 +109,7 @@ from agentdesk.llm import (
     settings_chat,
 )
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
+from agentdesk.presentations.packs import load_packs
 from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
     EmbedderUnavailable,
@@ -2141,10 +2144,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         runs = (
             server.agents.recent() if server.agents is not None else []
         )
+        ready, sentence = self._presentation_endpoint()
         page = render_agents_page(
             ROSTER, runs, agentdesk.__version__,
             inbox_count=self._inbox_waiting_count(),
             history_available=server.agents is not None,
+            packs=self._presentation_packs(),
+            endpoint_ready=ready,
+            endpoint_sentence="" if ready else sentence,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2162,6 +2169,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         body = self._read_json_body()
         agent_id = body.get("agent") if body is not None else None
+        if agent_id == "presentation":
+            self._presentation_run(body or {})
+            return
         brief = body.get("brief") if body is not None else None
         kind = find_agent(agent_id) if isinstance(agent_id, str) else None
         if kind is None:
@@ -2229,6 +2239,131 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "artifact": result.artifact,
                 "facts": result.facts,
             })
+
+    def _presentation_packs(self) -> list:
+        """Shipped packs plus anything installed under the user templates dir."""
+        return load_packs()
+
+    def _presentation_endpoint(self) -> tuple[bool, str]:
+        """Whether a presentation may run, and the sentence when it may not.
+
+        The switch uses the pinned endpoint-off sentence. An empty base
+        uses the same unconfigured sentence as the rest of the desk.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        enabled = True if settings is None else bool(settings.get("endpoint_enabled"))
+        saved = settings.get("llm_base") if settings is not None else ""
+        configured = bool(saved) or bool(getattr(server, "llm_endpoint", ""))
+        if not enabled:
+            return False, ENDPOINT_OFF_CAUSE
+        if not configured:
+            return False, NO_ENDPOINT_CAUSE
+        return True, ""
+
+    def _presentation_run(self, body: dict) -> None:
+        """Record the template, variant and recipe. The file comes later.
+
+        A run with the endpoint off or unconfigured is the named degraded
+        row and no file. A run that names a pack the loader does not have
+        is a 400, and nothing is stored.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        brief = body.get("brief")
+        if not isinstance(brief, str) or not brief.strip():
+            self._send_json(
+                400,
+                {"error": "expected {\"agent\": \"presentation\","
+                          " \"brief\": \"a short task brief\"}"},
+            )
+            return
+        brief = brief.strip()
+        if len(brief) > BRIEF_MAX_CHARS:
+            self._send_json(
+                400,
+                {"error": f"the brief is longer than {BRIEF_MAX_CHARS}"
+                          " characters; shorten it"},
+            )
+            return
+        if server.agents is None:
+            self._send_json(503, {"error": "the agents store is not available"})
+            return
+        ready, sentence = self._presentation_endpoint()
+        if not ready:
+            run_id = server.agents.record(
+                "presentation", brief, "degraded", cause=sentence,
+            )
+            self._audit("agents.run", target="presentation", status="error",
+                        detail=f"status degraded; {sentence}")
+            self._finish_agent_run(run_id, "presentation", "degraded", sentence, "", None, [])
+            return
+        template = body.get("template")
+        variant = body.get("variant") or "dark"
+        recipe = body.get("recipe")
+        packs = {pack.id: pack for pack in self._presentation_packs()}
+        pack = packs.get(template) if isinstance(template, str) else None
+        recipe_ok = False
+        if pack is not None and isinstance(recipe, str):
+            recipe_ok = any(path.endswith(f"/{recipe}.json") or path == f"{recipe}.json"
+                            for path in pack.recipes)
+        if pack is None or variant not in pack.variants or not recipe_ok:
+            self._send_json(
+                400,
+                {"error": "choose a template, a variant and a recipe from the"
+                          " /agents page"},
+            )
+            return
+        artifact = {
+            "kind": "presentation",
+            "templateId": pack.id,
+            "templateVersion": pack.version,
+            "digest": pack.digest,
+            "variant": variant,
+            "recipe": recipe,
+            "phase": "selected",
+        }
+        run_id = server.agents.record(
+            "presentation", brief, "ok", artifact=artifact,
+        )
+        self._audit(
+            "agents.run", target="presentation", status="ok",
+            detail=(f"status ok; template {pack.id}@{pack.version}; "
+                    f"variant {variant}; recipe {recipe}"),
+        )
+        self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact, [])
+
+    def _finish_agent_run(self, run_id, agent_id, status, cause, reply, artifact, facts) -> None:
+        """JSON for a fetch, or a redirect back to the page for a form."""
+        if self._is_form_submit():
+            self.send_response(303)
+            self.send_header("Location", "/agents")
+            self._common_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self._send_json(200, {
+            "id": run_id,
+            "agent": agent_id,
+            "status": status,
+            "cause": cause,
+            "reply": reply,
+            "artifact": artifact,
+            "facts": facts,
+        })
+
+    def _agents_template_thumb(self, rest: str) -> None:
+        """One pack preview, and only a preview the pack itself names."""
+        pack_id, _, filename = (rest or "").partition("/")
+        if not filename.endswith(".png") or "/" in filename or not pack_id:
+            self._send_json(404, {"error": "no such preview"})
+            return
+        variant = filename[:-4]
+        pack = next((item for item in self._presentation_packs() if item.id == pack_id), None)
+        path = pack.thumb_path(variant) if pack is not None else None
+        if path is None:
+            self._send_json(404, {"error": "no such preview"})
+            return
+        self._send_bytes(200, path.read_bytes(), "image/png")
 
     def _agents_feedback(self, run_id_text: str) -> None:
         """Record how one run landed and offer it to the memory loop.

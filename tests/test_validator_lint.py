@@ -281,7 +281,7 @@ def test_absolute_manual_metric_file_without_read_permission_is_rejected(tmp_pat
 def test_every_registry_plugin_manifest_validates():
     manifests = sorted(
         (REPO_ROOT / "registry" / "plugins").glob("*/manifest.json"))
-    assert len(manifests) == 2
+    assert len(manifests) == 3
     for manifest_path in manifests:
         verdict = validate_plugin(manifest_path.parent)
         assert verdict.ok, (manifest_path.parent.name, verdict.as_dict())

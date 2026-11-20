@@ -1,14 +1,13 @@
-"""The two shipped plugins keep the publishing contract after spec 015.
+"""The shipped plugins keep the publishing contract after spec 015.
 
-The retirement (spec 015, issue #188) leaves exactly two in-box plugins:
-excel-report (the workbook tracker card) and competitor-watch (the page
-watch card). This file holds the contract that still applies to them: the
-shared validator accepts each plugin, registry review CI passes over the
-shipped index, every release pin equals the recomputed tree digest, the
-listing payload names both, the executable card binds only names its
-source type computes, every sample renders complete (no blank elements),
-and excel-report still installs and shows its honest setup state without
-a workbook.
+The retirement (spec 015, issue #188) left the two card plugins. The
+presentation starter joined them as a template pack, not a card. This
+file holds the contract that still applies: the shared validator accepts
+each plugin, registry review CI passes over the shipped index, every
+release pin equals the recomputed tree digest, the listing payload names
+each one, the executable card binds only names its source type computes,
+every card sample renders complete (no blank elements), and excel-report
+still installs and shows its honest setup state without a workbook.
 """
 import json
 import sys
@@ -38,6 +37,7 @@ PLUGINS = REGISTRY / "plugins"
 LIBRARY = {
     "competitor-watch": "0.1.0",
     "excel-report": "0.1.0",
+    "presentation-starter": "0.1.0",
 }
 
 # The names the executable excel-watch source computes; its card may bind
@@ -82,7 +82,7 @@ def test_shared_validator_accepts_each_shipped_plugin(plugin_id):
     assert verdict.ok, verdict.failures
 
 
-@pytest.mark.parametrize("plugin_id", LIBRARY)
+@pytest.mark.parametrize("plugin_id", [plugin_id for plugin_id in LIBRARY if plugin_id != "presentation-starter"])
 def test_every_plugin_stays_inside_the_declarative_vocabulary(plugin_id):
     """Keep every shipped plugin declarative and deny-by-default.
 
@@ -173,7 +173,7 @@ def test_the_excel_card_binds_only_names_its_source_computes():
 # ---- every sample is complete ------------------------------------------
 
 
-@pytest.mark.parametrize("plugin_id", LIBRARY)
+@pytest.mark.parametrize("plugin_id", [plugin_id for plugin_id in LIBRARY if plugin_id != "presentation-starter"])
 def test_every_sample_renders_fresh_with_no_blank_element(plugin_id):
     rendered = render_sample(PLUGINS / plugin_id)
     assert rendered["status"] == "fresh", (plugin_id, rendered)
