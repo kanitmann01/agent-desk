@@ -2346,16 +2346,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         llm = self._effective_llm()[0]
         try:
-            planned = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
-            if not planned:
+            parsed = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
+            if not parsed:
                 raise ValueError("malformed plan")
+            deck_title, planned = parsed
             filled = []
             for section in planned:
-                one = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
-                if one is None:
+                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
+                if not slides:
                     raise ValueError("malformed fill")
-                filled.append(one)
-            outline = outline_from_fill(brief, recipe_doc, planned, filled, sources)
+                filled.append(slides)
+            outline = outline_from_fill(
+                brief, recipe_doc, planned, filled, sources, title=deck_title,
+            )
             blob = write_deck(shell_path.read_bytes(), recipe_doc, outline)
         except (OSError, ValueError, LlmUnavailable) as exc:
             if isinstance(exc, LlmUnavailable):

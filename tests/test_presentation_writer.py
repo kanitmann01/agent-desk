@@ -95,7 +95,7 @@ def test_the_download_serves_only_the_run_file(tmp_path):
         assert headers["Content-Type"] == PPTX
         assert 'attachment; filename="deck.pptx"' in headers["Content-Disposition"]
         assert package_problems(blob) == []
-        assert slide_texts(blob)[0]["texts"] == ["the Q3 review"]
+        assert slide_texts(blob)[0]["texts"] == ["The Q3 Review"]
         rows = [row for row in audit_store.entries(booted.server.audit_conn)
                 if row["action"] == "agents.download"]
         assert len(rows) == 1

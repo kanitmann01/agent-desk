@@ -109,24 +109,60 @@ def _outline_reply(prompt: str) -> str:
 
 
 def _presentation_plan(prompt: str) -> str:
-    """Echo the Sections JSON the prompt already listed, in order."""
+    """Echo the Sections JSON the prompt already listed, with a real title."""
     line = next((item for item in prompt.splitlines() if item.startswith("Sections: ")), "")
     try:
         sections = json.loads(line.split("Sections: ", 1)[1])
     except (ValueError, IndexError):
         sections = []
-    return json.dumps({"sections": sections})
+    topic = next((item for item in prompt.splitlines() if item.startswith("Topic: ")), "Topic: Briefing")
+    topic = topic.split("Topic: ", 1)[1].strip()
+    return json.dumps({"title": _deck_title(topic), "sections": sections})
+
+
+def _deck_title(topic: str) -> str:
+    """Title case for a lowercase topic. QBR stays an abbreviation."""
+    words = topic.split()
+    if words and words[0].lower() == "the":
+        words = words[1:]
+    titled = []
+    for word in words:
+        core = word.strip(".,").lower()
+        if core == "qbr":
+            titled.append("QBR")
+        elif core == "competitor-brief":
+            titled.append("Competitor Brief")
+        else:
+            titled.append(word[:1].upper() + word[1:])
+    return " ".join(titled) or "Briefing"
 
 
 def _presentation_fill(prompt: str) -> str:
-    """A slide that quotes a number only when a source line already has it."""
+    """Two slides for the named section, with a figure only when a source has one."""
+    section = "This section"
+    for line in prompt.splitlines():
+        if line.startswith("Section: "):
+            section = line.split("Section: ", 1)[1].strip() or section
+            break
     numbers = re.findall(r"\d+", prompt.split("Sources:", 1)[-1])
-    bullet = f"The source says {numbers[0]}." if numbers else "No figure was supplied."
-    return json.dumps({
-        "title": "From the mock",
-        "bullets": [bullet, "One idea on the slide."],
-        "citations": [1] if numbers else [],
-    })
+    figure = f"The source says {numbers[0]}." if numbers else ""
+    first = [
+        f"{section} starts from the brief, not from a figure the desk did not supply.",
+        "The situation is the part a listener can repeat after the meeting.",
+        "What changed is the second point, said in one sentence.",
+        "The constraint on the next step stays visible on this slide.",
+    ]
+    if figure:
+        first[0] = figure
+    second = [
+        f"One example makes {section.lower()} easier to retell.",
+        "The example belongs to this section, so the deck does not repeat itself.",
+        "The last line is what the room should remember without the notes.",
+    ]
+    return json.dumps({"slides": [
+        {"title": section, "bullets": first, "citations": [1] if numbers else []},
+        {"title": f"More on {section}", "bullets": second, "citations": []},
+    ]})
 
 
 def reply_for(prompt: str) -> str:

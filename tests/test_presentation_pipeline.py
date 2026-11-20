@@ -67,7 +67,9 @@ def test_each_recipe_downloads_a_deck_filled_from_the_mock():
                 texts = " ".join(
                     " ".join(row["texts"]) for row in slide_texts(blob)
                 )
-                assert "From the mock" in texts
+                assert "Q3 Review" in texts
+                assert texts.count("starts from the brief") >= len(_ids)
+                assert texts.count("easier to retell") >= len(_ids)
         finally:
             booted.close()
     finally:
@@ -203,8 +205,9 @@ def test_the_digit_guard_replaces_only_unsourced_numbers():
     assert guard_numbers("revenue is 220", sources, [1]) == "revenue is 220"
     assert guard_numbers("revenue is 999", sources, [1]) == "revenue is [data needed]"
     assert guard_numbers("revenue is 220", sources, []) == "revenue is [data needed]"
-    for token in ("20", "202", "6", "0.2"):
+    for token in ("20", "202", "6", "0.2", "22.0"):
         assert guard_numbers(f"figure {token}", sources, [1]) == "figure [data needed]"
+    assert guard_numbers("figure 22.0", [{"id": 1, "text": "about 22.0"}], [1]) == "figure 22.0"
     outline = outline_from_fill(
         "review",
         {"sections": [{"id": "context"}]},
