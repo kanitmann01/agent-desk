@@ -107,21 +107,11 @@ function isHouseDefault(card: MarketCard): boolean {
     && QUIET_RISK.has(card.riskTier.toLowerCase());
 }
 
-// What a featured plugin draws on the desk, in miniature. Shapes, not
+// What a shipped plugin draws on the desk, in miniature. Shapes, not
 // numbers: the catalog previews the cell, it does not report data.
 function Miniature({ id }: { id: string }) {
   const base = id.split('~')[0];
-  if (base === 'ar-aging' || base === 'renewal-radar') {
-    const buckets: Array<[string, number]> = [['0–30', 92], ['31–60', 58], ['61–90', 30], ['90+', 16]];
-    return (
-      <div className="mini mini-aging" aria-hidden="true">
-        {buckets.map(([label, h]) => (
-          <span key={label} className="mini-col"><span className="mini-bar" style={{ height: `${h}%` }} /><span className="mini-x">{label}</span></span>
-        ))}
-      </div>
-    );
-  }
-  if (base === 'budget-burn' || base === 'revenue-vs-target' || base === 'kpi-scorecard' || base === 'excel-report') {
+  if (base === 'excel-report') {
     return (
       <div className="mini mini-pace" aria-hidden="true">
         <div className="mini-pace-row"><span className="mini-pace-fig">68%</span><span className="mini-x">of month spent · day 17 of 30</span></div>
@@ -129,7 +119,7 @@ function Miniature({ id }: { id: string }) {
       </div>
     );
   }
-  if (base === 'competitor-watch' || base === 'source-ledger' || base === 'reconciliation-watch') {
+  if (base === 'competitor-watch') {
     return (
       <div className="mini mini-diff" aria-hidden="true">
         <span className="del">− old line</span>

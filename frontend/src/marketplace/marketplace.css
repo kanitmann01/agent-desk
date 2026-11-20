@@ -167,12 +167,6 @@
 .mkt-featured > li:first-child .mkt-row-featured .mkt-row-name { font-size: 22px; }
 .mkt-row-featured .mkt-row-cat { font-size: 12px; margin-top: auto; padding-top: 6px; }
 .mini { margin: 0 0 6px; padding: 0; list-style: none; border-bottom: 1px solid var(--rule); }
-.mini-aging { height: 150px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: end; padding: 8px 4px 0; }
-.mkt-featured > li:first-child .mini-aging { flex: 1; height: auto; min-height: 190px; }
-.mini-col { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 6px; }
-.mini-col .mini-bar { width: min(100%, 64px); }
-.mini-bar { display: block; background: var(--accent); border-radius: 2px 2px 0 0; }
-.mini-col:nth-child(n+3) .mini-bar { background: var(--faint); }
 .mini-x { font-family: var(--font-mono); font-size: 11px; color: var(--muted); padding-bottom: 6px; }
 .mini-events { display: flex; flex-direction: column; padding: 2px 0 8px; }
 .mini-events li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--rule); }
