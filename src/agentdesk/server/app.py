@@ -112,6 +112,12 @@ from agentdesk.llm import (
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.presentations.deliver import deliver_deck
 from agentdesk.presentations.packs import load_packs
+from agentdesk.presentations.research import (
+    FETCH_TIMEOUT_S,
+    RESULT_LIMIT,
+    as_sources,
+    fetch_sources,
+)
 from agentdesk.presentations.pipeline import (
     call_model,
     fill_prompt,
@@ -2158,6 +2164,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.agents.recent() if server.agents is not None else []
         )
         ready, sentence = self._presentation_endpoint()
+        research_url = ""
+        if server.settings is not None:
+            research_url = server.settings.get("research_provider_url") or ""
+        research_ready = bool(research_url) or getattr(server, "research_fetch", None) is not None
         page = render_agents_page(
             ROSTER, runs, agentdesk.__version__,
             inbox_count=self._inbox_waiting_count(),
@@ -2165,6 +2175,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             packs=self._presentation_packs(),
             endpoint_ready=ready,
             endpoint_sentence="" if ready else sentence,
+            research_ready=research_ready,
+            research_sentence="" if research_ready else "Web research needs a provider URL in settings.",
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2350,6 +2362,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not parsed:
                 raise ValueError("malformed plan")
             deck_title, planned = parsed
+            if str(body.get("use_research", "")).lower() in ("1", "true", "on"):
+                self._pause_for_research(
+                    server, brief, pack, variant, recipe, planned, sources, timeout, deck_title,
+                )
+                return
             filled = []
             for section in planned:
                 slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
@@ -2422,6 +2439,189 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     f"renderer {rendered['renderer']}"),
         )
         self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact, facts)
+
+    def _pause_for_research(self, server, brief, pack, variant, recipe, planned, sources, timeout,
+                            deck_title: str = "") -> None:
+        """Store the gathered web sources and wait. The request is not held."""
+        fetch = getattr(server, "research_fetch", None)
+        url = ""
+        key = ""
+        if server.settings is not None:
+            url = server.settings.get("research_provider_url") or ""
+            key = server.settings.get("research_provider_key") or ""
+        titles = [section["title"] for section in planned]
+        if fetch is None and not url:
+            cause = "Web research needs a provider URL in settings."
+            run_id = server.agents.record("presentation", brief, "degraded", cause=cause)
+            self._audit("agents.run", target="presentation", status="error",
+                        detail=f"status degraded; research unconfigured")
+            self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
+            return
+        base = {
+            "kind": "presentation",
+            "templateId": pack.id,
+            "templateVersion": pack.version,
+            "digest": pack.digest,
+            "variant": variant,
+            "recipe": recipe,
+            "plan": planned,
+            "title": deck_title,
+            "deskSources": sources,
+            "timeout": timeout,
+        }
+        try:
+            if fetch is not None:
+                rows = list(fetch(brief, titles))[:RESULT_LIMIT]
+            else:
+                rows = fetch_sources(url, key, brief, titles, timeout=FETCH_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - a failed gather is a named state
+            cause = f"Web research failed: {exc}"
+            artifact = {**base, "phase": "research-failed", "webSources": []}
+            run_id = server.agents.record(
+                "presentation", brief, "degraded", cause=cause, artifact=artifact,
+            )
+            self._audit("agents.run", target="presentation", status="error",
+                        detail="status degraded; research failed")
+            self._finish_agent_run(run_id, "presentation", "degraded", cause, "", artifact, [])
+            return
+        web = as_sources(rows, len(sources) + 1)
+        artifact = {**base, "phase": "awaiting-review", "webSources": web, "research": True}
+        run_id = server.agents.record(
+            "presentation", brief, "awaiting-review", artifact=artifact,
+        )
+        self._audit(
+            "agents.run", target="presentation", status="ok",
+            detail=(f"status awaiting-review; template {pack.id}@{pack.version}; "
+                    f"recipe {recipe}; research on; sources {len(web)}"),
+        )
+        self._finish_agent_run(run_id, "presentation", "awaiting-review", "", "", artifact, [])
+
+    def _agents_sources(self, rest: str) -> None:
+        """Confirm a paused research run and build the deck from the kept sources."""
+        server = self.server  # type: ignore[attr-defined]
+        try:
+            run_id = int(str(rest).strip("/"))
+        except ValueError:
+            run_id = -1
+        run = server.agents.get(run_id) if server.agents is not None and run_id > 0 else None
+        artifact = run.get("artifact") if run else None
+        phase = artifact.get("phase") if isinstance(artifact, dict) else ""
+        if phase == "written":
+            self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact, [])
+            return
+        if phase not in ("awaiting-review", "research-failed"):
+            self._send_json(404, {"error": "that run is not waiting on sources"})
+            return
+        inflight = getattr(server, "presentation_filling", None)
+        if inflight is None:
+            inflight = set()
+            server.presentation_filling = inflight
+        if run_id in inflight:
+            self._send_json(409, {"error": "that run is already being built"})
+            return
+        raw = getattr(self, "_raw_body", b"") or b""
+        if self._is_form_submit():
+            fields = parse_qs(raw.decode("utf-8", "replace"))
+            keep = fields.get("keep", [])
+            carry_on = (fields.get("continue") or [""])[0]
+        else:
+            body = self._read_json_body() or {}
+            keep = body.get("keep") or []
+            if isinstance(keep, str):
+                keep = [keep]
+            carry_on = str(body.get("continue") or "")
+        desk = artifact.get("deskSources") or []
+        web = artifact.get("webSources") or []
+        if carry_on == "cancel":
+            cause = "Cancelled before the deck was built."
+            server.agents.update_outcome(run_id, "degraded", artifact, cause)
+            self._audit("agents.run", target="presentation", status="error",
+                        detail="status degraded; research cancelled")
+            self._finish_agent_run(run_id, "presentation", "degraded", cause, "", artifact, [])
+            return
+        if carry_on == "desk" or phase == "research-failed":
+            chosen = []
+        else:
+            wanted = {str(item) for item in keep}
+            chosen = [source for source in web if str(source.get("id")) in wanted]
+        inflight.add(run_id)
+        try:
+            self._fill_paused(run_id, run, artifact, desk + chosen, chosen)
+        finally:
+            inflight.discard(run_id)
+
+    def _fill_paused(self, run_id, run, artifact, sources, chosen) -> None:
+        """Fill and write a paused run. Deselected web sources are not passed in."""
+        server = self.server  # type: ignore[attr-defined]
+        brief = run.get("brief") or ""
+        recipe_name = artifact.get("recipe")
+        pack = next((item for item in self._presentation_packs()
+                     if item.id == artifact.get("templateId")), None)
+        recipe_doc = pack.recipe(recipe_name) if pack is not None else None
+        shell_path = pack.shell_path(artifact.get("variant")) if pack is not None else None
+        if recipe_doc is None or shell_path is None:
+            self._send_json(400, {"error": "the template for that run is no longer installed"})
+            return
+        timeout = timeout_seconds(artifact.get("timeout") or 30)
+        llm = self._effective_llm()[0]
+        planned = artifact.get("plan") or []
+        try:
+            filled = []
+            for section in planned:
+                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
+                if not slides:
+                    raise ValueError("malformed fill")
+                filled.append(slides)
+            outline = outline_from_fill(
+                brief, recipe_doc, planned, filled, sources, title=str(artifact.get("title") or ""),
+            )
+
+            def shorten(text, limit, call_timeout):
+                """One shorten call, on the presentation timeout."""
+                reply = call_model(
+                    llm,
+                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
+                    call_timeout,
+                )
+                return (reply or "").strip() or text
+
+            folder = self._presentation_dir() / secrets.token_hex(8)
+            delivered = deliver_deck(
+                shell_path.read_bytes(), recipe_doc, outline, sources, folder,
+                shorten, timeout, runner=getattr(server, "presentation_runner", None),
+            )
+        except (OSError, ValueError, LlmUnavailable) as exc:
+            if isinstance(exc, LlmUnavailable):
+                cause = str(exc)
+            elif isinstance(exc, ValueError) and "fill" in str(exc):
+                cause = "The presentation could not be filled, so no deck was written."
+            else:
+                cause = "The deck could not be written."
+            server.agents.update_outcome(run_id, "degraded", None, cause)
+            self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
+            return
+        rendered = delivered["rendered"]
+        updated = {
+            **{key: artifact[key] for key in artifact if key not in ("plan", "webSources")},
+            "phase": "written",
+            "file": f"{folder.name}/deck.pptx",
+            "sources": receipt_lines(sources),
+            "research": True,
+            "kept": [source.get("id") for source in chosen],
+            "fit": delivered["fit"],
+            "renderer": rendered["renderer"],
+            "previewNote": rendered["note"],
+            "pdf": f"{folder.name}/{rendered['pdf']}" if rendered["pdf"] else "",
+            "images": [f"{folder.name}/{image}" for image in rendered["images"]],
+        }
+        server.agents.update_outcome(run_id, "ok", updated, "")
+        kept = ", ".join(str(source.get("id")) for source in chosen) or "none"
+        self._audit(
+            "agents.run", target="presentation", status="ok",
+            detail=(f"status ok; template {pack.id}@{pack.version}; recipe {recipe_name}; "
+                    f"research on; kept {kept}"),
+        )
+        self._finish_agent_run(run_id, "presentation", "ok", "", "", updated, updated["sources"])
 
     def _finish_agent_run(self, run_id, agent_id, status, cause, reply, artifact, facts) -> None:
         """JSON for a fetch, or a redirect back to the page for a form."""
@@ -2788,6 +2988,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         settings = self.server.settings  # type: ignore[attr-defined]
         values = settings.all() if settings is not None else {}
         values["llm_key"] = mask_llm_key(values.get("llm_key", ""))
+        values["research_provider_key"] = mask_llm_key(values.get("research_provider_key", ""))
         return values
 
     def _endpoint_status(self) -> dict:
@@ -2807,6 +3008,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         saved_model = settings.get("llm_model") if settings is not None else ""
         key_state = mask_llm_key(settings.get("llm_key")) if settings is not None else ""
         timeout = settings.get("presentation_timeout_s") if settings is not None else "30"
+        research_url = settings.get("research_provider_url") if settings is not None else ""
+        research_key = mask_llm_key(settings.get("research_provider_key")) if settings is not None else ""
         return {
             "configured": configured,
             "last": last,
@@ -2814,6 +3017,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "model": saved_model or server.llm_model,
             "keyState": key_state,
             "presentationTimeout": timeout or "30",
+            "researchUrl": research_url or "",
+            "researchKeyState": research_key,
         }
 
     def _send_settings_values(self) -> None:
@@ -2841,12 +3046,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         unknown = sorted(
-            name for name in body if name not in ("base", "key", "model", "presentationTimeout")
+            name for name in body if name not in (
+                "base", "key", "model", "presentationTimeout", "researchUrl", "researchKey",
+            )
         )
         if unknown:
             self._send_json(400, {"error": (
                 "unknown endpoint field(s): " + ", ".join(unknown)
-                + "; accepted fields are base, key, model, presentationTimeout"
+                + "; accepted fields are base, key, model, presentationTimeout, researchUrl, researchKey"
             )})
             return
         base = str(body.get("base", "")).strip()
@@ -2873,11 +3080,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             settings.set(key, value)
         if timeout_raw is not None:
             settings.set("presentation_timeout_s", timeout_raw)
+        if "researchUrl" in body:
+            settings.set("research_provider_url", str(body.get("researchUrl") or "").strip())
+        if "researchKey" in body and str(body.get("researchKey") or "").strip():
+            settings.set("research_provider_key", str(body.get("researchKey")).strip())
         self._send_json(200, {
             "ok": True,
             "base": saved["llm_base"],
             "model": saved["llm_model"],
             "keyState": mask_llm_key(saved["llm_key"]),
+            "researchKeyState": mask_llm_key(settings.get("research_provider_key")),
         })
 
     def _endpoint_test(self) -> None:

@@ -620,7 +620,9 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
       base: (document.getElementById('llm-base') || {}).value || '',
       key: (document.getElementById('llm-key') || {}).value || '',
       model: (document.getElementById('llm-model') || {}).value || '',
-      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30'
+      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30',
+      researchUrl: (document.getElementById('research-url') || {}).value || '',
+      researchKey: (document.getElementById('research-key') || {}).value || ''
     };
   };
   save.addEventListener('click', function () {

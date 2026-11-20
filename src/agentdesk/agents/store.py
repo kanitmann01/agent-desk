@@ -106,6 +106,23 @@ class AgentRunStore:
         )
         return rows[0] if rows else None
 
+    def update_outcome(self, run_id: int, status: str, artifact: dict | None,
+                       cause: str = "") -> bool:
+        """Replace one run's status, cause and artifact. Used when a paused
+        presentation run is confirmed. Returns False when the id is unknown.
+        """
+        with self._lock, self.conn:
+            cursor = self.conn.execute(
+                "UPDATE agent_runs SET status = ?, cause = ?, artifact = ? WHERE id = ?",
+                (
+                    str(status),
+                    str(cause),
+                    json.dumps(artifact) if artifact is not None else "",
+                    run_id,
+                ),
+            )
+            return cursor.rowcount > 0
+
     def set_feedback(self, run_id: int, feedback: str) -> bool:
         """Record one run's feedback with its own timestamp.
 

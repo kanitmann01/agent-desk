@@ -50,7 +50,8 @@ def _receipt_html(run: dict) -> str:
     return f"<p class='empty'>This run used these facts from memory:</p><ul>{lines}</ul>"
 
 
-def _presentation_card(packs, endpoint_ready: bool, sentence: str) -> str:
+def _presentation_card(packs, endpoint_ready: bool, sentence: str,
+                       research_ready: bool = False, research_sentence: str = "") -> str:
     """The template picker under the topic box.
 
     A plain form: one radio per pack, dark or light, one recipe. When
@@ -100,6 +101,15 @@ def _presentation_card(packs, endpoint_ready: bool, sentence: str) -> str:
         for variant in variants
     )
     note = f'<p class="empty">{_esc(sentence)}</p>' if sentence else ""
+    if research_ready:
+        research_html = (
+            '<label><input type="checkbox" name="use_research" value="1"> Web research</label>'
+        )
+    else:
+        research_html = (
+            f'<p class="empty">{_esc(research_sentence)}</p>'
+            '<label><input type="checkbox" name="use_research" value="1" disabled> Web research</label>'
+        )
     return (
         '<article class="card" id="agent-presentation">'
         "<h3>Presentation</h3>"
@@ -122,6 +132,7 @@ def _presentation_card(packs, endpoint_ready: bool, sentence: str) -> str:
         f'<label><input type="checkbox" name="use_workbook" value="1" checked{disabled}> Workbook tracker</label>'
         f'<label><input type="checkbox" name="use_watch" value="1" checked{disabled}> Page watch</label>'
         '</fieldset>'
+        f"{research_html}"
         f'<button class="btn btn-primary" type="submit"{disabled}>Run Presentation</button>'
         "</form></article>"
     )
@@ -145,6 +156,35 @@ def _artifact_html(run: dict) -> str:
             f"({artifact.get('variant', '')}), "
             f"recipe {artifact.get('recipe', '')}."
         )
+        if artifact.get("phase") == "awaiting-review":
+            rows = []
+            for source in artifact.get("webSources") or []:
+                rows.append(
+                    "<label><input type='checkbox' name='keep' "
+                    f"value='{_esc(source.get('id'))}' checked> "
+                    f"{_esc(source.get('title') or '')} "
+                    f"{_esc(source.get('url') or '')} "
+                    f"{_esc(source.get('snippet') or '')}</label>"
+                )
+            form = (
+                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                + "".join(rows)
+                + '<button class="btn btn-primary" type="submit">Build the deck</button></form>'
+                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                '<input type="hidden" name="continue" value="desk">'
+                '<button class="btn" type="submit">Continue with desk sources only</button></form>'
+                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                '<input type="hidden" name="continue" value="cancel">'
+                '<button class="btn" type="submit">Cancel</button></form>'
+            )
+            return f"<pre>{_esc(text)}</pre>" + form
+        if artifact.get("phase") == "research-failed":
+            return (
+                f"<pre>{_esc(text)}</pre>"
+                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                '<input type="hidden" name="continue" value="desk">'
+                '<button class="btn" type="submit">Continue with desk sources only</button></form>'
+            )
         if artifact.get("file"):
             text_html = f"<pre>{_esc(text)}</pre>"
             href = f"/agents/runs/{run['id']}/download"
@@ -241,7 +281,8 @@ def _esc(value: str) -> str:
 
 def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
                        history_available: bool = True, packs=(),
-                       endpoint_ready: bool = False, endpoint_sentence: str = "") -> str:
+                       endpoint_ready: bool = False, endpoint_sentence: str = "",
+                       research_ready: bool = False, research_sentence: str = "") -> str:
     """The full agents document: the roster with a run form per agent,
     then the run history newest first with receipts and artifacts.
 
@@ -249,7 +290,9 @@ def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
     the honest state of a store that could not open (the roster still
     renders, the history says why it is absent).
     """
-    roster = _presentation_card(packs, endpoint_ready, endpoint_sentence)
+    roster = _presentation_card(
+        packs, endpoint_ready, endpoint_sentence, research_ready, research_sentence,
+    )
     roster += "".join(_brief_form(agent) for agent in agents)
     if not history_available:
         history = (

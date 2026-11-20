@@ -66,6 +66,9 @@ TEXT_KEYS = {
     "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated
     # Presentation-agent calls only. Other agents stay on the 10s adapter cap.
     "presentation_timeout_s": "30",
+    # Web research for a presentation run. Off until a URL is saved.
+    "research_provider_url": "",
+    "research_provider_key": "",
 }
 DEFAULTS = {**TOGGLES, "daily_cap": 3, "plugin_instance_cap": 6, **TEXT_KEYS}
 

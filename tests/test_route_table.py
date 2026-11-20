@@ -128,6 +128,7 @@ EXPECTED_POST_ROUTES = (
     ("POST", "/assistant/ask", "_assistant_ask", False, "none", ""),
     ("POST", "/agents/run", "_agents_run", False, "none", ""),
     ("POST", "/agents/runs/", "_agents_feedback", True, "rest", "/feedback"),
+    ("POST", "/agents/runs/", "_agents_sources", True, "rest", "/sources"),
 )
 
 # Not worth pinning: these reach no response a client can depend on. The two
