@@ -49,6 +49,14 @@ def render_deck(pptx: Path, out_dir: Path, runner=None, timeout: float = RENDER_
     `timeout` seconds.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        return _render_deck(pptx, out_dir, runner, timeout)
+    finally:
+        shutil.rmtree(out_dir / "lo-profile", ignore_errors=True)
+
+
+def _render_deck(pptx: Path, out_dir: Path, runner, timeout: float) -> dict:
+    """The render itself. The caller removes the LibreOffice profile."""
     name = which_renderer() if runner is None else "injected"
     if runner is None and name == "none":
         return {"renderer": "none", "pdf": "", "images": [], "note": "Previews are unavailable."}

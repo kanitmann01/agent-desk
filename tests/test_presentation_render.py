@@ -137,6 +137,7 @@ def test_libreoffice_renders_a_real_deck(tmp_path):
     if shutil.which("pdftoppm"):
         assert result["images"]
         assert (tmp_path / result["images"][0]).is_file()
+    assert not (tmp_path / "preview" / "lo-profile").exists()
 
 
 def test_powerpoint_paths_escape_quotes(tmp_path):
