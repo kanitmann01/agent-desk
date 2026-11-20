@@ -4,6 +4,7 @@ The seam is the run page and the audit line. The deck still downloads
 when previews are unavailable.
 """
 
+import json
 import shutil
 import sys
 import time
@@ -20,14 +21,29 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import server_harness
 from agentdesk.assistant import audit as audit_store
 from agentdesk.presentations.ooxml import build_shell
-from agentdesk.presentations.render import render_deck
+from agentdesk.presentations.render import _command, render_deck
 
 PNG = b"\x89PNG\r\n\x1a\n"
 
 
 def _ready(booted, runner):
+    """Point the run at a scripted model and the given preview runner."""
     booted.server.llm_endpoint = "http://127.0.0.1:9/v1"
+    booted.server.llm = _scripted_llm()
     booted.server.presentation_runner = runner
+
+
+def _scripted_llm():
+    """Plan and fill replies so a preview test does not need a network."""
+    def llm(prompt, timeout=30):
+        if "Presentation plan" in prompt:
+            return json.dumps({"sections": [
+                {"id": "context", "title": "Context"},
+                {"id": "findings", "title": "Findings"},
+                {"id": "next", "title": "What we do next"},
+            ]})
+        return json.dumps({"title": "Noted", "bullets": ["No figure was supplied."], "citations": []})
+    return llm
 
 
 def _fake(argv, timeout):
@@ -49,7 +65,6 @@ def test_a_fake_renderer_shows_a_preview_and_names_itself():
              "template": "starter", "variant": "dark", "recipe": "briefing"},
             auth,
         )
-        import json
         payload = json.loads(body)
         assert payload["status"] == "ok"
         assert payload["artifact"]["renderer"] == "libreoffice"
@@ -76,7 +91,6 @@ def test_a_missing_renderer_keeps_the_deck_and_says_so():
     _ready(booted, fail)
     try:
         auth = booted.exchange()
-        import json
         payload = json.loads(booted.post_json(
             "/agents/run",
             {"agent": "presentation", "brief": "the Q3 review",
@@ -120,3 +134,13 @@ def test_libreoffice_renders_a_real_deck(tmp_path):
     result = render_deck(pptx, tmp_path / "preview")
     assert result["renderer"] == "libreoffice"
     assert (tmp_path / result["pdf"]).is_file()
+    if shutil.which("pdftoppm"):
+        assert result["images"]
+        assert (tmp_path / result["images"][0]).is_file()
+
+
+def test_powerpoint_paths_escape_quotes(tmp_path):
+    pptx = tmp_path / "o'brien.pptx"
+    argv = _command("powerpoint", pptx, tmp_path / "out")
+    assert "o''brien.pptx" in argv[-1]
+    assert "-env:UserInstallation=" in " ".join(_command("libreoffice", pptx, tmp_path / "out"))
