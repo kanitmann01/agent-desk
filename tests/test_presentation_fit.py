@@ -22,6 +22,57 @@ RECIPE = json.loads(
 )
 
 
+def test_a_bullet_that_wraps_stays_one_bullet_and_continuations_loop():
+    def shorten(text, limit, timeout):
+        return text
+
+    wide = "word " * 40
+    outline = {
+        "title": "Q3",
+        "slides": [{"role": "content", "title": "Context", "bullets": [wide.strip()], "citations": []}],
+    }
+    fitted, notes = fit_outline(outline, RECIPE, shorten, 30, [])
+    content = [slide for slide in fitted["slides"] if slide["role"] == "content"]
+    assert len(content) == 1
+    assert content[0]["bullets"] == [wide.strip()]
+    assert notes == []
+    many = ["word"] * 50
+    outline["slides"][0]["bullets"] = many
+    fitted, notes = fit_outline(outline, RECIPE, shorten, 30, [])
+    content = [slide for slide in fitted["slides"] if slide["role"] == "content"]
+    assert len(content) >= 3
+    assert any(item.endswith("(cont.)") for item in notes)
+    assert sum(_bullet_ok(slide["bullets"]) for slide in content) == len(content)
+
+
+def _bullet_ok(bullets: list[str]) -> bool:
+    """True when this slide's bullets use no more lines than the box."""
+    from agentdesk.presentations.fit import _bullet_lines, slot_budget
+    budget = slot_budget([0.9, 1.7, 11.5, 4.6], 14)
+    used = sum(_bullet_lines(bullet, budget["charsPerLine"]) for bullet in bullets)
+    return used <= budget["lines"]
+
+
+def test_a_shortened_reply_is_digit_guarded():
+    def shorten(text, limit, timeout):
+        return "revenue is 999"
+
+    sources = [{"id": 1, "text": "220 in Q3 2026", "kind": "memory"}]
+    outline = {
+        "title": "Q3",
+        "slides": [{
+            "role": "content", "title": "Context",
+            "bullets": ["word " * 800], "citations": [1],
+        }],
+    }
+    fitted, _notes = fit_outline(outline, RECIPE, shorten, 30, sources)
+    text = " ".join(
+        " ".join(slide["bullets"]) for slide in fitted["slides"] if slide["role"] == "content"
+    )
+    assert "999" not in text
+    assert "[data needed]" in text
+
+
 def test_the_budget_matches_the_recipe_region_at_14_pt():
     region = [0.9, 1.7, 11.5, 4.6]
     budget = slot_budget(region, 14)
