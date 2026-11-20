@@ -44,10 +44,6 @@ class CaptureLlm:
         return self.reply
 
 
-SLIDES_REPLY = json.dumps(
-    {"title": "Q3 Review", "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}]}
-)
-
 # The briefing the fake endpoint returns for a worksheet-brief run: plain
 # text, grounded in the fixture workbook's own rows (164000 + 58000 +
 # 22500), so the double never invents a number either.
@@ -60,7 +56,7 @@ WORKBOOK_BRIEFING = (
 
 @pytest.fixture()
 def env():
-    booted = server_harness.Booted(llm=CaptureLlm(reply=SLIDES_REPLY))
+    booted = server_harness.Booted(llm=CaptureLlm(reply=WORKBOOK_BRIEFING))
     try:
         yield booted
     finally:
@@ -78,7 +74,7 @@ def _add_fact(env, auth, text):
     return json.loads(body)
 
 
-def _run(env, auth, brief="the Q3 review should cover revenue", agent="presentation"):
+def _run(env, auth, brief="the Q3 review should cover revenue", agent="worksheet-brief"):
     return env.post_json("/agents/run", {"agent": agent, "brief": brief}, auth)
 
 
@@ -120,8 +116,8 @@ def test_a_run_creates_an_ok_row_whose_receipt_lists_the_recalled_facts(env, aut
     assert status == 200
     payload = json.loads(body)
     assert payload["status"] == "ok"
-    assert payload["artifact"]["kind"] == "slides"
-    assert payload["artifact"]["title"] == "Q3 Review"
+    assert payload["artifact"]["kind"] == "outline"
+    assert payload["artifact"]["text"] == WORKBOOK_BRIEFING
     assert [row["text"] for row in payload["facts"]] == ["revenue is 220"]
     stored = _runs(env)
     assert len(stored) == 1
@@ -200,21 +196,20 @@ def test_the_agents_page_renders_roster_and_history_as_plain_forms(env, auth):
     status, _h, body = env.request("GET", "/agents", auth)
     assert status == 200
     page = body.decode("utf-8")
-    assert "Presentation" in page
+    assert "Worksheet brief" in page
+    assert "Presentation" not in page
     assert 'action="/agents/run"' in page
     assert 'name="brief"' in page
     assert 'href="/agents"' in page
     # The history: newest first, with the receipt and the artifact.
     assert "the Q3 review should cover revenue" in page
     assert "- revenue is 220" in page or "revenue is 220" in page
-    assert "Q3 Review" in page
+    assert "Watched workbook" in page
     assert "used nothing" in page
 
 
 def test_model_output_is_escaped_never_raw_html(env, auth):
-    hostile = json.dumps(
-        {"title": "<script>alert(1)</script>", "slides": [{"title": "x", "bullets": ["<img src=x>"]}]}
-    )
+    hostile = "See <script>alert(1)</script> and <img src=x>"
     env.server.llm = CaptureLlm(reply=hostile)
     _run(env, auth)
     status, _h, body = env.request("GET", "/agents", auth)
@@ -230,7 +225,24 @@ def test_the_empty_page_names_the_roster_and_honest_empties(env, auth):
     page = body.decode("utf-8")
     assert status == 200
     assert "No runs yet" in page
-    assert "Presentation" in page
+    assert "Worksheet brief" in page
+    assert "Presentation" not in page
+
+
+def test_a_stored_slides_run_renders_as_text(env, auth):
+    env.server.agents.record(
+        "presentation", "the old deck", "ok",
+        artifact={
+            "kind": "slides",
+            "title": "Q3 Review",
+            "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}],
+        },
+    )
+    status, _h, body = env.request("GET", "/agents", auth)
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "<pre>Q3 Review\nRevenue\n- revenue is 220</pre>" in page
+    assert "<ol" not in page
 
 
 # -- the worksheet-brief agent ----------------------------------------------
@@ -322,12 +334,12 @@ def test_a_locked_memory_bank_still_runs_with_no_block(tmp_path):
         key_path=tmp_path / "memory.key",
     )
     assert locked.locked_cause is not None
-    booted = server_harness.Booted(memory_store=locked, llm=CaptureLlm(reply=SLIDES_REPLY))
+    booted = server_harness.Booted(memory_store=locked, llm=CaptureLlm(reply=WORKBOOK_BRIEFING))
     try:
         auth = booted.exchange()
         status, _h, body = booted.post_json(
             "/agents/run",
-            {"agent": "presentation", "brief": "the Q3 review should cover revenue"},
+            {"agent": "worksheet-brief", "brief": "the Q3 review should cover revenue"},
             auth,
         )
         assert status == 200
@@ -343,7 +355,7 @@ def test_a_locked_memory_bank_still_runs_with_no_block(tmp_path):
 
 
 def test_a_form_post_redirects_back_to_the_agents_page(env, auth):
-    body = "agent=presentation&brief=the+Q3+review".encode("utf-8")
+    body = "agent=worksheet-brief&brief=the+Q3+review".encode("utf-8")
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "Content-Length": str(len(body)),
@@ -364,17 +376,31 @@ def test_an_unknown_agent_id_is_refused_with_a_named_error(env, auth):
     assert _runs(env) == []
 
 
-def test_a_blank_brief_is_refused(env, auth):
+def test_the_removed_presentation_kind_is_refused(env, auth):
     status, _h, body = env.post_json(
-        "/agents/run", {"agent": "presentation", "brief": "   "}, auth
+        "/agents/run", {"agent": "presentation", "brief": "a deck"}, auth
     )
     assert status == 400
-    assert "brief" in json.loads(body)["error"]
+    error = json.loads(body)["error"]
+    assert "unknown agent" in error
+    assert "presentation" not in error
+    assert _runs(env) == []
+
+
+def test_a_blank_brief_is_refused(env, auth):
+    status, _h, body = env.post_json(
+        "/agents/run", {"agent": "worksheet-brief", "brief": "   "}, auth
+    )
+    assert status == 400
+    error = json.loads(body)["error"]
+    assert "brief" in error
+    assert "worksheet-brief" in error
+    assert "presentation" not in error
 
 
 def test_an_oversize_brief_is_refused(env, auth):
     status, _h, body = env.post_json(
-        "/agents/run", {"agent": "presentation", "brief": "x" * 401}, auth
+        "/agents/run", {"agent": "worksheet-brief", "brief": "x" * 401}, auth
     )
     assert status == 400
     assert "400" in json.loads(body)["error"]
@@ -382,7 +408,7 @@ def test_an_oversize_brief_is_refused(env, auth):
 
 def test_the_agents_routes_require_a_session(env):
     status, _h, _b = env.post_json(
-        "/agents/run", {"agent": "presentation", "brief": "x"}, env.host_header()
+        "/agents/run", {"agent": "worksheet-brief", "brief": "x"}, env.host_header()
     )
     assert status == 401
     status, _h, _b = env.request("GET", "/agents", env.host_header())
@@ -421,7 +447,7 @@ def test_posting_feedback_stages_one_agents_channel_card_built_from_the_own_word
     # The excerpt is the run transcript: agent, brief, artifact, feedback.
     excerpt = candidate["excerpt"]["text"]
     assert "the Q3 review should cover revenue" in excerpt
-    assert "Q3 Review" in excerpt
+    assert "Watched workbook" in excerpt
     assert FEEDBACK in excerpt
     # The card's own origin copy names the channel, like every other origin.
     [card] = env.server.inbox.waiting()
@@ -559,7 +585,7 @@ def test_each_feedback_writes_one_agents_feedback_audit_row(env, auth):
     _post_feedback(env, auth, run_id, FEEDBACK)
     rows = _audit_rows(env, "agents.feedback")
     assert len(rows) == 1
-    assert rows[0]["target"] == "presentation"
+    assert rows[0]["target"] == "worksheet-brief"
     # Counts and ids only, never the feedback's words.
     assert "Dana" not in rows[0]["detail"]
     assert f"run {run_id}" in rows[0]["detail"]
@@ -573,7 +599,7 @@ def test_each_run_writes_one_agents_run_audit_row(env, auth):
     _run(env, auth)
     rows = _audit_rows(env, "agents.run")
     assert len(rows) == 1
-    assert rows[0]["target"] == "presentation"
+    assert rows[0]["target"] == "worksheet-brief"
     assert rows[0]["status"] == "ok"
     assert "used 1" in rows[0]["detail"] or "1 fact" in rows[0]["detail"]
 
@@ -589,7 +615,7 @@ def test_a_degraded_run_audits_as_an_error_naming_its_cause(env, auth):
 
 def test_a_boot_with_no_injection_never_writes_the_real_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
-    booted = server_harness.Booted(llm=CaptureLlm(reply=SLIDES_REPLY))
+    booted = server_harness.Booted(llm=CaptureLlm(reply=WORKBOOK_BRIEFING))
     try:
         auth = booted.exchange()
         status, _h, _b = booted.request("GET", "/agents", auth)

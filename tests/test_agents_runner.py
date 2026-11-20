@@ -6,7 +6,6 @@ excel status are injected, so these tests pin the pure contract the
 HTTP suite then drives end to end through the booted server.
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -53,14 +52,6 @@ def _ranked(*texts: str) -> list:
 # -- the registry ---------------------------------------------------------
 
 
-def test_find_agent_returns_the_presentation_kind_by_id():
-    agent = find_agent("presentation")
-    assert agent is not None
-    assert agent.name == "Presentation"
-    assert agent.context == CONTEXT_NONE
-    assert agent.artifact_kind == "slides"
-
-
 def test_find_agent_returns_the_worksheet_brief_kind_by_id():
     agent = find_agent("worksheet-brief")
     assert agent is not None
@@ -71,21 +62,22 @@ def test_find_agent_returns_the_worksheet_brief_kind_by_id():
 
 def test_find_agent_refuses_an_unknown_id():
     assert find_agent("worksheet") is None
+    assert find_agent("presentation") is None
     assert find_agent("") is None
 
 
 def test_the_roster_carries_unique_ids():
     ids = [agent.id for agent in ROSTER]
     assert len(ids) == len(set(ids))
-    assert "presentation" in ids
     assert "worksheet-brief" in ids
+    assert "presentation" not in ids
 
 
 # -- prompt assembly ------------------------------------------------------
 
 
 def test_the_prompt_places_the_facts_block_before_instructions_and_brief():
-    agent = find_agent("presentation")
+    agent = find_agent("worksheet-brief")
     prompt = runner.build_agent_prompt(
         agent, "the Q3 review", facts_block="Known facts about the user:\n- revenue is 220"
     )
@@ -96,7 +88,7 @@ def test_the_prompt_places_the_facts_block_before_instructions_and_brief():
 
 
 def test_the_prompt_without_facts_carries_no_block():
-    agent = find_agent("presentation")
+    agent = find_agent("worksheet-brief")
     prompt = runner.build_agent_prompt(agent, "the Q3 review")
     assert "Known facts about the user" not in prompt
     assert "the Q3 review" in prompt
@@ -105,7 +97,7 @@ def test_the_prompt_without_facts_carries_no_block():
 def test_the_prompt_bounds_come_from_the_block_whole_facts_only():
     # Seven ranked facts: the block keeps at most five, and only whole
     # facts, because the bounds live in memory/service once.
-    agent = find_agent("presentation")
+    agent = find_agent("worksheet-brief")
     ranked = _ranked(*[f"revenue fact number {i}" for i in range(7)])
     block, receipt = runner.recall_block(ranked)
     lines = [ln for ln in block.splitlines() if ln.startswith("- ")]
@@ -170,7 +162,11 @@ def test_a_workbook_kind_gains_the_excel_context_lines():
 
 
 def test_a_none_kind_carries_no_widget_context():
-    agent = find_agent("presentation")
+    agent = AgentKind(
+        id="plain", name="Plain", blurb="No live context.",
+        artifact_kind="outline", instructions="Answer in text.",
+        context=CONTEXT_NONE,
+    )
     assert runner.workbook_context(agent, {"configured": True}) == ""
 
 
@@ -213,55 +209,45 @@ def test_the_worksheet_brief_context_says_the_empty_honestly():
 # -- the tolerant artifact parse -------------------------------------------
 
 
-def test_parse_artifact_reads_the_slides_json():
-    reply = json.dumps(
-        {"title": "Q3 Review", "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}]}
-    )
-    artifact = runner.parse_artifact(reply, find_agent("presentation"))
-    assert artifact["kind"] == "slides"
-    assert artifact["title"] == "Q3 Review"
-    assert artifact["slides"][0]["bullets"] == ["revenue is 220"]
-
-
-def test_parse_artifact_tolerates_a_fenced_reply():
-    reply = "```json\n" + json.dumps({"title": "Q3", "slides": []}) + "\n```"
-    artifact = runner.parse_artifact(reply, find_agent("presentation"))
-    assert artifact["kind"] == "slides"
-    assert artifact["title"] == "Q3"
-
-
-def test_parse_artifact_falls_back_to_a_text_outline():
+def test_parse_artifact_keeps_the_reply_as_text():
     artifact = runner.parse_artifact(
-        "1. Revenue\n- revenue is 220", find_agent("presentation")
+        "1. Revenue\n- revenue is 220", find_agent("worksheet-brief")
     )
     assert artifact["kind"] == "outline"
     assert "revenue is 220" in artifact["text"]
 
 
-def test_parse_artifact_names_an_empty_reply_honestly():
-    artifact = runner.parse_artifact("   ", find_agent("presentation"))
-    assert artifact["kind"] == "outline"
-    assert artifact["text"]
+def test_parse_artifact_unwraps_a_fence_and_names_an_empty_reply():
+    fenced = runner.parse_artifact(
+        "```json\n{\"title\": \"Q3\"}\n```", find_agent("worksheet-brief")
+    )
+    assert fenced["kind"] == "outline"
+    assert "Q3" in fenced["text"]
+    assert "```" not in fenced["text"]
+    empty = runner.parse_artifact("   ", find_agent("worksheet-brief"))
+    assert empty["kind"] == "outline"
+    assert empty["text"]
 
 
 # -- the run --------------------------------------------------------------
 
 
 def test_run_agent_calls_the_llm_once_and_returns_the_parsed_artifact():
-    llm = ScriptLlm(reply=json.dumps({"title": "Q3", "slides": []}))
+    llm = ScriptLlm(reply="Revenue is the watched total.")
     result = runner.run_agent(
-        find_agent("presentation"), "the Q3 review", llm, ranked_facts=_ranked("revenue is 220")
+        find_agent("worksheet-brief"), "the Q3 review", llm, ranked_facts=_ranked("revenue is 220")
     )
     assert len(llm.prompts) == 1
     assert "- revenue is 220" in llm.prompts[0]
     assert result.status == runner.STATUS_OK
-    assert result.artifact["kind"] == "slides"
+    assert result.artifact["kind"] == "outline"
+    assert result.artifact["text"] == "Revenue is the watched total."
     assert [row["text"] for row in result.facts] == ["revenue is 220"]
 
 
 def test_run_agent_degrades_with_the_pinned_cause():
     llm = ScriptLlm(error=LlmUnavailable("no corporate endpoint configured"))
-    result = runner.run_agent(find_agent("presentation"), "brief", llm)
+    result = runner.run_agent(find_agent("worksheet-brief"), "brief", llm)
     assert result.status == runner.STATUS_DEGRADED
     assert result.cause == "no corporate endpoint configured"
     assert result.artifact is None
@@ -287,7 +273,7 @@ def test_run_agent_gives_a_workbook_kind_its_live_status_lines():
 
 def test_run_agent_degrades_with_the_standing_line_on_unexpected_errors():
     llm = ScriptLlm(error=RuntimeError("boom"))
-    result = runner.run_agent(find_agent("presentation"), "brief", llm)
+    result = runner.run_agent(find_agent("worksheet-brief"), "brief", llm)
     assert result.status == runner.STATUS_DEGRADED
     assert result.cause == runner.DEGRADED_CAUSE
     assert result.reply == ""
@@ -303,26 +289,26 @@ def test_the_brief_bound_is_a_few_hundred_characters():
 def test_the_transcript_carries_agent_brief_artifact_and_feedback():
     run = {
         "brief": "the Q3 review",
-        "artifact": {"kind": "slides", "title": "Q3 Review",
-                     "slides": [{"title": "Revenue", "bullets": ["revenue is 220"]}]},
+        "artifact": {"kind": "outline", "text": "Revenue is the watched total."},
     }
-    text = runner.feedback_transcript("Presentation", run, "My manager liked it.")
-    assert "Presentation" in text
+    text = runner.feedback_transcript("Worksheet brief", run, "My manager liked it.")
+    assert "Worksheet brief" in text
     assert "the Q3 review" in text
-    assert "Q3 Review" in text and "1 slide" in text
+    assert "Revenue is the watched total." in text
+    assert "slide" not in text
     assert text.endswith("My manager liked it.")
 
 
 def test_the_transcript_of_a_degraded_run_names_the_honest_empty():
     run = {"brief": "the Q3 review", "artifact": None}
-    text = runner.feedback_transcript("Presentation", run, "It never ran.")
+    text = runner.feedback_transcript("Worksheet brief", run, "It never ran.")
     assert "no artifact" in text
     assert "It never ran." in text
 
 
 def test_the_transcript_of_an_outline_artifact_keeps_it_short():
     run = {"brief": "b", "artifact": {"kind": "outline", "text": "word " * 100}}
-    text = runner.feedback_transcript("Presentation", run, "fine")
+    text = runner.feedback_transcript("Worksheet brief", run, "fine")
     summary = text.split("What it produced: ", 1)[1].splitlines()[0]
     assert len(summary) <= 140
 

@@ -2174,7 +2174,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not isinstance(brief, str) or not brief.strip():
             self._send_json(
                 400,
-                {"error": "expected {\"agent\": \"presentation\","
+                {"error": "expected {\"agent\": \"worksheet-brief\","
                           " \"brief\": \"a short task brief\"}"},
             )
             return

@@ -50,25 +50,46 @@ def _receipt_html(run: dict) -> str:
     return f"<p class='empty'>This run used these facts from memory:</p><ul>{lines}</ul>"
 
 
+def _slides_text(artifact: dict) -> str:
+    """An old slides artifact as plain lines, so history still reads.
+
+    The structured outline is gone; a stored deck is its title, then
+    each slide title and its bullets, one line each.
+    """
+    lines = []
+    title = str(artifact.get("title") or "").strip()
+    if title:
+        lines.append(title)
+    for slide in artifact.get("slides") or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_title = str(slide.get("title") or "").strip()
+        if slide_title:
+            lines.append(slide_title)
+        for bullet in slide.get("bullets") or []:
+            text = str(bullet).strip()
+            if text:
+                lines.append(f"- {text}")
+    return "\n".join(lines)
+
+
 def _artifact_html(run: dict) -> str:
-    """The parsed artifact as text and structure: slides as an outline
-    list, a non-cooperating reply as its text. Nothing the model
-    returned is ever interpolated as markup."""
+    """The artifact as text. Nothing the model returned is markup.
+
+    A current outline is its text. An old slides row, from before the
+    outline-only agent was removed, is the same: plain lines in a pre,
+    never a list the page builds from the model's structure.
+    """
     artifact = run.get("artifact")
     if not artifact:
         return ""
     if artifact.get("kind") == "slides":
-        title = f"<p><b>{_esc(artifact.get('title', ''))}</b></p>" if artifact.get("title") else ""
-        items = ""
-        for slide in artifact.get("slides", []):
-            bullets = "".join(
-                f"<li>{_esc(str(bullet))}</li>"
-                for bullet in slide.get("bullets", [])
-            )
-            bullet_list = f"<ul>{bullets}</ul>" if bullets else ""
-            items += f"<li>{_esc(slide.get('title', ''))}{bullet_list}</li>"
-        return f"{title}<ol class='empty'>{items}</ol>" if items else title
-    return f"<pre>{_esc(artifact.get('text', ''))}</pre>"
+        text = _slides_text(artifact)
+    else:
+        text = str(artifact.get("text", ""))
+    if not text:
+        return ""
+    return f"<pre>{_esc(text)}</pre>"
 
 
 def _feedback_html(run: dict) -> str:
