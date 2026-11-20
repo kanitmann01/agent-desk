@@ -64,6 +64,8 @@ TEXT_KEYS = {
     "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
     "registry_path": "",  # the local registry checkout the plugins page browses; empty means auto
     "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated
+    # Presentation-agent calls only. Other agents stay on the 10s adapter cap.
+    "presentation_timeout_s": "30",
 }
 DEFAULTS = {**TOGGLES, "daily_cap": 3, "plugin_instance_cap": 6, **TEXT_KEYS}
 

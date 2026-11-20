@@ -108,6 +108,27 @@ def _outline_reply(prompt: str) -> str:
     return "\n".join(lines)
 
 
+def _presentation_plan(prompt: str) -> str:
+    """Echo the Sections JSON the prompt already listed, in order."""
+    line = next((item for item in prompt.splitlines() if item.startswith("Sections: ")), "")
+    try:
+        sections = json.loads(line.split("Sections: ", 1)[1])
+    except (ValueError, IndexError):
+        sections = []
+    return json.dumps({"sections": sections})
+
+
+def _presentation_fill(prompt: str) -> str:
+    """A slide that quotes a number only when a source line already has it."""
+    numbers = re.findall(r"\d+", prompt.split("Sources:", 1)[-1])
+    bullet = f"The source says {numbers[0]}." if numbers else "No figure was supplied."
+    return json.dumps({
+        "title": "From the mock",
+        "bullets": [bullet, "One idea on the slide."],
+        "citations": [1] if numbers else [],
+    })
+
+
 def reply_for(prompt: str) -> str:
     """The deterministic answer for one prompt, by its stable markers.
 
@@ -118,6 +139,10 @@ def reply_for(prompt: str) -> str:
         return _extraction_reply(prompt)
     if _AGENT_MARKER in prompt:
         return _outline_reply(prompt)
+    if "Presentation plan" in prompt:
+        return _presentation_plan(prompt)
+    if "Presentation fill" in prompt:
+        return _presentation_fill(prompt)
     return "The mock endpoint answers a plain prompt with this sentence."
 
 
