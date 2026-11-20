@@ -149,6 +149,9 @@ def _artifact_html(run: dict) -> str:
             text_html = f"<pre>{_esc(text)}</pre>"
             href = f"/agents/runs/{run['id']}/download"
             extra = _sources_html(artifact)
+            if artifact.get("fit"):
+                items = "".join(f"<li>{_esc(item)}</li>" for item in artifact["fit"])
+                extra += "<p class='empty'>Slides adjusted to fit:</p><ul>" + items + "</ul>"
             if artifact.get("previewNote"):
                 extra += f"<p class='empty'>{_esc(artifact['previewNote'])}</p>"
             if artifact.get("pdf"):
