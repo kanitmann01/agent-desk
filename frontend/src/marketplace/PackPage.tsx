@@ -74,17 +74,16 @@ export function PackPage({ id }: { id: string }) {
           <span className="mkt-eyebrow">Marketplace</span>
           <h1>Packs are no longer offered</h1>
           <p className="mkt-lede">
-            This marketplace stopped publishing packs. Every plugin installs on its own,
-            with its own permission sheet.
+            Every plugin installs on its own, with its own permission sheet.
           </p>
         </header>
         <EmptyState
           icon={ICON_SHEET}
           action={<MarketLink className="btn btn-secondary" to="/marketplace">Browse plugins</MarketLink>}
         >
-          <span>Nothing is bundled to install.</span>
+          <span>No packs are published.</span>
           <span className="w-note mkt-empty-line">
-            The pack set was retired on purpose. The two plugins this desk still ships are on Discover.
+            The two plugins this desk still ships are on Discover.
           </span>
         </EmptyState>
       </div>

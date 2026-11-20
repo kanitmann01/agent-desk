@@ -81,9 +81,8 @@ describe('pack install', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Packs are no longer offered' }))
       .toBeInTheDocument();
-    expect(screen.getByText(/This marketplace stopped publishing packs/)).toBeInTheDocument();
-    expect(screen.getByText('Nothing is bundled to install.')).toBeInTheDocument();
-    expect(screen.getByText(/The pack set was retired on purpose/)).toBeInTheDocument();
+    expect(screen.getByText(/Every plugin installs on its own/)).toBeInTheDocument();
+    expect(screen.getByText('No packs are published.')).toBeInTheDocument();
     expect(screen.getByText(/The two plugins this desk still ships are on Discover/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Browse plugins' })).toHaveAttribute('href', '/marketplace');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
