@@ -272,6 +272,23 @@ class InboxStore:
         return self.get(card_id)
 
     @_serialized
+    def reopen(self, card_id: str) -> Card:
+        """Bring a dismissed card back for an Undo, with no recovery limit.
+
+        The user's own restore keeps the 30-day window; a change the desk
+        made by itself must stay undoable however long it sat, so this
+        reopens unconditionally. An unknown id raises UnknownCard before
+        anything is written.
+        """
+        self.get(card_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE cards SET status = ?, dismissed_ts = NULL WHERE id = ?",
+                (STATUS_WAITING, card_id),
+            )
+        return self.get(card_id)
+
+    @_serialized
     def mark_notified(self, card_id: str) -> None:
         """Stamp the card as notified without touching its status.
 

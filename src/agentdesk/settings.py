@@ -47,6 +47,10 @@ TOGGLES = {
     "memory_capture_workbook": True,
     # Run feedback on the agents page captures on its own channel (#170).
     "memory_capture_agents": True,
+    # Spec §8: the desk acts by itself and every change it makes is logged
+    # in the action ledger with Undo. The four ask-first classes are
+    # enforced in code (ledger.may_act), not by this switch.
+    "autonomy": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
