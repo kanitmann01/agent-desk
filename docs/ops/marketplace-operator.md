@@ -76,7 +76,7 @@ The server resolves the requested source and version against the catalog entry. 
 
 ## Retired plugins and the one-time cleanup
 
-The in-box catalog ships two plugins: `excel-report` (the Workbook tracker card) and `competitor-watch` (the Page watch card). The 23 plugins this desk used to carry are retired. Their trees are kept under `archive/plugins/` as a reference copy only; the app never reads that folder and it is not an import queue. No pack ships either: `registry/packs.json` carries an empty list, so there is no pack entry to open.
+The in-box catalog ships three plugins: `excel-report` (the Workbook tracker card), `competitor-watch` (the Page watch card), and `presentation-starter` (a neutral presentation template, not a dashboard card). The 23 plugins this desk used to carry are retired. Their trees are kept under `archive/plugins/` as a reference copy only; the app never reads that folder and it is not an import queue. No pack ships either: `registry/packs.json` carries an empty list, so there is no pack entry to open.
 
 Nothing is removed automatically on upgrade. A desk set up before the retirement keeps its installed copies until the owner removes them: open `/marketplace/installed`, Uninstall each of the 23, and confirm. Uninstall keeps the plugin's data folder; Purge data deletes that folder only after the typed `delete-data:<plugin id>` confirmation, so do that only where the history is no longer needed. A fresh desk never sees the retired plugins, and no data or settings are migrated.
 
@@ -191,9 +191,9 @@ The export does not include the internal detail field, so changelogs, rejection 
 
 ## Offline behavior and the catalog
 
-The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json`. Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (two plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
+The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json`. Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (three plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
 
-The packaged build ships the committed bundle but not the `registry` folder, so a copy with no registry checkout still shows those two plugins. An approved org release of a shipped id takes precedence over the bundled pin, so publish a version bump locally when you need to update one.
+The packaged build ships the committed bundle but not the `registry` folder, so a copy with no registry checkout still shows those three plugins. An approved org release of a shipped id takes precedence over the bundled pin, so publish a version bump locally when you need to update one.
 
 ## Troubleshooting
 

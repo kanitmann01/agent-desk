@@ -268,7 +268,7 @@ def main() -> int:
             catalog = payload(response)
             print(f"{step}. bundled catalog: {catalog.get('total')} plugins")
             check(response.status == 200, f"/catalog returned {response.status}")
-            check(catalog.get("total") == 2, f"expected 2 bundled plugins, got {catalog.get('total')}")
+            check(catalog.get("total") == 3, f"expected 3 bundled plugins, got {catalog.get('total')}")
 
             step += 1
             response = call(handler, "GET", "/packs")

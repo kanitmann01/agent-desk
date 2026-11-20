@@ -1,0 +1,20 @@
+{
+  "id": "qbr",
+  "name": "QBR",
+  "sections": [
+    {"id": "snapshot", "title": "Period snapshot"},
+    {"id": "performance", "title": "Performance vs plan"},
+    {"id": "wins", "title": "Wins"},
+    {"id": "risks", "title": "Risks"},
+    {"id": "asks", "title": "Priorities and asks"}
+  ],
+  "preferredSources": ["excel-report", "memory"],
+  "slides": [
+    {"role": "title", "layout": "Title Slide", "slots": {"title": {"maxChars": 60}}},
+    {"role": "section", "layout": "Divider", "repeat": "per-section", "slots": {"title": {"maxChars": 40}}},
+    {"role": "content", "layout": "Content", "repeat": "2-4 per section",
+     "slots": {"title": {"maxChars": 60},
+               "body": {"region": [0.9, 1.7, 11.5, 4.6], "bullets": [2, 5], "maxCharsPerBullet": 110, "minPt": 14}}},
+    {"role": "closing", "layout": "Closing", "fixed": true}
+  ]
+}

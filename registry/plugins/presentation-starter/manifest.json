@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "id": "presentation-starter",
+  "name": "Presentation starter",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "Apache-2.0",
+  "category": "communication",
+  "tags": ["presentation", "template"],
+  "icon": "generic",
+  "summary": "A neutral presentation template with dark and light variants.",
+  "description": "The starter template is one shell in two variants and three recipes: a generic briefing, a quarterly review, and a competitor brief. It carries no logo and no company name. A pack you install on this machine is listed beside it.",
+  "highlights": [
+    "Dark and light are two variants of one template.",
+    "Three recipes: briefing, quarterly review, competitor brief.",
+    "No logo and no company colours."
+  ],
+  "permissions": {
+    "filesystem": {"read": [], "write": []},
+    "network": {"allow": []},
+    "llm": {"allow": false},
+    "shell": "none"
+  },
+  "activationEvents": ["onCommand:presentation"],
+  "contributes": {
+    "presentationTemplates": [{
+      "id": "starter",
+      "name": "Starter",
+      "variants": {
+        "dark": "shells/starter-dark.pptx",
+        "light": "shells/starter-light.pptx"
+      },
+      "recipes": [
+        "recipes/briefing.json",
+        "recipes/qbr.json",
+        "recipes/competitor-brief.json"
+      ],
+      "thumbs": {
+        "dark": "thumbs/dark.png",
+        "light": "thumbs/light.png"
+      },
+      "guidance": "guidance/SKILL.md",
+      "fonts": {"body": "Arial"}
+    }]
+  },
+  "sample": "sample.json",
+  "minHost": ">=0.1.0"
+}

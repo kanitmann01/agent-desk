@@ -50,6 +50,77 @@ def _receipt_html(run: dict) -> str:
     return f"<p class='empty'>This run used these facts from memory:</p><ul>{lines}</ul>"
 
 
+def _presentation_card(packs, endpoint_ready: bool, sentence: str) -> str:
+    """The template picker under the topic box.
+
+    A plain form: one radio per pack, dark or light, one recipe. When
+    the endpoint is off or unconfigured the controls are disabled and
+    the page shows the same sentence the rest of the desk uses.
+    """
+    if not packs:
+        return ""
+    disabled = "" if endpoint_ready else " disabled"
+    tiles = []
+    recipes: list[str] = []
+    variants: list[str] = []
+    for pack in packs:
+        checked = " checked" if not tiles else ""
+        thumbs = ""
+        for variant in ("dark", "light"):
+            if pack.thumb_path(variant) is None and variant not in pack.thumbs:
+                continue
+            if variant not in variants:
+                variants.append(variant)
+            src = f"/agents/templates/{_esc(pack.id)}/{variant}.png"
+            thumbs += (
+                f'<img src="{src}" alt="{_esc(pack.name)}, {variant}" width="320" height="180">'
+            )
+        tiles.append(
+            f'<label class="template-tile">'
+            f'<input type="radio" name="template" value="{_esc(pack.id)}"{checked}{disabled}>'
+            f'<span class="thumbs">{thumbs}</span>'
+            f"<b>{_esc(pack.name)}</b></label>"
+        )
+        for path in pack.recipes:
+            recipe_id = path.rsplit("/", 1)[-1].removesuffix(".json")
+            if recipe_id not in recipes:
+                recipes.append(recipe_id)
+    labels = {
+        "briefing": "Generic briefing",
+        "qbr": "QBR",
+        "competitor-brief": "Competitor brief",
+    }
+    options = "".join(
+        f'<option value="{_esc(recipe)}">{_esc(labels.get(recipe, recipe))}</option>'
+        for recipe in recipes
+    )
+    variant_rows = "".join(
+        f'<label><input type="radio" name="variant" value="{variant}"'
+        f'{" checked" if variant == "dark" else ""}{disabled}> {variant.title()}</label>'
+        for variant in variants
+    )
+    note = f'<p class="empty">{_esc(sentence)}</p>' if sentence else ""
+    return (
+        '<article class="card" id="agent-presentation">'
+        "<h3>Presentation</h3>"
+        "<p>A deck from a template you pick. The topic is one short brief.</p>"
+        f"{note}"
+        '<form method="post" action="/agents/run" class="cardform presentation-form">'
+        '<input type="hidden" name="agent" value="presentation">'
+        '<label class="empty" for="brief-presentation">Topic</label>'
+        f'<textarea id="brief-presentation" name="brief" rows="2" required{disabled} '
+        'placeholder="e.g. the Q3 business review"></textarea>'
+        f'<fieldset class="template-tiles"{disabled}><legend class="empty">Template</legend>'
+        f'{"".join(tiles)}</fieldset>'
+        f'<fieldset class="variant-row"{disabled}><legend class="empty">Variant</legend>'
+        f"{variant_rows}</fieldset>"
+        f'<label class="empty" for="recipe-presentation">Recipe</label>'
+        f'<select id="recipe-presentation" name="recipe"{disabled}>{options}</select>'
+        f'<button class="btn btn-primary" type="submit"{disabled}>Run Presentation</button>'
+        "</form></article>"
+    )
+
+
 def _artifact_html(run: dict) -> str:
     """The artifact as text. Nothing the model returned is markup.
 
@@ -62,6 +133,12 @@ def _artifact_html(run: dict) -> str:
         return ""
     if artifact.get("kind") == "slides":
         text = slides_text(artifact)
+    elif artifact.get("kind") == "presentation":
+        text = (
+            f"Template {artifact.get('templateId', '')} "
+            f"({artifact.get('variant', '')}), "
+            f"recipe {artifact.get('recipe', '')}."
+        )
     else:
         text = str(artifact.get("text", ""))
     if not text:
@@ -125,7 +202,8 @@ def _esc(value: str) -> str:
 
 
 def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
-                       history_available: bool = True) -> str:
+                       history_available: bool = True, packs=(),
+                       endpoint_ready: bool = False, endpoint_sentence: str = "") -> str:
     """The full agents document: the roster with a run form per agent,
     then the run history newest first with receipts and artifacts.
 
@@ -133,7 +211,8 @@ def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
     the honest state of a store that could not open (the roster still
     renders, the history says why it is absent).
     """
-    roster = "".join(_brief_form(agent) for agent in agents)
+    roster = _presentation_card(packs, endpoint_ready, endpoint_sentence)
+    roster += "".join(_brief_form(agent) for agent in agents)
     if not history_available:
         history = (
             '<p class="empty">The run history is not available right now: '

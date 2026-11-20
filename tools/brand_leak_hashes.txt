@@ -1,0 +1,5 @@
+# One sha256 per line. A token hash is sha256 of the lower-cased token.
+# A media hash is sha256 of the file bytes. Lines starting with # are comments.
+# Optional untracked hashes: tools/brand_leak.local.txt (same shape, not committed).
+# Add a token with:
+#   python -c "import hashlib; print(hashlib.sha256(b'the-token').hexdigest())"

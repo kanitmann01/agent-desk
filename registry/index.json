@@ -45,6 +45,25 @@
         "workbook"
       ],
       "dependencies": {}
+    },
+    {
+      "id": "presentation-starter",
+      "publisher": "agent-desk",
+      "latest": "0.1.0",
+      "risk": "low",
+      "class": "declarative",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "sha256": "e3aeef94d01e99c4b5e17a97ebee6f5ed7984f2a3e7740f795e4961a72240c1f",
+          "source": "local",
+          "yanked": false
+        }
+      ],
+      "name": "Presentation starter",
+      "category": "communication",
+      "tags": ["presentation", "template"],
+      "dependencies": {}
     }
   ],
   "schemaVersion": 1

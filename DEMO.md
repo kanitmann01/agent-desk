@@ -151,10 +151,11 @@ card on `/` renders amber: `no file matches ${workspace}/reports/*.xlsx`.
 
 SAY: installs are pinned and verified (digest plus the shared
 validator), and a plugin whose truth is not available yet says so in
-amber with the precise cause. The two shipped plugins are
+amber with the precise cause. The shipped card plugins are
 `excel-report` (this card) and `competitor-watch` (the Page watch
 card); `competitor-watch` reads an outside page through a network
-allowlist, so this demo leaves it out.
+allowlist, so this demo leaves it out. The presentation starter is a
+template, not a dashboard card.
 
 IF IT FAILS: amber with a cause is the designed state; read the cause.
 
