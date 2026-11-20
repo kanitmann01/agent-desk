@@ -328,11 +328,22 @@ def _map_layouts(names: list[str]) -> dict[str, str]:
             return unused.pop(0)
         return "Content"
 
+    def take_named(exact: str, pred) -> str:
+        """An exact layout name when the shell has it, otherwise `pred`."""
+        for name in list(unused):
+            if name.lower() == exact:
+                unused.remove(name)
+                return name
+        return take(pred)
+
     return {
         "section": take(lambda low: "divider" in low or "section" in low),
         "closing": take(lambda low: "clos" in low or "engage" in low or "thank" in low),
         "content": take(lambda low: "content" in low and "vertical" not in low),
-        "title": take(lambda low: "title" in low and "vertical" not in low and "content" not in low),
+        "title": take_named(
+            "title slide",
+            lambda low: "title" in low and "vertical" not in low and "content" not in low,
+        ),
     }
 
 

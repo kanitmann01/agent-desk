@@ -170,6 +170,8 @@ def test_layouts_sort_numerically_and_a_divider_is_not_a_vertical_title():
     assert mapping["section"] == "Divider"
     assert mapping["title"] == "Title Slide"
     assert "Vertical" not in mapping["section"] and "Vertical" not in mapping["title"]
+    preferred = pack_builder._map_layouts(["Title", "Title Slide", "Content", "Closing"])
+    assert preferred["title"] == "Title Slide"
 
 
 def test_a_narrow_shell_scales_the_body_region(tmp_path, monkeypatch):
