@@ -12,8 +12,8 @@ Example, using shells you already have in Downloads (do not commit the
 result):
 
     python tools/pack_builder.py --id my-template \\
-        --dark ~/Downloads/brand-Dark.pptx \\
-        --light ~/Downloads/brand-Light.pptx
+        --dark ~/Downloads/dark.pptx \\
+        --light ~/Downloads/light.pptx
 
 Brand packs stay on your machine. This repository ships the format and
 one neutral starter only.
@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -35,31 +36,49 @@ from agentdesk.presentations.packs import user_templates_dir  # noqa: E402
 from agentdesk.presentations.thumbs import variant_thumb  # noqa: E402
 
 _SLIDE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
-_DROP_PREFIXES = ("customXml/", "[trash]/", "ppt/changesInfos/")
+_DROP_PREFIXES = (
+    "customXml/", "[trash]/", "ppt/changesInfos/",
+    "ppt/notesSlides/", "ppt/media/", "ppt/comments/",
+)
+_DROP_EXACT = {
+    "docProps/thumbnail.jpeg",
+    "docProps/custom.xml",
+    "ppt/revisionInfo.xml",
+    "ppt/commentAuthors.xml",
+}
+_REL_MARKERS = (
+    "customXml/", "[trash]/", "changesInfos/", "notesSlides/",
+    "media/", "revisionInfo", "commentAuthors", "thumbnail.jpeg",
+    "/custom.xml", "comments/",
+)
+# The starter recipes are written for a 13.333in by 7.5in slide.
+_STANDARD_CX = 12192000
+_STANDARD_CY = 6858000
 
 
 def clean_shell(blob: bytes) -> bytes:
     """A shell with sample slides and package leftovers removed.
 
-    Layouts stay. The typo face "Tahom (Body)" becomes Tahoma, and a
-    hard-coded date "14-08-2026" is cleared.
+    Layouts stay. A typeface that is really a role label (it contains
+    parentheses) becomes Arial, and a hard-coded calendar date in a
+    layout is cleared. Notes, media, thumbnails, revision history,
+    comment authors and custom properties are removed, along with the
+    relationships that pointed at them.
     """
     parts = read_parts(blob)
     _drop_slides(parts)
-    doomed = [name for name in parts if name.startswith(_DROP_PREFIXES)]
+    doomed = [
+        name for name in parts
+        if name.startswith(_DROP_PREFIXES) or name in _DROP_EXACT
+    ]
     for name in doomed:
         parts.pop(name, None)
         _drop_override(parts, "/" + name)
-    _drop_rels_to(parts, ("customXml/", "[trash]/", "changesInfos/"))
+    _drop_rels_to(parts, _REL_MARKERS)
     for name, data in list(parts.items()):
         if not name.endswith(".xml"):
             continue
-        text = data.decode("utf-8", "replace")
-        text = text.replace("Tahom (Body)", "Tahoma")
-        text = text.replace("14-08-2026", "")
-        text = re.sub(r"(<dc:creator>)(.*?)(</dc:creator>)", r"\1\3", text)
-        text = re.sub(r"(<cp:lastModifiedBy>)(.*?)(</cp:lastModifiedBy>)", r"\1\3", text)
-        parts[name] = text.encode("utf-8")
+        parts[name] = _clean_text(data.decode("utf-8", "replace")).encode("utf-8")
     return pack_zip(parts)
 
 
@@ -67,7 +86,11 @@ def layout_names(blob: bytes) -> list[str]:
     """Layout names in file order."""
     names = []
     parts = read_parts(blob)
-    for name in sorted(part for part in parts if part.startswith("ppt/slideLayouts/slideLayout") and part.endswith(".xml")):
+    layouts = [
+        part for part in parts
+        if part.startswith("ppt/slideLayouts/slideLayout") and part.endswith(".xml")
+    ]
+    for name in sorted(layouts, key=_layout_index):
         match = re.search(r'<p:cSld name="([^"]*)"', parts[name].decode("utf-8", "replace"))
         if match and match.group(1):
             names.append(match.group(1))
@@ -83,10 +106,12 @@ def build_pack(out: Path, pack_id: str, name: str, shells: dict[str, bytes]) -> 
     repo = ROOT.resolve()
     if destination == repo or repo in destination.parents:
         raise SystemExit(f"refusing to write inside the project tree: {destination}")
-    if destination.exists() and any(destination.iterdir()):
-        # A fresh pack directory. An existing one is replaced only when it
-        # is the pack we are rebuilding, which is the same id's folder.
-        pass
+    if destination.exists():
+        for child in destination.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
     destination.mkdir(parents=True, exist_ok=True)
     shell_dir = destination / "shells"
     shell_dir.mkdir(exist_ok=True)
@@ -99,6 +124,7 @@ def build_pack(out: Path, pack_id: str, name: str, shells: dict[str, bytes]) -> 
         if not names:
             names = layout_names(blob)
     mapping = _map_layouts(names)
+    size = _slide_size(read_parts(next(iter(shells.values()))))
     recipe_dir = destination / "recipes"
     recipe_dir.mkdir(exist_ok=True)
     recipe_paths = []
@@ -109,6 +135,7 @@ def build_pack(out: Path, pack_id: str, name: str, shells: dict[str, bytes]) -> 
             role = slide.get("role")
             if role in mapping:
                 slide["layout"] = mapping[role]
+            _scale_regions(slide, size)
         target = recipe_dir / path.name
         target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
         recipe_paths.append(f"recipes/{path.name}")
@@ -235,29 +262,77 @@ def _drop_override(parts: dict, part_name: str) -> None:
     parts["[Content_Types].xml"] = types.encode("utf-8")
 
 
+def _layout_index(name: str) -> int:
+    """The numeric layout index, so layout 2 sorts before layout 10."""
+    match = re.search(r"slideLayout(\d+)\.xml$", name)
+    return int(match.group(1)) if match else 0
+
+
+def _slide_size(parts: dict) -> tuple[int, int]:
+    """The slide size in EMU, or the standard 16:9 size when the part omits it."""
+    xml = parts.get("ppt/presentation.xml", b"").decode("utf-8", "replace")
+    match = re.search(r'<p:sldSz\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"', xml)
+    if not match:
+        return _STANDARD_CX, _STANDARD_CY
+    return int(match.group(1)), int(match.group(2))
+
+
+def _scale_regions(slide: dict, size: tuple[int, int]) -> None:
+    """Scale a recipe region from the standard slide onto this shell's size."""
+    slots = slide.get("slots") or {}
+    body = slots.get("body") or {}
+    region = body.get("region")
+    if not isinstance(region, list) or len(region) != 4:
+        return
+    sx = size[0] / _STANDARD_CX
+    sy = size[1] / _STANDARD_CY
+    body["region"] = [
+        round(region[0] * sx, 2), round(region[1] * sy, 2),
+        round(region[2] * sx, 2), round(region[3] * sy, 2),
+    ]
+
+
+def _clean_text(text: str) -> str:
+    """Clear author fields, role-labelled typefaces, calendar dates and company."""
+    def font(match: re.Match) -> str:
+        """Replace a typeface that is a role label rather than a family."""
+        face = match.group(1)
+        if "(" in face or ")" in face:
+            return 'typeface="Arial"'
+        return match.group(0)
+
+    text = re.sub(r'typeface="([^"]*)"', font, text)
+    text = re.sub(r"\b\d{2}-\d{2}-\d{4}\b", "", text)
+    text = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", "", text)
+    text = re.sub(r"(<dc:creator>)(.*?)(</dc:creator>)", r"\1\3", text)
+    text = re.sub(r"(<cp:lastModifiedBy>)(.*?)(</cp:lastModifiedBy>)", r"\1\3", text)
+    text = re.sub(r"(<Company>)(.*?)(</Company>)", r"\1\3", text)
+    return text
+
+
 def _map_layouts(names: list[str]) -> dict[str, str]:
     """Role to the shell's layout name. Keywords win, then position."""
     unused = list(names)
 
-    def take(pred, fallback: int) -> str:
-        """The first unused layout matching `pred`, else the layout at `fallback`."""
+    def take(pred) -> str:
+        """The first unused layout matching `pred`, else one that is not a vertical title."""
         for name in list(unused):
             if pred(name.lower()):
                 unused.remove(name)
                 return name
-        if not names:
-            return "Content"
-        index = min(fallback, len(names) - 1)
-        choice = names[index]
-        if choice in unused:
-            unused.remove(choice)
-        return choice
+        for name in list(unused):
+            if "vertical" not in name.lower():
+                unused.remove(name)
+                return name
+        if unused:
+            return unused.pop(0)
+        return "Content"
 
     return {
-        "section": take(lambda low: "divider" in low, 1),
-        "closing": take(lambda low: "clos" in low or "engage" in low, max(len(names) - 1, 0)),
-        "content": take(lambda low: "content" in low, 2 if len(names) > 2 else 0),
-        "title": take(lambda low: "title" in low, 0),
+        "section": take(lambda low: "divider" in low or "section" in low),
+        "closing": take(lambda low: "clos" in low or "engage" in low or "thank" in low),
+        "content": take(lambda low: "content" in low and "vertical" not in low),
+        "title": take(lambda low: "title" in low and "vertical" not in low and "content" not in low),
     }
 
 

@@ -18,6 +18,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import server_harness
 from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
 from agentdesk.presentations.packs import load_packs
+from agentdesk.presentations.writer import package_problems
 
 sys.path.insert(0, str(ROOT / "tools"))
 import pack_builder
@@ -29,6 +30,30 @@ def _dirty(variant: str = "dark") -> bytes:
     parts["[trash]/0000.dat"] = b"leftover"
     parts["ppt/changesInfos/changesInfo1.xml"] = b"<changes/>"
     parts["customXml/item1.xml"] = b"<p>sharepoint</p>"
+    parts["ppt/notesSlides/notesSlide1.xml"] = b"<p:notes>orphan</p:notes>"
+    parts["ppt/notesSlides/_rels/notesSlide1.xml.rels"] = (
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        b'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="../notesMasters/missing.xml"/>'
+        b'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/missing.xml"/>'
+        b'<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/missing.png"/>'
+        b'<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/also-missing.png"/>'
+        b"</Relationships>"
+    )
+    parts["ppt/media/image1.png"] = b"\x89PNG"
+    parts["docProps/thumbnail.jpeg"] = b"\xff\xd8\xff"
+    parts["ppt/revisionInfo.xml"] = b"<p:revisionInfo/>"
+    parts["ppt/commentAuthors.xml"] = b"<p:cmAuthorLst/>"
+    parts["docProps/custom.xml"] = b"<Properties/>"
+    app = parts["docProps/app.xml"].decode("utf-8")
+    app = app.replace("</Properties>", "<Company>Example Co</Company></Properties>")
+    parts["docProps/app.xml"] = app.encode("utf-8")
+    layout_rel = parts["ppt/slideLayouts/_rels/slideLayout1.xml.rels"].decode("utf-8")
+    layout_rel = layout_rel.replace(
+        "</Relationships>",
+        '<Relationship Id="rIdPic" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+        'Target="../media/image1.png"/></Relationships>',
+    )
+    parts["ppt/slideLayouts/_rels/slideLayout1.xml.rels"] = layout_rel.encode("utf-8")
     core = parts["docProps/core.xml"].decode("utf-8")
     core = core.replace("</cp:coreProperties>",
                         "<dc:creator>Sample Author</dc:creator>"
@@ -36,8 +61,8 @@ def _dirty(variant: str = "dark") -> bytes:
                         "</cp:coreProperties>")
     parts["docProps/core.xml"] = core.encode("utf-8")
     master = parts["ppt/slideMasters/slideMaster1.xml"].decode("utf-8")
-    master = master.replace("Arial", "Tahom (Body)", 1)
-    master = master.replace("</p:cSld>", "14-08-2026</p:cSld>", 1)
+    master = master.replace('typeface="Arial"', 'typeface="NotAFont (Body)"', 1)
+    master = master.replace("</p:cSld>", "03-04-2005</p:cSld>", 1)
     parts["ppt/slideMasters/slideMaster1.xml"] = master.encode("utf-8")
     return pack_zip(parts)
 
@@ -63,13 +88,28 @@ def test_a_dirty_shell_becomes_a_clean_pack_outside_the_repo(tmp_path, monkeypat
     assert "[trash]/0000.dat" not in parts
     assert "ppt/changesInfos/changesInfo1.xml" not in parts
     assert "customXml/item1.xml" not in parts
+    assert not any(name.startswith("ppt/notesSlides/") for name in parts)
+    assert not any(name.startswith("ppt/media/") for name in parts)
+    assert "docProps/thumbnail.jpeg" not in parts
+    assert "ppt/revisionInfo.xml" not in parts
+    assert "ppt/commentAuthors.xml" not in parts
+    assert "docProps/custom.xml" not in parts
     text = "\n".join(
         data.decode("utf-8", "replace") for name, data in parts.items() if name.endswith(".xml")
     )
     assert "Sample Author" not in text
-    assert "Tahom (Body)" not in text
-    assert "Tahoma" in text
-    assert "14-08-2026" not in text
+    assert "NotAFont" not in text
+    assert 'typeface="Arial"' in text
+    assert "03-04-2005" not in text
+    assert "Example Co" not in text
+    assert package_problems((pack / "shells" / "dark.pptx").read_bytes()) == []
+    stale = pack / "recipes" / "stale.json"
+    stale.write_text("{}\n", encoding="utf-8")
+    pack_builder.main([
+        "--id", "local-shell", "--name", "Local shell",
+        "--dark", str(dark), "--light", str(light),
+    ])
+    assert not stale.exists()
     recipes = sorted(path.name for path in (pack / "recipes").iterdir())
     assert recipes == ["briefing.json", "competitor-brief.json", "qbr.json"]
     briefing = json.loads((pack / "recipes" / "briefing.json").read_text(encoding="utf-8"))
@@ -116,3 +156,33 @@ def test_the_picker_lists_the_installed_pack(tmp_path, monkeypatch):
         assert "Generic briefing" in page and "QBR" in page and "Competitor brief" in page
     finally:
         booted.close()
+
+
+def test_layouts_sort_numerically_and_a_divider_is_not_a_vertical_title():
+    parts = read_parts(build_shell())
+    vertical = parts["ppt/slideLayouts/slideLayout2.xml"].replace(
+        b'name="Divider"', b'name="Title and Vertical Text"', 1,
+    )
+    parts["ppt/slideLayouts/slideLayout10.xml"] = vertical
+    names = pack_builder.layout_names(pack_zip(parts))
+    assert names.index("Divider") < names.index("Title and Vertical Text")
+    mapping = pack_builder._map_layouts(names)
+    assert mapping["section"] == "Divider"
+    assert mapping["title"] == "Title Slide"
+    assert "Vertical" not in mapping["section"] and "Vertical" not in mapping["title"]
+
+
+def test_a_narrow_shell_scales_the_body_region(tmp_path, monkeypatch):
+    parts = read_parts(build_shell())
+    presentation = parts["ppt/presentation.xml"].decode("utf-8")
+    presentation = presentation.replace('cx="12192000"', 'cx="9144000"')
+    parts["ppt/presentation.xml"] = presentation.encode("utf-8")
+    dark = tmp_path / "narrow.pptx"
+    dark.write_bytes(pack_zip(parts))
+    install = tmp_path / "templates"
+    monkeypatch.setenv("AGENTDESK_TEMPLATES", str(install))
+    pack_builder.main(["--id", "narrow", "--dark", str(dark)])
+    briefing = json.loads((install / "narrow" / "recipes" / "briefing.json").read_text(encoding="utf-8"))
+    region = next(slide["slots"]["body"]["region"] for slide in briefing["slides"] if slide["role"] == "content")
+    width_in = 9144000 / 914400
+    assert region[0] + region[2] <= width_in
