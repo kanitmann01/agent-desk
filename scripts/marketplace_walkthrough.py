@@ -268,29 +268,36 @@ def main() -> int:
             catalog = payload(response)
             print(f"{step}. bundled catalog: {catalog.get('total')} plugins")
             check(response.status == 200, f"/catalog returned {response.status}")
-            check(catalog.get("total") == 25, f"expected 25 bundled plugins, got {catalog.get('total')}")
+            check(catalog.get("total") == 2, f"expected 2 bundled plugins, got {catalog.get('total')}")
 
             step += 1
             response = call(handler, "GET", "/packs")
             packs = payload(response)
             print(f"{step}. bundled packs: {packs.get('total')} packs")
             check(response.status == 200, f"/packs returned {response.status}")
-            check(packs.get("total") == 3, f"expected 3 bundled packs, got {packs.get('total')}")
+            check(packs.get("total") == 0, f"expected no bundled packs, got {packs.get('total')}")
 
             step += 1
-            response = call(handler, "POST", "/packs/install", {"id": "cfo"})
-            pack_result = payload(response)
-            print(f"{step}. install cfo pack: {len(pack_result.get('installed') or [])} plugins")
-            check(response.status == 200, f"pack install returned {response.status}: {pack_result}")
-            check(len(pack_result.get("installed") or []) == 8,
-                  f"cfo pack should install 8 plugins, got {len(pack_result.get('installed') or [])}")
+            desk_plugins = ("excel-report", "competitor-watch")
+            installed_ids = []
+            for plugin_id in desk_plugins:
+                response = call(handler, "POST", "/install", {"id": plugin_id})
+                result = payload(response)
+                check(response.status == 200,
+                      f"installing {plugin_id} returned {response.status}: {result}")
+                installed_ids.append(plugin_id)
+            print(f"{step}. install the two desk plugins: {len(installed_ids)} plugins")
+            check(installed_ids == list(desk_plugins),
+                  f"installed {installed_ids}, expected both desk plugins")
 
             step += 1
             response = call(handler, "GET", "/installed")
             installed = payload(response)["plugins"]
             print(f"{step}. installed records: {len(installed)} with pinned digests")
-            check(len(installed) == 8, f"expected 8 installed records, got {len(installed)}")
+            check(len(installed) == 2, f"expected 2 installed records, got {len(installed)}")
             records = {record["id"]: record for record in runtime.list_records()}
+            check(set(records) == set(desk_plugins),
+                  f"installed records {sorted(records)}, expected the two desk plugins")
             for record in installed:
                 pinned = record.get("pinned") or {}
                 lock = records[record["id"]]
@@ -300,11 +307,12 @@ def main() -> int:
                 check(pinned["sha256"] == lock.get("sha256"), f"{record['id']} pinned digest does not match the lockfile")
 
             step += 1
-            response = call(handler, "GET", "/plugin/ar-aging")
+            response = call(handler, "GET", "/plugin/competitor-watch")
             detail = payload(response)
-            print(f"{step}. detail DTO for ar-aging includes a sample")
+            print(f"{step}. detail DTO for competitor-watch includes a sample")
             check(response.status == 200, f"detail returned {response.status}: {detail}")
-            check(detail["plugin"]["id"] == "ar-aging", "detail returned the wrong plugin")
+            check(detail["plugin"]["id"] == "competitor-watch",
+                  "detail returned the wrong plugin")
             check(detail.get("installed") is not None, "detail should report the installed record")
             check(bool((detail.get("sample") or {}).get("elements")),
                   "detail should carry rendered sample elements")
@@ -385,10 +393,10 @@ def main() -> int:
 
             step += 1
             response = call(handler, "POST", "/admin/kill-switch",
-                            {"pluginId": "source-ledger", "enabled": True})
+                            {"pluginId": "walkthrough-published", "enabled": True})
             print(f"{step}. kill switch blocks an install")
             check(response.status == 200, f"kill switch returned {response.status}: {payload(response)}")
-            response = call(handler, "POST", "/install", {"id": "source-ledger"})
+            response = call(handler, "POST", "/install", {"id": "walkthrough-published"})
             blocked = payload(response)
             check(response.status == 403, f"killed plugin install returned {response.status}: {blocked}")
             check(blocked.get("error") == "policy:kill-switch",
@@ -408,7 +416,7 @@ def main() -> int:
                 check(set(event) == {"at", "action", "pluginId", "actor", "outcome"},
                       f"audit event keys drifted: {sorted(event)}")
                 actions.add(event["action"])
-            check({"install", "pack-install", "publish.approve", "policy.kill-switch"} <= actions,
+            check({"install", "publish.approve", "policy.kill-switch"} <= actions,
                   f"audit export is missing actions: {sorted(actions)}")
 
         print("walkthrough: PASS")

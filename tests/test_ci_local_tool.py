@@ -50,6 +50,21 @@ def test_the_registry_gate_checks_every_plugin_in_one_call():
     assert 'args += ["--plugins", f"registry/plugins/{name}"]' not in source
 
 
+def test_the_registry_gate_reviews_the_branch_against_its_base():
+    source = _source()
+    # Retirement removes ids from the index, so the gate compares the new
+    # index to the mainline base and tells the review which removals the
+    # archive accounts for. Without the base the history leg is skipped;
+    # without the archive every deliberate retirement reads as truncation.
+    for mark in (
+        '"git", "merge-base", "HEAD", ref',
+        '"git", "show", f"{merge.stdout.strip()}:registry/index.json"',
+        '"--archive", "archive/plugins"',
+        '"--base-index", str(base_index)',
+    ):
+        assert mark in source, f"the registry gate lost {mark}"
+
+
 def test_a_missing_check_is_a_failure_never_a_skip():
     source = _source()
     # the gate runner turns every exception into a FAIL line

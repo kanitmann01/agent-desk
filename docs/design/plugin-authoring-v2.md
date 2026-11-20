@@ -14,17 +14,19 @@ registry/plugins/<id>/
   widget.ui.json     {"type": "card", "elements": [...]}
   sample.json        {"bindings": {...}, "state": "ok", "checkedAt": "2026-11-15T09:00:00"}
   README.md          what question it answers, what it reads, what it never does
-  skills/...         only for the five existing ids (the four upgraded
-                     plugins plus excel-report); keep untouched
+  skills/...         only where the shipped plugin already has one
+                     (excel-report); keep untouched
 ```
 
 ## Manifest template
 
+The template below is a specimen, not one of the two shipped plugins.
+
 ```json
 {
   "schemaVersion": 2,
-  "id": "revenue-vs-target",
-  "name": "Revenue vs target",
+  "id": "quarter-bookings",
+  "name": "Quarter bookings",
   "version": "0.1.0",
   "publisher": "agent-desk",
   "class": "declarative",
@@ -34,7 +36,7 @@ registry/plugins/<id>/
   "tags": ["revenue", "target"],
   "icon": "chart",
   "summary": "Are we ahead or behind the quarter?",
-  "description": "Reads the revenue workbook you point it at and compares booked revenue with the quarter target. Two numbers, their gap, and the fill that shows the gap at a glance.",
+  "description": "Reads the bookings workbook you point it at and compares booked revenue with the quarter target. Two numbers, their gap, and the fill that shows the gap at a glance.",
   "highlights": [
     "Booked revenue and the quarter target side by side",
     "The gap in currency and as a percentage",
@@ -46,10 +48,10 @@ registry/plugins/<id>/
     "llm": {"allow": false},
     "shell": "none"
   },
-  "activationEvents": ["onWidget:revenue-vs-target", "onSchedule:0 7 * * *"],
+  "activationEvents": ["onWidget:quarter-bookings", "onSchedule:0 7 * * *"],
   "contributes": {
     "widgets": [{
-      "id": "revenue-vs-target",
+      "id": "quarter-bookings",
       "size": "2x1",
       "dataSource": {"type": "excel-watch", "file": "${workspace}/finance/*.xlsx",
                      "keyColumn": "Region", "valueColumn": "Booked",
@@ -67,7 +69,7 @@ Rules:
 - `icon` one of calendar, chart, mail, book, checklist, clock, alert, folder, plugin, generic.
 - exactly three `highlights`, each <= 120 chars; `summary` <= 120; `tags` lowercase slugs, <= 8; `description` <= 4000.
 - permissions are minimal: read only the glob the source needs, write only `${pluginData}` when the source stores snapshots, network only for the network plugin.
-- existing ids keep their id and `skills` block; bump version to 0.2.0 for the four upgraded plugins.
+- a shipped id keeps its id and any existing `skills` block; a new plugin picks a fresh id.
 
 ## Element slots (exact)
 

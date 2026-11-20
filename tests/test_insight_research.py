@@ -371,19 +371,3 @@ def test_a_sealed_bank_says_why_it_recalled_nothing():
         "text": "Memory is locked, so nothing was recalled.",
         "tone": "attention",
     }
-
-
-def test_the_widget_schema_still_labels_the_text_the_reading_reads():
-    schema = json.loads(
-        (ROOT / "registry" / "plugins" / "research-brief" / "widget.ui.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    labels = [
-        element.get("label", "").lower()
-        for element in schema["elements"]
-        if element.get("type") == "text"
-    ]
-
-    assert research.SUMMARY_LABEL in labels
-    assert research.ANSWERED_LABEL in labels

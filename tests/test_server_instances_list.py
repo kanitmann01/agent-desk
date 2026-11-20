@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from server_harness import Booted
+from tests.plugin_fixtures import write_alias_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "registry" / "plugins"
@@ -69,7 +70,10 @@ def test_a_config_backed_plugin_lists_the_instances_it_was_given(booted):
 def test_an_alias_lists_the_target_instance_it_resolves_to(booted, tmp_path):
     server = booted
     runtime = server.server.plugins
-    runtime.install(REGISTRY / "sales-delta-widget", source="dir")
+    runtime.install(write_alias_plugin(
+        tmp_path, "sales-delta-widget", "Sales 24h Delta", "Sales",
+        tags=("sales", "pipeline", "daily-delta"), widget_id="sales-delta"),
+        source="dir")
 
     status, listing = get_listing(server, "sales-delta-widget")
     assert status == 200, listing
@@ -88,11 +92,11 @@ def test_an_alias_lists_the_target_instance_it_resolves_to(booted, tmp_path):
 def test_a_plain_plugin_answers_an_empty_list(booted, tmp_path):
     server = booted
     runtime = server.server.plugins
-    runtime.install(REGISTRY / "ar-aging", source="dir")
+    runtime.install(REGISTRY / "competitor-watch", source="dir")
 
-    status, listing = get_listing(server, "ar-aging")
+    status, listing = get_listing(server, "competitor-watch")
     assert status == 200, listing
-    assert listing["pluginId"] == "ar-aging"
+    assert listing["pluginId"] == "competitor-watch"
     assert listing["configBacked"] is False
     assert listing["aliasOf"] is None
     assert listing["instances"] == []

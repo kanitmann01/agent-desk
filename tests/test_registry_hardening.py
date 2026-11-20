@@ -152,14 +152,14 @@ def test_no_shell_run_interpolates_an_untrusted_ref():
 def test_registry_root_document_is_seeded():
     """The committed index loads and tells the truth about the plugin
     directories next to it: every entry's pin equals the recomputed
-    tree digest of its plugin directory (the first publish is
-    sales-delta-widget 0.1.0)."""
+    tree digest of its plugin directory (after spec 015 the two shipped
+    releases are excel-report and competitor-watch)."""
     repo = Path(__file__).resolve().parents[1]
     raw = (repo / "registry" / "index.json").read_text(encoding="utf-8")
     index = load_index(raw)
     assert index is not None
     ids = {entry.id for entry in index.plugins}
-    assert "sales-delta-widget" in ids
+    assert ids == {"excel-report", "competitor-watch"}
     from agentdesk.registry.install import tree_digest
     for entry in index.plugins:
         release = entry.release_for(entry.latest)

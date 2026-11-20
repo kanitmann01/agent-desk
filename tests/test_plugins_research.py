@@ -1,12 +1,11 @@
-"""Research family plugins: research-brief, source-ledger, competitor-watch,
-notes-actions.
+"""Research family: the one surviving research plugin, competitor-watch.
 
-Each directory goes through the real validator, and each packaged sample
-through the host renderer, so the marketplace preview is proven to draw
-every element without a blank. Nothing here reads outside the plugin
-directory or starts a server.
+Spec 015 retires the rest of the family, so competitor-watch is the only
+in-box research plugin. It is still declarative: a v2 manifest, a ui-schema
+of known element kinds, a sample that binds every element, and a README.
+Its http-get source is the only network source and the host stays an
+explicit consent grant, not a base permission.
 """
-
 import json
 import sys
 from pathlib import Path
@@ -22,7 +21,7 @@ from agentdesk.plugins.render import ELEMENT_KINDS, render_sample  # noqa: E402
 from agentdesk.validator import validate_plugin  # noqa: E402
 
 PLUGINS = ROOT / "registry" / "plugins"
-FAMILY = ("research-brief", "source-ledger", "competitor-watch", "notes-actions")
+FAMILY = ("competitor-watch",)
 CHECKED_AT = "2026-11-15T09:00:00"
 
 # The one binding field each element kind reads its data from.
@@ -133,42 +132,6 @@ def test_every_plugin_ships_a_readme(plugin_id):
     assert len(readme.split()) >= 40
 
 
-def test_research_brief_is_the_upgraded_plugin():
-    manifest = manifest_of("research-brief")
-    assert manifest["version"] == "0.2.0"
-    assert manifest["contributes"]["skills"] == ["skills/research-recap/SKILL.md"]
-    assert (
-        plugin_dir("research-brief") / "skills" / "research-recap" / "SKILL.md"
-    ).is_file()
-    assert data_source_of("research-brief")["type"] == "research-brief"
-
-    slots = [
-        (element["type"], element.get("binding"), element.get("label"))
-        for element in ui_schema_of("research-brief")["elements"]
-    ]
-    assert slots == [
-        ("text", "summary", "Latest answer"),
-        ("metric", "sourcesCount", "Sources"),
-        ("text", "answeredAt", "Answered"),
-    ]
-
-
-def test_source_ledger_reads_the_research_brief_source():
-    assert data_source_of("source-ledger")["type"] == "research-brief"
-
-    table, metric = ui_schema_of("source-ledger")["elements"]
-    assert table["type"] == "table"
-    assert table["title"] == "Sources"
-    assert table["rowsBinding"] == "sourceTable"
-    assert table["columns"] == ["Source", "Title", "Used"]
-    assert metric["type"] == "metric"
-    assert metric["binding"] == "sourcesCount"
-    assert metric["label"] == "Entries"
-
-    rows = sample_of("source-ledger")["bindings"]["sourceTable"]
-    assert rows and all(len(row) == 3 for row in rows)
-
-
 def test_competitor_watch_is_the_only_network_plugin():
     manifest = manifest_of("competitor-watch")
     source = data_source_of("competitor-watch")
@@ -182,38 +145,15 @@ def test_competitor_watch_is_the_only_network_plugin():
     assert manifest["optionalPermissions"]["network"]["allow"] == ["example.com"]
     assert manifest["optionalPermissions"]["network"]["userPrompt"].strip()
 
+    # No other shipped plugin asks for the network, even optionally.
+    for other in sorted(PLUGINS.iterdir()):
+        if other.name == "competitor-watch" or not other.is_dir():
+            continue
+        other_manifest = load_json(other / "manifest.json")
+        assert other_manifest["permissions"]["network"] == {"allow": []}, other.name
+        assert other_manifest.get("optionalPermissions", {}).get("network") is None, other.name
+
     readme = (plugin_dir("competitor-watch") / "README.md").read_text(encoding="utf-8")
     text = " ".join(readme.lower().split())
     assert "excluded from every pack" in text
     assert "admin network approval" in text
-
-    for other_id in FAMILY:
-        if other_id == "competitor-watch":
-            continue
-        other = manifest_of(other_id)
-        assert other["permissions"]["network"].get("allow", []) == []
-        assert "optionalPermissions" not in other
-        assert data_source_of(other_id)["type"] != "http-get"
-
-
-def test_notes_actions_reads_the_actions_heading():
-    manifest = manifest_of("notes-actions")
-    source = data_source_of("notes-actions")
-    assert source["type"] == "markdown-watch"
-    assert source["file"] == "${workspace}/notes/*.md"
-    assert source["heading"] == "Actions"
-    assert manifest["permissions"]["filesystem"]["read"] == ["${workspace}/notes/*.md"]
-
-    checklist, metric, status = ui_schema_of("notes-actions")["elements"]
-    assert (checklist["type"], checklist["title"], checklist["itemsBinding"]) == (
-        "checklist", "Actions", "items",
-    )
-    assert (metric["type"], metric["binding"], metric["label"]) == (
-        "metric", "openCount", "Open",
-    )
-    assert (status["type"], status["toneBinding"], status["binding"]) == (
-        "status", "tone", "nextDue",
-    )
-
-    items = sample_of("notes-actions")["bindings"]["items"]
-    assert items and all({"text", "done", "due"} <= set(item) for item in items)

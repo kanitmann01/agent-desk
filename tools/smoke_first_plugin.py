@@ -1,10 +1,10 @@
 """One end-to-end smoke over the real registry checkout.
 
-Boots the real server over a temp data directory, installs
-sales-delta-widget 0.1.0 from this worktree's own registry through the
-HTTP API, with a real .xlsx in the workspace the plugin's glob
-resolves, and reads the bound card back. Not part of the suite: run
-directly (python tools/smoke_first_plugin.py) from the worktree root.
+Boots the real server over a temp data directory, installs excel-report
+0.1.0 from this worktree's own registry through the HTTP API, opens a real
+.xlsx through the typed-path setup, and reads the bound card back. Not part
+of the suite: run directly (python tools/smoke_first_plugin.py) from the
+worktree root.
 """
 import json
 import os
@@ -25,12 +25,12 @@ def main() -> int:
     """Run the end-to-end registry install smoke and return the exit code.
 
     Boots the real server on an ephemeral port over a temporary AGENTDESK_DATA
-    directory, seeds workspace/reports/sales.xlsx, installs sales-delta-widget
-    from this checkout's registry over HTTP, and checks that the dashboard
-    card binds a fresh payload. Prints the registry, install, card and record
-    lines, then "SMOKE PASS". An unmet assertion or an HTTP error exits
-    nonzero with its traceback; the temporary directory is removed either
-    way, so the checkout keeps nothing.
+    directory, seeds workspace/reports/sales.xlsx, installs excel-report from
+    this checkout's registry over HTTP, stages and confirms the workbook, and
+    checks that the dashboard card binds a fresh payload. Prints the registry,
+    install, card and record lines, then "SMOKE PASS". An unmet assertion or
+    an HTTP error exits nonzero with its traceback; the temporary directory is
+    removed either way, so the checkout keeps nothing.
     """
     # ignore_cleanup_errors: the app's audit store holds its sqlite file
     # open until process exit (shutdown does not close it); Windows then
@@ -43,7 +43,8 @@ def main() -> int:
 
         reports = Path(tmp) / "workspace" / "reports"
         reports.mkdir(parents=True)
-        (reports / "sales.xlsx").write_bytes(make_xlsx([
+        book = reports / "sales.xlsx"
+        book.write_bytes(make_xlsx([
             ["Region", "Sales"], ["North", 10], ["South", 20],
         ]))
 
@@ -80,20 +81,34 @@ def main() -> int:
 
         listing = get("/api/registry")
         assert listing["ok"], listing
-        entry = listing["plugins"][0]
+        entry = next(item for item in listing["plugins"]
+                     if item["id"] == "excel-report")
         print(f"registry: {entry['id']} {entry['latest']} "
               f"risk={entry['risk']} class={entry['class']} "
               f"origin={listing['origin']}")
 
-        result = post("/api/registry/install", {"id": "sales-delta-widget"})
+        result = post("/api/registry/install", {"id": "excel-report"})
         assert result.get("ok"), result
         print(f"installed: {result['id']}@{result['version']} "
               f"sha256={result['sha256'][:12]} pilot={result['pilot']}")
 
+        staged = post("/api/plugins/excel-report/instances/main/stage",
+                      {"path": str(book)})
+        assert staged.get("step") == "columns", staged
+        print(f"staged: {staged['instance']['source']['path']} "
+              f"headers={staged['preview']['headers']}")
+
+        confirmed = post("/api/plugins/excel-report/instances/main/confirm",
+                         {"tracking": {"labelColumn": "Region",
+                                       "valueColumn": "Sales",
+                                       "aggregate": "sum"}})
+        assert confirmed.get("step") == "done", confirmed
+
         dashboard = get("/api/dashboard")
         cards = dashboard["plugins"]["cards"]
         assert cards, "no plugin card on the dashboard"
-        card = cards[0]
+        card = next(item for item in cards
+                    if item["id"].startswith("excel-report"))
         print(f"card: {card['title']} v{card['version']} "
               f"freshness={card['freshness']} pilot={card['pilot']}")
         payload = card["payload"]
@@ -103,17 +118,20 @@ def main() -> int:
             label = element.get("label", "")
             print(f"  {element['kind']}: {shown}" + (f" ({label})" if label else ""))
         assert payload["status"] == "fresh"
-        values = [e.get("value") for e in payload["elements"]]
-        assert any("First snapshot" in v for v in values if v), values
+        metrics = {element.get("label"): element.get("value")
+                   for element in payload["elements"]
+                   if element.get("kind") == "metric"}
+        assert metrics.get("Value") == "30", metrics
 
-        record = get("/api/plugins")["plugins"][0]
+        record = next(item for item in get("/api/plugins")["plugins"]
+                      if item["id"] == "excel-report")
         source = record["data_source"]
         print(f"record: reading {source.get('file')} "
               f"status={source['status']}")
 
         # Detach the data source before shutdown so Windows lets the
         # temp data directory go (the store file closes with the watch).
-        post("/api/plugins/sales-delta-widget/disable", {})
+        post("/api/plugins/excel-report/disable", {})
         server.shutdown()
         server.server_close()
         print("SMOKE PASS")

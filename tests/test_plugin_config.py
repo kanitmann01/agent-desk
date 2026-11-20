@@ -14,6 +14,7 @@ from agentdesk.plugins.suggest import (
     propose_columns,
 )
 from agentdesk.plugins.tracker import pace_line, read_tracker
+from tests.plugin_fixtures import write_alias_plugin
 
 
 def test_a_confirmed_file_is_the_only_path_that_can_be_read(tmp_path):
@@ -212,7 +213,7 @@ def test_propose_columns_uses_the_model_reply_and_ignores_a_failure(tmp_path):
         )
 
 
-def test_a_sales_install_becomes_a_tracker_instance(tmp_path):
+def test_two_aliases_expand_to_their_tracker_instances(tmp_path):
     from agentdesk.plugins.execute import PluginWidgetRunner
     from agentdesk.plugins.runtime import PluginRuntime
 
@@ -226,13 +227,17 @@ def test_a_sales_install_becomes_a_tracker_instance(tmp_path):
     )
     root = Path(__file__).resolve().parents[1] / "registry" / "plugins"
     runtime.install(root / "excel-report", source="dir")
-    runtime.install(root / "sales-delta-widget", source="dir")
-    runtime.install(root / "budget-burn", source="dir")
+    runtime.install(write_alias_plugin(
+        tmp_path, "sales-alias", "Sales 24h Delta", "Sales"),
+        source="dir")
+    runtime.install(write_alias_plugin(
+        tmp_path, "budget-alias", "Budget 24h Delta", "Budget"),
+        source="dir")
     cards = runtime.widget_cards()
     titles = {card["title"] for card in cards}
     assert titles == {"Sales", "Budget"}
-    assert all(card["id"] != "sales-delta-widget" for card in cards)
-    assert all(card["id"] != "budget-burn" for card in cards)
+    assert all(card["id"] != "sales-alias" for card in cards)
+    assert all(card["id"] != "budget-alias" for card in cards)
     budget = next(card for card in cards if card["title"] == "Budget")
     assert budget["freshness"] == "setup"
 

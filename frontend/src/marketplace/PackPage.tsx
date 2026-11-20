@@ -2,6 +2,7 @@
 // The server installs all of them or none and names the blocked member.
 import { useEffect, useState } from 'react';
 import Button from '../components/Button';
+import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import { MarketApiError, getMarket, marketErrorText, postMarket } from './client';
 import { ConsentSheet } from './ConsentSheet';
 import { MarketLink } from './context';
@@ -13,7 +14,7 @@ import type { Pack, PacksResponse } from './types';
 type Load =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; pack: Pack | null };
+  | { kind: 'ready'; pack: Pack | null; packCount: number };
 
 /**
  * Render one pack: its members, their combined scopes, and the single review
@@ -38,7 +39,11 @@ export function PackPage({ id }: { id: string }) {
     getMarket<PacksResponse>('/api/marketplace/packs')
       .then((data) => {
         if (cancelled) return;
-        setLoad({ kind: 'ready', pack: data.packs.find((pack) => pack.id === id) ?? null });
+        setLoad({
+          kind: 'ready',
+          pack: data.packs.find((pack) => pack.id === id) ?? null,
+          packCount: data.packs.length,
+        });
       })
       .catch((err) => {
         if (!cancelled) setLoad({ kind: 'error', message: marketErrorText(err) });
@@ -62,6 +67,34 @@ export function PackPage({ id }: { id: string }) {
           <p>{load.message}</p>
           <Button tone="secondary" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
         </div>
+      </div>
+    );
+  }
+  if (load.packCount === 0) {
+    return (
+      <div className="mkt-page">
+        <nav className="mkt-crumbs" aria-label="Breadcrumb">
+          <ol>
+            <li><MarketLink to="/marketplace">Marketplace</MarketLink></li>
+            <li aria-current="page">Packs</li>
+          </ol>
+        </nav>
+        <header className="mkt-page-head">
+          <span className="mkt-eyebrow">Marketplace</span>
+          <h1>Packs are no longer offered</h1>
+          <p className="mkt-lede">
+            Every plugin installs on its own, with its own permission sheet.
+          </p>
+        </header>
+        <EmptyState
+          icon={ICON_SHEET}
+          action={<MarketLink className="btn btn-secondary" to="/marketplace">Browse plugins</MarketLink>}
+        >
+          <span>No packs are published.</span>
+          <span className="w-note mkt-empty-line">
+            The two plugins this desk still ships are on Discover.
+          </span>
+        </EmptyState>
       </div>
     );
   }

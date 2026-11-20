@@ -47,6 +47,26 @@ def test_catalog_digests_match_the_plugin_trees():
         assert entry["digest"] == tree_digest(REGISTRY / "plugins" / entry["id"])
 
 
+def test_the_committed_bundle_is_fresh_against_the_registry():
+    """The committed bundle's pins are the registry's current pins.
+
+    The bundle is what a fresh desk installs from; a stale bundle would
+    offer an old release while the registry review checks the new one.
+    """
+    committed = json.loads(bundled_catalog_path().read_text(encoding="utf-8"))
+    index = load_index((REGISTRY / "index.json").read_text(encoding="utf-8"))
+    assert {entry["id"] for entry in committed["plugins"]} == {
+        plugin.id for plugin in index.plugins
+    }
+    for entry in committed["plugins"]:
+        plugin = index.plugin(entry["id"])
+        assert plugin is not None, entry["id"]
+        assert entry["latest"] == plugin.latest
+        release = plugin.release_for(plugin.latest)
+        assert release is not None, entry["id"]
+        assert entry["digest"] == release.sha256, entry["id"]
+
+
 def test_catalog_ids_match_the_index():
     module = load_catalog_module()
     catalog = module.build_catalog(REGISTRY)
@@ -97,7 +117,7 @@ def test_catalog_cli_writes_the_bundle(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     document = json.loads(out.read_text(encoding="utf-8"))
     assert document["schemaVersion"] == 2
-    assert len(document["plugins"]) >= 5
+    assert len(document["plugins"]) == 2
 
 
 def test_the_downloads_flag_lands_after_nuitka_not_between_m_and_nuitka():
@@ -114,3 +134,54 @@ def test_the_downloads_flag_lands_after_nuitka_not_between_m_and_nuitka():
     without = _build_command(Path("."), allow_downloads=False)
     assert without[1:3] == ["-m", "nuitka"]
     assert "--assume-yes-for-downloads" not in without
+
+
+ARCHIVE = REPO / "archive" / "plugins"
+SHIPPED = {"competitor-watch", "excel-report"}
+
+
+def test_the_archive_is_outside_every_shipped_surface():
+    """Keep the retired trees where no shipped surface can pick them up.
+
+    The archive holds the 23 retired trees; this test counts their directories
+    and manifests but deliberately does not read their contents, so it proves
+    the boundary instead. The archive sits outside the registry scan and
+    outside the packaged source tree, and every shipped plugin list carries
+    exactly the two surviving ids, so no archived tree can be published or
+    installed.
+    """
+    assert ARCHIVE.is_dir()
+    assert not ARCHIVE.is_relative_to(REGISTRY)
+    assert not ARCHIVE.is_relative_to(REPO / "src")
+
+    archived = [path for path in ARCHIVE.iterdir() if path.is_dir()]
+    assert len(archived) == 23
+    assert sum((path / "manifest.json").is_file() for path in archived) == 23
+
+    shipped_dirs = {path.name for path in (REGISTRY / "plugins").iterdir()
+                    if path.is_dir()}
+    assert shipped_dirs == SHIPPED
+
+    catalog = load_catalog_module().build_catalog(REGISTRY)
+    assert {entry["id"] for entry in catalog["plugins"]} == SHIPPED
+
+    index = load_index((REGISTRY / "index.json").read_text(encoding="utf-8"))
+    assert {plugin.id for plugin in index.plugins} == SHIPPED
+
+    committed = json.loads(bundled_catalog_path().read_text(encoding="utf-8"))
+    assert {entry["id"] for entry in committed["plugins"]} == SHIPPED
+
+
+def test_the_packaged_build_never_reaches_the_archive():
+    """The packaged inputs are the agentdesk package and its static assets.
+
+    The build command names neither the archive folder nor anything under it;
+    the only plugin list it can carry is the committed bundle, whose ids the
+    test above pins to the two survivors. Engine-level render support for
+    installed copies (card kinds, insight families) is not a shipped tree.
+    """
+    from scripts.build_bundle import _build_command
+
+    command = _build_command(REPO, allow_downloads=False)
+    assert not any("archive" in part for part in command), command
+    assert not (REPO / "src" / "archive").exists()
