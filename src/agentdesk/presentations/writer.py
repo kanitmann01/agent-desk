@@ -1,14 +1,18 @@
 """Fill a shell from an outline. Standard library only.
 
-Sample slides are removed with their relationships and parts. New slides
-are added from the named layouts. A content layout with a body
-placeholder is filled through it. A title-only layout gets a text box
-in the recipe's region. The layout and master parts are not rewritten.
+Sample slides are removed with their notes, thumbnail, and any media
+nothing else uses. New slides reference the layout placeholders by
+index and type, and do not set their own colour, typeface, or
+background, so a dark layout stays dark and its art and footer stay
+put. A title-only layout gets a text box in the recipe's region.
 """
 
 from __future__ import annotations
 
+import io
 import re
+import zipfile
+import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 from agentdesk.presentations.ooxml import (
@@ -16,9 +20,7 @@ from agentdesk.presentations.ooxml import (
     SAMPLE_TEXT,
     _paragraph,
     _rels,
-    _run,
     _shape,
-    _slide,
     _xml,
     emu,
     pack_zip,
@@ -30,11 +32,14 @@ _SLIDE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 _LAYOUT_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout"
 _NOTES_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide"
 _NOTES_MASTER_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster"
+_THEME_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
 _SLIDE_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"
 _NOTES_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"
 _NOTES_MASTER_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"
 
 _LEFTOVER = (SAMPLE_TEXT, "Divider Slide Option")
+# XML 1.0 forbids these. A model or a brief can still emit them.
+_ILLEGAL_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def outline_for(brief: str, recipe: dict) -> dict:
@@ -67,8 +72,6 @@ def write_deck(shell: bytes, recipe: dict, outline: dict) -> bytes:
     parts = read_parts(shell)
     _drop_sample_slides(parts)
     spec = {row["role"]: row for row in recipe.get("slides") or [] if isinstance(row, dict)}
-    ink = _ink(parts)
-    notes_master_added = False
     slide_ids = []
     for index, row in enumerate(outline.get("slides") or [], start=1):
         role = str(row.get("role") or "content")
@@ -76,25 +79,23 @@ def write_deck(shell: bytes, recipe: dict, outline: dict) -> bytes:
         layout_name = str(rule.get("layout") or "Content")
         layout_part = _find_layout(parts, layout_name)
         if layout_part is None:
-            raise ValueError(f"no layout named {layout_name}")
+            raise ValueError("this template has no layout for that slide")
         title = _title_for(row, rule, layout_part)
         bullets = [str(item) for item in (row.get("bullets") or []) if str(item).strip()]
-        shapes = _title_placeholder(title, ink, role)
+        shapes = _title_shape_for(title, role, layout_part, parts)
         if role == "content":
-            if _layout_has_body(layout_part, parts) or not _region(rule):
-                shapes += _body_placeholder(bullets, ink)
+            if _layout_has_body(layout_part, parts):
+                shapes += _body_from_layout(bullets, layout_part, parts)
             else:
-                shapes += _body_box(bullets, ink, _region(rule))
+                shapes += _body_box(bullets, _region(rule) or [0.9, 1.7, 11.5, 4.6])
         notes = str(row.get("notes") or "")
         slide_name = f"ppt/slides/slide{index}.xml"
-        parts[slide_name] = _slide(shapes, _bg(parts, layout_part))
+        parts[slide_name] = _slide_plain(shapes)
         rels = [("rId1", _LAYOUT_REL, "../" + layout_part.split("ppt/", 1)[1])]
         if notes:
-            if not notes_master_added:
-                _add_notes_master(parts)
-                notes_master_added = True
+            _ensure_notes_master(parts)
             notes_name = f"ppt/notesSlides/notesSlide{index}.xml"
-            parts[notes_name] = _notes_slide(notes, ink)
+            parts[notes_name] = _notes_slide(notes)
             parts[f"ppt/notesSlides/_rels/notesSlide{index}.xml.rels"] = _rels([
                 ("rId1", _NOTES_MASTER_REL, "../notesMasters/notesMaster1.xml"),
                 ("rId2", _SLIDE_REL, f"../slides/slide{index}.xml"),
@@ -112,45 +113,61 @@ def write_deck(shell: bytes, recipe: dict, outline: dict) -> bytes:
 def package_problems(blob: bytes) -> list[str]:
     """What a person would notice is wrong with the package.
 
-    The zip opens, every relationship target exists, content-type
-    overrides name real parts, and leftover placeholder text is gone.
+    The zip opens, every part name is unique, every XML part parses,
+    every part has a content type, every internal relationship target
+    exists, and leftover placeholder text is gone. An external target
+    is a link, not a missing part.
     """
     problems = []
     try:
-        parts = read_parts(blob)
+        archive = zipfile.ZipFile(io.BytesIO(blob))
+        names = archive.namelist()
+        parts = {name: archive.read(name) for name in names}
     except Exception as exc:  # noqa: BLE001 - a bad zip is the problem
         return [f"package does not open: {exc}"]
-    if len(parts) != len(set(parts)):
+    if len(names) != len(set(names)):
         problems.append("duplicate part names")
+    for name, data in parts.items():
+        if name.endswith(".xml") or name.endswith(".rels"):
+            try:
+                ET.fromstring(data)
+            except ET.ParseError:
+                problems.append(f"xml does not parse: {name}")
+    types = parts.get("[Content_Types].xml", b"").decode("utf-8", "replace")
+    defaults = {ext.lower() for ext in re.findall(r'Extension="([^"]+)"', types)}
+    overrides = {part.lstrip("/") for part in re.findall(r'PartName="([^"]+)"', types)}
+    for name in parts:
+        if name == "[Content_Types].xml":
+            continue
+        leaf = name.rsplit("/", 1)[-1]
+        ext = leaf.rsplit(".", 1)[-1].lower() if "." in leaf else ""
+        if name not in overrides and ext not in defaults:
+            problems.append(f"part has no content type: {name}")
+    for part_name in overrides:
+        if part_name not in parts:
+            problems.append(f"content type names a missing part: /{part_name}")
     for name, blob_part in parts.items():
         if not name.endswith(".rels"):
             continue
-        base = name.rsplit("/", 1)[0]
-        base = "" if base.endswith("_rels") else base
-        parent = base[: -len("/_rels")] if base.endswith("/_rels") else base.rsplit("/", 1)[0]
-        # rels live in _rels next to the source, or at _rels/.rels for the root
-        if name == "_rels/.rels":
-            folder = ""
-        else:
-            folder = name[: -len("/_rels/" + name.rsplit("/", 1)[-1])]
-        for target in re.findall(r'Target="([^"]+)"', blob_part.decode("utf-8", "replace")):
-            if target.startswith("/"):
-                resolved = target.lstrip("/")
-            else:
-                resolved = _join(folder, target)
+        folder = _rels_folder(name)
+        text = blob_part.decode("utf-8", "replace")
+        for attrs in re.findall(r"<Relationship\b([^>]*)/?>", text):
+            if 'TargetMode="External"' in attrs:
+                continue
+            found = re.search(r'Target="([^"]+)"', attrs)
+            if not found:
+                continue
+            target = found.group(1)
+            resolved = target.lstrip("/") if target.startswith("/") else _join(folder, target)
             if resolved not in parts:
                 problems.append(f"{name} target missing: {target}")
-    types = parts.get("[Content_Types].xml", b"").decode("utf-8", "replace")
-    for part_name in re.findall(r'PartName="([^"]+)"', types):
-        if part_name.lstrip("/") not in parts:
-            problems.append(f"content type names a missing part: {part_name}")
-    text = "\n".join(
-        blob_part.decode("utf-8", "replace")
-        for name, blob_part in parts.items()
+    slide_text = "\n".join(
+        data.decode("utf-8", "replace")
+        for name, data in parts.items()
         if name.endswith(".xml") and "/slides/" in name
     )
     for leftover in _LEFTOVER:
-        if leftover in text:
+        if leftover in slide_text:
             problems.append(f"leftover template text: {leftover}")
     return problems
 
@@ -175,38 +192,34 @@ def slide_texts(blob: bytes) -> list[dict]:
 
 
 def _drop_sample_slides(parts: dict) -> None:
-    """Remove every slide the shell shipped, and the parts that belonged to it."""
+    """Remove the shell's slides, their notes, its thumbnail, and unused media.
+
+    Notes and media that belong to a layout or master stay. A sample
+    notes part must not survive under the name the first new slide
+    would reuse, or the sample's speaker notes show up on slide 1.
+    """
+    for name in list(parts):
+        if (name.startswith("ppt/slides/") or name.startswith("ppt/notesSlides/")
+                or name == "docProps/thumbnail.jpeg"):
+            parts.pop(name, None)
+            _drop_override(parts, "/" + name)
     rels_name = "ppt/_rels/presentation.xml.rels"
     rels = parts.get(rels_name, b"").decode("utf-8")
-    targets = re.findall(
-        r'Id="([^"]+)"[^>]*Type="[^"]*/slide"[^>]*Target="([^"]+)"', rels
-    )
-    # The attribute order in our shells is Id, Type, Target. Also accept Type first.
-    if not targets:
-        targets = re.findall(
-            r'Type="[^"]*/slide"[^>]*Target="([^"]+)"', rels
-        )
-        targets = [(f"rId{i}", target) for i, target in enumerate(targets, start=1)]
-    for _rid, target in targets:
-        slide = _join("ppt", target)
-        slide_rels = slide.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels"
-        if slide_rels in parts:
-            for notes in re.findall(r'Target="([^"]*notesSlides/[^"]+)"', parts[slide_rels].decode("utf-8")):
-                notes_part = _join("ppt/slides", notes) if not notes.startswith("..") else _join("ppt", notes.removeprefix("../"))
-                parts.pop(notes_part, None)
-                parts.pop(notes_part.replace("ppt/notesSlides/", "ppt/notesSlides/_rels/") + ".rels", None)
-                _drop_override(parts, "/" + notes_part)
-        parts.pop(slide, None)
-        parts.pop(slide_rels, None)
-        _drop_override(parts, "/" + slide)
     if rels:
-        cleaned = re.sub(
-            r'<Relationship[^>]*Type="[^"]*/slide"[^>]*/>', "", rels
-        )
+        cleaned = re.sub(r'<Relationship[^>]*Type="[^"]*/slide"[^>]*/>', "", rels)
         parts[rels_name] = cleaned.encode("utf-8")
     presentation = parts.get("ppt/presentation.xml", b"").decode("utf-8")
-    presentation = re.sub(r"<p:sldIdLst>.*?</p:sldIdLst>", "<p:sldIdLst></p:sldIdLst>", presentation)
-    parts["ppt/presentation.xml"] = presentation.encode("utf-8")
+    if presentation:
+        presentation = re.sub(
+            r"<p:sldIdLst>.*?</p:sldIdLst>", "<p:sldIdLst></p:sldIdLst>",
+            presentation, flags=re.DOTALL,
+        )
+        parts["ppt/presentation.xml"] = presentation.encode("utf-8")
+    referenced = _referenced_parts(parts)
+    for name in list(parts):
+        if name.startswith("ppt/media/") and name not in referenced:
+            parts.pop(name, None)
+            _drop_override(parts, "/" + name)
 
 
 def _point_presentation_at(parts: dict, slide_ids: list[int]) -> None:
@@ -240,9 +253,16 @@ def _point_presentation_at(parts: dict, slide_ids: list[int]) -> None:
     parts["ppt/presentation.xml"] = presentation.encode("utf-8")
 
 
-def _add_notes_master(parts: dict) -> None:
-    """One notes master, added the first time a slide carries notes."""
-    parts["ppt/notesMasters/notesMaster1.xml"] = _xml(
+def _ensure_notes_master(parts: dict) -> None:
+    """A notes master with a theme relationship, without replacing one that exists.
+
+    Office requires the theme relationship. A shell that already has a
+    notes master keeps that part; only a missing theme link is added.
+    """
+    master = "ppt/notesMasters/notesMaster1.xml"
+    rels_name = "ppt/notesMasters/_rels/notesMaster1.xml.rels"
+    if master not in parts:
+        parts[master] = _xml(
         '<p:notesMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
@@ -255,25 +275,37 @@ def _add_notes_master(parts: dict) -> None:
         'accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" '
         'accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
         "</p:notesMaster>"
-    )
-    parts["ppt/notesMasters/_rels/notesMaster1.xml.rels"] = _rels([])
-    _override(parts, "/ppt/notesMasters/notesMaster1.xml", _NOTES_MASTER_TYPE)
-    rels_name = "ppt/_rels/presentation.xml.rels"
-    rels = parts[rels_name].decode("utf-8")
-    if "notesMaster" not in rels:
-        rels = rels.replace(
+        )
+        parts[rels_name] = _rels([("rId1", _THEME_REL, "../theme/theme1.xml")])
+        _override(parts, "/ppt/notesMasters/notesMaster1.xml", _NOTES_MASTER_TYPE)
+    else:
+        rels = parts.get(rels_name, b"").decode("utf-8")
+        if "relationships/theme" not in rels:
+            link = (
+                f'<Relationship Id="rIdTheme" Type="{_THEME_REL}" '
+                'Target="../theme/theme1.xml"/>'
+            )
+            if "</Relationships>" in rels:
+                rels = rels.replace("</Relationships>", link + "</Relationships>")
+            else:
+                rels = _rels([("rIdTheme", _THEME_REL, "../theme/theme1.xml")]).decode("utf-8")
+            parts[rels_name] = rels.encode("utf-8")
+    pres_rels_name = "ppt/_rels/presentation.xml.rels"
+    pres_rels = parts[pres_rels_name].decode("utf-8")
+    if "notesMaster" not in pres_rels:
+        pres_rels = pres_rels.replace(
             "</Relationships>",
             f'<Relationship Id="rIdNotes" Type="{_NOTES_MASTER_REL}" '
             'Target="notesMasters/notesMaster1.xml"/></Relationships>',
         )
-        parts[rels_name] = rels.encode("utf-8")
+        parts[pres_rels_name] = pres_rels.encode("utf-8")
 
 
-def _notes_slide(text: str, ink: str) -> bytes:
+def _notes_slide(text: str) -> bytes:
     """A notes slide whose body is the speaker-note text."""
     body = _shape(
         2, "Notes", emu(0.5), emu(1.2), emu(6), emu(5),
-        _paragraph(_run(text, 12, ink)),
+        _paragraph(_plain_run(text)),
         placeholder='<p:ph type="body" idx="1"/>',
     )
     return _xml(
@@ -295,46 +327,93 @@ def _title_for(row: dict, rule: dict, layout_part: str) -> str:
     return str(row.get("title") or "").strip()
 
 
-def _title_placeholder(title: str, ink: str, role: str) -> str:
-    """The title placeholder for one role."""
-    size = 32 if role in ("title", "closing") else 28 if role == "section" else 24
-    y = 2.6 if role in ("title", "closing", "section") else 0.45
-    ph = '<p:ph type="title"/>' if role == "section" else '<p:ph type="ctrTitle"/>'
-    if role == "content":
-        ph = '<p:ph type="title"/>'
-    return _shape(2, "Title", emu(0.7), emu(y), emu(11.9), emu(1.1), _paragraph(_run(title, size, ink)), placeholder=ph)
+def _title_shape_for(title: str, role: str, layout_part: str, parts: dict) -> str:
+    """The title placeholder, matching the layout's own placeholder."""
+    wanted = "title" if role in ("content", "section") else "ctrTitle"
+    found = _placeholder(parts[layout_part], wanted) or _placeholder(parts[layout_part], "title")
+    ph = found["ph"] if found else f'<p:ph type="{wanted}"/>'
+    xfrm = found["xfrm"] if found else ""
+    return _ph_shape(2, "Title", xfrm, _paragraph(_plain_run(title)), ph)
 
 
-def _body_placeholder(bullets: list[str], ink: str) -> str:
-    """The body placeholder, filled with the bullets."""
-    return _shape(
-        3, "Body", emu(0.9), emu(1.7), emu(11.5), emu(4.6),
-        _bullet_paragraphs(bullets, ink, 14),
-        placeholder='<p:ph type="body" idx="1"/>',
-    )
+def _body_from_layout(bullets: list[str], layout_part: str, parts: dict) -> str:
+    """The body placeholder the layout already defines, filled and not restyled."""
+    found = _placeholder(parts[layout_part], "body")
+    ph = found["ph"] if found else '<p:ph type="body" idx="1"/>'
+    xfrm = found["xfrm"] if found else ""
+    return _ph_shape(3, "Body", xfrm, _bullet_paragraphs(bullets), ph)
 
 
-def _body_box(bullets: list[str], ink: str, region: list) -> str:
+def _body_box(bullets: list[str], region: list) -> str:
     """A text box in the recipe region, for a shell with no body placeholder."""
     x, y, w, h = region
     return _shape(
         3, "Body", emu(x), emu(y), emu(w), emu(h),
-        _bullet_paragraphs(bullets, ink, 14),
+        _bullet_paragraphs(bullets),
     )
 
 
-def _bullet_paragraphs(bullets: list[str], ink: str, size: int) -> str:
-    """One bulleted paragraph per line, at the given point size."""
+def _bullet_paragraphs(bullets: list[str]) -> str:
+    """One bulleted paragraph per line, with no typeface of its own."""
     if not bullets:
-        return _paragraph(_run("", size, ink))
+        return _paragraph(_plain_run(""))
     rows = []
     for bullet in bullets:
         rows.append(
-            '<a:p><a:pPr marL="342900" indent="-171450">'
-            '<a:buFont typeface="Arial"/><a:buChar char="•"/></a:pPr>'
-            + _run(bullet, size, ink) + "</a:p>"
+            '<a:p><a:pPr marL="342900" indent="-171450"><a:buChar char="•"/></a:pPr>'
+            + _plain_run(bullet) + "</a:p>"
         )
     return "".join(rows)
+
+
+def _plain_run(text: str) -> str:
+    """A run with no colour and no typeface, so the placeholder's own win."""
+    return f'<a:r><a:rPr lang="en-US" dirty="0"/><a:t>{_xml_text(text)}</a:t></a:r>'
+
+
+def _xml_text(value: str) -> str:
+    """Escape text for XML, dropping characters XML 1.0 forbids."""
+    return escape(_ILLEGAL_XML.sub("", str(value)))
+
+
+def _ph_shape(shape_id: int, name: str, xfrm: str, paragraphs: str, placeholder: str) -> str:
+    """A placeholder shape. No fill, so it cannot paint over the layout."""
+    box = f"<p:spPr>{xfrm}</p:spPr>" if xfrm else "<p:spPr/>"
+    return (
+        "<p:sp><p:nvSpPr>"
+        f'<p:cNvPr id="{shape_id}" name="{escape(name)}"/>'
+        '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+        f"<p:nvPr>{placeholder}</p:nvPr></p:nvSpPr>{box}"
+        f"<p:txBody><a:bodyPr/><a:lstStyle/>{paragraphs}</p:txBody></p:sp>"
+    )
+
+
+def _slide_plain(shapes: str) -> bytes:
+    """A slide with no background of its own, so the layout's shows through."""
+    return _xml(
+        '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+        "<p:cSld><p:spTree>"
+        '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+        '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
+        '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+        f"{shapes}</p:spTree></p:cSld>"
+        "<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"
+    )
+
+
+def _placeholder(layout_xml: bytes, ph_type: str) -> dict | None:
+    """The layout shape of one placeholder type, with its transform."""
+    text = layout_xml.decode("utf-8", "replace")
+    for match in re.finditer(r"<p:sp>.*?</p:sp>", text):
+        block = match.group(0)
+        ph = re.search(r"<p:ph\b[^>]*/>", block)
+        if not ph or f'type="{ph_type}"' not in ph.group(0):
+            continue
+        xfrm = re.search(r"<a:xfrm>.*?</a:xfrm>", block)
+        return {"ph": ph.group(0), "xfrm": xfrm.group(0) if xfrm else ""}
+    return None
 
 
 def _find_layout(parts: dict, wanted: str) -> str | None:
@@ -371,21 +450,6 @@ def _region(rule: dict) -> list | None:
     return None
 
 
-def _ink(parts: dict) -> str:
-    """The master text colour, so filled runs match the shell."""
-    master = parts.get("ppt/slideMasters/slideMaster1.xml", b"").decode("utf-8", "replace")
-    if "F4F4F2" in master:
-        return "F4F4F2"
-    return "1C1C1F"
-
-
-def _bg(parts: dict, layout_part: str) -> str:
-    """The layout background colour, so the new slide matches the shell."""
-    xml = parts[layout_part].decode("utf-8", "replace")
-    match = re.search(r'<a:srgbClr val="([0-9A-Fa-f]{6})"/>', xml)
-    return match.group(1) if match else "1C1C1F"
-
-
 def _override(parts: dict, part_name: str, content_type: str) -> None:
     """Declare the content type of a part this write added."""
     types = parts["[Content_Types].xml"].decode("utf-8")
@@ -408,7 +472,7 @@ def _set_title(parts: dict, title: str) -> None:
     if not core:
         return
     text = core.decode("utf-8")
-    safe = escape(title)
+    safe = _xml_text(title)
     if "<dc:title>" in text:
         text = re.sub(r"<dc:title>.*?</dc:title>", f"<dc:title>{safe}</dc:title>", text)
     else:
@@ -428,6 +492,35 @@ def _slide_order(parts: dict) -> list[str]:
         if target:
             names.append("ppt/" + target)
     return names
+
+
+def _rels_folder(name: str) -> str:
+    """The folder a relationship target is resolved against."""
+    if name == "_rels/.rels":
+        return ""
+    marker = "/_rels/"
+    if marker in name:
+        return name.rsplit(marker, 1)[0]
+    return name.rsplit("/", 1)[0]
+
+
+def _referenced_parts(parts: dict) -> set[str]:
+    """Internal relationship targets that some remaining part still points at."""
+    found = set()
+    for name, blob in parts.items():
+        if not name.endswith(".rels"):
+            continue
+        folder = _rels_folder(name)
+        text = blob.decode("utf-8", "replace")
+        for attrs in re.findall(r"<Relationship\b([^>]*)/?>", text):
+            if 'TargetMode="External"' in attrs:
+                continue
+            target = re.search(r'Target="([^"]+)"', attrs)
+            if not target:
+                continue
+            raw = target.group(1)
+            found.add(raw.lstrip("/") if raw.startswith("/") else _join(folder, raw))
+    return found
 
 
 def _join(folder: str, target: str) -> str:
