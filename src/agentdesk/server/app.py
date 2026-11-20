@@ -111,6 +111,7 @@ from agentdesk.llm import (
 )
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.presentations.packs import load_packs
+from agentdesk.presentations.fit import fit_outline
 from agentdesk.presentations.pipeline import (
     call_model,
     fill_prompt,
@@ -2360,6 +2361,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             outline = outline_from_fill(
                 brief, recipe_doc, planned, filled, sources, title=deck_title,
             )
+
+            def shorten(text, limit, call_timeout):
+                """One shorten call, on the presentation timeout."""
+                reply = call_model(
+                    llm,
+                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
+                    call_timeout,
+                )
+                return (reply or "").strip() or text
+
+            outline, fit_notes = fit_outline(outline, recipe_doc, shorten, timeout)
             blob = write_deck(shell_path.read_bytes(), recipe_doc, outline)
         except (OSError, ValueError, LlmUnavailable) as exc:
             if isinstance(exc, LlmUnavailable):
@@ -2397,6 +2409,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "previewNote": rendered["note"],
             "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
             "images": [f"{prefix}/{image}" for image in rendered["images"]],
+            "fit": fit_notes,
         }
         facts = [
             {"id": row["id"], "text": row["text"]}
