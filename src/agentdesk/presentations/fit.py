@@ -25,16 +25,19 @@ def slot_budget(region: list, min_pt: int = 14, slack: float = 0.10) -> dict:
 
 
 def fit_outline(outline: dict, recipe: dict, shorten, timeout: float,
-                sources: list | None = None) -> tuple[dict, list[str]]:
+                sources: list | None = None, min_pt: int | None = None) -> tuple[dict, list[str]]:
     """Return the outline and the slides that were shortened or split.
 
     `shorten(text, limit, timeout)` is called at most once per content
     slide. Continuation slides repeat until every slide fits the line budget.
+    `min_pt` is the size the writer will draw, so the budget matches the slide.
     """
     rule = next((row for row in recipe.get("slides") or [] if row.get("role") == "content"), {})
     body = (rule.get("slots") or {}).get("body") or {}
     region = body.get("region") or [0.9, 1.7, 11.5, 4.6]
-    min_pt = int(body.get("minPt") or 14)
+    if min_pt is None:
+        min_pt = int(body.get("minPt") or 14)
+    min_pt = max(14, int(min_pt))
     budget = slot_budget(region, min_pt)
     limit = budget["charsPerLine"] * budget["lines"]
     notes = []

@@ -73,6 +73,24 @@ def test_a_shortened_reply_is_digit_guarded():
     assert "[data needed]" in text
 
 
+def test_a_larger_layout_size_tightens_the_budget():
+    seen = []
+
+    def shorten(text, limit, timeout):
+        seen.append(limit)
+        return text
+
+    outline = {
+        "title": "Q3",
+        "slides": [{"role": "content", "title": "Context", "bullets": ["word " * 800], "citations": []}],
+    }
+    fit_outline(outline, RECIPE, shorten, 30, [], min_pt=18)
+    wide = slot_budget([0.9, 1.7, 11.5, 4.6], 14)
+    tight = slot_budget([0.9, 1.7, 11.5, 4.6], 18)
+    assert seen == [tight["charsPerLine"] * tight["lines"]]
+    assert tight["charsPerLine"] < wide["charsPerLine"]
+
+
 def test_the_budget_matches_the_recipe_region_at_14_pt():
     region = [0.9, 1.7, 11.5, 4.6]
     budget = slot_budget(region, 14)
