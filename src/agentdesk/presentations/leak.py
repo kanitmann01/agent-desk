@@ -13,12 +13,17 @@ This module does not contain the denylisted words. Add a token with:
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
+import zipfile
 from pathlib import Path
 
 TOKEN = re.compile(r"[a-z0-9]+")
-MEDIA_SUFFIXES = {".pptx", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".emf", ".wdp", ".bin"}
+# A deck is a zip. Its outer bytes are fingerprinted, and so is every
+# part inside: XML is token-scanned, media is hashed as bytes.
+PACKAGE_SUFFIXES = {".pptx"}
+MEDIA_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".emf", ".wdp", ".bin", ".jpeg"}
 
 
 def load_hashes(*paths: Path) -> set[str]:
@@ -38,8 +43,9 @@ def scan(roots: list[Path], hashes: set[str]) -> list[str]:
     """Paths under `roots` whose tokens or bytes hit `hashes`.
 
     An empty hash set never fails: there is nothing to match. Text files
-    contribute lower-cased tokens. Every file also contributes its byte
-    hash, which is how a media fingerprint is caught.
+    contribute lower-cased tokens. A .pptx is opened and each part is
+    scanned the same way, so a token that lives only inside slide XML
+    still matches. Every file also contributes its byte hash.
     """
     if not hashes:
         return []
@@ -83,11 +89,46 @@ def _hit(path: Path, hashes: set[str]) -> bool:
         return False
     if hashlib.sha256(blob).hexdigest() in hashes:
         return True
+    if path.suffix.lower() in PACKAGE_SUFFIXES:
+        return _package_hit(blob, hashes)
     if path.suffix.lower() in MEDIA_SUFFIXES:
         return False
+    return _text_hit(blob, hashes)
+
+
+def _package_hit(blob: bytes, hashes: set[str]) -> bool:
+    """Whether any part of a .pptx hits the denylist.
+
+    XML and other text parts are token-scanned. Media parts are matched
+    by the hash of their bytes. A package that is not a zip is ignored
+    beyond the outer hash already checked.
+    """
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile:
+        return False
+    for name in archive.namelist():
+        try:
+            data = archive.read(name)
+        except zipfile.BadZipFile:
+            continue
+        if hashlib.sha256(data).hexdigest() in hashes:
+            return True
+        suffix = Path(name).suffix.lower()
+        if suffix in MEDIA_SUFFIXES or "/media/" in name.replace("\\", "/"):
+            continue
+        if _text_hit(data, hashes):
+            return True
+    return False
+
+
+def _text_hit(blob: bytes, hashes: set[str]) -> bool:
+    """Whether any lower-cased token in this text is denylisted."""
     try:
         text = blob.decode("utf-8")
     except UnicodeDecodeError:
         return False
-    lowered = text.lower()
-    return any(hashlib.sha256(token.encode("utf-8")).hexdigest() in hashes for token in TOKEN.findall(lowered))
+    return any(
+        hashlib.sha256(token.encode("utf-8")).hexdigest() in hashes
+        for token in TOKEN.findall(text.lower())
+    )
