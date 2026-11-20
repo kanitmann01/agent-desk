@@ -122,6 +122,7 @@ from agentdesk.presentations.pipeline import (
     receipt_lines,
     timeout_seconds,
 )
+from agentdesk.presentations.render import render_deck
 from agentdesk.presentations.writer import write_deck
 from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
@@ -2377,6 +2378,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         folder = self._presentation_dir() / secrets.token_hex(8)
         folder.mkdir(parents=True)
         (folder / "deck.pptx").write_bytes(blob)
+        rendered = render_deck(
+            folder / "deck.pptx", folder / "preview",
+            runner=getattr(server, "presentation_runner", None),
+        )
+        prefix = folder.name
         artifact = {
             "kind": "presentation",
             "templateId": pack.id,
@@ -2385,21 +2391,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "variant": variant,
             "recipe": recipe,
             "phase": "written",
-            "file": f"{folder.name}/deck.pptx",
+            "file": f"{prefix}/deck.pptx",
             "sources": receipt_lines(sources),
+            "renderer": rendered["renderer"],
+            "previewNote": rendered["note"],
+            "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
+            "images": [f"{prefix}/{image}" for image in rendered["images"]],
         }
+        facts = [
+            {"id": row["id"], "text": row["text"]}
+            for row in sources if row["kind"] == "memory"
+        ]
         run_id = server.agents.record(
-            "presentation", brief, "ok", artifact=artifact,
-            facts=[{"id": row["id"], "text": row["text"]} for row in sources if row["kind"] == "memory"],
+            "presentation", brief, "ok", artifact=artifact, facts=facts,
         )
         used = ", ".join(f"{row['kind']}:{row['id']}" for row in sources) or "none"
         self._audit(
             "agents.run", target="presentation", status="ok",
             detail=(f"status ok; template {pack.id}@{pack.version}; "
-                    f"variant {variant}; recipe {recipe}; sources {used}"),
+                    f"variant {variant}; recipe {recipe}; sources {used}; "
+                    f"renderer {rendered['renderer']}"),
         )
-        self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact,
-                               artifact["sources"])
+        self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact, facts)
 
     def _finish_agent_run(self, run_id, agent_id, status, cause, reply, artifact, facts) -> None:
         """JSON for a fetch, or a redirect back to the page for a form."""
@@ -2535,20 +2548,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
             run_id = -1
         run = server.agents.get(run_id) if server.agents is not None and run_id > 0 else None
         artifact = run.get("artifact") if run else None
-        rel = artifact.get("file") if isinstance(artifact, dict) else None
+        part = (parse_qs(self.path.partition("?")[2]).get("part") or ["pptx"])[0] or "pptx"
+        rel = None
+        if isinstance(artifact, dict):
+            if part == "pdf":
+                rel = artifact.get("pdf")
+            elif part == "pptx":
+                rel = artifact.get("file")
+            else:
+                rel = next((image for image in artifact.get("images") or []
+                            if str(image).endswith("/" + part)), None)
         root = self._presentation_dir().resolve()
         path = (root / rel).resolve() if isinstance(rel, str) and rel and ".." not in rel.split("/") else None
         if path is None or root not in path.parents or not path.is_file():
             self._send_json(404, {"error": "this run has no deck to download"})
             return
+        kind = part if part in ("pptx", "pdf") else "png"
         self._audit(
             "agents.download", target=str(run.get("agentId", "")),
-            detail=f"run {run_id}; pptx",
+            detail=f"run {run_id}; {kind}",
         )
+        if part == "pdf":
+            content_type = "application/pdf"
+            filename = "deck.pdf"
+        elif part == "pptx":
+            content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            filename = "deck.pptx"
+        else:
+            content_type = "image/png"
+            filename = part if part.endswith(".png") else "slide.png"
         self._send_bytes(
-            200, path.read_bytes(),
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            {"Content-Disposition": 'attachment; filename="deck.pptx"'},
+            200, path.read_bytes(), content_type,
+            {"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     def _agents_template_thumb(self, rest: str) -> None:

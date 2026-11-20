@@ -148,7 +148,18 @@ def _artifact_html(run: dict) -> str:
         if artifact.get("file"):
             text_html = f"<pre>{_esc(text)}</pre>"
             href = f"/agents/runs/{run['id']}/download"
-            return text_html + _sources_html(artifact) + f'<p><a href="{href}">Download .pptx</a></p>'
+            extra = _sources_html(artifact)
+            if artifact.get("previewNote"):
+                extra += f"<p class='empty'>{_esc(artifact['previewNote'])}</p>"
+            if artifact.get("pdf"):
+                extra += f'<p><a href="/agents/runs/{run["id"]}/download?part=pdf">Download PDF</a></p>'
+            for image in artifact.get("images") or []:
+                name = str(image).rsplit("/", 1)[-1]
+                extra += (
+                    f'<p><img src="/agents/runs/{run["id"]}/download?part={_esc(name)}" '
+                    f'alt="Slide preview" width="320"></p>'
+                )
+            return text_html + extra + f'<p><a href="{href}">Download .pptx</a></p>'
     else:
         text = str(artifact.get("text", ""))
     if not text:
