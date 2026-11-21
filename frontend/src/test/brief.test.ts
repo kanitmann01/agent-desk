@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dealName, formatSigned, moversFromDelta, netByStage, netPipeline } from '../dashboard/briefModel';
+import { dealName, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline } from '../dashboard/briefModel';
 
 const atlas = (amount: number) => ['Halvorsen Freight renewal', 'AMER', 'Prospect', amount];
 const field = (amount: number) => ['Kestrel Foods pilot', 'EMEA', 'Qualify', amount];
@@ -52,5 +52,31 @@ describe('the morning brief movers', () => {
     expect(formatSigned(2670)).toBe('+2,670');
     expect(formatSigned(-4940)).toBe('−4,940');
     expect(formatSigned(0)).toBe('0');
+  });
+});
+
+describe('the morning brief desk check', () => {
+  const finding = {
+    id: 'inbox-unreadable-rows',
+    title: '1 inbox card this version cannot read',
+    cause: 'This version has no card kind called commitment, so the row stays in the inbox database, hidden from the list.',
+    severity: 'attention' as const,
+    confident: true,
+    fix: 'auto' as const,
+    fixLabel: 'Fix it',
+    href: '',
+    detail: { count: 1, kinds: ['commitment'] },
+  };
+
+  it('shows desk-check alert when attention > 0', () => {
+    expect(deskCheckAlert({ attention: 1, top: finding })).toEqual({
+      label: 'Desk check: 1 inbox card this version cannot read · Open',
+      href: '/settings#desk-check',
+    });
+  });
+
+  it('stays quiet when nothing wants attention', () => {
+    expect(deskCheckAlert({ attention: 0, top: null })).toBeNull();
+    expect(deskCheckAlert(undefined)).toBeNull();
   });
 });

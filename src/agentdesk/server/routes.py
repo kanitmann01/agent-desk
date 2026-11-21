@@ -181,6 +181,7 @@ GET_ROUTES: tuple[Route, ...] = (
     Route("GET", "/api/registry", "_send_registry_listing"),
     Route("GET", "/api/peers", "_send_peers_api"),
     Route("GET", "/api/dashboard", "_send_dashboard_api"),
+    Route("GET", "/api/desk-check", "_send_desk_check_api"),
     Route("GET", "/api/preferences", "_send_preferences_values"),
     Route("GET", "/api/ledger", "_send_ledger_api"),
     Route("GET", "/api/layout", "_send_layout_api"),

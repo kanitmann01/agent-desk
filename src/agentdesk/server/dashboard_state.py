@@ -76,14 +76,15 @@ class DashboardState:
     plugin_cards: tuple[dict, ...]
     layout_entries: tuple[dict, ...]
     custom_titles: dict[str, str]
+    desk_check: dict
     now: dt.datetime
 
     def payload(self) -> dict:
         """Return the GET /api/dashboard JSON body for this state.
 
         The key set is part of the API contract: version, sample, flags,
-        sources, sales, commitments, research, inbox, skills, layout and
-        plugins, each with the nested shape the SPA reads.
+        sources, sales, commitments, research, inbox, deskCheck, skills,
+        layout and plugins, each with the nested shape the SPA reads.
         """
         return {
             "version": self.version,
@@ -112,6 +113,7 @@ class DashboardState:
                 "lastAnsweredTs": self.research.last_answered_ts,
             },
             "inbox": {"waiting": self.inbox_waiting},
+            "deskCheck": dict(self.desk_check),
             "skills": [
                 {"id": skill["id"], "name": skill["name"], "description": skill["description"]}
                 for skill in self.skills
@@ -187,6 +189,17 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     custom_titles = {entry["key"]: entry["title"] for entry in layout_entries if entry["title"]}
     inbox_waiting = len(server.inbox.waiting()) if server.inbox is not None else 0
 
+    # The desk check is one more read of the same collaborators. A crashing
+    # check is a fatal finding, not a dashboard error, so the whole run is
+    # inside a try as a last resort: the dashboard always renders.
+    try:
+        from agentdesk.deskcheck import summary
+        from agentdesk.server.app import desk_check_result
+
+        desk_check = summary(desk_check_result(server))
+    except Exception:  # noqa: BLE001 - a check never breaks the dashboard
+        desk_check = {"attention": 0, "top": None}
+
     return DashboardState(
         version=agentdesk.__version__,
         sample=bool(settings.get("sample_data")) if settings is not None else False,
@@ -205,5 +218,6 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
         plugin_cards=tuple(plugin_cards),
         layout_entries=tuple(layout_entries),
         custom_titles=custom_titles,
+        desk_check=desk_check,
         now=instant,
     )

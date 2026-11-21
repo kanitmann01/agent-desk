@@ -1187,6 +1187,47 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     return build_dashboard_state(server).payload()
 
 
+def desk_check_context(server: AgentDeskServer) -> "DeskContext":
+    """The desk check's view of this server: live collaborators, read only.
+
+    The catalog is left unset. The retired-plugin check loads the shipped
+    catalog itself, so a file that will not open is one crashed check and
+    an empty file retires nothing. The ledger is whatever this build has.
+    """
+    from agentdesk.deskcheck import DeskContext
+
+    return DeskContext(
+        settings=server.settings,
+        inbox=server.inbox,
+        excel=server.excel,
+        calendar=server.calendar,
+        plugins=server.plugins,
+        catalog_ids=None,
+        data_dir=default_data_dir(),
+        ledger=getattr(server, "ledger", None),
+        clock=time.time,
+    )
+
+
+def desk_check_result(server: AgentDeskServer) -> "CheckResult":
+    """One run of every desk check: detection only, never a fix."""
+    from agentdesk.deskcheck import run_checks
+
+    return run_checks(desk_check_context(server))
+
+
+def desk_check_api_payload(server: AgentDeskServer) -> dict:
+    """GET /api/desk-check's JSON body: one read-only run of every check."""
+    from agentdesk.deskcheck import finding_to_api
+
+    result = desk_check_result(server)
+    return {
+        "ranTs": time.time(),
+        "findings": [finding_to_api(finding) for finding in result.findings],
+        "failed": dict(result.failed),
+    }
+
+
 def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
     """A handler with no request, for work that starts outside one (the
     workbook watch's poll thread). Only the helpers that read
@@ -1544,6 +1585,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }
             for entry in entries
         ]})
+
+    def _send_desk_check_api(self) -> None:
+        """Serve one read-only run of every desk check as JSON."""
+        self._send_json(200, desk_check_api_payload(self.server))
 
     def _send_preferences_values(self) -> None:
         """Serve the stored insight preferences."""
@@ -2975,6 +3020,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return "Saved. The card below reads back what the store now holds."
         return ""
 
+    def _desk_check_for_page(self, server) -> dict | None:
+        """The desk check for the settings page, or nothing if it cannot run.
+
+        The page has to render either way. A failure here is the empty
+        section, not a 500.
+        """
+        try:
+            return desk_check_api_payload(server)
+        except Exception:
+            return {
+                "ranTs": time.time(),
+                "findings": [{
+                    "title": "The desk check could not finish",
+                    "cause": "Something went wrong running the check, so this page has no findings.",
+                }],
+                "failed": {},
+            }
+
     def _send_settings_page(self) -> None:
         """Render the settings page: sources, skills, endpoint, mail, registry, audit.
 
@@ -3007,6 +3070,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_entries=audit_entries,
             audit_total=audit_total,
             preference_notice=self._preference_notice(),
+            desk_check=self._desk_check_for_page(server),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 

@@ -376,6 +376,42 @@ deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 </section>"""
 
 
+def _desk_check_section(desk_check: dict | None) -> str:
+    """What the desk check last noticed, listed plainly.
+
+    Read-only on this page: the check only detects, so a finding is its
+    title and cause, never a button that pretends to know the fix.
+    """
+    desk_check = desk_check or {}
+    findings = desk_check.get("findings") or []
+    ran_ts = desk_check.get("ranTs")
+    if ran_ts:
+        last_run = (
+            "Last run <span class='mono'>"
+            + datetime.fromtimestamp(ran_ts).strftime("%Y-%m-%d %H:%M")
+            + "</span>"
+        )
+        stamp = f"{len(findings)} TO CHECK" if findings else "ALL CLEAR"
+    else:
+        last_run = "Not run yet."
+        stamp = "NOT RUN"
+    if findings:
+        rows = "".join(
+            "<li class='settings-finding'>"
+            f"<p class='finding-title'><b>{html.escape(finding['title'])}</b></p>"
+            f"<p class='empty'>{html.escape(finding['cause'])}</p></li>"
+            for finding in findings
+        )
+        findings_html = f"<ul class='findings'>{rows}</ul>"
+    else:
+        findings_html = "<p class='empty'>Everything the desk checks is fine.</p>"
+    return f"""<section class='card settings-card' id='desk-check'>
+<div class='w-head'><h2>Desk check</h2><span class='stamp'>{stamp}</span></div>
+<p class='empty'>{last_run}</p>
+{findings_html}
+</section>"""
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -392,6 +428,7 @@ def render_settings_page(
     audit_total: int | None = None,
     preferences: dict | None = None,
     preference_notice: str = "",
+    desk_check: dict | None = None,
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -515,6 +552,8 @@ AGENTDESK_MAIL_FOLDER environment variable.</p>
 </form>
 <p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
 </section>
+
+{_desk_check_section(desk_check)}
 
 <section class='card settings-card' id='registry'>
 <div class='w-head'><h2>Plugin registry</h2><span class='stamp'>{registry_stamp}</span></div>

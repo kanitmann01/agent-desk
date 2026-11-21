@@ -2,7 +2,7 @@
 // one row per deal. An edited row arrives once in `added` and once in
 // `removed`; those pair into a single change. A trailing "— 12" is the
 // sample workbook's row index, not a name, so it is never shown.
-import type { DeltaPayload } from '../types';
+import type { DeltaPayload, DeskCheckSummary } from '../types';
 
 const ROW_INDEX = /(?:—|-)\s*\d+$/;
 
@@ -26,6 +26,25 @@ export interface Mover {
 }
 
 export const MOVER_CAP = 5;
+
+// The desk check's foot line under the health matrix: one finding when
+// something wants attention, nothing when the desk is quiet. The label is
+// the whole line; the link goes to every finding, on the settings page.
+export interface DeskCheckAlert {
+  label: string;
+  href: string;
+}
+
+/** The health cell's desk-check foot line, or null when nothing wants attention. */
+export function deskCheckAlert(
+  deskCheck: DeskCheckSummary | null | undefined,
+): DeskCheckAlert | null {
+  if (!deskCheck || deskCheck.attention <= 0 || !deskCheck.top) return null;
+  return {
+    label: `Desk check: ${deskCheck.top.title} · Open`,
+    href: '/settings#desk-check',
+  };
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
