@@ -336,14 +336,17 @@ def _map_layouts(names: list[str]) -> dict[str, str]:
                 return name
         return take(pred)
 
+    # Title first. Closing's fallback would otherwise take Title Slide
+    # and leave the title role on Title Only.
+    title = take_named(
+        "title slide",
+        lambda low: "title" in low and "vertical" not in low and "content" not in low and "only" not in low,
+    )
     return {
+        "title": title,
         "section": take(lambda low: "divider" in low or "section" in low),
-        "closing": take(lambda low: "clos" in low or "engage" in low or "thank" in low),
         "content": take(lambda low: "content" in low and "vertical" not in low),
-        "title": take_named(
-            "title slide",
-            lambda low: "title" in low and "vertical" not in low and "content" not in low,
-        ),
+        "closing": take(lambda low: "clos" in low or "engage" in low or "thank" in low),
     }
 
 
