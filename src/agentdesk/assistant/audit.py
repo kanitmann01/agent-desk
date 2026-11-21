@@ -121,6 +121,8 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("peer.install", "plugin", "A plugin was downloaded from a paired desk, verified against the publisher's recorded digest, validated by the shared validator, and installed with the peer recorded as its source."),
     ("peer.update", "plugin", "A plugin that came from a paired desk was updated to the publisher's newer version, through the same validate-and-consent path as every update."),
     ("ledger.undo", "decision", "You pressed Undo on a change the desk made by itself; the earlier state was put back, and the undo is itself recorded and undoable."),
+    ("recommend.added", "decision", "The desk added a recommendation built from facts you saved; the row names the rule and the fact ids, never the fact text."),
+    ("recommend.withdrawn", "decision", "A recommendation was withdrawn because the fact behind it was removed or replaced."),
 ]
 
 ACTOR = "agent-desk"

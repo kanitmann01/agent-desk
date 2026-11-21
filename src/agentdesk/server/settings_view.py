@@ -29,6 +29,10 @@ _LABELS = {
     "semantic_memory": "Semantic memory (embeddings)",
     "suggest_headers_only": "Suggest columns from headers only",
     "plugin_instance_cap": "Plugin instances per plugin",
+    "recommendations": "Recommendations",
+    "recommend_deadlines": "Deadline recommendations",
+    "recommend_meetings": "Meeting prep recommendations",
+    "recommend_horizon_days": "Look ahead",
 }
 
 ENDPOINT_HINT = (
@@ -153,6 +157,8 @@ def _toggle_button(key: str, value, label: str | None = None) -> str:
         state = shown
     elif key == "plugin_instance_cap":
         state = str(value)
+    elif key == "recommend_horizon_days":
+        state = f"{value} days"
     else:
         state = "On" if value else "Off"
     return (
@@ -369,6 +375,16 @@ def _agent_section(settings_values: dict) -> str:
 <div class='settings-block'>
 {_toggle_button("autonomy", on, label="Act on its own")}
 </div>
+<h3>Recommendations</h3>
+<div class='settings-block'>
+{_toggle_button("recommendations", bool(settings_values.get("recommendations", True)))}
+{_toggle_button("recommend_deadlines", bool(settings_values.get("recommend_deadlines", True)))}
+{_toggle_button("recommend_meetings", bool(settings_values.get("recommend_meetings", True)))}
+{_toggle_button("recommend_horizon_days", int(settings_values.get("recommend_horizon_days", 30)))}
+</div>
+<p class='empty'>On by default: a deadline in a saved fact becomes a waiting
+card in Decisions, with the fact quoted and the day it was saved. Not now
+keeps one gone for good, and removing or replacing the fact withdraws it.</p>
 <p class='empty'>On by default: the desk acts on its own, and every change it
 makes by itself is recorded on <a href="/settings/activity">Activity</a> with
 an Undo button. It still asks first before sending email or messages,

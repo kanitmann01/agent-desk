@@ -298,6 +298,24 @@ class InboxStore:
         return self.get(card_id)
 
     @_serialized
+    def withdraw(self, card_id: str, origin: str) -> Card:
+        """Dismiss a card and replace its why line with the withdrawal reason.
+
+        The desk withdraws a recommendation whose fact went away; the row keeps
+        its dismissal stamp and stays in the thirty-day history like a Not now.
+        An unknown id raises UnknownCard before anything is written.
+        """
+        if not origin.strip():
+            raise ValueError("a withdrawn card needs a reason")
+        self.get(card_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE cards SET status = ?, dismissed_ts = ?, origin = ? WHERE id = ?",
+                (STATUS_DISMISSED, self.clock(), origin, card_id),
+            )
+        return self.get(card_id)
+
+    @_serialized
     def mark_notified(self, card_id: str) -> None:
         """Stamp the card as notified without touching its status.
 

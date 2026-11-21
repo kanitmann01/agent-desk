@@ -81,6 +81,12 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "memory_capture_research": True,
         "memory_capture_workbook": True,
         "memory_capture_agents": True,
+        # Recommendations (spec 016 §8): on by default, deadlines and
+        # meeting prep named separately, a 30-day look ahead.
+        "recommendations": True,
+        "recommend_deadlines": True,
+        "recommend_meetings": True,
+        "recommend_horizon_days": 30,
         # Presentation calls only. Other agents keep the 10 second cap.
         "presentation_timeout_s": "30",
         "research_provider_url": "",
@@ -477,7 +483,8 @@ def test_quiet_hours_and_cap_set_here_are_what_the_inbox_enforces(env, auth):
 
 def test_first_run_shows_real_connect_actions_with_zero_permission_prompts(env, auth):
     page = env.request("GET", "/", auth)[2].decode("utf-8")
-    assert page.count('data-widget-id=') == 3
+    # Sales, commitments, research, and the Decisions card (spec 016 #195).
+    assert page.count('data-widget-id=') == 4
     assert "Connect a workbook" in page
     assert "Connect your calendar" in page
     # No permission ask exists anywhere on the first screen.

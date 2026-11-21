@@ -124,9 +124,9 @@ def test_rail_links_the_daily_surfaces(page):
     ]
 
 
-def test_dashboard_serves_three_widgets_in_varying_sizes(page):
+def test_dashboard_serves_four_widgets_in_varying_sizes(page):
     scan = _scan(page)
-    assert len(scan.widgets) == 3
+    assert len(scan.widgets) == 4
     cols = {
         next(c for c in w["classes"] if c.startswith("col-")) for w in scan.widgets
     }
@@ -150,8 +150,9 @@ def test_first_run_shows_honest_states_and_no_fabricated_values(page):
     scan = _scan(page)
     statuses = sorted(w["status"] for w in scan.widgets)
     # Sales not connected and commitments empty are attention states;
-    # research is an action surface (Ready). Nothing is sample anymore.
-    assert statuses == ["attention", "attention", "fresh"]
+    # research is an action surface (Ready), and Decisions says nothing
+    # needs a decision (fresh). Nothing is sample anymore.
+    assert statuses == ["attention", "attention", "fresh", "fresh"]
     for banned in (
         "14,320",                # the old invented KPI
         "Q4 pipeline review",    # the old invented meeting

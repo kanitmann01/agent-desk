@@ -177,6 +177,7 @@ from agentdesk.peers.store import PeerError, PeerStore, derive_token
 from agentdesk.registry.install import RegistryError, tree_digest
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.service import Consolidator
+from agentdesk.recommend.builder import RecommendationBuilder
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.audit_view import render_audit_page
 from agentdesk.server.activity_view import DECISIONS
@@ -981,6 +982,23 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.memory_observe_after = 0.0
         # Tests inject a summarizer port; None builds the endpoint one.
         self.summarizer = None
+        # The recommendation builder (spec 016 §6.3): turns deadlines in saved
+        # facts into waiting inbox cards. None only when a store it reads is absent.
+        self.recommender = (
+            RecommendationBuilder(
+                inbox=inbox_store,
+                memory=memory_store,
+                calendar=calendar,
+                settings=settings_store,
+                ledger=ledger,
+                clock=getattr(inbox_store, "clock", time.time),
+            )
+            if inbox_store is not None
+            and memory_store is not None
+            and settings_store is not None
+            and ledger is not None
+            else None
+        )
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -2182,6 +2200,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             widgets.append(render_research_disabled(now))
         widgets += [self._plugin_widget(card) for card in state.plugin_cards]
+        widgets.append(pages.render_decisions_widget(list(state.recommendations), now))
         page = pages.render_dashboard(
             widgets,
             state.version,
@@ -3244,7 +3263,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
-                       "memory_capture_agents"):
+                       "memory_capture_agents", "recommendations", "recommend_deadlines",
+                       "recommend_meetings", "recommend_horizon_days"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -3257,6 +3277,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # the next memory action re-derives the store's semantic
             # half from this value and the probe's cached answer.
             pass
+        elif key.startswith("recommend"):
+            # The recommendation switches are read by the builder on every
+            # refresh. Turning the feature back on runs the pass the next
+            # memory write would otherwise have to wait for.
+            if key == "recommendations":
+                self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap") or key.startswith("memory_"):
             # The memory loop reads its switches on every capture, and the
             # autonomy switch is read by ledger.may_act before each action.
@@ -3292,6 +3318,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = dict(result, detail=f"{result['detail']} Memory: {verb} {memories} sample facts.")
         self._audit("demo.seeded" if value else "demo.cleared",
                     target="sample_data", detail=result["detail"])
+        self._after_memory_change()
 
     def _layout_save(self) -> None:
         """Save the full desired dashboard layout (issue #66).
@@ -3596,6 +3623,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._on_mail_follow_up_decided(card)
         if decision == "accept":
             self._on_fact_carried(card)
+        if card.kind == KIND_MEMORY_DRAFT:
+            self._after_memory_change()
         self._audit(
             "inbox.approved" if decision == "accept" else "inbox.denied",
             target=card.id, detail=card.title,
@@ -3849,6 +3878,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             memory, text.strip(), source="page", entities=memory_loop.names_in(text),
         )
         self._schedule_observation_pass()
+        self._after_memory_change()
         self._memory_response(_fact_json(outcome.fact), status=201)
 
     def _memory_edit(self, fact_id: int | None) -> None:
@@ -3876,6 +3906,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except UnknownFact as exc:
             self._send_json(404, {"error": str(exc)})
             return
+        self._after_memory_change()
         # Ticket #92: an edit that landed on another fact's text merged
         # into it; a form post renders the page with the plain notice,
         # JSON carries the flag alongside the surviving fact.
@@ -3908,6 +3939,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         memory_loop.apply_removal(memory, plan, keep_source_ids=self._pending_source_ids())
         self._audit("memory.remove", target=f"fact {fact_id}", detail="1 fact")
         self._schedule_observation_pass()
+        self._after_memory_change()
         self._memory_response({"deleted": fact_id})
 
     def _memory_sweep_page(self) -> None:
@@ -4286,6 +4318,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                   f" {len(result.observations_flagged)} flagged;"
                   f" {memory_loop.counted(len(result.entities_removed), 'entity', 'entities')} forgotten")
         self._audit("memory.remove", target=f"{kind} {target_id}", detail=counts)
+        self._after_memory_change()
         self._send_json(200, {
             "status": "ok",
             "removed": result.to_json(),
@@ -4318,6 +4351,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._schedule_observation_pass()
         self._audit("memory.undo", target=memory_loop.counted(len(held.result.fact_ids), "fact"),
                     detail="removal undone within the window")
+        self._after_memory_change()
         self._send_json(200, {"status": "ok", "restored": held.result.to_json()})
 
     def _memory_keep(self, raw_id: str) -> None:
@@ -5342,6 +5376,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         inbox_service.evaluate(inbox, _local_now(), on_snooze_return=on_return,
                                **self._budget_values())
+
+    def _after_memory_change(self) -> None:
+        """Keep recommendations caught up after a memory write.
+
+        The builder adds waiting cards for deadlines that just became known and
+        withdraws cards whose fact was just removed or replaced, then the inbox
+        spends its notification budget on whatever is new: quiet hours and the
+        daily cap therefore apply to recommendations exactly as to every card.
+        """
+        recommender = getattr(self.server, "recommender", None)  # type: ignore[attr-defined]
+        if recommender is not None:
+            recommender.refresh()
+        if self.server.inbox is not None:  # type: ignore[attr-defined]
+            self._evaluate_inbox(self.server.inbox)  # type: ignore[attr-defined]
 
     def _audit(self, action: str, target: str = "", detail: str = "",
                status: str = "ok") -> None:
@@ -7510,6 +7558,10 @@ def create_server(
     else:
         server = construct(port)
     _wire_audit(server)
+    # The first recommendation pass runs once the desk is fully wired: facts
+    # saved by an earlier run become waiting cards before any page is read.
+    if server.recommender is not None:
+        server.recommender.refresh()
     return server
 
 
