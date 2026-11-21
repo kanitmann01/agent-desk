@@ -28,6 +28,10 @@
 licenses/third-party/*.txt text eol=lf
 frontend/public/licenses/*.txt text eol=lf
 src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
+# The build-compare contract (a fresh vite build must diff clean against
+# this tree) needs LF bytes in index.html on every checkout; the generic
+# *.html rule missed a dirty blob already in the index, so the path pin.
+src/agentdesk/server/static/spa/index.html text eol=lf
 # The registry's release trees are digest-pinned (registry/index.json), so
 # every checkout must see their bytes exactly as committed. The extension-
 # less LICENSE/NOTICE inside the presentation pack fall outside the *.md
