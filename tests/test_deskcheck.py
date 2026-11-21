@@ -331,8 +331,23 @@ def test_a_catalog_that_will_not_load_is_one_crashed_check(tmp_path, monkeypatch
     crashed = [finding for finding in result.findings
                if finding.id == "deskcheck-crashed:retired-plugins-installed"]
     assert len(crashed) == 1
-    assert crashed[0].title == "Installed plugins the catalog no longer carries"
-    assert "retired-plugins-installed" not in crashed[0].title
+    assert crashed[0].title == (
+        "Couldn't run the check for installed plugins the catalog no longer carries"
+    )
+    assert crashed[0].title != "Installed plugins the catalog no longer carries"
+
+
+def test_a_fresh_context_has_no_catalog_until_one_is_loaded(tmp_path, monkeypatch):
+    import agentdesk.marketplace.catalog as catalog
+
+    monkeypatch.setattr(catalog, "load_catalog_file", lambda path, source: [])
+    ctx = DeskContext(
+        plugins=plugin_runtime(tmp_path, **{"kept-plugin": "enabled"}),
+        data_dir=tmp_path,
+    )
+    assert ctx.catalog_ids is None
+    result = run_checks(ctx)
+    assert [finding.id for finding in result.findings if "retired" in finding.id] == []
 
 
 def test_every_check_skips_silently_without_its_collaborators(tmp_path):

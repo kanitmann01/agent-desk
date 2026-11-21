@@ -69,7 +69,7 @@ class DeskContext:
     excel: object = None
     calendar: object = None
     plugins: object = None
-    catalog_ids: frozenset | None = frozenset()
+    catalog_ids: frozenset | None = None
     data_dir: object = None
     ledger: object = None
     clock: Callable[[], float] | None = None
@@ -120,10 +120,11 @@ def run_checks(ctx: DeskContext, should_fix: bool = False) -> CheckResult:
             contribution = check(ctx, should_fix)
         except Exception as exc:  # one broken check must not break the report
             crashed_id = f"deskcheck-crashed:{check_id}"
-            plain = getattr(check, "plain_title", "") or "A desk check"
+            plain = getattr(check, "plain_title", "") or "a desk check"
+            plain_lowercased = plain[:1].lower() + plain[1:]
             result.findings.append(Finding(
                 id=crashed_id,
-                title=plain,
+                title=f"Couldn't run the check for {plain_lowercased}",
                 cause=f"The check raised {type(exc).__name__}, so its answer is missing.",
                 severity=SEVERITY_FATAL,
                 confident=False,
