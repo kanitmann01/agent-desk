@@ -15,7 +15,6 @@ logged, never silent.
 from collections.abc import Callable
 from datetime import datetime
 
-from agentdesk.inbox.budget import decide_budget
 from agentdesk.inbox.core import Card
 from agentdesk.inbox.store import InboxStore
 
@@ -35,13 +34,11 @@ def evaluate(
     unnotified = [c for c in store.waiting() if c.notified_ts is None]
     if not unnotified:
         return {"notified": 0, "queued": 0, "digest": False}
-    if decide_budget(now, store.notified_today(now), quiet_hours, cap) != "notify":
+    # One serialized decide-and-spend: two concurrent evaluations cannot
+    # both pass the cap check (the decision is judged inside the spend's
+    # own lock, against the ledger as it will be committed).
+    if not store.spend_notification([c.id for c in unnotified], now, quiet_hours, cap):
         return {"notified": 0, "queued": len(unnotified), "digest": False}
     if len(unnotified) == 1:
-        store.mark_notified(unnotified[0].id)
-        store.record_notification("card", 1)
         return {"notified": 1, "queued": 0, "digest": False}
-    for card in unnotified:
-        store.mark_notified(card.id)
-    store.record_notification("digest", len(unnotified))
     return {"notified": len(unnotified), "queued": 0, "digest": True}

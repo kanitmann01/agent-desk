@@ -62,11 +62,16 @@ class Card:
     meta: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Reject a card whose kind is not in CARD_KINDS or whose origin is blank."""
+        """Reject a card whose kind is not in CARD_KINDS, whose origin is
+        blank, or whose window is not a number."""
         if self.kind not in CARD_KINDS:
             raise ValueError(f"unknown card kind: {self.kind!r}")
         if not self.origin.strip():
             raise ValueError("a card without an origin line is not a card")
+        # A non-numeric window would raise in is_expired on every page that
+        # shows the card: refuse it here, where the API answers 400.
+        if self.window_hours is not None and not isinstance(self.window_hours, (int, float)):
+            raise ValueError(f"window hours must be a number, got {self.window_hours!r}")
 
     def is_expired(self, now_ts: float) -> bool:
         """Return True when the card's window has closed by now_ts.
