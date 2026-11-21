@@ -2011,14 +2011,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
             text = answer.reply if answer.status == "ok" else f"[degraded] {answer.cause}"
             threadlog.append(self.server.audit_conn, "assistant", text)  # type: ignore[attr-defined]
-        if self._is_form_submit():
-            self.send_response(303)
-            self.send_header("Location", "/assistant")
-            self._common_headers()
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-        else:
-            self._send_json(200, answer.to_json())
+        self._respond_form_or_json("/assistant", answer.to_json())
 
     def _is_form_submit(self) -> bool:
         """Whether this POST came from a plain HTML form rather than fetch.
@@ -2027,6 +2020,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         that choose between a redirect and JSON consult it.
         """
         return "application/x-www-form-urlencoded" in (self.headers.get("Content-Type") or "")
+
+    def _respond_form_or_json(self, page: str, payload: dict,
+                              status: int = 200) -> None:
+        """The one form-versus-JSON answer.
+
+        A plain HTML form post (no JavaScript) gets the 303 back to the
+        page it came from, a refusal riding the query as a ?notice=
+        sentence; a fetch client gets the JSON payload at `status`. The
+        no-JS half is an accessibility commitment, never cut.
+        """
+        if self._is_form_submit():
+            self._send_redirect(page)
+            return
+        self._send_json(status, payload)
 
     def _ask_question_from_body(self) -> str | None:
         """The trimmed question field of the JSON body, or None.
@@ -2449,22 +2456,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             status="ok" if result.status == AGENT_STATUS_OK else "error",
             detail=f"status {result.status}; {used}",
         )
-        if self._is_form_submit():
-            self.send_response(303)
-            self.send_header("Location", "/agents")
-            self._common_headers()
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-        else:
-            self._send_json(200, {
-                "id": run_id,
-                "agent": kind.id,
-                "status": result.status,
-                "cause": result.cause,
-                "reply": result.reply,
-                "artifact": result.artifact,
-                "facts": result.facts,
-            })
+        self._respond_form_or_json("/agents", {
+            "id": run_id,
+            "agent": kind.id,
+            "status": result.status,
+            "cause": result.cause,
+            "reply": result.reply,
+            "artifact": result.artifact,
+            "facts": result.facts,
+        })
 
     def _presentation_packs(self) -> list:
         """Shipped packs plus anything installed under the user templates dir."""
@@ -2846,14 +2846,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _finish_agent_run(self, run_id, agent_id, status, cause, reply, artifact, facts) -> None:
         """JSON for a fetch, or a redirect back to the page for a form."""
-        if self._is_form_submit():
-            self.send_response(303)
-            self.send_header("Location", "/agents")
-            self._common_headers()
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        self._send_json(200, {
+        self._respond_form_or_json("/agents", {
             "id": run_id,
             "agent": agent_id,
             "status": status,
@@ -3087,20 +3080,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             feedback,
             use_model=True,
         )
-        if self._is_form_submit():
-            self.send_response(303)
-            self.send_header("Location", "/agents")
-            self._common_headers()
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-        else:
-            stored = server.agents.get(run_id)
-            self._send_json(200, {
-                "id": run_id,
-                "agent": run.get("agentId", ""),
-                "feedback": feedback,
-                "feedbackTs": stored["feedbackTs"] if stored else None,
-            })
+        stored = server.agents.get(run_id)
+        self._respond_form_or_json("/agents", {
+            "id": run_id,
+            "agent": run.get("agentId", ""),
+            "feedback": feedback,
+            "feedbackTs": stored["feedbackTs"] if stored else None,
+        })
 
     def _agent_fact_ranks(self, kind, brief: str) -> list:
         """The ranked recall for one agent run: the agent's name joined
@@ -3799,10 +3785,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # A no-JS post lands back on the page it came from: settings
         # pages name themselves with return_to, and the inbox empty
         # state's offer (the only other form poster) defaults to /inbox.
-        if self._is_form_submit():
-            self._send_redirect("/inbox")
-            return
-        self._send_json(200, {"key": key, "value": value})
+        self._respond_form_or_json("/inbox", {"key": key, "value": value})
 
     def _apply_sample_data(self, value) -> None:
         """On seeds the labelled sample set into the real stores; off
@@ -4118,13 +4101,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # card's current state; a replayed form post redirects back to
         # the inbox, which is what a double-click means.
         if current.status != STATUS_WAITING:
-            if self._is_form_submit():
-                self._send_redirect("/inbox")
-                return
-            self._send_json(409, {
+            self._respond_form_or_json("/inbox", {
                 "error": "that card was already decided",
                 "card": current.to_json(inbox.now_ts()),
-            })
+            }, 409)
             return
         # The mail draft's effect lands before the acceptance is
         # recorded: if the outbox write fails, the card stays waiting
@@ -4150,7 +4130,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "inbox.approved" if decision == "accept" else "inbox.denied",
             target=card.id, detail=card.title,
         )
-        self._inbox_action_response(card.to_json(inbox.now_ts()))
+        self._respond_form_or_json("/inbox", card.to_json(inbox.now_ts()))
 
     def _inbox_edit(self, card_id: str) -> None:
         """Update the card's draft; the decision vocabulary calls it
@@ -4173,7 +4153,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except UnknownCard as exc:
             self._send_json(404, {"error": str(exc)})
             return
-        self._inbox_action_response(card.to_json(inbox.now_ts()))
+        self._respond_form_or_json("/inbox", card.to_json(inbox.now_ts()))
 
     def _inbox_snooze(self, card_id: str) -> None:
         """Hide the card for one hour or until the next morning. The
@@ -4196,7 +4176,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._audit("inbox.snoozed", target=card.id,
                     detail="until " + datetime.fromtimestamp(until).strftime("%Y-%m-%d %H:%M"))
-        self._inbox_action_response(card.to_json(inbox.now_ts()))
+        self._respond_form_or_json("/inbox", card.to_json(inbox.now_ts()))
 
     def _inbox_more_info(self, card_id: str) -> None:
         """Attach the user's instruction; the card stays waiting for the
@@ -4217,14 +4197,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": str(exc)})
             return
         self._audit("inbox.more-info", target=card.id, detail=instruction[:200])
-        self._inbox_action_response(card.to_json(inbox.now_ts()))
-
-    def _inbox_action_response(self, payload: dict) -> None:
-        """A no-JS form post lands back on the inbox; JSON gets JSON."""
-        if self._is_form_submit():
-            self._send_redirect("/inbox")
-            return
-        self._send_json(200, payload)
+        self._respond_form_or_json("/inbox", card.to_json(inbox.now_ts()))
 
     def _send_audit_page(self) -> None:
         """The one activity trail inside Settings: every audit row,
@@ -4280,21 +4253,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._audit("ledger.undo", target=entry_id,
                     detail=f"undo entry {recorded.id}")
-        if self._is_form_submit():
-            self._send_redirect(self._form_return_to(body, "/settings/activity"))
-            return
-        self._send_json(200, {"undone": entry_id, "entry": recorded.id})
+        self._respond_form_or_json(self._form_return_to(body, "/settings/activity"),
+                                   {"undone": entry_id, "entry": recorded.id})
 
     def _ledger_undo_error(self, status: int, sentence: str) -> None:
-        """A failed undo: JSON for a fetch, a notice redirect for a form.
-
-        The sentence is what the page shows. A form post must not be left
-        looking at a raw JSON body.
-        """
-        if self._is_form_submit():
-            self._send_redirect(f"/settings/activity?notice={quote(sentence)}")
-            return
-        self._send_json(status, {"error": sentence})
+        """A failed undo: the sentence rides back as the page's notice."""
+        self._respond_form_or_json(f"/settings/activity?notice={quote(sentence)}",
+                                   {"error": sentence}, status)
 
     # -- memory: the page and its actions (tickets #42, #94) --------------
 
@@ -4419,7 +4384,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             memory, text.strip(), source="page", entities=memory_loop.names_in(text),
         )
         self._schedule_observation_pass()
-        self._memory_response(_fact_json(outcome.fact), status=201)
+        self._respond_form_or_json("/memory", _fact_json(outcome.fact), 201)
 
     def _memory_edit(self, fact_id: int | None) -> None:
         """Rewrite one fact's text.
@@ -4454,7 +4419,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         payload = _fact_json(result.fact)
         payload["mergedIntoExisting"] = result.merged_into
-        self._memory_response(payload)
+        self._respond_form_or_json("/memory", payload)
 
     def _memory_delete(self, fact_id: int | None) -> None:
         """Remove one fact, holding it for undo.
@@ -4478,7 +4443,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         memory_loop.apply_removal(memory, plan, keep_source_ids=self._pending_source_ids())
         self._audit("memory.remove", target=f"fact {fact_id}", detail="1 fact")
         self._schedule_observation_pass()
-        self._memory_response({"deleted": fact_id})
+        self._respond_form_or_json("/memory", {"deleted": fact_id})
 
     def _memory_sweep_page(self) -> None:
         """The sweep's dry run (ticket #92): the memory page with the
@@ -4953,7 +4918,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         f" observations and {len(removed.entity_ids)} orphaned"
                         " entities"),
             )
-        self._memory_response({
+        self._respond_form_or_json("/memory", {
             "status": "ok",
             "deleted": len(removed.fact_ids),
             "removedFactIds": list(removed.fact_ids),
@@ -5016,7 +4981,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 target=str(survivor),
                 detail=f"merged entity {removed} into entity {survivor}",
             )
-        self._memory_response({
+        self._respond_form_or_json("/memory", {
             "status": "ok",
             "survivor": merged.id,
             "survivorName": merged.canonical_name,
@@ -5115,7 +5080,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 detail=("memory.sqlite3 encrypted at rest; the key stays"
                         " in memory.key"),
             )
-        self._memory_response({"status": "ok", "fields": result["fields"]})
+        self._respond_form_or_json("/memory", {"status": "ok", "fields": result["fields"]})
 
     def _memory_error_response(self, status: int, cause: str) -> None:
         """A refused memory action: the error page for a form post, the
@@ -5124,13 +5089,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_error_page(status, "Memory encryption", cause)
             return
         self._send_json(status, {"error": cause})
-
-    def _memory_response(self, payload: dict, status: int = 200) -> None:
-        """A no-JS form post lands back on the memory page; JSON gets JSON."""
-        if self._is_form_submit():
-            self._send_redirect("/memory")
-            return
-        self._send_json(status, payload)
 
     # -- embeddings backfill (ticket #95) ----------------------------------
 
@@ -5258,12 +5216,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not kept:
             # Nothing survived the donor's filters: no source row, no
             # cards, no writes at all.
-            self._retain_response({"status": "ok", "cards": [], "sourceId": None})
+            self._respond_form_or_json("/inbox", {"status": "ok", "cards": [], "sourceId": None})
             return
         source_id = memory.add_source(excerpt)
         cards = [self._memory_draft_card(candidate, source_id) for candidate in kept]
         self._evaluate_inbox(server.inbox)
-        self._retain_response({
+        self._respond_form_or_json("/inbox", {
             "status": "ok",
             "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
             "sourceId": source_id,
@@ -5307,14 +5265,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "source_id": source_id,
             }},
         )
-
-    def _retain_response(self, payload: dict) -> None:
-        """A form post from the chat surface lands in the inbox, where
-        the new cards wait; JSON gets JSON."""
-        if self._is_form_submit():
-            self._send_redirect("/inbox")
-            return
-        self._send_json(200, payload)
 
     def _retain_error_response(self, status: int, cause: str) -> None:
         """A failed retain says so in plain language and writes nothing:
@@ -5411,7 +5361,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             for draft in survivors
         ]
         self._evaluate_inbox(server.inbox)
-        self._retain_response({
+        self._respond_form_or_json("/inbox", {
             "status": "ok",
             "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
             "rejected": len(drafts) - len(survivors),
@@ -5555,10 +5505,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_error_page(404, "Nothing here", "No gate lives at this address.")
             return
         cached = cache.save_result(runner())
-        if self._is_form_submit():
-            self._send_redirect("/capabilities")
-            return
-        self._send_json(200, cached.to_json())
+        self._respond_form_or_json("/capabilities", cached.to_json())
 
     def _on_fact_carried(self, card) -> None:
         """An accepted card may carry a fact. Two shapes: the memory
@@ -5711,10 +5658,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         status = mail.retest()
         if server.inbox is not None:
             self._evaluate_inbox(server.inbox)
-        if self._is_form_submit():
-            self._send_redirect("/mail")
-            return
-        self._send_json(200, status)
+        self._respond_form_or_json("/mail", status)
 
     def _mail_draft(self, message_id: str) -> None:
         """The reply draft flow's opening move: a card from the message's
@@ -5761,10 +5705,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         self._audit("mail.draft", target=message.id, detail=f"To: {recipients}")
         self._evaluate_inbox(server.inbox)
-        if self._is_form_submit():
-            self._send_redirect("/mail")
-            return
-        self._send_json(201, card.to_json(server.inbox.now_ts()))
+        self._respond_form_or_json("/mail", card.to_json(server.inbox.now_ts()), 201)
 
     def _write_mail_reply(self, card) -> bool:
         """Acceptance's effect, done first: write the threaded .eml into
@@ -5823,10 +5764,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         settings.set("mail_folder", folder.strip())
         if server.mail is not None and folder.strip():
             server.mail.retest()
-        if self._is_form_submit():
-            self._send_redirect("/settings")
-            return
-        self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
+        self._respond_form_or_json("/settings",
+                                   {"key": "mail_folder", "value": folder.strip()})
 
     def _mail_address_save(self) -> None:
         """The settings page's mail address field, next to the folder.
@@ -5851,10 +5790,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         settings.set("mail_self_address", address.strip())
         if server.mail is not None and address.strip():
             server.mail.retest()
-        if self._is_form_submit():
-            self._send_redirect("/settings")
-            return
-        self._send_json(200, {"key": "mail_self_address", "value": address.strip()})
+        self._respond_form_or_json("/settings",
+                                   {"key": "mail_self_address", "value": address.strip()})
 
     def _preferences_save(self) -> None:
         """The settings form for what the desk knows about this person.
@@ -5890,18 +5827,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             document = PreferenceStore(default_data_dir()).write(patch)
         except PreferencesError as exc:
-            if form:
-                self._send_redirect(
-                    "/settings?preferences_error=" + quote(exc.message))
-                return
-            self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+            self._respond_form_or_json(
+                "/settings?preferences_error=" + quote(exc.message),
+                {"error": exc.message, "code": exc.code}, exc.status)
             return
         self._audit("settings.preferences", target="preferences",
                     detail=",".join(changed(document)) or "none")
-        if form:
-            self._send_redirect("/settings?preferences_saved=1")
-            return
-        self._send_json(200, document)
+        self._respond_form_or_json("/settings?preferences_saved=1", document)
 
     def _on_update_consent_decided(self, card, decision: str, body: dict) -> None:
         """Accepting applies the held update; the "for this plugin"
@@ -6695,20 +6627,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
-            self._registry_install_refused("plugins:unavailable",
+            self._registry_refused("plugins:unavailable",
                                            "no plugin runtime is configured")
             return
         body = self._read_json_body() or {}
         plugin_id = str(body.get("id", "")).strip()
         version = str(body.get("version", "")).strip() or None
         if not plugin_id:
-            self._registry_install_refused("bad-request",
+            self._registry_refused("bad-request",
                                            'expected {"id": "...", "version": "..."}',
                                            status=400)
             return
         root, _origin = self._registry_root_for_request()
         if root is None:
-            self._registry_install_refused(
+            self._registry_refused(
                 "registry:not-configured",
                 "No plugin registry is configured. Set one in Settings.")
             return
@@ -6726,11 +6658,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if active and (version is None or version == active):
                 self._audit("plugin.install", target=plugin_id,
                             detail=f"already installed v{active}; nothing changed")
-                if self._is_form_submit():
-                    self._send_redirect(f"/plugins?notice={quote(
-                        'Already installed ' + plugin_id + ' v' + active + '.')}")
-                    return
-                self._send_json(200, {"ok": True, "already": True, "version": active})
+                self._respond_form_or_json(f"/plugins?notice={quote(
+                    'Already installed ' + plugin_id + ' v' + active + '.')}",
+                    {"ok": True, "already": True, "version": active})
                 return
         try:
             with tempfile.TemporaryDirectory(prefix="agentdesk-registry-") as tmp:
@@ -6739,11 +6669,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     sha256=body.get("sha256"), staging_dir=Path(tmp))
                 result = plugins.install(staged["dir"], source="registry")
         except (RegistryError, RegistryIndexError) as exc:
-            self._registry_install_refused(
+            self._registry_refused(
                 getattr(exc, "code", "install:refused"), str(exc))
             return
         except PluginError as exc:
-            self._registry_install_refused(exc.code, str(exc), exc.status)
+            self._registry_refused(exc.code, str(exc), exc.status)
             return
         if (isinstance(result, dict)
                 and result.get("status") == "pending-consent"):
@@ -6768,18 +6698,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, result)
 
-    def _registry_install_refused(self, code: str, message: str,
-                                  status: int = 409) -> None:
-        """Report a refused registry install to whichever client asked.
+    def _registry_refused(self, code: str, message: str,
+                          status: int = 409) -> None:
+        """A refused registry install or publish, in one shape.
 
         A form post goes back to the plugins page with the message as a notice, because
         a browser form has nowhere else to put it; a fetch gets the code and message as
         JSON, at 409 unless the caller names another status.
         """
-        if self._is_form_submit():
-            self._send_redirect(f"/plugins?notice={quote(message)}")
-            return
-        self._send_json(status, {"error": code, "message": message})
+        self._respond_form_or_json(f"/plugins?notice={quote(message)}",
+                                   {"error": code, "message": message}, status)
 
     def _publish_plugin(self, plugins: PluginRuntime, plugin_id: str) -> None:
         """Publish one installed plugin to the resolved registry (#63).
@@ -6809,34 +6737,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = publish_to_registry(root, plugin_id, version=version,
                                          source_dir=source_dir)
         except PluginError as exc:
-            self._publish_refused(exc.code, str(exc), exc.status)
+            self._registry_refused(exc.code, str(exc), exc.status)
             return
         except (RegistryError, RegistryIndexError) as exc:
-            self._publish_refused(
+            self._registry_refused(
                 getattr(exc, "code", "publish:refused"), str(exc))
             return
         self._audit("registry.publish", target=plugin_id,
                     detail=f"local v{result.get('version', '')} to the "
                            f"{origin} registry")
-        if self._is_form_submit():
-            self._send_redirect(f"/plugins?notice={quote(
-                'Published ' + plugin_id + ' v'
-                + str(result.get('version', '')) + ' to the registry.')}")
-            return
-        self._send_json(200, result)
-
-    def _publish_refused(self, code: str, message: str,
-                         status: int = 409) -> None:
-        """Report a refused publish, in the same shape as a refused install.
-
-        A form post gets the notice redirect and a fetch gets code and message as JSON
-        at 409, so the two refusal routes of the marketplace cannot drift into different
-        contracts.
-        """
-        if self._is_form_submit():
-            self._send_redirect(f"/plugins?notice={quote(message)}")
-            return
-        self._send_json(status, {"error": code, "message": message})
+        self._respond_form_or_json(f"/plugins?notice={quote(
+            'Published ' + plugin_id + ' v'
+            + str(result.get('version', '')) + ' to the registry.')}", result)
 
     def _registry_path_save(self) -> None:
         """Save or clear the registry checkout path (the settings form)."""
@@ -6880,10 +6792,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         settings.set("extra_allowed_hosts", hosts.strip())
         self._audit("settings.hosts", target="extra_allowed_hosts",
                     detail="cleared" if not hosts.strip() else "updated")
-        if self._is_form_submit():
-            self._send_redirect("/settings")
-            return
-        self._send_json(200, {"key": "extra_allowed_hosts", "value": hosts.strip()})
+        self._respond_form_or_json("/settings",
+                                   {"key": "extra_allowed_hosts", "value": hosts.strip()})
 
     # -- the peer-to-peer surface (issue #67) ------------------------------
 
@@ -7211,10 +7121,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       status: int = 409) -> None:
         """The peers page's own refusals: forms get the notice line,
         JSON callers get the named error."""
-        if self._is_form_submit():
-            self._peers_redirect(message)
-            return
-        self._send_json(status, {"error": code, "message": message})
+        self._respond_form_or_json(f"/peers?notice={quote(message)}",
+                                   {"error": code, "message": message}, status)
 
     def _peers_code_generate(self) -> None:
         """Mint a single-use pairing code and tell the user what it is.
@@ -7232,12 +7140,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         out = store.create_pairing_code()
         self._audit("peer.code", target="pairing-code",
                     detail="a single-use pairing code was generated")
-        if self._is_form_submit():
-            self._peers_redirect(
+        self._respond_form_or_json(
+            "/peers?notice=" + quote(
                 f"Pairing code {out['code']}. Another desk can redeem it "
-                "for the next ten minutes; it works once.")
-            return
-        self._send_json(200, out)
+                "for the next ten minutes; it works once."), out)
 
     def _peers_pair(self) -> None:
         """This desk types the other desk's code: submit it, then pin the
@@ -7279,12 +7185,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # One honest refresh right away, so the page shows the peer's
         # shares (or the cause it could not be read).
         self._refresh_one_peer(str(answer.get("peer_id", "")))
-        if self._is_form_submit():
-            self._peers_redirect(
-                f"Paired with {answer.get('name', 'the other desk')}.")
-            return
-        self._send_json(200, {"ok": True, "peer_id": answer.get("peer_id"),
-                              "name": answer.get("name")})
+        self._respond_form_or_json(
+            "/peers?notice=" + quote(
+                f"Paired with {answer.get('name', 'the other desk')}."),
+            {"ok": True, "peer_id": answer.get("peer_id"),
+             "name": answer.get("name")})
 
     def _refresh_one_peer(self, peer_id: str) -> bool:
         """Fetch one peer's shared-plugin list into the subscription
@@ -7386,12 +7291,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._audit("peer.install", target=plugin_id,
                     detail=f"from {peer['name']} v{result['version']} "
                            f"digest {staged['sha256'][:12]} verified")
-        if self._is_form_submit():
-            self._peers_redirect(
+        self._respond_form_or_json(
+            "/peers?notice=" + quote(
                 f"Installed {plugin_id} v{result['version']} from "
-                f"{peer['name']}.")
-            return
-        self._send_json(200, result)
+                f"{peer['name']}."), result)
 
     def _peers_update(self) -> None:
         """One click to the publisher's newer version: same staging and
@@ -7726,14 +7629,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                       "message": "no plugin runtime is configured"})
             return
         if session.state != "preview" or not session.draft:
-            if self._is_form_submit():
-                # The refusal, honestly rendered: back to the page, which
-                # shows the state the session is really in (the approved
-                # screen after an approval, the preview and its button
-                # otherwise). Nothing installs twice.
-                self._send_redirect(f"/wizard/{session_id}")
-                return
-            self._send_json(409, {"error": "wizard:not-in-preview"})
+            # The refusal, honestly rendered: back to the page, which
+            # shows the state the session is really in (the approved
+            # screen after an approval, the preview and its button
+            # otherwise). Nothing installs twice.
+            self._respond_form_or_json(f"/wizard/{session_id}",
+                                       {"error": "wizard:not-in-preview"}, 409)
             return
         import tempfile
         import zipfile
@@ -7754,11 +7655,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         session.draft = {**session.draft, "installed": result}
         wizard.save(session)
         summary = approval_summary(session.draft["manifest"])
-        if self._is_form_submit():
-            self._send_redirect(f"/wizard/{session_id}")
-            return
-        self._send_json(200, {"status": "installed", "pilot": True,
-                              "summary": summary, "install": result})
+        self._respond_form_or_json(f"/wizard/{session_id}", {
+            "status": "installed", "pilot": True,
+            "summary": summary, "install": result})
 
     def _wizard_escalate(self, session_id: str, reason: str) -> None:
         """End a wizard session as escalated and send the user back to its page.
