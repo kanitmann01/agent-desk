@@ -1,0 +1,13 @@
+agent-desk local CI  (data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-ci-r39d4y9o)
+checkout: D:\20-projects\Personal Agents\.worktrees\017-13-render-paths
+------------------------------------------------------------------------
+PASS  py-grammar          0.0s  0 files parse under 3.10
+PASS  pytest            527.2s  2677 passed, 2 skipped, 11 warnings in 525.38s (0:08:45)
+PASS  frontend-check      2.8s  tsc --noEmit clean
+PASS  frontend-tests      8.6s  [2m      Tests [22m [1m[32m312 passed[39m[22m[90m (312)[39m
+PASS  licenses            0.1s  manifest clean and current
+PASS  registry-ci         0.2s  REGISTRY-CI PASS
+PASS  brand-leak          0.1s  BRAND-LEAK PASS (1 pack(s), 0 hash(es))
+------------------------------------------------------------------------
+7/7 gates passed in 539s
+CI PASS
