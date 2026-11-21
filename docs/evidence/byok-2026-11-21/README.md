@@ -1,4 +1,4 @@
-# BYOK evidence pack, 2026-11-21 (spec 018, ticket #235)
+# BYOK evidence pack, 2026-11-21 (spec 018, tickets #231 to #235 and #241)
 
 The proof behind the BYOK close-out: the full local gate green, the
 suite green with no OS keychain anywhere, the Nuitka smoke leg with
@@ -8,16 +8,17 @@ flow without a screenshot here means that flow was not done.
 
 ## How the walkthrough ran
 
-- Two throwaway data folders under the system temp dir
-  (`%TEMP%\\byok-desk-a`, `%TEMP%\\byok-desk-b`), never the user's real
-  `%USERPROFILE%\\.agent-desk`. Desk A booted fresh; Desk B's settings
-  sqlite was seeded before boot with the legacy rows (`llm_base`,
-  `llm_key`, `llm_model`) using the clearly fake key value
-  `sk-demo-legacy-migration-0001`, so the one-boot migration ran on a
-  real start. Both boots were the real app: `python -m agentdesk.server
-  --port <free port> --no-browser` with `AGENTDESK_DATA` pointed at the
-  throwaway folder and the `AGENTDESK_*` endpoint overrides emptied,
-  entered through the printed one-time start link.
+- Throwaway data folders under the system temp dir (`%TEMP%\byok-desk-a`,
+  `%TEMP%\byok-desk-b`; the merge retake used fresh ones, see below),
+  never the user's real `%USERPROFILE%\.agent-desk`. Desk A booted
+  fresh; Desk B's settings sqlite was seeded before boot with the
+  legacy rows (`llm_base`, `llm_key`, `llm_model`) using the clearly
+  fake key value `sk-demo-legacy-migration-0001`, so the one-boot
+  migration ran on a real start. Both boots were the real app:
+  `python -m agentdesk.server --port <free port> --no-browser` with
+  `AGENTDESK_DATA` pointed at the throwaway folder and the
+  `AGENTDESK_LLM_BASE` / `AGENTDESK_LLM_KEY` / `AGENTDESK_LLM_MODEL`
+  overrides emptied, entered through the printed one-time start link.
 - Loopback stub endpoints (stdlib `http.server` on 127.0.0.1 free
   ports) played the provider, the same shapes
   `tests/server_harness.py` and `tests/test_server_keys_health.py`
@@ -26,8 +27,9 @@ flow without a screenshot here means that flow was not done.
   answered 401, and one recorded port was left dead for the transient
   case.
 - Every key typed during the walkthrough was a clearly fake demo value
-  (`sk-demo-byok-walkthrough-0001`, `sk-demo-bad-9999`,
-  `sk-demo-dead-7777`). No screenshot shows an input holding a value:
+  (`sk-demo-byok-walkthrough-0001`, `sk-demo-bad-9999`; the Dead port
+  row was created on the Ollama no-key preset with no key at all). No
+  screenshot shows an input holding a value:
   forms were captured before typing and after saves, where only masked
   hints render.
 - Screenshots were taken with playwright-cli (Chromium, 1440x900)
@@ -35,24 +37,26 @@ flow without a screenshot here means that flow was not done.
 
 ## The captured gate
 
-- `ci-local.txt`: the complete output of `python tools/ci_local.py`
-  (launched detached because the run takes ~577 s). It ends:
+- `ci-local.txt`: the complete output of `python tools/ci_local.py` on
+  the merged tree (launched detached because the run takes ~600 s).
+  The seven leg names are unchanged by the 017 gate rework; the
+  licenses leg now phrases its pass as "sbom, license gate and notices
+  all clean" (the SBOM chain replaced the legacy manifest this merge
+  retired). It ends:
 
-      7/7 gates passed in 577s
+      7/7 gates passed in 603s
       CI PASS
 
-  pytest leg: `2743 passed, 1 skipped` over a fresh temp data dir.
-  Note: the `py-grammar` leg reports `0 files parse under 3.10` because
-  this worktree lives under a `.worktrees` parent the gate's walker
-  deliberately skips; from a normal checkout path it scans the tree.
+  pytest leg: `2802 passed, 1 skipped` over a fresh temp data dir; the
+  frontend legs: `313 passed` vitest, `tsc --noEmit` clean.
 
 - `null-keyring-pytest.txt`: the full pytest suite with
-  `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` forced in the
-  environment (probe printed `keyring.backends.fail.Keyring
-  (priority: 0)` before the run), stderr empty, verdict
-  `2741 passed, 2 skipped, 10 warnings in 570.22s`. CI parity with no
-  OS keychain anywhere: connections still save (without secrets), the
-  page names the state, tests inject fakes.
+  `PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring` forced in the
+  environment (probe printed `keyring.backends.null.Keyring (priority:
+  -1)` before the run), stderr empty, verdict `2802 passed, 1 skipped,
+  13 warnings in 595.50s`. CI parity with no OS keychain anywhere:
+  connections still save (without secrets), the page names the state,
+  tests inject fakes.
 
 ## The Nuitka smoke leg
 
@@ -67,7 +71,9 @@ flow without a screenshot here means that flow was not done.
 - `nuitka-built-exe-connections.png`: the built `AgentDesk.exe`
   serving the Settings Connections card (authenticated through its
   one-time start link): the packaged app renders the new surface with
-  the keychain live and no no-keychain notice.
+  the keychain live and no no-keychain notice. The merge retake below
+  did not redo this frame: the Connections card's visible content is
+  unchanged by the 017 wave and the packaging surface did not change.
 
 ## Walkthrough screenshots, flow by flow
 
@@ -82,20 +88,20 @@ flow without a screenshot here means that flow was not done.
 | `04-row-after-clear-no-key.png` | (d) after save | The row's Key cell now reads `no key`: the clear removed the stored key and its keychain entry. |
 | `05-test-badge-ok.png` | (e) Test: ok | The Test button's free model-list request against the loopback stub: badge `ok`, checked stamp, models cached. |
 | `05-test-badge-error-401.png` | (e) Test: error | The stub answering 401: badge `error` with the inline cause "the endpoint rejected the API key (HTTP 401); check the key". |
-| `05-test-badge-transient-dead-port.png` | (e) Test: transient | A dead port: the badge keeps its stored status (`unknown` on a fresh row, the spec's mapping for transport failures) and the inline cause names it: "the endpoint host refused the connection: nothing is listening at 127.0.0.1:61038". The frame also shows all three badge states side by side. |
-| `06-models-cached-row.png` | (f) model refresh, page | The deeper-check/model block's row after the check: the model block shows "2 models cached" from the loopback stub. |
+| `05-test-badge-transient-dead-port.png` | (e) Test: transient | A dead port: the badge keeps its stored status (`unknown` on a fresh row, the spec's mapping for transport failures) and the inline cause names it: "the endpoint host refused the connection: nothing is listening at 127.0.0.1:50147". The frame also shows all three badge states side by side. |
+| `06-models-cached-row.png` | (f) model cache, page | The Connections card after the checks: the row shows "2 models cached" from the loopback stub. |
 | `06-models-refresh-discovered-ids.png` | (f) model refresh, the ids | `GET /api/connections/<id>/models?refresh=1` (the refresh route re-fetches server-side) rendering the discovered ids `demo-mini`, `demo-large` with their fetched-at stamp in the browser. |
-| `07-job-binding-serves-through.png` | (g) per-job picker | The assistant job bound to Demo stub with model `demo-mini`; the picker shows Demo stub as the selected option (retaken after the #235 fix) and the readback line agrees: "Serves through Demo stub, model demo-mini." |
-| `08-delete-bound-jobs-warning.png` | (h) delete with bound jobs | The no-JS confirmation page a bound connection's first delete answers with: it names the bound job ("Demo stub is bound to the assistant job"), what the delete removes, and the "Keep it" exit. |
-| `08-connections-after-delete.png` | (h) after confirm | The list without the deleted connection; the remaining rows (Stub rejects, Dead port) keep their badges. The binding went with the delete. |
+| `07-job-binding-serves-through.png` | (g) per-job picker | The assistant job bound to the saved connection with model `demo-mini`; the picker shows the bound connection as the selected option and the readback line agrees: "Serves through OpenRouter personal, model demo-mini." |
+| `08-delete-bound-jobs-warning.png` | (h) delete with bound jobs | The no-JS confirmation page a bound connection's first delete answers with: it names the bound job ("OpenRouter personal is bound to the assistant job"), what the delete removes, and the "Keep it" exit. |
+| `08-connections-after-delete.png` | (h) after confirm | The list without the deleted connection; the remaining rows (Stub rejects, Dead port) keep their badges. The binding went with the delete (NONE BOUND). |
 | `09-migrated-endpoint-connection.png` | (i) migration | Desk B after a real boot over legacy settings rows: the "Migrated endpoint" connection with the Custom preset, its masked hint (`sk-...0001`), the legacy base URL verbatim, and the default star. |
 | `09-migrated-default-job-bound.png` | (i) migration bound the job | The default job's readback: "Serves through Migrated endpoint, model demo-mini.", the legacy `llm_model` carried into the binding. |
 | `10-theme-unkey-connections.png` | (j) theme: Unkey | The Connections card under the default dark yellow-green theme, three saved connections rendering badges, masked hints and the preset grid. |
-| `10-theme-unkey-jobs.png` | (j) theme: Unkey | The Jobs card under Unkey, retaken after the #235 fix: the assistant picker shows its bound connection, the six unbound pickers show Not bound. |
+| `10-theme-unkey-jobs.png` | (j) theme: Unkey | The Jobs card under Unkey: the assistant picker shows its bound connection, the other pickers show Not bound, the readback agrees. |
 | `10-theme-coforge-connections.png` | (j) theme: Coforge | The Connections card under the navy/coral theme. |
-| `10-theme-coforge-jobs.png` | (j) theme: Coforge | The Jobs card under Coforge, retaken after the #235 fix (the corrected picker, `1 BOUND`). |
+| `10-theme-coforge-jobs.png` | (j) theme: Coforge | The Jobs card under Coforge (the corrected picker, `1 BOUND`). |
 | `10-theme-momentuum-connections.png` | (j) theme: Momentuum blue | The Connections card under the light brand-blue theme. |
-| `10-theme-momentuum-jobs.png` | (j) theme: Momentuum blue | The Jobs card under Momentuum blue, retaken after the #235 fix (the corrected picker, `1 BOUND`). |
+| `10-theme-momentuum-jobs.png` | (j) theme: Momentuum blue | The Jobs card under Momentuum blue (the corrected picker, `1 BOUND`). |
 
 The shipped theme list was taken from the page code:
 `src/agentdesk/server/settings_view.py`, `_THEMES` (unkey, coforge,
@@ -109,52 +115,65 @@ bound job's select still displayed "Not bound" (no option carried the
 `selected` attribute) while the readback under the form said otherwise.
 After the fix (the picker preselects its bound connection), the four
 frames whose content changed were retaken so this pack shows the final
-state:
+state. The merge retake below re-captured those frames again with the
+final wording.
 
-- `07-job-binding-serves-through.png` and the three
-  `10-theme-*-jobs.png` frames were re-captured against a fresh
-  throwaway desk (`%TEMP%\\byok-refresh\\desk-a`, never the real
-  `%USERPROFILE%\\.agent-desk`), booted exactly like the original run:
-  `python -m agentdesk.server --port <free> --no-browser` with
-  `AGENTDESK_DATA` on the throwaway folder, the `AGENTDESK_*` overrides
-  emptied, and the branch's `src` on `PYTHONPATH` so the desk ran this
-  worktree's code. The same loopback stub (stdlib `http.server`) served
-  `GET /v1/models` 200 with `demo-mini` and `demo-large`; the Demo stub
-  connection was created through the real form with the clearly fake
-  key `sk-demo-byok-walkthrough-0001`, and the assistant job bound to
-  it through the real picker. Chromium 1440x900 via playwright-cli, the
-  same viewport as the original frames. No screenshot shows an input
-  holding a raw key value (the frames show the Jobs card only, where no
-  key field exists).
+## The merge retake (2026-11-21, after merging the 017 wave)
+
+origin/main moved 28 commits past this branch's base: the spec 017
+remediation wave, including "every surface says Agent Desk" (#228),
+which renamed the product chrome on every page this pack screenshots
+(the sidebar brand, breadcrumbs, page titles and footers all said the
+retired working name in the old frames). Every frame whose visible
+content the merge touched was therefore re-captured against the merged
+tree (`e0915e0`), keeping the same file names and the same flow order:
+that is all frames above except `nuitka-built-exe-connections.png`
+(whose Connections-card region is unchanged; see its section).
+
+How the retake ran, same hygiene as the original:
+
+- Three throwaway desks under `%TEMP%\byok-merge-retake\` (desk A
+  fresh for the CRUD and theme flows, desk B seeded with the legacy
+  `llm_base` / `llm_key` / `llm_model` rows and the fake key
+  `sk-demo-legacy-migration-0001` for the migration frames, desk C
+  fresh again for a clean chronological CRUD pass), booted exactly
+  like the original run: `python -m agentdesk.server --port <free>
+  --no-browser`, `AGENTDESK_DATA` on the throwaway folder, the
+  `AGENTDESK_LLM_*` overrides emptied, entered through the printed
+  one-time start link.
+- The same three loopback stub shapes (200 model list, 401, dead
+  port); the same clearly fake keys; no screenshot shows an input
+  holding a value. Two frames are byte-identical on purpose: the
+  (b)-after-save and (c)-after-save views render exactly the same
+  pixels (the claim of frame (c) is that nothing visibly changed),
+  and the (e)-transient and (f)-cached frames share one view where
+  both stamps are visible side by side.
+- Chromium 1440x900 via playwright-cli, the same viewport as the
+  original frames.
 
 ## Keychain cleanup (the walkthrough's traces are gone)
 
 The walkthrough used the real OS keychain on purpose (the feature under
 test). Entries it created, service `agent-desk`, username `key/<id>`:
 
-- `key/2aa13365...` (Demo stub): already removed by the app itself,
-  because flow (d)'s clear-key action deletes the entry through the
-  keychain wrapper.
-- `key/8f7b34c5...` (Stub rejects), `key/b1e3fa92...` (Dead port),
-  `key/migrated-endpoint` (Desk B's migration; the delete route
-  deliberately keeps a migrated key so a restart can recover).
+- The original run's entries were cleaned the same day (documented in
+  the previous revision of this README: plain targets via the keyring
+  API, two compound `key/<id>@agent-desk` targets by exact name).
+- The merge retake's entries: the app itself deleted the flow (d)
+  clear and the flow (h) bound-delete entries through the keychain
+  wrapper; the compound `key/<id>@agent-desk` targets kept three
+  traces (`key/70aeb2a9...`, `key/01910b73...`, and
+  `key/migrated-endpoint` from Desk B's migration, which deliberately
+  keeps a migrated key so a restart can recover).
 
-After the walkthrough every remaining `agent-desk` entry was enumerated
-with `cmdkey /list` (3 found), deleted through the keyring API, and the
-enumeration re-run: **0 agent-desk entries remain**. The throwaway data
-folders and their sqlite stores were deleted with the temp run
-directory at the end.
-
-The #235 refresh pass created its own keychain traces and cleaned them
-the same way: the retake's two boots (one before noticing the desk was
-importing a stale installed copy, one on the worktree code) saved the
-demo key twice, and the keyring backend kept the first save under its
-compound target (`key/<id>@agent-desk`) when the second landed. Both
-targets were enumerated (`CredEnumerateW` via the same win32 API the
-keyring backend wraps, cross-checked with `cmdkey /list`: 2 found),
-deleted by exact target name, and the enumeration re-run: **0
-agent-desk entries remain** (confirmed by `CredEnumerateW`, `cmdkey
-/list` and `keyring.get_password` returning nothing).
+After the retake every remaining `agent-desk` entry was enumerated
+with `CredEnumerateW` (filters `agent-desk*` and `key/*`, cross-checked
+with `cmdkey /list`: 1 plain + 3 compound found), deleted by exact
+target name through `CredDeleteW`, and the enumeration re-run across
+`agent-desk*`, `key/*`, `*agent*` and `*desk*` plus `cmdkey /list`:
+**0 agent-desk entries remain**. The throwaway data folders, their
+sqlite stores, the stub/boot scripts and the browser session were
+deleted with the temp run directory at the end.
 
 ## Artifacts not in this folder
 
