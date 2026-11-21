@@ -270,6 +270,22 @@ def test_the_no_js_delete_confirmation_for_a_migrated_connection_names_the_resta
         assert "came from the upgrade migration" in page
         assert "key stays in this machine's keychain" in page
         assert "puts the connection back" in page
+        # The whole migrated consequence paragraph, pinned verbatim
+        # (spec 019 #258): every fragment join keeps its space, so a
+        # dropped join space anywhere in the paragraph fails the pin.
+        assert (
+            "<p><b>Migrated endpoint</b> came from the upgrade migration"
+            " (the legacy endpoint rows). Deleting it removes the"
+            " connection and those bindings, but the key stays in this"
+            " machine's keychain, and on the next start the migration step"
+            " sees the legacy rows and puts the connection back with its"
+            " key and its jobs: nothing needs retyping. The jobs you left"
+            " bound to your own connections stay exactly as they"
+            " are.</p>"
+        ) in page
+        for run_on in ("thosebindings", "ownconnections", "jobs:nothing",
+                       "andputs"):
+            assert run_on not in page, run_on
         assert "action='/api/connections/migrated-endpoint/delete'" in page
         assert "name='confirm'" in page
         # The warning answered, nothing landed yet.

@@ -490,16 +490,17 @@ def render_connection_delete_warning(connection: dict, jobs: list[str],
     else:
         consequence = (
             f"<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}."
-            "Deleting it removes the connection, its keychain entry and those"
-            "bindings; the jobs fall back to the default binding, the single"
-            "remaining connection, or the environment, and a job with none of those"
-            "answers with a named unbound error instead of a silent one.</p>"
+            " Deleting it removes the connection, its keychain entry and those"
+            " bindings; the jobs fall back to the default binding, the single"
+            " remaining connection, or the environment, and a job with none of"
+            " those answers with a named unbound error instead of a silent"
+            " one.</p>"
         )
     content = f"""<h1>Delete a connection that serves jobs</h1>
 {consequence}
 <form method='post' action='/api/connections/{connection_id}/delete' class='cardform'>
 <input type='hidden' name='confirm' value='1'>
-<button class='btn btn-primary' type='submit'>Delete {label} and unbind {named}</button>
+<button class='btn btn-danger' type='submit'>Delete {label} and unbind {named}</button>
 </form>
 <p><a class='btn btn-secondary' href='/settings'>Keep it</a></p>"""
     return page_shell("Connections", "/settings", content, version)
