@@ -61,6 +61,25 @@ def _ask(env, auth, question):
     assert status == 200
 
 
+def test_a_transient_memory_failure_reads_as_no_facts_on_the_assistant(env, auth, caplog):
+    # A locked store file (a backup or sync process holding it) raises
+    # OperationalError mid-read; the turn must answer without facts, the
+    # way a locked bank already does, never the generic error page.
+    import logging
+    import sqlite3
+
+    def locked(_query):
+        raise sqlite3.OperationalError("database is locked")
+
+    env.server.memory.recall = locked
+    with caplog.at_level(logging.WARNING, logger="agentdesk.server"):
+        _ask(env, auth, "what is the revenue?")
+    assert any("could not be read just now" in record.getMessage()
+               for record in caplog.records)
+    # The turn proceeded: the prompt carried no facts block.
+    assert "Known facts about the user" not in env.server.llm.prompts[-1]
+
+
 def test_the_loop_state_needs_a_session(env):
     status, _h, _b = env.request("GET", "/api/memory/loop", env.host_header())
     assert status == 401

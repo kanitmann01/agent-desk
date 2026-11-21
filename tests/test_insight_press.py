@@ -18,6 +18,7 @@ from agentdesk.inbox.store import InboxStore
 from agentdesk.insight import press
 from agentdesk.insight.preferences import defaults
 from agentdesk.insight.types import InsightError
+from agentdesk.llm import LlmUnavailable
 from agentdesk.mail.core import parse_eml, with_threads
 
 
@@ -116,6 +117,22 @@ def test_a_model_that_fails_explains_nothing_rather_than_crashing():
     assert answer["text"] == ""
     assert answer["source"] == "none"
     assert "did not answer" in answer["note"]
+
+
+def test_a_named_endpoint_failure_keeps_its_cause_in_the_note():
+    def complete(_prompt: str) -> str:
+        raise LlmUnavailable(
+            "the endpoint answered 401; check the API key in Settings"
+        )
+
+    answer = press.draft_reply(
+        None, {"kind": "explain-range", "text": "Booked falls as Margin rises."},
+        preferences=_prefs(), complete=complete,
+    )
+    assert answer["status"] == "empty"
+    # The recovery is named, not discarded with the generic line.
+    assert "did not answer" in answer["note"]
+    assert "check the API key in Settings" in answer["note"]
 
 
 def test_an_explanation_needs_the_finding():

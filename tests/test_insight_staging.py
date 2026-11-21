@@ -21,6 +21,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 
 import server_harness
+from agentdesk.assistant import audit as audit_store
 from agentdesk.inbox.store import InboxStore
 from agentdesk.insight import press
 from agentdesk.mail.store import MailStore
@@ -157,4 +158,47 @@ def test_a_press_that_names_no_thread_refuses_and_stages_nothing(env, auth):
     assert answer["code"] == "insight:thread-missing"
     assert '"Q3 plan"' in answer["error"]
     assert press.DISCLOSURE[0] in answer["error"]
+    assert _drafted(env) == []
+
+
+# -- the audit trail on the JSON door (spec 017 workstream 3) --------------
+
+
+def _press_rows(env) -> list:
+    return [e for e in audit_store.entries(env.server.audit_conn)
+            if e["action"] == "insight.press"]
+
+
+def test_a_json_press_writes_the_row_its_no_js_twin_writes(env, auth):
+    status, answer = _post(env, auth, {
+        "kind": "reply-draft",
+        "thread": {"subject": "Budget", "sender": "priya@example.com"},
+        "stage": True,
+    })
+    assert status == 200
+    rows = _press_rows(env)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["status"] == "ok"
+    # The row names the thread and the source, never the words.
+    assert row["target"] == MESSAGE_ID
+    assert row["detail"] == "reply-draft:model: staged " + answer["cardId"]
+    assert MODEL_TEXT not in row["detail"]
+
+
+def test_a_json_press_refused_before_any_call_records_an_error_row(env, auth):
+    status, answer = _post(env, auth, {
+        "kind": "reply-draft",
+        "thread": {"subject": "Q3 plan", "sender": "priya@example.com"},
+        "stage": True,
+    })
+    assert status == 404
+    assert answer["code"] == "insight:thread-missing"
+    rows = _press_rows(env)
+    # The refusal is the only row, and it is an error: nothing claims a
+    # call was spent or a card staged.
+    assert len(rows) == 1
+    assert rows[0]["status"] == "error"
+    assert rows[0]["detail"] == "insight:thread-missing"
+    assert [r for r in rows if r["status"] == "ok"] == []
     assert _drafted(env) == []

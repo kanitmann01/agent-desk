@@ -1,0 +1,65 @@
+Agent Desk, spec 017 workstream 3: the pressed-card JSON route writes
+the audit rows its no-JS twin writes. Real server, temp data dir,
+tools/mock_endpoint.py as the endpoint on 127.0.0.1:63875/v1.
+
+1. Bootstrap exchange: GET /auth/... -> 303 + session cookie (the launcher's browser does this).
+
+2. Priya presses an explain card on the dashboard. The SPA posts the
+   press payload to the JSON door, /api/insight/draft:
+   POST /api/insight/draft -> 200
+   status='draft' source='model'
+   text='The mock endpoint answers a plain prompt with this sentence.'
+
+3. The IT surface: the audit export (GET /audit/export.csv):
+   actor,action,target,timestamp
+   agent-desk,insight.press,explain-range,2026-11-21T09:24:44
+
+4. The same store through the settings page's live tail (GET /audit/tail),
+   which carries the columns the CSV leaves for the page: model, status:
+   [
+      {
+         "ts": 1795271084.9629862,
+         "actor": "agent-desk",
+         "action": "insight.press",
+         "target": "explain-range",
+         "status": "ok",
+         "model": "",
+         "request_bytes": 0,
+         "detail": "explain-range:model"
+      }
+   ]
+
+5. The refusal: model calls are turned off in settings, then the press
+   is attempted again. The desk refuses before spending any call:
+   POST /api/insight/draft -> 409
+   code='insight:model-off'
+
+6. The export now holds both press rows (the CSV's four columns are the
+   ones Security sorts in Excel); the tail below shows the refused one
+   recorded as an error row, never a working one:
+   agent-desk,insight.press,explain-range,2026-11-21T09:24:44
+   agent-desk,insight.press,explain-range,2026-11-21T09:24:44
+
+   tail rows for insight.press (status column):
+   [
+      {
+         "ts": 1795271084.9708898,
+         "actor": "agent-desk",
+         "action": "insight.press",
+         "target": "explain-range",
+         "status": "error",
+         "model": "",
+         "request_bytes": 0,
+         "detail": "insight:model-off"
+      },
+      {
+         "ts": 1795271084.9629862,
+         "actor": "agent-desk",
+         "action": "insight.press",
+         "target": "explain-range",
+         "status": "ok",
+         "model": "",
+         "request_bytes": 0,
+         "detail": "explain-range:model"
+      }
+   ]

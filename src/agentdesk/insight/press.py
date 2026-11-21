@@ -26,6 +26,7 @@ from typing import Any, Callable
 from agentdesk.insight import digest
 from agentdesk.insight.agenda import normalise
 from agentdesk.insight.types import InsightError
+from agentdesk.llm import LlmUnavailable
 from agentdesk.mail import watcher as mail_watcher
 from agentdesk.mail.core import reply_recipients, reply_subject
 
@@ -468,18 +469,26 @@ def _explain(body: dict, complete: Callable[[str], str] | None) -> dict:
         raise InsightError("insight:bad-request", "That finding is too long to explain.")
     if complete is None:
         raise InsightError("insight:model-off", _say(MODEL_OFF_EXPLAIN, EXPLAIN_DISCLOSURE), 409)
+    cause = ""
     try:
         answer = complete(EXPLAIN_PROMPT + text)
-    except Exception:  # noqa: BLE001 - a failed explanation is a sentence, not a crash
+    except Exception as exc:  # noqa: BLE001 - a failed explanation is a sentence, not a crash
         answer = ""
+        # The adapter's pinned cause (a timeout, a rejected key, a
+        # redirect) names the recovery; anything else keeps the generic
+        # line, because a bare crash's text names nothing.
+        cause = str(exc) if isinstance(exc, LlmUnavailable) else ""
     explanation = answer.strip() if isinstance(answer, str) else ""
     if not explanation:
+        note = "The model did not answer, so nothing is explained."
+        if cause:
+            note = f"The model did not answer ({cause}), so nothing is explained."
         return {
             "status": "empty",
             "text": "",
             "source": "none",
             "disclosure": list(EXPLAIN_DISCLOSURE),
-            "note": "The model did not answer, so nothing is explained.",
+            "note": note,
         }
     return {
         "status": "draft",

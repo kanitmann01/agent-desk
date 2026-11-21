@@ -256,3 +256,53 @@ def test_a_pressed_card_can_stage_its_draft_as_one_card(tmp_path):
     assert waiting[0].title == "Drafted reply: Re: Budget"
     assert waiting[0].draft == "Thanks, I will send the revised budget by Friday."
 
+
+# -- the audit trail (spec 017 workstream 3) -------------------------------
+
+
+def _press_rows(booted) -> list:
+    from agentdesk.assistant import audit as audit_store
+    return [e for e in audit_store.entries(booted.server.audit_conn)
+            if e["action"] == "insight.press"]
+
+
+def test_a_page_press_writes_one_insight_press_row(tmp_path):
+    booted = _mail_desk(tmp_path)
+    try:
+        auth = booted.exchange()
+        status, _headers, _body = _post_form(
+            booted, auth,
+            {"kind": "reply-draft", "subject": "Budget", "sender": "priya@example.com"},
+        )
+        assert status == 200
+        rows = _press_rows(booted)
+    finally:
+        booted.close()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["target"] == "<budget-1@example.com>"
+    assert rows[0]["detail"] == "reply-draft:model"
+
+
+def test_a_refused_page_press_records_an_error_row(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    from tests.server_harness import Booted
+
+    booted = Booted()
+    try:
+        auth = booted.exchange()
+        status, _headers, _body = _post_form(
+            booted, auth,
+            {"kind": "explain-range", "text": "Booked falls as Margin rises."},
+        )
+        assert status == 200  # the page keeps the refusal sentence
+        rows = _press_rows(booted)
+    finally:
+        booted.close()
+    # Refused before any call: the error row is the only one, and it
+    # names the refusal, never a spend.
+    assert len(rows) == 1
+    assert rows[0]["status"] == "error"
+    assert rows[0]["detail"] == "insight:model-off"
+    assert [r for r in rows if r["status"] == "ok"] == []
+

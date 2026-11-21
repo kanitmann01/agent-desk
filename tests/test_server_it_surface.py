@@ -128,6 +128,26 @@ def test_touches_page_is_generated_from_the_vocabulary(env, auth):
     assert "No third-party components" not in page
 
 
+def test_the_touches_table_lists_every_action_the_app_can_record():
+    # The table is generated from VOCABULARY alone, so an action the app
+    # records but the vocabulary misses under-describes the machine to
+    # the one reviewer who reads this page (spec 017 workstream 3): the
+    # rows the audit found missing, the press included, must all render.
+    from agentdesk.assistant import audit as audit_store
+    from agentdesk.server import touches
+    page = touches.render_touches(
+        {"insight.press"}, "test", datetime(2026, 11, 21, 9, 0)
+    )
+    for action in ("insight.press", "llm.observe", "memory.capture",
+                   "memory.keep", "memory.remove", "memory.undo",
+                   "settings.preferences", "settings.hosts",
+                   "agents.download"):
+        assert f"<td class='mono'>{action}</td>" in page
+    # The badge tells the truth about the one action this desk ran.
+    press_row = page.split("<td class='mono'>insight.press</td>", 1)[1]
+    assert "touch-badge on" in press_row.split("</tr>", 1)[0]
+
+
 def test_notices_file_states_the_shipped_set():
     notices = (Path(__file__).resolve().parents[1] / "THIRD-PARTY-NOTICES.md").read_text(encoding="utf-8")
     # The notices file is the authoritative distribution record now the
