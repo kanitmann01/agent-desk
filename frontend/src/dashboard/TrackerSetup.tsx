@@ -337,7 +337,7 @@ export default function TrackerSetup({
                 <strong>{review.recommendation.valueColumn}</strong> by <strong>{review.recommendation.labelColumn}</strong>
                 {review.recommendation.rows && review.recommendation.rows.length > 0
                   ? ` · ${review.recommendation.rows.length} rows` : ''}
-                {review.recommendation.reason ? ` — ${review.recommendation.reason}` : ''}
+                {review.recommendation.reason ? ` (${review.recommendation.reason})` : ''}
               </p>
               <div className="setup-actions">
                 <Button tone="primary" onClick={() => useRecommendation(ctx, review.recommendation as Proposal)}>Use this instead</Button>

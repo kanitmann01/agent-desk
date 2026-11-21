@@ -51,7 +51,7 @@ export interface MemoryLoopProps {
  * failed is not lost.
  */
 async function errorOf(res: { status: number; data: unknown }, fallback: string): Promise<string> {
-  if (res.status === 401) return 'Your session ended. Open Nexuus Bot from its shortcut to get a fresh link.';
+  if (res.status === 401) return 'Your session ended. Open Agent Desk from its shortcut to get a fresh link.';
   const error = (res.data as { error?: string; cause?: string }).error ?? (res.data as { cause?: string }).cause;
   return error ? `${fallback} ${error}` : fallback;
 }

@@ -6,7 +6,9 @@ const field = (amount: number) => ['Kestrel Foods pilot', 'EMEA', 'Qualify', amo
 
 describe('the morning brief movers', () => {
   it('hides the sample row index and keeps the deal name', () => {
-    expect(dealName(['Halvorsen Freight renewal — 1', 'AMER', 'Prospect', 15120])).toBe('Halvorsen Freight renewal');
+    expect(dealName(['Halvorsen Freight renewal - 1', 'AMER', 'Prospect', 15120])).toBe('Halvorsen Freight renewal');
+    // The em dash spelling some exports use still strips, via the escape.
+    expect(dealName(['Halvorsen Freight renewal \u2014 1', 'AMER', 'Prospect', 15120])).toBe('Halvorsen Freight renewal');
   });
 
   it('pairs an edited deal into one row with the signed delta', () => {

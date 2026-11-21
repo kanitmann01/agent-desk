@@ -1333,7 +1333,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._authenticated():
             self._refuse_and_close(
                 401, "Session required",
-                "Open Nexuus Bot from its shortcut to get a fresh link.",
+                "Open Agent Desk from its shortcut to get a fresh link.",
             )
             return False
         return True
@@ -1505,8 +1505,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         One release of continuity: the legacy address names the new installed surface
         with a permanent-enough 302. The SPA route owns everything past this point.
+        A notice query rides along: the lifecycle actions below redirect back to
+        /plugins?notice=..., and the sentence must survive into the page the user
+        lands on, not die in this hop.
         """
-        self._send_redirect_302("/marketplace/installed")
+        _, _sep, query = self.path.partition("?")
+        notice = parse_qs(query).get("notice", [""])[0] if query else ""
+        target = "/marketplace/installed"
+        if notice:
+            target += "?notice=" + quote(notice)
+        self._send_redirect_302(target)
 
     def _send_peers_page_request(self) -> None:
         """Serve the peers page, carrying its optional notice query field."""
@@ -1644,10 +1652,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         Deep links are the SPA's routes, so the server hands the shell to every known
         marketplace GET after the session gate. An unknown marketplace path gets the
         same shell with a 404 status, so a typo is honest to clients and crawlers; /api
-        paths still answer 404 elsewhere and never the shell.
+        paths still answer 404 elsewhere and never the shell. A notice query arrives
+        from the plugin lifecycle actions' redirect chain; the shell renders it
+        server-side, so the sentence is on the page with JavaScript off too.
         """
-        path, _, _query = self.path.partition("?")
-        self._send_marketplace_shell(200 if _known_marketplace_path(path) else 404)
+        path, _, query = self.path.partition("?")
+        notice = parse_qs(query).get("notice", [""])[0] if query else ""
+        self._send_marketplace_shell(200 if _known_marketplace_path(path) else 404,
+                                     notice=notice)
 
     def _preferences_write(self) -> None:
         """Store the posted insight preferences, reporting a rejection as JSON."""
@@ -7346,11 +7358,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "in Settings for questions tailored to your ask."
         )
 
-    def _send_marketplace_shell(self, status: int = 200) -> None:
-        """The SPA shell for a marketplace deep link, when the build exists."""
+    def _send_marketplace_shell(self, status: int = 200, notice: str = "") -> None:
+        """The SPA shell for a marketplace deep link, when the build exists.
+
+        A notice (a plugin action's confirmation or named refusal riding its
+        redirect chain) is rendered into the body server-side: the SPA mounts
+        into #root and leaves the sibling alone, and without JavaScript the
+        sentence is still on the page. The value is escaped, the slot is the
+        alert markup the server pages already use.
+        """
         index = spa_index_path()
         if index.is_file():
-            self._send_bytes(status, index.read_bytes(), "text/html; charset=utf-8")
+            page = index.read_text(encoding="utf-8")
+            if notice and '<div id="root">' in page:
+                banner = (
+                    '<div class="alert" role="status" '
+                    'style="padding:16px 20px"><p>'
+                    + html.escape(notice)
+                    + "</p></div>"
+                )
+                page = page.replace('<div id="root">', banner + '<div id="root">', 1)
+            self._send_bytes(status, page.encode("utf-8"),
+                             "text/html; charset=utf-8")
         else:
             self._send_error_page(
                 404, "Marketplace unavailable",
@@ -8030,7 +8059,7 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     if sys.stdout is not None:  # pythonw runs without a console stream
         # flush: launchers redirect this to a log file, where a buffered
         # print would hide the one-time start link until the process ends
-        print(f"Nexuus Bot is running: {url}", flush=True)
+        print(f"Agent Desk is running: {url}", flush=True)
     start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()

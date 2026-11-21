@@ -316,3 +316,57 @@ def test_plugin_api_answers_without_an_injected_runtime(tmp_path, monkeypatch):
         assert booted.server.plugins.plugins_dir == tmp_path / "plugins"
     finally:
         booted.close()
+
+
+# -- the page door's notices survive the redirect chain (spec 017, 8b) ------
+
+# The shipped launcher serves the committed SPA build, and that build is the
+# page a plugin action's redirect lands on; conftest defaults SPA_DIR away
+# so the rendered pages stay covered, so these tests point it back.
+COMMITTED_SPA = ROOT / "src" / "agentdesk" / "server" / "static" / "spa"
+
+
+def _follow_page(running, method, path):
+    """A no-JS browser: one request, then every redirect to a page.
+
+    Returns (status, body text). This is exactly what a form post does with
+    JavaScript off, which is the only user the /plugins/<id>/<action> door
+    still answers with redirects.
+    """
+    headers = running.authed_headers()
+    status, resp_headers, body = running.request(method, path, headers=headers,
+                                                 body={} if method == "POST" else None)
+    hops = 0
+    while status in (301, 302, 303) and hops < 5:
+        status, resp_headers, body = running.request(
+            "GET", resp_headers["Location"], headers=headers)
+        hops += 1
+    assert status == 200, (status, hops)
+    return status, body
+
+
+def test_a_refused_page_action_names_its_cause_on_the_landing_page(
+        running, tmp_path, monkeypatch):
+    monkeypatch.setattr(server_app, "SPA_DIR", COMMITTED_SPA)
+    zip_path = valid_zip(tmp_path / "plugin.zip")
+    status, _ = running.post("/api/plugins/install",
+                             {"zip_path": str(zip_path), "source": "zip"})
+    assert status == 200
+
+    # A refusal: the unknown id's named cause must ride the chain
+    # (303 /plugins?notice=... -> 302 /marketplace/installed?notice=...)
+    # and be on the page the user lands on, not die in the double redirect.
+    _status, page = _follow_page(running, "POST", "/plugins/no-such-plugin/share")
+    assert "no installed plugin no-such-plugin" in page
+
+
+def test_a_confirmed_page_action_reports_the_outcome_on_the_landing_page(
+        running, tmp_path, monkeypatch):
+    monkeypatch.setattr(server_app, "SPA_DIR", COMMITTED_SPA)
+    zip_path = valid_zip(tmp_path / "plugin.zip")
+    status, _ = running.post("/api/plugins/install",
+                             {"zip_path": str(zip_path), "source": "zip"})
+    assert status == 200
+
+    _status, page = _follow_page(running, "POST", "/plugins/sales-delta-widget/share")
+    assert "sales-delta-widget is now shared with paired desks." in page

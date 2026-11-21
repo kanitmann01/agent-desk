@@ -268,7 +268,7 @@ export interface HealthRow {
  * Desk health as one row per source: a live dot, its status word, the last run
  * time and the item count.
  *
- * Every cell arrives as display text — the table formats nothing, so a value
+ * Every cell arrives as display text: the table formats nothing, so a value
  * shows exactly as given.
  */
 export function HealthMatrix({ rows }: { rows: HealthRow[] }) {

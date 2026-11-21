@@ -1,0 +1,7 @@
+$ render_wizard_page(session with one option-less question, version)
+
+the rendered question form:
+<form class="answer" method="post" action="/wizard/wiz-evidence/answer"><input type="hidden" name="question" value="0"><p class="aq">Which workbook column holds the number?</p><input type="text" name="answer" class="well-input" aria-label="Which workbook column holds the number?"><div class="cardrow"><button type="submit" class="btn btn-primary">Ask</button></div></form>
+
+$ grep the accessible name out of the rendered page:
+<input type="text" name="answer" class="well-input" aria-label="Which workbook column holds the number?">
