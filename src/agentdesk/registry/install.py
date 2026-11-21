@@ -308,7 +308,9 @@ def rollback(destination: Path | str, plugin_id: str, *, to_version: str) -> dic
     """Repoint the lock at an already-installed older version.
 
     Rollback is metadata: the versioned directory is already on disk, so
-    going back is one lock write, not a re-download.
+    going back is one lock write, not a re-download. The prior tree's
+    digest is re-verified against the history pin first, so a tampered
+    older directory can never be certified by the lock.
     """
     _require_safe_name(plugin_id, "plugin id")
     _require_safe_name(to_version, "version")
@@ -325,12 +327,20 @@ def rollback(destination: Path | str, plugin_id: str, *, to_version: str) -> dic
     if entry is None or to_version not in entry.get("history", {}):
         raise RegistryError("rollback:unknown-pin",
                             f"no lockfile pin for {plugin_id} {to_version}")
+    pinned = entry["history"][to_version]
+    actual = tree_digest(prior_dir)
+    if actual != pinned:
+        raise RegistryError(
+            "rollback:hash-mismatch",
+            f"{plugin_id} {to_version} on disk hashes to {actual[:12]}, not "
+            f"the pinned {pinned[:12]}; the older tree changed after its pin "
+            "was recorded")
     entry["version"] = to_version
-    entry["sha256"] = entry["history"][to_version]
+    entry["sha256"] = pinned
     lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n",
                          encoding="utf-8")
     return {"ok": True, "plugin": plugin_id, "version": to_version,
-            "sha256": entry["sha256"]}
+            "sha256": pinned}
 
 
 def _safe_extractall(archive: tarfile.TarFile, destination: str) -> None:

@@ -278,6 +278,60 @@ def test_absolute_manual_metric_file_without_read_permission_is_rejected(tmp_pat
         "data source sales-delta reads C:/Users/secret/manual.json")
 
 
+def _with_http_widget(manifest):
+    """Add an http-get widget beside the first one, so one plugin carries
+    network and a manual-metric file at once."""
+    manifest["contributes"]["widgets"].append({
+        "id": "sales-web",
+        "size": "2x1",
+        "dataSource": {
+            "type": "http-get",
+            "url": "https://api.example.com/sales",
+            "allow": ["api.example.com"],
+        },
+        "render": {"type": "ui-schema", "file": "widget.ui.json"},
+    })
+    return manifest
+
+
+def test_manual_metric_file_plus_network_in_one_plugin_is_refused(tmp_path):
+    """The lethal-trifecta rule holds structurally (audit F4): a
+    manual-metric source naming a file outside the plugin's own data
+    directory cannot ride beside a network widget, even with no declared
+    read glob for the lint's glob check to see."""
+    manifest = manifest_copy()
+    manifest["permissions"]["filesystem"]["read"] = []
+    manifest["contributes"]["widgets"][0]["dataSource"] = {
+        "type": "manual-metric",
+        "file": "notes/private.md",
+    }
+    _with_http_widget(manifest)
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert not verdict.ok
+    assert any(
+        code == "unsafe-network-filesystem" for code, _ in failures(verdict)), (
+            verdict.as_dict())
+
+
+def test_plugin_data_rooted_manual_metric_file_keeps_network_allowed(tmp_path):
+    """The plugin's own data directory is the honored shape: a
+    plugin-data-rooted manual-metric file beside a network widget stays
+    a valid plugin."""
+    manifest = manifest_copy()
+    manifest["permissions"]["filesystem"]["read"] = []
+    manifest["contributes"]["widgets"][0]["dataSource"] = {
+        "type": "manual-metric",
+        "file": "${pluginData}/manual.json",
+    }
+    _with_http_widget(manifest)
+
+    verdict = validate_plugin(write_plugin(tmp_path, manifest))
+
+    assert verdict.ok, verdict.as_dict()
+
+
 def test_every_registry_plugin_manifest_validates():
     manifests = sorted(
         (REPO_ROOT / "registry" / "plugins").glob("*/manifest.json"))

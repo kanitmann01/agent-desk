@@ -370,30 +370,22 @@ def test_plugin_cards_agree_between_payload_and_rendered_articles(
 
 def test_gets_are_pure_and_the_view_report_spends(booted, auth, tmp_path):
     install_plugin(booted, auth, tmp_path)
-    assert pilot_views(booted) == {"sales-delta-widget": 3}
+    # The PRD's binding count: five runs carry the pilot badge (017-02 2h).
+    assert pilot_views(booted) == {"sales-delta-widget": 5}
 
     # Both GET surfaces only read: the pilot count must not move.
     status, _h, _b = booted.request("GET", "/", auth)
     assert status == 200
     payload = get_payload(booted, auth)
     assert len(payload["plugins"]["cards"]) == 1
-    assert pilot_views(booted) == {"sales-delta-widget": 3}
+    assert pilot_views(booted) == {"sales-delta-widget": 5}
 
     # The explicit report spends one view per enabled plugin, then stops.
-    status, _h, body = booted.post_json("/api/dashboard/view", {}, auth)
-    assert status == 200
-    assert json.loads(body) == {"spent": 1}
-    assert pilot_views(booted) == {"sales-delta-widget": 2}
-
-    status, _h, body = booted.post_json("/api/dashboard/view", {}, auth)
-    assert status == 200
-    assert json.loads(body) == {"spent": 1}
-    assert pilot_views(booted) == {"sales-delta-widget": 1}
-
-    status, _h, body = booted.post_json("/api/dashboard/view", {}, auth)
-    assert status == 200
-    assert json.loads(body) == {"spent": 1}
-    assert pilot_views(booted) == {"sales-delta-widget": 0}
+    for expected in (4, 3, 2, 1, 0):
+        status, _h, body = booted.post_json("/api/dashboard/view", {}, auth)
+        assert status == 200
+        assert json.loads(body) == {"spent": 1}
+        assert pilot_views(booted) == {"sales-delta-widget": expected}
 
     # Exhausted: a view still renders, but spends nothing and writes nothing.
     status, _h, body = booted.post_json("/api/dashboard/view", {}, auth)

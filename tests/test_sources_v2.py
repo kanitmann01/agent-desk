@@ -229,6 +229,29 @@ def test_manual_metric_reads_value_target_and_history(tmp_path):
     assert result.bindings["lastUpdated"] == NOW.isoformat(timespec="seconds")
 
 
+def test_manual_metric_honors_only_plugin_data_rooted_files(tmp_path):
+    """The consent panel tells the truth (audit F4): a manual-metric
+    file outside ${pluginData} stays the display hint the validator's
+    test names; the read lands on the plugin's own data directory, so an
+    undeclared workspace file is never opened."""
+    ctx = make_ctx(tmp_path)
+    write(ctx.workspace_dir / "notes" / "private.md",
+          json.dumps({"value": 999}))
+    write(ctx.data_dir / "manual.json", json.dumps({"value": 7}))
+
+    hinted = read_source(
+        {"type": "manual-metric", "file": "notes/private.md"}, ctx)
+
+    assert hinted.state == "ok"
+    assert hinted.bindings["value"] == 7  # the data-dir default, not the hint
+
+    write(ctx.data_dir / "metric.json", json.dumps({"value": 11}))
+    rooted = read_source(
+        {"type": "manual-metric", "file": "${pluginData}/metric.json"}, ctx)
+    assert rooted.state == "ok"
+    assert rooted.bindings["value"] == 11
+
+
 def test_desk_state_reads_the_injected_callback_only(tmp_path):
     ctx = make_ctx(tmp_path, desk_state={
         "runtime": lambda: {"value": 3, "status": "running"},

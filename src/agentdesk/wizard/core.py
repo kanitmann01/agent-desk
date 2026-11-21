@@ -7,8 +7,10 @@ engine honest:
 - Vocabulary confinement. A draft can only watch the four data sources
   in VOCABULARY, and its permissions are fixed: a workbook ask reads
   nothing at build time (the file is picked per instance in setup),
-  any other kind reads the one chosen glob, and no draft gets shell,
-  network, or llm. The endpoint (when configured) may
+  any other file kind reads the one chosen glob, a web ask reads no
+  files and declares its one URL host as an optional permission the
+  consent flow shows, and no draft gets shell, base network, or llm.
+  The endpoint (when configured) may
   shape the human-readable copy and suggest structure inside the
   vocabulary; the sanitizer strips everything else before the validator
   ever sees it.
@@ -38,6 +40,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from agentdesk.validator.core import validate_plugin
 from agentdesk.validator.model import Verdict
@@ -109,6 +112,13 @@ DAY_WINDOW_PATTERN = re.compile(r"\b24[ -]?h(our)?s?\b", re.IGNORECASE)
 GLOB_PATTERN = re.compile(
     r"[A-Za-z0-9_.\-*/\\]*[A-Za-z0-9_]\.(?:xlsx|xlsm|csv|json|ics)\b"
 )
+URL_PATTERN = re.compile(r"https?://[A-Za-z0-9._-]+(?:/[A-Za-z0-9._\-/%]*)?")
+# The deterministic fallbacks when no URL was named anywhere: the same
+# neutral host the registry's own network plugin uses in its examples.
+DEFAULT_HTTP_URL = "https://example.com/data.json"
+# json-watch always needs a selector; the deterministic composer's
+# default addresses the value key a hand-maintained metric file carries.
+DEFAULT_JSON_SELECTOR = "$.value"
 
 # Asks the declarative vocabulary cannot honor. Each rule carries the
 # plain-language label the escalation uses, so the refusal names what the
@@ -534,6 +544,26 @@ def _file_glob(description: str, answers: dict, source_type: str) -> str:
     return DEFAULT_FILE_GLOBS[source_type]
 
 
+def _http_url(description: str, answers: dict) -> str:
+    """The absolute http(s) URL an http-get build watches.
+
+    The first URL written in the answers or the description wins; with no
+    URL anywhere the neutral default applies, so the wizard's own web
+    option always finishes a valid plugin instead of dead-ending.
+    """
+    texts = [str(value) for value in answers.values() if isinstance(value, str)]
+    for text in texts + [description]:
+        match = URL_PATTERN.search(text)
+        if match:
+            return match.group(0).rstrip("/.,;:!?")
+    return DEFAULT_HTTP_URL
+
+
+def _http_host(url: str) -> str:
+    """The allowlist host of a URL: the one host the source may fetch."""
+    return (urlsplit(url).hostname or "").lower() or "example.com"
+
+
 def _cadence(answers: dict) -> str:
     """Return the cron entry the answers' wording asks for, or the default.
 
@@ -577,7 +607,8 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
     Whatever it omits falls back to the deterministic skeleton, and the
     validator, not the suggestion, has the final word on what survives.
     A config-backed skeleton keeps that shape on the suggestion too:
-    its config kinds are pinned and its widgets stay file-less.
+    its config kinds are pinned and its widgets stay file-less; an
+    http-get skeleton keeps its network allowance pinned the same way.
     """
     floored: dict = {}
     if isinstance(raw, dict):
@@ -587,7 +618,9 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
 
     # Identity and permissions are never negotiable. A config-backed
     # skeleton pins its config kinds too, so the suggestion can shape
-    # the copy but never unmake the setup-state install (T2).
+    # the copy but never unmake the setup-state install (T2); an
+    # http-get skeleton pins its network allowance the same way, so a
+    # suggestion can neither widen it nor strand the source's fetch.
     floored["schemaVersion"] = 1
     floored["class"] = "declarative"
     floored["publisher"] = PUBLISHER
@@ -595,6 +628,9 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
     floored["permissions"] = copy.deepcopy(skeleton["permissions"])
     if "config" in skeleton:
         floored["config"] = copy.deepcopy(skeleton["config"])
+    if "optionalPermissions" in skeleton:
+        floored["optionalPermissions"] = copy.deepcopy(
+            skeleton["optionalPermissions"])
 
     if not isinstance(floored.get("license"), str) or floored["license"] not in ALLOWED_LICENSES:
         floored["license"] = LICENSE_ID
@@ -771,7 +807,11 @@ class WizardCompiler:
         composes the config-backed shape the bundled tracker uses
         (T2): no fabricated glob, no watched file. The install lands in
         the setup state, and the data is picked per instance through the
-        file dialog. Every other kind keeps the watched-glob shape."""
+        file dialog. A web ask composes the same file-less shape the
+        registry's network plugin uses: no read globs, the URL and its
+        one host parsed from the answers, the network reach declared as
+        an optional permission the consent flow shows. Every other kind
+        keeps the watched-glob shape."""
         slug = safe_slug(description)
         source_type = _source_type(description, answers)
         glob_full = WORKSPACE_PREFIX + _file_glob(description, answers, source_type)
@@ -788,13 +828,20 @@ class WizardCompiler:
         # stays empty and the data source names only its type. The 24h
         # window stays a preview-copy concern, not a manifest one.
         config_backed = source_type == "excel-watch"
+        network_backed = source_type == "http-get"
         data_source: dict = {"type": source_type}
-        if config_backed:
+        if config_backed or network_backed:
             read_globs: list[str] = []
+            if network_backed:
+                url = _http_url(description, answers)
+                data_source["url"] = url
+                data_source["allow"] = [_http_host(url)]
         else:
             data_source["file"] = glob_full
             if window:
                 data_source["deltaWindow"] = window
+            if source_type == "json-watch":
+                data_source["selector"] = DEFAULT_JSON_SELECTOR
             read_globs = [glob_full]
 
         manifest = {
@@ -826,6 +873,15 @@ class WizardCompiler:
         }
         if config_backed:
             manifest["config"] = {"kinds": ["workbook"]}
+        if network_backed:
+            manifest["optionalPermissions"] = {
+                "network": {
+                    "allow": data_source["allow"],
+                    "userPrompt": (
+                        f"Allow this widget to read {data_source['url']} "
+                        "on its schedule?"),
+                },
+            }
 
         title, blurb = _human_copy(description, style)
         if not blurb:

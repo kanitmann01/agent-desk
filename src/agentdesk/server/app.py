@@ -5764,8 +5764,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                       "message": 'expected {"zip_path": "..."}'})
                 return
             result = plugins.install(body["zip_path"], source=body.get("source", "zip"))
-            self._audit("plugin.install", target=str(result.get("id", "")),
-                        detail=f"v{result.get('version', '')} pilot install")
+            plugin_id = str(result.get("id", "")) if isinstance(result, dict) else ""
+            held = (isinstance(result, dict)
+                    and result.get("status") == "pending-consent")
+            if held:
+                # An install over an installed plugin holds for consent
+                # exactly like an update; the user meets the same card.
+                result = self._hold_update_for_consent(plugins, plugin_id, result)
+                held = (isinstance(result, dict)
+                        and result.get("status") == "pending-consent")
+            self._audit(
+                "plugin.install", target=plugin_id,
+                detail=("held for consent: adds "
+                        + "; ".join(result.get("added_scopes", [])) if held
+                        else f"v{result.get('version', '')} pilot install"))
             self._send_json(200, result)
             return
         if len(parts) < 3:
@@ -6132,9 +6144,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except PluginError as exc:
             self._registry_install_refused(exc.code, str(exc), exc.status)
             return
-        self._audit("plugin.install", target=plugin_id,
-                    detail=f"registry v{result.get('version', '')} pinned install")
+        if (isinstance(result, dict)
+                and result.get("status") == "pending-consent"):
+            # An install over an installed plugin holds for consent
+            # exactly like an update; the user meets the same card.
+            result = self._hold_update_for_consent(plugins, plugin_id, result)
+        self._audit(
+            "plugin.install", target=plugin_id,
+            detail=("registry install held for consent: adds "
+                    + "; ".join(result.get("added_scopes", []))
+                    if isinstance(result, dict)
+                    and result.get("status") == "pending-consent"
+                    else f"registry v{result.get('version', '')} pinned install"))
         if self._is_form_submit():
+            if isinstance(result, dict) and result.get("status") == "pending-consent":
+                self._send_redirect(f"/plugins?notice={quote(
+                    plugin_id + "'s new release is waiting for your decision; "
+                    "it adds: " + '; '.join(result.get('added_scopes', [])) + '.')}")
+                return
             self._send_redirect(f"/plugins?notice={quote(
                 'Installed ' + plugin_id + ' v' + str(result.get('version', '')) + '.')}")
             return

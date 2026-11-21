@@ -28,3 +28,10 @@
 licenses/third-party/*.txt text eol=lf
 frontend/public/licenses/*.txt text eol=lf
 src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
+# The registry's release trees are digest-pinned (registry/index.json), so
+# every checkout must see their bytes exactly as committed. The extension-
+# less LICENSE/NOTICE inside the presentation pack fall outside the *.md
+# and *.json rules above; without this pin a CRLF-smudging checkout
+# breaks the pin (the gate's registry legs fail on that machine alone).
+registry/plugins/presentation-starter/LICENSE text eol=lf
+registry/plugins/presentation-starter/NOTICE text eol=lf

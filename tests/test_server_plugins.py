@@ -211,6 +211,35 @@ def test_widened_update_holds_with_exact_capability_diff(running, tmp_path):
     assert record["active_version"] == "1.2.1"
 
 
+def test_widened_install_over_holds_with_the_update_consent_card(running, tmp_path):
+    """The Install button is not an Update bypass (audit F1): installing a
+    widening release over an installed plugin through the install route
+    holds for consent and raises the same update_consent card the update
+    route raises."""
+    running.post("/api/plugins/install",
+                 {"zip_path": str(valid_zip(tmp_path / "v1.zip")), "source": "zip"})
+    status, out = running.post("/api/plugins/install",
+                               {"zip_path": str(widened_zip(tmp_path / "wide.zip")),
+                                "source": "zip"})
+    assert status == 200, out
+    assert out["applied"] is False
+    assert out["status"] == "pending-consent"
+    assert out["added_scopes"] == ["filesystem.read: ${workspace}/reports/*.pdf"]
+    _, record = running.get("/api/plugins/sales-delta-widget")
+    assert record["active_version"] == "1.2.0"
+
+    cards = running.server.inbox.waiting()
+    consent_cards = [card for card in cards if card.kind == "update_consent"]
+    assert len(consent_cards) == 1
+    assert "reports/*.pdf" in consent_cards[0].body
+
+    status, out = running.post("/api/plugins/sales-delta-widget/consent", {})
+    assert status == 200
+    _, record = running.get("/api/plugins/sales-delta-widget")
+    assert record["active_version"] == "1.2.1"
+    assert [v["version"] for v in record["versions"]] == ["1.2.0", "1.2.1"]
+
+
 def test_rollback_restores_prior_version_and_lockfile(running, tmp_path):
     running.post("/api/plugins/install",
                  {"zip_path": str(valid_zip(tmp_path / "v1.zip")), "source": "zip"})

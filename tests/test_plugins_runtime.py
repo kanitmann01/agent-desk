@@ -4,9 +4,13 @@ Install validates before anything executes, lands the plugin in a
 versioned directory recorded in a lockfile, and starts it in pilot
 mode. Enable, disable, uninstall (data preserved), a separately named
 data purge, updates with scope diffing, rollback, and the amber
-data-source state with Re-test.
+data-source state with Re-test. An install over an installed plugin
+rides the update path's consent machinery, so the Install button
+cannot grant what the Update button would ask for.
 """
 import json
+import re
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -128,6 +132,114 @@ def test_widened_update_holds_for_reconsent_with_exact_diff(runtime, tmp_path):
     record = runtime.record("sales-delta-widget")
     assert record["active_version"] == "1.2.1"
     assert record["pending_update"] is None
+
+
+def test_install_over_installed_holds_widening_and_keeps_history_and_pilot(
+        runtime, tmp_path):
+    """The Install button over an installed plugin is an update (audit F1).
+
+    A widening release holds for consent exactly like the Update path,
+    the version history is appended instead of replaced (rollback still
+    answers), and the pilot counter does not restart.
+    """
+    from agentdesk.plugins.runtime import PILOT_VIEWS
+    runtime.install(zip_file(tmp_path / "v1.zip"), source="zip")
+    runtime.record_dashboard_view()
+    runtime.record_dashboard_view()
+    spent_down = PILOT_VIEWS - 2
+
+    out = runtime.install(widened_zip(tmp_path / "wide.zip"), source="zip")
+
+    assert out["applied"] is False
+    assert out["status"] == "pending-consent"
+    record = runtime.record("sales-delta-widget")
+    assert record["active_version"] == "1.2.0"  # held, not applied
+    assert record["pending_update"]["added_scopes"] == [
+        "filesystem.read: ${workspace}/reports/*.pdf"]
+    assert [v["version"] for v in record["versions"]] == ["1.2.0"]
+    assert record["pilot_views_left"] == spent_down
+
+    runtime.consent("sales-delta-widget")
+    record = runtime.record("sales-delta-widget")
+    assert [v["version"] for v in record["versions"]] == ["1.2.0", "1.2.1"]
+    assert record["active_version"] == "1.2.1"
+    assert record["pilot_views_left"] == spent_down
+
+    assert runtime.rollback("sales-delta-widget")["rolled_back_to"] == "1.2.0"
+
+
+def test_install_over_installed_applies_a_same_scope_release(runtime, tmp_path):
+    runtime.install(zip_file(tmp_path / "v1.zip"), source="zip")
+    runtime.record_dashboard_view()
+
+    out = runtime.install(zip_file(tmp_path / "v2.zip", version="1.2.1"),
+                          source="zip")
+
+    assert out["applied"] is True
+    record = runtime.record("sales-delta-widget")
+    assert record["active_version"] == "1.2.1"
+    assert [v["version"] for v in record["versions"]] == ["1.2.0", "1.2.1"]
+    assert record["pending_update"] is None
+
+
+def test_lockfile_write_survives_a_crash_mid_write(runtime, tmp_path, monkeypatch):
+    """The lockfile is written atomically (audit F6): a crash between
+    truncation and the full write must leave the previous lockfile in
+    place, not a partial file every plugins route chokes on."""
+    runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+    real_write_text = Path.write_text
+
+    def crashing_write_text(self, data, *args, **kwargs):
+        real_write_text(self, data[: len(data) // 2], *args, **kwargs)
+        raise OSError("power loss mid-write")
+
+    monkeypatch.setattr(Path, "write_text", crashing_write_text)
+    with pytest.raises(OSError):
+        runtime.disable("sales-delta-widget")
+    monkeypatch.undo()
+
+    document = json.loads(
+        (runtime.plugins_dir / "lockfile.json").read_text(encoding="utf-8"))
+    assert document["plugins"]["sales-delta-widget"]["state"] == "enabled"
+    assert runtime.list_records()[0]["state"] == "enabled"
+
+
+def test_extract_refuses_a_zip_member_over_the_size_cap(tmp_path):
+    """A small bundle with one declared-huge member is refused before any
+    decompression (audit F8): the cap reads the member's declared size,
+    so a multi-gigabyte member cannot spike memory."""
+    from agentdesk.plugins.runtime import MAX_ZIP_MEMBER_BYTES, PluginError, extract_plugin_zip
+
+    source = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(source, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", "{}")
+        archive.writestr("huge.bin", b"\0" * (MAX_ZIP_MEMBER_BYTES + 1))
+
+    destination = tmp_path / "staged"
+    with pytest.raises(PluginError) as excinfo:
+        extract_plugin_zip(source, destination)
+    assert excinfo.value.code == "install:unsafe-zip"
+    assert "huge.bin" in str(excinfo.value)
+    assert not (destination / "huge.bin").exists()
+
+
+def test_pilot_badge_covers_exactly_the_first_five_runs(runtime, tmp_path):
+    """PRD R3.7 (the binding interaction document) pins the badge at five
+    runs; the runtime constant must match it, not drift again."""
+    from agentdesk.plugins.runtime import PILOT_VIEWS
+    prd = (Path(__file__).resolve().parents[1] / "docs" / "PRD.md").read_text(
+        encoding="utf-8")
+    match = re.search(r'"pilot" badge for the first (\d+) runs', prd)
+    assert match, "docs/PRD.md R3.7 must state the pilot badge run count"
+    assert PILOT_VIEWS == int(match.group(1)) == 5
+
+    runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+    for _ in range(PILOT_VIEWS):
+        assert runtime.record("sales-delta-widget")["pilot_views_left"] > 0
+        runtime.record_dashboard_view()
+    assert runtime.record("sales-delta-widget")["pilot_views_left"] == 0
+    runtime.record_dashboard_view()  # run 6: no badge, no further spend
+    assert runtime.record("sales-delta-widget")["pilot_views_left"] == 0
 
 
 def test_rollback_restores_prior_version(runtime, tmp_path):

@@ -6,6 +6,7 @@ and rollback. The client lockfile is the pointer that rollback repoints.
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -95,10 +96,9 @@ def test_rollback_repoints_the_lock_to_an_installed_version(tmp_path):
     install_from_registry(repo, "sales-delta-widget", version="1.2.0",
                           destination=destination)
     # An older version directory already on disk, as a previous install
-    # would have left it.
+    # would have left it: a byte-identical copy of the pinned tree.
     older = destination / "sales-delta-widget-1.1.0"
-    older.mkdir()
-    (older / "manifest.json").write_text("{}", encoding="utf-8")
+    shutil.copytree(destination / "sales-delta-widget-1.2.0", older)
     lock_path = destination / "lock.json"
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     entry = lock["plugins"]["sales-delta-widget"]
@@ -112,6 +112,30 @@ def test_rollback_repoints_the_lock_to_an_installed_version(tmp_path):
     # The versioned directory is untouched: rollback is a repoint, not a
     # re-download.
     assert older.is_dir()
+
+
+def test_rollback_refuses_a_tampered_prior_tree(tmp_path):
+    """The lock certifies the digest it pins: an older directory whose
+    bytes no longer match the history pin is refused, not certified."""
+    repo = make_registry(tmp_path)
+    destination = tmp_path / "plugins"
+    install_from_registry(repo, "sales-delta-widget", version="1.2.0",
+                          destination=destination)
+    older = destination / "sales-delta-widget-1.1.0"
+    shutil.copytree(destination / "sales-delta-widget-1.2.0", older)
+    (older / "manifest.json").write_text(
+        (older / "manifest.json").read_text(encoding="utf-8")
+        + "\n", encoding="utf-8")  # tampered after the pin was recorded
+    lock_path = destination / "lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    entry = lock["plugins"]["sales-delta-widget"]
+    entry["history"]["1.1.0"] = entry["history"]["1.2.0"]
+    lock_path.write_text(json.dumps(lock, indent=2), encoding="utf-8")
+
+    with pytest.raises(RegistryError) as excinfo:
+        rollback(destination, "sales-delta-widget", to_version="1.1.0")
+    assert excinfo.value.code == "rollback:hash-mismatch"
+    assert read_lock(destination, "sales-delta-widget")["version"] == "1.2.0"
 
 
 def test_rollback_refuses_missing_versions_and_pins(tmp_path):
