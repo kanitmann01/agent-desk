@@ -17,20 +17,11 @@ from agentdesk.memory.loop import (
     ENTITY_SCOPE_PREFIX,
     entity_scope,
 )
+from agentdesk.server.core import bounded_text
 from agentdesk.server.memory_graph_api import SAMPLE_SOURCE
 
 EXCERPT_CHARS = 400
 REVIEW_KINDS = (KIND_MEMORY_DRAFT, KIND_MEMORY_REFLECTION)
-
-
-def _bounded(text: str, limit: int) -> str:
-    """One value collapsed onto one line and cut to a character budget.
-
-    An over-long value keeps limit - 1 characters plus an ellipsis, so the result never
-    exceeds the budget.
-    """
-    flat = " ".join(str(text).split())
-    return flat if len(flat) <= limit else flat[: limit - 1] + "\u2026"
 
 
 def origin_of(source: str, card, excerpt) -> dict:
@@ -56,7 +47,7 @@ def origin_of(source: str, card, excerpt) -> dict:
         if card is not None and card.kind == KIND_MEMORY_DRAFT:
             return {"id": "retain", "label": "Save to memory", "how": "You approved"}
         return {"id": "inbox", "label": "Inbox card", "how": "You approved"}
-    return {"id": "other", "label": _bounded(source or "Unrecorded", 40), "how": "Saved"}
+    return {"id": "other", "label": bounded_text(source or "Unrecorded", 40), "how": "Saved"}
 
 
 def _card_for(inbox, source: str):
@@ -78,7 +69,7 @@ def candidate_json(card, excerpts: dict, facts_by_id: dict) -> dict:
     if card.kind == KIND_MEMORY_REFLECTION:
         meta = card.meta.get("memoryObservation") or {}
         cites = [
-            {"id": fid, "text": _bounded(facts_by_id[fid].text, 160)}
+            {"id": fid, "text": bounded_text(facts_by_id[fid].text, 160)}
             for fid in meta.get("source_fact_ids") or []
             if isinstance(fid, int) and fid in facts_by_id
         ]
@@ -106,7 +97,7 @@ def candidate_json(card, excerpts: dict, facts_by_id: dict) -> dict:
         "method": str(meta.get("method") or "model"),
         "entities": entities,
         "excerpt": (
-            {"id": excerpt.id, "text": _bounded(excerpt.text, EXCERPT_CHARS),
+            {"id": excerpt.id, "text": bounded_text(excerpt.text, EXCERPT_CHARS),
              "speaker": excerpt.speaker, "createdTs": excerpt.created_ts}
             if excerpt is not None else None
         ),
@@ -159,7 +150,7 @@ def build_loop_state(memory, inbox, capture: dict, extractor: dict,
             "sample": fact.source == SAMPLE_SOURCE,
             "sourceId": fact.source_id,
             "excerpt": (
-                {"id": excerpt.id, "text": _bounded(excerpt.text, EXCERPT_CHARS),
+                {"id": excerpt.id, "text": bounded_text(excerpt.text, EXCERPT_CHARS),
                  "speaker": excerpt.speaker, "createdTs": excerpt.created_ts}
                 if excerpt is not None else None
             ),
@@ -177,7 +168,7 @@ def build_loop_state(memory, inbox, capture: dict, extractor: dict,
         fact_ids = [f.id for f in facts if f.source_id == excerpt.id]
         source_rows.append({
             "id": excerpt.id,
-            "text": _bounded(excerpt.text, EXCERPT_CHARS),
+            "text": bounded_text(excerpt.text, EXCERPT_CHARS),
             "speaker": excerpt.speaker,
             "channel": excerpt.context,
             "channelLabel": CHANNEL_LABELS.get(

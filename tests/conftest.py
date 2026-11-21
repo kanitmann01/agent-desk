@@ -18,9 +18,14 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from agentdesk.server import app as server_app
+from agentdesk.server import memory_api as server_memory_api
 
 
 @pytest.fixture(autouse=True)
 def no_spa_build(monkeypatch, tmp_path):
-    """Serve the rendered dashboard under test: SPA_DIR points nowhere."""
+    """Serve the rendered dashboard under test: SPA_DIR points nowhere.
+
+    The memory api mixin reads its own SPA_DIR import, so both module
+    namespaces are repointed."""
     monkeypatch.setattr(server_app, "SPA_DIR", tmp_path / "no-spa-build")
+    monkeypatch.setattr(server_memory_api, "SPA_DIR", tmp_path / "no-spa-build")

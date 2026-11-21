@@ -1,6 +1,6 @@
 # The dashboard SPA source
 
-The Nexuus Bot dashboard is a React single-page app. This folder is its
+The Agent Desk dashboard is a React single-page app. This folder is its
 development source. The production build is emitted into
 `../src/agentdesk/server/static/spa/` and committed, so end users never
 need node: the Python launcher serves the committed bundle directly.

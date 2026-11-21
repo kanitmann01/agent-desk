@@ -163,7 +163,7 @@ $sig.SignerCertificate.Subject
 
 Use `SignerCertificate.Subject` verbatim as `PublisherName`. It is a full
 distinguished name, for example
-`CN=Nexuus Bot, O=Nexuus Bot, L=Seattle, S=Washington, C=US`. The product
+`CN=Agent Desk, O=Agent Desk, L=Seattle, S=Washington, C=US`. The product
 name and binary name must match the version resource exactly.
 
 Template, with placeholders that must be replaced from a signed binary:
@@ -173,14 +173,14 @@ Template, with placeholders that must be replaced from a signed binary:
   <RuleCollection Type="Exe" EnforcementMode="Enforced">
     <FilePublisherRule
         Id="00000000-0000-0000-0000-000000000000"
-        Name="Nexuus Bot - signed publisher"
-        Description="Allow Nexuus Bot from its per-user install folder"
+        Name="Agent Desk - signed publisher"
+        Description="Allow Agent Desk from its per-user install folder"
         UserOrGroupSid="S-1-1-0"
         Action="Allow">
       <Conditions>
         <FilePublisherCondition
             PublisherName="CN=&lt;REPLACE-WITH-CERT-SUBJECT-CN&gt;, O=&lt;REPLACE-WITH-ORG&gt;, L=&lt;REPLACE-WITH-LOCALITY&gt;, S=&lt;REPLACE-WITH-STATE&gt;, C=&lt;REPLACE-WITH-COUNTRY&gt;"
-            ProductName="Nexuus Bot"
+            ProductName="Agent Desk"
             BinaryName="AgentDesk.exe">
           <BinaryVersionRange LowSection="0.1.0.0" HighSection="*" />
         </FilePublisherCondition>
@@ -236,7 +236,7 @@ version directory in place.
 
 Update procedure:
 
-1. Close Nexuus Bot.
+1. Close Agent Desk.
 2. Copy the new version to a versioned folder under
    `%LOCALAPPDATA%\AgentDesk\app\<version>`.
 3. Verify `manifest.json` against the extracted files and check the SBOM and

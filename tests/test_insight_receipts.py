@@ -3,7 +3,7 @@
 A reading carries two tuples: the preference keys whose stored value shaped
 it, and the inputs it consulted. The presentation turns them into the
 receipts a card prints, filtered to a fixed vocabulary so no surface has to
-look a name up, and so no value ever travels — a focus list cannot ride into
+look a name up, and so no value ever travels: a focus list cannot ride into
 a screenshot on the back of a receipt.
 
 The families are held to the narrow rules the ticket gives them:

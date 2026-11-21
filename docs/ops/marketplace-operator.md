@@ -1,8 +1,8 @@
 # Marketplace operator guide
 
-This is for the IT operator who runs Nexuus Bot for one person on a managed Windows laptop. It covers installs, publishing, policy, audit, the kill switch, the one-time retirement cleanup and recovery. Authoring is in `docs/design/plugin-authoring-v2.md`, the build and AppLocker story is in `docs/ops/distribution.md`, and licensing is in `docs/licensing.md`.
+This is for the IT operator who runs Agent Desk for one person on a managed Windows laptop. It covers installs, publishing, policy, audit, the kill switch, the one-time retirement cleanup and recovery. Authoring is in `docs/design/plugin-authoring-v2.md`, the build and AppLocker story is in `docs/ops/distribution.md`, and licensing is in `docs/licensing.md`.
 
-Nexuus Bot is a single-user, loopback-only app. The marketplace runs in the same process, reads local catalog files, and makes no marketplace network requests of its own. Everything below happens inside one Windows user profile.
+Agent Desk is a single-user, loopback-only app. The marketplace runs in the same process, reads local catalog files, and makes no marketplace network requests of its own. Everything below happens inside one Windows user profile.
 
 ## Where the marketplace keeps its state
 
@@ -16,14 +16,14 @@ The data folder defaults to `%LOCALAPPDATA%\AgentDesk` and can be moved with `AG
 | `audit.json` | The local audit log, capped at the last 1000 events. |
 | `governance.json` | Deprecate, yank and quarantine records written by the Admin page. |
 | `org-catalog.json` | Releases approved after pending review. |
-| `peer-catalog.json` | Catalogs shared by paired desks. |
+| `peer-catalog.json` | Read if present as the third catalog input; nothing in the app writes one today. |
 | `pending\` | Submissions waiting for review, one JSON file each. |
 | `reports.json` | Problem reports filed from plugin and publisher pages. |
 | `validation.json` | The last validator run. |
 
 Installed plugins live under `<data folder>\plugins`, and their data under `<data folder>\plugin-data`.
 
-To back up, stop Nexuus Bot, copy the whole data folder, then start it again. To restore, stop it, put the copied folder back, start it. Do not copy `policy.json`, `anchor.json` or `kill-switch.json` between machines unless you mean to move the policy identity too.
+To back up, stop Agent Desk, copy the whole data folder, then start it again. To restore, stop it, put the copied folder back, start it. Do not copy `policy.json`, `anchor.json` or `kill-switch.json` between machines unless you mean to move the policy identity too.
 
 ## Turn on admin mode
 
@@ -191,7 +191,7 @@ The export does not include the internal detail field, so changelogs, rejection 
 
 ## Offline behavior and the catalog
 
-The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json`. Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (three plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
+The marketplace does not fetch a catalog from the internet. `/api/marketplace/catalog` merges three local inputs: the bundled catalog, `org-catalog.json`, and `peer-catalog.json` (read if present; the app never writes one, so this input stays empty on a desk that has only used the shipped surfaces). Per plugin id, a locally approved org entry wins over a bundled entry, and a bundled entry wins over a peer entry. The bundled baseline is the committed `src/agentdesk/marketplace/bundled-catalog.json` (three plugins) with pinned tree digests; when a registry checkout also resolves, the API uses its releases for ids the bundle does not pin. The registry checkout is the path saved in Settings, then `AGENTDESK_REGISTRY`, then the app's own `registry` folder.
 
 The packaged build ships the committed bundle but not the `registry` folder, so a copy with no registry checkout still shows those three plugins. An approved org release of a shipped id takes precedence over the bundled pin, so publish a version bump locally when you need to update one.
 

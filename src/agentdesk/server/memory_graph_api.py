@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 from agentdesk.inbox.core import KIND_MEMORY_DRAFT, STATUS_WAITING, UnknownCard
 from agentdesk.memory.graph import DEFAULT_GRAPH_LIMIT
+from agentdesk.server.core import bounded_text, count_noun
 from agentdesk.memory.loop import CHANNEL_LABELS, ENTITY_SCOPE_PREFIX, METHOD_MODEL, entity_scope
 
 SAMPLE_SOURCE = "sample seed"
@@ -55,24 +56,6 @@ _CARD_KIND_WORDS = {
     KIND_MEMORY_DRAFT: "a memory draft",
     "memory_reflection": "a reflection card",
 }
-
-
-def _bounded(text: str, limit: int) -> str:
-    """One value cut to a character budget on a single line.
-
-    Whitespace runs, newlines included, collapse to one space before measuring, and a
-    truncated value ends in an ellipsis that counts toward the limit.
-    """
-    flat = " ".join(str(text).split())
-    return flat if len(flat) <= limit else flat[: limit - 1] + "\u2026"
-
-
-def _plural(count: int, noun: str) -> str:
-    """Count a noun, adding the plural s unless the count is exactly one.
-
-    Zero takes the plural, as English does.
-    """
-    return f"{count} {noun}" + ("" if count == 1 else "s")
 
 
 @dataclass(frozen=True)
@@ -135,7 +118,7 @@ def _origin_for(source: str, card) -> _Origin:
     if not source:
         return _Origin("origin:unknown", "Unrecorded",
                        "Facts saved before their writer was recorded.")
-    return _Origin(f"origin:other:{source}", _bounded(source, 40),
+    return _Origin(f"origin:other:{source}", bounded_text(source, 40),
                    f"Facts written by {source}.")
 
 
@@ -149,7 +132,7 @@ def _fact_steps(fact, card, excerpt, entity_names, has_vector, origin) -> list[d
         steps.append({
             "step": STEP_RETAIN, "ts": excerpt.created_ts,
             "text": f"{lead}{who} was saved to memory: "
-                    f"\u201c{_bounded(excerpt.text, 140)}\u201d",
+                    f"\u201c{bounded_text(excerpt.text, 140)}\u201d",
         })
     if card is not None and card.kind == KIND_MEMORY_DRAFT:
         meta = card.meta.get("memoryFact") or {}
@@ -172,7 +155,7 @@ def _fact_steps(fact, card, excerpt, entity_names, has_vector, origin) -> list[d
         })
     if card is not None:
         words = _CARD_KIND_WORDS.get(card.kind, "an inbox card")
-        title = _bounded(card.title, 80)
+        title = bounded_text(card.title, 80)
         steps.append({
             "step": STEP_APPROVE, "ts": card.accepted_ts,
             "text": f"You accepted {words}, \u201c{title}\u201d.",
@@ -252,8 +235,8 @@ def build_memory_graph(
             fact_nodes.append({
                 "id": node_id,
                 "kind": "fact",
-                "label": _bounded(fact.text, LABEL_CHARS),
-                "text": _bounded(fact.text, TEXT_CHARS),
+                "label": bounded_text(fact.text, LABEL_CHARS),
+                "text": bounded_text(fact.text, TEXT_CHARS),
                 "factKind": fact.kind,
                 "createdTs": fact.created_ts,
                 "occurredTs": fact.occurrence_ts,
@@ -268,8 +251,8 @@ def build_memory_graph(
                 push({
                     "id": source_id,
                     "kind": "source",
-                    "label": _bounded(excerpt.text, LABEL_CHARS),
-                    "text": _bounded(excerpt.text, TEXT_CHARS),
+                    "label": bounded_text(excerpt.text, LABEL_CHARS),
+                    "text": bounded_text(excerpt.text, TEXT_CHARS),
                     "createdTs": excerpt.created_ts,
                     "sample": excerpt.context == SAMPLE_SOURCE,
                     "speaker": excerpt.speaker,
@@ -288,7 +271,7 @@ def build_memory_graph(
                 push({
                     "id": entity_node,
                     "kind": "entity",
-                    "label": _bounded(entity.canonical_name, 40),
+                    "label": bounded_text(entity.canonical_name, 40),
                     "text": entity.canonical_name,
                     "entityType": entity.type,
                     "aliases": list(entity.aliases),
@@ -296,7 +279,7 @@ def build_memory_graph(
                     "steps": [{
                         "step": STEP_LINK, "ts": None,
                         "text": f"Resolved from the mentions in "
-                                f"{_plural(entity.fact_count, 'fact')}; names that "
+                                f"{count_noun(entity.fact_count, 'fact')}; names that "
                                 "match an existing entity or alias join it.",
                     }],
                 })
@@ -309,7 +292,7 @@ def build_memory_graph(
             # Observations carry no writer of their own; one whose every
             # cited fact came from the sample seed was seeded alongside them.
             sample = bool(cited) and all(facts[fid].source == SAMPLE_SOURCE for fid in cited)
-            reflect = (f"{_plural(len(cited), 'fact')}, confidence {obs.confidence:.2f}.")
+            reflect = (f"{count_noun(len(cited), 'fact')}, confidence {obs.confidence:.2f}.")
             scope = obs_scopes.get(obs.id, "")
             entity = (entities.get(int(scope[len(ENTITY_SCOPE_PREFIX):]))
                       if scope.startswith(ENTITY_SCOPE_PREFIX) else None)
@@ -323,7 +306,7 @@ def build_memory_graph(
                 steps = [{"step": STEP_REFLECT, "ts": obs.updated_ts,
                           "text": f"Rebuilt from the standing facts about "
                                   f"{entity.canonical_name}, {writer}; cites "
-                                  f"{_plural(len(cited), 'fact')}. It is rewritten "
+                                  f"{count_noun(len(cited), 'fact')}. It is rewritten "
                                   "whenever those facts change."}]
             elif sample:
                 steps = [{"step": STEP_REFLECT, "ts": obs.created_ts,
@@ -340,8 +323,8 @@ def build_memory_graph(
             push({
                 "id": f"observation:{obs.id}",
                 "kind": "observation",
-                "label": _bounded(label_text, LABEL_CHARS),
-                "text": _bounded(obs.text, TEXT_CHARS),
+                "label": bounded_text(label_text, LABEL_CHARS),
+                "text": bounded_text(obs.text, TEXT_CHARS),
                 "createdTs": obs.created_ts,
                 "updatedTs": obs.updated_ts,
                 "confidence": obs.confidence,

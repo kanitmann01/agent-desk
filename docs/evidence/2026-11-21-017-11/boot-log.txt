@@ -1,0 +1,5 @@
+boot: AGENTDESK_DATA=<temp dir> PYTHONPATH=<worktree>/src python -m agentdesk.server --port 8799 --no-browser
+browser: Chrome headless (new), signed in through the start link itself, one shared user-data-dir for the three captures
+
+data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-evidence-n6f4y3of
+start link: http://127.0.0.1:8799/auth/nH47sc-lKVQDvXH0BP9s5IGJSMxMM60BZN4XLCVOZro

@@ -1,6 +1,6 @@
 // @vitest-environment node
 // The design-contract suite: the stylesheet, the shell HTML, the package
-// manifest and the license records must speak the warm-paper system from
+// manifest and the license records must speak the three-theme Geist system from
 // DESIGN.md (docs/design-language.md), and must not carry any of the
 // recorded dark-glass drift. These tests read files; they render nothing.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -57,8 +57,8 @@ const componentSources = walkSources(resolve(frontend, 'src', 'components'))
   .map((f) => readFileSync(f, 'utf8'))
   .join('\n');
 
-// The fourteen DESIGN.md frontmatter colors, each asserted as the exact
-// hex so a near-miss (a re-darkened green, a colder paper) fails.
+// The DESIGN.md frontmatter colors, each asserted as the exact
+// hex so a near-miss (a re-darkened accent, a colder canvas) fails.
 const SYSTEM_COLORS: Array<[string, string]> = [
   ['canvas', '#060609'],
   ['cell', '#101014'],
@@ -85,7 +85,7 @@ const DRIFT_COLORS = [
 const CARD_AT_REST = '--shadow-card:none';
 const CARD_LIFTED = '--shadow-card-hover:none';
 
-describe('index.css speaks the warm-paper system', () => {
+describe('index.css speaks the DESIGN.md system', () => {
   it('carries every DESIGN.md color token', () => {
     for (const [name, hex] of SYSTEM_COLORS) {
       expect(css, `missing ${name} ${hex}`).toContain(hex);

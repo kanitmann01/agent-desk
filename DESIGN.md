@@ -1,64 +1,60 @@
 ---
-version: 1
-name: Nexuus Bot morning brief
-description: A printed morning brief, not a card grid. Stone paper, black rules, one oxide action, fir only when a number is up.
-colors:
-  paper: "#F6F3EC"
-  brief: "#FFFDF8"
-  ink: "#141414"
-  ink-secondary: "#3A3A3A"
-  ink-muted: "#5C5C5C"
-  oxide: "#8C2F2F"
-  oxide-soft: "#F3E4E1"
-  fir: "#1B6B3A"
+version: 3
+name: Agent Desk
+description: One bento language, three themes. Near-black canvas by default, 1px rules, Geist and Geist Mono, one accent per theme doing all the pointing.
+themes:
+  unkey:
+    scheme: dark
+    canvas: "#060609"
+    surface: "#0C0C0F"
+    rule: "#26272A"
+    text: "#FBFBFB"
+    muted: "#8E8E93"
+    accent: "#E1F56A"
+  coforge:
+    scheme: dark
+    canvas: "#082340"
+    surface: "#0C2A4A"
+    rule: "#1E4472"
+    text: "#FFFFFF"
+    muted: "#A0A1A2"
+    accent: "#F15840"
+  momentuum:
+    scheme: light
+    canvas: "#F3F6FA"
+    surface: "#FFFFFF"
+    rule: "#D5DDE8"
+    text: "#082340"
+    muted: "#5B6B82"
+    accent: "#2470B0"
 typography:
-  greeting:
-    fontFamily: Source Serif 4
-    fontSize: 56px
-    fontWeight: 560
-  section:
-    fontFamily: Source Serif 4
-    fontSize: 32px
-    fontWeight: 560
-  body:
-    fontFamily: Source Sans 3
-    fontSize: 14px
-    fontWeight: 400
-  label:
-    fontFamily: Source Sans 3
-    fontSize: 12px
-    fontWeight: 600
-  figure:
-    fontFamily: IBM Plex Mono
-    fontSize: 64px
-    fontWeight: 500
+  words: Geist (Momentuum headings: Montserrat 700)
+  numerals: Geist Mono, tabular
+  greeting: 40px
+  figure: 56px
 rounded:
-  card: 0px
-  control: 0px
+  card: 8px
+  control: 6px
+  inner: 4px
+  pill: 6px
 spacing:
-  unit: 4px
-  frame: 16px
   rail: 200px
-elevation:
-  frame: "8px 8px 0 #141414"
-  card-hover: "4px 4px 0 #141414"
+  content: 1200px
+  rhythm: 28px 36px 60px
+elevation: none
 ---
 
-# Nexuus Bot
+# Agent Desk
 
-The desk is a morning brief for one manager. The first screen is a greeting, one question, one figure, and the decisions that are waiting. It is not a mosaic of equal cards.
-
-## What it takes from the references
-
-- Rosterline's brutalist operations desk: the greeting, the hard black rule, the offset shadow used once, and a list of things that need a decision with a square button.
-- Linear, from awesome-design-md: hairline structure, type doing the hierarchy, color held back from decoration. The lavender accent and the dark canvas stay there.
-- The Bruddle crypto dashboard: a black rail and a big figure beside a list. The purple, the gradient stage, and the coin icons do not come with it.
-- Monty Hayton's command palette: one field that is the way you ask. It is light here, because the desk is a morning document, not a dark launcher.
+The desk is a quiet instrument, dark by default: near-black canvas, 1px rules, one accent per theme doing all the pointing. Hierarchy comes from spacing, weight and a four-level ink ramp, never from shadow or glass. The work is louder than the chrome. `docs/design-language.md` is the full statement of this system; `frontend/src/test/tokens.test.ts` enforces it.
 
 ## Rules
 
-- Square corners. A 2px black rule. The only shadow is a hard offset.
-- Source Serif 4 for the greeting and section titles. Source Sans 3 for everything else you read as UI. IBM Plex Mono for figures, times, and counts.
-- Oxide `#8C2F2F` is the action and anything down. Fir `#1B6B3A` is only a number that went up.
-- The rail is words. The current page is an underline. A letter shows only when the rail is collapsed.
-- No gradients, no glass, no emoji, no filled icon tiles, no soft blurred shadows.
+- Components read only the semantic tokens (canvas, surface, rule, text, muted, accent, focus, heading and their derived steps). No component carries a hex.
+- The user picks one of three themes in Settings; `theme-boot.js` applies it before first paint. Unkey (default, dark) carries the dot cell texture and the one radial light on the hero. Coforge (dark) and Momentuum (light) are flat.
+- Geist for words, Geist Mono tabular for every compared value. The greeting is 40px, the one dashboard figure is 56px, and nothing else is bigger. No `clamp()`.
+- Concentric radii: cards 8px, controls 6px, inner wells 4px, pill 6px. No shadow at rest and none on hover.
+- A 200px word rail beside a 1200px content column on a 28/36/60px rhythm.
+- Motion is 120ms on color and background only; `prefers-reduced-motion` freezes it to instant.
+- Focus is always visible; every icon-only control carries an accessible name.
+- No gradients (except that one monochrome hero light), no glass, no blur, no glow, no text shadows, no emoji in chrome, no filled icon tiles, and none of the recorded dark-glass drift palette.

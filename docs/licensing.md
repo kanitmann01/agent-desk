@@ -141,9 +141,9 @@ the T14 ticket and plan documents, this document, the gate fixtures in
 `src/vendor` does not exist and that no component imports
 `vendor/reactbits`. The components and their supporting animation, styling,
 and class-helper packages were removed with the dark-glass theme in an
-earlier revamp. The warm-paper system in `docs/design-language.md` is drawn
-with the repo's own stylesheet and components, so no user-facing feature was
-dropped by this ticket.
+earlier revamp. The three-theme Geist system in `docs/design-language.md` is
+drawn with the repo's own stylesheet and components, so no user-facing
+feature was dropped by this ticket.
 
 Because nothing remained, nothing was quarantined and no new directory was
 excluded from the build. The regression guard is the CI source scan for

@@ -163,19 +163,22 @@ def _endpoint_card(sources: list[SourceStatus], endpoint: dict) -> str:
     )
 
 
-def _source_card(title: str, word: str, detail: str, cause: str = "") -> str:
+def _source_card(title: str, word: str, detail: str, cause: str = "",
+                 card_id: str = "") -> str:
     """One source card: title, the watch word as a stamp, detail and an optional cause.
 
     Every value is escaped; the cause line appears only for an error that carries a
-    cause.
+    cause. `card_id` names the DOM id when a card is addressed from elsewhere (the
+    mail card is).
     """
     cause_line = (
         f" <span class='empty'>{html.escape(cause)}</span>"
         if word == "error" and cause
         else ""
     )
+    id_attr = f" id='{card_id}'" if card_id else ""
     return (
-        "<article class='widget'>"
+        f"<article class='widget'{id_attr}>"
         f"<div class='w-head'><h2>{html.escape(title)}</h2>"
         f"<span class='stamp'>{html.escape(word)}</span></div>"
         f"<p>{html.escape(detail)}{cause_line}</p>"
@@ -209,20 +212,14 @@ def _source_cards(
 
 
 def _mail_card(mail: dict) -> str:
-    """The mail source card. The word comes straight from the caller:
+    """The mail source card, the source card builder with the mail
+    card's DOM id. The word comes straight from the caller:
     off (the settings toggle), unconfigured (no folder chosen),
     watching, or error, and the word can never contradict the toggle
     because the caller read both from the same place."""
-    word = mail.get("word", "")
-    cause = str(mail.get("cause", ""))
-    detail = str(mail.get("detail", ""))
-    cause_line = f" <span class='empty'>{html.escape(cause)}</span>" if word == "error" and cause else ""
-    return (
-        "<article class='widget' id='card-mail'>"
-        f"<div class='w-head'><h2>Mail folder</h2>"
-        f"<span class='stamp'>{html.escape(word)}</span></div>"
-        f"<p>{html.escape(detail)}{cause_line}</p>"
-        "</article>"
+    return _source_card(
+        "Mail folder", str(mail.get("word", "")), str(mail.get("detail", "")),
+        str(mail.get("cause", "")), card_id="card-mail",
     )
 
 

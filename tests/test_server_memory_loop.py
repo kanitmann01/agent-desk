@@ -216,7 +216,7 @@ def test_removing_an_excerpt_also_rejects_its_waiting_cards(env, auth):
 
 
 def test_the_memory_page_mounts_the_loop_island_over_the_server_forms(env, auth, monkeypatch):
-    from agentdesk.server import app as app_module
+    from agentdesk.server import memory_api as app_module
     monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: True)
     status, _h, body = env.request("GET", "/memory", auth)
     page = body.decode()
@@ -240,7 +240,7 @@ def test_the_memory_page_mounts_the_loop_island_over_the_server_forms(env, auth,
 
 
 def test_without_the_build_the_memory_page_stays_server_rendered(env, auth, monkeypatch):
-    from agentdesk.server import app as app_module
+    from agentdesk.server import memory_api as app_module
     monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: False)
     _s, _h, body = env.request("GET", "/memory", auth)
     page = body.decode()

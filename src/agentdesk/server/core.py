@@ -7,7 +7,11 @@ language. Everything decisive here is a pure data structure so the request
 guard, session store and page renderer stay testable without a browser.
 """
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
+
+SPA_DIR = Path(__file__).resolve().parent / "static" / "spa"
 
 COOKIE_NAME = "agentdesk_session"
 SESSION_MAX_AGE = 12 * 60 * 60  # 12 hours, then a fresh auth exchange
@@ -37,6 +41,44 @@ ATTENTION = "attention"  # amber dot, refresh blocked or stale (see PRD)
 SAMPLE = "sample"        # demo data, labeled as such, never mistaken for live
 
 FRESHNESS_STATUSES = (FRESH, ATTENTION, SAMPLE)
+
+
+def _active_version_dir(record: dict) -> Path:
+    """The directory of the version the user actually runs (the same
+    rule the runtime applies: after rollback that is not the newest)."""
+    active = record.get("active_version")
+    for version in record.get("versions", []):
+        if version["version"] == active:
+            return Path(version["dir"])
+    return Path(record["versions"][-1]["dir"])
+
+
+def plain_preview(text: str, limit: int = 140) -> str:
+    """A one-line plain-text preview of a draft for the audit log: the
+    donor approvals module's plainText. Tags and entities out, whitespace
+    collapsed, capped, so the log never carries markup."""
+    stripped = re.sub(r"<[^>]*>", " ", text)
+    stripped = re.sub(r"&[a-zA-Z]+;", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()[:limit]
+
+
+def count_noun(value: int, noun: str) -> str:
+    """One counted noun, plural s unless the count is exactly one.
+
+    Zero takes the plural, as English does.
+    """
+    return f"{value} {noun}" + ("" if value == 1 else "s")
+
+
+def bounded_text(text: str, limit: int) -> str:
+    """One value cut to a character budget on a single line.
+
+    Whitespace runs, newlines included, collapse to one space before measuring, and an
+    over-long value keeps limit - 1 characters plus an ellipsis, so the result never
+    exceeds the budget.
+    """
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "\u2026"
 
 
 @dataclass(frozen=True)
