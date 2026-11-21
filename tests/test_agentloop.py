@@ -198,7 +198,10 @@ def test_release_never_deletes_a_successors_claim(tmp_path):
 
 
 def test_the_built_in_steps_are_registered():
-    assert [step.name for step in STEPS] == ["deskcheck", "rank", "update"]
+    # Import order after the stack: the shipped steps (deskcheck, rank,
+    # update) then this ticket's (skills, curator).
+    assert [step.name for step in STEPS] == [
+        "deskcheck", "rank", "update", "skills", "curator"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------

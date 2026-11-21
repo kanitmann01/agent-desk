@@ -71,6 +71,12 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         # Autonomy (spec 016 §8): on by default; the desk acts by itself
         # and every change it makes is logged in the action ledger.
         "autonomy": True,
+        # The self-improving skills (spec 016 §8, ticket 10): create from
+        # repeated asks, improve from feedback, and the weekly curator,
+        # all on by default and all touching only desk-made skills.
+        "skills_auto_create": True,
+        "skills_auto_refine": True,
+        "skills_curator": True,
         # The agent loop's pass interval (spec 016 §8): one hour by
         # default; 0 turns the loop off.
         "agent_loop_minutes": 60,

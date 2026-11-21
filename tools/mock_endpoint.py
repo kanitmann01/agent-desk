@@ -34,6 +34,10 @@ _AGENT_MARKER = "agent instructions:"
 _FEEDBACK_MARKER = "How it landed (the user's own words): "
 _BRIEF_MARKER = "The user's brief (they will not restate their context; use it):"
 _FACTS_HEADER_MARKER = "Known facts about the user"
+# The skill-refine prompt's own labels (repetition/refine.py build_input).
+_SKILL_REFINE_MARKER = "Refine one saved skill of this desk."
+_SKILL_PROMPT_MARKER = "The skill's current prompt:"
+_SKILL_FEEDBACK_MARKER = "The user's feedback:"
 
 # Names the entity miner refuses: sentence starters and calendar words,
 # the rules extractor's own stoplist spirit, so "My manager Dana" yields
@@ -188,6 +192,26 @@ def _slide_titles(section: str) -> tuple[str, str]:
     return own.get(section.lower(), (section, f"The point of {section}"))
 
 
+def _skill_refine_reply(prompt: str) -> str:
+    """The refined prompt as strict JSON: the current prompt with the
+    queued feedback appended as instructions, what a careful refine
+    model would return for the same input. The user's words are echoed
+    verbatim, the extraction reply's own spirit."""
+    current = _after(prompt, _SKILL_PROMPT_MARKER)
+    current = current.split(_SKILL_FEEDBACK_MARKER, 1)[0].strip()
+    feedback_lines = []
+    in_block = False
+    for line in prompt.splitlines():
+        if _SKILL_FEEDBACK_MARKER in line:
+            in_block = True
+            continue
+        if in_block and line.startswith("- "):
+            feedback_lines.append(line[2:].strip())
+    additions = "".join(f"\n- {item}" for item in feedback_lines)
+    refined = (current + "\n\nUser feedback applied:" + additions).strip()
+    return json.dumps({"prompt": refined})
+
+
 def reply_for(prompt: str) -> str:
     """The deterministic answer for one prompt, by its stable markers.
 
@@ -196,6 +220,8 @@ def reply_for(prompt: str) -> str:
     """
     if _EXTRACTION_MARKER in prompt:
         return _extraction_reply(prompt)
+    if _SKILL_REFINE_MARKER in prompt:
+        return _skill_refine_reply(prompt)
     if _AGENT_MARKER in prompt:
         return _outline_reply(prompt)
     if "Presentation plan" in prompt:

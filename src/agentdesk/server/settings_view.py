@@ -982,6 +982,7 @@ def render_settings_page(
     connections_notice: str = "",
     agent_loop: dict | None = None,
     update: dict | None = None,
+    curator_last_run: str | None = None,
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -1022,18 +1023,65 @@ def render_settings_page(
                 if skill["active"]
                 else ""
             )
+            made_by = ("Made by the desk" if skill.get("created_by") == "agent"
+                       else "Made by you")
+            state_word = {"active": "Active", "stale": "Stale",
+                          "archived": "Archived"}.get(str(skill.get("state", "active")),
+                                                      "Active")
+            skill_id = html.escape(str(skill["id"]), quote=True)
+            pinned = bool(skill.get("pinned"))
+            pin_form = (
+                f"<form method='post' action='/skills/{skill_id}/pin' class='cardform'>"
+                "<input type='hidden' name='return_to' value='/settings#skills'>"
+                f"<input type='hidden' name='pinned' value='{0 if pinned else 1}'>"
+                f"<button class='btn btn-secondary' type='submit'>"
+                f"{'Unpin' if pinned else 'Pin'}</button></form>"
+            )
+            improve = ""
+            if skill.get("created_by") == "agent" and not pinned:
+                improve = (
+                    f"<form method='post' action='/skills/{skill_id}/feedback'"
+                    " class='cardform'>"
+                    "<input type='hidden' name='return_to' value='/settings#skills'>"
+                    f"<label class='empty' for='skill-{skill_id}-improve'>"
+                    "Improve this skill</label>"
+                    f"<input id='skill-{skill_id}-improve' type='text' name='text'"
+                    " maxlength='1000' placeholder='be shorter, lead with the number'"
+                    " autocomplete='off'>"
+                    "<button class='btn btn-secondary' type='submit'>Queue feedback"
+                    "</button></form>"
+                    "<p class='empty'>Queued feedback is sent to the company"
+                    " endpoint with this skill's prompt on the next pass, and"
+                    " the rewrite lands as a new version with an Undo.</p>"
+                )
             blocks.append(
                 "<article class='settings-skill'>"
                 f"<div class='w-head'><h2 class='skill-name'>{html.escape(skill['name'])}</h2>"
                 f"<span class='stamp'>{versions}</span></div>"
+                f"<p><b>{made_by}</b> · {state_word}"
+                + (f" · used {skill['use_count']} times" if skill.get("use_count") else "")
+                + "</p>"
                 f"<details><summary class='empty'>SKILL.md</summary><pre>{md}</pre></details>"
-                f"{undo}</article>"
+                f"{improve}{pin_form}{undo}</article>"
             )
         skills_html = "".join(blocks)
-        skills_stamp = f"{len(skills)} ACTIVE"
+        active_count = sum(1 for s in skills if s.get("active"))
+        skills_stamp = (f"{active_count} ACTIVE" if active_count == len(skills)
+                        else f"{active_count} OF {len(skills)} ACTIVE")
     else:
         skills_html = "<p class='empty'>No skills yet. Accept a proposal in the inbox and it appears here with its history.</p>"
         skills_stamp = "NONE YET"
+
+    if curator_last_run:
+        try:
+            curator_when = datetime.fromisoformat(curator_last_run).strftime(
+                "%Y-%m-%d %H:%M")
+        except ValueError:
+            curator_when = curator_last_run
+        curator_line = f"Curator last ran <b class='mono'>{curator_when}</b>."
+    else:
+        curator_line = ("Curator last ran <b class='mono'>never</b>; the first"
+                        " pass comes a week after it first sees the desk.")
 
     desk_stamp = "SAMPLE DATA ON" if settings_values.get("sample_data") else "REAL DATA"
     endpoint_stamp = "CONFIGURED" if endpoint_status["configured"] else "NOT SET"
@@ -1131,6 +1179,15 @@ environment variable, then the app's own checkout.</p>
 
 <section class='card settings-card' id='skills'>
 <div class='w-head'><h2>Skills</h2><span class='stamp'>{skills_stamp}</span></div>
+<p>A skill is a saved ask: one click re-runs it. Skills the desk made
+itself can be improved from feedback and are curated weekly; pinning one
+keeps it out of both. Skills you made are never touched by either.</p>
+<div class='settings-block'>
+{_toggle_button("skills_auto_create", settings_values.get("skills_auto_create", True), label="Skills: create from repeated asks")}
+{_toggle_button("skills_auto_refine", settings_values.get("skills_auto_refine", True), label="Skills: improve from feedback")}
+{_toggle_button("skills_curator", settings_values.get("skills_curator", True), label="Skills: weekly curator")}
+</div>
+<p class='empty'>{curator_line}</p>
 {skills_html}
 </section>
 
