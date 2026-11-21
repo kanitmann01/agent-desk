@@ -1,0 +1,13 @@
+agent-desk local CI  (data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-ci-0n9j8f47)
+checkout: D:\20-projects\Personal Agents\.worktrees\017-12-presentations
+------------------------------------------------------------------------
+PASS  py-grammar          0.0s  0 files parse under 3.10
+FAIL  pytest            523.7s  1 failed, 2676 passed, 2 skipped, 11 warnings in 521.62s (0:08:41)
+PASS  frontend-check      3.0s  tsc --noEmit clean
+PASS  frontend-tests      6.8s  [2m      Tests [22m [1m[32m312 passed[39m[22m[90m (312)[39m
+PASS  licenses            0.1s  manifest clean and current
+PASS  registry-ci         0.3s  REGISTRY-CI PASS
+PASS  brand-leak          0.1s  BRAND-LEAK PASS (1 pack(s), 0 hash(es))
+------------------------------------------------------------------------
+6/7 gates passed in 534s
+FAILED gates: pytest

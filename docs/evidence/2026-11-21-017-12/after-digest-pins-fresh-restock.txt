@@ -1,0 +1,13 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.5, pytest-9.0.2, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: D:\20-projects\Personal Agents\.worktrees\017-12-presentations
+configfile: pyproject.toml
+plugins: anyio-4.13.0, Faker-40.40.0, langsmith-0.9.0, platformdirs-4.13.5, asyncio-1.4.0, cov-7.1.0, django-4.12.0, mock-3.15.1, snapshot-0.9.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 2 items
+
+tests/test_presentation_packs.py::test_the_shipped_starter_validates_and_pins_its_digest PASSED [ 50%]
+tests/test_presentation_packs.py::test_installing_the_starter_uses_the_registry_pin PASSED [100%]
+
+============================== 2 passed in 0.19s ==============================
