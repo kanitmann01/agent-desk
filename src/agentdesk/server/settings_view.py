@@ -77,6 +77,11 @@ def _registry_section(status: dict | None) -> str:
         "<a href='/marketplace/installed'>Open Marketplace</a>.</p>")
 
 
+def _esc_timeout(status: dict) -> str:
+    """The presentation timeout as the form shows it."""
+    return html.escape(str(status.get("presentationTimeout") or "30"))
+
+
 def mask_llm_key(key: str) -> str:
     """The page-facing form of a saved key: state only, never the value."""
     key = (key or "").strip()
@@ -110,6 +115,9 @@ def _endpoint_form(status: dict) -> str:
         "<label class='field'>Model"
         f"<input id='llm-model' type='text' value='{esc_model}' "
         "placeholder='gpt-4o-mini' autocomplete='off'></label>"
+        "<label class='field'>Presentation timeout (seconds)"
+        f"<input id='presentation-timeout' type='text' value='{_esc_timeout(status)}' "
+        "placeholder='30' autocomplete='off'></label>"
         "</div>"
         + "<div class='cardrow'>"
         "<button class='btn btn-primary' data-endpoint-save>Save</button>"

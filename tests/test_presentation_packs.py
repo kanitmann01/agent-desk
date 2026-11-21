@@ -30,8 +30,42 @@ PACK = ROOT / "registry" / "plugins" / "presentation-starter"
 REGISTRY = ROOT / "registry"
 
 
+def _scripted_llm():
+    """A plan and a fill the writer can turn into a deck, with no network."""
+    def llm(prompt, timeout=30):
+        if "Presentation plan" in prompt:
+            if '"id": "snapshot"' in prompt or "Period snapshot" in prompt:
+                return json.dumps({"sections": [
+                    {"id": "snapshot", "title": "Period snapshot"},
+                    {"id": "performance", "title": "Performance vs plan"},
+                    {"id": "wins", "title": "Wins"},
+                    {"id": "risks", "title": "Risks"},
+                    {"id": "asks", "title": "Priorities and asks"},
+                ]})
+            if "competitor-brief" in prompt:
+                return json.dumps({"sections": [
+                    {"id": "landscape", "title": "Landscape"},
+                    {"id": "profile", "title": "Competitor profile"},
+                    {"id": "gaps", "title": "Strengths and gaps"},
+                    {"id": "implications", "title": "Implications"},
+                    {"id": "moves", "title": "Recommended moves"},
+                ]})
+            return json.dumps({"sections": [
+                {"id": "context", "title": "Context"},
+                {"id": "findings", "title": "Findings"},
+                {"id": "next", "title": "What we do next"},
+            ]})
+        return json.dumps({
+            "title": "From the mock",
+            "bullets": ["Prepared from the desk.", "One idea on the slide."],
+            "citations": [],
+        })
+    return llm
+
+
 def _ready(env):
-    env.server.settings.set("llm_base", "http://127.0.0.1:9/v1")
+    env.server.llm_endpoint = "http://127.0.0.1:9/v1"
+    env.server.llm = _scripted_llm()
 
 
 def test_the_shipped_starter_validates_and_pins_its_digest():

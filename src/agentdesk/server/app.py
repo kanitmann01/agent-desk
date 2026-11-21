@@ -111,7 +111,18 @@ from agentdesk.llm import (
 )
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.presentations.packs import load_packs
-from agentdesk.presentations.writer import outline_for, write_deck
+from agentdesk.presentations.pipeline import (
+    call_model,
+    fill_prompt,
+    gather,
+    outline_from_fill,
+    parse_fill,
+    parse_plan,
+    plan_prompt,
+    receipt_lines,
+    timeout_seconds,
+)
+from agentdesk.presentations.writer import write_deck
 from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
     EmbedderUnavailable,
@@ -2323,10 +2334,45 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 {"error": "that template has no shell for the chosen variant"},
             )
             return
+        enabled = self._presentation_sources(body)
+        sources = gather(
+            self._agent_fact_ranks_plain(brief) if "memory" in enabled else [],
+            self._excel_status() if "excel-report" in enabled else None,
+            self._page_watch() if "competitor-watch" in enabled else None,
+            enabled,
+        )
+        timeout = timeout_seconds(
+            server.settings.get("presentation_timeout_s") if server.settings is not None else "30"
+        )
+        llm = self._effective_llm()[0]
         try:
-            blob = write_deck(shell_path.read_bytes(), recipe_doc, outline_for(brief, recipe_doc))
-        except (OSError, ValueError):
-            self._send_json(400, {"error": "the deck could not be written"})
+            parsed = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
+            if not parsed:
+                raise ValueError("malformed plan")
+            deck_title, planned = parsed
+            filled = []
+            for section in planned:
+                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
+                if not slides:
+                    raise ValueError("malformed fill")
+                filled.append(slides)
+            outline = outline_from_fill(
+                brief, recipe_doc, planned, filled, sources, title=deck_title,
+            )
+            blob = write_deck(shell_path.read_bytes(), recipe_doc, outline)
+        except (OSError, ValueError, LlmUnavailable) as exc:
+            if isinstance(exc, LlmUnavailable):
+                cause = str(exc)
+            elif isinstance(exc, ValueError) and "plan" in str(exc):
+                cause = "The presentation plan could not be read, so no deck was written."
+            elif isinstance(exc, ValueError) and "fill" in str(exc):
+                cause = "The presentation could not be filled, so no deck was written."
+            else:
+                cause = "The deck could not be written."
+            run_id = server.agents.record("presentation", brief, "degraded", cause=cause)
+            self._audit("agents.run", target="presentation", status="error",
+                        detail=f"status degraded; {cause}")
+            self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
         folder = self._presentation_dir() / secrets.token_hex(8)
         folder.mkdir(parents=True)
@@ -2340,16 +2386,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "recipe": recipe,
             "phase": "written",
             "file": f"{folder.name}/deck.pptx",
+            "sources": receipt_lines(sources),
         }
         run_id = server.agents.record(
             "presentation", brief, "ok", artifact=artifact,
+            facts=[{"id": row["id"], "text": row["text"]} for row in sources if row["kind"] == "memory"],
         )
+        used = ", ".join(f"{row['kind']}:{row['id']}" for row in sources) or "none"
         self._audit(
             "agents.run", target="presentation", status="ok",
             detail=(f"status ok; template {pack.id}@{pack.version}; "
-                    f"variant {variant}; recipe {recipe}"),
+                    f"variant {variant}; recipe {recipe}; sources {used}"),
         )
-        self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact, [])
+        self._finish_agent_run(run_id, "presentation", "ok", "", "", artifact,
+                               artifact["sources"])
 
     def _finish_agent_run(self, run_id, agent_id, status, cause, reply, artifact, facts) -> None:
         """JSON for a fetch, or a redirect back to the page for a form."""
@@ -2369,6 +2419,95 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "artifact": artifact,
             "facts": facts,
         })
+
+    def _presentation_sources(self, body: dict) -> set[str]:
+        """Which desk reads this run keeps.
+
+        A JSON body leaves a missing key on, and turns one off with 0,
+        false, or off. A form post includes sources_form, and an
+        unchecked box is simply absent, so a missing key is off.
+        """
+        wanted = {"memory", "excel-report", "competitor-watch"}
+        flags = {
+            "use_memory": "memory",
+            "use_workbook": "excel-report",
+            "use_watch": "competitor-watch",
+        }
+        form = str(body.get("sources_form") or "") == "1"
+        for key, source in flags.items():
+            if key not in body:
+                if form:
+                    wanted.discard(source)
+                continue
+            if str(body[key]).lower() in ("0", "false", "off", ""):
+                wanted.discard(source)
+        return wanted
+
+    def _agent_fact_ranks_plain(self, brief: str) -> list:
+        """Memory facts for a presentation, as {id, text} rows."""
+        memory = self.server.memory  # type: ignore[attr-defined]
+        if memory is None:
+            return []
+        self._configure_memory_embeddings()
+        try:
+            ranked = memory.recall(f"Presentation {brief}")
+        except MemoryEncryptedError:
+            return []
+        return [{"id": fact.id, "text": fact.text} for _score, fact in ranked[:5]]
+
+    def _excel_status(self) -> dict | None:
+        """The watched workbook's status, or None when there is no watch."""
+        excel = self.server.excel  # type: ignore[attr-defined]
+        if excel is None:
+            return None
+        try:
+            return excel.status()
+        except Exception:  # noqa: BLE001 - a watch that cannot answer is not read
+            return None
+
+    def _page_watch(self) -> dict | None:
+        """The latest Page watch snapshot.
+
+        A test may inject `server.page_watch`. Otherwise the snapshot is
+        the competitor-watch plugin's http-state.json, the file that
+        source writes after a fetch. The newest entry wins.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        supplied = getattr(server, "page_watch", None)
+        if isinstance(supplied, dict):
+            return supplied
+        plugins = getattr(server, "plugins", None)
+        root = getattr(plugins, "data_dir", None)
+        if root is None:
+            return None
+        path = Path(root) / "competitor-watch" / "http-state.json"
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(state, dict):
+            return None
+        best = None
+        best_at = ""
+        best_url = ""
+        for url, entry in state.items():
+            if not isinstance(entry, dict):
+                continue
+            at = str(entry.get("fetchedAt") or entry.get("checkedAt") or "")
+            if best is None or at >= best_at:
+                best = entry
+                best_at = at
+                best_url = str(url)
+        if best is None:
+            return None
+        value = best.get("text")
+        if not value:
+            stored = best.get("value")
+            value = "" if stored is None else str(stored)
+        text = f"{best_url}: {value}".strip(": ").strip() if best_url else str(value)
+        if not text:
+            return None
+        return {"text": text, "at": best_at}
 
     def _presentation_dir(self):
         """Where this process writes decks. Tests point it at a temp dir."""
@@ -2627,12 +2766,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     break
         saved_model = settings.get("llm_model") if settings is not None else ""
         key_state = mask_llm_key(settings.get("llm_key")) if settings is not None else ""
+        timeout = settings.get("presentation_timeout_s") if settings is not None else "30"
         return {
             "configured": configured,
             "last": last,
             "base": saved_base or server.llm_endpoint,
             "model": saved_model or server.llm_model,
             "keyState": key_state,
+            "presentationTimeout": timeout or "30",
         }
 
     def _send_settings_values(self) -> None:
@@ -2659,11 +2800,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
-        unknown = sorted(name for name in body if name not in ("base", "key", "model"))
+        unknown = sorted(
+            name for name in body if name not in ("base", "key", "model", "presentationTimeout")
+        )
         if unknown:
             self._send_json(400, {"error": (
                 "unknown endpoint field(s): " + ", ".join(unknown)
-                + "; accepted fields are base, key, model"
+                + "; accepted fields are base, key, model, presentationTimeout"
             )})
             return
         base = str(body.get("base", "")).strip()
@@ -2671,6 +2814,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if problem:
             self._send_json(400, {"error": problem})
             return
+        timeout_raw = None
+        if "presentationTimeout" in body:
+            timeout_raw = str(body.get("presentationTimeout") or "").strip()
+            try:
+                seconds = float(timeout_raw)
+            except ValueError:
+                seconds = 0
+            if seconds < 5 or seconds > 300:
+                self._send_json(400, {"error": "presentation timeout must be a number of seconds from 5 to 300"})
+                return
         saved = {
             "llm_base": base,
             "llm_key": str(body.get("key", "")).strip(),
@@ -2678,6 +2831,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         }
         for key, value in saved.items():
             settings.set(key, value)
+        if timeout_raw is not None:
+            settings.set("presentation_timeout_s", timeout_raw)
         self._send_json(200, {
             "ok": True,
             "base": saved["llm_base"],

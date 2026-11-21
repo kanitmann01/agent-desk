@@ -297,9 +297,13 @@ def chat(
 
 def chat_client(base_url: str, api_key: str, model: str):
     """A prompt-to-text callable bound to one endpoint config."""
-    def complete(prompt: str) -> str:
-        """One completion against the endpoint this client was built with."""
-        return chat(base_url, api_key, model, prompt)
+    def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
+        """One completion against the endpoint this client was built with.
+
+        Callers that omit timeout keep the 10 second cap. The presentation
+        agent passes its own, longer, timeout.
+        """
+        return chat(base_url, api_key, model, prompt, timeout=timeout)
 
     return complete
 

@@ -116,6 +116,12 @@ def _presentation_card(packs, endpoint_ready: bool, sentence: str) -> str:
         f"{variant_rows}</fieldset>"
         f'<label class="empty" for="recipe-presentation">Recipe</label>'
         f'<select id="recipe-presentation" name="recipe"{disabled}>{options}</select>'
+        '<fieldset class="source-row"><legend class="empty">Use</legend>'
+        '<input type="hidden" name="sources_form" value="1">'
+        f'<label><input type="checkbox" name="use_memory" value="1" checked{disabled}> Memory</label>'
+        f'<label><input type="checkbox" name="use_workbook" value="1" checked{disabled}> Workbook tracker</label>'
+        f'<label><input type="checkbox" name="use_watch" value="1" checked{disabled}> Page watch</label>'
+        '</fieldset>'
         f'<button class="btn btn-primary" type="submit"{disabled}>Run Presentation</button>'
         "</form></article>"
     )
@@ -142,12 +148,26 @@ def _artifact_html(run: dict) -> str:
         if artifact.get("file"):
             text_html = f"<pre>{_esc(text)}</pre>"
             href = f"/agents/runs/{run['id']}/download"
-            return text_html + f'<p><a href="{href}">Download .pptx</a></p>'
+            return text_html + _sources_html(artifact) + f'<p><a href="{href}">Download .pptx</a></p>'
     else:
         text = str(artifact.get("text", ""))
     if not text:
         return ""
     return f"<pre>{_esc(text)}</pre>"
+
+
+def _sources_html(artifact: dict) -> str:
+    """The receipt lines for a presentation: what was read, and when."""
+    rows = artifact.get("sources") or []
+    if not rows:
+        return ""
+    items = []
+    for row in rows:
+        when = f" ({_esc(row.get('at') or '')})" if row.get("at") else ""
+        items.append(
+            f"<li>{_esc(row.get('label', ''))}: {_esc(row.get('text', ''))}{when}</li>"
+        )
+    return "<p class='empty'>This run used these sources:</p><ul>" + "".join(items) + "</ul>"
 
 
 def _feedback_html(run: dict) -> str:
