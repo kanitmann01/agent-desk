@@ -121,6 +121,13 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("peer.install", "plugin", "A plugin was downloaded from a paired desk, verified against the publisher's recorded digest, validated by the shared validator, and installed with the peer recorded as its source."),
     ("peer.update", "plugin", "A plugin that came from a paired desk was updated to the publisher's newer version, through the same validate-and-consent path as every update."),
     ("ledger.undo", "decision", "You pressed Undo on a change the desk made by itself; the earlier state was put back, and the undo is itself recorded and undoable."),
+
+    # The key lifecycle (spec 018): a saved, changed or deleted model
+    # connection. The rows name the label and the preset only; the key
+    # itself lives in the OS keychain and never reaches the trail.
+    ("keys.create", "decision", "You saved a named model connection: its label and provider preset are recorded here, its key went to this machine's keychain, and only the masked hint (first three, last four) is kept beside it."),
+    ("keys.update", "decision", "You changed a saved connection (its label, base URL, headers, default star or key). The row names the connection; an empty key field kept the stored key, and the stored key changed only when you typed a new one or pressed clear."),
+    ("keys.delete", "decision", "You deleted a saved connection; its row and its keychain entry went together, and no secret material is recorded here."),
 ]
 
 ACTOR = "agent-desk"

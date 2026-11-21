@@ -422,6 +422,13 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .settings-links{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
 .settings-skill{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--hairline)}
 .settings-skill:first-of-type{border-top:none;padding-top:0}
+/* Connections (spec 018): the preset grid wraps as tiles so twelve
+   providers stay one keyboard-reachable radiogroup, and a row's Delete
+   form sits inline with its Edit link instead of stacking. */
+.preset-grid{display:flex;flex-wrap:wrap;gap:8px;border:0;padding:0;margin:8px 0}
+.preset-tile{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--hairline);border-radius:var(--r-inner);background:var(--surface);font-size:13px;color:var(--ink-1)}
+.preset-tile:has(input:checked){border-color:var(--accent);color:var(--accent-text)}
+.inlineform{display:inline-block;margin:0 0 0 6px}
 """
 
 # The scripts the shell ships: the workbook picker flow, the Re-test
@@ -659,6 +666,24 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
         location.reload();
       })
       .catch(function () { show('The dashboard could not reach its own server; the research key was not cleared.'); });
+  });
+})();
+
+// Connections (spec 018): the key field reveals only while the box is
+// checked (the full value is visible exactly once, in the form), and
+// picking a preset fills its default base URL, editable afterwards.
+// Both are enhancements; the form itself posts without any script.
+(function () {
+  var reveal = document.querySelector('[data-key-reveal]');
+  var key = document.getElementById('conn-key');
+  if (reveal && key) reveal.addEventListener('change', function () {
+    key.type = reveal.checked ? 'text' : 'password';
+  });
+  var base = document.getElementById('conn-base');
+  document.querySelectorAll("input[name='provider']").forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      if (base && radio.dataset.base) base.value = radio.dataset.base;
+    });
   });
 })();
 

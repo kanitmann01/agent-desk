@@ -81,6 +81,9 @@ from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
+from agentdesk.keys.presets import PRESETS, preset_for
+from agentdesk.keys.secrets import KeychainSecrets
+from agentdesk.keys.store import KeysStore, UnknownConnection, mask_key
 from agentdesk.layout import (
     BUILTIN_KEYS as BUILTIN_LAYOUT_KEYS,
     LayoutError,
@@ -866,6 +869,8 @@ class AgentDeskServer(ThreadingHTTPServer):
         outbox_dir=None,
         registry_root=None,
         peer_store: PeerStore | None = None,
+        keys_store: KeysStore | None = None,
+        keychain=None,
         extractor=None,
         reflector=None,
         announce_port: int | None = None,
@@ -946,6 +951,13 @@ class AgentDeskServer(ThreadingHTTPServer):
         # deliberately NOT started here: a default boot announces
         # nothing until the first visit to the peers surface.
         self.peer_store = peer_store
+        # The named model connections (spec 018): the store may be absent
+        # (its sqlite could not open), in which case the connections
+        # routes and the settings section say so and refuse. The keychain
+        # wrapper is injectable like every store; None builds the real
+        # keyring-backed one, tests pass the in-memory fake.
+        self.keys = keys_store
+        self.keychain = keychain if keychain is not None else KeychainSecrets()
         self.announce_port = announce_port
         self.peer_discovery: DiscoveryService | None = None
         self._peer_discovery_lock = threading.Lock()
@@ -3057,6 +3069,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_store.count(server.audit_conn)
             if server.audit_conn is not None else 0
         )
+        connections = (
+            [_connection_payload(c) for c in server.keys.all()]
+            if server.keys is not None else None
+        )
+        editing_id = parse_qs(self.path.partition("?")[2]).get("connection", [""])[0]
+        editing = next((c for c in (connections or []) if c["id"] == editing_id), None)
         page = render_settings_page(
             entries, skills, histories, agentdesk.__version__,
             settings_values=self._settings_public_values(),
@@ -3071,8 +3089,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_total=audit_total,
             preference_notice=self._preference_notice(),
             desk_check=self._desk_check_for_page(server),
+            connections=connections,
+            editing_connection=editing,
+            keychain_available=bool(server.keychain.available()),
+            connections_notice=self._connections_notice(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _connections_notice(self) -> str:
+        """A connection save's refusal, or the store's unavailability."""
+        if self.server.keys is None:  # type: ignore[attr-defined]
+            return "The connections store is not available, so connections cannot be saved here."
+        return parse_qs(self.path.partition("?")[2]).get("connections_error", [""])[0]
 
     def _registry_status_for_settings(self) -> dict:
         """The listing shape plus the saved path, for the settings form."""
@@ -3225,6 +3253,166 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": False, "cause": str(exc)})
             return
         self._send_json(200, {"ok": True})
+
+    # -- named connections (spec 018) -------------------------------------
+
+    def _send_connections_json(self) -> None:
+        """GET /api/connections: every connection, masked hints only.
+
+        The keychain's availability rides along so a client never learns it
+        from a failed save; 503 without a store, the honest unavailable
+        state every store route uses.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        self._send_json(200, {
+            "connections": [_connection_payload(c) for c in server.keys.all()],
+            "keychainAvailable": server.keychain.available(),
+        })
+
+    def _connections_refusal(self, message: str, status: int = 400) -> None:
+        """Answer a connection refusal: JSON, or the settings page carrying it.
+
+        A no-JS form post lands back on the Settings page with the server's
+        own words in the query, the preferences save's pattern, so a refusal
+        is never a dead JSON end for a browser form.
+        """
+        if self._is_form_submit():
+            self._send_redirect("/settings?connections_error=" + quote(message))
+            return
+        self._send_json(status, {"error": message})
+
+    def _connection_create(self) -> None:
+        """POST /api/connections: save one named connection.
+
+        The key goes to the keychain alone; the row and every answer after
+        this one carry the masked hint. A key that cannot land in the
+        keychain refuses the whole save: a connection whose secret silently
+        went nowhere is a trap.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        body = self._read_json_body() or {}
+        values, error = _connection_input(body, CONNECTION_CREATE_FIELDS)
+        if error:
+            self._connections_refusal(error)
+            return
+        preset = values["provider"]
+        base = values["baseUrl"] or preset.base_url
+        if not base:
+            self._connections_refusal("a custom connection needs a base URL")
+            return
+        if not values["apiKey"] and not preset.key_optional:
+            where = f" Get a key at {preset.console_url}." if preset.console_url else ""
+            self._connections_refusal(
+                f"the {preset.name} preset needs an API key.{where}")
+            return
+        if values["apiKey"] and not server.keychain.available():
+            self._connections_refusal(NO_KEYCHAIN_NOTICE)
+            return
+        try:
+            connection = server.keys.add(
+                label=values["label"], provider=preset.id, base_url=base,
+                masked_key=mask_key(values["apiKey"]) if values["apiKey"] else "",
+                headers=values["headers"], is_default=values["isDefault"])
+        except ValueError as exc:
+            self._connections_refusal(str(exc), status=409)
+            return
+        if values["apiKey"] and not server.keychain.store(connection.id,
+                                                          values["apiKey"]):
+            server.keys.delete(connection.id)  # never keep a row whose secret went nowhere
+            self._connections_refusal("the keychain refused the key; nothing was saved")
+            return
+        self._audit("keys.create", target=connection.id,
+                    detail=f"{connection.label} ({preset.name})")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(201, _connection_payload(connection))
+
+    def _connection_update(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/update: edit one connection.
+
+        An empty key field keeps the stored key (the one edit semantic
+        everywhere); keyClear removes it; a typed key replaces it. A row
+        that cannot be written puts the previous secret back, so the
+        keychain and the database never disagree about what is stored.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            existing = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        body = self._read_json_body() or {}
+        values, error = _connection_input(body, CONNECTION_UPDATE_FIELDS)
+        if error:
+            self._connections_refusal(error)
+            return
+        preset = values["provider"]
+        base = values["baseUrl"] or existing.base_url
+        if not base:
+            self._connections_refusal("a custom connection needs a base URL")
+            return
+        api_key = values["apiKey"]
+        if api_key and not server.keychain.available():
+            self._connections_refusal(NO_KEYCHAIN_NOTICE)
+            return
+        previous_secret = server.keychain.fetch(existing.id) if api_key else None
+        if api_key and not server.keychain.store(existing.id, api_key):
+            self._connections_refusal("the keychain refused the key; nothing changed")
+            return
+        try:
+            connection = server.keys.update(
+                existing.id, label=values["label"], provider=preset.id,
+                base_url=base,
+                masked_key=mask_key(api_key) if api_key else existing.masked_key,
+                headers=values["headers"])
+        except ValueError as exc:
+            if api_key:
+                if previous_secret is None:
+                    server.keychain.forget(existing.id)
+                else:
+                    server.keychain.store(existing.id, previous_secret)
+            self._connections_refusal(str(exc), status=409)
+            return
+        if _flag(body, "keyClear") and not api_key:
+            server.keychain.forget(existing.id)
+            connection = server.keys.clear_key(existing.id)
+        if values["isDefault"]:
+            connection = server.keys.set_default(existing.id)
+        self._audit("keys.update", target=existing.id,
+                    detail=f"{connection.label} ({preset.name})")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _connection_payload(connection))
+
+    def _connection_delete(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/delete: the row and its secret go together."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        server.keychain.forget(connection.id)
+        server.keys.delete(connection.id)
+        self._audit("keys.delete", target=connection.id, detail=connection.label)
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, {"ok": True, "id": connection.id})
 
     def _settings_toggle(self) -> None:
         """Flip one named switch and let the change take effect before answering.
@@ -7375,6 +7563,8 @@ def create_server(
     outbox_dir=None,
     registry_root=None,
     peer_store: PeerStore | None = None,
+    keys_store: KeysStore | None = None,
+    keychain=None,
     extractor=None,
     reflector=None,
     announce_port: int | None = None,
@@ -7458,6 +7648,12 @@ def create_server(
 
     if peer_store is None:
         peer_store = _default_peer_store()
+    # The named connections (spec 018): the store gets its own sqlite
+    # file in the data dir; the keychain wrapper defaults to the real
+    # keyring client (an injectable fake in tests, a machine with no
+    # backend answers available() False and stores no secret).
+    if keys_store is None:
+        keys_store = _default_keys_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         """Build the server bound to one port, everything else fixed.
@@ -7497,6 +7693,8 @@ def create_server(
             outbox_dir=outbox_dir,
             registry_root=registry_root,
             peer_store=peer_store,
+            keys_store=keys_store,
+            keychain=keychain,
             extractor=extractor,
             reflector=reflector,
             announce_port=announce_port,
@@ -7832,6 +8030,113 @@ def _default_peer_store() -> PeerStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("peer store unavailable")
         return None
+
+
+def _default_keys_store() -> KeysStore | None:
+    """The connections store over its own sqlite file (keys.sqlite3),
+    or None when it cannot open. None means the connections routes and
+    the settings section say the surface is unavailable; it never means
+    a half-working silent mode."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "keys.sqlite3", check_same_thread=False)
+        return KeysStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("keys store unavailable")
+        return None
+
+
+# The connections API's field whitelist (the endpoint-save pattern: an
+# unknown field name is a 400 naming the typos and the accepted names,
+# never a silent ok with dropped values) and the no-keychain notice.
+CONNECTION_CREATE_FIELDS = (
+    "label", "provider", "baseUrl", "apiKey", "headers", "isDefault",
+)
+CONNECTION_UPDATE_FIELDS = CONNECTION_CREATE_FIELDS + ("keyClear",)
+NO_KEYCHAIN_NOTICE = (
+    "This machine has no keychain, so a key cannot be stored here. Save the"
+    " connection without one (local presets need no key) or resolve keys"
+    " through environment variables."
+)
+
+
+def _connection_payload(connection) -> dict:
+    """The wire shape of one connection: the masked hint, never the key."""
+    return {
+        "id": connection.id,
+        "label": connection.label,
+        "provider": connection.provider,
+        "baseUrl": connection.base_url,
+        "maskedKey": connection.masked_key,
+        "headers": connection.headers,
+        "isDefault": connection.is_default,
+        "enabled": connection.enabled,
+        "status": connection.status,
+        "lastError": connection.last_error,
+        "createdAt": connection.created_at,
+        "updatedAt": connection.updated_at,
+    }
+
+
+def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | None, str | None]:
+    """Validate one connection POST body into field values, or name the refusal.
+
+    The provider resolves to its preset object, a typed base URL is checked with
+    the adapter's own base_url_problem, and headers arrive as a JSON dict or
+    form "Name: Value" lines. baseUrl comes back empty when blank: the create
+    path fills the preset default, the update path keeps the stored value.
+    """
+    unknown = sorted(name for name in body if name not in accepted)
+    if unknown:
+        return None, ("unknown connection field(s): " + ", ".join(unknown)
+                      + "; accepted fields are " + ", ".join(accepted))
+    label = str(body.get("label", "") or "").strip()
+    if not label:
+        return None, "a label is required"
+    preset = preset_for(str(body.get("provider", "") or "").strip())
+    if preset is None:
+        return None, ("unknown provider preset: " + str(body.get("provider", ""))
+                      + "; presets are " + ", ".join(p.id for p in PRESETS))
+    base = str(body.get("baseUrl", "") or "").strip()
+    if base:
+        problem = base_url_problem(base)
+        if problem:
+            return None, problem
+    headers, problem = _headers_from_input(body.get("headers"))
+    if problem:
+        return None, problem
+    return {
+        "label": label,
+        "provider": preset,
+        "baseUrl": base,
+        "apiKey": str(body.get("apiKey", "") or "").strip(),
+        "headers": headers,
+        "isDefault": _flag(body, "isDefault"),
+    }, None
+
+
+def _headers_from_input(value) -> tuple[dict | None, str | None]:
+    """Extra headers from a JSON dict or one 'Name: Value' per form line."""
+    if value is None or value == "":
+        return {}, None
+    if isinstance(value, dict):
+        if any(not isinstance(name, str) or not isinstance(content, str) or not name.strip()
+               for name, content in value.items()):
+            return None, "headers must map each name to a text value"
+        return {name.strip(): content.strip() for name, content in value.items()}, None
+    if isinstance(value, str):
+        headers: dict[str, str] = {}
+        for line in value.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            name, sep, content = line.partition(":")
+            if not sep or not name.strip() or not content.strip():
+                return None, "each header line must be 'Name: Value'"
+            headers[name.strip()] = content.strip()
+        return headers, None
+    return None, "headers must be name: value lines"
 
 
 def default_calendar_hint(explicit: str | None = None) -> Path:

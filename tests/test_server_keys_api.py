@@ -1,0 +1,437 @@
+"""Connections CRUD through the real HTTP seam (spec 018, ticket #231).
+
+The harness boots with an inert in-memory keys store and the in-memory
+fake keychain, so every test here drives the real server over a real
+socket without touching a real OS keychain. The one guarantee asserted
+everywhere: the secret appears in the create request and never again,
+not in a payload, not in the page, not in the sqlite file, not in the
+audit trail.
+"""
+
+import json
+import sqlite3
+import sys
+import time
+from pathlib import Path
+from urllib.parse import urlencode
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+for _p in (str(ROOT / "src"), str(ROOT / "tests")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import server_harness
+from agentdesk.keys.presets import PRESETS
+from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
+from agentdesk.keys.store import KeysStore
+
+SECRET = "sk-live-quietly-aaaaaaaaaaaaaaaa-9999"
+
+
+class DeadKeychain:
+    """A keyring-shaped backend with no keychain behind it, ever."""
+
+    def get_keyring(self):
+        raise RuntimeError("no backend on this machine")
+
+    def set_password(self, *_args):
+        raise RuntimeError("no backend on this machine")
+
+    def get_password(self, *_args):
+        raise RuntimeError("no backend on this machine")
+
+    def delete_password(self, *_args):
+        raise RuntimeError("no backend on this machine")
+
+
+@pytest.fixture()
+def keychain():
+    return MemoryKeychain()
+
+
+@pytest.fixture()
+def env(keychain):
+    booted = server_harness.Booted(keychain=KeychainSecrets(keychain))
+    try:
+        yield booted
+    finally:
+        booted.close()
+
+
+@pytest.fixture()
+def auth(env):
+    return env.exchange()
+
+
+def _post_form(env, path, fields, headers):
+    """A browser-shaped POST: form-urlencoded fields, no JavaScript."""
+    data = urlencode(fields).encode("utf-8")
+    merged = {"Content-Type": "application/x-www-form-urlencoded"}
+    merged.update(headers)
+    return env.request("POST", path, merged, data)
+
+
+def _create(env, auth, **overrides):
+    """One create request with the usual hosted-preset shape."""
+    body = {"label": "OpenAI personal", "provider": "openai",
+            "apiKey": SECRET, **overrides}
+    return env.post_json("/api/connections", body, auth)
+
+
+# -- create / list / update / delete ----------------------------------------
+
+
+def test_create_stores_the_key_in_the_keychain_and_answers_the_mask(env, auth, keychain):
+    status, _h, body = _create(env, auth)
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["label"] == "OpenAI personal"
+    assert payload["provider"] == "openai"
+    # The preset default filled the blank base URL.
+    assert payload["baseUrl"] == "https://api.openai.com/v1"
+    assert payload["maskedKey"] == "sk-...9999"
+    # The secret itself went to the keychain alone, under the spec's shape.
+    assert keychain.secrets == {("agent-desk", f"key/{payload['id']}"): SECRET}
+
+
+def test_the_secret_is_never_echoed_after_create(env, auth):
+    _create(env, auth)
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert SECRET not in json.dumps(listing)
+    assert "sk-live-quietly" not in page
+
+
+def test_list_carries_every_connection_with_masked_hints_only(env, auth):
+    _create(env, auth)
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Local ollama", "provider": "ollama",
+    }, auth)
+    assert status == 201
+    payload = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert payload["keychainAvailable"] is True
+    hints = {c["maskedKey"] for c in payload["connections"]}
+    assert hints == {"sk-...9999", ""}
+    labels = {c["label"] for c in payload["connections"]}
+    assert labels == {"OpenAI personal", "Local ollama"}
+
+
+def test_unknown_fields_answer_400_naming_the_accepted_fields(env, auth):
+    status, _h, body = env.post_json("/api/connections", {
+        "labell": "OpenAI personal", "provider": "openai",
+        "key": SECRET, "isDefault": "yes",
+    }, auth)
+    payload = json.loads(body)
+    assert status == 400
+    for typo in ("labell", "key"):
+        assert typo in payload["error"]
+    for accepted in ("label", "provider", "baseUrl", "apiKey", "headers", "isDefault"):
+        assert accepted in payload["error"]
+    # Refusing beats a silent ok with dropped values: nothing was saved.
+    assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
+
+
+def test_create_refuses_a_blank_label_an_unknown_preset_and_a_bad_base(env, auth):
+    for body, fragment in (
+        ({"provider": "openai", "apiKey": SECRET}, "label"),
+        ({"label": "x", "provider": "madeup", "apiKey": SECRET}, "preset"),
+        ({"label": "x", "provider": "custom", "baseUrl": "llm.corp.example/v1"}, "http"),
+        ({"label": "x", "provider": "custom"}, "base URL"),
+        ({"label": "x", "provider": "openai", "apiKey": "k",
+          "headers": {"Bad": 5}}, "headers"),
+    ):
+        status, _h, returned = env.post_json("/api/connections", body, auth)
+        assert status == 400, body
+        assert fragment in json.loads(returned)["error"], body
+    assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
+
+
+def test_a_duplicate_label_is_refused_with_409(env, auth):
+    _create(env, auth)
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "OpenAI personal", "provider": "openai", "apiKey": "other",
+    }, auth)
+    assert status == 409
+    assert "already used" in json.loads(body)["error"]
+
+
+def test_hosted_presets_need_a_key_and_name_their_console(env, auth):
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "No key", "provider": "openai",
+    }, auth)
+    assert status == 400
+    error = json.loads(body)["error"]
+    assert "API key" in error
+    assert "https://platform.openai.com/api-keys" in error
+
+
+def test_local_presets_save_with_no_key_and_skip_the_keychain(env, auth, keychain):
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Desk ollama", "provider": "ollama",
+    }, auth)
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["maskedKey"] == ""
+    assert payload["baseUrl"] == "http://localhost:11434/v1"
+    assert keychain.secrets == {}  # no key, so no keychain write at all
+
+
+def test_update_with_an_empty_key_keeps_the_stored_key(env, auth, keychain):
+    created = json.loads(_create(env, auth)[2])
+    status, _h, body = env.post_json(
+        f"/api/connections/{created['id']}/update", {
+            "label": "OpenAI work", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1", "apiKey": "",
+        }, auth)
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["label"] == "OpenAI work"
+    assert payload["maskedKey"] == "sk-...9999"  # the hint survived the edit
+    assert keychain.secrets == {("agent-desk", f"key/{created['id']}"): SECRET}
+
+
+def test_the_clear_action_removes_the_stored_key(env, auth, keychain):
+    created = json.loads(_create(env, auth)[2])
+    status, _h, body = env.post_json(
+        f"/api/connections/{created['id']}/update", {
+            "label": "OpenAI personal", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1", "keyClear": "1",
+        }, auth)
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["maskedKey"] == ""
+    assert keychain.secrets == {}
+
+
+def test_update_can_replace_the_key_and_star_the_default(env, auth, keychain):
+    created = json.loads(_create(env, auth)[2])
+    env.post_json("/api/connections", {
+        "label": "Local ollama", "provider": "ollama"}, auth)
+    status, _h, body = env.post_json(
+        f"/api/connections/{created['id']}/update", {
+            "label": "OpenAI personal", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1",
+            "apiKey": "sk-rotated-bbbbbbbbbbbbbbbb-7777", "isDefault": "1",
+        }, auth)
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["maskedKey"] == "sk-...7777"
+    assert payload["isDefault"] is True
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    defaults = [c["label"] for c in listing["connections"] if c["isDefault"]]
+    assert defaults == ["OpenAI personal"]  # the star belongs to one row
+
+
+def test_update_and_delete_answer_404_for_an_unknown_id(env, auth):
+    status, _h, _b = env.post_json("/api/connections/gone/update", {
+        "label": "x", "provider": "openai"}, auth)
+    assert status == 404
+    status, _h, _b = env.post_json("/api/connections/gone/delete", {}, auth)
+    assert status == 404
+
+
+def test_delete_removes_the_row_and_the_keychain_entry(env, auth, keychain):
+    created = json.loads(_create(env, auth)[2])
+    status, _h, body = env.post_json(
+        f"/api/connections/{created['id']}/delete", {}, auth)
+    assert status == 200
+    assert json.loads(body) == {"ok": True, "id": created["id"]}
+    assert keychain.secrets == {}
+    assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
+
+
+def test_custom_connections_carry_extra_headers(env, auth):
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Work gateway", "provider": "custom",
+        "baseUrl": "https://llm.corp.example/v1", "apiKey": SECRET,
+        "headers": {"X-Gateway": "corp", "api-version": "2"},
+    }, auth)
+    assert status == 201
+    assert json.loads(body)["headers"] == {"X-Gateway": "corp", "api-version": "2"}
+
+
+# -- the never-leak guarantees, in bytes --------------------------------------
+
+
+def test_no_secret_substring_in_the_keys_sqlite_file_or_any_payload(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    conn = sqlite3.connect(tmp_path / "keys.sqlite3", check_same_thread=False)
+    booted = server_harness.Booted(
+        keys_store=KeysStore(conn, time.time),
+        keychain=KeychainSecrets(MemoryKeychain()))
+    try:
+        auth = booted.exchange()
+        _create(booted, auth)
+        booted.post_json("/api/connections", {
+            "label": "Local ollama", "provider": "ollama"}, auth)
+        created = json.loads(booted.request("GET", "/api/connections", auth)[2])
+        first = created["connections"][0]
+        booted.post_json(f"/api/connections/{first['id']}/update", {
+            "label": "OpenAI personal", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1", "apiKey": ""}, auth)
+        surfaces = [
+            booted.request("GET", "/api/connections", auth)[2],
+            booted.request("GET", "/settings", auth)[2],
+            booted.request("GET", "/settings/activity", auth)[2],
+            booted.request("GET", "/audit/tail", auth)[2],
+            booted.request("GET", "/audit/export.csv", auth)[2],
+            (tmp_path / "keys.sqlite3").read_bytes(),
+        ]
+        for surface in surfaces:
+            as_text = surface.decode("utf-8", errors="replace")
+            assert "sk-live-quietly" not in as_text
+            assert SECRET not in as_text
+    finally:
+        booted.close()
+
+
+# -- a machine with no keychain ----------------------------------------------
+
+
+def test_no_keychain_machine_names_the_state_and_still_saves_keyless_connections():
+    booted = server_harness.Booted(keychain=KeychainSecrets(DeadKeychain()))
+    try:
+        auth = booted.exchange()
+        status, _h, body = booted.post_json("/api/connections", {
+            "label": "OpenAI personal", "provider": "openai", "apiKey": SECRET,
+        }, auth)
+        assert status == 400
+        assert "keychain" in json.loads(body)["error"].lower()
+        # A local connection needs no secret, so it saves anyway.
+        status, _h, _b = booted.post_json("/api/connections", {
+            "label": "Desk ollama", "provider": "ollama"}, auth)
+        assert status == 201
+        listing = json.loads(booted.request("GET", "/api/connections", auth)[2])
+        assert listing["keychainAvailable"] is False
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "cannot be stored" in page
+    finally:
+        booted.close()
+
+
+# -- the Settings page, server-rendered ---------------------------------------
+
+
+def test_settings_page_carries_the_preset_grid_and_console_deep_links(env, auth):
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    for preset in PRESETS:
+        assert f"value='{preset.id}'" in page, preset.id
+    # The console deep-links answer "where do I get a key" inline.
+    assert "https://platform.openai.com/api-keys" in page
+    assert "https://console.anthropic.com/settings/keys" in page
+    assert "https://openrouter.ai/settings/keys" in page
+    # The form is a real form: it posts without any script.
+    assert "action='/api/connections'" in page
+    assert "name='label'" in page and "name='provider'" in page
+    assert "name='apiKey'" in page
+    assert "type='password'" in page
+
+
+def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth):
+    created = json.loads(_create(env, auth)[2])
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "OpenAI personal" in page
+    assert "sk-...9999" in page
+    assert "sk-live-quietly" not in page
+    assert f"/settings?connection={created['id']}" in page  # the edit link
+    assert f"/api/connections/{created['id']}/delete" in page  # the delete form
+
+
+def test_edit_form_is_prefilled_and_posts_to_the_update_route(env, auth):
+    created = json.loads(_create(env, auth)[2])
+    page = env.request("GET", f"/settings?connection={created['id']}", auth)[2]
+    text = page.decode("utf-8")
+    assert f"action='/api/connections/{created['id']}/update'" in text
+    assert "OpenAI personal" in text
+    # The empty-key-keeps rule and the separate clear action are both stated.
+    assert "keeps the stored key" in text
+    assert "Remove the stored key" in text
+
+
+def test_form_posts_really_work_without_javascript(env, auth, keychain):
+    # Create: a plain form post redirects back to the page.
+    status, headers, _b = _post_form(env, "/api/connections", {
+        "label": "OpenAI personal", "provider": "openai",
+        "baseUrl": "", "apiKey": SECRET, "headers": "",
+    }, auth)
+    assert status == 303
+    assert headers["Location"] == "/settings"
+    created = json.loads(env.request("GET", "/api/connections", auth)[2])["connections"][0]
+
+    # Edit with an empty key field keeps the stored key.
+    status, _h, _b = _post_form(
+        env, f"/api/connections/{created['id']}/update", {
+            "label": "OpenAI work", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1", "apiKey": "",
+        }, auth)
+    assert status == 303
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert listing["connections"][0]["label"] == "OpenAI work"
+    assert listing["connections"][0]["maskedKey"] == "sk-...9999"
+
+    # The clear checkbox removes the stored key.
+    _post_form(env, f"/api/connections/{created['id']}/update", {
+        "label": "OpenAI work", "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1", "keyClear": "1",
+    }, auth)
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert listing["connections"][0]["maskedKey"] == ""
+    assert keychain.secrets == {}
+
+    # Delete is a form post too.
+    status, _h, _b = _post_form(
+        env, f"/api/connections/{created['id']}/delete", {}, auth)
+    assert status == 303
+    assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
+
+
+# -- the audit trail -----------------------------------------------------------
+
+
+def test_keys_lifecycle_lands_in_the_audit_trail_without_secret_material(env, auth):
+    created = json.loads(_create(env, auth)[2])
+    env.post_json(f"/api/connections/{created['id']}/update", {
+        "label": "OpenAI work", "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1", "apiKey": ""}, auth)
+    env.post_json(f"/api/connections/{created['id']}/delete", {}, auth)
+    tail = env.request("GET", "/audit/tail", auth)[2].decode("utf-8")
+    entries = json.loads(tail)["entries"]
+    actions = [e["action"] for e in entries]
+    for expected in ("keys.delete", "keys.update", "keys.create"):  # newest first
+        assert expected in actions
+    for entry in entries:
+        if entry["action"].startswith("keys."):
+            assert SECRET not in json.dumps(entry)
+            assert "sk-" not in entry["detail"]
+    # The vocabulary rows appear on the what-this-touches page.
+    touches = env.request("GET", "/what-this-touches", auth)[2].decode("utf-8")
+    for expected in ("keys.create", "keys.update", "keys.delete"):
+        assert expected in touches
+
+
+def test_the_activity_page_shows_the_key_lifecycle(env, auth):
+    created = json.loads(_create(env, auth)[2])
+    page = env.request("GET", "/settings/activity", auth)[2].decode("utf-8")
+    assert "keys.create" in page
+    assert "OpenAI personal" in page
+    assert created["id"] in page
+
+
+# -- the preset catalog ---------------------------------------------------------
+
+
+def test_the_catalog_ships_the_twelve_verified_presets():
+    assert [p.id for p in PRESETS] == [
+        "openai", "anthropic-compat", "openrouter", "groq", "together",
+        "gemini", "deepseek", "mistral", "ollama", "lmstudio", "vllm", "custom",
+    ]
+    hosted = [p for p in PRESETS if not p.key_optional and p.id != "custom"]
+    assert all(p.base_url.startswith("https://") for p in hosted)
+    assert all(p.console_url.startswith("https://") for p in hosted)
+    local = [p for p in PRESETS if p.key_optional]
+    assert {p.id for p in local} == {"ollama", "lmstudio", "vllm"}
+    assert all(p.base_url.startswith("http://localhost:") for p in local)
+    assert all(p.console_url == "" for p in local)

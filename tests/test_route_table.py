@@ -53,6 +53,7 @@ EXPECTED_GET_ROUTES = (
     ("GET", "/api/desk-check", "_send_desk_check_api", False, "none", ""),
     ("GET", "/api/preferences", "_send_preferences_values", False, "none", ""),
     ("GET", "/api/ledger", "_send_ledger_api", False, "none", ""),
+    ("GET", "/api/connections", "_send_connections_json", False, "none", ""),
     ("GET", "/api/layout", "_send_layout_api", False, "none", ""),
     ("GET", "/api/plugins/**instances**", "_plugin_setup_get_request", False, "none", ""),
     ("GET", "/api/plugins/", "_plugin_record_get", True, "rest", ""),
@@ -107,6 +108,9 @@ EXPECTED_POST_ROUTES = (
     ("POST", "/skills/", "_skill_run_rest", True, "rest", "/run"),
     ("POST", "/skills/", "_skill_undo_rest", True, "rest", "/undo"),
     ("POST", "/settings/toggle", "_settings_toggle", False, "none", ""),
+    ("POST", "/api/connections", "_connection_create", False, "none", ""),
+    ("POST", "/api/connections/", "_connection_update", True, "rest", "/update"),
+    ("POST", "/api/connections/", "_connection_delete", True, "rest", "/delete"),
     ("POST", "/api/layout", "_layout_save", False, "none", ""),
     ("POST", "/api/dashboard/view", "_dashboard_view_report", False, "none", ""),
     ("POST", "/settings/endpoint/save", "_endpoint_save", False, "none", ""),
@@ -156,6 +160,7 @@ EXPECTED_GET_STATUS = {
     "/api/memory/graph": 200,
     "/api/memory/loop": 200,
     "/api/peers": 200,
+    "/api/connections": 200,
     "/api/plugins": 200,
     "/api/preferences": 200,
     "/api/registry": 200,
@@ -188,6 +193,7 @@ EXPECTED_GET_STATUS = {
 
 EXPECTED_POST_STATUS = {
     "/agents/run": 400,
+    "/api/connections": 400,
     "/api/dashboard/view": 200,
     "/api/insight/draft": 400,
     "/api/layout": 400,

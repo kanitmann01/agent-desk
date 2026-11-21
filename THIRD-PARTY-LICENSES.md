@@ -1,10 +1,11 @@
 # Third-party license manifest
 
-The Agent Desk 0.1.0 **Python runtime ships one third-party dependency** (the first; it arrived with memory encryption at rest, ticket #94):
+The Agent Desk 0.1.0 **Python runtime ships 2 third-party dependencies**:
 
 | Component | Version scoped in pyproject | Used for | License |
 |---|---|---|---|
 | cryptography | pinned in pyproject | memory encryption at rest (AES-256-GCM field encryption, HKDF key derivation and HMAC blind indexes) | Apache-2.0 OR BSD-3-Clause |
+| keyring | pinned in pyproject | API keys in the OS keychain (model-connection secrets; the second runtime dependency, spec 018) | MIT |
 
 The runtime itself is CPython, Python Software Foundation
 license, a permissive license reviewed separately from bundled

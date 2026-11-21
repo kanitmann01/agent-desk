@@ -30,6 +30,8 @@ PURPOSES = {
     "cryptography": "memory encryption at rest (AES-256-GCM field "
                     "encryption, HKDF key derivation and HMAC blind "
                     "indexes)",
+    "keyring": "API keys in the OS keychain (model-connection secrets; "
+               "the second runtime dependency, spec 018)",
 }
 
 
@@ -62,10 +64,17 @@ def render_manifest(annotations: dict[str, str], version: str) -> str:
         "",
     ]
     if annotations:
-        lines += [
+        count = len(annotations)
+        intro = (
             f"The Agent Desk {version} **Python runtime ships one"
             f" third-party dependency** (the first; it arrived with"
-            " memory encryption at rest, ticket #94):",
+            " memory encryption at rest, ticket #94):"
+            if count == 1 else
+            f"The Agent Desk {version} **Python runtime ships"
+            f" {count} third-party dependencies**:"
+        )
+        lines += [
+            intro,
             "",
             "| Component | Version scoped in pyproject | Used for | License |",
             "|---|---|---|---|",

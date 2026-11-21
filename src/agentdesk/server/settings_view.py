@@ -14,6 +14,7 @@ import html
 from datetime import datetime
 
 from agentdesk.insight.preferences import PreferenceStore, changed
+from agentdesk.keys.presets import PRESETS, preset_for
 from agentdesk.repetition.skills import render_skill_md
 from agentdesk.server import audit_view
 from agentdesk.server.pages import page_shell
@@ -376,6 +377,170 @@ deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 </section>"""
 
 
+def _connection_rows(connections: list[dict]) -> str:
+    """The saved-connections table: label, preset, masked key, base URL,
+    default star, edit and delete. A raw key never reaches this markup;
+    the masked hint is the only key-shaped thing on the page."""
+    rows = []
+    for c in connections:
+        preset = preset_for(c.get("provider", ""))
+        preset_name = preset.name if preset else str(c.get("provider", ""))
+        label = html.escape(str(c.get("label", "")))
+        star = " <span aria-label='default connection'>&#9733;</span>" if c.get("isDefault") else ""
+        masked = html.escape(str(c.get("maskedKey", "") or ""))
+        key_cell = f"<span class='mono'>{masked}</span>" if masked else \
+            "<span class='empty'>no key</span>"
+        base = html.escape(str(c.get("baseUrl", "")))
+        connection_id = html.escape(str(c.get("id", "")), quote=True)
+        rows.append(
+            "<tr>"
+            f"<td><b>{label}</b>{star}</td>"
+            f"<td>{html.escape(preset_name)}</td>"
+            f"<td>{key_cell}</td>"
+            f"<td class='mono'>{base}</td>"
+            f"<td><a class='btn btn-secondary' href='/settings?connection={connection_id}'>Edit</a> "
+            f"<form method='post' action='/api/connections/{connection_id}/delete' class='inlineform'>"
+            "<button class='btn btn-secondary' type='submit'>Delete</button></form></td>"
+            "</tr>"
+        )
+    return (
+        "<table class='rows'><thead><tr><th scope='col'>Connection</th>"
+        "<th scope='col'>Preset</th><th scope='col'>Key</th>"
+        "<th scope='col'>Base URL</th><th scope='col'>Actions</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
+def _preset_grid(selected: str) -> str:
+    """The provider radios: one tile per preset, the selected one checked.
+
+    Each input carries its preset's default base URL as data, so the
+    script can fill the base field on choice; without script the server
+    fills the same default when the field arrives empty."""
+    tiles = []
+    for preset in PRESETS:
+        checked = " checked" if preset.id == selected else ""
+        tiles.append(
+            f"<label class='preset-tile'><input type='radio' name='provider'"
+            f" value='{preset.id}'{checked} data-base='{html.escape(preset.base_url, quote=True)}'>"
+            f"{html.escape(preset.name)}"
+            + (" <span class='empty'>(no key)</span>" if preset.key_optional else "")
+            + "</label>"
+        )
+    return (
+        "<fieldset class='preset-grid'><legend class='empty'>Provider</legend>"
+        + "".join(tiles) + "</fieldset>"
+    )
+
+
+def _console_links() -> str:
+    """One deep-link per hosted preset: where its keys are issued."""
+    links = "".join(
+        f"<a class='btn btn-secondary' href='{preset.console_url}'>"
+        f"{html.escape(preset.name)}</a>"
+        for preset in PRESETS if preset.console_url
+    )
+    return f"<div class='settings-links'>{links}</div>"
+
+
+def _connections_section(
+    connections: list[dict] | None,
+    editing: dict | None,
+    keychain_available: bool,
+    notice: str = "",
+) -> str:
+    """The keys card: the connections list, then the add/edit form.
+
+    Server-rendered throughout: the form posts as a plain form, the
+    masked hints are printed, and the preset grid and console deep-links
+    answer the two first-run questions with no script at all. The edit
+    semantic is the one rule everywhere: an empty key field keeps the
+    stored key, and only the separate clear action removes it.
+    """
+    if connections is None:
+        body = (
+            "<div class='alert'><p>The connections store is not available,"
+            " so connections cannot be saved here.</p></div>"
+        )
+        stamp = "UNAVAILABLE"
+    else:
+        notice_block = (
+            f"<div class='alert'><p>{html.escape(notice)}</p></div>" if notice else ""
+        )
+        keychain_block = "" if keychain_available else (
+            "<div class='alert'><p>This machine has no keychain, so secrets"
+            " cannot be stored here. Local presets still work without a"
+            " key, and environment variables still resolve.</p></div>"
+        )
+        if connections:
+            listing = _connection_rows(connections)
+        else:
+            listing = (
+                "<p class='empty'>No connections yet. Pick a provider below,"
+                " paste its key and save; it lands in this machine's"
+                " keychain, never in a file the desk writes.</p>"
+            )
+        if editing is not None:
+            heading = "Edit connection"
+            action = f"/api/connections/{html.escape(str(editing['id']), quote=True)}/update"
+            label_value = html.escape(str(editing.get("label", "")), quote=True)
+            base_value = html.escape(str(editing.get("baseUrl", "")), quote=True)
+            selected = str(editing.get("provider", ""))
+            key_placeholder = html.escape(
+                str(editing.get("maskedKey") or "not set"), quote=True)
+            headers_text = html.escape("\n".join(
+                f"{name}: {value}"
+                for name, value in (editing.get("headers") or {}).items()))
+            default_checked = " checked" if editing.get("isDefault") else ""
+            clear_row = (
+                "<label class='empty'><input type='checkbox' name='keyClear'"
+                " value='1'> Remove the stored key</label>"
+            )
+            cancel = " <a class='btn btn-secondary' href='/settings'>Cancel</a>"
+        else:
+            heading = "Add a connection"
+            action = "/api/connections"
+            label_value = ""
+            base_value = ""
+            selected = PRESETS[0].id
+            key_placeholder = "not required for local presets"
+            headers_text = ""
+            default_checked = ""
+            clear_row = ""
+            cancel = ""
+        form = f"""<h3>{heading}</h3>
+<form method='post' action='{action}' class='cardform' id='connection-form'>
+{_preset_grid(selected)}
+<label class='empty' for='conn-label'>Label</label>
+<input id='conn-label' type='text' name='label' value='{label_value}' placeholder='OpenAI personal' autocomplete='off'>
+<label class='empty' for='conn-base'>Base URL</label>
+<input id='conn-base' type='text' name='baseUrl' value='{base_value}' placeholder='filled from the preset when empty' autocomplete='off'>
+<label class='empty' for='conn-key'>API key</label>
+<input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
+<label class='empty' for='conn-key-show'><input type='checkbox' id='conn-key-show' data-key-reveal> Show the key while typing</label>
+<label class='empty' for='conn-headers'>Extra headers (corporate gateways, one Name: Value per line)</label>
+<textarea id='conn-headers' name='headers' rows='2' placeholder='X-Gateway: corp'>{headers_text}</textarea>
+<label class='empty'><input type='checkbox' name='isDefault' value='1'{default_checked}> Make this the default connection</label>
+{clear_row}
+<button class='btn btn-primary' type='submit'>Save connection</button>{cancel}
+</form>
+<p class='empty'>Saving with the key field empty keeps the stored key;
+Remove the stored key is the only action that deletes it. Leave the base
+URL empty to use the preset's own address.</p>
+<h3>Where to get a key</h3>
+{_console_links()}"""
+        stamp = f"{len(connections)} SAVED" if connections else "NONE YET"
+        body = notice_block + keychain_block + listing + form
+    return f"""<section class='card settings-card' id='connections'>
+<div class='w-head'><h2>Connections</h2><span class='stamp'>{stamp}</span></div>
+<p>Named model connections: pick a preset, paste its key, save. The key
+lives in this machine's keychain; the desk keeps only a masked hint
+(first three and last four characters) and never writes the key to any
+file. Local presets (Ollama, LM Studio, vLLM) need no key at all.</p>
+{body}
+</section>"""
+
+
 def _desk_check_section(desk_check: dict | None) -> str:
     """What the desk check last noticed, listed plainly.
 
@@ -429,6 +594,10 @@ def render_settings_page(
     preferences: dict | None = None,
     preference_notice: str = "",
     desk_check: dict | None = None,
+    connections: list[dict] | None = None,
+    editing_connection: dict | None = None,
+    keychain_available: bool = True,
+    connections_notice: str = "",
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -525,6 +694,9 @@ data tag, and turning it off removes exactly what it added.</p>
 </section>
 
 {_agent_section(settings_values)}
+
+{_connections_section(connections, editing_connection, keychain_available,
+                      connections_notice)}
 
 <section class='card settings-card' id='endpoint'>
 <div class='w-head'><h2>Endpoint</h2><span class='stamp'>{endpoint_stamp}</span></div>

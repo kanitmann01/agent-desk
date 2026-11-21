@@ -1,0 +1,271 @@
+"""The keys store: named model connections in their own sqlite file.
+
+A connection is the label a user types, its provider preset, a base URL
+and a keychain reference; the secret itself never lands here, only the
+masked hint (first three and last four characters, never the middle).
+The inbox store's pattern throughout: the idempotent per-store schema
+step, one re-entrant lock serializing every statement, an injectable
+clock supplying every timestamp.
+"""
+
+import functools
+import json
+import sqlite3
+import threading
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS connections (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL UNIQUE,
+  provider TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  keychain_ref TEXT NOT NULL DEFAULT '',
+  masked_key TEXT NOT NULL DEFAULT '',
+  headers TEXT NOT NULL DEFAULT '{}',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'unknown',
+  last_checked_at REAL,
+  last_error TEXT NOT NULL DEFAULT '',
+  last_used_at REAL,
+  models TEXT NOT NULL DEFAULT '[]',
+  models_fetched_at REAL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+"""
+
+_COLUMNS = (
+    "id, label, provider, base_url, keychain_ref, masked_key, headers,"
+    " is_default, enabled, status, last_checked_at, last_error,"
+    " last_used_at, models, models_fetched_at, created_at, updated_at"
+)
+
+
+class UnknownConnection(Exception):
+    """No connection carries the id (or it is not readable here)."""
+
+
+@dataclass
+class Connection:
+    """One saved connection, exactly the columns the store holds."""
+
+    id: str
+    label: str
+    provider: str
+    base_url: str
+    keychain_ref: str = ""
+    masked_key: str = ""
+    headers: dict = field(default_factory=dict)
+    is_default: bool = False
+    enabled: bool = True
+    status: str = "unknown"
+    last_checked_at: float | None = None
+    last_error: str = ""
+    last_used_at: float | None = None
+    models: list = field(default_factory=list)
+    models_fetched_at: float | None = None
+    created_at: float = 0.0
+    updated_at: float = 0.0
+
+
+def mask_key(secret: str) -> str:
+    """The hint a saved key leaves everywhere except the keychain.
+
+    First three and last four characters when the key is long enough to
+    spare the middle; a plain "Set." when it is not, because a short key
+    minus its middle is most of the key. Empty answers empty.
+    """
+    secret = (secret or "").strip()
+    if not secret:
+        return ""
+    if len(secret) < 10:
+        return "Set."
+    return f"{secret[:3]}...{secret[-4:]}"
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the connections table and commit; safe on every open."""
+    conn.executescript(SCHEMA)
+    conn.commit()
+
+
+def _serialized(method):
+    """Every read and write holds the store's one lock (the inbox store's
+    precedent: the connection is shared by the server's request threads)."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        """Run one store method with the store's re-entrant lock held."""
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
+class KeysStore:
+    """Connections in, references out; secrets live in the keychain.
+    Thread-safe: every method serializes on one lock (see _serialized)."""
+
+    def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float]) -> None:
+        """Adopt the connection as the store's only one, and migrate it.
+
+        The lock belongs to this instance; the clock supplies every timestamp the
+        store writes.
+        """
+        self.conn = conn
+        self.clock = clock
+        self._lock = threading.RLock()
+        with self._lock:
+            ensure_schema(conn)
+
+    @_serialized
+    def add(
+        self,
+        label: str,
+        provider: str,
+        base_url: str,
+        masked_key: str = "",
+        headers: dict | None = None,
+        is_default: bool = False,
+        connection_id: str | None = None,
+    ) -> Connection:
+        """Insert one connection and return it as the store now holds it.
+
+        The id is generated unless handed in, and the keychain reference is always
+        key/<id>, so the keychain entry is derivable from the row alone. A label
+        another connection already has is refused (ValueError): labels are how a
+        user tells two keys for the same provider apart, so duplicates cannot
+        silently merge.
+        """
+        connection_id = connection_id or uuid.uuid4().hex
+        now = self.clock()
+        try:
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO connections (id, label, provider, base_url,"
+                    " keychain_ref, masked_key, headers, is_default,"
+                    " created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (connection_id, label, provider, base_url,
+                     f"key/{connection_id}", masked_key,
+                     json.dumps(headers or {}, ensure_ascii=False),
+                     1 if is_default else 0, now, now),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"the label {label!r} is already used by another"
+                             " connection") from exc
+        if is_default:
+            self._clear_other_defaults(connection_id)
+        return self.get(connection_id)
+
+    @_serialized
+    def get(self, connection_id: str) -> Connection:
+        """Read one connection by id; UnknownConnection when there is none."""
+        row = self.conn.execute(
+            f"SELECT {_COLUMNS} FROM connections WHERE id = ?",
+            (connection_id,),
+        ).fetchone()
+        if row is None:
+            raise UnknownConnection(f"no connection {connection_id}")
+        return _as_connection(row)
+
+    @_serialized
+    def all(self) -> list[Connection]:
+        """Every connection, oldest created first."""
+        rows = self.conn.execute(
+            f"SELECT {_COLUMNS} FROM connections ORDER BY created_at ASC, id ASC"
+        ).fetchall()
+        return [_as_connection(row) for row in rows]
+
+    @_serialized
+    def update(
+        self,
+        connection_id: str,
+        label: str | None = None,
+        provider: str | None = None,
+        base_url: str | None = None,
+        masked_key: str | None = None,
+        headers: dict | None = None,
+    ) -> Connection:
+        """Change only the named fields; everything else keeps its value.
+
+        updated_at moves to the clock's now; created_at never does. An
+        unknown id raises before anything is written, and a label another
+        connection owns is refused like a duplicate insert.
+        """
+        self.get(connection_id)  # unknown ids raise before any write
+        stored = {name: value for name, value in (
+            ("label", label), ("provider", provider), ("base_url", base_url),
+            ("masked_key", masked_key),
+            ("headers", json.dumps(headers, ensure_ascii=False)
+             if headers is not None else None),
+        ) if value is not None}
+        if not stored:
+            return self.get(connection_id)
+        assignments = ", ".join(f"{name} = ?" for name in stored)
+        try:
+            with self.conn:
+                self.conn.execute(
+                    f"UPDATE connections SET {assignments}, updated_at = ?"
+                    " WHERE id = ?",
+                    (*stored.values(), self.clock(), connection_id),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"the label {label!r} is already used by another"
+                             " connection") from exc
+        return self.get(connection_id)
+
+    @_serialized
+    def clear_key(self, connection_id: str) -> Connection:
+        """Empty the masked hint; the keychain entry is the caller's to drop."""
+        self.get(connection_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE connections SET masked_key = '', updated_at = ?"
+                " WHERE id = ?",
+                (self.clock(), connection_id),
+            )
+        return self.get(connection_id)
+
+    @_serialized
+    def set_default(self, connection_id: str) -> Connection:
+        """Star one connection; any previous default loses the star."""
+        self.get(connection_id)
+        with self.conn:
+            self.conn.execute("UPDATE connections SET is_default = 0")
+            self.conn.execute(
+                "UPDATE connections SET is_default = 1, updated_at = ?"
+                " WHERE id = ?",
+                (self.clock(), connection_id),
+            )
+        return self.get(connection_id)
+
+    @_serialized
+    def delete(self, connection_id: str) -> Connection:
+        """Remove the row and return it, so the caller can drop its secret."""
+        connection = self.get(connection_id)
+        with self.conn:
+            self.conn.execute("DELETE FROM connections WHERE id = ?", (connection_id,))
+        return connection
+
+    def _clear_other_defaults(self, connection_id: str) -> None:
+        """The default star belongs to one connection at a time."""
+        with self.conn:
+            self.conn.execute(
+                "UPDATE connections SET is_default = 0 WHERE id != ?",
+                (connection_id,),
+            )
+
+
+def _as_connection(row: tuple) -> Connection:
+    """One stored row as a Connection; positions are fixed by _COLUMNS."""
+    return Connection(
+        id=row[0], label=row[1], provider=row[2], base_url=row[3],
+        keychain_ref=row[4], masked_key=row[5], headers=json.loads(row[6]),
+        is_default=bool(row[7]), enabled=bool(row[8]), status=row[9],
+        last_checked_at=row[10], last_error=row[11], last_used_at=row[12],
+        models=json.loads(row[13]), models_fetched_at=row[14],
+        created_at=row[15], updated_at=row[16],
+    )

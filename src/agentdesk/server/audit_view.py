@@ -22,6 +22,7 @@ KINDS = (
     ("inbox.", "Decision"),
     ("demo.", "Decision"),
     ("ledger.", "Decision"),
+    ("keys.", "Decision"),
     ("memory.", "Memory"),
     ("llm.", "Model call"),
     ("excel.", "File"),
