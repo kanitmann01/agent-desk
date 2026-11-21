@@ -273,6 +273,8 @@ POST_ROUTES: tuple[Route, ...] = (
     Route("POST", "/agents/run", "_agents_run"),
     Route("POST", "/agents/runs/", "_agents_feedback", prefix=True, arg="rest",
           suffix="/feedback"),
+    Route("POST", "/agents/runs/", "_agents_sources", prefix=True, arg="rest",
+          suffix="/sources"),
 )
 
 _TABLES: dict[str, tuple[Route, ...]] = {

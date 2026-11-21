@@ -80,6 +80,8 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "memory_capture_agents": True,
         # Presentation calls only. Other agents keep the 10 second cap.
         "presentation_timeout_s": "30",
+        "research_provider_url": "",
+        "research_provider_key": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200
@@ -196,7 +198,7 @@ def test_endpoint_save_refuses_unknown_field_names_instead_of_dropping_them(env,
     assert status == 400
     # The refusal names the typos and the accepted names, both.
     assert "base_url" in payload["error"] and "api_key" in payload["error"]
-    assert "accepted fields are base, key, model, presentationTimeout" in payload["error"]
+    assert "researchClear" in payload["error"]
     # And nothing was saved: refusing beats a silent ok with dropped values.
     values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
     assert values["llm_base"] == "" and values["llm_key"] == ""

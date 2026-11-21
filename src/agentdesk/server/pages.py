@@ -620,7 +620,9 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
       base: (document.getElementById('llm-base') || {}).value || '',
       key: (document.getElementById('llm-key') || {}).value || '',
       model: (document.getElementById('llm-model') || {}).value || '',
-      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30'
+      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30',
+      researchUrl: (document.getElementById('research-url') || {}).value || '',
+      researchKey: (document.getElementById('research-key') || {}).value || ''
     };
   };
   save.addEventListener('click', function () {
@@ -647,6 +649,16 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     post('/settings/endpoint/save', {base: '', key: '', model: ''})
       .then(function () { location.reload(); })
       .catch(function () { show('The dashboard could not reach its own server; nothing was cleared.'); });
+  });
+  var clearResearch = document.querySelector('[data-research-clear]');
+  if (clearResearch) clearResearch.addEventListener('click', function () {
+    post('/settings/endpoint/save', {researchClear: true})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { show(d.error); return; }
+        location.reload();
+      })
+      .catch(function () { show('The dashboard could not reach its own server; the research key was not cleared.'); });
   });
 })();
 
