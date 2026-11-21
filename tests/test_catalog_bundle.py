@@ -117,7 +117,7 @@ def test_catalog_cli_writes_the_bundle(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     document = json.loads(out.read_text(encoding="utf-8"))
     assert document["schemaVersion"] == 2
-    assert len(document["plugins"]) == 2
+    assert len(document["plugins"]) == 3
 
 
 def test_the_downloads_flag_lands_after_nuitka_not_between_m_and_nuitka():
@@ -137,7 +137,7 @@ def test_the_downloads_flag_lands_after_nuitka_not_between_m_and_nuitka():
 
 
 ARCHIVE = REPO / "archive" / "plugins"
-SHIPPED = {"competitor-watch", "excel-report"}
+SHIPPED = {"competitor-watch", "excel-report", "presentation-starter"}
 
 
 def test_the_archive_is_outside_every_shipped_surface():
@@ -147,8 +147,8 @@ def test_the_archive_is_outside_every_shipped_surface():
     and manifests but deliberately does not read their contents, so it proves
     the boundary instead. The archive sits outside the registry scan and
     outside the packaged source tree, and every shipped plugin list carries
-    exactly the two surviving ids, so no archived tree can be published or
-    installed.
+    the surviving card plugins plus the presentation starter, so no archived
+    tree can be published or installed.
     """
     assert ARCHIVE.is_dir()
     assert not ARCHIVE.is_relative_to(REGISTRY)

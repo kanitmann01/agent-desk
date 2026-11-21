@@ -153,6 +153,7 @@ GET_ROUTES: tuple[Route, ...] = (
     Route("GET", "/walkthrough/calendar", "_send_walkthrough_calendar"),
     Route("GET", "/assistant", "_send_assistant_page"),
     Route("GET", "/agents", "_send_agents_page"),
+    Route("GET", "/agents/templates/", "_agents_template_thumb", prefix=True, arg="rest"),
     Route("GET", "/inbox", "_send_inbox_page"),
     Route("GET", "/activity", "_send_activity_redirect"),
     Route("GET", "/memory", "_send_memory_page"),

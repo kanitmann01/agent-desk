@@ -92,7 +92,7 @@ export function PackPage({ id }: { id: string }) {
         >
           <span>No packs are published.</span>
           <span className="w-note mkt-empty-line">
-            The two plugins this desk still ships are on Discover.
+            The plugins this desk ships are on Discover.
           </span>
         </EmptyState>
       </div>

@@ -1,0 +1,20 @@
+{
+  "id": "competitor-brief",
+  "name": "Competitor brief",
+  "sections": [
+    {"id": "landscape", "title": "Landscape"},
+    {"id": "profile", "title": "Competitor profile"},
+    {"id": "gaps", "title": "Strengths and gaps"},
+    {"id": "implications", "title": "Implications"},
+    {"id": "moves", "title": "Recommended moves"}
+  ],
+  "preferredSources": ["competitor-watch", "memory"],
+  "slides": [
+    {"role": "title", "layout": "Title Slide", "slots": {"title": {"maxChars": 60}}},
+    {"role": "section", "layout": "Divider", "repeat": "per-section", "slots": {"title": {"maxChars": 40}}},
+    {"role": "content", "layout": "Content", "repeat": "2-4 per section",
+     "slots": {"title": {"maxChars": 60},
+               "body": {"region": [0.9, 1.7, 11.5, 4.6], "bullets": [2, 5], "maxCharsPerBullet": 110, "minPt": 14}}},
+    {"role": "closing", "layout": "Closing", "fixed": true}
+  ]
+}

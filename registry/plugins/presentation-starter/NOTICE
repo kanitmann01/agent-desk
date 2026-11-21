@@ -1,0 +1,6 @@
+This pack includes guidance adapted from the Anthropic pptx skill
+(https://github.com/anthropics/skills), Copyright Anthropic, PBC,
+licensed under the Apache License, Version 2.0. The original is a
+shell skill with scripts. This copy keeps the filling and QA rules as
+prompt text, drops the scripts, and adds the house rules for numbered
+sources. Changes are marked in guidance/SKILL.md.

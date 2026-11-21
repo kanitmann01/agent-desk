@@ -78,7 +78,7 @@ def test_unavailable_registry_is_honest_on_api_and_page():
         status, _h, body = booted.request(
             "GET", "/api/marketplace/catalog", auth)
         assert status == 200
-        assert json.loads(body)["total"] == 2  # bundled catalog is offline
+        assert json.loads(body)["total"] == 3  # bundled catalog is offline
     finally:
         booted.close()
 

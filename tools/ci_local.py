@@ -163,6 +163,16 @@ def _registry_base_index(env: dict) -> Path | None:
     return None
 
 
+def _brand_leak_gate(env: dict) -> tuple[bool, str]:
+    """Committed template packs against the hash denylist."""
+    proc = subprocess.run(
+        [PYTHON, "tools/brand_leak.py"],
+        cwd=ROOT, env=env, capture_output=True, text=True,
+    )
+    tail = (proc.stdout or proc.stderr or "").strip().splitlines()
+    return proc.returncode == 0, tail[-1][:160] if tail else f"exit {proc.returncode}"
+
+
 def _registry_gate(env: dict) -> tuple[bool, str]:
     """Registry CI over every committed plugin directory and its base."""
     plugin_dirs = sorted(p.name for p in (ROOT / "registry" / "plugins").iterdir() if p.is_dir())
@@ -190,6 +200,7 @@ GATES = [
     ("frontend-tests", _frontend_tests),
     ("licenses", _license_gate),
     ("registry-ci", _registry_gate),
+    ("brand-leak", _brand_leak_gate),
 ]
 
 

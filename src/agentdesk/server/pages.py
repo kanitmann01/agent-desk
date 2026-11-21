@@ -190,6 +190,14 @@ svg{display:block;flex:none}
 .skills-strip .skill-btn:hover{background:var(--surface-2)}
 .settings-block{display:flex;flex-direction:column;gap:8px;max-width:460px}
 .cardform{display:flex;flex-direction:column;gap:8px;margin:8px 0;max-width:460px}
+.presentation-form{max-width:none}
+.template-tiles{display:flex;flex-wrap:wrap;gap:12px;border:0;padding:0;margin:0}
+.template-tile{display:flex;flex-direction:column;gap:6px;width:220px;max-width:100%;padding:8px;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface)}
+.template-tile .thumbs{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.template-tile img{width:100%;height:auto;aspect-ratio:16/9;background:var(--bg);border-radius:2px}
+.variant-row{display:flex;gap:16px;border:0;padding:0;margin:0}
+fieldset:disabled,.presentation-form :disabled{opacity:.55}
+@media (max-width:560px){.template-tile{width:100%}}
 .cardform .btn{align-self:flex-start}
 .cardform label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .cardform input,.cardform select,.cardform textarea{font:inherit;font-size:14px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;min-height:36px}

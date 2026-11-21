@@ -1,0 +1,18 @@
+{
+  "id": "briefing",
+  "name": "Generic briefing",
+  "sections": [
+    {"id": "context", "title": "Context"},
+    {"id": "findings", "title": "Findings"},
+    {"id": "next", "title": "What we do next"}
+  ],
+  "preferredSources": ["memory", "excel-report", "competitor-watch", "web-research"],
+  "slides": [
+    {"role": "title", "layout": "Title Slide", "slots": {"title": {"maxChars": 60}}},
+    {"role": "section", "layout": "Divider", "repeat": "per-section", "slots": {"title": {"maxChars": 40}}},
+    {"role": "content", "layout": "Content", "repeat": "2-4 per section",
+     "slots": {"title": {"maxChars": 60},
+               "body": {"region": [0.9, 1.7, 11.5, 4.6], "bullets": [2, 5], "maxCharsPerBullet": 110, "minPt": 14}}},
+    {"role": "closing", "layout": "Closing", "fixed": true}
+  ]
+}

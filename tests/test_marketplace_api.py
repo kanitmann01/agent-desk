@@ -230,7 +230,7 @@ def test_catalog_filters_compose(booted):
     assert body["total"] == 3
     sources = {entry["source"]: entry["count"] for entry in body["sources"]}
     assert sources["org"] == 3
-    assert sources.get("bundled", 0) == 2
+    assert sources.get("bundled", 0) == 3
     assert body["policy"]["mode"] == "curated"
 
     _status, body = get_json(booted, "/api/marketplace/catalog?source=org&q=focus")
@@ -266,7 +266,7 @@ def test_catalog_filters_compose(booted):
 def test_missing_registry_falls_back_to_the_committed_bundle(booted):
     status, body = get_json(booted, "/api/marketplace/catalog")
     assert status == 200
-    assert body["total"] == 2
+    assert body["total"] == 3
     assert all(entry["source"] == "bundled" for entry in body["entries"])
     assert body["entries"]
 
