@@ -4,6 +4,7 @@ The point size stays 14. Shorten uses the presentation timeout.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -14,8 +15,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.presentations.fit import fit_outline, slot_budget
-from agentdesk.presentations.ooxml import read_parts
-from agentdesk.presentations.writer import slide_texts
+from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
+from agentdesk.presentations.writer import content_point_size, slide_texts
 
 RECIPE = json.loads(
     (ROOT / "registry/plugins/presentation-starter/recipes/briefing.json").read_text(encoding="utf-8")
@@ -89,6 +90,41 @@ def test_a_larger_layout_size_tightens_the_budget():
     tight = slot_budget([0.9, 1.7, 11.5, 4.6], 18)
     assert seen == [tight["charsPerLine"] * tight["lines"]]
     assert tight["charsPerLine"] < wide["charsPerLine"]
+
+
+def test_the_budget_uses_the_size_resolved_from_the_master():
+    parts = read_parts(build_shell())
+    for name in list(parts):
+        if name.startswith("ppt/slideLayouts/") and name.endswith(".xml"):
+            parts[name] = re.sub(br'\s*sz="\d+"', b"", parts[name])
+    master = parts["ppt/slideMasters/slideMaster1.xml"].decode("utf-8")
+    styles = (
+        "<p:txStyles>"
+        '<p:titleStyle><a:lvl1pPr><a:defRPr sz="4400"/></a:lvl1pPr></p:titleStyle>'
+        '<p:bodyStyle><a:lvl1pPr><a:defRPr sz="3200"/></a:lvl1pPr></p:bodyStyle>'
+        '<p:otherStyle><a:lvl1pPr><a:defRPr sz="1800"/></a:lvl1pPr></p:otherStyle>'
+        "</p:txStyles>"
+    )
+    parts["ppt/slideMasters/slideMaster1.xml"] = master.replace(
+        "</p:sldMaster>", styles + "</p:sldMaster>",
+    ).encode("utf-8")
+    shell = pack_zip(parts)
+    assert content_point_size(shell, RECIPE) == 32
+    seen = []
+
+    def shorten(text, limit, timeout):
+        seen.append(limit)
+        return text
+
+    fit_outline(
+        {"title": "Q3", "slides": [{
+            "role": "content", "title": "Context", "bullets": ["word " * 800], "citations": [],
+        }]},
+        RECIPE, shorten, 30, [], min_pt=content_point_size(shell, RECIPE),
+    )
+    tight = slot_budget([0.9, 1.7, 11.5, 4.6], 32)
+    assert seen == [tight["charsPerLine"] * tight["lines"]]
+    assert tight["charsPerLine"] < slot_budget([0.9, 1.7, 11.5, 4.6], 14)["charsPerLine"]
 
 
 def test_the_budget_matches_the_recipe_region_at_14_pt():
