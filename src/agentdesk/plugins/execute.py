@@ -802,16 +802,6 @@ class PluginWidgetRunner:
             "files": list(result.files),
         }
 
-    def start_polling(self, plugin_id: str) -> None:
-        """Start the plugin's background poller, when it has one.
-
-        Pipeline-backed and declared-file sources have no poller, so this does nothing
-        for them: their values are read on demand.
-        """
-        watch = self._watches.get(plugin_id)
-        if watch is not None:
-            watch.start_polling()
-
     def start_all_polling(self) -> None:
         """Start the poller of every attached watch.
 
@@ -820,16 +810,6 @@ class PluginWidgetRunner:
         """
         for watch in self._watches.values():
             watch.start_polling()
-
-    def stop_all(self) -> None:
-        """Detach every attached plugin, stopping pollers and closing their stores.
-
-        The registry is copied first, so detaching while iterating is safe. Plugin data
-        directories are left on disk: this stops the runner reading them, it does not
-        remove what a plugin wrote.
-        """
-        for plugin_id in list(self._watches):
-            self.detach(plugin_id)
 
     # ---- internals ----
 
@@ -1179,14 +1159,6 @@ class PluginWidgetRunner:
             out["delta"] = raw["delta"]
         out["rowsSeen"] = raw.get("rowsSeen", 0)
         return out
-
-    def _watch_status(self, plugin_id: str) -> dict:
-        """Return the probe-shaped status of an attached watch.
-
-        Raises ``KeyError`` when the plugin has no watch, so it is only for plugins that
-        ``attached`` accepted.
-        """
-        return self._status_from_raw(self._watches[plugin_id].status())
 
     def _attention(self, cause: str) -> dict:
         """Build a not-yet-run status whose ``cause`` is the reason the user is shown.

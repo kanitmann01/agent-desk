@@ -1,16 +1,10 @@
-"""The activity page: the decision log, newest first.
+"""The decision vocabulary behind the audit page's activity trail.
 
-The donor approvals module's activity page on this app's audit store:
-every inbox decision (approved, denied, edited, snoozed, more-info,
-pending) with its timestamp and summary, newest first. Non-decision
-audit rows (model calls, file polls) stay in the audit export; this page
-is the human answer to "what did I decide and when".
+The audit store records every inbox decision under a dotted action name;
+this module owns the mapping from those names to the plain words the
+activity trail renders. The old /activity page that first used it is a
+302 into Settings now, so only the vocabulary remains.
 """
-
-import html
-
-from agentdesk.server.pages import page_shell
-from datetime import datetime
 
 # The decision vocabulary and the plain word each renders as.
 DECISIONS = {

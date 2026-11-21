@@ -46,8 +46,7 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY,
   ts REAL NOT NULL,
-  kind TEXT NOT NULL,
-  card_count INTEGER NOT NULL DEFAULT 1
+  kind TEXT NOT NULL
 );
 """
 
@@ -323,12 +322,12 @@ class InboxStore:
             self.conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
 
     @_serialized
-    def record_notification(self, kind: str, card_count: int = 1) -> None:
+    def record_notification(self, kind: str) -> None:
         """Append one notification to the ledger the daily budget counts."""
         with self.conn:
             self.conn.execute(
-                "INSERT INTO notifications (ts, kind, card_count) VALUES (?, ?, ?)",
-                (self.clock(), kind, card_count),
+                "INSERT INTO notifications (ts, kind) VALUES (?, ?)",
+                (self.clock(), kind),
             )
 
     @_serialized
@@ -349,7 +348,7 @@ class InboxStore:
         for card_id in card_ids:
             self.mark_notified(card_id)
         kind = "digest" if len(card_ids) > 1 else "card"
-        self.record_notification(kind, len(card_ids))
+        self.record_notification(kind)
         return True
 
     # -- reads ------------------------------------------------------------

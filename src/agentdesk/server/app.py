@@ -214,7 +214,6 @@ from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
 from agentdesk.server.memory_graph_api import build_memory_graph
 from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
-from agentdesk.server.plugins_view import render_plugins_page
 from agentdesk.server.peers_view import render_peers_page
 from agentdesk.server.research import (
     RETAIN_EXCERPT_MAX_CHARS,
@@ -6605,26 +6604,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._audit("registry.read", target="registry",
                         detail=f"{len(listing.get('plugins', []))} plugins from {origin}")
         return listing
-
-    def _send_plugins_page(self, notice: str = "") -> None:
-        """Render the plugins page from the runtime's records and the registry listing.
-
-        The listing's origin is passed as a word the page can branch on, and the peer
-        counts come from the peer store when it opened. Without a plugin runtime the
-        records are empty and the page still renders, which is the honest way to show a
-        desk that has no plugin surface.
-        """
-        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
-        records = plugins.list_records() if plugins is not None else []
-        listing = self._registry_listing_for_request()
-        peer_store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        page = render_plugins_page(
-            records, listing, str(listing.get("origin", "none")),
-            agentdesk.__version__, notice=notice,
-            inbox_count=self._inbox_waiting_count(),
-            shared_ids=peer_store.shared_ids() if peer_store is not None else set(),
-            peers_paired=len(peer_store.peers()) if peer_store is not None else 0)
-        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _plugins_page_action(self, path: str) -> None:
         """One lifecycle action posted from the plugins page's own forms.

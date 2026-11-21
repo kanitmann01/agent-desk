@@ -69,7 +69,7 @@ def test_quiet_hour_boundaries_are_pinned():
 def test_notified_today_rolls_over_at_local_midnight():
     clock = FakeClock(MORNING)
     store = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
-    store.record_notification("card", 1)
+    store.record_notification("card")
     late = MORNING.replace(hour=23, minute=59)
     clock.advance_to(late)
     assert store.notified_today(late) == 1  # today's spend is today's ledger

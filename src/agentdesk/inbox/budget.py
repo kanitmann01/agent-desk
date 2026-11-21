@@ -7,8 +7,7 @@ A card that may not notify simply waits in the inbox; nothing is lost.
 """
 
 import secrets
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 
 QUIET_START = 18  # 18:00 local
 QUIET_END = 8     # 08:00 local
@@ -32,17 +31,3 @@ def new_card_id() -> str:
     """Fresh random card id; the `card-` prefix keeps it readable in logs and URLs."""
     return "card-" + secrets.token_urlsafe(9)
 
-
-def local_now(clock) -> datetime:
-    """Read `clock` as an aware local datetime, the frame quiet hours use."""
-    return datetime.fromtimestamp(clock()).astimezone()
-
-
-def window_deadline(created: datetime, window_hours: float) -> datetime:
-    """The instant a card created at `created` stops being actionable."""
-    return created + timedelta(hours=window_hours)
-
-
-def safe_name(path_like: str) -> str:
-    """File name from a path-like string, for card targets."""
-    return str(path_like).replace("\\", "/").rsplit("/", 1)[-1] or Path(path_like).name

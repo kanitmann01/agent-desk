@@ -30,7 +30,6 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.server.plugins_view import render_plugins_page
 
 SHELL_PAGES = [
     ("/inbox", "Inbox"),
@@ -173,44 +172,6 @@ def test_the_wizard_description_is_a_full_width_block(booted):
 def test_the_wizard_page_keeps_the_answer_form(booted):
     page = _get(booted, "/wizard")
     assert 'class="answer"' in page and 'well-input' in page, page[:400]
-
-
-# -- The plugins registry list --------------------------------------------
-
-def _registry_listing():
-    return {
-        "ok": True,
-        "path": "registry",
-        "origin": "checkout",
-        "plugins": [{
-            "id": "sample-plugin",
-            "publisher": "agent-desk",
-            "latest": "0.1.0",
-            "risk": "low",
-            "class": "declarative",
-            "releases": [{"version": "0.1.0", "yanked": False}],
-        }],
-    }
-
-
-def test_registry_installs_are_not_primary_actions():
-    page = render_plugins_page([], _registry_listing(), "checkout", "0.0.0-test")
-    registry = page.split("<h2>From the registry</h2>")[1]
-    assert "Install</button>" in registry
-    # One Voice Rule: a catalog row's Install is a routine action, not
-    # the surface's one commanding green.
-    assert "btn-primary' type='submit'>Install" not in registry, registry[:400]
-    assert "btn-secondary' type='submit'>Install" in registry
-
-
-def test_purge_is_marked_destructive():
-    record = {
-        "id": "sample-plugin", "name": "Sample plugin", "state": "uninstalled",
-        "active_version": "0.1.0", "source": "zip", "pilot_views_left": 0,
-        "versions": ["0.1.0"],
-    }
-    page = render_plugins_page([record], _registry_listing(), "checkout", "0.0.0-test")
-    assert "btn-danger' type='submit'>Purge data" in page, page[-600:]
 
 
 # -- The breadcrumb ---------------------------------------------------------
@@ -358,15 +319,6 @@ def test_the_registry_origin_line_reads_quiet(booted):
     rule = re.search(r"\.reg-origin\{[^}]*\}", css)
     assert rule, "no .reg-origin rule"
     assert "font-size:12px" in rule.group(0) and "color:var(--ink-3)" in rule.group(0)
-
-
-def test_the_legacy_plugins_view_still_renders_its_origin_line():
-    # /plugins redirects to the marketplace now; the compatibility view
-    # is still rendered by peers/wizard code, so its chrome contract is
-    # pinned directly rather than through a route that no longer answers.
-    page = render_plugins_page([], _registry_listing(), "checkout", "0.0.0-test")
-    assert "class='reg-origin'" in page, "the registry origin line carries no quiet class"
-    assert "<article class='card'>" in page
 
 
 def test_widget_paragraphs_do_not_double_the_card_gap(booted):
