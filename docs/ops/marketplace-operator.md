@@ -1,8 +1,8 @@
 # Marketplace operator guide
 
-This is for the IT operator who runs Nexuus Bot for one person on a managed Windows laptop. It covers installs, publishing, policy, audit, the kill switch, the one-time retirement cleanup and recovery. Authoring is in `docs/design/plugin-authoring-v2.md`, the build and AppLocker story is in `docs/ops/distribution.md`, and licensing is in `docs/licensing.md`.
+This is for the IT operator who runs Agent Desk for one person on a managed Windows laptop. It covers installs, publishing, policy, audit, the kill switch, the one-time retirement cleanup and recovery. Authoring is in `docs/design/plugin-authoring-v2.md`, the build and AppLocker story is in `docs/ops/distribution.md`, and licensing is in `docs/licensing.md`.
 
-Nexuus Bot is a single-user, loopback-only app. The marketplace runs in the same process, reads local catalog files, and makes no marketplace network requests of its own. Everything below happens inside one Windows user profile.
+Agent Desk is a single-user, loopback-only app. The marketplace runs in the same process, reads local catalog files, and makes no marketplace network requests of its own. Everything below happens inside one Windows user profile.
 
 ## Where the marketplace keeps its state
 
@@ -23,7 +23,7 @@ The data folder defaults to `%LOCALAPPDATA%\AgentDesk` and can be moved with `AG
 
 Installed plugins live under `<data folder>\plugins`, and their data under `<data folder>\plugin-data`.
 
-To back up, stop Nexuus Bot, copy the whole data folder, then start it again. To restore, stop it, put the copied folder back, start it. Do not copy `policy.json`, `anchor.json` or `kill-switch.json` between machines unless you mean to move the policy identity too.
+To back up, stop Agent Desk, copy the whole data folder, then start it again. To restore, stop it, put the copied folder back, start it. Do not copy `policy.json`, `anchor.json` or `kill-switch.json` between machines unless you mean to move the policy identity too.
 
 ## Turn on admin mode
 

@@ -3,7 +3,7 @@
   "private": true,
   "license": "SEE LICENSE IN ../LICENSE",
   "version": "0.1.0",
-  "description": "The Nexuus Bot dashboard as a React SPA. The build output is committed into src/agentdesk/server/static/spa so end users never need node; rebuild with npm ci && npm run build.",
+  "description": "The Agent Desk dashboard as a React SPA. The build output is committed into src/agentdesk/server/static/spa so end users never need node; rebuild with npm ci && npm run build.",
   "type": "module",
   "scripts": {
     "dev": "vite",

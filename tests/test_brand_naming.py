@@ -1,8 +1,10 @@
 """The brand rules, pinned (spec 017 workstreams 8a and the 017-11 rider).
 
 Two greps, pinned. First: no user-visible surface carries the retired
-working name; the walk covers the shipped string sources plus the build
-scripts, whose bundle metadata names the exe a person installs. Second:
+working name; the walk covers the shipped string sources, the build
+scripts whose bundle metadata names the exe a person installs, the ops
+guides the IT reviewer reads, and the demo script plus the frontend
+manifest and readme. Second:
 no live file carries the em dash, the mark the writing rules ban; that
 walk adds the test tree and docs/docstrings.md. The dated archives
 (docs/evidence, docs/tickets, docs/plans, docs/ideas, docs/superpowers,
@@ -21,6 +23,7 @@ NAME_ROOTS = (
     ROOT / "src",
     ROOT / "tools",
     ROOT / "scripts",
+    ROOT / "docs" / "ops",
     ROOT / "frontend" / "src",
 )
 LIVE_ROOTS = NAME_ROOTS + (
@@ -29,6 +32,9 @@ LIVE_ROOTS = NAME_ROOTS + (
 )
 SCAN_FILES = (
     ROOT / "README.md",
+    ROOT / "DEMO.md",
+    ROOT / "frontend" / "README.md",
+    ROOT / "frontend" / "package.json",
     ROOT / "frontend" / "index.html",
 )
 LIVE_FILES = SCAN_FILES + (ROOT / "docs" / "docstrings.md",)
