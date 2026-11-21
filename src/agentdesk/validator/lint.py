@@ -368,22 +368,35 @@ def _validate_http_get(data_source) -> list[Failure]:
 
 
 def _validate_network_filesystem(manifest) -> list[Failure]:
-    """http-get and filesystem reads are mutually exclusive."""
+    """http-get and filesystem reads are mutually exclusive.
+
+    A read is either a declared read glob or a manual-metric source
+    naming a file outside the plugin's own data directory: the file-
+    reading widgets get no network rule must hold structurally, not only
+    against declared globs. A plugin-data-rooted manual-metric file stays
+    allowed: it names the plugin's own data directory.
+    """
     contributes = manifest.get("contributes")
     widgets = contributes.get("widgets") if isinstance(contributes, dict) else None
     if not isinstance(widgets, list):
         return []
-    has_http = any(
-        isinstance(widget, dict)
-        and isinstance(widget.get("dataSource"), dict)
-        and widget["dataSource"].get("type") == "http-get"
-        for widget in widgets)
+    data_sources = [
+        widget.get("dataSource") for widget in widgets
+        if isinstance(widget, dict) and isinstance(widget.get("dataSource"), dict)
+    ]
+    has_http = any(source.get("type") == "http-get" for source in data_sources)
     if not has_http:
         return []
     permissions = manifest.get("permissions")
     filesystem = permissions.get("filesystem") if isinstance(permissions, dict) else None
     read_globs = filesystem.get("read") if isinstance(filesystem, dict) else None
-    if isinstance(read_globs, list) and read_globs:
+    reads_declared = isinstance(read_globs, list) and bool(read_globs)
+    stray_manual_metric = any(
+        source.get("type") == "manual-metric"
+        and isinstance(source.get("file"), str)
+        and not _is_plugin_data(source["file"])
+        for source in data_sources)
+    if reads_declared or stray_manual_metric:
         return [Failure(
             "unsafe-network-filesystem",
             "http-get cannot be combined with filesystem read access; "

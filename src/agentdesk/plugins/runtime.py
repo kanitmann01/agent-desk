@@ -10,6 +10,7 @@ scopes. Uninstall keeps plugin data until a separately named purge.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -29,7 +30,14 @@ from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.registry.install import tree_digest
 from agentdesk.validator.core import validate_plugin
 
-PILOT_VIEWS = 3
+# The PRD's binding count (R3.7): "a visible 'pilot' badge for the first
+# 5 runs". The test pins this constant against that sentence.
+PILOT_VIEWS = 5
+
+# One zip member may declare at most this many uncompressed bytes. The
+# HTTP boundary caps compressed bodies; this caps what a small bundle can
+# become in memory when extracted (a peer bundle is another desk's input).
+MAX_ZIP_MEMBER_BYTES = 16 * 1024 * 1024
 
 # Plugin ids and versions become filesystem fragments (install dirs,
 # data dirs, rmtree targets), so they are names, not free text.
@@ -93,9 +101,10 @@ _tree_digest = tree_digest
 def extract_plugin_zip(zip_path: Path, destination: Path) -> None:
     """Extract member by member. Python's zipfile has no extraction
     filter, so containment is enforced here: every resolved target must
-    stay inside ``destination``. The one extractor for every zip this
-    app opens (installs, updates, peer bundles); a refusal raises
-    PluginError with ``install:unsafe-zip``."""
+    stay inside ``destination``, and no member's declared size may exceed
+    MAX_ZIP_MEMBER_BYTES, checked before any decompression. The one
+    extractor for every zip this app opens (installs, updates, peer
+    bundles); a refusal raises PluginError with ``install:unsafe-zip``."""
     with zipfile.ZipFile(zip_path) as archive:
         for info in archive.infolist():
             name = Path(info.filename)
@@ -110,6 +119,11 @@ def extract_plugin_zip(zip_path: Path, destination: Path) -> None:
             if info.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
+            if info.file_size > MAX_ZIP_MEMBER_BYTES:
+                raise PluginError(
+                    "install:unsafe-zip",
+                    f"zip entry {info.filename} declares {info.file_size} bytes, "
+                    f"over the {MAX_ZIP_MEMBER_BYTES} byte cap", 400)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(info))
 
@@ -192,12 +206,17 @@ class PluginRuntime:
     def _write(self, document: dict) -> None:
         """Persist the lockfile as indented JSON with sorted keys.
 
-        The plugins directory is created first; the document is rewritten in place, so
-        readers see either the previous or the new lockfile, never a partial one.
+        The write is atomic: the document lands in a sibling temp file
+        that replaces the lockfile in one step, so a crash mid-write
+        leaves the previous lockfile in place instead of a partial file
+        every plugins route chokes on (the readers raise on malformed
+        JSON by design, so this is the only crash-safe shape).
         """
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
-        self._lockfile.write_text(
-            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
+        tmp = self._lockfile.with_name(self._lockfile.name + ".tmp")
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, self._lockfile)
 
     def _entry(self, state: dict, plugin_id: str) -> dict:
         """Return one plugin's lockfile entry, refusing an unknown id with 404.
@@ -273,7 +292,10 @@ class PluginRuntime:
         Directory sources are the registry path: the registry machinery
         resolves the pin, verifies the tree digest and runs the shared
         validator before staging; everything after validation is the
-        same for both shapes.
+        same for both shapes. An install over an already-installed
+        plugin is an update: the same scope-diff consent machinery
+        decides, and version history and pilot state survive instead of
+        being replaced.
         """
         plugin_path = Path(plugin_path)
         try:
@@ -301,6 +323,14 @@ class PluginRuntime:
             _require_safe_name(plugin_id, "plugin id")
             _require_safe_name(version, "version")
             digest = _tree_digest(staged)
+            existing = state["plugins"].get(plugin_id)
+            if existing is not None and existing.get("versions"):
+                # The Install button must not grant what the Update
+                # button would ask for: one shared decision for both.
+                outcome = self._apply_or_hold(state, existing, staged,
+                                              manifest, version, digest)
+                outcome["id"] = plugin_id
+                return outcome
             version_dir = self.plugins_dir / plugin_id / version
             version_dir.parent.mkdir(parents=True, exist_ok=True)
             if version_dir.exists():
@@ -333,6 +363,52 @@ class PluginRuntime:
         return {"ok": True, "id": plugin_id, "version": version,
                 "sha256": digest, "pilot": True}
 
+    def _apply_or_hold(self, state: dict, entry: dict, staged: Path,
+                       manifest: dict, version: str, digest: str) -> dict:
+        """The one update decision, shared by update() and install-over.
+
+        A widening release is held for consent as pending_update with the
+        exact added scopes; an identical or narrower one is appended to
+        the version history and made active. The staged tree is moved out
+        of its temp directory either way; pilot state is never touched,
+        so an install-over cannot restart the pilot badge.
+        """
+        if entry.get("pending_update"):
+            raise PluginError("update:already-pending",
+                              f"{entry['id']} already holds a re-consent", 409)
+        current_manifest = json.loads(
+            (self._active_version_dir(entry) / "manifest.json").read_text(encoding="utf-8"))
+        # Optional permissions are capability reach too: a release that
+        # adds a network host or a new optional file scope must be held for
+        # re-consent exactly like a base permission widening.
+        added = scope_diff(_scope_block(current_manifest),
+                           _scope_block(manifest))
+        if added:
+            pending_dir = self._staging / f"{entry['id']}-{version}"
+            if pending_dir.exists():
+                shutil.rmtree(pending_dir)
+            shutil.move(str(staged), str(pending_dir))
+            entry["pending_update"] = {
+                "version": version, "sha256": digest,
+                "dir": str(pending_dir), "added_scopes": added,
+            }
+            self._write(state)
+            return {"applied": False, "status": "pending-consent",
+                    "added_scopes": added}
+        version_dir = self.plugins_dir / entry["id"] / version
+        version_dir.parent.mkdir(parents=True, exist_ok=True)
+        if version_dir.exists():
+            shutil.rmtree(version_dir)
+        shutil.move(str(staged), str(version_dir))
+        entry["versions"].append({"version": version, "sha256": digest,
+                                  "dir": str(version_dir),
+                                  "installed_at": self.now})
+        entry["active_version"] = version
+        entry["sha256"] = digest
+        entry["data_source"] = self._attach_runner(entry["id"], entry)
+        self._write(state)
+        return {"applied": True, "status": "updated", "version": version}
+
     def update(self, plugin_id: str, zip_path: Path) -> dict:
         """Install a newer version from a zip, holding it for consent when it widens scopes.
 
@@ -340,7 +416,8 @@ class PluginRuntime:
         optional, the staged tree is kept under the staging directory and recorded as
         pending_update instead of being applied, so nothing runs with capabilities the
         user has not seen; otherwise the version is appended and made active. Only one
-        held update exists per plugin at a time.
+        held update exists per plugin at a time. The apply-or-hold decision
+        is the one shared helper install-over rides too.
         """
         state = self._read()
         entry = self._entry(state, plugin_id)
@@ -362,8 +439,6 @@ class PluginRuntime:
             raise PluginError("update:validator-failed",
                               f"{first.code}: {first.message}", 400)
 
-        current_manifest = json.loads(
-            (self._active_version_dir(entry) / "manifest.json").read_text(encoding="utf-8"))
         self._staging.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=self._staging) as tmp:
             staged = Path(tmp) / "plugin"
@@ -371,37 +446,8 @@ class PluginRuntime:
             manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
             version = str(manifest["version"])
             digest = _tree_digest(staged)
-            # Optional permissions are capability reach too: a release that
-            # adds a network host or a new optional file scope must be held for
-            # re-consent exactly like a base permission widening.
-            added = scope_diff(_scope_block(current_manifest),
-                               _scope_block(manifest))
-            if added:
-                pending_dir = self._staging / f"{plugin_id}-{version}"
-                if pending_dir.exists():
-                    shutil.rmtree(pending_dir)
-                shutil.move(str(staged), str(pending_dir))
-                entry["pending_update"] = {
-                    "version": version, "sha256": digest,
-                    "dir": str(pending_dir), "added_scopes": added,
-                }
-                self._write(state)
-                return {"applied": False, "status": "pending-consent",
-                        "added_scopes": added}
-            version_dir = self.plugins_dir / plugin_id / version
-            version_dir.parent.mkdir(parents=True, exist_ok=True)
-            if version_dir.exists():
-                shutil.rmtree(version_dir)
-            shutil.move(str(staged), str(version_dir))
-
-        entry["versions"].append({"version": version, "sha256": digest,
-                                  "dir": str(version_dir),
-                                  "installed_at": self.now})
-        entry["active_version"] = version
-        entry["sha256"] = digest
-        entry["data_source"] = self._attach_runner(plugin_id, entry)
-        self._write(state)
-        return {"applied": True, "status": "updated", "version": version}
+            return self._apply_or_hold(state, entry, staged, manifest,
+                                       version, digest)
 
     def consent(self, plugin_id: str) -> dict:
         """Apply the update that was held for re-consent.

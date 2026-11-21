@@ -91,7 +91,7 @@ def _render_delta(element: dict) -> str:
     label = str(element.get("label") or "").strip()
     value = _escape(element.get("value", ""))
     direction = str(element.get("direction") or "").strip()
-    text = (label + ": " if label else "") + value
+    text = (_escape(label) + ": " if label else "") + value
     if direction:
         text += " " + _escape(direction)
     return '<p class="w-note">' + text + "</p>"

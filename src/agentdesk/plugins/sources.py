@@ -870,9 +870,14 @@ def _manual_metric(source, ctx: SourceContext) -> SourceResult:
     The file is an object with a numeric ``value`` plus optional ``unit``,
     ``target``, ``updatedAt`` and a ``history`` list of ``{at, value}`` entries. The
     history values become the ``points`` series and its last two give ``delta``; an
-    ``updatedAt`` older than ``cadence`` makes the read stale.
+    ``updatedAt`` older than ``cadence`` makes the read stale. Only a
+    ``${pluginData}``-rooted ``file`` is honored; every other value stays the
+    display hint the validator's rule names, so an undeclared workspace
+    file is never opened beside a network widget.
     """
-    declared = source.get("file") or "${pluginData}/manual.json"
+    declared = source.get("file")
+    if not (isinstance(declared, str) and declared.startswith("${pluginData}")):
+        declared = "${pluginData}/manual.json"
     path = _resolve(declared, ctx)
     if not path.exists():
         return _blank("missing-file",
