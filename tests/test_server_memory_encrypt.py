@@ -246,6 +246,31 @@ def test_the_encrypt_page_on_an_already_encrypted_bank_says_so(tmp_path):
 # -- the locked banner --------------------------------------------------------
 
 
+def test_the_default_store_names_a_corrupt_key_file_as_corrupt(tmp_path,
+                                                               monkeypatch):
+    """The startup read (spec 017, 4d): a memory.key that exists but is
+    not a valid key locks the store with the cause that says so, not the
+    missing-file wording the banner used to show."""
+    from agentdesk.server.app import _default_memory_store
+
+    data_dir = tmp_path / "desk-data"
+    data_dir.mkdir()
+    monkeypatch.setenv("AGENTDESK_DATA", str(data_dir))
+    conn = sqlite3.connect(str(data_dir / "memory.sqlite3"),
+                           check_same_thread=False)
+    seeded = MemoryStore(conn, time.time, key=KEY, key_path=data_dir / "memory.key")
+    seeded.add("Revenue is 220", source="page")
+    conn.close()
+    (data_dir / "memory.key").write_bytes(b"not thirty two bytes")
+    store = _default_memory_store()
+    assert store is not None
+    assert store.locked_cause is not None
+    assert "exists but is not a valid key" in store.locked_cause
+    assert str(data_dir / "memory.key") in store.locked_cause
+    assert "missing" not in store.locked_cause
+    store.conn.close()
+
+
 def test_the_locked_memory_page_shows_the_banner_with_the_cause(locked_env,
                                                                  locked_auth):
     status, _h, body = locked_env.request("GET", "/memory", locked_auth)

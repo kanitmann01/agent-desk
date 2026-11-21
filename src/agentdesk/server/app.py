@@ -4436,6 +4436,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except UnknownEntity as exc:
             self._memory_hygiene_error_response(404, str(exc))
             return
+        # The merge deleted both sides' observations inside its
+        # transaction; this is the rebuild line every other write runs.
+        memory_loop.reconcile_observations(memory)
+        self._schedule_observation_pass()
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             audit_store.record(
                 self.server.audit_conn, "memory.merge",
@@ -7683,12 +7687,17 @@ def _default_memory_store() -> MemoryStore | None:
         conn = sqlite3.connect(data_dir / "memory.sqlite3", check_same_thread=False)
         key_path = key_file_path(data_dir)
         key = None
+        key_corrupt = False
         if key_path.exists():
             try:
                 key = read_key_file(key_path)
             except ValueError:
+                # Not a crash, and not "missing": the flag threads the
+                # true cause into the store's locked banner.
                 LOG.exception("memory.key exists but is not a valid key")
-        return MemoryStore(conn, time.time, key=key, key_path=key_path)
+                key_corrupt = True
+        return MemoryStore(conn, time.time, key=key, key_path=key_path,
+                           key_corrupt=key_corrupt)
     except (OSError, sqlite3.Error):
         LOG.exception("memory store unavailable")
         return None

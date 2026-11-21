@@ -218,6 +218,37 @@ def test_entity_merge_route_unions_aliases_and_relinks_facts(env, auth):
     assert "2" in row["detail"]
 
 
+def test_entity_merge_route_reconciles_the_survivors_observation(env, auth):
+    from agentdesk.memory import loop as memory_loop
+
+    facts = [
+        _add_fact(env, auth, text) for text in (
+            "the acme renewal was signed",
+            "acme hired maya",
+            "the globex widget shipped",
+            "globex opened the office",
+        )
+    ]
+    _link_entities(env, facts[0]["id"], [("Acme", "org")])
+    _link_entities(env, facts[1]["id"], [("Acme", "org")])
+    _link_entities(env, facts[2]["id"], [("Globex", "org")])
+    _link_entities(env, facts[3]["id"], [("Globex", "org")])
+    memory_loop.reconcile_observations(env.server.memory)
+    assert len(env.server.memory.observations()) == 2
+    status, _h, _b = env.post_json(
+        "/memory/entities/merge", {"survivor": 1, "removed": 2}, auth
+    )
+    assert status == 200
+    observations = env.server.memory.observations()
+    assert len(observations) == 1, "no orphaned Globex observation survives"
+    assert observations[0].text.startswith("4 facts about Acme")
+    assert set(observations[0].fact_ids) == {fact["id"] for fact in facts}
+    status, _h, body = env.request("GET", "/memory", auth)
+    page = body.decode("utf-8")
+    assert "4 facts about Acme" in page
+    assert "facts about Globex" not in page, "no orphaned observation text"
+
+
 def test_entity_merge_route_refuses_self_and_unknown(env, auth):
     fact = _add_fact(env, auth, "Maya joined Acme")
     _link_entities(env, fact["id"], [("Acme", "org")])

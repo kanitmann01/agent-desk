@@ -1,0 +1,14 @@
+Ticket #222, spec 017 item 4d: a corrupt memory.key names its true
+cause. Real server over a fresh temp AGENTDESK_DATA; the bank is
+sealed through the page's encrypt action, the server is stopped,
+memory.key is replaced with 9 junk bytes, and a new server starts.
+
+phase 1: encrypt action -> 200, key file 32 bytes
+phase 2: memory.key rewritten to 'not a key' (9 bytes), fresh server start on the same data dir
+GET /memory -> 200
+locked_cause: The memory database is encrypted; the key file exists but is not a valid key: C:\Users\mannk\AppData\Local\Temp\agentdesk-017-04-bgf8lljj\key-data\memory.key.
+POST /memory/add -> 503 {
+  "error": "The memory database is encrypted; the key file exists but is not a valid key: C:\\Users\\mannk\\AppData\\Local\\Temp\\agentdesk-017-04-bgf8lljj\\key-data\\memory.key."
+}
+
+PASS: the banner states the corrupt key, not a missing one.

@@ -95,6 +95,10 @@ from agentdesk.memory.graph import (
 )
 from agentdesk.memory.hybrid import EntityLink, normalize_name, rank_hybrid
 from agentdesk.memory.knowledge_gap import junk_reason
+# The loop sits above the store but owns the entity-scope vocabulary the
+# merge must speak; it imports nothing from here, so the dependency is
+# one-directional.
+from agentdesk.memory.loop import entity_scope
 from agentdesk.memory.resolve import (
     EntityRepo,
     EntityRef,
@@ -335,10 +339,11 @@ def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
     writer), so each copy's mention edges and observation citations
     move onto the keeper first (the donor's moveMentions, the same
     dance edit() merges with): the foreign keys would otherwise refuse
-    the delete. Groups whose normalized text is empty are skipped:
-    blank rows are not duplicates of each other. Only ever runs on a
-    plaintext bank: the migration and the conversion both happen before
-    any sealing.
+    the delete, and a fact a copy replaced is repointed at the keeper,
+    which carries its text now. Groups whose normalized text is empty
+    are skipped: blank rows are not duplicates of each other. Only
+    ever runs on a plaintext bank: the migration and the conversion
+    both happen before any sealing.
     """
     rows = conn.execute("SELECT id, text, created_ts FROM facts").fetchall()
     groups: dict[str, list[tuple[float, int]]] = {}
@@ -363,6 +368,12 @@ def _dedupe_identical_facts(conn: sqlite3.Connection) -> None:
                 "(observation_id, fact_id) "
                 "SELECT observation_id, ? FROM observation_sources "
                 "WHERE fact_id = ?",
+                (keeper_id, extra_id),
+            )
+            # A fact the copy replaced points at the keeper, the row that
+            # carries its text now, never at the deleted id.
+            conn.execute(
+                "UPDATE facts SET superseded_by = ? WHERE superseded_by = ?",
                 (keeper_id, extra_id),
             )
             conn.execute("DELETE FROM facts WHERE id = ?", (extra_id,))
@@ -562,6 +573,7 @@ class MemoryStore:
         key_path=None,
         embedder=None,
         embeddings_active: bool = False,
+        key_corrupt: bool = False,
     ) -> None:
         """Open the store: ensure the schema, then bind the key.
 
@@ -570,7 +582,10 @@ class MemoryStore:
         a key offered to a populated plaintext bank leaves the store locked with
         locked_cause set rather than raising here, and every later operation
         raises that cause through _guard. A key that is not 32 bytes raises
-        ValueError before any binding happens.
+        ValueError before any binding happens; `key_corrupt` carries the
+        caller's knowledge that the key file exists but failed that check
+        (the startup read catches the ValueError), so the locked cause
+        names the corruption instead of a missing file.
         """
         self.conn = conn
         self.clock = clock
@@ -592,10 +607,16 @@ class MemoryStore:
         marker = _read_marker(conn)
         if marker is not None:
             if key is None:
-                where = (
-                    f"the key file is missing: {self.key_path}"
-                    if self.key_path is not None else "no key was provided"
-                )
+                if key_corrupt and self.key_path is not None:
+                    where = (
+                        f"the key file exists but is not a valid key:"
+                        f" {self.key_path}"
+                    )
+                else:
+                    where = (
+                        f"the key file is missing: {self.key_path}"
+                        if self.key_path is not None else "no key was provided"
+                    )
                 self.locked_cause = (
                     f"The memory database is encrypted; {where}."
                 )
@@ -932,7 +953,8 @@ class MemoryStore:
         donor's updateFact): the edited fact's entity mentions move onto
         the survivor (INSERT OR IGNORE, then the source edges go), the
         survivor's null occurrence is backfilled from the edited row,
-        the edited row and its citations are deleted, and any
+        the edited row and its citations are deleted (a fact it had
+        replaced is released, like the removal path), and any
         observation left uncited is pruned with them. The survivor is
         the oldest other fact, like the donor's ordering. An edit to a
         unique text behaves exactly as before and reports no merge.
@@ -970,6 +992,13 @@ class MemoryStore:
                 self.conn.execute("DELETE FROM edges WHERE fact_id = ?", (fact_id,))
                 self.conn.execute(
                     "DELETE FROM observation_sources WHERE fact_id = ?", (fact_id,)
+                )
+                # The removal path's release: a fact this one replaced is
+                # freed, not left pointing at the row the merge deletes,
+                # so the older true value rides recall again.
+                self.conn.execute(
+                    "UPDATE facts SET superseded_by = NULL WHERE superseded_by = ?",
+                    (fact_id,),
                 )
                 self.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
                 # Spec decision 24: pruning follows every fact deletion.
@@ -1384,10 +1413,14 @@ class MemoryStore:
         dedupeAliases), every mention edge is relinked onto the survivor
         (INSERT OR IGNORE), the removed entity and its index rows go,
         and the survivor's type upgrades from "other" like the automatic
-        resolution's do. Merging an entity with itself is refused; an
-        unknown id is an UnknownEntity. One transaction; sealed banks
-        re-seal the survivor's names and rebuild its entity_name_index
-        rows through the same seam resolution writes."""
+        resolution's do. Both sides' consolidated observations are deleted
+        in the same transaction (the caller's reconcile rebuilds the
+        survivor's from the merged facts), so no derived text outlives the
+        merge citing facts that changed owner. Merging an entity with
+        itself is refused; an unknown id is an UnknownEntity. One
+        transaction; sealed banks re-seal the survivor's names and rebuild
+        its entity_name_index rows through the same seam resolution
+        writes."""
         self._guard()
         if survivor_id == removed_id:
             raise ValueError("an entity cannot be merged with itself")
@@ -1408,6 +1441,24 @@ class MemoryStore:
             else survivor.type
         )
         with self.conn:
+            # The consolidated observations of both sides go in this same
+            # transaction (delete_observations' own commit would break it):
+            # the absorbed entity's scope would otherwise outlive it
+            # forever, and the survivor's stale text would state a basis
+            # the merged bank no longer has. reconcile_observations, the
+            # line every other write runs, rebuilds the survivor's.
+            for entity_id in (survivor_id, removed_id):
+                scope_ids = self.observation_ids_in_scope(entity_scope(entity_id))
+                if not scope_ids:
+                    continue
+                marks = ",".join("?" for _ in scope_ids)
+                self.conn.execute(
+                    f"DELETE FROM observation_sources WHERE observation_id IN ({marks})",
+                    scope_ids,
+                )
+                self.conn.execute(
+                    f"DELETE FROM observations WHERE id IN ({marks})", scope_ids
+                )
             # Relink: every mention edge keeps its fact and swaps the
             # removed entity for the survivor.
             self.conn.execute(
@@ -2237,6 +2288,14 @@ class MemoryStore:
                 cursor = self.conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
                 if cursor.rowcount:
                     removed_sources.append(source_id)
+            # What this removal deleted, so the undo can refuse when any of
+            # those ids has been taken since (the dump also holds surviving
+            # rows, whose ids are still legitimately theirs).
+            dump["removed_ids"] = {
+                "entities": list(removed.entity_ids),
+                "observations": removed_observations,
+                "sources": removed_sources,
+            }
         return {
             "fact_ids": list(removed.fact_ids),
             "observation_ids": removed_observations,
@@ -2253,7 +2312,9 @@ class MemoryStore:
         own id (ciphertext stays bound to it), drop the observations the
         removal's re-consolidation wrote, and point the released facts
         at their replacement again. Refused, with nothing written, when
-        a removed fact's id has been taken since."""
+        a removed row's id (fact, entity, source or observation) has
+        been taken since; the ids the re-consolidation legitimately
+        reused are excepted, because the undo drops those rows itself."""
         self._guard()
         fact_rows = dump["facts"]
         with self.conn:
@@ -2263,6 +2324,26 @@ class MemoryStore:
                 marks = ",".join("?" for _ in ids)
                 taken = self.conn.execute(
                     f"SELECT id FROM facts WHERE id IN ({marks})", ids
+                ).fetchone()
+                if taken is not None:
+                    raise ValueError(
+                        "Memory changed since the removal, so it can no longer be undone."
+                    )
+            reused = {int(v) for v in drop_observation_ids}
+            removed_ids = dump.get("removed_ids", {})
+            for table, ids in (
+                ("entities", removed_ids.get("entities", ())),
+                ("sources", removed_ids.get("sources", ())),
+                ("observations", [
+                    int(v) for v in removed_ids.get("observations", ())
+                    if int(v) not in reused
+                ]),
+            ):
+                if not ids:
+                    continue
+                marks = ",".join("?" for _ in ids)
+                taken = self.conn.execute(
+                    f"SELECT id FROM {table} WHERE id IN ({marks})", list(ids)
                 ).fetchone()
                 if taken is not None:
                     raise ValueError(
