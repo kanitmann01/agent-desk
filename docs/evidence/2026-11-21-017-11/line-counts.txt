@@ -1,0 +1,33 @@
+Line counts for the 017-11 lean sweep (branch vs main fbe7d30)
+
+Branch total: 39 files changed, +2618 / -3102 = net -484 lines.
+
+Per commit (git show <sha> --stat):
+
+  11a    3cc08ad  delete the verified-dead code             9 files  +24 / -448   net -424
+  11b    c9addc7  one form-versus-JSON response helper      1 file   +106 / -207  net -101
+  11d    43029dd  count/plural/bounded to single owners     5 files  +54 / -69    net -15
+  11g    fc01f68  four view-level dedups                    6 files  +60 / -86    net -26
+  11h    fd86e6b  one escape rule for view ids              4 files  +16 / -12    net +4
+  11c    006b1e7  app.py splits by job exactly twice        8 files  +2201 / -2207  net -6
+  11e    6d794d1  design documents tell the truth           5 files  +140 / -92   net +48 (docs)
+  11f    f31d800  peer-catalog claim aligned                2 files  +3 / -3      net 0
+  rider  340bd08  em dash leaves the live trees, pinned    13 files  +83 / -44    net +39
+  pin    15635cb  the pin names the ban by code point       1 file   +2 / -5      net -3
+
+11c is near-zero net as the ticket requires: the memory api block (1143
+lines) and the peers api block (645 lines) moved verbatim (class bodies
+byte-identical to the parent revision, verified by diff), the module
+docstrings and resolved imports are the only additions, and app.py
+shrank from 8019 to 6000 lines.
+
+Growth outside 11c's movement and the doc rewrites, item by item:
+
+  +4   11h: escaping the ids split four f-strings onto two lines.
+  +39  the rider commit: the em-dash pin test and its walk plumbing in
+       tests/test_brand_naming.py (+52/-13). The sweep's thirty text
+       rewrites are line-neutral swaps (30 lines changed, 30 written).
+  +2/-5 pin follow-up: the ban is named by code point.
+
+app.py before: 8019 lines. After: 6000 lines, plus memory_api.py (1286)
+and peers_api.py (711), whose bodies are the moved blocks.

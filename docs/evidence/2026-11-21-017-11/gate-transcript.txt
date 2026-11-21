@@ -1,0 +1,13 @@
+agent-desk local CI  (data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-ci-5srf09x7)
+checkout: D:\20-projects\Personal Agents\.worktrees\017-11-lean-sweep
+------------------------------------------------------------------------
+PASS  py-grammar          0.5s  367 files parse under 3.10
+PASS  pytest            533.4s  2691 passed, 1 skipped, 13 warnings in 529.45s (0:08:49)
+PASS  frontend-check      2.9s  tsc --noEmit clean
+PASS  frontend-tests      6.6s  [2m      Tests [22m [1m[32m313 passed[39m[22m[90m (313)[39m
+PASS  licenses            0.4s  sbom, license gate and notices all clean
+PASS  registry-ci         0.2s  REGISTRY-CI PASS
+PASS  brand-leak          0.1s  BRAND-LEAK PASS (1 pack(s), 0 hash(es))
+------------------------------------------------------------------------
+7/7 gates passed in 544s
+CI PASS
