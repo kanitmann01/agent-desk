@@ -816,7 +816,8 @@ def render_settings_page(
             )
             md = html.escape(render_skill_md(skill["name"], skill["description"], skill["prompt"])[:400])
             undo = (
-                f"<button class='btn btn-secondary btn-start' data-skill-undo='{skill['id']}'>"
+                f"<button class='btn btn-secondary btn-start' "
+                f"data-skill-undo='{html.escape(str(skill['id']))}'>"
                 "Undo (deactivate)</button>"
                 if skill["active"]
                 else ""

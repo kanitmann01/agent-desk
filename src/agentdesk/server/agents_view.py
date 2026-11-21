@@ -148,6 +148,7 @@ def _artifact_html(run: dict) -> str:
     artifact = run.get("artifact")
     if not artifact:
         return ""
+    run_id = _esc(str(run["id"]))
     if artifact.get("kind") == "slides":
         text = slides_text(artifact)
     elif artifact.get("kind") == "presentation":
@@ -167,13 +168,13 @@ def _artifact_html(run: dict) -> str:
                     f"{_esc(source.get('snippet') or '')}</label>"
                 )
             form = (
-                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
                 + "".join(rows)
                 + '<button class="btn btn-primary" type="submit">Build the deck</button></form>'
-                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
                 '<input type="hidden" name="continue" value="desk">'
                 '<button class="btn" type="submit">Continue with desk sources only</button></form>'
-                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
                 '<input type="hidden" name="continue" value="cancel">'
                 '<button class="btn" type="submit">Cancel</button></form>'
             )
@@ -181,13 +182,13 @@ def _artifact_html(run: dict) -> str:
         if artifact.get("phase") == "research-failed":
             return (
                 f"<pre>{_esc(text)}</pre>"
-                f'<form method="post" action="/agents/runs/{run["id"]}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
                 '<input type="hidden" name="continue" value="desk">'
                 '<button class="btn" type="submit">Continue with desk sources only</button></form>'
             )
         if artifact.get("file"):
             text_html = f"<pre>{_esc(text)}</pre>"
-            href = f"/agents/runs/{run['id']}/download"
+            href = f"/agents/runs/{run_id}/download"
             extra = _sources_html(artifact)
             if artifact.get("fit"):
                 items = "".join(f"<li>{_esc(item)}</li>" for item in artifact["fit"])
@@ -195,11 +196,11 @@ def _artifact_html(run: dict) -> str:
             if artifact.get("previewNote"):
                 extra += f"<p class='empty'>{_esc(artifact['previewNote'])}</p>"
             if artifact.get("pdf"):
-                extra += f'<p><a href="/agents/runs/{run["id"]}/download?part=pdf">Download PDF</a></p>'
+                extra += f'<p><a href="/agents/runs/{run_id}/download?part=pdf">Download PDF</a></p>'
             for image in artifact.get("images") or []:
                 name = str(image).rsplit("/", 1)[-1]
                 extra += (
-                    f'<p><img src="/agents/runs/{run["id"]}/download?part={_esc(name)}" '
+                    f'<p><img src="/agents/runs/{run_id}/download?part={_esc(name)}" '
                     f'alt="Slide preview" width="320"></p>'
                 )
             return text_html + extra + f'<p><a href="{href}">Download .pptx</a></p>'
@@ -231,7 +232,7 @@ def _feedback_html(run: dict) -> str:
     promise; a recorded feedback renders with its own timestamp and the
     form steps aside, because the run carries one record, the latest.
     """
-    run_id = run["id"]
+    run_id = _esc(str(run["id"]))
     if run.get("feedback"):
         when = datetime.fromtimestamp(run["feedbackTs"]).strftime("%Y-%m-%d %H:%M")
         return (

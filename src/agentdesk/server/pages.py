@@ -919,7 +919,8 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     strip = ""
     if skills:
         buttons = "".join(
-            f"<button class='skill-btn' data-skill-run='{s['id']}'>{html.escape(s['name'])}</button>"
+            f"<button class='skill-btn' data-skill-run='{html.escape(str(s['id']))}'>"
+            f"{html.escape(s['name'])}</button>"
             for s in skills
         )
         strip = f"<div class='skills-strip' aria-label='Your skills'>{buttons}</div>"

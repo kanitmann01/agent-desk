@@ -404,11 +404,12 @@ def _observations_section(
             if fact is None:
                 continue
             citations.append(
-                f'<a href="#fact-{fact.id}">{html.escape(fact.text)}</a>'
+                f'<a href="#fact-{html.escape(str(fact.id))}">'
+                f"{html.escape(fact.text)}</a>"
             )
         cited = ", ".join(citations) if citations else "nothing citable left"
         rows.append(
-            f"<li id='observation-{observation.id}'>"
+            f"<li id='observation-{html.escape(str(observation.id))}'>"
             f"<b>{html.escape(observation.text)}</b> "
             f"<span class='empty mono'>confidence "
             f"{observation.confidence:.2f}, cites {cited}</span></li>"
