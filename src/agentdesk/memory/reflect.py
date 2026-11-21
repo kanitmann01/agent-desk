@@ -447,8 +447,8 @@ class EndpointReflector:
 
         Returns draft observations only: nothing is written here, and the caller
         decides which drafts to keep. Raises ReflectorUnavailable when the
-        callable fails at all — LlmUnavailable keeps its pinned cause, any other
-        exception becomes the generic one — and ReflectFailed when the reply
+        callable fails at all (LlmUnavailable keeps its pinned cause, any other
+        exception becomes the generic one) and ReflectFailed when the reply
         cannot be parsed. last_request_bytes is set before the call, so a failed
         call still reports the prompt size it sent.
         """

@@ -77,7 +77,7 @@ def sentence_reason(sentence: str) -> str | None:
 
     The order is the precedence: inability, then knowledge-gap, then
     session-narration, because an inability predicate also satisfies the gap
-    test. A session narrative counts only when it names no past event — "I
+    test. A session narrative counts only when it names no past event: "I
     opened the article yesterday" describes the world, so it stays.
     """
     predicate = assistant_predicate(sentence)
@@ -374,8 +374,8 @@ def identity_tail(tail: str) -> bool:
     """True when what follows an unsure predicate names a person or thing.
 
     An empty tail counts ("I am not sure."), as do the who/what/which/whom
-    forms and "about|of" plus a pronoun or person. Any other tail — a plan, a
-    time, an action — is not an identity question and returns False.
+    forms and "about|of" plus a pronoun or person. Any other tail (a plan, a
+    time, an action) is not an identity question and returns False.
     """
     rest = tail.strip()
     if rest == "":

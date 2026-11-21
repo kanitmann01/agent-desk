@@ -203,7 +203,7 @@ def _ledger_section(ledger_entries: list) -> str:
                 f"<td>Undone{(' ' + when_text(when)) if when is not None else ''}</td>"
             )
         else:
-            cells.append("<td class='empty'>—</td>")
+            cells.append("<td class='empty'>-</td>")
         rows.append("<tr>" + "".join(cells) + "</tr>")
     return (
         "<h2>Changes the desk made by itself</h2>\n"

@@ -189,7 +189,7 @@ def _inside(path: Path, root) -> bool:
     """Report whether ``path`` lies below ``root``.
 
     Only ``root`` is resolved, so a caller that cares about symlinks passes an
-    already-resolved path — the readers resolve before they call this.
+    already-resolved path: the readers resolve before they call this.
     """
     try:
         Path(path).relative_to(Path(root).resolve())
@@ -783,7 +783,7 @@ def _markdown_watch(source, ctx: SourceContext) -> SourceResult:
 
     When ``heading`` names one or more titles, only checkboxes under a heading that
     contains one of them count; without it the whole file counts. A ``due:`` marker
-    inside an item's text becomes its ``due`` field and also sets the tone —
+    inside an item's text becomes its ``due`` field and also sets the tone:
     attention when something is overdue, warn when something is due today.
 
     Bindings carry ``openCount``, ``doneCount``, the item list and ``nextDue`` when
@@ -943,7 +943,7 @@ def _manual_metric(source, ctx: SourceContext) -> SourceResult:
 def _desk_state(source, ctx: SourceContext) -> SourceResult:
     """Publish an injected host callback's state as a source result.
 
-    ``selector`` picks ``runtime``, ``audit`` or ``policy`` from an injected object —
+    ``selector`` picks ``runtime``, ``audit`` or ``policy`` from an injected object:
     either a dict of callables or an object with those attributes. A dict return
     may set ``state``, ``bindings``, ``value``, ``status``, ``tone``, ``reason``,
     ``human`` and ``asOf``; whatever it leaves out is filled in so the renderer
@@ -1029,8 +1029,8 @@ def _compare(source, ctx: SourceContext) -> SourceResult:
             return _blank("unsafe-source",
                           f"The compare source may only read local sources; "
                           f"the {side} side is {spec.get('type', '(none)')}.")
-    left = read_source(left_source, replace(ctx, visiting=ctx.visiting))
-    right = read_source(right_source, replace(ctx, visiting=ctx.visiting))
+    left = read_source(left_source, ctx)
+    right = read_source(right_source, ctx)
     for side, result in (("left", left), ("right", right)):
         if result.state == "blank":
             return _blank("blank-side",

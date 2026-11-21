@@ -982,7 +982,7 @@ def render_press_page(
     The disclosure comes first and the answer second, because the promise
     and the result are read together: a person decides whether to press
     again from the same screen that shows what the press sent. A refusal
-    is the whole answer when it happens — the page keeps the sentence and
+    is the whole answer when it happens: the page keeps the sentence and
     offers nothing to press.
     """
     lines = "".join(

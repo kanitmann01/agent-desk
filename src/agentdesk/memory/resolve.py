@@ -243,8 +243,8 @@ class EntityRepo:
     def linked_fact_ids(self, entity_ids) -> dict[int, set[int]]:
         """The fact ids each of these entities is mentioned in.
 
-        The map may leave out an id with no mentions — the co-occurrence winner
-        reads it with an empty-set default — so an implementation need not
+        The map may leave out an id with no mentions: the co-occurrence winner
+        reads it with an empty-set default, so an implementation need not
         materialize empty sets, and a missing key means "no links", never
         "unknown".
         """
@@ -255,7 +255,7 @@ class EntityRepo:
 
         None is an answer, not a failure: it tells the create-entity guard to
         consider every loaded entity, the only option a plaintext bank has. An
-        empty list claims the opposite — that no row matches — and means the
+        empty list claims the opposite (that no row matches) and means the
         caller may skip the scan.
         """
         return None

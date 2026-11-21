@@ -83,8 +83,8 @@ class PeersApiMixin:
         """Serve one peer GET, gated for a paired desk rather than a browser session.
 
         The guard weighs Host, Origin and the pairing token together, and a request
-        failing it gets a peer:blocked 403 with the reason. The three read paths —
-        /peer/info, a plugin's manifest and its bundle — each check the token again
+        failing it gets a peer:blocked 403 with the reason. The three read paths
+        (/peer/info, a plugin's manifest and its bundle) each check the token again
         before answering, because the guard's token test is also what a desk without a
         token fails. Every read is audited as peer.read, so another desk's access shows
         up in this desk's trail.
@@ -143,7 +143,7 @@ class PeersApiMixin:
     def _route_peer_post(self, path: str) -> None:
         """Handle the one peer POST that exists, pairing, and refuse everything else.
 
-        Pairing has no token to present — its code is the gate — so it takes the plain
+        Pairing has no token to present (its code is the gate), so it takes the plain
         Host and Origin guard. Any other peer POST is a 405 explaining that the surface
         reads and pairs and changes nothing else.
         """

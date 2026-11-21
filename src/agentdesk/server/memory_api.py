@@ -633,8 +633,8 @@ class MemoryApiMixin:
         observations.
 
         423 when the store is locked, carrying the store's own cause. When any
-        observation still carries the rules' mark — the bank predates the endpoint, or a
-        pass ran while it was down — one pass is scheduled, at most once a minute while
+        observation still carries the rules' mark (the bank predates the endpoint, or a
+        pass ran while it was down), one pass is scheduled, at most once a minute while
         the page stays open, so looking at the page is what improves it.
         """
         server = self.server  # type: ignore[attr-defined]

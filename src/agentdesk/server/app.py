@@ -3512,7 +3512,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         nobody reads. What the flip then means depends on the key: sample data seeds or
         clears its fixtures, the semantic and memory-loop switches are re-read on the
         next action, and every remaining key stops or starts its watcher. A form submit
-        goes back to the inbox — the one page that posts this without JavaScript.
+        goes back to the inbox, the one page that posts this without JavaScript.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.settings is None:
@@ -4622,7 +4622,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
         The segment count selects the step: four segments create an instance from the
         posted name, which is slugged down to an id, while a longer path names one and
-        then its action — pick, stage, suggest, evaluate, confirm or outside. Suggest
+        then its action: pick, stage, suggest, evaluate, confirm or outside. Suggest
         and evaluate let a request override the saved headers-only and completion
         settings, since the flow's next question is usually the answer. A ConfigError
         answers 400 with its own code, anything else through the setup envelope, and an
@@ -5077,8 +5077,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         Uninstalled records are dropped: with no active version there is no card for a
         view to render. A pending update is reduced to the version and the scopes it
         would add, which is exactly what an update would widen, and pilot marks a record
-        that is enabled with pilot views left — the flag means a view can still be
-        spent, so a disabled plugin never carries it.
+        that is enabled with pilot views left (the flag means a view can still be
+        spent, so a disabled plugin never carries it).
         """
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
@@ -5819,8 +5819,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     headers: dict | None = None) -> None:
         """Send one response body and mark the request answered.
 
-        Content-Length is the body's own length, and every response path — page, JSON,
-        file, error — goes through here, so the security headers cannot be forgotten on
+        Content-Length is the body's own length, and every response path (page, JSON,
+        file, error) goes through here, so the security headers cannot be forgotten on
         one of them. extra headers precede the common set, which is where a caller adds
         one rather than where it overrides the defaults.
         """
@@ -5838,7 +5838,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """The headers every response carries.
 
         The security set comes first; the Connection close follows only when the request
-        left the connection unusable — its body was past the drain cap, or refused
+        left the connection unusable: its body was past the drain cap, or refused
         before the drain. Naming it here is what actually closes, because http.server
         flips close_connection when it sees that header.
         """

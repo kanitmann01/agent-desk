@@ -278,8 +278,8 @@ def _validated_recommendation(rec, request: dict):
 def propose_columns(request: dict, complete) -> dict:
     """Ask the model which columns to track.
 
-    Every failure — an endpoint that raises, an answer with no JSON object, or a
-    column name that was not in the request — raises ``config:suggest-failed`` so the
+    Every failure (an endpoint that raises, an answer with no JSON object, or a
+    column name that was not in the request) raises ``config:suggest-failed`` so the
     picker can keep the user's own choice. An unknown aggregate falls back to sum, and
     a missing row list means every row that was sampled.
     """
