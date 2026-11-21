@@ -1,0 +1,200 @@
+"""Text has to fit the box: one shorten, then a continuation slide.
+
+The point size stays 14. Shorten uses the presentation timeout.
+"""
+
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+for _p in (str(ROOT / "src"), str(ROOT / "tests")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import server_harness
+from agentdesk.presentations.fit import fit_outline, slot_budget
+from agentdesk.presentations.ooxml import build_shell, pack_zip, read_parts
+from agentdesk.presentations.writer import content_point_size, slide_texts
+
+RECIPE = json.loads(
+    (ROOT / "registry/plugins/presentation-starter/recipes/briefing.json").read_text(encoding="utf-8")
+)
+
+
+def test_a_bullet_that_wraps_stays_one_bullet_and_continuations_loop():
+    def shorten(text, limit, timeout):
+        return text
+
+    wide = "word " * 40
+    outline = {
+        "title": "Q3",
+        "slides": [{"role": "content", "title": "Context", "bullets": [wide.strip()], "citations": []}],
+    }
+    fitted, notes = fit_outline(outline, RECIPE, shorten, 30, [])
+    content = [slide for slide in fitted["slides"] if slide["role"] == "content"]
+    assert len(content) == 1
+    assert content[0]["bullets"] == [wide.strip()]
+    assert notes == []
+    many = ["word"] * 50
+    outline["slides"][0]["bullets"] = many
+    fitted, notes = fit_outline(outline, RECIPE, shorten, 30, [])
+    content = [slide for slide in fitted["slides"] if slide["role"] == "content"]
+    assert len(content) >= 3
+    assert any(item.endswith("(cont.)") for item in notes)
+    assert sum(_bullet_ok(slide["bullets"]) for slide in content) == len(content)
+
+
+def _bullet_ok(bullets: list[str]) -> bool:
+    """True when this slide's bullets use no more lines than the box."""
+    from agentdesk.presentations.fit import _bullet_lines, slot_budget
+    budget = slot_budget([0.9, 1.7, 11.5, 4.6], 14)
+    used = sum(_bullet_lines(bullet, budget["charsPerLine"]) for bullet in bullets)
+    return used <= budget["lines"]
+
+
+def test_a_shortened_reply_is_digit_guarded():
+    def shorten(text, limit, timeout):
+        return "revenue is 999"
+
+    sources = [{"id": 1, "text": "220 in Q3 2026", "kind": "memory"}]
+    outline = {
+        "title": "Q3",
+        "slides": [{
+            "role": "content", "title": "Context",
+            "bullets": ["word " * 800], "citations": [1],
+        }],
+    }
+    fitted, _notes = fit_outline(outline, RECIPE, shorten, 30, sources)
+    text = " ".join(
+        " ".join(slide["bullets"]) for slide in fitted["slides"] if slide["role"] == "content"
+    )
+    assert "999" not in text
+    assert "[data needed]" in text
+
+
+def test_a_larger_layout_size_tightens_the_budget():
+    seen = []
+
+    def shorten(text, limit, timeout):
+        seen.append(limit)
+        return text
+
+    outline = {
+        "title": "Q3",
+        "slides": [{"role": "content", "title": "Context", "bullets": ["word " * 800], "citations": []}],
+    }
+    fit_outline(outline, RECIPE, shorten, 30, [], min_pt=18)
+    wide = slot_budget([0.9, 1.7, 11.5, 4.6], 14)
+    tight = slot_budget([0.9, 1.7, 11.5, 4.6], 18)
+    assert seen == [tight["charsPerLine"] * tight["lines"]]
+    assert tight["charsPerLine"] < wide["charsPerLine"]
+
+
+def test_the_budget_uses_the_size_resolved_from_the_master():
+    parts = read_parts(build_shell())
+    for name in list(parts):
+        if name.startswith("ppt/slideLayouts/") and name.endswith(".xml"):
+            parts[name] = re.sub(br'\s*sz="\d+"', b"", parts[name])
+    master = parts["ppt/slideMasters/slideMaster1.xml"].decode("utf-8")
+    styles = (
+        "<p:txStyles>"
+        '<p:titleStyle><a:lvl1pPr><a:defRPr sz="4400"/></a:lvl1pPr></p:titleStyle>'
+        '<p:bodyStyle><a:lvl1pPr><a:defRPr sz="3200"/></a:lvl1pPr></p:bodyStyle>'
+        '<p:otherStyle><a:lvl1pPr><a:defRPr sz="1800"/></a:lvl1pPr></p:otherStyle>'
+        "</p:txStyles>"
+    )
+    parts["ppt/slideMasters/slideMaster1.xml"] = master.replace(
+        "</p:sldMaster>", styles + "</p:sldMaster>",
+    ).encode("utf-8")
+    shell = pack_zip(parts)
+    assert content_point_size(shell, RECIPE) == 32
+    seen = []
+
+    def shorten(text, limit, timeout):
+        seen.append(limit)
+        return text
+
+    fit_outline(
+        {"title": "Q3", "slides": [{
+            "role": "content", "title": "Context", "bullets": ["word " * 800], "citations": [],
+        }]},
+        RECIPE, shorten, 30, [], min_pt=content_point_size(shell, RECIPE),
+    )
+    tight = slot_budget([0.9, 1.7, 11.5, 4.6], 32)
+    assert seen == [tight["charsPerLine"] * tight["lines"]]
+    assert tight["charsPerLine"] < slot_budget([0.9, 1.7, 11.5, 4.6], 14)["charsPerLine"]
+
+
+def test_the_budget_matches_the_recipe_region_at_14_pt():
+    region = [0.9, 1.7, 11.5, 4.6]
+    budget = slot_budget(region, 14)
+    # 11.5in * 72 / (14 * 0.5) * 1.10, and the height the same way.
+    assert budget["charsPerLine"] == 130
+    assert budget["lines"] == 21
+    assert budget["minPt"] == 14
+
+
+def test_a_long_reply_is_shortened_once_then_split():
+    calls = []
+
+    def shorten(text, limit, timeout):
+        calls.append((limit, timeout))
+        return text  # still too long, so the slide splits
+
+    outline = {
+        "title": "Q3",
+        "slides": [
+            {"role": "title", "title": "Q3"},
+            {"role": "content", "title": "Context", "bullets": ["word " * 800], "notes": "Sources: none."},
+            {"role": "closing"},
+        ],
+    }
+    fitted, notes = fit_outline(outline, RECIPE, shorten, 30)
+    content = [slide for slide in fitted["slides"] if slide["role"] == "content"]
+    assert len(calls) == 1
+    assert calls[0][1] == 30
+    assert len(content) == 2
+    assert content[1]["title"].endswith("(cont.)")
+    assert "Context (shortened)" in notes
+    assert "Context (cont.)" in notes
+
+
+def test_the_run_page_lists_a_continuation_and_the_type_stays_14_pt():
+    def llm(prompt, timeout=30):
+        if "Shorten this" in prompt:
+            return "word " * 800
+        if "Presentation plan" in prompt:
+            return json.dumps({"sections": [
+                {"id": "context", "title": "Context"},
+                {"id": "findings", "title": "Findings"},
+                {"id": "next", "title": "What we do next"},
+            ]})
+        return json.dumps({
+            "title": "Context",
+            "bullets": ["word " * 800],
+            "citations": [],
+        })
+
+    booted = server_harness.Booted(llm=llm)
+    booted.server.llm_endpoint = "http://127.0.0.1:9/v1"
+    try:
+        auth = booted.exchange()
+        body = json.loads(booted.post_json(
+            "/agents/run",
+            {"agent": "presentation", "brief": "the Q3 review",
+             "template": "starter", "variant": "dark", "recipe": "briefing"},
+            auth,
+        )[2])
+        assert body["status"] == "ok", body
+        assert any(item.endswith("(cont.)") for item in body["artifact"]["fit"])
+        page = booted.request("GET", "/agents", auth)[2].decode("utf-8")
+        assert "Slides adjusted to fit" in page
+        blob = booted.request("GET", f"/agents/runs/{body['id']}/download", auth)[2]
+        titles = [row["texts"][0] for row in slide_texts(blob) if row["texts"]]
+        assert any(title.endswith("(cont.)") for title in titles)
+        xml = b"\n".join(read_parts(blob).values())
+        assert b'sz="1400"' in xml
+    finally:
+        booted.close()

@@ -354,13 +354,13 @@ def test_a_write_failure_does_not_blame_the_endpoint():
 
     booted = server_harness.Booted(llm=llm)
     booted.server.llm_endpoint = "http://127.0.0.1:9/v1"
-    import agentdesk.server.app as appmod
+    import agentdesk.presentations.deliver as deliver
 
     def boom(*_args, **_kwargs):
         raise OSError("disk full")
 
-    original = appmod.write_deck
-    appmod.write_deck = boom
+    original = deliver.write_deck
+    deliver.write_deck = boom
     try:
         auth = booted.exchange()
         status, _h, body = _run(booted, auth, "briefing")
@@ -370,5 +370,5 @@ def test_a_write_failure_does_not_blame_the_endpoint():
         assert "not answering" not in payload["cause"]
         assert "disk full" not in payload["cause"]
     finally:
-        appmod.write_deck = original
+        deliver.write_deck = original
         booted.close()

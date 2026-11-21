@@ -110,6 +110,7 @@ from agentdesk.llm import (
     settings_chat,
 )
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
+from agentdesk.presentations.deliver import deliver_deck
 from agentdesk.presentations.packs import load_packs
 from agentdesk.presentations.pipeline import (
     call_model,
@@ -122,8 +123,6 @@ from agentdesk.presentations.pipeline import (
     receipt_lines,
     timeout_seconds,
 )
-from agentdesk.presentations.render import render_deck
-from agentdesk.presentations.writer import write_deck
 from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
     EmbedderUnavailable,
@@ -2360,7 +2359,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
             outline = outline_from_fill(
                 brief, recipe_doc, planned, filled, sources, title=deck_title,
             )
-            blob = write_deck(shell_path.read_bytes(), recipe_doc, outline)
+
+            def shorten(text, limit, call_timeout):
+                """One shorten call, on the presentation timeout."""
+                reply = call_model(
+                    llm,
+                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
+                    call_timeout,
+                )
+                return (reply or "").strip() or text
+
+            folder = self._presentation_dir() / secrets.token_hex(8)
+            delivered = deliver_deck(
+                shell_path.read_bytes(), recipe_doc, outline, sources, folder,
+                shorten, timeout, runner=getattr(server, "presentation_runner", None),
+            )
+            fit_notes = delivered["fit"]
+            rendered = delivered["rendered"]
         except (OSError, ValueError, LlmUnavailable) as exc:
             if isinstance(exc, LlmUnavailable):
                 cause = str(exc)
@@ -2375,13 +2390,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         detail=f"status degraded; {cause}")
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
-        folder = self._presentation_dir() / secrets.token_hex(8)
-        folder.mkdir(parents=True)
-        (folder / "deck.pptx").write_bytes(blob)
-        rendered = render_deck(
-            folder / "deck.pptx", folder / "preview",
-            runner=getattr(server, "presentation_runner", None),
-        )
         prefix = folder.name
         artifact = {
             "kind": "presentation",
@@ -2397,6 +2405,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "previewNote": rendered["note"],
             "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
             "images": [f"{prefix}/{image}" for image in rendered["images"]],
+            "fit": fit_notes,
         }
         facts = [
             {"id": row["id"], "text": row["text"]}
