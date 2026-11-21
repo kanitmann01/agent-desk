@@ -1,9 +1,10 @@
-"""The settings page: toggles, the endpoint form, the visible parts.
+"""The settings page: toggles, connections, the visible parts.
 
 Data sources, quiet hours and the notification budget are toggles or
-small choices; the endpoint section takes a base URL, an API key and a
-model, and tells the truth about the last call under failure. The key is
-secret: this module renders only its masked state, never the value. The
+small choices; endpoints and their keys live on the Connections card
+(spec 018), and the endpoint card keeps the state line and the
+presentation timeout, the one field its route still saves. A key is
+secret: this module renders only masked hints, never a value. The
 activity log, skills, audit export and the what-this-touches statement
 are reachable from here. The preferences card is the only place the desk
 is told what to assume about its reader; its values are read back from the
@@ -14,6 +15,9 @@ import html
 from datetime import datetime
 
 from agentdesk.insight.preferences import PreferenceStore, changed
+from agentdesk.keys.presets import PRESETS, preset_for
+from agentdesk.keys.resolve import JOB_LABELS
+from agentdesk.keys.store import mask_key
 from agentdesk.repetition.skills import render_skill_md
 from agentdesk.server import audit_view
 from agentdesk.server.pages import page_shell
@@ -32,13 +36,10 @@ _LABELS = {
 }
 
 ENDPOINT_HINT = (
-    "<p>Any OpenAI-compatible endpoint works: your company gateway, "
-    "OpenAI, OpenRouter, LiteLLM, Azure AI Foundry, or Anthropic at "
-    "https://api.anthropic.com/v1. Use the full API address: it starts "
-    "with http:// or https:// and usually ends in /v1; a portal sign-in "
-    "page is not an API base. The key and URL are the whole login. "
-    "Saving with an empty key field clears the saved key. Saved settings "
-    "win over environment variables.</p>"
+    "<p>Endpoints and their keys are named connections now: configure "
+    "them on the Connections card above. The legacy endpoint rows stay "
+    "in the settings database as a read-only fallback, and the desk "
+    "still answers on them when no connection serves a job.</p>"
 )
 
 
@@ -83,60 +84,40 @@ def _esc_timeout(status: dict) -> str:
 
 
 def mask_llm_key(key: str) -> str:
-    """The page-facing form of a saved key: state only, never the value."""
+    """The page-facing form of a saved key: state only, never the value.
+
+    The last four characters appear only when keys.store.mask_key would
+    show them (a key long enough to spare its middle): a short key is
+    mostly tail, so it reads as "Set." with no tail at all.
+    """
     key = (key or "").strip()
     if not key:
         return ""
-    return f"Set. Ends with {key[-4:]}." if len(key) > 4 else "Set."
+    if mask_key(key) == "Set.":  # the short-key rule: no tail anywhere
+        return "Set."
+    return f"Set. Ends with {key[-4:]}."
 
 
 def _endpoint_form(status: dict) -> str:
-    """Three fields, three buttons, and the masked key state.
+    """The reduced endpoint card body: the migration pointer, the
+    read-only fallback statement, and the presentation timeout form,
+    the one field the endpoint route still saves (spec 018 #234).
 
-    The key field is always empty when rendered: the masked line and the
-    placeholder are the only evidence a key is saved. Saving with the
-    field empty clears the key, so the page says so plainly.
+    The base URL, API key, model, research URL and research key fields
+    retired to the Connections card. The timeout form is a plain form
+    post, so it works with no script at all.
     """
-    esc_base = html.escape(status.get("base", ""))
-    esc_model = html.escape(status.get("model", ""))
-    key_state = status.get("keyState", "")
-    esc_hint = html.escape(key_state) if key_state else "Not set"
     return (
         ENDPOINT_HINT
-        + f"<p class='empty'>API key: {esc_hint}. "
-        "Saving with the key field empty clears the saved key.</p>"
-        + "<div class='settings-block'>"
-        "<label class='field'>Base URL"
-        f"<input id='llm-base' type='text' value='{esc_base}' "
-        "placeholder='https://llm.yourcompany.example/v1' autocomplete='off'></label>"
-        "<label class='field'>API key"
-        "<input id='llm-key' type='password' "
-        f"placeholder='{esc_hint}' autocomplete='new-password'></label>"
-        "<label class='field'>Model"
-        f"<input id='llm-model' type='text' value='{esc_model}' "
-        "placeholder='gpt-4o-mini' autocomplete='off'></label>"
-        "<label class='field'>Presentation timeout (seconds)"
-        f"<input id='presentation-timeout' type='text' value='{_esc_timeout(status)}' "
-        "placeholder='30' autocomplete='off'></label>"
-        "<label class='field'>Web research URL"
-        f"<input id='research-url' type='text' value='{html.escape(str(status.get('researchUrl') or ''))}' "
-        "placeholder='https://research.example/v1' autocomplete='off'></label>"
-        "<label class='field'>Web research key"
-        "<input id='research-key' type='password' "
-        f"placeholder='{html.escape(str(status.get('researchKeyState') or 'Not set'))}' "
-        "autocomplete='new-password'></label>"
-        "</div>"
-        + "<p class='empty'>The research key is shown only as set or not set. "
-        "Leaving the field empty keeps the saved key. "
-        "Clear research key removes it. "
-        "Web research stays off until a presentation run turns it on.</p>"
-        + "<div class='cardrow'>"
-        "<button class='btn btn-primary' data-endpoint-save>Save</button>"
-        "<button class='btn btn-secondary' data-endpoint-test>Test connection</button>"
-        "<button class='btn btn-secondary' data-endpoint-clear>Clear</button>"
-        "<button class='btn btn-secondary' type='button' data-research-clear>Clear research key</button>"
-        "</div>"
-        + "<div class='alert' id='endpoint-note' hidden></div>"
+        + "<form method='post' action='/settings/endpoint/save' class='cardform'>"
+        "<label class='empty' for='presentation-timeout'>Presentation timeout (seconds)</label>"
+        f"<input id='presentation-timeout' type='text' name='presentationTimeout' "
+        f"value='{_esc_timeout(status)}' placeholder='30' autocomplete='off'>"
+        "<button class='btn btn-secondary' type='submit'>Save timeout</button>"
+        "</form>"
+        "<p class='empty'>How long presentation calls wait before the desk "
+        "gives up, from 5 to 300 seconds; every other call keeps the "
+        "10 second cap.</p>"
     )
 
 
@@ -376,6 +357,372 @@ deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 </section>"""
 
 
+def _job_choices(connections: list[dict], selected: str) -> str:
+    """One job's connection options, grouped by provider, with the job's
+    bound connection preselected: the dropdown then tells the same truth
+    the readback under the form tells, and an untouched save posts the
+    binding back instead of silently unbinding it (spec 018 #235). The
+    Not bound option is selected only when the job has no binding."""
+    groups: dict[str, list[dict]] = {}
+    for connection in connections:
+        preset = preset_for(connection.get("provider", ""))
+        name = preset.name if preset else str(connection.get("provider", ""))
+        groups.setdefault(name, []).append(connection)
+    options = [
+        "<option value=''"
+        + (" selected" if not selected else "")
+        + ">Not bound (default connection or environment)</option>"
+    ]
+    for provider, rows in groups.items():
+        items = "".join(
+            f"<option value='{html.escape(row['id'], quote=True)}'"
+            + (" selected" if row["id"] == selected else "")
+            + f">{html.escape(str(row.get('label', '')))}</option>"
+            for row in rows
+        )
+        options.append(
+            f"<optgroup label='{html.escape(provider)}'>{items}</optgroup>")
+    return "".join(options)
+
+
+def _jobs_section(bindings: list[dict] | None,
+                  connections: list[dict] | None) -> str:
+    """The per-job picker: which connection and model serves which job.
+
+    One plain form per job (the house rule: the page works with no
+    script at all), the connection select grouped by provider and
+    preselected to the job's own binding, and the model offered as a
+    text input with a datalist of every cached model, so choosing from
+    the cached list and typing by hand are the same control. The current
+    binding reads back under each row, so the page always states what
+    serves what, and the select shows the same state.
+    """
+    if bindings is None or connections is None:
+        body = (
+            "<div class='alert'><p>The connections store is not available,"
+            " so jobs cannot be bound here.</p></div>"
+        )
+        stamp = "UNAVAILABLE"
+    else:
+        by_job = {binding["job"]: binding for binding in bindings}
+        by_id = {connection["id"]: connection for connection in connections}
+        cached = []
+        for connection in connections:
+            for model in connection.get("models") or []:
+                if model not in cached:
+                    cached.append(model)
+        datalist = "".join(
+            f"<option value='{html.escape(str(model), quote=True)}'></option>"
+            for model in cached)
+        forms = []
+        for job in ("default", "assistant", "agents", "presentations",
+                    "memory", "insights", "research-web"):
+            binding = by_job.get(job)
+            selected = str(binding.get("connectionId") or "") if binding else ""
+            model = str(binding.get("model") or "") if binding else ""
+            choices = _job_choices(connections, selected)
+            if selected and selected in by_id:
+                current = (
+                    f"<span class='empty'>Serves through"
+                    f" <b>{html.escape(str(by_id[selected].get('label', '')))}</b>"
+                    + (f", model <span class='mono'>{html.escape(model)}</span>"
+                       if model else "")
+                    + ".</span>")
+            elif binding:
+                current = "<span class='empty'>Bound to a connection that is gone.</span>"
+            else:
+                current = "<span class='empty'>Unbound: the default binding, the single saved connection or the environment serves it.</span>"
+            list_id = f"job-{job}-models"
+            forms.append(f"""<div class='settings-block'>
+<form method='post' action='/api/bindings' class='cardform job-form'>
+<input type='hidden' name='job' value='{job}'>
+<label class='empty' for='job-{job}-connection'><b>{JOB_LABELS[job]}</b></label>
+<select id='job-{job}-connection' name='connectionId'>{choices}</select>
+<label class='empty' for='job-{job}-model'>Model (picked from the cached lists or typed)</label>
+<input id='job-{job}-model' type='text' name='model' list='{list_id}'
+ value='{html.escape(model, quote=True)}' autocomplete='off'>
+<datalist id='{list_id}'>{datalist}</datalist>
+<button class='btn btn-secondary' type='submit'>Save the {job} job</button>
+</form>
+{current}
+</div>""")
+        bound = sum(1 for job in by_job)
+        stamp = f"{bound} BOUND" if bound else "NONE BOUND"
+        body = (
+            "<p class='empty'>Saving with Not bound chosen removes the job's"
+            " binding; the default binding, a single saved connection or the"
+            " environment then serves it.</p>"
+            + "".join(forms)
+        )
+    return f"""<section class='card settings-card' id='jobs'>
+<div class='w-head'><h2>Jobs</h2><span class='stamp'>{stamp}</span></div>
+<p>Assign the desk's jobs to connections: the assistant on a personal
+key, presentations on a work key, web research on a third. Every model
+call asks one resolution hub: the job's binding here, then the default
+binding, then the single enabled connection, then the environment.</p>
+{body}
+</section>"""
+
+
+def render_connection_delete_warning(connection: dict, jobs: list[str],
+                                     version: str,
+                                     migrated: bool = False) -> str:
+    """The no-JS confirmation page a bound connection's first delete post
+    answers with: the jobs named before anything lands, one form that
+    posts the same delete with confirm, and one link back.
+
+    A migrated connection (spec 018 #234) gets the honest variant: its
+    keychain entry survives and the connection returns on the next
+    start, because the delete is the recovery path."""
+    connection_id = html.escape(str(connection.get("id", "")), quote=True)
+    label = html.escape(str(connection.get("label", "")))
+    named = ", ".join(html.escape(job) for job in jobs)
+    if migrated:
+        consequence = (
+            f"<p><b>{label}</b> came from the upgrade migration (the legacy"
+            " endpoint rows). Deleting it removes the connection and those"
+            " bindings, but the key stays in this machine's keychain, and"
+            " on the next start the migration step sees the legacy rows and"
+            " puts the connection back with its key and its jobs: nothing"
+            " needs retyping. The jobs you left bound to your own"
+            " connections stay exactly as they are.</p>"
+        )
+    else:
+        consequence = (
+            f"<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}."
+            "Deleting it removes the connection, its keychain entry and those"
+            "bindings; the jobs fall back to the default binding, the single"
+            "remaining connection, or the environment, and a job with none of those"
+            "answers with a named unbound error instead of a silent one.</p>"
+        )
+    content = f"""<h1>Delete a connection that serves jobs</h1>
+{consequence}
+<form method='post' action='/api/connections/{connection_id}/delete' class='cardform'>
+<input type='hidden' name='confirm' value='1'>
+<button class='btn btn-primary' type='submit'>Delete {label} and unbind {named}</button>
+</form>
+<p><a class='btn btn-secondary' href='/settings'>Keep it</a></p>"""
+    return page_shell("Connections", "/settings", content, version)
+
+
+def _connection_rows(connections: list[dict]) -> str:
+    """The saved-connections table: label, preset, masked key, base URL,
+    status badge with its inline cause, default star, Test, edit and
+    delete. A raw key never reaches this markup; the masked hint is the
+    only key-shaped thing on the page, and the badge state renders from
+    the row alone, so the page works with no script at all."""
+    rows = []
+    for c in connections:
+        preset = preset_for(c.get("provider", ""))
+        preset_name = preset.name if preset else str(c.get("provider", ""))
+        label = html.escape(str(c.get("label", "")))
+        star = " <span aria-label='default connection'>&#9733;</span>" if c.get("isDefault") else ""
+        masked = html.escape(str(c.get("maskedKey", "") or ""))
+        key_cell = f"<span class='mono'>{masked}</span>" if masked else \
+            "<span class='empty'>no key</span>"
+        base = html.escape(str(c.get("baseUrl", "")))
+        connection_id = html.escape(str(c.get("id", "")), quote=True)
+        status = html.escape(str(c.get("status") or "unknown"))
+        cause = html.escape(str(c.get("lastError", "") or ""))
+        cause_line = f"<br><span class='empty'>{cause}</span>" if cause else ""
+        checked = c.get("lastCheckedAt")
+        when = (
+            f"<br><span class='empty mono'>checked "
+            + datetime.fromtimestamp(float(checked)).strftime("%m-%d %H:%M")
+            + "</span>" if checked else ""
+        )
+        models = c.get("models") or []
+        fetched = c.get("modelsFetchedAt")
+        models_line = (
+            f"<br><span class='empty'>{len(models)} model"
+            f"{'s' if len(models) != 1 else ''} cached</span>"
+            if fetched else ""
+        )
+        rows.append(
+            "<tr>"
+            f"<td><b>{label}</b>{star}</td>"
+            f"<td>{html.escape(preset_name)}</td>"
+            f"<td>{key_cell}</td>"
+            f"<td class='mono'>{base}</td>"
+            f"<td><span class='conn-status conn-{status}'>{status}</span>"
+            f"{cause_line}{when}{models_line}</td>"
+            f"<td><form method='post' action='/api/connections/{connection_id}/test'"
+            " class='inlineform'>"
+            "<button class='btn btn-secondary' type='submit'>Test</button></form> "
+            f"<a class='btn btn-secondary' href='/settings?connection={connection_id}'>Edit</a> "
+            f"<form method='post' action='/api/connections/{connection_id}/delete' class='inlineform'>"
+            "<button class='btn btn-secondary' type='submit'>Delete</button></form></td>"
+            "</tr>"
+        )
+    return (
+        "<table class='rows'><thead><tr><th scope='col'>Connection</th>"
+        "<th scope='col'>Preset</th><th scope='col'>Key</th>"
+        "<th scope='col'>Base URL</th><th scope='col'>Status</th>"
+        "<th scope='col'>Actions</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
+def _preset_grid(selected: str) -> str:
+    """The provider radios: one tile per preset, the selected one checked.
+
+    Each input carries its preset's default base URL as data, so the
+    script can fill the base field on choice; without script the server
+    fills the same default when the field arrives empty."""
+    tiles = []
+    for preset in PRESETS:
+        checked = " checked" if preset.id == selected else ""
+        tiles.append(
+            f"<label class='preset-tile'><input type='radio' name='provider'"
+            f" value='{preset.id}'{checked} data-base='{html.escape(preset.base_url, quote=True)}'>"
+            f"{html.escape(preset.name)}"
+            + (" <span class='empty'>(no key)</span>" if preset.key_optional else "")
+            + "</label>"
+        )
+    return (
+        "<fieldset class='preset-grid'><legend class='empty'>Provider</legend>"
+        + "".join(tiles) + "</fieldset>"
+    )
+
+
+def _console_links() -> str:
+    """One deep-link per hosted preset: where its keys are issued."""
+    links = "".join(
+        f"<a class='btn btn-secondary' href='{preset.console_url}'>"
+        f"{html.escape(preset.name)}</a>"
+        for preset in PRESETS if preset.console_url
+    )
+    return f"<div class='settings-links'>{links}</div>"
+
+
+def _health_forms(editing: dict | None) -> str:
+    """The two check forms for one saved connection, or "" while adding.
+
+    Test posts the free model-list request and never completes a chat.
+    The deeper check takes the model typed by hand, always available and
+    never gated on a listing existing, and completes exactly one token
+    with it. Both are plain form posts, so the badge they refresh and
+    the cause it shows render server-side on the redirect back."""
+    if editing is None:
+        return ""
+    connection_id = html.escape(str(editing.get("id", "")), quote=True)
+    return f"""<h3>Check the key</h3>
+<form method='post' action='/api/connections/{connection_id}/test' class='cardform'>
+<p class='empty'>Test makes one free model-list request with the saved
+key; it never completes a chat. The badge in the list above shows the
+outcome with its cause.</p>
+<button class='btn btn-secondary' type='submit'>Test connection</button>
+</form>
+<form method='post' action='/api/connections/{connection_id}/check' class='cardform'>
+<label class='empty' for='conn-check-model'>Model, typed by hand (the
+deeper check completes exactly one token with it)</label>
+<input id='conn-check-model' type='text' name='model'
+ placeholder='for example gpt-4o-mini' autocomplete='off'>
+<p class='empty'>For endpoints with no model listing, this one-token
+completion is the only way to verify the key.</p>
+<button class='btn btn-secondary' type='submit'>Deeper check (one-token completion)</button>
+</form>"""
+
+
+def _connections_section(
+    connections: list[dict] | None,
+    editing: dict | None,
+    keychain_available: bool,
+    notice: str = "",
+) -> str:
+    """The keys card: the connections list, then the add/edit form.
+
+    Server-rendered throughout: the form posts as a plain form, the
+    masked hints are printed, and the preset grid and console deep-links
+    answer the two first-run questions with no script at all. The edit
+    semantic is the one rule everywhere: an empty key field keeps the
+    stored key, and only the separate clear action removes it.
+    """
+    if connections is None:
+        body = (
+            "<div class='alert'><p>The connections store is not available,"
+            " so connections cannot be saved here.</p></div>"
+        )
+        stamp = "UNAVAILABLE"
+    else:
+        notice_block = (
+            f"<div class='alert'><p>{html.escape(notice)}</p></div>" if notice else ""
+        )
+        keychain_block = "" if keychain_available else (
+            "<div class='alert'><p>This machine has no keychain, so secrets"
+            " cannot be stored here. Local presets still work without a"
+            " key, and environment variables still resolve.</p></div>"
+        )
+        if connections:
+            listing = _connection_rows(connections)
+        else:
+            listing = (
+                "<p class='empty'>No connections yet. Pick a provider below,"
+                " paste its key and save; it lands in this machine's"
+                " keychain, never in a file the desk writes.</p>"
+            )
+        if editing is not None:
+            heading = "Edit connection"
+            action = f"/api/connections/{html.escape(str(editing['id']), quote=True)}/update"
+            label_value = html.escape(str(editing.get("label", "")), quote=True)
+            base_value = html.escape(str(editing.get("baseUrl", "")), quote=True)
+            selected = str(editing.get("provider", ""))
+            key_placeholder = html.escape(
+                str(editing.get("maskedKey") or "not set"), quote=True)
+            headers_text = html.escape("\n".join(
+                f"{name}: {value}"
+                for name, value in (editing.get("headers") or {}).items()))
+            default_checked = " checked" if editing.get("isDefault") else ""
+            clear_row = (
+                "<label class='empty'><input type='checkbox' name='keyClear'"
+                " value='1'> Remove the stored key</label>"
+            )
+            cancel = " <a class='btn btn-secondary' href='/settings'>Cancel</a>"
+        else:
+            heading = "Add a connection"
+            action = "/api/connections"
+            label_value = ""
+            base_value = ""
+            selected = PRESETS[0].id
+            key_placeholder = "not required for local presets"
+            headers_text = ""
+            default_checked = ""
+            clear_row = ""
+            cancel = ""
+        form = f"""<h3>{heading}</h3>
+<form method='post' action='{action}' class='cardform' id='connection-form'>
+{_preset_grid(selected)}
+<label class='empty' for='conn-label'>Label</label>
+<input id='conn-label' type='text' name='label' value='{label_value}' placeholder='OpenAI personal' autocomplete='off'>
+<label class='empty' for='conn-base'>Base URL</label>
+<input id='conn-base' type='text' name='baseUrl' value='{base_value}' placeholder='filled from the preset when empty' autocomplete='off'>
+<label class='empty' for='conn-key'>API key</label>
+<input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
+<label class='empty' for='conn-key-show'><input type='checkbox' id='conn-key-show' data-key-reveal> Show the key while typing</label>
+<label class='empty' for='conn-headers'>Extra headers (corporate gateways, one Name: Value per line)</label>
+<textarea id='conn-headers' name='headers' rows='2' placeholder='X-Gateway: corp'>{headers_text}</textarea>
+<label class='empty'><input type='checkbox' name='isDefault' value='1'{default_checked}> Make this the default connection</label>
+{clear_row}
+<button class='btn btn-primary' type='submit'>Save connection</button>{cancel}
+</form>
+<p class='empty'>Saving with the key field empty keeps the stored key;
+Remove the stored key is the only action that deletes it. Leave the base
+URL empty to use the preset's own address.</p>
+{_health_forms(editing)}
+<h3>Where to get a key</h3>
+{_console_links()}"""
+        stamp = f"{len(connections)} SAVED" if connections else "NONE YET"
+        body = notice_block + keychain_block + listing + form
+    return f"""<section class='card settings-card' id='connections'>
+<div class='w-head'><h2>Connections</h2><span class='stamp'>{stamp}</span></div>
+<p>Named model connections: pick a preset, paste its key, save. The key
+lives in this machine's keychain; the desk keeps only a masked hint
+(first three and last four characters) and never writes the key to any
+file. Local presets (Ollama, LM Studio, vLLM) need no key at all.</p>
+{body}
+</section>"""
+
+
 def _desk_check_section(desk_check: dict | None) -> str:
     """What the desk check last noticed, listed plainly.
 
@@ -430,6 +777,11 @@ def render_settings_page(
     preferences: dict | None = None,
     preference_notice: str = "",
     desk_check: dict | None = None,
+    connections: list[dict] | None = None,
+    editing_connection: dict | None = None,
+    bindings: list[dict] | None = None,
+    keychain_available: bool = True,
+    connections_notice: str = "",
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -526,6 +878,11 @@ data tag, and turning it off removes exactly what it added.</p>
 </section>
 
 {_agent_section(settings_values)}
+
+{_connections_section(connections, editing_connection, keychain_available,
+                      connections_notice)}
+
+{_jobs_section(bindings, connections)}
 
 <section class='card settings-card' id='endpoint'>
 <div class='w-head'><h2>Endpoint</h2><span class='stamp'>{endpoint_stamp}</span></div>

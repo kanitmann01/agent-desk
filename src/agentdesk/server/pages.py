@@ -422,6 +422,19 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .settings-links{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
 .settings-skill{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--hairline)}
 .settings-skill:first-of-type{border-top:none;padding-top:0}
+/* Connections (spec 018): the preset grid wraps as tiles so twelve
+   providers stay one keyboard-reachable radiogroup, and a row's Delete
+   form sits inline with its Edit link instead of stacking. */
+.preset-grid{display:flex;flex-wrap:wrap;gap:8px;border:0;padding:0;margin:8px 0}
+.preset-tile{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--hairline);border-radius:var(--r-inner);background:var(--surface);font-size:13px;color:var(--ink-1)}
+.preset-tile:has(input:checked){border-color:var(--accent);color:var(--accent-text)}
+.inlineform{display:inline-block;margin:0 0 0 6px}
+/* The health badge (spec 018): one pill per state, colored like the
+   delta arrows (good, bad) with unknown in the quiet ink; the inline
+   cause under it is plain text, not part of the pill. */
+.conn-status{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);color:var(--ink-3)}
+.conn-ok{color:var(--good)}
+.conn-error{color:var(--bad)}
 """
 
 # The scripts the shell ships: the workbook picker flow, the Re-test
@@ -597,59 +610,24 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
   });
 });
 
-// Endpoint form: Save and Clear reload (the masked key state re-renders),
-// Test answers inline using exactly what is typed, saved or not.
+// The endpoint fields retired to the Connections card (spec 018 #234);
+// the presentation timeout is a plain form post and needs no script.
+
+// Connections (spec 018): the key field reveals only while the box is
+// checked (the full value is visible exactly once, in the form), and
+// picking a preset fills its default base URL, editable afterwards.
+// Both are enhancements; the form itself posts without any script.
 (function () {
-  var save = document.querySelector('[data-endpoint-save]');
-  if (!save) return;
-  var note = document.getElementById('endpoint-note');
-  var show = function (text) {
-    if (note) { note.hidden = false; note.textContent = text; }
-  };
-  var typed = function () {
-    return {
-      base: (document.getElementById('llm-base') || {}).value || '',
-      key: (document.getElementById('llm-key') || {}).value || '',
-      model: (document.getElementById('llm-model') || {}).value || '',
-      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30',
-      researchUrl: (document.getElementById('research-url') || {}).value || '',
-      researchKey: (document.getElementById('research-key') || {}).value || ''
-    };
-  };
-  save.addEventListener('click', function () {
-    post('/settings/endpoint/save', typed()).then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { show(d.error); return; }
-        location.reload();
-      })
-      .catch(function () { show('The dashboard could not reach its own server; nothing was saved.'); });
+  var reveal = document.querySelector('[data-key-reveal]');
+  var key = document.getElementById('conn-key');
+  if (reveal && key) reveal.addEventListener('change', function () {
+    key.type = reveal.checked ? 'text' : 'password';
   });
-  var test = document.querySelector('[data-endpoint-test]');
-  if (test) test.addEventListener('click', function () {
-    show('Testing the connection');
-    post('/settings/endpoint/test', typed()).then(function (r) { return r.json(); })
-      .then(function (d) {
-        // The cause is a full sentence from the adapter's vocabulary;
-        // it already says what to fix, so it is shown as-is.
-        show(d.ok ? 'The endpoint answered.' : (d.cause || 'The test did not run.'));
-      })
-      .catch(function () { show('The dashboard could not reach its own server; the test did not run.'); });
-  });
-  var clear = document.querySelector('[data-endpoint-clear]');
-  if (clear) clear.addEventListener('click', function () {
-    post('/settings/endpoint/save', {base: '', key: '', model: ''})
-      .then(function () { location.reload(); })
-      .catch(function () { show('The dashboard could not reach its own server; nothing was cleared.'); });
-  });
-  var clearResearch = document.querySelector('[data-research-clear]');
-  if (clearResearch) clearResearch.addEventListener('click', function () {
-    post('/settings/endpoint/save', {researchClear: true})
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { show(d.error); return; }
-        location.reload();
-      })
-      .catch(function () { show('The dashboard could not reach its own server; the research key was not cleared.'); });
+  var base = document.getElementById('conn-base');
+  document.querySelectorAll("input[name='provider']").forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      if (base && radio.dataset.base) base.value = radio.dataset.base;
+    });
   });
 })();
 

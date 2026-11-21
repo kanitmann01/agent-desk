@@ -62,6 +62,6 @@ happened on this machine. Generated {html.escape(generated)}, version
 <li><b>Data location:</b> <span class="mono">{html.escape(data_dir_statement())}</span>. The watched workbook is copied to the temp folder before parsing and never modified.</li>
 <li><b>Change ledger:</b> every change the desk makes by itself is recorded in <span class="mono">ledger.sqlite3</span> in that folder, with the before and after state of each change so Undo can put it back; the undo is itself recorded and can be undone in turn.</li>
 <li><b>Uninstall:</b> delete the folder. Nothing is left behind, nothing to unregister.</li>
-<li><b>License:</b> the core app is proprietary, all rights reserved; the plugin SDK is Apache-2.0. The Python runtime ships one third-party dependency, <span class="mono">cryptography</span> (memory encryption at rest; Apache-2.0 OR BSD-3-Clause), recorded with the dashboard bundle's documented, licensed set in <span class="mono">THIRD-PARTY-NOTICES.md</span>.</li>
+<li><b>License:</b> the core app is proprietary, all rights reserved; the plugin SDK is Apache-2.0. The Python runtime ships two third-party dependencies, <span class="mono">cryptography</span> (memory encryption at rest; Apache-2.0 OR BSD-3-Clause) and <span class="mono">keyring</span> (model-connection API keys in the OS keychain; MIT), recorded with the dashboard bundle's documented, licensed set in <span class="mono">THIRD-PARTY-NOTICES.md</span>.</li>
 </ul>"""
     return page_shell("What this app touches", "", content, version, inbox_count=inbox_count)

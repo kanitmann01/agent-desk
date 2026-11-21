@@ -81,6 +81,25 @@ from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
+from agentdesk.keys import health
+from agentdesk.keys.migrate import MIGRATED_CONNECTION_IDS, migrate_legacy_settings
+from agentdesk.keys.presets import PRESETS, preset_for
+from agentdesk.keys.resolve import (
+    DEFAULT_JOB,
+    JOBS,
+    JOB_LABELS,
+    JobUnbound,
+    Resolution,
+    resolve_job,
+)
+from agentdesk.keys.secrets import KeychainSecrets
+from agentdesk.keys.store import (
+    Connection,
+    JobBinding,
+    KeysStore,
+    UnknownConnection,
+    mask_key,
+)
 from agentdesk.layout import (
     BUILTIN_KEYS as BUILTIN_LAYOUT_KEYS,
     LayoutError,
@@ -99,7 +118,6 @@ from agentdesk.mail.watcher import (
     MailWatch,
 )
 from agentdesk.llm import (
-    DEFAULT_MODEL,
     LlmUnavailable,
     NO_ENDPOINT_CAUSE,
     REQUEST_TIMEOUT_S,
@@ -204,7 +222,11 @@ from agentdesk.server.research import (
     render_research_disabled,
     render_research_widget,
 )
-from agentdesk.server.settings_view import mask_llm_key, render_settings_page
+from agentdesk.server.settings_view import (
+    mask_llm_key,
+    render_connection_delete_warning,
+    render_settings_page,
+)
 from agentdesk.server.wizard_view import (
     approval_summary,
     preview_lines,
@@ -874,6 +896,9 @@ class AgentDeskServer(ThreadingHTTPServer):
         outbox_dir=None,
         registry_root=None,
         peer_store: PeerStore | None = None,
+        keys_store: KeysStore | None = None,
+        keychain=None,
+        connection_check=None,
         extractor=None,
         reflector=None,
         announce_port: int | None = None,
@@ -903,6 +928,11 @@ class AgentDeskServer(ThreadingHTTPServer):
         # copy (the wizard) take their deterministic path instead of
         # consulting a client that can only raise.
         self.llm_defaulted_to_env = llm is None
+        # The client construction built, remembered so the resolution hub
+        # (spec 018 #233) can tell a startup env default from a client a
+        # caller swapped in later: a replaced llm is an injected llm, and
+        # an injected client is never silently replaced by the hub.
+        self._startup_llm = self.llm
         self.audit_conn = audit_conn
         self.ledger = ledger
         env_endpoint, _key, env_model = env_config()
@@ -954,6 +984,21 @@ class AgentDeskServer(ThreadingHTTPServer):
         # deliberately NOT started here: a default boot announces
         # nothing until the first visit to the peers surface.
         self.peer_store = peer_store
+        # The named model connections (spec 018): the store may be absent
+        # (its sqlite could not open), in which case the connections
+        # routes and the settings section say so and refuse. The keychain
+        # wrapper is injectable like every store; None builds the real
+        # keyring-backed one, tests pass the in-memory fake.
+        self.keys = keys_store
+        self.keychain = keychain if keychain is not None else KeychainSecrets()
+        # The save-time key prober (spec 018 story 3): the free
+        # model-list GET a save with a key performs. Injectable so a
+        # hermetic boot answers instantly; the explicit Test, refresh
+        # and deeper-check routes use the real health module, so they
+        # are exercised against loopback stubs instead.
+        self.connection_check = (
+            connection_check if connection_check is not None else health.check_models
+        )
         self.announce_port = announce_port
         self.peer_discovery: DiscoveryService | None = None
         self._peer_discovery_lock = threading.Lock()
@@ -2041,7 +2086,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.calendar.status() if server.calendar is not None else None,
             facts_block=self._facts_block(question) if not summary_mode else "",
         )
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("assistant")
         common = {
             "llm": llm,
             "audit_conn": server.audit_conn,
@@ -2081,18 +2126,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         " the answer proceeds without recalled facts")
             return ""
 
-    def _effective_llm(self) -> tuple:
-        """The client this request uses, resolved per call: saved settings
-        win over the startup-resolved endpoint, so an endpoint entered in
-        the settings page applies without a restart. With nothing saved
-        the startup client (env/config.env, or a test injection) is kept.
+    def _job_resolution(self, job: str) -> Resolution | None:
+        """The pure resolution for one job, or None when nothing serves it.
+
+        The keys store may be absent (its sqlite could not open), which is
+        exactly an empty store's answer: no connections, no bindings, only
+        the environment leg and the named unbound error remain.
         """
         server = self.server  # type: ignore[attr-defined]
-        settings = server.settings
-        if settings is not None and settings.get("llm_base"):
-            base, key, model = effective_llm_config(settings)
-            return chat_client(base, key, model), base, model
-        return server.llm, server.llm_endpoint, server.llm_model
+        return _server_resolution(server, job)
+
+    def _effective_llm(self, job: str = DEFAULT_JOB) -> tuple:
+        """The resolution hub (spec 018 #233): the client, the serving
+        name and the model for one job's next call.
+
+        Every model call-site in the desk asks here, passing its job. The
+        order is the spec's, resolved per call: the job's binding, the
+        default binding, the single enabled connection, then the
+        environment with the saved settings rows over it (config.env
+        rides that leg; saved wins over env, the documented precedence).
+        A saved connection serves through its own base URL, its keychain
+        key and its gateway headers, stamps the row's last_used_at, and
+        answers to its label, so every llm.* audit row names it. An
+        unbound job gets a client that raises LlmUnavailable naming the
+        job, unless a client was injected at construction: an injected
+        client is never silently replaced.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        return _job_llm_parts(server, job)
 
     def _declared_length(self) -> int:
         """The Content-Length header as an int, 0 when absent or malformed.
@@ -2302,7 +2363,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         research_url = ""
         if server.settings is not None:
             research_url = server.settings.get("research_provider_url") or ""
-        research_ready = bool(research_url) or getattr(server, "research_fetch", None) is not None
+        resolved = self._job_resolution("research-web")
+        connection_serves = resolved is not None and resolved.connection is not None
+        research_ready = (
+            bool(research_url)
+            or getattr(server, "research_fetch", None) is not None
+            or connection_serves
+        )
         page = render_agents_page(
             ROSTER, runs, agentdesk.__version__,
             inbox_count=self._inbox_waiting_count(),
@@ -2363,7 +2430,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = endpoint_off_run()
         else:
             result = run_agent(
-                kind, brief, self._effective_llm()[0],
+                kind, brief, self._effective_llm("agents")[0],
                 ranked_facts=self._agent_fact_ranks(kind, brief),
                 excel_status=(
                     server.excel.status() if server.excel is not None else None
@@ -2407,14 +2474,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _presentation_endpoint(self) -> tuple[bool, str]:
         """Whether a presentation may run, and the sentence when it may not.
 
-        The switch uses the pinned endpoint-off sentence. An empty base
-        uses the same unconfigured sentence as the rest of the desk.
+        The switch uses the pinned endpoint-off sentence. Configuration is
+        the hub's answer now (spec 018): a job binding, a default binding,
+        a single saved connection, the saved settings rows or the startup
+        endpoint each count; only a fully unbound presentations job uses
+        the unconfigured sentence.
         """
         server = self.server  # type: ignore[attr-defined]
         settings = server.settings
         enabled = True if settings is None else bool(settings.get("endpoint_enabled"))
-        saved = settings.get("llm_base") if settings is not None else ""
-        configured = bool(saved) or bool(getattr(server, "llm_endpoint", ""))
+        configured = (
+            self._job_resolution("presentations") is not None
+            or (bool(settings.get("llm_base")) if settings is not None else False)
+            or bool(getattr(server, "llm_endpoint", ""))
+        )
         if not enabled:
             return False, ENDPOINT_OFF_CAUSE
         if not configured:
@@ -2491,7 +2564,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         timeout = timeout_seconds(
             server.settings.get("presentation_timeout_s") if server.settings is not None else "30"
         )
-        llm = self._effective_llm()[0]
+        llm = self._effective_llm("presentations")[0]
         try:
             parsed = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
             if not parsed:
@@ -2577,11 +2650,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _pause_for_research(self, server, brief, pack, variant, recipe, planned, sources, timeout,
                             deck_title: str = "") -> None:
-        """Store the gathered web sources and wait. The request is not held."""
+        """Store the gathered web sources and wait. The request is not held.
+
+        The provider rides the research-web job's resolution (spec 018):
+        a bound connection serves with its own base URL and key, and only
+        with no connection does the legacy research-provider settings row
+        keep serving (its migration is ticket #234).
+        """
         fetch = getattr(server, "research_fetch", None)
         url = ""
         key = ""
-        if server.settings is not None:
+        resolved = self._job_resolution("research-web")
+        if resolved is not None and resolved.connection is not None:
+            url = resolved.connection.base_url
+            key = server.keychain.fetch(resolved.connection.id) or ""
+            try:
+                server.keys.record_use(resolved.connection.id)
+            except Exception:  # noqa: BLE001 - the stamp never fails the fetch
+                LOG.debug("could not stamp last_used_at", exc_info=True)
+        elif server.settings is not None:
             url = server.settings.get("research_provider_url") or ""
             key = server.settings.get("research_provider_key") or ""
         titles = [section["title"] for section in planned]
@@ -2698,7 +2785,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "the template for that run is no longer installed"})
             return
         timeout = timeout_seconds(artifact.get("timeout") or 30)
-        llm = self._effective_llm()[0]
+        llm = self._effective_llm("assistant")[0]
         planned = artifact.get("plan") or []
         try:
             filled = []
@@ -3118,6 +3205,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_store.count(server.audit_conn)
             if server.audit_conn is not None else 0
         )
+        connections = (
+            [_connection_payload(c) for c in server.keys.all()]
+            if server.keys is not None else None
+        )
+        bindings = (
+            [_binding_payload(b) for b in server.keys.bindings()]
+            if server.keys is not None else None
+        )
+        editing_id = parse_qs(self.path.partition("?")[2]).get("connection", [""])[0]
+        editing = next((c for c in (connections or []) if c["id"] == editing_id), None)
         page = render_settings_page(
             entries, skills, histories, agentdesk.__version__,
             settings_values=self._settings_public_values(),
@@ -3134,8 +3231,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_total=audit_total,
             preference_notice=self._preference_notice(),
             desk_check=self._desk_check_for_page(server),
+            connections=connections,
+            editing_connection=editing,
+            bindings=bindings,
+            keychain_available=bool(server.keychain.available()),
+            connections_notice=self._connections_notice(),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _connections_notice(self) -> str:
+        """A connection save's refusal, or the store's unavailability."""
+        if self.server.keys is None:  # type: ignore[attr-defined]
+            return "The connections store is not available, so connections cannot be saved here."
+        return parse_qs(self.path.partition("?")[2]).get("connections_error", [""])[0]
 
     def _registry_status_for_settings(self) -> dict:
         """The listing shape plus the saved path, for the settings form."""
@@ -3155,9 +3263,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return values
 
     def _endpoint_status(self) -> dict:
-        """Configured or not, the form's current values, and the truth
-        about the last call. A down endpoint shows degraded, never a
-        false green; the key answers only in its masked state."""
+        """Configured or not, and the truth about the last call. A down
+        endpoint shows degraded, never a false green. The form values
+        retired to the connections surface (spec 018 #234); the legacy
+        rows themselves stay in the store, read-only."""
         server = self.server  # type: ignore[attr-defined]
         settings = server.settings
         saved_base = settings.get("llm_base") if settings is not None else ""
@@ -3168,20 +3277,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if entry["action"].startswith("llm."):
                     last = entry["status"]
                     break
-        saved_model = settings.get("llm_model") if settings is not None else ""
-        key_state = mask_llm_key(settings.get("llm_key")) if settings is not None else ""
         timeout = settings.get("presentation_timeout_s") if settings is not None else "30"
-        research_url = settings.get("research_provider_url") if settings is not None else ""
-        research_key = mask_llm_key(settings.get("research_provider_key")) if settings is not None else ""
         return {
             "configured": configured,
             "last": last,
-            "base": saved_base or server.llm_endpoint,
-            "model": saved_model or server.llm_model,
-            "keyState": key_state,
             "presentationTimeout": timeout or "30",
-            "researchUrl": research_url or "",
-            "researchKeyState": research_key,
         }
 
     def _send_settings_values(self) -> None:
@@ -3198,48 +3298,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, self._settings_public_values())
 
     def _endpoint_save(self) -> None:
-        """Save (or clear, with empty strings) the three endpoint rows.
+        """Save the one field the endpoint route still carries: the
+        presentation timeout.
 
-        Unknown field names are a 400 naming the accepted fields, and a
-        base that is not a full http(s) address is refused: a silent ok
-        is how a typo'd field name loses a key."""
+        The base, key, model and research fields retired to the
+        connections surface (spec 018 #234), and the legacy settings
+        rows are read-only fallback now, so every other field name is
+        refused with the accepted names: a silent ok with dropped values
+        is how a typo loses data."""
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         unknown = sorted(
-            name for name in body if name not in (
-                "base", "key", "model", "presentationTimeout", "researchUrl", "researchKey",
-                "researchClear",
-            )
+            name for name in body if name != "presentationTimeout"
         )
         if unknown:
             self._send_json(400, {"error": (
                 "unknown endpoint field(s): " + ", ".join(unknown)
-                + "; accepted fields are base, key, model, presentationTimeout, researchUrl, researchKey, researchClear"
+                + "; accepted fields are presentationTimeout"
             )})
             return
-        clearing_research = (
-            body.get("researchClear") is True
-            or str(body.get("researchClear") or "").lower() in ("1", "true", "on")
-        )
-        if clearing_research and "base" not in body:
-            settings.set("research_provider_key", "")
-            self._send_json(200, {
-                "ok": True,
-                "base": settings.get("llm_base"),
-                "model": settings.get("llm_model"),
-                "keyState": mask_llm_key(settings.get("llm_key")),
-                "researchKeyState": "",
-            })
-            return
-        base = str(body.get("base", "")).strip()
-        problem = base_url_problem(base)
-        if problem:
-            self._send_json(400, {"error": problem})
-            return
-        timeout_raw = None
         if "presentationTimeout" in body:
             timeout_raw = str(body.get("presentationTimeout") or "").strip()
             try:
@@ -3247,47 +3327,438 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except ValueError:
                 seconds = 0
             if seconds < 5 or seconds > 300:
-                self._send_json(400, {"error": "presentation timeout must be a number of seconds from 5 to 300"})
+                refusal = {"error": "presentation timeout must be a number of seconds from 5 to 300"}
+                if self._is_form_submit():
+                    self._send_redirect(
+                        "/settings?connections_error=" + quote(refusal["error"]))
+                    return
+                self._send_json(400, refusal)
                 return
-        saved = {
-            "llm_base": base,
-            "llm_key": str(body.get("key", "")).strip(),
-            "llm_model": str(body.get("model", "")).strip(),
-        }
-        for key, value in saved.items():
-            settings.set(key, value)
-        if timeout_raw is not None:
             settings.set("presentation_timeout_s", timeout_raw)
-        if "researchUrl" in body:
-            settings.set("research_provider_url", str(body.get("researchUrl") or "").strip())
-        if str(body.get("researchClear") or "").lower() in ("1", "true", "on") or body.get("researchClear") is True:
-            settings.set("research_provider_key", "")
-        elif "researchKey" in body and str(body.get("researchKey") or "").strip():
-            settings.set("research_provider_key", str(body.get("researchKey")).strip())
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
         self._send_json(200, {
             "ok": True,
-            "base": saved["llm_base"],
-            "model": saved["llm_model"],
-            "keyState": mask_llm_key(saved["llm_key"]),
-            "researchKeyState": mask_llm_key(settings.get("research_provider_key")),
+            "presentationTimeout": settings.get("presentation_timeout_s"),
         })
 
-    def _endpoint_test(self) -> None:
-        """One minimal chat request against the SUBMITTED values, not the
-        saved ones, so the connection can be checked before saving."""
+    # -- named connections (spec 018) -------------------------------------
+
+    def _send_connections_json(self) -> None:
+        """GET /api/connections: every connection, masked hints only.
+
+        The keychain's availability rides along so a client never learns it
+        from a failed save; 503 without a store, the honest unavailable
+        state every store route uses.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        self._send_json(200, {
+            "connections": [_connection_payload(c) for c in server.keys.all()],
+            "keychainAvailable": server.keychain.available(),
+        })
+
+    def _connections_refusal(self, message: str, status: int = 400) -> None:
+        """Answer a connection refusal: JSON, or the settings page carrying it.
+
+        A no-JS form post lands back on the Settings page with the server's
+        own words in the query, the preferences save's pattern, so a refusal
+        is never a dead JSON end for a browser form.
+        """
+        if self._is_form_submit():
+            self._send_redirect("/settings?connections_error=" + quote(message))
+            return
+        self._send_json(status, {"error": message})
+
+    def _connection_create(self) -> None:
+        """POST /api/connections: save one named connection.
+
+        The key goes to the keychain alone; the row and every answer after
+        this one carry the masked hint. A key that cannot land in the
+        keychain refuses the whole save: a connection whose secret silently
+        went nowhere is a trap. The refusal really leaves nothing behind:
+        the row is deleted, and the default star the refused row's insert
+        had already taken from the previous default is given back, so the
+        user's starred connection keeps its star.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
         body = self._read_json_body() or {}
-        base = str(body.get("base", "")).strip()
+        values, error = _connection_input(body, CONNECTION_CREATE_FIELDS)
+        if error:
+            self._connections_refusal(error)
+            return
+        preset = values["provider"]
+        base = values["baseUrl"] or preset.base_url
         if not base:
-            self._send_json(200, {"ok": False, "cause": "Type a base URL first: there is nothing to test."})
+            self._connections_refusal("a custom connection needs a base URL")
             return
-        key = str(body.get("key", "")).strip()
-        model = str(body.get("model", "")).strip() or DEFAULT_MODEL
+        if not values["apiKey"] and not preset.key_optional:
+            where = f" Get a key at {preset.console_url}." if preset.console_url else ""
+            self._connections_refusal(
+                f"the {preset.name} preset needs an API key.{where}")
+            return
+        if values["apiKey"] and not server.keychain.available():
+            self._connections_refusal(NO_KEYCHAIN_NOTICE)
+            return
+        previous_default = next(
+            (c for c in server.keys.all() if c.is_default), None)
         try:
-            chat(base, key, model, "ping", timeout=REQUEST_TIMEOUT_S, max_tokens=1)
-        except LlmUnavailable as exc:
-            self._send_json(200, {"ok": False, "cause": str(exc)})
+            connection = server.keys.add(
+                label=values["label"], provider=preset.id, base_url=base,
+                masked_key=mask_key(values["apiKey"]) if values["apiKey"] else "",
+                headers=values["headers"], is_default=values["isDefault"])
+        except ValueError as exc:
+            self._connections_refusal(str(exc), status=409)
             return
-        self._send_json(200, {"ok": True})
+        if values["apiKey"] and not server.keychain.store(connection.id,
+                                                          values["apiKey"]):
+            server.keys.delete(connection.id)  # never keep a row whose secret went nowhere
+            if previous_default is not None:
+                # The insert cleared the previous default's star before the
+                # keychain refused; restoring it is what makes "nothing
+                # was saved" true.
+                server.keys.set_default(previous_default.id)
+            self._connections_refusal("the keychain refused the key; nothing was saved")
+            return
+        if values["apiKey"] and not preset.local:
+            # Story 3: the save itself checks the key with the free
+            # model-list GET; a failed check never refuses the save.
+            connection = _check_after_save(server, connection, values["apiKey"])
+        self._audit("keys.create", target=connection.id,
+                    detail=f"{connection.label} ({preset.name})")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(201, _connection_payload(connection))
+
+    def _connection_update(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/update: edit one connection.
+
+        An empty key field keeps the stored key (the one edit semantic
+        everywhere); keyClear removes it; a typed key replaces it. A row
+        that cannot be written puts the previous secret back, so the
+        keychain and the database never disagree about what is stored.
+        A keychain that refuses the clear's delete is named in the
+        answer (a notice for JSON, the connections notice for a form
+        post): the row says no key, so the user must hear that the
+        keychain still holds the secret.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            existing = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        body = self._read_json_body() or {}
+        values, error = _connection_input(body, CONNECTION_UPDATE_FIELDS)
+        if error:
+            self._connections_refusal(error)
+            return
+        preset = values["provider"]
+        base = values["baseUrl"] or existing.base_url
+        if not base:
+            self._connections_refusal("a custom connection needs a base URL")
+            return
+        api_key = values["apiKey"]
+        if api_key and not server.keychain.available():
+            self._connections_refusal(NO_KEYCHAIN_NOTICE)
+            return
+        previous_secret = server.keychain.fetch(existing.id) if api_key else None
+        if api_key and not server.keychain.store(existing.id, api_key):
+            self._connections_refusal("the keychain refused the key; nothing changed")
+            return
+        try:
+            connection = server.keys.update(
+                existing.id, label=values["label"], provider=preset.id,
+                base_url=base,
+                masked_key=mask_key(api_key) if api_key else existing.masked_key,
+                headers=values["headers"])
+        except ValueError as exc:
+            if api_key:
+                if previous_secret is None:
+                    server.keychain.forget(existing.id)
+                else:
+                    server.keychain.store(existing.id, previous_secret)
+            self._connections_refusal(str(exc), status=409)
+            return
+        clear_notice = ""
+        if _flag(body, "keyClear") and not api_key:
+            if not server.keychain.forget(existing.id) \
+                    and server.keychain.fetch(existing.id) is not None:
+                # forget answers False both for "there was none" and for a
+                # refusal; the re-fetch is what tells the two apart, so a
+                # refused delete is surfaced and an empty keychain is not.
+                clear_notice = (
+                    "the connection no longer names a key, but this"
+                    " machine's keychain refused to drop it and still"
+                    " holds the key")
+            connection = server.keys.clear_key(existing.id)
+        if values["isDefault"]:
+            connection = server.keys.set_default(existing.id)
+        if api_key and not preset.local:
+            # A typed key is checked like a fresh save; an empty key
+            # field keeps the stored key and checks nothing.
+            connection = _check_after_save(server, connection, api_key)
+        self._audit("keys.update", target=existing.id,
+                    detail=f"{connection.label} ({preset.name})")
+        if self._is_form_submit():
+            self._send_redirect("/settings?connections_error=" + quote(clear_notice)
+                                if clear_notice else "/settings")
+            return
+        payload = _connection_payload(connection)
+        if clear_notice:
+            payload["notice"] = clear_notice
+        self._send_json(200, payload)
+
+    def _connection_delete(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/delete: the row, its secret and its
+        bindings go together, but not before the bound jobs are named
+        (spec 018 story 10): a first post about a connection that serves
+        jobs answers the warning naming them (a no-JS confirmation page
+        for a form post, a 409 carrying them for JSON), and only a
+        confirmed post deletes.
+
+        A migrated connection (spec 018 #234) is the one exception: its
+        keychain entry survives the delete, because the legacy settings
+        rows stay in place and the next boot's migration step puts the
+        connection back with its key: that delete is the recovery path,
+        and both confirmations say so."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        migrated = connection.id in MIGRATED_CONNECTION_IDS
+        jobs = server.keys.bound_jobs(connection.id)
+        confirmed = _flag(self._read_json_body() or {}, "confirm")
+        if jobs and not confirmed:
+            if migrated:
+                sentence = (
+                    f"the {connection.label} connection serves the"
+                    f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
+                    " deleting it unbinds them. It came from the upgrade"
+                    " migration: the key stays in the keychain and the"
+                    " connection comes back with its bindings on the next"
+                    " start, so nothing needs retyping")
+            else:
+                sentence = (
+                    f"the {connection.label} connection serves the"
+                    f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
+                    " deleting it unbinds them")
+            if self._is_form_submit():
+                page = render_connection_delete_warning(
+                    _connection_payload(connection), jobs, agentdesk.__version__,
+                    migrated=migrated)
+                self._send_bytes(200, page.encode("utf-8"),
+                                 "text/html; charset=utf-8")
+                return
+            self._send_json(409, {"error": sentence, "boundJobs": jobs})
+            return
+        if not migrated:
+            server.keychain.forget(connection.id)
+        server.keys.delete(connection.id)  # the bindings cascade inside
+        detail = connection.label + (f"; unbound {', '.join(jobs)}" if jobs else "")
+        if migrated:
+            detail += "; the keychain entry stayed (it comes back on restart)"
+        self._audit("keys.delete", target=connection.id, detail=detail)
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, {"ok": True, "id": connection.id})
+
+    def _connection_test(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/test: the free model-list GET.
+
+        The check happens server-side only, with the connection's own key
+        from the keychain, and it is never a chat completion: the listing
+        alone answers whether the key works. The outcome lands in status,
+        last_checked_at and last_error per the spec's mapping, a
+        discovered listing refreshes the models cache, and a keys.test
+        audit row records the check with no secret material. A form post
+        lands back on Settings, where the badge re-renders from the row.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        result = health.check_models(
+            connection.base_url,
+            server.keychain.fetch(connection.id) or "",
+            extra_headers=connection.headers,
+        )
+        connection = _apply_health(server.keys, connection, result)
+        self._audit("keys.test", target=connection.id,
+                    status="error" if result.outcome == health.OUTCOME_ERROR else "ok",
+                    detail=f"{connection.label}: {result.cause or result.outcome}")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _connection_payload(connection))
+
+    def _connection_deep_check(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/check: the explicit deeper check.
+
+        One max_tokens=1 chat completion with the model typed by hand,
+        the only chat the keys surface ever sends, and only because the
+        button was pressed: save and Test never complete one. This is
+        the one way a key gets verified on an endpoint without a model
+        listing (the Anthropic compatibility case), and its outcome
+        stamps the row exactly like the free check's.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        body = self._read_json_body() or {}
+        model = str(body.get("model", "") or "").strip()
+        if not model:
+            self._connections_refusal("the deeper check needs a model name to complete")
+            return
+        result = health.deep_check(
+            connection.base_url,
+            server.keychain.fetch(connection.id) or "",
+            model,
+            extra_headers=connection.headers,
+        )
+        connection = _apply_health(server.keys, connection, result)
+        self._audit("keys.test", target=connection.id,
+                    status="error" if result.outcome == health.OUTCOME_ERROR else "ok",
+                    detail=f"{connection.label}: deeper check"
+                           f" ({result.cause or result.outcome})")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _connection_payload(connection))
+
+    def _connection_models(self, connection_id: str) -> None:
+        """GET /api/connections/<id>/models: the cached model list with
+        its fetched-at time; ?refresh re-fetches server-side first.
+
+        The upstream GET happens here and in the Test route only, never
+        in the browser; a connection whose endpoint offers no listing
+        answers its empty cache rather than an error, because typing the
+        model by hand is always the allowed path.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        refresh = str(
+            parse_qs(self.path.partition("?")[2]).get("refresh", [""])[0]
+        ).lower() in ("1", "true", "yes", "on")
+        if refresh:
+            result = health.check_models(
+                connection.base_url,
+                server.keychain.fetch(connection.id) or "",
+                extra_headers=connection.headers,
+            )
+            connection = _apply_health(server.keys, connection, result)
+        self._send_json(200, {
+            "id": connection.id,
+            "models": connection.models,
+            "fetchedAt": connection.models_fetched_at,
+            "status": connection.status,
+            "lastError": connection.last_error,
+        })
+
+    # -- job bindings (spec 018 #233) --------------------------------------
+
+    def _send_bindings_json(self) -> None:
+        """GET /api/bindings: every job binding. 503 without a store, the
+        honest unavailable state every keys route uses."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        self._send_json(200, {
+            "bindings": [_binding_payload(b) for b in server.keys.bindings()],
+            "jobs": list(JOBS),
+        })
+
+    def _binding_write(self) -> None:
+        """POST /api/bindings: point one job at one connection and model.
+
+        The endpoint-save pattern throughout: unknown fields are a 400
+        naming the typos and the accepted names, a job outside the seven
+        is a 400 naming them, an unknown connection is a 404, and an
+        empty connectionId unbinds the job (the picker's Not bound
+        choice). A form post lands back on Settings; JSON gets the
+        binding back.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        body = self._read_json_body() or {}
+        unknown = sorted(name for name in body if name not in BINDING_FIELDS)
+        if unknown:
+            self._connections_refusal(
+                "unknown binding field(s): " + ", ".join(unknown)
+                + "; accepted fields are " + ", ".join(BINDING_FIELDS))
+            return
+        job = str(body.get("job", "") or "").strip()
+        if job not in JOBS:
+            self._connections_refusal(
+                "unknown job: " + (job or "(none)")
+                + "; jobs are " + ", ".join(JOBS))
+            return
+        connection_id = str(body.get("connectionId", "") or "").strip()
+        model = str(body.get("model", "") or "").strip()
+        if not connection_id:
+            removed = server.keys.unbind(job)
+            self._audit(
+                "keys.update", target=job,
+                detail=(f"unbound the {job} job" if removed
+                        else f"the {job} job was already unbound"),
+            )
+            if self._is_form_submit():
+                self._send_redirect("/settings")
+                return
+            self._send_json(200, {"job": job, "connectionId": "", "model": model})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        binding = server.keys.bind(job, connection_id, model)
+        self._audit(
+            "keys.update", target=connection_id,
+            detail=f"bound the {job} job to {connection.label}"
+                   + (f" (model {model})" if model else ""),
+        )
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _binding_payload(binding))
 
     def _settings_toggle(self) -> None:
         """Flip one named switch and let the change take effect before answering.
@@ -3489,7 +3960,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.calendar.status() if server.calendar is not None else None,
             facts_block=self._facts_block(skill["prompt"]),
         )
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("agents")
         answer = research(
             skill["prompt"], context, llm=llm, audit_conn=server.audit_conn,
             endpoint=endpoint, model=model,
@@ -3847,12 +4318,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
         cache = server.capabilities_cache
         cached = cache.cached("embeddings") if cache is not None else None
         passed = cached is not None and cached.result.status == GATE_PASS
-        base, key, _model = effective_llm_config(settings)
+        # The embeddings ride the memory job through the hub (spec 018
+        # #233): a bound connection serves with its own base and key, and
+        # its label is the name the llm.embeddings rows carry; with no
+        # connection the settings-over-environment leg keeps answering.
+        resolved = self._job_resolution("memory")
+        base = key = serving_name = ""
+        if resolved is not None:
+            if resolved.connection is not None:
+                connection = resolved.connection
+                base = connection.base_url
+                key = server.keychain.fetch(connection.id) or ""
+                serving_name = connection.label
+                try:
+                    server.keys.record_use(connection.id)
+                except Exception:  # noqa: BLE001 - the stamp never fails the embeddings
+                    LOG.debug("could not stamp last_used_at for %s",
+                              connection.id, exc_info=True)
+            else:
+                base = resolved.base_url
+                key = resolved.api_key
+                serving_name = resolved.base_url
         embedder = None
         if active and passed and base:
             embedder = _AuditedEmbedder(
                 EndpointEmbedder(base, key, effective_embeddings_model(settings)),
-                base_url=base,
+                base_url=serving_name or base,
                 audit_conn=server.audit_conn,
             )
         memory.embedder = embedder
@@ -4141,7 +4632,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         if not self._source_allowed("endpoint_enabled"):
             return None, "", ""
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("memory")
         if server.summarizer is not None:
             return server.summarizer, endpoint or "", model or ""
         if endpoint or not server.llm_defaulted_to_env:
@@ -4245,7 +4736,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         if not self._source_allowed("endpoint_enabled"):
             return None, "", ""
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("memory")
         if server.extractor is not None:
             return server.extractor, endpoint or "", model or ""
         if endpoint or not server.llm_defaulted_to_env:
@@ -4747,7 +5238,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "this surface is paused. Everything else keeps working.",
             )
             return
-        _llm, endpoint, model = self._effective_llm()
+        _llm, endpoint, model = self._effective_llm("memory")
         extractor = server.extractor
         if extractor is None:
             extractor = EndpointExtractor(_llm)
@@ -4886,7 +5377,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # Refused before any model call, so nothing to audit.
             self._reflect_error_response(502, str(exc))
             return
-        _llm, endpoint, model = self._effective_llm()
+        _llm, endpoint, model = self._effective_llm("memory")
         reflector = server.reflector
         if reflector is None:
             reflector = EndpointReflector(_llm)
@@ -5731,13 +6222,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return False
 
     def _suggestion_complete(self):
-        """The completion callable an endpoint-backed suggestion gets, or None.
+        """The completion callable an endpoint-backed suggestion gets, or
+        None.
 
-        None means no client or no endpoint, which is how the setup flow is told to use
-        its deterministic heuristics instead of waiting on a call that would fail.
+        None means no client or no endpoint, which is how the setup flow
+        is told to use its deterministic heuristics instead of waiting on
+        a call that would fail. The client comes from the resolution hub
+        (spec 018 #233): suggestions honor the insights job's saved
+        connection like every other call-site, the old bypass that
+        ignored saved settings is gone.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.llm is None or not server.llm_endpoint:
+        if self._job_resolution("insights") is None and not server.llm_endpoint:
             return None
 
         def complete(prompt: str) -> str:
@@ -5746,7 +6242,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             It is a closure so the flow receives a plain callable and never the handler
             or the server.
             """
-            return server.llm(prompt)
+            client, _name, _model = self._effective_llm("insights")
+            return client(prompt)
         return complete
 
     def _insight_press_page(self) -> None:
@@ -5836,22 +6333,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _insight_complete(self):
         """The one model call a reading may offer, or None when this desk
-        has no endpoint or the user turned model calls off. A reading that
-        gets None keeps its local elements and offers no press."""
+        has nothing configured for the insights job or the user turned
+        model calls off. A reading that gets None keeps its local
+        elements and offers no press. The client comes from the
+        resolution hub (spec 018 #233): readings honor the insights job's
+        saved connection like every other call-site, fixing the known
+        bypass where they ignored saved settings entirely."""
         server = self.server  # type: ignore[attr-defined]
-        if server.llm is None or not server.llm_endpoint:
-            return None
         if not self._source_allowed("endpoint_enabled"):
+            return None
+        if self._job_resolution("insights") is None and not server.llm_endpoint:
             return None
 
         def complete(prompt: str) -> str:
-            """One model call over the desk's endpoint, raw.
+            """One model call over whatever serves the insights job, raw.
 
             A failing endpoint raises: each caller decides its own
             fallback, so the same adapter serves drafts that fall back to
             the template and explanations that refuse.
             """
-            return server.llm(prompt)
+            client, _name, _model = self._effective_llm("insights")
+            return client(prompt)
 
         return complete
 
@@ -7123,31 +7625,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.server.wizard_store.save(session)  # type: ignore[attr-defined]
 
     def _wizard_compiler(self):
-        """The compiler's endpoint client, audited: the settings-saved
-        endpoint over the startup one. None when nothing is configured
-        anywhere, so the deterministic path runs on purpose instead of a
-        client that raises on every call; the wizard never blocks on
-        the llm."""
+        """The compiler's endpoint client, audited, through the resolution
+        hub on the default job (spec 018 #233): a bound connection, the
+        saved settings rows, then the startup endpoint. None when nothing
+        is configured anywhere, so the deterministic path runs on purpose
+        instead of a client that raises on every call; the wizard never
+        blocks on the llm."""
         server = self.server  # type: ignore[attr-defined]
         if server.audit_conn is None:
             return WizardCompiler(None)
-        settings = server.settings
-        if settings is not None and settings.get("llm_base"):
-            base, _key, model = effective_llm_config(settings)
-            inner, endpoint = settings_chat(settings), base
-        elif getattr(server, "llm_defaulted_to_env", False) and not server.llm_endpoint:
+        resolved = self._job_resolution(DEFAULT_JOB)
+        if (resolved is None and getattr(server, "llm_defaulted_to_env", False)
+                and not server.llm_endpoint):
             return WizardCompiler(None)
-        else:
-            inner = server.llm
-            endpoint, _key, model = env_config()
+        inner, endpoint, model = self._effective_llm(DEFAULT_JOB)
         conn = server.audit_conn
 
         def audited_llm(prompt: str) -> str:
             """The wizard's prompt call, recorded as llm.wizard.
 
             Endpoint and model are those resolved when the compiler was built, so the
-            row names the client that actually answered. A failure records the error
-            text and re-raises, leaving the wizard's own error handling intact.
+            row names the client that actually answered (a saved connection answers
+            to its label, spec 018). A failure records the error text and re-raises,
+            leaving the wizard's own error handling intact.
             """
             try:
                 result = inner(prompt)
@@ -7560,6 +8060,9 @@ def create_server(
     outbox_dir=None,
     registry_root=None,
     peer_store: PeerStore | None = None,
+    keys_store: KeysStore | None = None,
+    keychain=None,
+    connection_check=None,
     extractor=None,
     reflector=None,
     announce_port: int | None = None,
@@ -7643,6 +8146,12 @@ def create_server(
 
     if peer_store is None:
         peer_store = _default_peer_store()
+    # The named connections (spec 018): the store gets its own sqlite
+    # file in the data dir; the keychain wrapper defaults to the real
+    # keyring client (an injectable fake in tests, a machine with no
+    # backend answers available() False and stores no secret).
+    if keys_store is None:
+        keys_store = _default_keys_store()
 
     def construct(bind_port: int) -> AgentDeskServer:
         """Build the server bound to one port, everything else fixed.
@@ -7682,6 +8191,9 @@ def create_server(
             outbox_dir=outbox_dir,
             registry_root=registry_root,
             peer_store=peer_store,
+            keys_store=keys_store,
+            keychain=keychain,
+            connection_check=connection_check,
             extractor=extractor,
             reflector=reflector,
             announce_port=announce_port,
@@ -7695,7 +8207,38 @@ def create_server(
     else:
         server = construct(port)
     _wire_audit(server)
+    _migrate_legacy_endpoints(server)
     return server
+
+
+def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:
+    """Run the legacy-endpoint migration (spec 018 #234) once per boot.
+
+    The step is idempotent by label (a live migrated connection means a
+    no-op) and doubles as the recovery path after a delete. It is boot
+    plumbing, not request handling: it runs before the first request can
+    arrive, it never probes an endpoint, and any failure is logged and
+    left behind rather than failing the boot.
+    """
+    try:
+        migrate_legacy_settings(
+            server.settings, server.keys, server.keychain,
+            record=_migration_audit(server.audit_conn))
+    except Exception:  # noqa: BLE001 - a migration problem never fails a boot
+        LOG.exception("the legacy endpoint migration did not complete")
+
+
+def _migration_audit(conn):
+    """The audit callback for the migration's keys.create rows, or None
+    without an audit store. No secret material ever rides the detail."""
+    if conn is None:
+        return None
+
+    def record(action: str, target: str, detail: str) -> None:
+        """Record one migration row in the shared audit store."""
+        audit_store.record(conn, action, target=target, detail=detail)
+
+    return record
 
 
 def _wire_audit(server: AgentDeskServer) -> None:
@@ -7728,16 +8271,32 @@ def _wire_audit(server: AgentDeskServer) -> None:
 
         def audited_llm(prompt: str) -> str:
             """Wrap the calendar's breakdown client so each call is recorded as
-            llm.breakdown.
+            llm.breakdown, through the resolution hub on the default job
+            (spec 018 #233).
 
-            The endpoint is resolved per call with the same settings-over-environment
-            order the inner client uses, so the row names what was really hit. The
-            failure path records the error text and re-raises, so the caller still sees
-            the real exception.
+            A saved connection serving the default job answers with its own
+            base URL and key and the row names its label; with no
+            connection the bridge's own client keeps serving and the
+            endpoint is resolved per call with the same settings-over-
+            environment order that client uses, so the row names what was
+            really hit either way. The failure path records the error text
+            and re-raises, so the caller still sees the real exception.
             """
-            endpoint, _key, model = effective_llm_config(server.settings)
+            resolved = _server_resolution(server, DEFAULT_JOB)
+            model = ""
+            if resolved is not None and resolved.connection is not None:
+                connection = resolved.connection
+                client = _connection_client(
+                    server, connection,
+                    server.keychain.fetch(connection.id) or "",
+                    resolved.model)
+                endpoint = connection.label
+                model = resolved.model
+            else:
+                client = inner_llm
+                endpoint, _key, model = effective_llm_config(server.settings)
             try:
-                result = inner_llm(prompt)
+                result = client(prompt)
             except Exception as exc:  # noqa: BLE001 - audit then re-raise
                 audit_store.record(conn, "llm.breakdown", target=endpoint,
                                    status="error", model=model,
@@ -8024,6 +8583,261 @@ def _default_peer_store() -> PeerStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("peer store unavailable")
         return None
+
+
+def _default_keys_store() -> KeysStore | None:
+    """The connections store over its own sqlite file (keys.sqlite3),
+    or None when it cannot open. None means the connections routes and
+    the settings section say the surface is unavailable; it never means
+    a half-working silent mode."""
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(data_dir / "keys.sqlite3", check_same_thread=False)
+        return KeysStore(conn, time.time)
+    except (OSError, sqlite3.Error):
+        LOG.exception("keys store unavailable")
+        return None
+
+
+# -- the resolution hub (spec 018 #233) ------------------------------------
+
+
+def _server_resolution(server, job: str) -> Resolution | None:
+    """The pure resolver over one server's current rows, or None when the
+    job is unbound. Shared by the handler hub and the call sites that
+    need the raw parts (web research's provider, the embeddings client);
+    the keys store being absent reads as an empty one."""
+    connections = server.keys.all() if server.keys is not None else []
+    bindings = server.keys.bindings() if server.keys is not None else []
+    try:
+        return resolve_job(job, connections=connections, bindings=bindings,
+                           env=effective_llm_config(server.settings))
+    except JobUnbound:
+        return None
+
+
+def _connection_client(server, connection: Connection, api_key: str,
+                       model: str):
+    """One connection's serving client: its base URL, its key, its gateway
+    headers, and last_used_at stamped by the live traffic it serves (the
+    one write the call path makes, spec 018's live-traffic leg). The
+    stamp is best-effort: a failed bookkeeping write must never fail the
+    call it is bookkeeping for."""
+
+    def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
+        """One completion on the connection the hub resolved to."""
+        try:
+            return chat(connection.base_url, api_key, model, prompt,
+                        timeout=timeout,
+                        extra_headers=connection.headers or None)
+        finally:
+            try:
+                server.keys.record_use(connection.id)
+            except Exception:  # noqa: BLE001 - bookkeeping, never the call
+                LOG.debug("could not stamp last_used_at for %s",
+                          connection.id, exc_info=True)
+
+    return complete
+
+
+def _unbound_client(job: str):
+    """The client an unbound job answers with: every call raises the
+    adapter's own error type carrying the named unbound sentence, so each
+    surface degrades in its own words exactly as it does for an
+    unconfigured endpoint, and the job is named on the way out."""
+
+    def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
+        """Refuse, naming the job nothing is bound to."""
+        raise LlmUnavailable(str(JobUnbound(job)))
+
+    return complete
+
+
+def _job_llm_parts(server, job: str) -> tuple:
+    """(client, serving_name, model) for one job on one server: the whole
+    hub in one place, so the request handler and the calendar's audited
+    wrapper can never drift apart.
+
+    A resolved connection serves with its own client and answers to its
+    label. The environment leg keeps the pre-hub posture exactly: a
+    settings-saved endpoint builds a fresh client per call, and with
+    nothing saved the startup client (env/config.env, or a test's
+    injection) keeps serving. An unbound job raises by name, again unless
+    a client was injected: at construction, or later by assignment to
+    server.llm (the injection seam several suites and callers use), which
+    is why the startup client is remembered and compared by identity.
+    """
+    resolved = _server_resolution(server, job)
+    if resolved is not None and resolved.connection is not None:
+        connection = resolved.connection
+        api_key = server.keychain.fetch(connection.id) or ""
+        return (_connection_client(server, connection, api_key,
+                                   resolved.model),
+                connection.label, resolved.model)
+    if resolved is not None:
+        settings = server.settings
+        if settings is not None and settings.get("llm_base"):
+            return (chat_client(resolved.base_url, resolved.api_key,
+                                resolved.model),
+                    resolved.base_url, resolved.model)
+        return server.llm, server.llm_endpoint, server.llm_model
+    injected = (
+        not getattr(server, "llm_defaulted_to_env", False)
+        or server.llm is not getattr(server, "_startup_llm", None)
+    )
+    if injected:
+        return server.llm, server.llm_endpoint, server.llm_model
+    return _unbound_client(job), "", ""
+
+
+# The connections API's field whitelist (the endpoint-save pattern: an
+# unknown field name is a 400 naming the typos and the accepted names,
+# never a silent ok with dropped values) and the no-keychain notice.
+CONNECTION_CREATE_FIELDS = (
+    "label", "provider", "baseUrl", "apiKey", "headers", "isDefault",
+)
+CONNECTION_UPDATE_FIELDS = CONNECTION_CREATE_FIELDS + ("keyClear",)
+# The job-binding write's whitelist, the same pattern one surface over.
+BINDING_FIELDS = ("job", "connectionId", "model")
+NO_KEYCHAIN_NOTICE = (
+    "This machine has no keychain, so a key cannot be stored here. Save the"
+    " connection without one (local presets need no key) or resolve keys"
+    " through environment variables."
+)
+
+
+def _connection_payload(connection) -> dict:
+    """The wire shape of one connection: the masked hint, never the key."""
+    return {
+        "id": connection.id,
+        "label": connection.label,
+        "provider": connection.provider,
+        "baseUrl": connection.base_url,
+        "maskedKey": connection.masked_key,
+        "headers": connection.headers,
+        "isDefault": connection.is_default,
+        "enabled": connection.enabled,
+        "status": connection.status,
+        "lastError": connection.last_error,
+        "lastCheckedAt": connection.last_checked_at,
+        "lastUsedAt": connection.last_used_at,
+        "models": connection.models,
+        "modelsFetchedAt": connection.models_fetched_at,
+        "createdAt": connection.created_at,
+        "updatedAt": connection.updated_at,
+    }
+
+
+def _binding_payload(binding: JobBinding) -> dict:
+    """The wire shape of one job binding: the job, the connection and the
+    model, nothing else."""
+    return {
+        "job": binding.job_key,
+        "connectionId": binding.connection_id,
+        "model": binding.model_id,
+        "updatedAt": binding.updated_at,
+    }
+
+
+def _apply_health(keys: KeysStore, connection: Connection,
+                  result: health.ProbeResult) -> Connection:
+    """Stamp one probe's outcome into the row and return it re-read.
+
+    status moves only for the outcomes that know it (ok, ok-with-limit,
+    error); transient and no-models keep the stored status, the spec's
+    mapping, while the check time and the inline note always refresh. A
+    successful listing refreshes the models cache with its fetched-at,
+    so the Test button and the refresh route land in the same place.
+    """
+    status = {"ok": "ok", "limited": "ok", "error": "error"}.get(result.outcome)
+    connection = keys.record_check(connection.id, status=status, note=result.cause)
+    if result.outcome == health.OUTCOME_OK:
+        connection = keys.set_models(connection.id, result.models)
+    return connection
+
+
+def _check_after_save(server, connection: Connection, api_key: str) -> Connection:
+    """The free check that rides a save (spec 018 story 3): one
+    model-list GET with the just-saved key, its outcome stamped into the
+    row and carried by the save response, so a typo'd key is caught on
+    the Settings page instead of at the first broken answer.
+
+    Never a chat, and never a refusal: a rejected, unreachable or
+    slow check leaves the save standing (the research pattern, a
+    discovery failure must not block saving) and the badge tells the
+    truth. Callers invoke this only when a key was typed and the preset
+    is not a local one, so local presets and empty-key edits check
+    nothing at all.
+    """
+    try:
+        result = server.connection_check(
+            connection.base_url, api_key, extra_headers=connection.headers)
+        return _apply_health(server.keys, connection, result)
+    except Exception:  # noqa: BLE001 - the check must never refuse a save
+        LOG.warning("the save-time check failed for %s", connection.id,
+                    exc_info=True)
+        return connection
+
+
+def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | None, str | None]:
+    """Validate one connection POST body into field values, or name the refusal.
+
+    The provider resolves to its preset object, a typed base URL is checked with
+    the adapter's own base_url_problem, and headers arrive as a JSON dict or
+    form "Name: Value" lines. baseUrl comes back empty when blank: the create
+    path fills the preset default, the update path keeps the stored value.
+    """
+    unknown = sorted(name for name in body if name not in accepted)
+    if unknown:
+        return None, ("unknown connection field(s): " + ", ".join(unknown)
+                      + "; accepted fields are " + ", ".join(accepted))
+    label = str(body.get("label", "") or "").strip()
+    if not label:
+        return None, "a label is required"
+    preset = preset_for(str(body.get("provider", "") or "").strip())
+    if preset is None:
+        return None, ("unknown provider preset: " + str(body.get("provider", ""))
+                      + "; presets are " + ", ".join(p.id for p in PRESETS))
+    base = str(body.get("baseUrl", "") or "").strip()
+    if base:
+        problem = base_url_problem(base)
+        if problem:
+            return None, problem
+    headers, problem = _headers_from_input(body.get("headers"))
+    if problem:
+        return None, problem
+    return {
+        "label": label,
+        "provider": preset,
+        "baseUrl": base,
+        "apiKey": str(body.get("apiKey", "") or "").strip(),
+        "headers": headers,
+        "isDefault": _flag(body, "isDefault"),
+    }, None
+
+
+def _headers_from_input(value) -> tuple[dict | None, str | None]:
+    """Extra headers from a JSON dict or one 'Name: Value' per form line."""
+    if value is None or value == "":
+        return {}, None
+    if isinstance(value, dict):
+        if any(not isinstance(name, str) or not isinstance(content, str) or not name.strip()
+               for name, content in value.items()):
+            return None, "headers must map each name to a text value"
+        return {name.strip(): content.strip() for name, content in value.items()}, None
+    if isinstance(value, str):
+        headers: dict[str, str] = {}
+        for line in value.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            name, sep, content = line.partition(":")
+            if not sep or not name.strip() or not content.strip():
+                return None, "each header line must be 'Name: Value'"
+            headers[name.strip()] = content.strip()
+        return headers, None
+    return None, "headers must be name: value lines"
 
 
 def default_calendar_hint(explicit: str | None = None) -> Path:

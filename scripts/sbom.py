@@ -86,6 +86,7 @@ LOCAL_LICENSE_FILES = {
 # purl key would silently stop matching after an upgrade.
 PYTHON_LICENSE_FILES = {
     "cryptography": "licenses/third-party/cryptography-LICENSE.txt",
+    "keyring": "licenses/third-party/keyring-LICENSE.txt",
 }
 
 # Only these non-allowlist licences are excepted, and only for the

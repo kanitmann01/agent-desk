@@ -32,6 +32,8 @@ from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
+from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
+from agentdesk.keys.store import KeysStore
 from agentdesk.layout import LayoutStore
 from agentdesk.ledger.store import Ledger
 from agentdesk.mail.store import MailStore
@@ -108,6 +110,19 @@ def _inert_ledger():
 
 def _inert_peer_store():
     return PeerStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_keys_store():
+    """The connections store joins the inert in-memory defaults: without
+    this, a boot with no injection falls through to create_server's
+    _default_keys_store(), which writes the real ~/.agent-desk/keys.sqlite3."""
+    return KeysStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+
+
+def _inert_keychain():
+    """The keychain joins the inert defaults as the in-memory fake, so no
+    boot in the suite touches a real OS keychain (spec 018)."""
+    return KeychainSecrets(MemoryKeychain())
 
 
 def _inert_capabilities_cache():
@@ -213,6 +228,12 @@ class Booted:
         # boot (only the peers page starts it), so no boot in the suite
         # sends a UDP packet unless its test asks for the peers page.
         kwargs.setdefault("peer_store", _inert_peer_store())
+        # The connections store and the keychain join the inert defaults:
+        # no boot in the suite creates the real keys.sqlite3 or touches a
+        # real OS keychain; tests that care inject their own inspectable
+        # fake keychain.
+        kwargs.setdefault("keys_store", _inert_keys_store())
+        kwargs.setdefault("keychain", _inert_keychain())
         if "outbox_dir" not in kwargs:
             self._outbox_root = tempfile.TemporaryDirectory(prefix="agentdesk-outbox-")
             outbox = Path(self._outbox_root.name) / "outbox"

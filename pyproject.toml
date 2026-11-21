@@ -6,10 +6,12 @@ license = { text = "Proprietary" }
 requires-python = ">=3.10"
 dependencies = [
     "cryptography>=44",
+    "keyring>=25",
 ]
 
 [tool.agent-desk-licenses]
 cryptography = "Apache-2.0 OR BSD-3-Clause"
+keyring = "MIT"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

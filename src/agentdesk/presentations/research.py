@@ -9,20 +9,38 @@ from __future__ import annotations
 
 import json
 import urllib.request
+from urllib.parse import urlsplit
 
 RESULT_LIMIT = 5
 FETCH_TIMEOUT_S = 10
 MAX_RESPONSE_BYTES = 1_000_000
+
+# Loopback hosts never leave this machine, so a research provider running
+# beside the desk (a local gateway, a test stub) may speak plain http: the
+# https rule exists to protect a key in transit, and there is no transit
+# to protect on the loopback.
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def _plain_http_allowed(url: str) -> bool:
+    """Whether this URL may be plain http: loopback only, nothing else."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.hostname in _LOOPBACK_HOSTS
 
 
 def fetch_sources(url: str, key: str, topic: str, sections: list[str],
                   timeout: float = FETCH_TIMEOUT_S, limit: int = RESULT_LIMIT) -> list[dict]:
     """POST the topic and section titles. Return at most `limit` sources.
 
-    The provider URL must be https. The body is capped, so a huge
+    The provider URL must be https, the one exception being a loopback
+    host (a local research gateway never leaves the machine, so plain
+    http costs no secret in transit). The body is capped, so a huge
     response cannot be pulled into the prompt.
     """
-    if not str(url).lower().startswith("https://"):
+    if not str(url).lower().startswith("https://") and not _plain_http_allowed(url):
         raise ValueError("the research provider URL must start with https://")
     payload = json.dumps({"topic": topic, "sections": list(sections)}).encode("utf-8")
     headers = {"Content-Type": "application/json"}

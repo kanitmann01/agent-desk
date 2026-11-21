@@ -32,17 +32,14 @@ src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
 # this tree) needs LF bytes in index.html on every checkout; the generic
 # *.html rule missed a dirty blob already in the index, so the path pin.
 src/agentdesk/server/static/spa/index.html text eol=lf
-# The registry's release trees are digest-pinned (registry/index.json), so
-# every checkout must see their bytes exactly as committed. The extension-
-# less LICENSE/NOTICE inside the presentation pack fall outside the *.md
-# and *.json rules above; without this pin a CRLF-smudging checkout
-# breaks the pin (the gate's registry legs fail on that machine alone).
-registry/plugins/presentation-starter/LICENSE text eol=lf
-registry/plugins/presentation-starter/NOTICE text eol=lf
-# Plugin trees are digest-pinned byte-exactly (registry/index.json,
-# bundled-catalog.json), and their LICENSE/NOTICE carry no extension, so
-# the text=auto default would flip them to CRLF on a Windows checkout
-# and break every pin. The generic rule covers future plugin trees; the
-# presentation-pack lines above stay for the tree already shipped.
+# The registry trees are digest-pinned: index.json publishes a sha256 per
+# release and every install re-hashes the working tree, so each checkout
+# must see the committed bytes. Pin LF under registry/ so core.autocrlf
+# cannot rewrite text files on Windows (LICENSE and NOTICE have no
+# extension rule of their own). eol=lf makes the checkout smudge a no-op
+# for every registry file, text=auto keeps the .pptx shells and .png
+# thumbs out of newline conversion entirely, and the one rule covers
+# every plugin tree, present and future.
+registry/** text=auto eol=lf
 LICENSE text eol=lf
 NOTICE text eol=lf

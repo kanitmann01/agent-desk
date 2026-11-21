@@ -85,11 +85,24 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class _LoginStubHandler(http.server.BaseHTTPRequestHandler):
-    """Answers any POST with an HTML login page: the endpoint test's
-    worst real-world shape (an SSO front door, not an API)."""
+    """Answers any request with an HTML login page: the connection
+    check's worst real-world shape (an SSO front door, not an API)."""
+
+    def _page(self) -> None:
+        """Answer with the HTML page an SSO front door returns."""
+        body = b"<html><body><h1>Sign in to continue</h1></body></html>"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server contract)
+        """The model-list GET a connection Test makes sees the page too."""
+        self._page()
 
     def do_POST(self) -> None:  # noqa: N802 (http.server contract)
-        """Answer any POST with the HTML login page an SSO front door returns.
+        """Answer any POST with the page as well; the body is discarded.
 
         The request body is read and discarded: the stub cares about the shape
         of the answer, not the question.
@@ -97,12 +110,7 @@ class _LoginStubHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         if length:
             self.rfile.read(length)
-        body = b"<html><body><h1>Sign in to continue</h1></body></html>"
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._page()
 
     def log_message(self, format, *args) -> None:  # noqa: A002
         """Discard the stub's request log line so step output stays readable."""
@@ -113,8 +121,8 @@ class LoginStub:
     def __init__(self) -> None:
         """Start the HTML-only stub on an ephemeral loopback port.
 
-        base_url already carries the version suffix, so it can be pasted into
-        the endpoint form exactly as a user would type a base.
+        base_url already carries the version suffix, so it can be saved as
+        a connection's base URL exactly as a user would type a base.
         """
         self._httpd = http.server.HTTPServer(("127.0.0.1", 0), _LoginStubHandler)
         self.port = self._httpd.server_address[1]
@@ -475,44 +483,53 @@ class Walkthrough:
             check(word in page, f"the activity page does not name {word!r}")
 
     def step_endpoint_strict_save(self) -> None:
-        """Check the endpoint save refuses mistyped fields and stores nothing.
+        """Check the connections save refuses mistyped fields and stores nothing.
 
         The refusal must name both the rejected fields and the accepted ones,
-        and a refused save must leave the stored base and key empty.
+        and a refused save must leave the connections list empty (the
+        endpoint rows themselves retired to this surface, spec 018 #234).
         """
         desk = self.a
-        status, _headers, body = desk.post_json("/settings/endpoint/save", {
-            "base_url": "https://llm.corp.example/v1",
-            "api_key": "typed-key",
-            "model": "m",
+        status, _headers, body = desk.post_json("/api/connections", {
+            "labell": "OpenAI personal",
+            "provider": "openai",
+            "apiKey": "typed-key",
         })
         check(status == 400, f"the wrong-field save answered {status}, expected 400")
         payload = json.loads(body.decode("utf-8"))
-        check("base_url" in payload["error"] and "api_key" in payload["error"],
+        check("labell" in payload["error"] and "apiKey" in payload["error"],
               "the refusal must name the mistyped fields")
-        check("accepted fields are base, key, model" in payload["error"],
+        check("accepted fields are label, provider, baseUrl, apiKey" in payload["error"],
               "the refusal must name the accepted fields")
-        values = desk.get_json("/widgets/settings")
-        check(not values["llm_base"] and not values["llm_key"],
+        check(desk.get_json("/api/connections")["connections"] == [],
               "a refused save must save nothing")
 
     def step_endpoint_test_cause(self) -> None:
-        """Check Test connection names the login-page cause and saves nothing.
+        """Check a connection's Test names the login-page cause and saves nothing.
 
-        The stub answers every POST with an HTML sign-in page, the worst
-        real-world shape an endpoint can take.
+        The stub answers every request with an HTML sign-in page, the worst
+        real-world shape an endpoint can take. The connection rides a local
+        preset, so the step needs no key and touches no keychain; the
+        row is deleted again before the step ends.
         """
         desk = self.a
         stub = LoginStub()
         try:
-            out = desk.post_json_ok("/settings/endpoint/test", {
-                "base": stub.base_url, "key": "k", "model": "m"})
-            check(out["ok"] is False, "the HTML login page must not pass as an API")
-            check("web page" in out["cause"],
-                  f"the cause must name the web page, got {out['cause']!r}")
+            out = desk.post_json_ok("/api/connections", {
+                "label": "Stub box", "provider": "ollama",
+                "baseUrl": stub.base_url})
+            connection_id = out["id"]
+            out = desk.post_json_ok(f"/api/connections/{connection_id}/test", {})
+            check(out["status"] == "error",
+                  "the HTML login page must not pass as an API")
+            check("web page" in out["lastError"],
+                  f"the cause must name the web page, got {out['lastError']!r}")
             values = desk.get_json("/widgets/settings")
             check(not values["llm_base"],
-                  "Test connection must never save what was typed")
+                  "Test must never save what was typed into the connection")
+            status, _headers, _body = desk.post_json(
+                f"/api/connections/{connection_id}/delete", {})
+            check(status == 200, f"the cleanup delete answered {status}")
         finally:
             stub.close()
 

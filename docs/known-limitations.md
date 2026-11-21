@@ -1,10 +1,10 @@
 # Known limitations
 
-Honest gaps in the marketplace branch as of 2026-11-16. Each item is verified in this tree or comes from the ticket reports. None of these is a promise of future work.
+Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in this tree or comes from the ticket reports. None of these is a promise of future work.
 
 ## Distribution and legal
 
-- No Nuitka artifact exists. Nuitka is not installed in this environment, so `python scripts/build_bundle.py build` prints `SKIP: Nuitka is not installed` and exits 3. There is no `dist/agent-desk`, no `manifest.json`, no signature and no working AppLocker publisher rule. The rule in `docs/ops/distribution.md` is a template.
+- No Nuitka artifact ships. Where Nuitka is not installed, `python scripts/build_bundle.py build` prints `SKIP: Nuitka is not installed ...` and exits 3; there is no released `dist/agent-desk`, no `manifest.json` on a release, no signature and no working AppLocker publisher rule, and the rule in `docs/ops/distribution.md` is a template. The build path itself is exercised: the enterprise workflow's `nuitka-probe` and `nuitka-build-smoke` jobs install Nuitka and run the build, the manifest verify and the `/health` smoke when the toolchain allows, and that leg ran locally with keyring present on 2026-11-21 (`docs/evidence/byok-2026-11-21/nuitka-smoke.md`).
 - There is no installer, no MSI and no per-machine deployment. The app is an on-demand executable launched from a folder.
 - No legal review has happened. `LICENSE` is a draft with `[COUNSEL: ...]` placeholders, the plugin SDK boundary in `docs/licensing.md` is not counsel-approved, and the distribution grant in the draft is not implemented as an acceptance flow. The Apache-2.0 boundary mentions an `sdk/` directory that does not exist; the published boundary is the manifest schema and the files marked Apache-2.0.
 - No SBOM ships yet because no build ships. `scripts/sbom.py` can generate one, and `scripts/license_gate.py` can check it, but there is no artifact to attach it to.
@@ -56,6 +56,14 @@ Honest gaps in the marketplace branch as of 2026-11-16. Each item is verified in
 
 - The consent sheet traps Tab and Shift+Tab, closes on Escape and restores focus to its trigger. Initial focus lands on the close button, not the confirm button, so the first keypress cannot accidentally accept a widening.
 - The source filter is supplied as described above, so one visible option can never produce results.
+
+## Keys, connections and the legacy upgrade (spec 018)
+
+- The legacy endpoint rows (`llm_base`, `llm_key`, `llm_model`, `research_provider_url`, `research_provider_key`) stay in the settings database forever: no surface removes them, and the migration keeps representing them as "Migrated endpoint" and "Migrated research provider" connections on every boot while their base/URL rows are non-empty. A desk that has fully moved on to its own connections still sees the migrated connections reappear in the list after a delete-plus-restart (that delete is the recovery path; see below). Only hand-editing the settings sqlite removes the fallback.
+- Deleting a migrated connection never deletes its key: the keychain entry survives so the next boot can put the connection back without a retype. A user who wants the key truly gone from the keychain has no button for it while the legacy rows exist.
+- On a machine with no usable keychain, the migrated connections are created disabled and unbound (masked hint only) and the legacy secret columns are NOT cleared, so the environment leg keeps serving exactly as before the upgrade. The connections stay disabled even if a keychain appears later; the user must edit the connection and paste the key (or delete it and hand-build their own).
+- A recovery boot restores a migrated connection's binding only when that job is unbound and takes the default star only when no connection holds it. A user who deleted a migrated connection and bound the job elsewhere keeps their choice, but the migrated connection still reappears (unstarred, unbound) in the list.
+- The migrated connections carry the custom preset and the legacy base URLs verbatim; nothing re-validates them at migration time, so a row that was already wrong (a portal URL, a dead key) migrates as a connection with an unknown badge, exactly as wrong as it was before.
 
 ## Operations
 
