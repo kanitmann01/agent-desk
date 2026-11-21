@@ -1,0 +1,51 @@
+== admin mode off (AGENTDESK_MARKETPLACE_ADMIN unset), authenticated session ==
+
+\$ curl -i http://127.0.0.1:8791/api/marketplace/audit?limit=200
+HTTP/1.1 403 Forbidden
+Server: AgentDesk/0.1.0 
+Date: Sat, 21 Nov 2026 07:05:13 GMT
+Content-Type: application/json; charset=utf-8
+Content-Security-Policy: default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Content-Length: 207
+
+{
+  "error": "admin:disabled",
+  "message": "the marketplace admin surface is disabled; set AGENTDESK_MARKETPLACE_ADMIN=1 and reload the server",
+  "details": {
+    "env": "AGENTDESK_MARKETPLACE_ADMIN"
+  }
+}
+
+\$ curl -i http://127.0.0.1:8791/api/marketplace/audit/export
+HTTP/1.1 403 Forbidden
+Server: AgentDesk/0.1.0 
+Date: Sat, 21 Nov 2026 07:05:13 GMT
+Content-Type: application/json; charset=utf-8
+Content-Security-Policy: default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Content-Length: 207
+
+{
+  "error": "admin:disabled",
+  "message": "the marketplace admin surface is disabled; set AGENTDESK_MARKETPLACE_ADMIN=1 and reload the server",
+  "details": {
+    "env": "AGENTDESK_MARKETPLACE_ADMIN"
+  }
+}
+
+== the audit store on disk holds the policy.verify rejection row the gate refuses to serve ==
+[
+  {
+    "action": "policy.verify",
+    "actor": "local-admin",
+    "at": "2026-11-21T07:04:47+00:00",
+    "detail": "policy:bad-signature",
+    "outcome": "rejected",
+    "pluginId": ""
+  }
+]

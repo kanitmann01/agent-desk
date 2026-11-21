@@ -259,6 +259,17 @@ def test_unsigned_local_policy_still_loads(tmp_path):
     assert verification["signerFingerprint"] is None
 
 
+def test_unsigned_overlay_cannot_set_signature_status_or_source(tmp_path):
+    write_raw_policy(tmp_path, {"source": "signed",
+                                "signatureStatus": "signed"})
+
+    policy, verification = load_effective_policy(tmp_path)
+
+    assert policy.source == "local-admin"
+    assert policy.signatureStatus == "unsigned"
+    assert verification["signatureStatus"] == "unsigned"
+
+
 def test_tampered_bundle_falls_back_to_curated_default_and_audits(tmp_path):
     bundle = signed_bundle()
     bundle["policy"]["riskCeiling"] = "T3"
@@ -281,6 +292,26 @@ def test_tampered_bundle_falls_back_to_curated_default_and_audits(tmp_path):
     # A second load of the same invalid bundle does not duplicate the event.
     load_effective_policy(tmp_path)
     assert len(signed_policy.read_audit(tmp_path)) == 1
+
+
+def test_float_in_a_signed_bundle_falls_back_to_curated_and_audits(tmp_path):
+    bundle = signed_bundle()
+    bundle["policy"]["retentionDays"] = 30.5
+    write_raw_policy(tmp_path, bundle)
+
+    policy, verification = load_effective_policy(tmp_path)
+
+    assert policy.source == "built-in"
+    assert policy.mode == "curated"
+    assert policy.riskCeiling == "T1"
+    assert policy.signatureStatus == "tampered"
+    assert verification["rejectedCode"] == "policy:bad-signature"
+    assert "rejected" in verification["warning"]
+
+    events = signed_policy.read_audit(tmp_path)
+    assert [event["action"] for event in events] == ["policy.verify"]
+    assert events[0]["outcome"] == "rejected"
+    assert events[0]["detail"] == "policy:bad-signature"
 
 
 def test_expired_bundle_leaves_the_default_active(tmp_path):
@@ -331,6 +362,71 @@ def test_anchor_never_lowers_its_epoch_and_unions_fingerprints(tmp_path):
 
 def test_missing_anchor_means_epoch_zero(tmp_path):
     assert load_anchor(tmp_path) == {"epoch": 0, "fingerprints": []}
+
+
+def test_corrupt_anchor_is_answered_differently_from_a_missing_one(tmp_path):
+    write_anchor_file(tmp_path, 7, [PIN])
+    (Path(tmp_path) / "marketplace" / "anchor.json").write_text(
+        "{broken", encoding="utf-8")
+
+    corrupt = load_anchor(tmp_path)
+    assert corrupt == {"epoch": 0, "fingerprints": [], "corrupt": True}
+
+    # With no policy file at all, the corrupt anchor still warns: the pins
+    # this desk once had are gone and nobody knows which key was pinned.
+    policy, verification = load_effective_policy(tmp_path)
+    assert policy.mode == "curated"
+    assert verification["signatureStatus"] == "unsigned"
+    assert "anchor" in verification["warning"]
+
+    (Path(tmp_path) / "marketplace" / "anchor.json").unlink()
+    policy, verification = load_effective_policy(tmp_path)
+    assert verification["warning"] is None
+
+
+def test_corrupt_anchor_fails_closed_instead_of_trusting_any_key(tmp_path):
+    write_anchor_file(tmp_path, 7, [PIN])
+    (Path(tmp_path) / "marketplace" / "anchor.json").write_text(
+        "{broken", encoding="utf-8")
+    write_policy_bundle(tmp_path, SIGNER, revocation_epoch=7)
+
+    policy, verification = load_effective_policy(tmp_path)
+
+    assert policy.source == "built-in"
+    assert policy.mode == "curated"
+    assert verification["signatureStatus"] == "unknown-key"
+    assert verification["rejectedCode"] == "policy:unknown-key"
+    assert "anchor" in verification["warning"]
+    assert signed_policy.read_audit(tmp_path)[0]["detail"] == "policy:unknown-key"
+
+
+def test_a_crash_mid_write_leaves_the_prior_state_intact(tmp_path, monkeypatch):
+    import os as os_module
+
+    signed_policy.set_kill_switch(tmp_path, "blocked-plugin", True)
+    signed_policy.write_anchor(tmp_path, epoch=3, fingerprints=[PIN])
+    signed_policy.append_audit(tmp_path, "policy.verify", "", "rejected",
+                               "policy:bad-signature")
+    market = Path(tmp_path) / "marketplace"
+    names = ("kill-switch.json", "anchor.json", "audit.json")
+    before = {name: (market / name).read_text(encoding="utf-8")
+              for name in names}
+
+    def crash(src, dst):
+        raise OSError("the process died between the temp write and the replace")
+
+    monkeypatch.setattr(os_module, "replace", crash)
+    with pytest.raises(OSError):
+        signed_policy.set_kill_switch(tmp_path, "another-plugin", True)
+    with pytest.raises(OSError):
+        signed_policy.write_anchor(tmp_path, epoch=9, fingerprints=[PIN])
+    with pytest.raises(OSError):
+        signed_policy.append_audit(tmp_path, "install", "sample", "ok")
+
+    after = {name: (market / name).read_text(encoding="utf-8")
+             for name in names}
+    assert after == before
+    assert {item.name for item in market.iterdir()} == set(names)
 
 
 # -- diff, kill switch and payload ----------------------------------------
