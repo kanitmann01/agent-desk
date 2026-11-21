@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RETIRED_NAME = "nexuus"
-EM_DASH = "—"
+EM_DASH = chr(0x2014)
 
 NAME_ROOTS = (
     ROOT / "src",
@@ -67,16 +67,13 @@ def test_no_live_file_carries_the_banned_em_dash():
     """The writing rules ban the em dash; the live trees carry zero.
 
     The dated archives under docs/ are records of what was produced then
-    and are not walked. tests/test_brand_naming.py itself is exempt from
-    its own walk only where this docstring names the character.
+    and are not walked.
     """
     hits = []
     for path in _iter_files(LIVE_ROOTS, LIVE_FILES):
         rel = path.relative_to(ROOT)
         rel_posix = rel.as_posix()
         if rel_posix.startswith(ARCHIVE_DIRS) or rel_posix.startswith("docs"):
-            continue
-        if path == Path(__file__):
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
