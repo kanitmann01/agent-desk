@@ -139,12 +139,19 @@ def auth(env):
     return env.exchange()
 
 
-def _connection(env, auth, stub, **overrides):
-    """One saved connection pointing at the stub, key in the keychain."""
+def _connection(env, auth, stub, clear_requests=True, **overrides):
+    """One saved connection pointing at the stub, key in the keychain.
+
+    The save itself runs the free check when a key is present (story 3),
+    so by default the stub's recording is cleared afterwards and each
+    test starts from the saved state; tests that assert on the save's
+    own requests pass clear_requests=False."""
     body = {"label": "Work gateway", "provider": "custom",
             "baseUrl": stub.base_url + "/v1", "apiKey": SECRET, **overrides}
     status, _h, out = env.post_json("/api/connections", body, auth)
     assert status == 201, out
+    if clear_requests:
+        stub.requests.clear()
     return json.loads(out)
 
 
@@ -178,12 +185,76 @@ def test_the_test_route_sends_the_models_get_with_the_connections_key(
     assert payload["modelsFetchedAt"] > 0
 
 
-def test_saving_and_editing_send_nothing_to_the_endpoint(env, auth, stub):
-    connection = _connection(env, auth, stub)
-    env.post_json(f"/api/connections/{connection['id']}/update", {
+def test_saving_with_a_key_runs_the_free_check_once_and_never_a_chat(
+        env, auth, stub):
+    """Story 3: the save itself checks the key (a free model-list GET,
+    never a chat) and the save response carries the outcome, so the form
+    shows the result inline right after saving. An empty-key edit keeps
+    the stored key and checks nothing; local presets skip the check."""
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Work gateway", "provider": "custom",
+        "baseUrl": stub.base_url + "/v1", "apiKey": SECRET}, auth)
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["status"] == "ok"
+    assert payload["lastError"] == ""
+    assert payload["lastCheckedAt"] > 0
+    assert payload["models"] == ["model-a", "model-b"]  # cached on save
+    assert len(stub.models_requests()) == 1
+    assert stub.models_requests()[0]["method"] == "GET"
+    assert stub.models_requests()[0]["path"] == "/v1/models"
+    assert stub.models_requests()[0]["auth"] == f"Bearer {SECRET}"
+    assert stub.chat_requests() == []  # never a chat completion on save
+    # Typing a new key on edit checks again, with the new key.
+    stub.requests.clear()
+    env.post_json(f"/api/connections/{payload['id']}/update", {
+        "label": "Work gateway", "provider": "custom",
+        "baseUrl": stub.base_url + "/v1",
+        "apiKey": "sk-rotated-bbbbbbbbbbbbbbbb-7777"}, auth)
+    assert len(stub.models_requests()) == 1
+    assert stub.models_requests()[0]["auth"] == "Bearer sk-rotated-bbbbbbbbbbbbbbbb-7777"
+    assert stub.chat_requests() == []
+    # The empty-key edit (keep stored) and local presets check nothing.
+    stub.requests.clear()
+    env.post_json(f"/api/connections/{payload['id']}/update", {
         "label": "Work gateway", "provider": "custom",
         "baseUrl": stub.base_url + "/v1", "apiKey": ""}, auth)
-    assert stub.requests == []  # no listing, no chat: save verifies nothing
+    env.post_json("/api/connections", {
+        "label": "Desk ollama", "provider": "ollama",
+        "baseUrl": stub.base_url + "/v1"}, auth)
+    assert stub.requests == []
+
+
+def test_a_rejected_check_never_refuses_the_save(env, auth, stub):
+    """Non-blocking semantics: a 401 answer marks the row error with the
+    named cause, but the save lands and the page tells the truth."""
+    stub.models_status = 401
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Typo'd key", "provider": "custom",
+        "baseUrl": stub.base_url + "/v1", "apiKey": SECRET}, auth)
+    assert status == 201  # the save is never refused over a check
+    payload = json.loads(body)
+    assert payload["status"] == "error"
+    assert payload["lastError"] == (
+        "the endpoint rejected the API key (HTTP 401); check the key")
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert [c["label"] for c in listing["connections"]] == ["Typo'd key"]
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "conn-error" in page
+    assert "rejected the API key" in page
+
+
+def test_an_unreachable_check_never_refuses_the_save(env, auth):
+    """A dead endpoint stamps its transport cause and keeps the save;
+    the status stays unknown, the spec's transient mapping."""
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Dead endpoint", "provider": "custom",
+        "baseUrl": "http://127.0.0.1:9/v1", "apiKey": SECRET}, auth)
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["status"] == "unknown"
+    assert "refused" in payload["lastError"]
+    assert payload["lastCheckedAt"] > 0
 
 
 def test_a_local_connection_without_a_key_sends_no_auth_header(env, auth, stub):
@@ -222,13 +293,17 @@ def test_a_rejected_key_turns_the_badge_to_error_with_the_named_cause(
 
 def test_a_rate_limited_key_stays_ok_with_a_limited_note(env, auth, stub):
     connection = _connection(env, auth, stub)
+    before = json.loads(
+        env.request("GET", "/api/connections", auth)[2])["connections"][0]
     stub.models_status = 429
     status, _h, body = _test(env, auth, connection)
     payload = json.loads(body)
     assert payload["status"] == "ok"  # a quota answer is not an outage
     assert "rate limiting" in payload["lastError"]
-    assert payload["lastCheckedAt"] > 0
-    assert payload["models"] == []  # the cache was not touched
+    assert payload["lastCheckedAt"] > before["lastCheckedAt"]
+    # The quota answer refreshed neither the cache nor its fetched-at.
+    assert payload["models"] == before["models"]
+    assert payload["modelsFetchedAt"] == before["modelsFetchedAt"]
 
 
 def test_a_5xx_is_transient_and_keeps_the_last_status(env, auth, stub):
@@ -279,8 +354,9 @@ def test_a_portal_redirect_is_reported_never_chased(env, auth, stub):
 
 
 def test_the_models_route_serves_the_cache_and_refresh_refetches(env, auth, stub):
-    connection = _connection(env, auth, stub)
-    # Before any check: the empty cache, fetched-at absent, not an error.
+    # A keyless local connection saves without checking, so it starts
+    # with the empty cache: fetched-at absent, never an error.
+    connection = _connection(env, auth, stub, provider="ollama", apiKey="")
     payload = json.loads(
         env.request("GET", f"/api/connections/{connection['id']}/models", auth)[2])
     assert payload == {"id": connection["id"], "models": [], "fetchedAt": None,

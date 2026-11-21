@@ -23,11 +23,20 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
+from agentdesk.keys import health
 from agentdesk.keys.presets import PRESETS
 from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
 from agentdesk.keys.store import KeysStore
 
 SECRET = "sk-live-quietly-aaaaaaaaaaaaaaaa-9999"
+
+
+def _instant_check(base_url, api_key, extra_headers=None, timeout=None):
+    """A save-time prober that answers instantly, hermetically: this
+    suite exercises the CRUD and markup surface, not the check itself
+    (the health suite runs the real prober against a loopback stub), so
+    no boot here can reach a real provider by saving a key."""
+    return health.ProbeResult(health.OUTCOME_OK, "", ["hermetic-model"])
 
 
 class DeadKeychain:
@@ -53,7 +62,8 @@ def keychain():
 
 @pytest.fixture()
 def env(keychain):
-    booted = server_harness.Booted(keychain=KeychainSecrets(keychain))
+    booted = server_harness.Booted(
+        keychain=KeychainSecrets(keychain), connection_check=_instant_check)
     try:
         yield booted
     finally:
@@ -261,7 +271,8 @@ def test_no_secret_substring_in_the_keys_sqlite_file_or_any_payload(
     conn = sqlite3.connect(tmp_path / "keys.sqlite3", check_same_thread=False)
     booted = server_harness.Booted(
         keys_store=KeysStore(conn, time.time),
-        keychain=KeychainSecrets(MemoryKeychain()))
+        keychain=KeychainSecrets(MemoryKeychain()),
+        connection_check=_instant_check)
     try:
         auth = booted.exchange()
         _create(booted, auth)
@@ -292,7 +303,8 @@ def test_no_secret_substring_in_the_keys_sqlite_file_or_any_payload(
 
 
 def test_no_keychain_machine_names_the_state_and_still_saves_keyless_connections():
-    booted = server_harness.Booted(keychain=KeychainSecrets(DeadKeychain()))
+    booted = server_harness.Booted(keychain=KeychainSecrets(DeadKeychain()),
+                                   connection_check=_instant_check)
     try:
         auth = booted.exchange()
         status, _h, body = booted.post_json("/api/connections", {
@@ -342,11 +354,17 @@ def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth
 
 def test_settings_page_renders_the_badge_states_server_side(env, auth):
     """The badge is server-rendered from the row (spec 018 #232): unknown
-    before any check, error with the cause inline, ok clean. The same
-    page works with no script because the state is in the markup."""
+    for a keyless connection nothing has checked, error with the cause
+    inline, ok clean (a keyed save checks on save, story 3, so the badge
+    is already truthful right after the redirect back). The same page
+    works with no script because the state is in the markup."""
+    status, _h, _b = env.post_json("/api/connections", {
+        "label": "Desk ollama", "provider": "ollama"}, auth)
+    assert status == 201
     created = json.loads(_create(env, auth)[2])
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert "conn-unknown" in page
+    assert "conn-unknown" in page  # the keyless connection, unchecked
+    assert "conn-ok" in page  # the keyed one, checked on save
     assert f"/api/connections/{created['id']}/test' class='inlineform'" in page
     env.server.keys.record_check(
         created["id"], status="error",
@@ -354,7 +372,6 @@ def test_settings_page_renders_the_badge_states_server_side(env, auth):
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
     assert "conn-error" in page
     assert "the endpoint rejected the API key (HTTP 401)" in page
-    assert "conn-unknown" not in page
     env.server.keys.record_check(created["id"], status="ok", note="")
     env.server.keys.set_models(created["id"], ["gpt-4o-mini"])
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")

@@ -872,6 +872,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         peer_store: PeerStore | None = None,
         keys_store: KeysStore | None = None,
         keychain=None,
+        connection_check=None,
         extractor=None,
         reflector=None,
         announce_port: int | None = None,
@@ -959,6 +960,14 @@ class AgentDeskServer(ThreadingHTTPServer):
         # keyring-backed one, tests pass the in-memory fake.
         self.keys = keys_store
         self.keychain = keychain if keychain is not None else KeychainSecrets()
+        # The save-time key prober (spec 018 story 3): the free
+        # model-list GET a save with a key performs. Injectable so a
+        # hermetic boot answers instantly; the explicit Test, refresh
+        # and deeper-check routes use the real health module, so they
+        # are exercised against loopback stubs instead.
+        self.connection_check = (
+            connection_check if connection_check is not None else health.check_models
+        )
         self.announce_port = announce_port
         self.peer_discovery: DiscoveryService | None = None
         self._peer_discovery_lock = threading.Lock()
@@ -3328,6 +3337,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.keys.delete(connection.id)  # never keep a row whose secret went nowhere
             self._connections_refusal("the keychain refused the key; nothing was saved")
             return
+        if values["apiKey"] and not preset.local:
+            # Story 3: the save itself checks the key with the free
+            # model-list GET; a failed check never refuses the save.
+            connection = _check_after_save(server, connection, values["apiKey"])
         self._audit("keys.create", target=connection.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
@@ -3389,6 +3402,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             connection = server.keys.clear_key(existing.id)
         if values["isDefault"]:
             connection = server.keys.set_default(existing.id)
+        if api_key and not preset.local:
+            # A typed key is checked like a fresh save; an empty key
+            # field keeps the stored key and checks nothing.
+            connection = _check_after_save(server, connection, api_key)
         self._audit("keys.update", target=existing.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
@@ -7676,6 +7693,7 @@ def create_server(
     peer_store: PeerStore | None = None,
     keys_store: KeysStore | None = None,
     keychain=None,
+    connection_check=None,
     extractor=None,
     reflector=None,
     announce_port: int | None = None,
@@ -7806,6 +7824,7 @@ def create_server(
             peer_store=peer_store,
             keys_store=keys_store,
             keychain=keychain,
+            connection_check=connection_check,
             extractor=extractor,
             reflector=reflector,
             announce_port=announce_port,
@@ -8209,6 +8228,29 @@ def _apply_health(keys: KeysStore, connection: Connection,
     if result.outcome == health.OUTCOME_OK:
         connection = keys.set_models(connection.id, result.models)
     return connection
+
+
+def _check_after_save(server, connection: Connection, api_key: str) -> Connection:
+    """The free check that rides a save (spec 018 story 3): one
+    model-list GET with the just-saved key, its outcome stamped into the
+    row and carried by the save response, so a typo'd key is caught on
+    the Settings page instead of at the first broken answer.
+
+    Never a chat, and never a refusal: a rejected, unreachable or
+    slow check leaves the save standing (the research pattern, a
+    discovery failure must not block saving) and the badge tells the
+    truth. Callers invoke this only when a key was typed and the preset
+    is not a local one, so local presets and empty-key edits check
+    nothing at all.
+    """
+    try:
+        result = server.connection_check(
+            connection.base_url, api_key, extra_headers=connection.headers)
+        return _apply_health(server.keys, connection, result)
+    except Exception:  # noqa: BLE001 - the check must never refuse a save
+        LOG.warning("the save-time check failed for %s", connection.id,
+                    exc_info=True)
+        return connection
 
 
 def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | None, str | None]:
