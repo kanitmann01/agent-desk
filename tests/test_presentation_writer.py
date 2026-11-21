@@ -6,6 +6,7 @@ download route. A title-only shell is a synthetic fixture with no brand strings.
 
 import io
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -186,7 +187,28 @@ def test_an_untyped_or_obj_placeholder_is_the_body_at_least_14_pt():
     larger = _shell_with_body_tag('<p:ph idx="1"/>', "1800")
     assert content_point_size(larger, RECIPE) == 18
     written = read_parts(write_deck(larger, RECIPE, outline_for("a note", RECIPE)))
-    assert 'sz="1800"' in written["ppt/slides/slide3.xml"].decode("utf-8")
+    body = written["ppt/slides/slide3.xml"].decode("utf-8")
+    assert 'sz="1800"' not in body
+    assert 'sz="1400"' not in body
+
+
+def test_master_text_styles_set_the_title_and_body_size():
+    shell = _office_style_shell()
+    blob = write_deck(shell, RECIPE, outline_for("a note", RECIPE))
+    assert package_problems(blob) == []
+    parts = read_parts(blob)
+    slide = parts["ppt/slides/slide3.xml"].decode("utf-8")
+    title, body = slide.split('name="Body"', 1)
+    assert "sz=" not in title
+    assert "sz=" not in body
+    assert content_point_size(shell, RECIPE) == 32
+    from agentdesk.presentations.writer import _resolved_pt, _find_layout, _placeholder
+    layout = _find_layout(parts, "Content")
+    # The written package still has the master styles. Resolve from the shell.
+    shell_parts = read_parts(shell)
+    layout = _find_layout(shell_parts, "Title Slide")
+    title_ph = _placeholder(shell_parts[layout], "ctrTitle")
+    assert _resolved_pt(shell_parts, layout, title_ph["ph"]) == 44
 
 
 def _shell_with_body_tag(ph: str, hundredths: str) -> bytes:
@@ -196,6 +218,30 @@ def _shell_with_body_tag(ph: str, hundredths: str) -> bytes:
     layout = layout.replace('<p:ph type="body" idx="1"/>', ph)
     layout = layout.replace('sz="1400"', f'sz="{hundredths}"')
     parts["ppt/slideLayouts/slideLayout3.xml"] = layout.encode("utf-8")
+    return pack_zip(parts)
+
+
+def _office_style_shell() -> bytes:
+    """A Title and Content shell whose sizes live only on the master.
+
+    Layout placeholders declare no size. The master text styles say
+    44 pt for titles and 32 pt for body text, which is what a default
+    Office template does.
+    """
+    parts = read_parts(build_shell())
+    for name in list(parts):
+        if name.startswith("ppt/slideLayouts/") and name.endswith(".xml"):
+            parts[name] = re.sub(br'\s*sz="\d+"', b"", parts[name])
+    master = parts["ppt/slideMasters/slideMaster1.xml"].decode("utf-8")
+    styles = (
+        "<p:txStyles>"
+        '<p:titleStyle><a:lvl1pPr><a:defRPr sz="4400"/></a:lvl1pPr></p:titleStyle>'
+        '<p:bodyStyle><a:lvl1pPr><a:defRPr sz="3200"/></a:lvl1pPr></p:bodyStyle>'
+        '<p:otherStyle><a:lvl1pPr><a:defRPr sz="1800"/></a:lvl1pPr></p:otherStyle>'
+        "</p:txStyles>"
+    )
+    master = master.replace("</p:sldMaster>", styles + "</p:sldMaster>")
+    parts["ppt/slideMasters/slideMaster1.xml"] = master.encode("utf-8")
     return pack_zip(parts)
 
 
