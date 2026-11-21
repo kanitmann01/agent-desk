@@ -1,11 +1,13 @@
-# BYOK settings UX evidence pack, 2026-11-21 (spec 019, tickets #255 to #259, pack ticket #260)
+# BYOK settings UX evidence pack, 2026-11-21 (spec 019, tickets #255 to #259, #263, pack ticket #260)
 
 The visual proof for the spec 019 pass: every flow the five tickets changed,
 re-screenshotted under all three themes (unkey, coforge, momentuum) from the
 merged code of those tickets, not mockups. The repo owner's rule applies: a
 flow without a screenshot here means that flow was not done. The before-state
 for every frame below is the spec 018 pack at
-`docs/evidence/byok-2026-11-21/`.
+`docs/evidence/byok-2026-11-21/`. Ticket #263 (the provider picker becomes a
+dropdown) extends the pack with the 12-* and 13-* frames below and supersedes
+the 01-* radio frames.
 
 ## The checkout the pack was taken from
 
@@ -13,7 +15,10 @@ Branch `spec018/byok-ux`, worktree
 `D:\20-projects\Personal Agents\.worktrees\byok-ux`, HEAD `c9a6d9b`, clean
 tree. The five implementation tickets landed as `36a166e` (#255), `b5171b6`
 (#256), `da3b614` (#257), `4b868aa` (#258) and `c9a6d9b` (#259). Nothing was
-pushed.
+pushed. The #263 frames (12-*, 13-*) were captured in the same worktree at
+the dropdown fix commit itself (`fix: the provider picker becomes a dropdown
+(spec 019 #263)`, this commit), so they show the working tree that commit
+records; the 01-11 frames stay pinned to the `c9a6d9b` checkout named above.
 
 ## How the walkthrough ran
 
@@ -50,6 +55,22 @@ pushed.
   the default unkey theme.
 - Screenshots: playwright-cli, Chromium, 1440x900 viewport frames. File
   names are kebab, numbered by flow group, theme in the name.
+- The #263 pass (frames 12-* and 13-*) ran the same way, one throwaway desk
+  under the system temp run directory (`byok-ux-263-run\desk-a`), booted
+  from the worktree source (`PYTHONPATH` at the worktree's `src`), the
+  `AGENTDESK_LLM_*` overrides emptied, entered through the printed one-time
+  start link, boot stderr 0 bytes. No key was typed at all: the one
+  connection the frames show was saved keyless on the Ollama local preset
+  (the select's own form post, base URL left to the preset default), so the
+  keychain wrote nothing (enumerated: 0 agent-desk entries before and
+  after; `cmdkey /list` agreed). The open-select frame shows the native
+  dropdown of the real page; in that headless capture the popup surface
+  draws with the system light scheme even under the dark themes, though the
+  page declares `color-scheme` per theme: the popup is the browser's own
+  control, exactly what the ticket mandates. The popup is shown scrolled to
+  its last option (Custom), because the native popup's own viewport clips
+  the fifteen rows; the closed frames and the markup suite pin the full
+  order.
 
 ## The captured gate
 
@@ -59,18 +80,18 @@ paths, polled with foreground reads). The stderr capture is 0 bytes: no
 tracebacks. The seven legs pass in order (py-grammar 379 files, pytest,
 frontend-check tsc clean, frontend-tests 313 vitest, licenses, registry-ci,
 brand-leak), the pytest leg reading `2810 passed, 1 skipped, 13 warnings in
-583.44s`. It ends:
+580.07s`. It ends:
 
-    7/7 gates passed in 600s
+    7/7 gates passed in 594s
     CI PASS
 
 ## Frames, flow by flow
 
 | File | Flow | Ticket and story | Theme |
 | --- | --- | --- | --- |
-| `01-create-form-preset-radios-unkey.png` | fresh Settings, the add form | #255: the twelve preset radios render as circles, one checked (OpenAI, accent dot and tile border) and eleven unchecked; show-key and make-default sit as small squares; key field empty | unkey |
-| `01-create-form-preset-radios-coforge.png` | same | #255 under the navy/coral theme | coforge |
-| `01-create-form-preset-radios-momentuum.png` | same | #255 under the light brand-blue theme | momentuum |
+| `01-create-form-preset-radios-unkey.png` | fresh Settings, the add form | #255: the twelve preset radios render as circles, one checked (OpenAI, accent dot and tile border) and eleven unchecked; show-key and make-default sit as small squares; key field empty. SUPERSEDED by #263: the radio grid is gone, the select frames 12-* are the add-form proof now; the #255 control-fix proof (circles and checks drawn right) rests on the checkbox frames 02/03, which remain valid | unkey |
+| `01-create-form-preset-radios-coforge.png` | same | #255 under the navy/coral theme. SUPERSEDED by #263, as above | coforge |
+| `01-create-form-preset-radios-momentuum.png` | same | #255 under the light brand-blue theme. SUPERSEDED by #263, as above | momentuum |
 | `02-create-form-checkboxes-ticked-unkey.png` | create form, controls ticked | #255: show-key and make-default ticked with visible checks, the checked radio moved to vLLM (no key), key field empty. This frame is connection "Loopback gateway" as it was actually saved | unkey |
 | `02-create-form-checkboxes-ticked-coforge.png` | same form state | #255 under coforge (staged on the live add form, not saved) | coforge |
 | `02-create-form-checkboxes-ticked-momentuum.png` | same form state | #255 under momentuum (staged on the live add form, not saved) | momentuum |
@@ -103,11 +124,21 @@ brand-leak), the pytest leg reading `2810 passed, 1 skipped, 13 warnings in
 | `11-delete-warning-migrated-unkey.png` | the delete warning, migrated variant | #258: the recovery paragraph in whole sentences (the key stays in the keychain, the next start puts the connection back), destructive confirm, Keep it secondary | unkey |
 | `11-delete-warning-migrated-coforge.png` | same | #258 under coforge | coforge |
 | `11-delete-warning-migrated-momentuum.png` | same | #258 under momentuum | momentuum |
+| `12-create-form-provider-select-unkey.png` | fresh Settings, the add form | #263: the twelve presets plus Custom render as one native select under a Provider label, OpenAI selected (the first preset, where the checked radio used to sit), the disclosure still the card's last block; no radio remains | unkey |
+| `12-create-form-provider-select-coforge.png` | same | #263 under coforge | coforge |
+| `12-create-form-provider-select-momentuum.png` | same | #263 under momentuum | momentuum |
+| `12-create-form-provider-select-open-unkey.png` | the select opened | #263: the real dropdown open, the optgroups readable: Hosted providers (names only), Local servers, no key needed (Ollama, LM Studio, vLLM each labeled this machine, no key needed), and the Custom group last, highlight on it (the popup is scrolled to its last option; see the walkthrough note above) | unkey |
+| `13-edit-form-provider-selected-unkey.png` | the edit form | #263: the saved connection's provider option carries selected, the select reads Ollama (this machine, no key needed), label and base URL prefilled, key field empty with placeholder not set (keyless save, no keychain write), the row above reading no key | unkey |
+| `13-edit-form-provider-selected-coforge.png` | same | #263 under coforge | coforge |
+| `13-edit-form-provider-selected-momentuum.png` | same | #263 under momentuum | momentuum |
 
 One naming note: the 02 frames for coforge and momentuum stage the same
 live add-form state (radio moved, both checkboxes ticked) rather than
 re-saving a connection, because the connection they mirror was already
 saved under unkey; the form, its controls and its state are the real page.
+The 12/13 frames for coforge and momentuum reload the same pages under the
+theme's localStorage key; the connection they show is the one keyless save
+described above.
 
 ## The other consumers of the changed --bad token
 

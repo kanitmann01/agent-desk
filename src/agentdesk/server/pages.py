@@ -430,12 +430,10 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .console-links summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0;width:fit-content}
 .settings-skill{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--hairline)}
 .settings-skill:first-of-type{border-top:none;padding-top:0}
-/* Connections (spec 018): the preset grid wraps as tiles so twelve
-   providers stay one keyboard-reachable radiogroup, and a row's Delete
-   form sits inline with its Edit link instead of stacking. */
-.preset-grid{display:flex;flex-wrap:wrap;gap:8px;border:0;padding:0;margin:8px 0}
-.preset-tile{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--hairline);border-radius:var(--r-inner);background:var(--surface);font-size:13px;color:var(--ink-1)}
-.preset-tile:has(input:checked){border-color:var(--accent);color:var(--accent-text)}
+/* Connections (spec 018): a row's Delete form sits inline with its
+   Edit link instead of stacking. The provider picker is a native
+   select since #263, so it shares the .cardform select styling above
+   and needs no rules of its own. */
 .inlineform{display:inline-block;margin:0 0 0 6px}
 /* A row scans one line tall (spec 019): the base URL wraps anywhere so
    a mono URL cannot dictate the column widths, and the three actions
@@ -631,7 +629,7 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
 
 // Connections (spec 018): the key field reveals only while the box is
 // checked (the full value is visible exactly once, in the form), and
-// picking a preset fills its default base URL, editable afterwards.
+// picking a provider fills its default base URL, editable afterwards.
 // Both are enhancements; the form itself posts without any script.
 (function () {
   var reveal = document.querySelector('[data-key-reveal]');
@@ -640,10 +638,10 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     key.type = reveal.checked ? 'text' : 'password';
   });
   var base = document.getElementById('conn-base');
-  document.querySelectorAll("input[name='provider']").forEach(function (radio) {
-    radio.addEventListener('change', function () {
-      if (base && radio.dataset.base) base.value = radio.dataset.base;
-    });
+  var provider = document.getElementById('conn-provider');
+  if (base && provider) provider.addEventListener('change', function () {
+    var chosen = provider.selectedOptions[0];
+    if (chosen && chosen.dataset.base) base.value = chosen.dataset.base;
   });
 })();
 

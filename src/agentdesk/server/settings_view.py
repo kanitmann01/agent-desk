@@ -565,25 +565,44 @@ def _connection_rows(connections: list[dict]) -> str:
     )
 
 
-def _preset_grid(selected: str) -> str:
-    """The provider radios: one tile per preset, the selected one checked.
+def _provider_select(selected: str) -> str:
+    """The provider picker: one native select, the presets grouped.
 
-    Each input carries its preset's default base URL as data, so the
-    script can fill the base field on choice; without script the server
-    fills the same default when the field arrives empty."""
-    tiles = []
+    Three optgroups in order: the hosted providers under their plain
+    names, the local servers whose labels carry the discovery fact
+    (this machine, no key needed), and Custom last. The hosted labels
+    stay bare because the console disclosure below the form answers
+    where keys come from. Each option carries its preset's default base
+    URL as data, so the script can fill the base field on choice;
+    without script the server fills the same default when the field
+    arrives empty. The saved provider's option carries selected on the
+    edit form, the first preset on the create form, exactly where the
+    checked radio used to sit (spec 019 #263)."""
+    groups: dict[str, list[str]] = {
+        "Hosted providers": [],
+        "Local servers, no key needed": [],
+        "Custom": [],
+    }
     for preset in PRESETS:
-        checked = " checked" if preset.id == selected else ""
-        tiles.append(
-            f"<label class='preset-tile'><input type='radio' name='provider'"
-            f" value='{preset.id}'{checked} data-base='{html.escape(preset.base_url, quote=True)}'>"
-            f"{html.escape(preset.name)}"
-            + (" <span class='empty'>(no key)</span>" if preset.key_optional else "")
-            + "</label>"
-        )
+        chosen = " selected" if preset.id == selected else ""
+        label = preset.name
+        if preset.local:
+            label += " (this machine, no key needed)"
+            group = "Local servers, no key needed"
+        elif preset.id == "custom":
+            group = "Custom"
+        else:
+            group = "Hosted providers"
+        groups[group].append(
+            f"<option value='{preset.id}'{chosen}"
+            f" data-base='{html.escape(preset.base_url, quote=True)}'>"
+            f"{html.escape(label)}</option>")
+    options = "".join(
+        f"<optgroup label='{html.escape(group)}'>{''.join(items)}</optgroup>"
+        for group, items in groups.items())
     return (
-        "<fieldset class='preset-grid'><legend class='empty'>Provider</legend>"
-        + "".join(tiles) + "</fieldset>"
+        "<label class='empty' for='conn-provider'>Provider</label>"
+        "<select id='conn-provider' name='provider'>" + options + "</select>"
     )
 
 
@@ -642,8 +661,9 @@ def _connections_section(
     """The keys card: the connections list, then the add/edit form.
 
     Server-rendered throughout: the form posts as a plain form, the
-    masked hints are printed, and the preset grid and console deep-links
-    answer the two first-run questions with no script at all. The edit
+    masked hints are printed, and the provider select and console
+    deep-links answer the two first-run questions with no script at
+    all. The edit
     semantic is the one rule everywhere: an empty key field keeps the
     stored key, and only the separate clear action removes it.
     """
@@ -700,7 +720,7 @@ def _connections_section(
             cancel = ""
         form = f"""<h3>{heading}</h3>
 <form method='post' action='{action}' class='cardform' id='connection-form'>
-{_preset_grid(selected)}
+{_provider_select(selected)}
 <label class='empty' for='conn-label'>Label</label>
 <input id='conn-label' type='text' name='label' value='{label_value}' placeholder='OpenAI personal' autocomplete='off'>
 <label class='empty' for='conn-base'>Base URL</label>
