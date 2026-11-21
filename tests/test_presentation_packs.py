@@ -202,10 +202,11 @@ def test_a_configured_run_records_the_template_variant_and_recipe():
         assert artifact["variant"] == "light"
         assert artifact["recipe"] == "qbr"
         assert artifact["digest"] == tree_digest(PACK)
-        assert artifact["phase"] == "selected"
-        assert "file" not in artifact
+        assert artifact["phase"] == "written"
+        assert artifact["file"].endswith("/deck.pptx")
         status, _h, page = booted.request("GET", "/agents", auth)
         assert b"recipe qbr" in page
+        assert b"Download .pptx" in page
     finally:
         booted.close()
 

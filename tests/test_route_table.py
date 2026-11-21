@@ -25,6 +25,7 @@ EXPECTED_GET_ROUTES = (
     ("GET", "/assistant", "_send_assistant_page", False, "none", ""),
     ("GET", "/agents", "_send_agents_page", False, "none", ""),
     ("GET", "/agents/templates/", "_agents_template_thumb", True, "rest", ""),
+    ("GET", "/agents/runs/", "_agents_download", True, "rest", "/download"),
     ("GET", "/inbox", "_send_inbox_page", False, "none", ""),
     ("GET", "/activity", "_send_activity_redirect", False, "none", ""),
     ("GET", "/memory", "_send_memory_page", False, "none", ""),
