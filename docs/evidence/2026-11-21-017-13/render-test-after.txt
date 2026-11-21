@@ -1,0 +1,6 @@
+after: as_posix() on the relative_to result in render_deck (src/agentdesk/presentations/render.py)
+command: python -m pytest "tests/test_presentation_render.py::test_a_fake_renderer_shows_a_preview_and_names_itself" -q
+---
+.                                                                        [100%]
+1 passed in 0.72s
+exit: 0

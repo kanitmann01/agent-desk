@@ -84,7 +84,8 @@ def _render_deck(pptx: Path, out_dir: Path, runner, timeout: float) -> dict:
     pdfs = sorted(out_dir.glob("*.pdf"))
     if pdfs and not list(out_dir.glob("*.png")):
         _rasterize(pdfs[0], out_dir)
-    images = sorted(str(path.relative_to(out_dir.parent)) for path in out_dir.glob("*.png"))
+    # posix form: the download route matches parts as URL paths ("/"-separated)
+    images = sorted(path.relative_to(out_dir.parent).as_posix() for path in out_dir.glob("*.png"))
     pdf = str(pdfs[0].relative_to(out_dir.parent)) if pdfs else ""
     used = name if runner is None else getattr(result, "renderer", "libreoffice")
     note = "" if pdf or images else "Previews are unavailable."
