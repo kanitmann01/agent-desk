@@ -39,6 +39,25 @@ SAMPLE = "sample"        # demo data, labeled as such, never mistaken for live
 FRESHNESS_STATUSES = (FRESH, ATTENTION, SAMPLE)
 
 
+def count_noun(value: int, noun: str) -> str:
+    """One counted noun, plural s unless the count is exactly one.
+
+    Zero takes the plural, as English does.
+    """
+    return f"{value} {noun}" + ("" if value == 1 else "s")
+
+
+def bounded_text(text: str, limit: int) -> str:
+    """One value cut to a character budget on a single line.
+
+    Whitespace runs, newlines included, collapse to one space before measuring, and an
+    over-long value keeps limit - 1 characters plus an ellipsis, so the result never
+    exceeds the budget.
+    """
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "\u2026"
+
+
 @dataclass(frozen=True)
 class SourceStatus:
     """One data source's health entry: who it is and whether it is wired."""

@@ -29,6 +29,7 @@ link to the server-rendered memory graph page.
 
 import html
 
+from agentdesk.server.core import count_noun
 from agentdesk.server.pages import page_shell
 from datetime import datetime
 
@@ -50,11 +51,6 @@ EDIT_MERGE_NOTICE = (
     "edited row merged into the older copy, its entity mentions moved "
     "with it, and only one fact remains."
 )
-
-
-def _count(value: int, noun: str) -> str:
-    """One counted noun, singular handled honestly."""
-    return f"{value} {noun}" + ("" if value == 1 else "s")
 
 
 # The Graph action (ticket #96), rendered beside the entities section.
@@ -141,10 +137,10 @@ def _encrypt_section(state: dict | None) -> str:
     if state.get("counts") is not None:
         counts = state["counts"]
         summary = (
-            f"{_count(counts['facts'], 'fact')}, "
-            f"{_count(counts['sources'], 'source')}, "
-            f"{_count(counts['entities'], 'entity')} and "
-            f"{_count(counts['observations'], 'observation')} would be "
+            f"{count_noun(counts['facts'], 'fact')}, "
+            f"{count_noun(counts['sources'], 'source')}, "
+            f"{count_noun(counts['entities'], 'entity')} and "
+            f"{count_noun(counts['observations'], 'observation')} would be "
             "sealed as AES-256-GCM ciphertext under a locally generated "
             "key file (<span class='mono'>memory.key</span>). Duplicates "
             "collapse and orphaned observations go first. This cannot "
@@ -201,7 +197,7 @@ def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
         total = embeddings["embedded"] + embeddings["remaining"]
         ready = (
             f"<span class='mono' id='embeddings-counts'>{embeddings['embedded']} of "
-            f"{_count(total, 'fact')} ready</span>"
+            f"{count_noun(total, 'fact')} ready</span>"
         )
         button = (
             "<form method='post' action='/memory/embeddings/backfill' class='ml-maint-form'>"
@@ -322,7 +318,7 @@ def _entities_section(entities: list[EntitySummary]) -> str:
         rows.append(
             f"<li id='entity-{entity_id}'>{html.escape(entity.canonical_name)}"
             f" <span class='empty mono'>{html.escape(entity.type)},"
-            f" {_count(entity.fact_count, 'fact')}{aka}</span></li>"
+            f" {count_noun(entity.fact_count, 'fact')}{aka}</span></li>"
         )
     merge_form = ""
     if len(entities) >= 2:
@@ -368,7 +364,7 @@ def _sweep_section(candidates: list[SweepCandidate]) -> str:
         )
     return (
         '<h2 id="sweep">Junk sweep</h2>'
-        f"<p class='empty'>{_count(len(candidates), 'candidate')} the "
+        f"<p class='empty'>{count_noun(len(candidates), 'candidate')} the "
         "assistant would drop (placeholders, its own knowledge gaps and "
         "session narration). Check what to delete; citations, orphaned "
         "observations and edge-less entities go with them.</p>"
