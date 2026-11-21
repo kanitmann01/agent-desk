@@ -17,6 +17,7 @@ from datetime import datetime
 from agentdesk.insight.preferences import PreferenceStore, changed
 from agentdesk.keys.presets import PRESETS, preset_for
 from agentdesk.keys.resolve import JOB_LABELS
+from agentdesk.keys.store import mask_key
 from agentdesk.repetition.skills import render_skill_md
 from agentdesk.server import audit_view
 from agentdesk.server.pages import page_shell
@@ -83,11 +84,18 @@ def _esc_timeout(status: dict) -> str:
 
 
 def mask_llm_key(key: str) -> str:
-    """The page-facing form of a saved key: state only, never the value."""
+    """The page-facing form of a saved key: state only, never the value.
+
+    The last four characters appear only when keys.store.mask_key would
+    show them (a key long enough to spare its middle): a short key is
+    mostly tail, so it reads as "Set." with no tail at all.
+    """
     key = (key or "").strip()
     if not key:
         return ""
-    return f"Set. Ends with {key[-4:]}." if len(key) > 4 else "Set."
+    if mask_key(key) == "Set.":  # the short-key rule: no tail anywhere
+        return "Set."
+    return f"Set. Ends with {key[-4:]}."
 
 
 def _endpoint_form(status: dict) -> str:

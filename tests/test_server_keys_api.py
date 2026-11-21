@@ -13,7 +13,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 import pytest
 
@@ -53,6 +53,35 @@ class DeadKeychain:
 
     def delete_password(self, *_args):
         raise RuntimeError("no backend on this machine")
+
+
+class RefusingStoreKeychain:
+    """A keyring-shaped backend that is reachable but refuses every
+    write, like an OS keychain denying the save."""
+
+    def get_password(self, *_args):
+        return None
+
+    def set_password(self, *_args):
+        raise RuntimeError("the keychain refused the write")
+
+
+class NoDeleteKeychain:
+    """A keyring-shaped wrapper that stores and reads through to a real
+    fake but refuses every delete, like an OS keychain denying the
+    removal while everything else works."""
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+
+    def get_password(self, service, username):
+        return self._inner.get_password(service, username)
+
+    def set_password(self, service, username, secret):
+        self._inner.set_password(service, username, secret)
+
+    def delete_password(self, service, username):
+        raise RuntimeError("the keychain refused the delete")
 
 
 @pytest.fixture()
@@ -250,6 +279,61 @@ def test_delete_removes_the_row_and_the_keychain_entry(env, auth, keychain):
     assert json.loads(body) == {"ok": True, "id": created["id"]}
     assert keychain.secrets == {}
     assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
+
+
+# -- a keychain that refuses ---------------------------------------------------
+
+
+def test_a_refused_keychain_write_leaves_the_previous_default_starred(env, auth):
+    first = json.loads(env.post_json("/api/connections", {
+        "label": "First and default", "provider": "openai",
+        "apiKey": SECRET, "isDefault": "1",
+    }, auth)[2])
+    assert first["isDefault"] is True
+    # The keychain starts refusing writes, so the second save's key cannot
+    # land and the whole save is refused.
+    env.server.keychain = KeychainSecrets(RefusingStoreKeychain())
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Second as default", "provider": "openai",
+        "apiKey": "sk-live-quietly-bbbbbbbbbbbbbbbb-4444", "isDefault": "1",
+    }, auth)
+    assert status == 400
+    assert "nothing was saved" in json.loads(body)["error"]
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    rows = listing["connections"]
+    # The refused row is gone and the first connection still carries the
+    # star: the refused save's insert had cleared it before the keychain
+    # said no, and the rollback gave it back.
+    assert [c["label"] for c in rows] == ["First and default"]
+    assert rows[0]["isDefault"] is True
+    assert rows[0]["id"] == first["id"]
+
+
+def test_a_refused_keychain_delete_is_named_on_the_clear_action(
+        env, auth, keychain):
+    created = json.loads(_create(env, auth)[2])
+    env.server.keychain = KeychainSecrets(NoDeleteKeychain(keychain))
+    status, _h, body = env.post_json(
+        f"/api/connections/{created['id']}/update", {
+            "label": "OpenAI personal", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1", "keyClear": "1",
+        }, auth)
+    assert status == 200
+    payload = json.loads(body)
+    # The row says no key from here on, and the answer names the keychain
+    # that still holds the secret instead of posing as a clean clear.
+    assert payload["maskedKey"] == ""
+    assert "still holds the key" in payload["notice"]
+    assert keychain.secrets  # the secret really is still in the keychain
+    # A no-JS form post gets the same sentence as the redirect's notice.
+    status, headers, _b = _post_form(
+        env, f"/api/connections/{created['id']}/update", {
+            "label": "OpenAI personal", "provider": "openai",
+            "baseUrl": "https://api.openai.com/v1", "keyClear": "1",
+        }, auth)
+    assert status == 303
+    assert "still holds the key" in unquote(headers["Location"])
+    assert "connections_error" in headers["Location"]
 
 
 def test_custom_connections_carry_extra_headers(env, auth):

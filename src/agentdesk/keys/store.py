@@ -162,7 +162,9 @@ class KeysStore:
         user tells two keys for the same provider apart, so duplicates cannot
         silently merge. enabled starts True everywhere except the migration's
         keychain-less rows (spec 018 #234), which step aside so the
-        environment leg keeps serving.
+        environment leg keeps serving. The insert and the default star's
+        clearing are one transaction (set_default's shape), so no crash
+        between them can leave two defaults.
         """
         connection_id = connection_id or uuid.uuid4().hex
         now = self.clock()
@@ -178,11 +180,14 @@ class KeysStore:
                      json.dumps(headers or {}, ensure_ascii=False),
                      1 if is_default else 0, 1 if enabled else 0, now, now),
                 )
+                if is_default:
+                    self.conn.execute(
+                        "UPDATE connections SET is_default = 0 WHERE id != ?",
+                        (connection_id,),
+                    )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"the label {label!r} is already used by another"
                              " connection") from exc
-        if is_default:
-            self._clear_other_defaults(connection_id)
         return self.get(connection_id)
 
     @_serialized
@@ -406,14 +411,6 @@ class KeysStore:
                  connection_id),
             )
         return self.get(connection_id)
-
-    def _clear_other_defaults(self, connection_id: str) -> None:
-        """The default star belongs to one connection at a time."""
-        with self.conn:
-            self.conn.execute(
-                "UPDATE connections SET is_default = 0 WHERE id != ?",
-                (connection_id,),
-            )
 
 
 def _as_connection(row: tuple) -> Connection:

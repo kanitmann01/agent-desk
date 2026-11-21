@@ -29,10 +29,13 @@ the environment leg serving exactly as before the upgrade. The Settings
 page's no-keychain notice names the state.
 """
 
+import logging
 from collections.abc import Callable
 
 from agentdesk.keys.secrets import KeychainSecrets
 from agentdesk.keys.store import KeysStore, mask_key
+
+LOG = logging.getLogger(__name__)
 
 # The stable ids: the keychain username is key/<id>, so a re-created
 # connection under the same id re-links the entry its earlier self
@@ -80,7 +83,13 @@ def migrate_legacy_settings(
                                          keys=keys, keychain=keychain,
                                          record=record))
         except Exception:  # noqa: BLE001 - the upgrade must never fail the boot
-            pass
+            # The swallow stays (a boot never fails here), but the failure
+            # is logged with the pair named: the boot wrapper's "any
+            # failure is logged and left behind" promise reaches this deep
+            # only through this record.
+            LOG.exception("the migration of the %s connection did not"
+                          " complete; it is left for the next boot",
+                          pair[1])
     return created
 
 

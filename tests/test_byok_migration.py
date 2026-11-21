@@ -11,6 +11,7 @@ delete-then-restart recovery loop is exercised for real.
 """
 
 import json
+import logging
 import sqlite3
 import sys
 import time
@@ -24,6 +25,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
+from agentdesk.keys import migrate
 from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
 from agentdesk.keys.store import KeysStore
 from agentdesk.settings import SettingsStore
@@ -316,6 +318,53 @@ def test_a_connection_the_user_bound_between_boots_keeps_its_star_and_its_jobs(t
         assert by_job["research-web"]["connectionId"] == "migrated-research"
     finally:
         booted.close()
+
+
+# -- one refused write must not stop the other pair, and must not be quiet -------
+
+
+def _exploding_settings(rows: dict, bad_row: str):
+    """A settings-shaped stub whose write to one named row raises, like a
+    settings database that refuses exactly one write. Reads come from the
+    seeded rows; every write but the bad one lands."""
+    class _Store:
+        def get(self, key):
+            return rows.get(key)
+
+        def set(self, key, value):
+            if key == bad_row:
+                raise RuntimeError("the settings database refused the write")
+            rows[key] = value
+
+    return _Store()
+
+
+def test_a_pair_whose_write_fails_is_logged_and_the_other_pair_still_migrates(caplog):
+    settings = _exploding_settings(dict(LEGACY_ROWS), "research_provider_key")
+    keys = KeysStore(sqlite3.connect(":memory:", check_same_thread=False),
+                     time.time)
+    keychain = KeychainSecrets(MemoryKeychain())
+    with caplog.at_level(logging.ERROR, logger="agentdesk.keys.migrate"):
+        created = migrate.migrate_legacy_settings(settings, keys, keychain)
+    # The endpoint pair landed whole: connection, key in the keychain,
+    # the default star and the legacy secret cleared from settings.
+    assert created == ["Migrated endpoint"]
+    assert [c.label for c in keys.all()] == ["Migrated endpoint"]
+    endpoint = keys.get("migrated-endpoint")
+    assert endpoint.is_default is True
+    assert endpoint.masked_key == "sk-...9999"
+    assert keychain.fetch("migrated-endpoint") == ENDPOINT_KEY
+    assert keys.binding("default").connection_id == "migrated-endpoint"
+    assert settings.get("llm_key") == ""
+    # The research pair failed on its settings write and is left behind,
+    # but the failure is logged by the migration module itself, naming it.
+    assert created != ["Migrated endpoint", "Migrated research provider"]
+    assert keychain.fetch("migrated-research") == RESEARCH_KEY  # landed first
+    records = [r for r in caplog.records
+               if r.name == "agentdesk.keys.migrate"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    assert "Migrated research provider" in records[0].getMessage()
 
 
 # -- desks with nothing to migrate ----------------------------------------------

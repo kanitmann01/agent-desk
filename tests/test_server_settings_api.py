@@ -243,6 +243,14 @@ def test_widget_settings_values_never_carry_the_raw_key(env, auth):
     raw = env.request("GET", "/widgets/settings", auth)[2].decode("utf-8")
     assert "raw-secret-key" not in raw
     assert "Set. Ends with abcd." in raw
+    # A short key shows no tail at all (the keys.store.mask_key rule):
+    # its last four characters are most of the key.
+    env.server.settings.set("llm_key", "abcd12")
+    values_page = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values_page["llm_key"] == "Set."
+    env.server.settings.set("llm_key", "nine-char")
+    values_page = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values_page["llm_key"] == "Set."
 
 
 def test_unknown_setting_is_rejected(env, auth):

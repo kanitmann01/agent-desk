@@ -199,6 +199,27 @@ def test_add_embeds_only_when_the_probe_passed_and_the_toggle_is_on(boot, auth):
     assert rows[0]["request_bytes"] == len(fact["text"].encode("utf-8"))
 
 
+def test_an_embeddings_call_stamps_last_used_at_on_the_serving_connection(
+        boot, auth):
+    """Embeddings ride the memory job's bound connection (spec 018
+    #233), so its live traffic counts for last_used_at like every
+    other connection-serving call does."""
+    boot.seed_probe()
+    saved = json.loads(boot.booted.post_json("/api/connections", {
+        "label": "Embed endpoint", "provider": "custom",
+        "baseUrl": boot.endpoint.url, "apiKey": "sk-live-quietly-aaaaaaaaaaaaaaaa-9999",
+    }, auth)[2])
+    assert boot.booted.post_json("/api/bindings", {
+        "job": "memory", "connectionId": saved["id"], "model": "",
+    }, auth)[0] == 200
+    assert boot.booted.server.keys.get(saved["id"]).last_used_at is None
+    _add_fact(boot, auth, "the quarterly revenue total is 220 thousand")
+    # The write-time embed resolved its base and key from the bound
+    # connection, and the connection's row carries the stamp for it.
+    assert len(boot.endpoint.requests) == 1
+    assert boot.booted.server.keys.get(saved["id"]).last_used_at is not None
+
+
 def test_add_without_a_passed_probe_stores_no_vector_and_asks_nothing(boot, auth):
     # No cached probe result at all: the never-passed state.
     boot.point_at_endpoint()

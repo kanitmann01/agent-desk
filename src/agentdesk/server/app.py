@@ -3316,7 +3316,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         The key goes to the keychain alone; the row and every answer after
         this one carry the masked hint. A key that cannot land in the
         keychain refuses the whole save: a connection whose secret silently
-        went nowhere is a trap.
+        went nowhere is a trap. The refusal really leaves nothing behind:
+        the row is deleted, and the default star the refused row's insert
+        had already taken from the previous default is given back, so the
+        user's starred connection keeps its star.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.keys is None:
@@ -3340,6 +3343,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if values["apiKey"] and not server.keychain.available():
             self._connections_refusal(NO_KEYCHAIN_NOTICE)
             return
+        previous_default = next(
+            (c for c in server.keys.all() if c.is_default), None)
         try:
             connection = server.keys.add(
                 label=values["label"], provider=preset.id, base_url=base,
@@ -3351,6 +3356,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if values["apiKey"] and not server.keychain.store(connection.id,
                                                           values["apiKey"]):
             server.keys.delete(connection.id)  # never keep a row whose secret went nowhere
+            if previous_default is not None:
+                # The insert cleared the previous default's star before the
+                # keychain refused; restoring it is what makes "nothing
+                # was saved" true.
+                server.keys.set_default(previous_default.id)
             self._connections_refusal("the keychain refused the key; nothing was saved")
             return
         if values["apiKey"] and not preset.local:
@@ -3371,6 +3381,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         everywhere); keyClear removes it; a typed key replaces it. A row
         that cannot be written puts the previous secret back, so the
         keychain and the database never disagree about what is stored.
+        A keychain that refuses the clear's delete is named in the
+        answer (a notice for JSON, the connections notice for a form
+        post): the row says no key, so the user must hear that the
+        keychain still holds the secret.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.keys is None:
@@ -3413,8 +3427,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     server.keychain.store(existing.id, previous_secret)
             self._connections_refusal(str(exc), status=409)
             return
+        clear_notice = ""
         if _flag(body, "keyClear") and not api_key:
-            server.keychain.forget(existing.id)
+            if not server.keychain.forget(existing.id) \
+                    and server.keychain.fetch(existing.id) is not None:
+                # forget answers False both for "there was none" and for a
+                # refusal; the re-fetch is what tells the two apart, so a
+                # refused delete is surfaced and an empty keychain is not.
+                clear_notice = (
+                    "the connection no longer names a key, but this"
+                    " machine's keychain refused to drop it and still"
+                    " holds the key")
             connection = server.keys.clear_key(existing.id)
         if values["isDefault"]:
             connection = server.keys.set_default(existing.id)
@@ -3425,9 +3448,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._audit("keys.update", target=existing.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect("/settings?connections_error=" + quote(clear_notice)
+                                if clear_notice else "/settings")
             return
-        self._send_json(200, _connection_payload(connection))
+        payload = _connection_payload(connection)
+        if clear_notice:
+            payload["notice"] = clear_notice
+        self._send_json(200, payload)
 
     def _connection_delete(self, connection_id: str) -> None:
         """POST /api/connections/<id>/delete: the row, its secret and its
@@ -4223,6 +4250,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 base = connection.base_url
                 key = server.keychain.fetch(connection.id) or ""
                 serving_name = connection.label
+                try:
+                    server.keys.record_use(connection.id)
+                except Exception:  # noqa: BLE001 - the stamp never fails the embeddings
+                    LOG.debug("could not stamp last_used_at for %s",
+                              connection.id, exc_info=True)
             else:
                 base = resolved.base_url
                 key = resolved.api_key
