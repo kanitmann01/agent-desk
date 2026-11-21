@@ -34,12 +34,14 @@ import ci_local
 ok, detail = ci_local._grammar_gate({})
 print("AFTER fix, from the worktree:", ok, "|", detail)
 PY
-AFTER fix, from the worktree: True | 364 files parse under 3.10
+AFTER fix, from the worktree: True | 365 files parse under 3.10
 ```
 
-364 = the src/tests/tools trees the gate always intended, plus the
-eight `scripts/` files now inside the floor. The count is nonzero in
-the very checkout whose path used to blank it.
+365 = the 356 src/tests/tools files the gate always intended, plus the
+nine `scripts/` files now inside the floor. The count is nonzero in
+the very checkout whose path used to blank it. (Re-verified after the
+rebase onto main 9418699; the before-run above re-reproduces against
+the merge-base tool unchanged.)
 
 The pinned regressions live in `tests/test_ci_local_tool.py`:
 

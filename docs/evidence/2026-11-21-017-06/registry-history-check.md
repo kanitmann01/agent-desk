@@ -54,3 +54,7 @@ restored; registry gate leg: PASS | REGISTRY-CI PASS
 
 The hosted job runs the identical command with the identical tool, so
 the same refusal now fails the `registry` job on the PR itself.
+
+Re-verified after the rebase onto main 9418699: the same break through
+the gate leg answers `FAIL | REGISTRY-CI FAILED (2)`, and the restored
+tree answers `PASS | REGISTRY-CI PASS`.
