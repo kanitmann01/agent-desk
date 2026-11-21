@@ -357,16 +357,45 @@ deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 </section>"""
 
 
+def _job_choices(connections: list[dict], selected: str) -> str:
+    """One job's connection options, grouped by provider, with the job's
+    bound connection preselected: the dropdown then tells the same truth
+    the readback under the form tells, and an untouched save posts the
+    binding back instead of silently unbinding it (spec 018 #235). The
+    Not bound option is selected only when the job has no binding."""
+    groups: dict[str, list[dict]] = {}
+    for connection in connections:
+        preset = preset_for(connection.get("provider", ""))
+        name = preset.name if preset else str(connection.get("provider", ""))
+        groups.setdefault(name, []).append(connection)
+    options = [
+        "<option value=''"
+        + (" selected" if not selected else "")
+        + ">Not bound (default connection or environment)</option>"
+    ]
+    for provider, rows in groups.items():
+        items = "".join(
+            f"<option value='{html.escape(row['id'], quote=True)}'"
+            + (" selected" if row["id"] == selected else "")
+            + f">{html.escape(str(row.get('label', '')))}</option>"
+            for row in rows
+        )
+        options.append(
+            f"<optgroup label='{html.escape(provider)}'>{items}</optgroup>")
+    return "".join(options)
+
+
 def _jobs_section(bindings: list[dict] | None,
                   connections: list[dict] | None) -> str:
     """The per-job picker: which connection and model serves which job.
 
     One plain form per job (the house rule: the page works with no
-    script at all), the connection select grouped by provider, and the
-    model offered as a text input with a datalist of every cached model,
-    so choosing from the cached list and typing by hand are the same
-    control. The current binding reads back under each row, so the page
-    always states what serves what.
+    script at all), the connection select grouped by provider and
+    preselected to the job's own binding, and the model offered as a
+    text input with a datalist of every cached model, so choosing from
+    the cached list and typing by hand are the same control. The current
+    binding reads back under each row, so the page always states what
+    serves what, and the select shows the same state.
     """
     if bindings is None or connections is None:
         body = (
@@ -382,21 +411,6 @@ def _jobs_section(bindings: list[dict] | None,
             for model in connection.get("models") or []:
                 if model not in cached:
                     cached.append(model)
-        groups: dict[str, list[dict]] = {}
-        for connection in connections:
-            preset = preset_for(connection.get("provider", ""))
-            name = preset.name if preset else str(connection.get("provider", ""))
-            groups.setdefault(name, []).append(connection)
-        options = ["<option value=''>Not bound (default connection or environment)</option>"]
-        for provider, rows in groups.items():
-            items = "".join(
-                f"<option value='{html.escape(row['id'], quote=True)}'>"
-                f"{html.escape(str(row.get('label', '')))}</option>"
-                for row in rows
-            )
-            options.append(
-                f"<optgroup label='{html.escape(provider)}'>{items}</optgroup>")
-        choices = "".join(options)
         datalist = "".join(
             f"<option value='{html.escape(str(model), quote=True)}'></option>"
             for model in cached)
@@ -406,6 +420,7 @@ def _jobs_section(bindings: list[dict] | None,
             binding = by_job.get(job)
             selected = str(binding.get("connectionId") or "") if binding else ""
             model = str(binding.get("model") or "") if binding else ""
+            choices = _job_choices(connections, selected)
             if selected and selected in by_id:
                 current = (
                     f"<span class='empty'>Serves through"

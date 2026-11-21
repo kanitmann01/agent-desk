@@ -395,3 +395,48 @@ def test_first_run_shows_real_connect_actions_with_zero_permission_prompts(env, 
     # And nothing is fabricated on the empty first screen.
     assert "Sample data" not in page
     assert "14,320" not in page
+
+
+# -- the Jobs pickers preselect the job's bound connection (#235) --------------
+
+
+def _picker(page: str, job: str) -> str:
+    """One job's picker form, sliced out of the rendered settings page."""
+    start = page.index(f"name='job' value='{job}'")
+    return page[start:page.index("</form>", start)]
+
+
+def test_the_jobs_pickers_preselect_the_bound_connection_so_an_untouched_save_keeps_it(env, auth):
+    """The dropdown tells the same truth the readback tells (spec 018
+    #235): a bound job's connection option carries selected and the Not
+    bound option does not, so saving the form untouched posts the
+    binding back instead of silently unbinding it; with no binding, Not
+    bound is the selected option."""
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Desk ollama", "provider": "ollama",
+        "baseUrl": "http://localhost:11434/v1", "apiKey": "",
+    }, auth)
+    assert status == 201, body
+    connection = json.loads(body)
+    status, _h, _b = env.post_json("/api/bindings", {
+        "job": "assistant", "connectionId": connection["id"], "model": "",
+    }, auth)
+    assert status == 200
+
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    picker = _picker(page, "assistant")
+    assert f"<option value='{connection['id']}' selected>Desk ollama</option>" in picker
+    assert "<option value=''>Not bound (default connection or environment)</option>" in picker
+    assert "<option value='' selected>" not in picker  # the job IS bound
+    assert "Serves through <b>Desk ollama</b>" in page  # the readback agrees
+
+    # Once the job is unbound, Not bound is what the picker shows selected.
+    status, _h, _b = env.post_json("/api/bindings", {
+        "job": "assistant", "connectionId": "", "model": "",
+    }, auth)
+    assert status == 200
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    picker = _picker(page, "assistant")
+    assert ("<option value='' selected>"
+            "Not bound (default connection or environment)</option>") in picker
+    assert f"<option value='{connection['id']}' selected" not in picker
