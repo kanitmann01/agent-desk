@@ -9,6 +9,7 @@ the ask-first gate.
 import json
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -20,6 +21,7 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
 import pytest
 
 from agentdesk.ledger import ASK_FIRST, Entry, Ledger, LedgerError, may_act
+from agentdesk.ledger.undo import undo
 from agentdesk.settings import SettingsStore
 
 
@@ -160,6 +162,98 @@ def test_trim_keeps_cap_and_referenced_blobs(tmp_path: Path) -> None:
             for sha in (entry.before_sha, entry.after_sha):
                 if sha is not None:
                     ledger.get_blob(sha)
+    finally:
+        ledger.close()
+
+
+def test_trim_drops_unreferenced_blobs_without_waiting_out_the_grace(tmp_path: Path) -> None:
+    clock = Clock(1_000_000.0)
+    ledger = _ledger(tmp_path, clock=clock, cap_bytes=10 * 1024)
+    try:
+        for index in range(40):
+            clock.advance(1)
+            before = json.dumps({"key": "daily_cap", "value": 3, "n": index}).encode() * 6
+            after = json.dumps({"key": "daily_cap", "value": 1, "n": index}).encode() * 6
+            ledger.record(
+                actor="agent-desk",
+                action="settings.set",
+                subject="daily_cap",
+                why="A burst of changes, one second apart.",
+                undo_kind="settings-key",
+                before=before,
+                after=after,
+            )
+        stored = ledger.conn.execute("SELECT COALESCE(SUM(LENGTH(data)), 0) FROM blobs").fetchone()[0]
+        entries = ledger.entries(limit=1000)
+        assert len(entries) > 1
+        assert stored <= 10 * 1024
+        for entry in entries:
+            for sha in (entry.before_sha, entry.after_sha):
+                if sha is not None:
+                    ledger.get_blob(sha)
+    finally:
+        ledger.close()
+
+
+def test_a_sealed_blob_that_will_not_open_is_not_returned_as_plaintext(tmp_path: Path) -> None:
+    def seal(data: bytes) -> bytes:
+        return b"\x01" + b"iv-twelve!!" + data
+
+    def unseal(_data: bytes) -> bytes:
+        raise RuntimeError("wrong key")
+
+    ledger = Ledger(tmp_path / "ledger.sqlite3", seal=seal, unseal=unseal)
+    try:
+        entry = ledger.record(
+            actor="agent-desk",
+            action="memory.add",
+            subject="memory/fact",
+            why="A private fact.",
+            before=b"secret",
+        )
+        with pytest.raises(LedgerError):
+            ledger.get_blob(entry.before_sha)
+        plain = ledger.put_blob(b"not an envelope")
+        assert ledger.get_blob(plain) == b"not an envelope"
+    finally:
+        ledger.close()
+
+
+def test_two_undos_at_once_record_only_one(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path)
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+    settings.set("daily_cap", 1)
+    server = type("Server", (), {})()
+    server.ledger = ledger
+    server.settings = settings
+    try:
+        entry = ledger.record(
+            actor="agent-desk",
+            action="settings.set",
+            subject="daily_cap",
+            why="The cap changed.",
+            undo_kind="settings-key",
+            before=json.dumps({"key": "daily_cap", "value": 3}).encode(),
+        )
+        barrier = threading.Barrier(2)
+        results: list = []
+        errors: list = []
+
+        def go() -> None:
+            barrier.wait()
+            try:
+                results.append(undo(server, ledger, entry.id))
+            except LedgerError as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=go) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(results) == 1
+        assert len(errors) == 1
+        assert ledger.get(entry.id).undone_by == results[0].id
     finally:
         ledger.close()
 

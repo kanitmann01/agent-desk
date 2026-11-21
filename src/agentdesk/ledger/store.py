@@ -244,6 +244,9 @@ class Ledger:
         except Exception:
             # Written before the memory database was sealed, so there is no
             # envelope to open: the stored bytes are the state itself.
+            # An envelope that will not open is a failure, not plaintext.
+            if data[:1] == b"\x01":
+                raise LedgerError("That capture could not be opened.") from None
             return data
 
     # -- entries ----------------------------------------------------------
@@ -312,10 +315,12 @@ class Ledger:
                 # An entry that undoes another is that undo: stamping the
                 # original in the same transaction makes "one undo per
                 # entry" true even across a crash.
-                self.conn.execute(
+                updated = self.conn.execute(
                     "UPDATE entries SET undone_by = ? WHERE id = ? AND undone_by IS NULL",
                     (entry.id, entry.undoes),
                 )
+                if updated.rowcount == 0:
+                    raise LedgerError("That change was already undone.")
         self._maintain_size()
         return entry
 
@@ -412,10 +417,20 @@ class Ledger:
                 if count <= 1:
                     break
                 with self.conn:
-                    self.conn.execute(
-                        "DELETE FROM entries WHERE id ="
-                        " (SELECT id FROM entries ORDER BY rowid ASC LIMIT 1)"
-                    )
+                    row = self.conn.execute(
+                        "SELECT id, before_sha, after_sha FROM entries"
+                        " ORDER BY rowid ASC LIMIT 1"
+                    ).fetchone()
+                    self.conn.execute("DELETE FROM entries WHERE id = ?", (row["id"],))
+                    for sha in (row["before_sha"], row["after_sha"]):
+                        if not sha:
+                            continue
+                        still = self.conn.execute(
+                            "SELECT 1 FROM entries WHERE before_sha = ? OR after_sha = ?",
+                            (sha, sha),
+                        ).fetchone()
+                        if still is None:
+                            self.conn.execute("DELETE FROM blobs WHERE sha = ?", (sha,))
         self._gc_blobs()
 
     def _gc_blobs(self) -> None:

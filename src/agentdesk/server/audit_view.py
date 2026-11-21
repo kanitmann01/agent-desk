@@ -220,6 +220,7 @@ def render_audit_page(
     inbox_count: int = 0,
     kind: str | None = None,
     ledger_entries: list | None = None,
+    notice: str = "",
 ) -> str:
     """The full trail document, newest first, inside the Settings rail."""
     # The filter names a family; an unknown name shows the whole trail
@@ -252,7 +253,9 @@ def render_audit_page(
 keystrokes, no screen, and this list is yours.</p>
 {_questions(questions)}
 """
+    notice_html = f"<div class='alert'><p>{html.escape(notice)}</p></div>" if notice else ""
     content = f"""<h1>Activity</h1>
+{notice_html}
 <p class='empty'><a href="/settings">Back to settings</a></p>
 <p>Everything the desk recorded, newest first: inbox decisions, model
 calls, file reads, mail, plugin and registry changes, settings saves and

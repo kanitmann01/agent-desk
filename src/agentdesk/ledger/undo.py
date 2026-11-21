@@ -50,30 +50,34 @@ def undo(
     changed. One undo per entry; the undo is itself an entry, so undoing it
     redoes the change. An unknown id raises LookupError (the API's 404).
     """
-    entry = ledger.get(entry_id)
-    if entry is None:
-        raise LookupError("That change is not in the ledger.")
-    if entry.undone_by is not None:
-        raise LedgerError("That change was already undone.")
-    reverse = UNDO.get(entry.undo_kind)
-    if reverse is None:
-        raise LedgerError("That change cannot be undone.")
-    before = ledger.get_blob(entry.before_sha) if entry.before_sha is not None else None
-    if entry.before_sha is not None and before is None:
-        raise LedgerError("That change's earlier state was not captured, so it cannot be undone.")
-    current = reverse(server, entry, before)
-    recorded = ledger.record(
-        actor=actor,
-        action="ledger.undo",
-        subject=entry.subject,
-        why=f"Undo: {entry.why}",
-        undo_kind=entry.undo_kind,
-        before=current,
-        after=before,
-        detail={"undoes": entry.id, "action": entry.action, "subject": entry.subject},
-        undoes=entry.id,
-    )
-    return recorded
+    with ledger._lock:
+        entry = ledger.get(entry_id)
+        if entry is None:
+            raise LookupError("That change is not in the ledger.")
+        if entry.undone_by is not None:
+            raise LedgerError("That change was already undone.")
+        reverse = UNDO.get(entry.undo_kind)
+        if reverse is None:
+            raise LedgerError("That change cannot be undone.")
+        before = ledger.get_blob(entry.before_sha) if entry.before_sha is not None else None
+        if entry.before_sha is not None and before is None:
+            raise LedgerError("That change's earlier state was not captured, so it cannot be undone.")
+        current = reverse(server, entry, before)
+        redo_kind = {"card-added": "card-dismissed", "card-dismissed": "card-added"}.get(
+            entry.undo_kind, entry.undo_kind,
+        )
+        recorded = ledger.record(
+            actor=actor,
+            action="ledger.undo",
+            subject=entry.subject,
+            why=f"Undo: {entry.why}",
+            undo_kind=redo_kind,
+            before=current,
+            after=before,
+            detail={"undoes": entry.id, "action": entry.action, "subject": entry.subject},
+            undoes=entry.id,
+        )
+        return recorded
 
 
 def _payload(entry: Entry, before: bytes | None) -> dict:

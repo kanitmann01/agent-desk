@@ -188,7 +188,7 @@ def test_card_undo_kinds(env, auth) -> None:
     assert status == 200, body
     assert inbox.get(added.id).status == STATUS_DISMISSED
     inverse = server.ledger.get(json.loads(body)["entry"])
-    assert inverse.undo_kind == "card-added"
+    assert inverse.undo_kind == "card-dismissed"
 
     # A card the desk dismissed by itself is undone by reopening it.
     dismissed = inbox.add("suggestion", "excel", "Act on the plan")
@@ -205,4 +205,72 @@ def test_card_undo_kinds(env, auth) -> None:
     assert status == 200, body
     assert inbox.get(dismissed.id).status == STATUS_WAITING
     inverse = server.ledger.get(json.loads(body)["entry"])
-    assert inverse.undo_kind == "card-dismissed"
+    assert inverse.undo_kind == "card-added"
+
+
+def test_redoing_a_card_undo_uses_the_opposite_kind(env, auth) -> None:
+    server = env.server
+    inbox = server.inbox
+    added = inbox.add("suggestion", "excel", "Try a pivot table")
+    entry = server.ledger.record(
+        actor="agent-desk",
+        action="inbox.add",
+        subject=f"card/{added.id}",
+        why="The desk added a suggestion card.",
+        undo_kind="card-added",
+        before=_card_capture(server, added),
+    )
+    first = json.loads(env.post_json("/api/ledger/undo", {"id": entry.id}, auth)[2])
+    redo = json.loads(env.post_json("/api/ledger/undo", {"id": first["entry"]}, auth)[2])
+    assert server.ledger.get(redo["entry"]).undo_kind == "card-added"
+    assert inbox.get(added.id).status != STATUS_DISMISSED
+
+    dismissed = inbox.add("suggestion", "excel", "Act on the plan")
+    dismissed = inbox.dismiss(dismissed.id)
+    entry = server.ledger.record(
+        actor="agent-desk",
+        action="inbox.dismiss",
+        subject=f"card/{dismissed.id}",
+        why="The desk dismissed a card nobody needed.",
+        undo_kind="card-dismissed",
+        before=_card_capture(server, dismissed),
+    )
+    first = json.loads(env.post_json("/api/ledger/undo", {"id": entry.id}, auth)[2])
+    redo = json.loads(env.post_json("/api/ledger/undo", {"id": first["entry"]}, auth)[2])
+    assert server.ledger.get(redo["entry"]).undo_kind == "card-dismissed"
+    assert inbox.get(dismissed.id).status == STATUS_DISMISSED
+
+
+def test_a_crafted_return_to_cannot_inject_a_header(env, auth) -> None:
+    status, headers, _body = _post_form(env, auth, "/settings/toggle", {
+        "key": "quiet_hours",
+        "return_to": "/settings%0d%0aX-Injected:%20yes",
+    })
+    location = headers.get("Location", "")
+    joined = " ".join(f"{name}:{value}" for name, value in headers.items())
+    assert status == 303
+    assert "X-Injected" not in joined
+    assert "\r" not in joined and "\n" not in joined
+    assert location == "/inbox"
+
+    entry = _seed_settings_change(env)
+    status, headers, body = _post_form(env, auth, "/api/ledger/undo", {
+        "id": "missing",
+        "return_to": "/settings%0d%0aX-Injected:%20yes",
+    })
+    assert status == 303
+    assert not body.startswith(b"{")
+    location = headers.get("Location", "")
+    assert "X-Injected" not in location
+    assert location.startswith("/settings")
+    assert "not in the ledger" in location or "change" in location.lower()
+
+    status, headers, _body = _post_form(env, auth, "/api/ledger/undo", {
+        "id": entry.id,
+        "return_to": "/settings%0d%0aX-Injected:%20yes",
+    })
+    location = headers.get("Location", "")
+    joined = " ".join(f"{name}:{value}" for name, value in headers.items())
+    assert status == 303
+    assert "X-Injected" not in joined
+    assert location == "/settings"

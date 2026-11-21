@@ -24,11 +24,3 @@ Scheduler are MIT; CPython is the Python Software Foundation License
 file carries both texts behind the package's own pointer note; Apache-2.0
 stands alone for the plugin SDK boundary and for Apache-2.0 build-only
 components.
-
-Hermes Agent (github.com/NousResearch/hermes-agent, commit `f6c3eb1`,
-Copyright (c) 2025 Nous Research) is MIT-licensed. Portions adapted in
-`src/agentdesk/{ledger,deskcheck,agentloop,recommend,safety,update}`,
-`memory/profile*.py` and `repetition/curator.py`. This is adapted source,
-not a package dependency: it is vendored by adaptation rather than installed,
-so it does not appear in the SBOM and its licence text is the notice that
-travels with the adapted files.

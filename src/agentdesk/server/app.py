@@ -2583,7 +2583,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # pages name themselves with return_to, and the inbox empty
         # state's offer (the only other form poster) defaults to /inbox.
         if self._is_form_submit():
-            self._send_redirect(self._form_return_to(body, "/inbox"))
+            self._send_redirect("/inbox")
             return
         self._send_json(200, {"key": key, "value": value})
 
@@ -3006,13 +3006,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if self.server.activity_log is not None else []  # type: ignore[attr-defined]
         )
         _, _sep, query = self.path.partition("?")
-        kind = parse_qs(query).get("kind", [""])[0] if query else ""
+        parsed = parse_qs(query) if query else {}
+        kind = parsed.get("kind", [""])[0]
+        notice = parsed.get("notice", [""])[0]
         ledger = getattr(self.server, "ledger", None)  # type: ignore[attr-defined]
         ledger_entries = ledger.entries(limit=50) if ledger is not None else []
         page = render_audit_page(entries, questions, agentdesk.__version__,
                                  inbox_count=self._inbox_waiting_count(),
                                  kind=kind or None,
-                                 ledger_entries=ledger_entries)
+                                 ledger_entries=ledger_entries,
+                                 notice=notice)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _ledger_undo(self) -> None:
@@ -3026,20 +3029,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         ledger = getattr(server, "ledger", None)
         if ledger is None:
-            self._send_json(503, {"error": "the ledger is not available"})
+            self._ledger_undo_error(503, "The ledger is not available, so nothing was changed.")
             return
         body = self._read_json_body() or {}
         entry_id = body.get("id")
         if not isinstance(entry_id, str) or not entry_id:
-            self._send_json(400, {"error": "name the change to undo"})
+            self._ledger_undo_error(400, "Name the change to undo.")
             return
         try:
             recorded = ledger_undo.undo(server, ledger, entry_id)
         except LookupError as exc:
-            self._send_json(404, {"error": str(exc)})
+            self._ledger_undo_error(404, str(exc))
             return
         except LedgerError as exc:
-            self._send_json(409, {"error": str(exc)})
+            self._ledger_undo_error(409, str(exc))
             return
         self._audit("ledger.undo", target=entry_id,
                     detail=f"undo entry {recorded.id}")
@@ -3047,6 +3050,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_redirect(self._form_return_to(body, "/settings/activity"))
             return
         self._send_json(200, {"undone": entry_id, "entry": recorded.id})
+
+    def _ledger_undo_error(self, status: int, sentence: str) -> None:
+        """A failed undo: JSON for a fetch, a notice redirect for a form.
+
+        The sentence is what the page shows. A form post must not be left
+        looking at a raw JSON body.
+        """
+        if self._is_form_submit():
+            self._send_redirect(f"/settings/activity?notice={quote(sentence)}")
+            return
+        self._send_json(status, {"error": sentence})
 
     # -- memory: the page and its actions (tickets #42, #94) --------------
 
@@ -6543,8 +6557,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         browser to another origin (no open redirect).
         """
         target = body.get("return_to")
-        if isinstance(target, str) and target.startswith("/settings"):
+        if isinstance(target, str) and re.fullmatch(
+            r"/settings(/[A-Za-z0-9_\-/]*)?(#[A-Za-z0-9_-]+)?", target,
+        ):
             return target
+        if isinstance(target, str):
+            return "/settings"
         return default
 
     def _send_redirect(self, location: str) -> None:
