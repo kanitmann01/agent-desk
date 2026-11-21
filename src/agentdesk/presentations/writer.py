@@ -333,7 +333,7 @@ def _title_shape_for(title: str, role: str, layout_part: str, parts: dict) -> st
     found = _placeholder(parts[layout_part], wanted) or _placeholder(parts[layout_part], "title")
     ph = found["ph"] if found else f'<p:ph type="{wanted}"/>'
     xfrm = found["xfrm"] if found else ""
-    pt = found["pt"] if found else 14
+    pt = _resolved_pt(parts, layout_part, ph) if found else None
     return _ph_shape(2, "Title", xfrm, _paragraph(_plain_run(title, pt)), ph)
 
 
@@ -346,7 +346,7 @@ def _body_from_layout(bullets: list[str], layout_part: str, parts: dict) -> str:
     found = _body_placeholder(parts[layout_part])
     ph = found["ph"] if found else '<p:ph type="body" idx="1"/>'
     xfrm = found["xfrm"] if found else ""
-    pt = found["pt"] if found else 14
+    pt = _resolved_pt(parts, layout_part, ph) if found else None
     return _ph_shape(3, "Body", xfrm, _bullet_paragraphs(bullets, pt), ph)
 
 
@@ -355,12 +355,15 @@ def _body_box(bullets: list[str], region: list) -> str:
     x, y, w, h = region
     return _shape(
         3, "Body", emu(x), emu(y), emu(w), emu(h),
-        _bullet_paragraphs(bullets, 14),
+        _bullet_paragraphs(bullets, None),
     )
 
 
-def _bullet_paragraphs(bullets: list[str], pt: int = 14) -> str:
-    """One bulleted paragraph per line, at least 14 pt, with no typeface of its own."""
+def _bullet_paragraphs(bullets: list[str], pt: int | None = None) -> str:
+    """One bulleted paragraph per line, with no typeface of its own.
+
+    `pt` is the inherited size. It is written only when that size is under 14.
+    """
     if not bullets:
         return _paragraph(_plain_run("", pt))
     rows = []
@@ -372,11 +375,18 @@ def _bullet_paragraphs(bullets: list[str], pt: int = 14) -> str:
     return "".join(rows)
 
 
-def _plain_run(text: str, pt: int = 14) -> str:
-    """A run with no colour and no typeface. The size is explicit and at least 14 pt."""
-    size = max(14, int(pt))
+def _plain_run(text: str, pt: int | None = None) -> str:
+    """A run with no colour and no typeface.
+
+    The size stays off when the inherited size is at least 14 pt, so a
+    master that says 44 or 32 keeps that size. A smaller size, or no
+    size at all, is raised to 14 pt.
+    """
+    size = ""
+    if pt is None or int(pt) < 14:
+        size = ' sz="1400"'
     return (
-        f'<a:r><a:rPr lang="en-US" sz="{size * 100}" dirty="0"/>'
+        f'<a:r><a:rPr lang="en-US"{size} dirty="0"/>'
         f"<a:t>{_xml_text(text)}</a:t></a:r>"
     )
 
@@ -453,12 +463,10 @@ def _shapes(layout_xml: bytes) -> list[dict]:
         if not ph:
             continue
         xfrm = re.search(r"<a:xfrm>.*?</a:xfrm>", block)
-        size = re.search(r'\bsz="(\d+)"', block)
-        pt = max(14, int(size.group(1)) // 100) if size else 14
         found.append({
             "ph": ph.group(0),
             "xfrm": xfrm.group(0) if xfrm else "",
-            "pt": pt,
+            "pt": _declared_pt(block),
         })
     return found
 
@@ -504,10 +512,10 @@ def _layout_has_body(layout_part: str, parts: dict) -> bool:
 
 
 def content_point_size(shell: bytes, recipe: dict) -> int:
-    """The body size a filled slide will use, never under 14 pt.
+    """The body size a filled slide will draw, never under 14 pt.
 
-    The size is the layout placeholder's own when it declares one, so a
-    fit check can budget for the text that will actually be drawn.
+    The size is resolved from the layout placeholder, then the master
+    placeholder, then the master's text styles. A size under 14 is raised.
     """
     parts = read_parts(shell)
     rule = next(
@@ -519,7 +527,82 @@ def content_point_size(shell: bytes, recipe: dict) -> int:
     if layout_part is None:
         return 14
     found = _body_placeholder(parts[layout_part])
-    return found["pt"] if found else 14
+    if found is None:
+        return 14
+    return _drawn_pt(_resolved_pt(parts, layout_part, found["ph"]))
+
+
+def _declared_pt(block: str) -> int | None:
+    """The point size written on this shape, or None when it inherits."""
+    match = re.search(r'\bsz="(\d+)"', block)
+    return int(match.group(1)) // 100 if match else None
+
+
+def _drawn_pt(pt: int | None) -> int:
+    """The size that will be drawn. Unknown or tiny sizes become 14."""
+    if pt is None or pt < 14:
+        return 14
+    return pt
+
+
+def _resolved_pt(parts: dict, layout_part: str, ph_tag: str) -> int | None:
+    """The inherited size for one placeholder.
+
+    Layout first, then the matching master placeholder, then the master's
+    text style for that placeholder's level.
+    """
+    declared = _matching_pt(parts[layout_part], ph_tag)
+    if declared is not None:
+        return declared
+    master = _master_xml(parts, layout_part)
+    if master is None:
+        return None
+    declared = _matching_pt(master, ph_tag)
+    if declared is not None:
+        return declared
+    return _style_pt(master, ph_tag)
+
+
+def _matching_pt(xml: bytes, ph_tag: str) -> int | None:
+    """The declared size of the placeholder that matches `ph_tag`."""
+    for shape in _shapes(xml):
+        if _same_ph(shape["ph"], ph_tag):
+            return shape["pt"]
+    return None
+
+
+def _same_ph(left: str, right: str) -> bool:
+    """Whether two placeholder tags name the same slot."""
+    return _attr(left, "type") == _attr(right, "type") and _attr(left, "idx") == _attr(right, "idx")
+
+
+def _master_xml(parts: dict, layout_part: str) -> bytes | None:
+    """The slide master this layout points at."""
+    rels_name = layout_part.replace("ppt/slideLayouts/", "ppt/slideLayouts/_rels/") + ".rels"
+    rels = parts.get(rels_name, b"").decode("utf-8", "replace")
+    match = re.search(r'Target="([^"]*slideMasters/[^"]+)"', rels)
+    if not match:
+        return parts.get("ppt/slideMasters/slideMaster1.xml")
+    target = match.group(1)
+    name = "ppt/" + target.removeprefix("../") if target.startswith("../") else target.lstrip("/")
+    return parts.get(name)
+
+
+def _style_pt(master: bytes, ph_tag: str) -> int | None:
+    """The lvl1 size in the master's title, body, or other style."""
+    kind = _attr(ph_tag, "type")
+    if kind in ("title", "ctrtitle"):
+        style = "titleStyle"
+    elif kind in ("body", "obj", "subtitle") or _attr(ph_tag, "idx") == "1":
+        style = "bodyStyle"
+    else:
+        style = "otherStyle"
+    text = master.decode("utf-8", "replace")
+    block = re.search(rf"<p:{style}\b[^>]*>(.*?)</p:{style}>", text, re.DOTALL)
+    if not block:
+        return None
+    match = re.search(r'<a:lvl1pPr\b.*?<a:defRPr\b[^>]*\bsz="(\d+)"', block.group(1), re.DOTALL)
+    return int(match.group(1)) // 100 if match else None
 
 
 def _region(rule: dict) -> list | None:
