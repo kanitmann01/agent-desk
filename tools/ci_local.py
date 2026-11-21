@@ -1,26 +1,27 @@
-"""The deterministic CI gate: every check the paid runners ran, one
-command, zero GitHub minutes.
+"""The deterministic local CI gate: the same checks the hosted workflow
+runs, one command, zero GitHub minutes.
 
-GitHub Actions on a private repo bills per minute and the account's
-spending limit broke (every 2026-11-13 run was refused before any job
-started). This script replaces the hosted matrix with the same gates,
-run locally in a fixed order under a pinned environment, so the verdict
+Born when the account's spending limit broke (every 2026-11-13 hosted
+run was refused before any job started); the hosted workflow is green
+again, and this script remains the local complement: the same gates,
+run offline in a fixed order under a pinned environment, so the verdict
 depends only on the code:
 
     python tools/ci_local.py
 
 Gates, in the workflow's order (a superset where local runs are free):
 
-1.  py-grammar       every src/tests/tools file parses under the 3.10
-                     grammar (the declared floor; this stood in for the
-                     3.10 legs of the hosted matrix)
+1.  py-grammar       every src/tests/tools/scripts file parses under the
+                     3.10 grammar (the declared floor; this stood in for
+                     the 3.10 legs of the hosted matrix)
 2.  pytest           the full suite over a fresh temp data dir
 3.  frontend-install npm ci ONLY when node_modules is missing
                      (deterministic install from the lockfile)
 4.  frontend-check   tsc --noEmit (the workflow's typecheck gate)
 5.  frontend-tests   the vitest suite (local-only addition)
-6.  licenses         tools/license_manifest.py and the committed
-                     manifest must be byte-current (git diff --exit-code)
+6.  licenses         the authoritative SBOM chain the hosted license
+                     job runs: sbom.py, license_gate.py over its
+                     output, and the notices --check currency leg
 7.  registry-ci      tools/registry_ci.py over every plugin in
                      registry/plugins/, against the index at the
                      branch's mainline merge-base, with archive/plugins
@@ -69,9 +70,17 @@ def _grammar_gate(env: dict) -> tuple[bool, str]:
     import ast
     bad: list[str] = []
     count = 0
-    for base in ("src", "tests", "tools"):
+    for base in ("src", "tests", "tools", "scripts"):
         for path in (ROOT / base).rglob("*.py"):
-            if "node_modules" in path.parts or ".worktrees" in path.parts:
+            # Relativize before the skip test: this gate may itself run
+            # from a checkout under .worktrees/, and matching the
+            # absolute path would skip the whole tree (docstring_gate
+            # relativizes for exactly this reason).
+            try:
+                parts = path.relative_to(ROOT).parts
+            except ValueError:
+                parts = path.parts
+            if "node_modules" in parts or ".worktrees" in parts:
                 continue
             count += 1
             try:
@@ -80,6 +89,8 @@ def _grammar_gate(env: dict) -> tuple[bool, str]:
                 bad.append(f"{path.relative_to(ROOT)}: {exc}")
     if bad:
         return False, f"{count} files, {len(bad)} 3.10 syntax errors: " + "; ".join(bad[:3])
+    if count == 0:
+        return False, "no Python files under src/tests/tools/scripts; the walk is broken, not the floor"
     return True, f"{count} files parse under 3.10"
 
 
@@ -117,20 +128,22 @@ def _frontend_tests(env: dict) -> tuple[bool, str]:
 
 
 def _license_gate(env: dict) -> tuple[bool, str]:
-    """The manifest regenerates byte-identical (the workflow's two steps)."""
-    proc = subprocess.run(
-        [PYTHON, "tools/license_manifest.py"],
-        cwd=ROOT, env=env, capture_output=True, text=True,
+    """The SBOM license chain the hosted license-gate job runs."""
+    chain = (
+        ("sbom", [PYTHON, "scripts/sbom.py"]),
+        ("license-gate", [PYTHON, "scripts/license_gate.py",
+                          "build/sbom.cdx.json", "--report",
+                          "build/license-report.txt"]),
+        ("notices", [PYTHON, "scripts/third_party_notices.py", "--check"]),
     )
-    if proc.returncode != 0:
-        return False, (proc.stderr or proc.stdout or "").strip().splitlines()[-1][:200]
-    diff = subprocess.run(
-        ["git", "diff", "--exit-code", "THIRD-PARTY-LICENSES.md"],
-        cwd=ROOT, env=env, capture_output=True, text=True,
-    )
-    if diff.returncode != 0:
-        return False, "THIRD-PARTY-LICENSES.md is stale; regenerate and commit it"
-    return True, "manifest clean and current"
+    for name, args in chain:
+        proc = subprocess.run(args, cwd=ROOT, env=env,
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            lines = (proc.stdout or proc.stderr or "").strip().splitlines()
+            tail = lines[-1][:160] if lines else f"exit {proc.returncode}"
+            return False, f"{name}: {tail}"
+    return True, "sbom, license gate and notices all clean"
 
 
 def _registry_base_index(env: dict) -> Path | None:

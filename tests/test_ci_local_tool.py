@@ -7,6 +7,7 @@ the gate cannot silently lose a check.
 """
 
 import ast
+import sys
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parent.parent / "tools" / "ci_local.py"
@@ -16,21 +17,71 @@ def _source() -> str:
     return TOOL.read_text(encoding="utf-8")
 
 
+def _gate():
+    """Import the gate module so its legs can be run against a fake checkout."""
+    if str(TOOL.parent) not in sys.path:
+        sys.path.insert(0, str(TOOL.parent))
+    import ci_local
+    return ci_local
+
+
+def _grammar_over(checkout: Path):
+    """Run the grammar gate with ROOT pointed at a fake checkout."""
+    ci_local = _gate()
+    saved = ci_local.ROOT
+    ci_local.ROOT = checkout
+    try:
+        return ci_local._grammar_gate({})
+    finally:
+        ci_local.ROOT = saved
+
+
 def test_the_tool_parses_under_the_3_10_grammar():
     ast.parse(_source(), feature_version=(3, 10))
 
 
+def test_the_grammar_gate_covers_worktree_checkouts_and_the_scripts_tree(tmp_path):
+    # The skip must be tested against the path below the checkout root,
+    # not the absolute path: this repo keeps its worktrees under
+    # .worktrees/, and the absolute test skipped the whole tree (the
+    # docstring gate relativizes for exactly this reason). The bad file
+    # lives in scripts/, which the floor must cover too (audit tooling F3
+    # and F7: the baseline worktree run passed on 0 files).
+    checkout = tmp_path / ".worktrees" / "gate"
+    (checkout / "src").mkdir(parents=True)
+    (checkout / "scripts").mkdir()
+    (checkout / "src" / "good.py").write_text("X = 1\n", encoding="utf-8")
+    (checkout / "scripts" / "bad.py").write_text(
+        "try:\n    pass\nexcept* ValueError:\n    pass\n", encoding="utf-8")
+    ok, detail = _grammar_over(checkout)
+    assert ok is False, "a 3.11-only syntax slip in scripts/ passed the floor"
+    assert "bad.py" in detail
+
+
+def test_the_grammar_gate_fails_when_it_finds_no_files(tmp_path):
+    # Three roots with zero Python files can only mean the walk is wrong;
+    # an empty pass must never read as a green light.
+    checkout = tmp_path / ".worktrees" / "empty"
+    (checkout / "src").mkdir(parents=True)
+    ok, _detail = _grammar_over(checkout)
+    assert ok is False
+
+
 def test_every_gate_of_the_hosted_matrix_is_present():
     source = _source()
-    # the exact gates the hosted workflow ran, by their distinctive marks
+    # the exact gates the hosted workflow runs, by their distinctive marks
     for mark in (
         '"pytest"',                 # the suite
-        "tools/license_manifest.py",  # the license gate
-        '"git", "diff", "--exit-code"',  # the manifest currency check
+        "scripts/sbom.py",            # the SBOM the license chain reads
+        "scripts/license_gate.py",    # the license gate over it
+        '"--check"',                 # the notices currency check
         "tools/registry_ci.py",     # the registry review
         '"npm", "run", "check"',    # tsc --noEmit
     ):
         assert mark in source, f"the local CI gate lost the {mark} check"
+    # the legacy manifest tool could be factually wrong and still pass
+    # its byte-diff gate (audit tooling F6); it is deleted, not watched
+    assert "license_manifest" not in source
 
 
 def test_the_environment_is_pinned_for_determinism():
