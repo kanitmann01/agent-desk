@@ -11,7 +11,6 @@ them (memory/service), never a copy.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 
@@ -43,12 +42,6 @@ BRIEF_MAX_CHARS = 400
 # The feedback bound rides the retain excerpt's own ceiling, so a run's
 # "how did it land?" can never out-grow the excerpt it is offered as.
 FEEDBACK_MAX_CHARS = 4000
-
-# The artifact's own bounds: the parse keeps a deck's worth of slides
-# and bullets, because the model sometimes answers with a wall.
-MAX_SLIDES = 12
-MAX_BULLETS = 8
-
 
 @dataclass(frozen=True)
 class AgentRun:
@@ -148,44 +141,15 @@ def build_agent_prompt(agent: AgentKind, brief: str, context_block: str = "",
 def parse_artifact(reply: str, agent: AgentKind) -> dict:
     """Tolerant parse of one reply into its artifact.
 
-    A slides-kind reply that cooperates (plain or fenced JSON with a
-    slides list) becomes {"kind": "slides", "title", "slides": [{"title",
-    "bullets"}]}, capped at MAX_SLIDES slides and MAX_BULLETS bullets
-    each; anything else becomes {"kind": "outline", "text"} with the
-    reply as text, so the model's words are kept and never dropped.
+    The reply is kept as {"kind": "outline", "text"}. A fenced block is
+    unwrapped so the model's words, not the fence, are what the page
+    prints. An empty reply is named, never dropped.
     """
     stripped = (reply or "").strip()
     if stripped.startswith("```"):
         stripped = stripped.strip("`")
-        if stripped.startswith("json"):
-            stripped = stripped[4:]
-    parsed = None
-    try:
-        candidate = json.loads(stripped)
-    except ValueError:
-        candidate = None
-    if (
-        agent.artifact_kind == "slides"
-        and isinstance(candidate, dict)
-        and isinstance(candidate.get("slides"), list)
-    ):
-        slides = []
-        for entry in candidate["slides"][:MAX_SLIDES]:
-            if not isinstance(entry, dict):
-                continue
-            raw_bullets = entry.get("bullets")
-            bullets = (
-                [str(b).strip() for b in raw_bullets if str(b).strip()][:MAX_BULLETS]
-                if isinstance(raw_bullets, list)
-                else []
-            )
-            slides.append({"title": str(entry.get("title", "")).strip(),
-                           "bullets": bullets})
-        return {
-            "kind": "slides",
-            "title": str(candidate.get("title", "")).strip(),
-            "slides": slides,
-        }
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:].strip()
     return {
         "kind": "outline",
         "text": stripped or "The endpoint returned an empty answer.",
@@ -207,21 +171,44 @@ def endpoint_off_run() -> AgentRun:
 ARTIFACT_SUMMARY_CHARS = 120
 
 
+def slides_text(artifact: dict) -> str:
+    """An old slides artifact as plain lines.
+
+    Title, then each slide title and its bullets. The page and the
+    feedback summary both use this, so a stored deck is never a blank line.
+    """
+    lines = []
+    title = str(artifact.get("title") or "").strip()
+    if title:
+        lines.append(title)
+    for slide in artifact.get("slides") or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_title = str(slide.get("title") or "").strip()
+        if slide_title:
+            lines.append(slide_title)
+        for bullet in slide.get("bullets") or []:
+            text = str(bullet).strip()
+            if text:
+                lines.append(f"- {text}")
+    return "\n".join(lines)
+
+
 def artifact_summary(run: dict) -> str:
     """One line naming what a run produced, for the feedback transcript.
 
-    A degraded run says so in so many words; a deck is named by title
-    and slide count; anything else keeps the first line of the outline.
+    A degraded run says so in so many words. An old slides row is named
+    from its title and bullets. Anything else keeps the first line of
+    its text.
     """
     artifact = run.get("artifact") if run else None
     if not artifact:
         return "no artifact (the run did not complete)"
     if artifact.get("kind") == "slides":
-        count = len(artifact.get("slides") or [])
-        slides = f"{count} slide" + ("" if count == 1 else "s")
-        title = artifact.get("title") or "untitled"
-        return f'a slide outline, "{title}" ({slides})'
-    text = " ".join(str(artifact.get("text", "")).split())
+        raw = slides_text(artifact)
+    else:
+        raw = str(artifact.get("text", ""))
+    text = " ".join(raw.split())
     return f"an outline: {text[:ARTIFACT_SUMMARY_CHARS]}"
 
 

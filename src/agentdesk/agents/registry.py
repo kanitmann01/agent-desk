@@ -22,7 +22,7 @@ class AgentKind:
 
     `instructions` is the whole model-facing contract for the kind,
     including the reply shape it asks for; `artifact_kind` names what
-    the tolerant parse aims for ("slides" for the slide outline).
+    the tolerant parse aims for ("outline" for plain text).
     `context` picks the live status lines the runner attaches
     (CONTEXT_NONE or CONTEXT_WORKBOOK).
     """
@@ -34,25 +34,6 @@ class AgentKind:
     instructions: str
     context: str = CONTEXT_NONE
 
-
-PRESENTATION = AgentKind(
-    id="presentation",
-    name="Presentation",
-    blurb=(
-        "A slide outline from a short brief, grounded in what the desk "
-        "already remembers about the topic."
-    ),
-    artifact_kind="slides",
-    instructions=(
-        "You turn a short brief into a slide outline. Reply with JSON "
-        'only: {"title": "the deck title", "slides": [{"title": "one '
-        'slide", "bullets": ["a short point", "a short point"]}]}. Keep '
-        "it to three to six slides of two to four bullets each. Use the "
-        "known facts and context when they are given; never invent "
-        "numbers."
-    ),
-    context=CONTEXT_NONE,
-)
 
 WORKSHEET_BRIEF = AgentKind(
     id="worksheet-brief",
@@ -74,7 +55,7 @@ WORKSHEET_BRIEF = AgentKind(
     context=CONTEXT_WORKBOOK,
 )
 
-ROSTER = (PRESENTATION, WORKSHEET_BRIEF)
+ROSTER = (WORKSHEET_BRIEF,)
 
 
 def find_agent(agent_id: str) -> AgentKind | None:

@@ -13,7 +13,7 @@ import html
 from datetime import datetime
 
 from agentdesk.agents.registry import AgentKind, find_agent
-from agentdesk.agents.runner import STATUS_DEGRADED
+from agentdesk.agents.runner import STATUS_DEGRADED, slides_text
 from agentdesk.server.pages import page_shell
 
 USED_NOTHING = "used nothing"
@@ -51,24 +51,22 @@ def _receipt_html(run: dict) -> str:
 
 
 def _artifact_html(run: dict) -> str:
-    """The parsed artifact as text and structure: slides as an outline
-    list, a non-cooperating reply as its text. Nothing the model
-    returned is ever interpolated as markup."""
+    """The artifact as text. Nothing the model returned is markup.
+
+    A current outline is its text. An old slides row, from before the
+    outline-only agent was removed, is the same: plain lines in a pre,
+    never a list the page builds from the model's structure.
+    """
     artifact = run.get("artifact")
     if not artifact:
         return ""
     if artifact.get("kind") == "slides":
-        title = f"<p><b>{_esc(artifact.get('title', ''))}</b></p>" if artifact.get("title") else ""
-        items = ""
-        for slide in artifact.get("slides", []):
-            bullets = "".join(
-                f"<li>{_esc(str(bullet))}</li>"
-                for bullet in slide.get("bullets", [])
-            )
-            bullet_list = f"<ul>{bullets}</ul>" if bullets else ""
-            items += f"<li>{_esc(slide.get('title', ''))}{bullet_list}</li>"
-        return f"{title}<ol class='empty'>{items}</ol>" if items else title
-    return f"<pre>{_esc(artifact.get('text', ''))}</pre>"
+        text = slides_text(artifact)
+    else:
+        text = str(artifact.get("text", ""))
+    if not text:
+        return ""
+    return f"<pre>{_esc(text)}</pre>"
 
 
 def _feedback_html(run: dict) -> str:

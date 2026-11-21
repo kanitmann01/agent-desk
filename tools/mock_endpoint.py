@@ -98,27 +98,6 @@ def _extraction_reply(prompt: str) -> str:
     return json.dumps({"facts": [fact]})
 
 
-def _slides_reply(prompt: str) -> str:
-    """A deck-shaped answer that carries the brief and the recalled facts.
-
-    The closing slide exists only when the host injected a known-facts
-    block, so a run before feedback has no such slide and a run after
-    feedback visibly gains one: recall made visible in the artifact.
-    """
-    brief = _after(prompt, _BRIEF_MARKER) or "an untitled brief"
-    title = " ".join(brief.split())[:60] or "Untitled"
-    facts = _known_facts(prompt)
-    slides = [
-        {"title": "Overview", "bullets": [brief[:200], "Prepared by the Agents surface"]},
-        {"title": "Where we are", "bullets": ["The current state, in three lines", "What moved since last time"]},
-        {"title": "What changed", "bullets": ["The two changes that matter", "Why they happened now"]},
-        {"title": "What we ask for", "bullets": ["The decision needed", "The date it is needed by"]},
-    ]
-    if facts:
-        slides.append({"title": "Grounded in your known facts", "bullets": facts})
-    return json.dumps({"title": title, "slides": slides})
-
-
 def _outline_reply(prompt: str) -> str:
     """A plain-text briefing, for kinds that answer in outlines."""
     brief = _after(prompt, _BRIEF_MARKER) or "an untitled brief"
@@ -133,15 +112,12 @@ def reply_for(prompt: str) -> str:
     """The deterministic answer for one prompt, by its stable markers.
 
     The kind is read from the agent-instructions label, never from loose
-    words in the prompt: a recalled fact can itself say "slides", and
-    that must not turn a worksheet briefing into a deck.
+    words in the prompt.
     """
     if _EXTRACTION_MARKER in prompt:
         return _extraction_reply(prompt)
     if _AGENT_MARKER in prompt:
-        if "Worksheet brief agent instructions:" in prompt:
-            return _outline_reply(prompt)
-        return _slides_reply(prompt)
+        return _outline_reply(prompt)
     return "The mock endpoint answers a plain prompt with this sentence."
 
 

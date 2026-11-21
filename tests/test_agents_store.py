@@ -38,15 +38,15 @@ def test_record_and_recent_roundtrip_every_column():
     artifact = {"kind": "slides", "title": "Q3", "slides": [{"title": "Revenue", "bullets": ["220"]}]}
     facts = [{"id": 3, "text": "revenue is 220"}]
     run_id = store.record(
-        "presentation", "the Q3 review", "ok",
+        "worksheet-brief", "the Q3 review", "ok",
         reply='{"title": "Q3"}', artifact=artifact, facts=facts,
     )
     clock.advance(5)
-    store.record("presentation", "a second brief", "degraded", cause="no corporate endpoint configured")
+    store.record("worksheet-brief", "a second brief", "degraded", cause="no corporate endpoint configured")
     rows = store.recent()
     assert [row["id"] for row in rows] == [run_id + 1, run_id]
     first = rows[1]
-    assert first["agentId"] == "presentation"
+    assert first["agentId"] == "worksheet-brief"
     assert first["brief"] == "the Q3 review"
     assert first["status"] == "ok"
     assert first["cause"] == ""
@@ -69,7 +69,7 @@ def test_record_and_recent_roundtrip_every_column():
 def test_recent_keeps_the_newest_first_under_its_cap():
     store, clock = _store()
     for index in range(25):
-        store.record("presentation", f"brief {index}", "degraded", cause="off")
+        store.record("worksheet-brief", f"brief {index}", "degraded", cause="off")
         clock.advance(1)
     rows = store.recent()
     assert len(rows) == 20
@@ -79,14 +79,14 @@ def test_recent_keeps_the_newest_first_under_its_cap():
 
 def test_get_returns_the_one_row_or_none():
     store, _clock = _store()
-    run_id = store.record("presentation", "brief", "ok")
+    run_id = store.record("worksheet-brief", "brief", "ok")
     assert store.get(run_id)["brief"] == "brief"
     assert store.get(run_id + 100) is None
 
 
 def test_set_feedback_records_the_text_with_its_own_timestamp():
     store, clock = _store()
-    run_id = store.record("presentation", "brief", "ok")
+    run_id = store.record("worksheet-brief", "brief", "ok")
     assert store.set_feedback(run_id, "my manager liked it") is True
     clock.advance(10)
     row = store.get(run_id)
