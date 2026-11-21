@@ -255,6 +255,7 @@ POST_ROUTES: tuple[Route, ...] = (
     Route("POST", "/settings/endpoint/save", "_endpoint_save"),
     Route("POST", "/settings/endpoint/test", "_endpoint_test"),
     Route("POST", "/settings/mail/folder", "_mail_folder_save"),
+    Route("POST", "/settings/mail/address", "_mail_address_save"),
     Route("POST", "/settings/preferences", "_preferences_save"),
     Route("POST", "/settings/registry/path", "_registry_path_save"),
     Route("POST", "/settings/hosts/save", "_extra_hosts_save"),

@@ -1676,8 +1676,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
             self._send_json(400, {"error": "expected {\"path\": \"...\"}"})
             return
-        # Reject nonsense before registering: the manual-path fallback
-        # lives on the card, so this error text is the feedback loop.
+        # Reject nonsense before registering: the picker is the only
+        # connect path, so this error text is the feedback loop.
         problem = workbook_path_problem(body["path"].strip())
         if problem:
             self._send_json(400, {"error": problem})
@@ -3062,6 +3062,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             settings_values=self._settings_public_values(),
             endpoint_status=self._endpoint_status(),
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
+            mail_self_address=(server.settings.get("mail_self_address")
+                               if server.settings is not None else ""),
             registry_status=self._registry_status_for_settings(),
             extra_hosts=(server.settings.get("extra_allowed_hosts")
                          if server.settings is not None else ""),
@@ -5205,6 +5207,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         injection guard speaking: refused with a 400, nothing written,
         the card untouched."""
         draft_info = card.meta.get("mailDraft")
+        mail = self.server.mail  # type: ignore[attr-defined]
         try:
             path = write_reply(
                 self.server.outbox_dir,  # type: ignore[attr-defined]
@@ -5212,6 +5215,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 to=str(draft_info.get("to", "")),
                 subject=str(draft_info.get("subject", "")),
                 body=card.draft,
+                self_address=mail.self_address if mail is not None else "",
             )
         except ValueError as exc:
             self._send_json(400, {"error": str(exc)})
@@ -5255,6 +5259,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_redirect("/settings")
             return
         self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
+
+    def _mail_address_save(self) -> None:
+        """The settings page's mail address field, next to the folder.
+
+        The address is what mail self-detection compares against the From
+        header; an empty value turns self-detection off honestly (no
+        follow-up cards that cannot know which threads were answered).
+        A saved address is retried against the folder right away."""
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if settings is None:
+            self._send_json(503, {"error": "settings are not available"})
+            return
+        body = self._read_json_body() or {}
+        address = body.get("address")
+        if not isinstance(address, str):
+            self._send_json(400, {"error": 'expected {"address": "..."}'})
+            return
+        if "\r" in address or "\n" in address:
+            self._send_json(400, {"error": "the address cannot contain a line break"})
+            return
+        settings.set("mail_self_address", address.strip())
+        if server.mail is not None and address.strip():
+            server.mail.retest()
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, {"key": "mail_self_address", "value": address.strip()})
 
     def _preferences_save(self) -> None:
         """The settings form for what the desk knows about this person.
@@ -7736,13 +7768,15 @@ def _default_mail_store() -> MailStore | None:
 
 
 def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
-    """The real mail watcher: settings decide the folder on every poll,
-    so a folder saved in the app applies without a restart."""
+    """The real mail watcher: settings decide the folder and the user's
+    own address on every poll, so either saved in the app applies
+    without a restart."""
     try:
         return MailWatch(
             inbox=inbox_store,
             store=mail_store,
             folder_provider=lambda: settings_store.get("mail_folder"),
+            self_address_provider=lambda: settings_store.get("mail_self_address"),
         )
     except (OSError, sqlite3.Error):
         LOG.exception("mail watcher unavailable")

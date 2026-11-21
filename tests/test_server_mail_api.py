@@ -84,6 +84,7 @@ def frozen_mail_bundle():
         store=store,
         adapters=Adapters(read_folder=read_eml_folder_reported, clock=lambda: SAMPLE_NOW),
         folder_provider=lambda: settings.get("mail_folder"),
+        self_address_provider=lambda: settings.get("mail_self_address"),
     )
     return watch, inbox, store, settings
 
@@ -108,13 +109,17 @@ def auth(env):
 
 
 def _enable_mail(env, auth, folder=None):
-    """The settings dance: toggle on, then (optionally) set the folder."""
+    """The settings dance: toggle on, then (optionally) the folder and the
+    user's own address, exactly as a real configuration does."""
     status, _h, body = env.post_json("/settings/toggle", {"key": "mail_enabled"}, auth)
     assert status == 200
     assert json.loads(body)["value"] is True
     if folder is not None:
         status, _h, body = env.post_json("/settings/mail/folder", {"folder": str(folder)}, auth)
         assert status == 200
+    status, _h, body = env.post_json(
+        "/settings/mail/address", {"address": "employee@example.com"}, auth)
+    assert status == 200
     return json.loads(body)
 
 
@@ -511,3 +516,41 @@ def test_toggling_mail_rewires_the_plugin_runner(env, auth):
 
     env.post_json("/settings/toggle", {"key": "mail_enabled"}, auth)  # off
     assert env.server.plugins.runner.mail is None
+
+
+def test_settings_page_carries_the_mail_address_field_next_to_the_folder(env, auth):
+    status, _h, body = env.request("GET", "/settings", auth)
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "/settings/mail/address" in page
+    assert 'id="mail-self-address"' in page
+
+
+def test_without_an_address_follow_ups_stay_off_and_the_mail_page_says_so(env, auth):
+    """The honest disabled state: the digest files, no follow-up card can
+    claim 'nothing from you', and the page names the missing setting."""
+    status, _h, _b = env.post_json("/settings/toggle", {"key": "mail_enabled"}, auth)
+    env.post_json("/settings/mail/folder", {"folder": str(FIXTURES)}, auth)
+    status, _h, body = env.post_json("/mail/retest", {}, auth)
+    payload = json.loads(body)
+    assert payload["selfDetection"] is False
+    assert [c.kind for c in _mail_cards(env)] == ["mail_digest"]
+    _status, _h, page = env.request("GET", "/mail", auth)
+    assert "self-detection is off" in page.decode("utf-8")
+
+
+def test_saving_the_address_turns_self_detection_on_for_the_watch(env, auth):
+    status, _h, _b = env.post_json("/settings/toggle", {"key": "mail_enabled"}, auth)
+    env.post_json("/settings/mail/folder", {"folder": str(FIXTURES)}, auth)
+    env.post_json("/mail/retest", {}, auth)
+    assert [c.kind for c in _mail_cards(env)] == ["mail_digest"]
+    status, _h, body = env.post_json(
+        "/settings/mail/address", {"address": "employee@example.com"}, auth)
+    assert status == 200
+    assert env.server.settings.get("mail_self_address") == "employee@example.com"
+    # The save retried the watch, so the fixture mailbox's follow-ups file
+    # under the now-configured address without any restart.
+    kinds = sorted(c.kind for c in _mail_cards(env))
+    assert kinds == [
+        "mail_digest", "mail_follow_up", "mail_follow_up", "mail_follow_up",
+    ]

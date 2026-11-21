@@ -4,7 +4,7 @@ state machine on fakes, a frozen clock, and an in-memory store.
 
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -278,3 +278,134 @@ def test_parse_breakdown_tolerates_fences_and_garbage():
     assert good["subtasks"] == ["a"]
     fallback = parse_breakdown("the model rambled in prose")
     assert fallback["subtasks"]  # generic, never empty
+
+
+def _z(local_dt: datetime) -> str:
+    """The UTC shape the sync flow writes: an instant, trailing Z."""
+    return local_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_z_timestamps_normalize_to_local_at_the_parse_boundary():
+    doc = parse_calendar_document({
+        "generatedAt": "2026-11-20T23:30:00Z",
+        "events": [{
+            "id": "early", "subject": "Early sync",
+            "start": "2026-11-20T23:30:00Z", "end": "2026-11-21T00:30:00Z",
+        }],
+    })
+    start = doc.events[0].start
+    expected = datetime.fromisoformat("2026-11-20T23:30:00+00:00").astimezone()
+    assert start == expected
+    # Local, not whatever zone the file carried.
+    assert start.utcoffset() == datetime.now().astimezone().utcoffset()
+
+
+def test_early_and_late_utc_meetings_count_today_and_show_local_clock(tmp_path):
+    """The audit's repro, machine-independent: the fixture's meaning is
+    pinned in local clock times (00:30 and 23:30 today) while the file
+    carries the UTC Z shape the sync flow actually writes."""
+    import json as json_mod
+
+    from agentdesk.server.commitments import render_commitments_widget
+
+    now = datetime(2026, 11, 11, 1, 0, 0).astimezone()
+    early = now.replace(hour=0, minute=30, second=0, microsecond=0)
+    late = now.replace(hour=23, minute=30, second=0, microsecond=0)
+    doc = json_mod.dumps({
+        "generatedAt": _z(now),
+        "events": [
+            {"id": "early", "subject": "Early sync",
+             "start": _z(early), "end": _z(early + timedelta(hours=1))},
+            {"id": "late", "subject": "Late review",
+             "start": _z(late), "end": _z(late + timedelta(minutes=30))},
+        ],
+    }).encode("utf-8")
+    bridge, clock = make_bridge(tmp_path, doc, now)
+    status = bridge.poll()
+    assert status["state"] == "healthy"
+    assert status["keyEvent"]["id"] == "early"
+    shown = datetime.fromisoformat(status["keyEvent"]["start"]).strftime("%H:%M")
+    assert shown == "00:30"  # the local clock time, not the file's UTC hour
+    view = bridge.day_view()
+    assert view["eventsToday"] == 2
+    assert view["todayRows"][0]["secondary"] == "00:30"
+    widget = render_commitments_widget(status, now)
+    assert "00:30" in widget.body_html
+
+    clock[0] = now.replace(hour=22, minute=0).timestamp()
+    later = bridge.status()
+    assert later["keyEvent"]["id"] == "late"
+    assert datetime.fromisoformat(later["keyEvent"]["start"]).strftime("%H:%M") == "23:30"
+
+
+def test_non_dict_events_are_unreadable_not_a_crash(tmp_path):
+    """A torn flow write can put a non-dict entry in events; that is the
+    unreadable amber state with a cause, never a 500 page."""
+    import json as json_mod
+
+    broken = json_mod.dumps({"generatedAt": _z(TODAY), "events": ["x"]}).encode("utf-8")
+    with pytest.raises(CalendarUnreadable):
+        parse_calendar_document(json_mod.loads(broken))
+    bridge, _clock = make_bridge(tmp_path, broken, TODAY)
+    status = bridge.poll()
+    assert status["state"] == "unreadable"
+    assert "calendar file" in status["cause"]
+
+
+def test_a_fallback_breakdown_is_retried_on_the_next_poll(tmp_path):
+    """One endpoint outage must not freeze the generic answer forever:
+    the degraded breakdown is not cached, so the next poll or retest
+    asks again and recovers when the endpoint returns."""
+    answers = [RuntimeError("endpoint down"), '{"subtasks": ["Recovered"], "followups": []}']
+
+    def llm(_prompt):
+        outcome = answers.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    bridge, _clock = make_bridge(tmp_path, event_doc(TODAY, sample_events(TODAY)),
+                                 TODAY, llm=llm)
+    degraded = bridge.poll()
+    assert degraded["breakdown"]["fallback"] is True
+    recovered = bridge.retest()
+    assert recovered["breakdown"]["subtasks"] == ["Recovered"]
+    assert recovered["breakdown"]["fallback"] is False
+    # And the real answer stays cached from here on.
+    again = bridge.retest()
+    assert again["breakdown"]["subtasks"] == ["Recovered"]
+
+
+def test_a_renamed_meeting_gets_a_fresh_breakdown(tmp_path):
+    """The cache key carries the subject, so a meeting renamed in the
+    same slot is prepared for what it became, not what it was."""
+    import json as json_mod
+
+    def llm(prompt):
+        if "Vendor negotiation" in prompt:
+            return '{"subtasks": ["Prep the term sheet"], "followups": []}'
+        return '{"subtasks": ["Prep the budget deck"], "followups": []}'
+
+    slot = TODAY.replace(hour=14, minute=0, second=0, microsecond=0)
+
+    def doc(subject: str) -> bytes:
+        return json_mod.dumps({
+            "generatedAt": TODAY.isoformat(),
+            "events": [{
+                "id": "evt-1", "subject": subject,
+                "start": slot.isoformat(), "end": (slot + timedelta(hours=1)).isoformat(),
+            }],
+        }).encode("utf-8")
+
+    data = {"bytes": doc("Budget review")}
+    adapters = Adapters(
+        read_calendar=lambda: ("calendar_sync.json", data["bytes"]),
+        clock=lambda: TODAY.timestamp(),
+    )
+    bridge = CalendarBridge(
+        sqlite3.connect(":memory:", check_same_thread=False), adapters, llm=llm)
+    first = bridge.poll()
+    assert first["breakdown"]["subtasks"] == ["Prep the budget deck"]
+    data["bytes"] = doc("Vendor negotiation")
+    renamed = bridge.retest()
+    assert renamed["breakdown"]["subtasks"] == ["Prep the term sheet"]

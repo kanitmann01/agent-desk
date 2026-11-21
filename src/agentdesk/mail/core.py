@@ -29,10 +29,9 @@ from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
 from typing import Callable
 
-# The user's own address, the donor's v1 constant. Reply-all minus self
-# and the follow-up exclusion both key on it.
-MAIL_USER = "employee@example.com"
-
+# The user's own address is a settings field (mail_self_address); an
+# empty value means self-detection is off rather than wrong. Reply-all
+# minus self and the follow-up exclusion both key on it.
 FOLLOW_UP_DAYS = 2  # the donor's threshold for "nobody acted on this"
 DIGEST_HOURS = 24   # a thread is "active today" when a message landed in this window
 
@@ -40,6 +39,7 @@ DAY_S = 24 * 60 * 60
 
 _RE_PREFIX = re.compile(r"^re:\s*", re.IGNORECASE)
 _ADDRESS_SPLIT = re.compile(r"[,;]")
+_ADDRESS_IN_ANGLES = re.compile(r"<([^<>]+)>")
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,17 @@ class Message:
     date_ts: float     # epoch seconds from the Date header; 0.0 when absent or unparseable
     thread: str = ""   # the root subject (Re: stripped), filled by with_threads
     importance: str = ""  # Importance or X-Priority, as written; "" when absent
+
+
+def sender_address(sender: str) -> str:
+    """The address inside a From-style value, as written.
+
+    "Priya Sharma <priya@corp.com>" is priya@corp.com; a value with no
+    angle brackets is the whole string, which is what a bare address
+    looks like. Self-detection compares this, never the display name.
+    """
+    match = _ADDRESS_IN_ANGLES.search(sender or "")
+    return (match.group(1) if match else sender or "").strip()
 
 
 def _decode_value(raw: str) -> str:
@@ -218,21 +229,25 @@ def follow_ups(
     handled: set[str],
     now: float,
     days: float = FOLLOW_UP_DAYS,
-    self_address: str = MAIL_USER,
+    self_address: str = "",
 ) -> list[str]:
     """Threads whose newest message is not the user's, sits past the
     threshold, and is not handled, sorted.
 
     The donor's followUps with the handled set passed in instead of
     queried from a database: the store is the watcher's concern, this
-    stays pure.
+    stays pure. An empty self_address disables the set: without the
+    configured address the claim "nothing from you" cannot be made, and
+    an honest empty set beats a wrong nudge.
     """
     cutoff = now - days * DAY_S
-    mine = self_address.lower()
+    mine = self_address.strip().lower()
+    if not mine:
+        return []
     names = []
     for name, message in latest_by_thread(messages).items():
         if (
-            message.sender.lower() != mine
+            sender_address(message.sender).lower() != mine
             and message.date_ts < cutoff
             and name not in handled
         ):
@@ -245,7 +260,7 @@ def follow_up_details(
     handled: set[str],
     now: float,
     days: float = FOLLOW_UP_DAYS,
-    self_address: str = MAIL_USER,
+    self_address: str = "",
 ) -> list[dict]:
     """The follow-ups as card/page metadata: thread and its latest message."""
     latest = latest_by_thread(messages)
@@ -262,20 +277,22 @@ def follow_up_details(
     return details
 
 
-def reply_recipients(message: Message, self_address: str = MAIL_USER) -> str:
+def reply_recipients(message: Message, self_address: str = "") -> str:
     """Reply-all minus this user's own address, deduped, From first.
 
     The donor's replyRecipients: split on commas and semicolons, drop
-    empties, drop the self address case-insensitively, keep the first
-    spelling of every address. Raises when nobody else is left, because
-    a reply to no one is not a reply.
+    empties, drop the self address case-insensitively (comparing the
+    address inside each token, so a display name never keeps self in the
+    draft), keep the first spelling of every address. Raises when nobody
+    else is left, because a reply to no one is not a reply.
     """
+    mine = self_address.strip().lower()
     seen: set[str] = set()
     kept: list[str] = []
     for raw in _ADDRESS_SPLIT.split(f"{message.sender},{message.to},{message.cc}"):
         address = raw.strip()
-        key = address.lower()
-        if not address or key == self_address.lower() or key in seen:
+        key = sender_address(address).lower()
+        if not address or (mine and key == mine) or key in seen:
             continue
         seen.add(key)
         kept.append(address)
@@ -298,6 +315,7 @@ def write_reply(
     subject: str,
     body: str,
     clock: Callable[[], float] = time.time,
+    self_address: str = "",
 ) -> Path:
     """Write the threaded reply as an .eml file into the outbox folder.
 
@@ -327,8 +345,11 @@ def write_reply(
     stamp = int(clock() * 1000)
     message_id = f"<reply-{stamp}@example.com>"
     file = outbox / f"{stamp}-{secrets.token_hex(4)}.eml"
-    text = "\r\n".join([
-        f"From: {MAIL_USER}",
+    # From is the configured address and nothing else: the user's mail
+    # client fills its own identity on send, so an unset address writes
+    # no From line rather than a placeholder that belongs to nobody.
+    from_line = f"From: {self_address.strip()}" if self_address.strip() else ""
+    headers = [
         f"To: {to}",
         f"Subject: {subject}",
         f"Date: {formatdate(stamp / 1000, usegmt=True)}",
@@ -339,7 +360,10 @@ def write_reply(
         "",
         body,
         "",
-    ])
+    ]
+    if from_line:
+        headers.insert(0, from_line)
+    text = "\r\n".join(headers)
     file.write_bytes(text.encode("utf-8"))
     return file
 
