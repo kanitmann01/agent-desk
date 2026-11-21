@@ -1,5 +1,5 @@
 @echo off
-REM Nexuus Bot: double-click me. The dashboard opens in your browser.
+REM Agent Desk: double-click me. The dashboard opens in your browser.
 REM No elevation, ever. No terminal stays open: the app runs windowless.
 setlocal enabledelayedexpansion
 set "PYTHONPATH=%~dp0..\src;%PYTHONPATH%"
@@ -38,5 +38,8 @@ if %errorlevel%==0 (
 )
 
 echo Python not found on PATH and no uv. Install Python 3.10+ for your user, or install uv.
+REM The reader of this message cannot fix it herself; hold the window the
+REM way the probe does, so a double-click shows more than a flash.
+pause
 :end
 endlocal

@@ -1,6 +1,6 @@
 // The workbook tracker on the desk. Live: the tracker pattern (name,
 // figure, signed change, trend line, pace to the goal, file), then the
-// reading the server appended — its elements through the same view the
+// reading the server appended: its elements through the same view the
 // generic plugin card uses, its resolved lines, and the press when the
 // workbook family offered one. Not set up: the dotted wireframe with one
 // Set up action. The setup sheet is separate and opens over the desk, and

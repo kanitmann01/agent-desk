@@ -982,7 +982,7 @@ class Walkthrough:
             ("customize: reorder and hide respect the payload, restore",
              self.step_customize),
         )
-        print("Nexuus Bot demo walkthrough")
+        print("Agent Desk demo walkthrough")
         print(f"checkout: {ROOT}")
         try:
             # ignore_cleanup_errors: the app's sqlite stores stay open for

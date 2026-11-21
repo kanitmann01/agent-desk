@@ -470,15 +470,14 @@ function post(url, body) {
 
 // Workbook connect: the app opens the native file dialog, the chosen
 // path registers the watch, and the dashboard reloads with real data.
-// A cancelled or invisible dialog is never silent: the amber note and
-// the manual path input appear on the card, and every failed call is
-// reported in the same place instead of reloading nothing.
+// The picker is the only connect path (never a typed one); a cancelled
+// or invisible dialog is never silent, the amber note says so and every
+// failed call is reported in the same place instead of reloading
+// nothing.
 (function () {
   var btn = document.querySelector('[data-pick]');
-  var manual = document.querySelector('[data-manual-connect]');
-  if (!btn && !manual) return;
+  if (!btn) return;
   var note = document.getElementById('pick-note');
-  var input = document.getElementById('workbook-path');
   var show = function (text) {
     if (note) { note.hidden = false; note.textContent = text; }
   };
@@ -500,11 +499,11 @@ function post(url, body) {
         show('The dashboard could not reach its own server; nothing was connected.');
       });
   };
-  if (btn) btn.addEventListener('click', function () {
+  btn.addEventListener('click', function () {
     post('/sources/excel-watch/pick').then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.path) {
-          show('The file dialog did not open. Type the workbook path below and press Connect.');
+          show('The file dialog did not open. Try Connect a workbook again; if it keeps failing, restart the app.');
           return;
         }
         connect(d.path);
@@ -512,14 +511,6 @@ function post(url, body) {
       .catch(function () {
         show('The dashboard could not reach its own server; the file dialog was not opened.');
       });
-  });
-  if (manual) manual.addEventListener('click', function () {
-    var path = input ? input.value.trim() : '';
-    if (!path) { show('Type the full path to the workbook first.'); return; }
-    connect(path);
-  });
-  if (input) input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); if (manual) manual.click(); }
   });
 })();
 
@@ -885,17 +876,17 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         "/memory": "Memory",
         "/settings": "Settings",
         "/marketplace": "Marketplace",
-    }.get(active, "Nexuus Bot")
+    }.get(active, "Agent Desk")
     phone = (
         '<div class="phone-bar">'
-        '<b class="brand-name">Nexuus Bot</b>'
+        '<b class="brand-name">Agent Desk</b>'
         f'<span class="phone-current">{current_label}</span>'
         '<button type="button" class="phone-menu" aria-expanded="false" '
         'aria-controls="main-rail">Menu</button></div>'
     )
     return (
         f'<nav class="rail" id="main-rail" aria-label="Main">{phone}'
-        '<div class="brand"><b class="brand-name">Nexuus Bot</b></div>'
+        '<div class="brand"><b class="brand-name">Agent Desk</b></div>'
         f'{entry("/", _ICON_DASHBOARD, "Dashboard")}'
         # The count rides inside the link: one row on the rail, and
         # the accessible name carries the waiting number.
@@ -913,7 +904,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
         f'{toggle}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
-        '<div><b class="user-name">Nexuus Bot</b><small>local only</small></div></div>'
+        '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
     )
 
@@ -944,16 +935,16 @@ def page_shell(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc_title}, Nexuus Bot</title>
+<title>{esc_title}, Agent Desk</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <div class="app">{_rail(active, inbox_count)}
 <main><div class="{'doc doc-wide' if wide else 'doc'}">
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Nexuus Bot</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
-<footer class="page-foot"><span>Nexuus Bot <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
 </div>
 </main>
 <script src="/static/app.js"></script>
@@ -988,7 +979,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nexuus Bot</title>
+<title>Agent Desk</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -1007,7 +998,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Nexuus Bot <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
+<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
 </main>
 </div>
 <script src="/static/app.js"></script>
@@ -1023,7 +1014,7 @@ def render_error_page(title: str, message: str) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}, Nexuus Bot</title>
+<title>{html.escape(title)}, Agent Desk</title>
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -1119,7 +1110,7 @@ def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_
             "Reset to automatic discovery</button>"
         )
     content = """<h1>Connect your calendar</h1>
-<p>Nexuus Bot reads one file that a small Power Automate flow keeps fresh
+<p>Agent Desk reads one file that a small Power Automate flow keeps fresh
 in your OneDrive. You create that flow once, in your browser: no admin,
 no terminal, nothing installed.</p>
 <ol>

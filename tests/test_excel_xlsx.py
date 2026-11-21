@@ -17,7 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 from agentdesk.excel.core import WorkbookUnreadable
 from agentdesk.excel.xlsx import parse_workbook_bytes
-from excel_fixtures import make_xlsx
+from excel_fixtures import base_workbook, make_xlsx, make_xlsx_reversed_tabs
 
 
 def test_reads_text_and_numbers_from_a_real_fixture():
@@ -76,3 +76,32 @@ def test_zip_without_a_worksheet_raises_unreadable():
         zf.writestr("readme.txt", "nothing spreadsheet-shaped in here")
     with pytest.raises(WorkbookUnreadable):
         parse_workbook_bytes(buffer.getvalue())
+
+
+def _reshared(data: bytes, old: str, new: str) -> bytes:
+    """Rewrite one archive entry's text inside a real fixture zip."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as src, zipfile.ZipFile(buffer, "w") as out:
+        for info in src.infolist():
+            out.writestr(info, src.read(info).decode("utf-8").replace(old, new))
+    return buffer.getvalue()
+
+
+def test_a_corrupt_shared_string_index_is_unreadable_not_a_crash():
+    """A zip-valid workbook whose t="s" cell points past the shared string
+    table (a torn save) is the workbook amber state with a cause; file
+    input is a trust boundary, never a traceback."""
+    torn = _reshared(base_workbook(), '<c r="A1" t="s"><v>0</v></c>',
+                     '<c r="A1" t="s"><v>999</v></c>')
+    with pytest.raises(WorkbookUnreadable):
+        parse_workbook_bytes(torn)
+
+
+def test_the_first_worksheet_resolves_by_declared_order_not_archive_name():
+    """A tab reorder in Excel keeps the part names but changes the
+    declared order; the delta must follow the declared first tab."""
+    data = make_xlsx_reversed_tabs([["archive-first-part"]], [["declared-first-tab"]])
+    assert parse_workbook_bytes(data) == [["declared-first-tab"]]

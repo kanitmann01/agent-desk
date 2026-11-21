@@ -50,9 +50,10 @@ class FakeClock:
         self.now += seconds
 
 
-def _open(path, key=None, key_path=None) -> MemoryStore:
+def _open(path, key=None, key_path=None, key_corrupt=False) -> MemoryStore:
     conn = sqlite3.connect(str(path), check_same_thread=False)
-    return MemoryStore(conn, FakeClock(), key=key, key_path=key_path)
+    return MemoryStore(conn, FakeClock(), key=key, key_path=key_path,
+                       key_corrupt=key_corrupt)
 
 
 def _close(store: MemoryStore) -> None:
@@ -340,6 +341,24 @@ def test_a_marker_without_a_key_locks_with_the_missing_key_cause(tmp_path):
         locked.all()
     with pytest.raises(MemoryEncryptedError, match=r"key file is missing"):
         locked.add("x")
+    _close(locked)
+
+
+def test_a_corrupt_key_file_locks_with_the_corrupt_key_cause(tmp_path):
+    db = tmp_path / "memory.sqlite3"
+    seeded = _open(db, key=KEY)
+    seeded.add("Revenue is 220", source="page")
+    _close(seeded)
+    # The file exists but is not a valid 32-byte key: the cause names
+    # that, so the recovery starts from the truth.
+    (tmp_path / "memory.key").write_bytes(b"truncated")
+    locked = _open(db, key_path=tmp_path / "memory.key", key_corrupt=True)
+    assert locked.locked_cause is not None
+    assert "exists but is not a valid key" in locked.locked_cause
+    assert str(tmp_path / "memory.key") in locked.locked_cause
+    assert "missing" not in locked.locked_cause
+    with pytest.raises(MemoryEncryptedError, match=r"not a valid key"):
+        locked.all()
     _close(locked)
 
 

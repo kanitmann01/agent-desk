@@ -1,14 +1,20 @@
-// The manage view's instance-setup sheet: the desk's shared dialog shell
-// (ModalSheet) and the shared selection surface (RowSelectGrid) driving
-// the same /api/plugins endpoints the dashboard card drives. A new
-// instance is named first, then the walk continues in this sheet: open
-// a workbook (the server-side picker), assign the columns on the
-// preview, choose the rows, and confirm with tracking.rows. Every
-// failure surfaces the server's error envelope verbatim, role=alert.
+// The manage view's instance-setup sheet: the shared instance walk
+// (open a workbook, assign the columns, pick the rows, confirm) with the
+// marketplace's own slots, the create-phase naming step among them. The
+// walk drives the same /api/plugins endpoints the dashboard card drives
+// through one adapter, so a change to the picker recovery or the
+// outside-workspace acceptance lands in both sheets at once.
 import { useState } from 'react';
 import Button from '../components/Button';
-import ModalSheet from '../components/ModalSheet';
-import RowSelectGrid, { type GridPreview } from '../components/RowSelectGrid';
+import InstanceWalk, {
+  type ConfirmCtx,
+  type InstanceWalkRequests,
+  type LeadCtx,
+  type OpenWay,
+  type WalkOpen,
+  type WalkSave,
+} from '../components/InstanceWalk';
+import type { GridPreview } from '../components/RowSelectGrid';
 import { MarketApiError, marketErrorText, postInstance, postUpload } from './client';
 import type { InstanceDocument } from './types';
 
@@ -48,8 +54,6 @@ function baseName(item: InstanceDocument): string {
   return raw.split(/[\\/]/).pop() || raw;
 }
 
-type Phase = 'name' | 'open' | 'choose' | 'confirm';
-
 const CREATE_STEPS = ['Name the instance', 'Open the workbook', 'Choose what to track'] as const;
 const EDIT_STEPS = ['Open the workbook', 'Choose what to track', 'Confirm'] as const;
 
@@ -68,350 +72,186 @@ export function InstanceSetupSheet({
   const isCreate = target.mode === 'create';
   const [instance, setInstance] = useState<InstanceDocument | null>(
     target.mode === 'edit' ? target.instance : null);
-  const [phase, setPhase] = useState<Phase>(isCreate ? 'name' : 'open');
   const [name, setName] = useState(
     target.mode === 'edit' ? target.instance.name : '');
-  const [preview, setPreview] = useState<GridPreview | null>(null);
-  const [role, setRole] = useState<'value' | 'label'>('value');
-  const [valueColumn, setValueColumn] = useState('');
-  const [labelColumn, setLabelColumn] = useState('');
-  const [picked, setPicked] = useState<number[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  // The staged file is outside the workspace folder: the confirm was
-  // refused, and the honest inline choice (accept once, retry) is up.
-  const [outside, setOutside] = useState(false);
-  // The Open step's second way in: a disclosure the user can open.
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
-  // The pick answered that the dialog could not open, so the sheet's note
-  // about the dialog (and the file's name) stops being true.
-  const [pickerUnavailable, setPickerUnavailable] = useState(false);
-  const [typedPath, setTypedPath] = useState('');
-  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
-
-  const steps = isCreate ? CREATE_STEPS : EDIT_STEPS;
-  // Each mode numbers its own list: create walks name, open, choose
-  // (the confirm block rides step 3); edit starts at open.
-  const stepNumber = isCreate
-    ? (phase === 'name' ? 1 : phase === 'open' ? 2 : 3)
-    : (phase === 'open' ? 1 : phase === 'choose' ? 2 : 3);
-
-  /** Show a failure, preferring the server's own message over the generic one. */
-  const fail = (err: unknown) => {
-    setError(err instanceof MarketApiError ? err.message : marketErrorText(err));
-  };
 
   /**
-   * Create the instance on the server and continue at the open step.
-   *
-   * The server's name is adopted, so a trimmed or generated name replaces what
-   * was typed; a failure leaves the walk where it was.
+   * The marketplace's throwing client as the walk's open answer; the
+   * instance document the open returns is adopted here, since the walk
+   * only needs the preview.
    */
-  const create = async () => {
-    setBusy(true);
-    setError('');
+  async function open(way: OpenWay): Promise<WalkOpen> {
+    const iid = instance?.instanceId;
+    if (!iid) return { ok: false, message: 'Name the instance first.' };
+    /** The per-instance URL tail every open way posts to. */
+    const tail = (suffix: string) => `/${encodeURIComponent(iid)}${suffix}`;
     try {
-      const res = await postInstance<{ instance: InstanceDocument }>(setupPluginId, '', { name });
+      if (way.kind === 'pick') {
+        const res = await postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
+          setupPluginId, tail('/pick'), { name: instance.name });
+        setInstance(res.instance);
+        return { ok: true, preview: res.preview };
+      }
+      if (way.kind === 'stage') {
+        const res = await postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
+          setupPluginId, tail('/stage'), { path: way.path });
+        setInstance(res.instance);
+        return { ok: true, preview: res.preview };
+      }
+      const res = await postUpload<{ instance: InstanceDocument; preview: GridPreview }>(
+        setupPluginId, tail(`/upload/${encodeURIComponent(way.file.name)}`), way.file);
       setInstance(res.instance);
-      setName(res.instance.name || name);
-      setPhase('open');
-      onChanged?.();
-    } catch (err) {
-      fail(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
-   * One tail for every way in: the dialog's pick, a typed path and an
-   * uploaded file all land on the same preview grid, starting from every
-   * row picked and no column assigned.
-   */
-  function applyOpen(res: { instance: InstanceDocument; preview: GridPreview }) {
-    setInstance(res.instance);
-    const next = res.preview;
-    setPreview(next);
-    // A fresh open starts from every row; the user narrows or clears.
-    setPicked(next.rows.map((_row, index) => index));
-    setValueColumn('');
-    setLabelColumn('');
-    // The chosen path and file were consumed by this open; a later open
-    // must not start with a stale selection, as on the dashboard.
-    setTypedPath('');
-    setFileToUpload(null);
-    setPhase('choose');
-  }
-
-  /**
-   * Run one open request with the busy flag held, routing the pick's
-   * "the dialog could not open" answer to the recovery block; the result
-   * lands on the one tail every way in shares.
-   */
-  async function runOpen(request: () => Promise<{ instance: InstanceDocument; preview: GridPreview }>) {
-    setBusy(true);
-    setError('');
-    try {
-      applyOpen(await request());
+      return { ok: true, preview: res.preview };
     } catch (err) {
       if (err instanceof MarketApiError && err.code === 'config:picker-unavailable') {
-        setPickerUnavailable(true);
-        setRecoveryOpen(true);
+        return { ok: false, message: err.message, pickerDown: true };
       }
-      fail(err);
-    } finally {
-      setBusy(false);
+      return { ok: false, message: marketErrorText(err) };
     }
   }
 
-  /** Assign a clicked column header to whichever role the toolbar selects now. */
-  function assign(header: string) {
-    if (role === 'value') setValueColumn(header);
-    else setLabelColumn(header);
+  /** A thrown marketplace failure as the walk's save answer. */
+  function thrown(err: unknown): WalkSave {
+    if (err instanceof MarketApiError && err.code === 'config:outside-workspace') {
+      // The dead-end becomes a choice (T6 review): the walk offers the
+      // acceptance the API supports, then retries this step.
+      return { ok: false, outside: true };
+    }
+    return { ok: false, message: marketErrorText(err) };
   }
 
-  /**
-   * Confirm the instance with the current name, columns and picked rows, then
-   * report what it now reads.
-   *
-   * A file outside the workspace folder is not an error to show: it flips the
-   * sheet into the acceptance choice. Every other refusal surfaces the
-   * server's message.
-   */
-  const confirm = async () => {
-    if (!instance) return;
-    setBusy(true);
-    setError('');
-    try {
-      await postInstance<{ instance: InstanceDocument }>(
-        setupPluginId,
-        `/${encodeURIComponent(instance.instanceId)}/confirm`,
-        {
-          name,
-          suggested: false,
-          headerRow: 1,
-          tracking: {
-            labelColumn,
-            valueColumn,
-            aggregate: 'sum',
-            unit: '',
-            rows: picked,
-            good: 'up',
-          },
-        });
-      onDone(`${name || instance.name} now reads ${baseName(instance)}, tracking ${picked.length} rows.`);
-    } catch (err) {
-      if (err instanceof MarketApiError && err.code === 'config:outside-workspace') {
-        // The dead-end becomes a choice (T6 review): the sheet offers
-        // the acceptance the API supports, then retries this step.
-        setOutside(true);
-        setError('');
-      } else {
-        fail(err);
+  const requests: InstanceWalkRequests = {
+    open,
+    confirm: async (choice) => {
+      if (!instance) return { ok: false, message: 'Name the instance first.' };
+      try {
+        await postInstance<{ instance: InstanceDocument }>(
+          setupPluginId,
+          `/${encodeURIComponent(instance.instanceId)}/confirm`,
+          {
+            name,
+            suggested: false,
+            headerRow: 1,
+            tracking: {
+              labelColumn: choice.labelColumn,
+              valueColumn: choice.valueColumn,
+              aggregate: 'sum',
+              unit: '',
+              rows: choice.picked,
+              good: 'up',
+            },
+          });
+        return { ok: true };
+      } catch (err) {
+        return thrown(err);
       }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
-   * Accept a file outside the workspace folder once, then retry the confirm
-   * that was blocked.
-   *
-   * The acceptance is posted first; when it fails the sheet stays on the
-   * choice with the error, rather than confirming anyway.
-   */
-  const acceptOutside = async () => {
-    if (!instance) return;
-    setBusy(true);
-    setError('');
-    try {
-      await postInstance<{ outsideAccepted: boolean }>(
-        setupPluginId,
-        `/${encodeURIComponent(instance.instanceId)}/outside`,
-        {});
-    } catch (err) {
-      fail(err);
-      setBusy(false);
-      return;
-    }
-    setOutside(false);
-    setBusy(false);
-    await confirm();
+    },
+    acceptOutside: async () => {
+      if (!instance) return { ok: false, message: 'Name the instance first.' };
+      try {
+        await postInstance<{ outsideAccepted: boolean }>(
+          setupPluginId,
+          `/${encodeURIComponent(instance.instanceId)}/outside`,
+          {});
+        return { ok: true };
+      } catch (err) {
+        return thrown(err);
+      }
+    },
   };
 
   const statusLabel = instance?.confirmedAt ? 'Confirmed' : 'Needs setup';
 
-  return (
-    <ModalSheet open title={title} onClose={onCancel} busy={busy} error={error}>
-      <ol className="setup-steps">
-        {steps.map((label, index) => {
-          const n = index + 1;
-          const state = n === stepNumber ? 'is-current' : n < stepNumber ? 'is-done' : '';
-          return (
-            <li key={label} className={state} aria-current={n === stepNumber ? 'step' : undefined}>
-              <span className="setup-step-n">{n}</span><span className="setup-step-label">{label}</span>
-            </li>
-          );
-        })}
-      </ol>
-
-      {phase === 'name' ? (
-        <section className="setup-open">
-          <div className="setup-open-copy">
-            <p>
-              Name the instance of {pluginName}. Each instance keeps its
-              own file, columns, and rows.
-            </p>
-            <label className="setup-field">Instance name
-              <input aria-label="Instance name" value={name}
-                     autoComplete="off" spellCheck={false}
-                     onChange={(event) => setName(event.target.value)} />
-            </label>
-            <Button tone="primary" disabled={busy || !name.trim()} onClick={() => void create()}>
-              {busy ? 'Creating…' : 'Create instance'}
-            </Button>
-          </div>
-        </section>
-      ) : null}
-
-      {phase === 'open' && instance ? (
-        <section className="setup-open">
-          <div className="setup-open-copy">
-            <p>
-              {isCreate
-                ? `${name || instance.name} is created. Now point it at its data.`
-                : `${instance.name} currently reads ${instanceFileName(instance)} · ${statusLabel}.`}
-            </p>
-            {pickerUnavailable ? null : (
-              <p className="w-note">
-                The file dialog opens on this computer; only the file's name
-                comes back.
-              </p>
-            )}
-            <Button tone="primary"
-                    onClick={() => void runOpen(() => postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
-                      setupPluginId,
-                      `/${encodeURIComponent(instance.instanceId)}/pick`,
-                      { name: instance.name }))}
-                    disabled={busy}>
-              {busy ? 'Opening…' : 'Open a workbook'}
-            </Button>
-            <Button
-              aria-expanded={recoveryOpen}
-              onClick={() => setRecoveryOpen((open) => !open)}
-              disabled={busy}
-            >
-              Type a path or upload instead
-            </Button>
-            {recoveryOpen && (
-              <div className="setup-choose">
-                <div className="setup-actions">
-                  <label className="setup-field">
-                    Workbook path
-                    <input
-                      aria-label="Workbook path"
-                      value={typedPath}
-                      onChange={(event) => setTypedPath(event.target.value)}
-                      disabled={busy}
-                    />
-                  </label>
-                  <Button
-                    onClick={() => void runOpen(() => postInstance<{ instance: InstanceDocument; preview: GridPreview }>(
-                      setupPluginId,
-                      `/${encodeURIComponent(instance.instanceId)}/stage`,
-                      { path: typedPath.trim() }))}
-                    disabled={busy || typedPath.trim() === ''}
-                  >
-                    Use this path
-                  </Button>
-                </div>
-                <div className="setup-actions">
-                  <label className="setup-field">
-                    Workbook file
-                    <input
-                      type="file"
-                      aria-label="Workbook file"
-                      accept=".xlsx,.xlsm,.csv,.json"
-                      onChange={(event) => setFileToUpload(event.target.files?.[0] ?? null)}
-                      disabled={busy}
-                    />
-                  </label>
-                  <Button
-                    onClick={() => {
-                      const file = fileToUpload;
-                      if (file) {
-                        void runOpen(() => postUpload<{ instance: InstanceDocument; preview: GridPreview }>(
-                          setupPluginId,
-                          `/${encodeURIComponent(instance.instanceId)}/upload/${encodeURIComponent(file.name)}`,
-                          file));
-                      }
-                    }}
-                    disabled={busy || fileToUpload === null}
-                  >
-                    Upload this file
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-      ) : null}
-
-      {phase === 'choose' && preview ? (
-        <section className="setup-choose">
-          <div className="setup-toolbar">
-            <div className="seg" role="radiogroup" aria-label="A click on a column header assigns">
-              <span className="seg-label">Header click sets</span>
-              <button type="button" role="radio" aria-checked={role === 'value'} className="seg-btn" onClick={() => setRole('value')}>Value column</button>
-              <button type="button" role="radio" aria-checked={role === 'label'} className="seg-btn" onClick={() => setRole('label')}>Row label</button>
-            </div>
-            <p className="setup-assignment">
-              <span className="pick-chip is-value"><span className="pick-k">VALUE</span>{valueColumn || 'not chosen'}</span>
-              <span className="pick-chip is-label"><span className="pick-k">LABEL</span>{labelColumn || 'not chosen'}</span>
-            </p>
-          </div>
-          <RowSelectGrid
-            preview={preview}
-            selected={picked}
-            onSelectedChange={setPicked}
-            onAssignHeader={assign}
-            valueColumn={valueColumn}
-            labelColumn={labelColumn}
-          />
-          <Button tone="primary" className="setup-continue"
-                  onClick={() => setPhase('confirm')}
-                  disabled={!labelColumn || !valueColumn || picked.length === 0}>
-            Continue
-          </Button>
-        </section>
-      ) : null}
-
-      {phase === 'confirm' && instance ? (
-        <section className="setup-name">
-          <p className="setup-summary mono">{valueColumn} by {labelColumn} · {picked.length} rows · {baseName(instance)}</p>
-          <label className="setup-field">Name this instance
+  /** The create step: name the instance, then the walk opens the workbook. */
+  function lead(ctx: LeadCtx) {
+    /** Create the named instance on the server and continue at the open step. */
+    const create = async () => {
+      await ctx.ask(async () => {
+        try {
+          const res = await postInstance<{ instance: InstanceDocument }>(setupPluginId, '', { name });
+          setInstance(res.instance);
+          setName(res.instance.name || name);
+          ctx.next();
+          onChanged?.();
+          return { ok: true };
+        } catch (err) {
+          return thrown(err);
+        }
+      });
+    };
+    return (
+      <section className="setup-open">
+        <div className="setup-open-copy">
+          <p>
+            Name the instance of {pluginName}. Each instance keeps its
+            own file, columns, and rows.
+          </p>
+          <label className="setup-field">Instance name
             <input aria-label="Instance name" value={name}
+                   autoComplete="off" spellCheck={false}
                    onChange={(event) => setName(event.target.value)} />
           </label>
-          {outside ? (
-            <div className="setup-proposal" role="status">
-              <p className="setup-reason">
-                That file lives outside the workspace folder. Accept it
-                once and this instance can read it.
-              </p>
-              <div className="setup-actions">
-                <Button tone="primary" onClick={() => void acceptOutside()} disabled={busy}>
-                  {busy ? 'Accepting…' : 'Use it anyway'}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          <Button tone="primary" onClick={() => void confirm()} disabled={busy || !name.trim()}>
-            {busy ? 'Confirming…' : 'Confirm'}
+          <Button tone="primary" disabled={ctx.busy || !name.trim()} onClick={() => void create()}>
+            {ctx.busy ? 'Creating…' : 'Create instance'}
           </Button>
-        </section>
-      ) : null}
-    </ModalSheet>
+        </div>
+      </section>
+    );
+  }
+
+  /** The naming step's body, from the choice the walk carries. */
+  function confirmBody(ctx: ConfirmCtx) {
+    return (
+      <>
+        <p className="setup-summary mono">
+          {ctx.columns.valueColumn} by {ctx.columns.labelColumn} · {ctx.columns.picked.length} rows
+          {instance ? ` · ${baseName(instance)}` : ''}
+        </p>
+        <label className="setup-field">Name this instance
+          <input aria-label="Instance name" value={name}
+                 onChange={(event) => setName(event.target.value)} />
+        </label>
+        {ctx.outside}
+        <Button tone="primary" onClick={ctx.save} disabled={ctx.busy || !name.trim()}>
+          {ctx.busy ? 'Confirming…' : 'Confirm'}
+        </Button>
+      </>
+    );
+  }
+
+  return (
+    <InstanceWalk
+      title={title}
+      onClose={onCancel}
+      requests={requests}
+      onDone={(choice) => onDone(
+        `${name || instance?.name || 'The instance'} now reads ${instance ? baseName(instance) : 'its workbook'}, tracking ${choice.picked.length} rows.`)}
+      unreachable="The marketplace could not reach its own server. Try again."
+      steps={isCreate ? CREATE_STEPS : EDIT_STEPS}
+      stepNumber={isCreate ? { open: 2, choose: 3, confirm: 3 } : { open: 1, choose: 2, confirm: 3 }}
+      outsideNoun="instance"
+      lead={isCreate ? lead : undefined}
+      openLead={(pickerDown) => (
+        <>
+          <p>
+            {isCreate
+              ? `${name || instance?.name || 'The instance'} is created. Now point it at its data.`
+              : `${instance?.name} currently reads ${instance ? instanceFileName(instance) : 'Not set up'} · ${statusLabel}.`}
+          </p>
+          {pickerDown ? null : (
+            <p className="w-note">
+              The file dialog opens on this computer; only the file's name
+              comes back.
+            </p>
+          )}
+        </>
+      )}
+      chooseFooter={(ctx) => (
+        <Button tone="primary" className="setup-continue" onClick={ctx.toConfirm} disabled={!ctx.ready}>
+          Continue
+        </Button>
+      )}
+      confirmBody={confirmBody}
+    />
   );
 }

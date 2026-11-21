@@ -1,0 +1,70 @@
+FF.                                                                      [100%]
+================================== FAILURES ===================================
+___________ test_the_shipped_starter_validates_and_pins_its_digest ____________
+
+    def test_the_shipped_starter_validates_and_pins_its_digest():
+        verdict = validate_plugin(PACK)
+        assert verdict.ok, verdict.failures
+        index = load_index((REGISTRY / "index.json").read_text(encoding="utf-8"))
+        entry = index.plugin("presentation-starter")
+        release = entry.release_for("0.1.0")
+>       assert release.sha256 == tree_digest(PACK)
+E       AssertionError: assert 'e3aeef94d01e...4961a72240c1f' == 'f5776b20d7d8...1881a9843fede'
+E         
+E         - f5776b20d7d88d213d6b66d21700a6f5fac48794ee51d19b3a91881a9843fede
+E         + e3aeef94d01e99c4b5e17a97ebee6f5ed7984f2a3e7740f795e4961a72240c1f
+
+tests\test_presentation_packs.py:77: AssertionError
+______________ test_installing_the_starter_uses_the_registry_pin ______________
+
+tmp_path = WindowsPath('C:/Users/mannk/AppData/Local/Temp/pytest-of-mannk/pytest-2205/test_installing_the_starter_us0')
+
+    def test_installing_the_starter_uses_the_registry_pin(tmp_path):
+>       record = install_from_registry(
+            REGISTRY, "presentation-starter", version="0.1.0", destination=tmp_path,
+        )
+
+tests\test_presentation_packs.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+registry_root = WindowsPath('D:/20-projects/Personal Agents/.worktrees/017-12-presentations/registry')
+plugin_id = 'presentation-starter'
+
+    def install_from_registry(registry_root: Path | str, plugin_id: str, *,
+                              version: str, sha256: str | None = None,
+                              destination: Path | str, trust=None,
+                              now=None) -> dict:
+        """Install one pinned release. Returns the install record."""
+        _require_safe_name(plugin_id, "plugin id")
+        _require_safe_name(version, "version")
+        registry_root = Path(registry_root)
+        destination = Path(destination)
+        try:
+            index = load_index((registry_root / "index.json").read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise RegistryError("install:index-unreadable", str(exc)) from exc
+        entry, release = resolve(index, plugin_id, version, sha256)
+    
+        plugin_prefix = f"plugins/{plugin_id}"
+        installed = destination / f"{plugin_id}-{version}"
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp) / "plugin"
+            if release.source == "local":
+                _stage_local_plugin(registry_root, plugin_id, release.version,
+                                    staged)
+            else:
+                _archive_plugin(registry_root, release.tag, plugin_prefix, staged)
+            actual = tree_digest(staged)
+            if actual != release.sha256:
+>               raise RegistryError(
+                    "install:hash-mismatch",
+                    f"content sha256 {actual[:12]} does not match the pinned "
+                    f"{release.sha256[:12]}")
+E               agentdesk.registry.install.RegistryError: content sha256 f5776b20d7d8 does not match the pinned e3aeef94d01e
+
+src\agentdesk\registry\install.py:234: RegistryError
+=========================== short test summary info ===========================
+FAILED tests/test_presentation_packs.py::test_the_shipped_starter_validates_and_pins_its_digest
+FAILED tests/test_presentation_packs.py::test_installing_the_starter_uses_the_registry_pin
+2 failed, 1 passed, 9 deselected in 0.84s

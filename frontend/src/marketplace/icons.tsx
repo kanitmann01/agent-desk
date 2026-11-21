@@ -102,35 +102,3 @@ export function PluginIcon({ name, size = 22 }: { name?: string; size?: number }
     </svg>
   );
 }
-
-/** Draw the decorative magnifier at its fixed 18px size. */
-export function SearchGlyph() {
-  return (
-    <svg className="mkt-search-glyph" width="18" height="18" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
-
-/** Draw the decorative copy-to-clipboard glyph at its fixed 14px size. */
-export function CopyGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5 15H4V4h11v1" />
-    </svg>
-  );
-}
-
-/** Draw the decorative confirmation check at its fixed 14px size. */
-export function CheckGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="m4 12 5 5L20 6" />
-    </svg>
-  );
-}

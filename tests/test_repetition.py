@@ -220,3 +220,41 @@ def test_activity_log_is_visible_in_settings(env_fixture=None):
         assert body.decode("utf-8").startswith("---\nname: test-skill\n")
     finally:
         booted.close()
+
+
+def test_a_malformed_id_in_the_skill_md_address_answers_404():
+    """/skills/abc/skill.md names no skill: the honest 404 page, never
+    the 500 a stale link used to crash into (spec 017, 7a)."""
+    booted = server_harness.Booted()
+    try:
+        auth = booted.exchange()
+        status, headers, body = booted.request("GET", "/skills/abc/skill.md", auth)
+        assert status == 404
+        assert headers["Content-Type"].startswith("text/html")
+        assert b"No skill lives at this address" in body
+    finally:
+        booted.close()
+
+
+def test_a_malformed_id_in_the_skill_run_address_answers_404():
+    """POST /skills/abc/run is a client error: 404, not 500."""
+    booted = server_harness.Booted()
+    try:
+        auth = booted.exchange()
+        status, _h, body = booted.post_json("/skills/abc/run", {}, auth)
+        assert status == 404
+        assert b"No skill lives at this address" in body
+    finally:
+        booted.close()
+
+
+def test_a_malformed_id_in_the_skill_undo_address_answers_404():
+    """POST /skills/abc/undo is a client error: 404, not 500."""
+    booted = server_harness.Booted()
+    try:
+        auth = booted.exchange()
+        status, _h, body = booted.post_json("/skills/abc/undo", {}, auth)
+        assert status == 404
+        assert b"No skill lives at this address" in body
+    finally:
+        booted.close()

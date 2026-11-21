@@ -251,3 +251,79 @@ def test_a_failing_change_hook_never_breaks_the_watch(tmp_path):
     watch.register("Q4-sales.xlsx")
     clock.advance(24 * 3600)
     assert watch.poll().state == "healthy"
+
+
+def test_a_read_only_workbook_polls_twice_without_locking(tmp_path):
+    """The shadow copy drops the source's read-only attribute, so the
+    second poll overwrites its copy instead of raising PermissionError
+    forever with the false 'open in Excel' cause."""
+    import os
+    import stat
+
+    from excel_fixtures import base_workbook
+    from agentdesk.excel.shadow import copy_to_shadow
+    from agentdesk.excel.xlsx import parse_workbook_file
+
+    src = tmp_path / "Q4-sales.xlsx"
+    src.write_bytes(base_workbook())
+    os.chmod(src, stat.S_IREAD)
+    adapters = Adapters(
+        copy_shadow=lambda path: copy_to_shadow(path, workdir=tmp_path),
+        parse_workbook=parse_workbook_file,
+        clock=FakeClock(),
+    )
+    watch = ExcelWatch(sqlite3.connect(":memory:"), adapters)
+    first = watch.register(str(src))
+    second = watch.retest()
+    assert first.state in ("first", "healthy")
+    assert second.state in ("first", "healthy")
+
+
+def test_snapshots_prune_after_seven_days():
+    """Nothing reads a snapshot older than the 24-hour reference, so a
+    poll keeps only seven days of its own history and the table stops
+    growing forever."""
+    from agentdesk.excel.core import row_hash
+
+    conn = sqlite3.connect(":memory:")
+    store.ensure_schema(conn)
+    old = 1_000_000.0
+    store.save_snapshot(conn, "excel-watch", old, [["old"]], row_hash)
+    recent = old + 8 * 24 * 3600.0
+    store.save_snapshot(conn, "excel-watch", recent, [["recent"]], row_hash)
+    poll_ts = [row[0] for row in conn.execute(
+        "SELECT DISTINCT poll_ts FROM snapshots WHERE source = 'excel-watch'")]
+    assert poll_ts == [recent]
+    # Pruning is per source: another watch's history is not ours to drop.
+    store.save_snapshot(conn, "other-watch", old, [["theirs"]], row_hash)
+    theirs = [row[0] for row in conn.execute(
+        "SELECT DISTINCT poll_ts FROM snapshots WHERE source = 'other-watch'")]
+    assert theirs == [old]
+
+
+def test_the_shadow_copy_exists_for_the_parse_and_is_removed_after_the_poll(tmp_path):
+    """The copy lives exactly as long as the poll needs it: present for
+    the parse, gone when the poll ends, so temp never accumulates."""
+    from agentdesk.excel.shadow import SHADOW_DIRNAME, copy_to_shadow
+    from agentdesk.excel.xlsx import parse_workbook_file
+    from excel_fixtures import base_workbook
+
+    src = tmp_path / "Q4-sales.xlsx"
+    src.write_bytes(base_workbook())
+    seen = {}
+
+    def parse(path):
+        seen["exists_during_parse"] = Path(path).is_file()
+        seen["inside_shadow_dir"] = Path(path).parent.name == SHADOW_DIRNAME
+        return parse_workbook_file(path)
+
+    adapters = Adapters(
+        copy_shadow=lambda path: copy_to_shadow(path, workdir=tmp_path),
+        parse_workbook=parse,
+        clock=FakeClock(),
+    )
+    watch = ExcelWatch(sqlite3.connect(":memory:"), adapters)
+    result = watch.register(str(src))
+    assert result.state == "first"
+    assert seen["exists_during_parse"] and seen["inside_shadow_dir"]
+    assert list((tmp_path / SHADOW_DIRNAME).iterdir()) == []

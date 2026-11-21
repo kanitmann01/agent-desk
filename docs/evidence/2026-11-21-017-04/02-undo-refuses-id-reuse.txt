@@ -1,0 +1,11 @@
+Ticket #222, spec 017 item 4a: undo refuses an id-reuse attempt.
+Real server over a fresh temp AGENTDESK_DATA, driven over HTTP.
+
+seeded: fact 2 mentions Beta Ltd, the highest entity id; a third fact carries no entity
+POST /api/memory/remove fact 2 -> 200, removed entities [2], undo window 30.0s
+then a new fact mentions Delta Corp: SQLite reuses the freed entity id, now owned by Delta Corp (entity 2)
+POST /api/memory/undo -> 409 {
+  "error": "Memory changed since the removal, so it can no longer be undone."
+}
+
+PASS: the undo refuses instead of wiring the restored Beta edges onto Delta Corp.

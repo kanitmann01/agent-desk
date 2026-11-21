@@ -1,6 +1,6 @@
 // Ticket 06: the press in the SPA. The button is the card's own offer, the
 // answer lands in place, the disclosure is drawn above any stage action, and
-// a refusal is the desk's sentence — never a status code dressed as one.
+// a refusal is the desk's sentence, never a status code dressed as one.
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';

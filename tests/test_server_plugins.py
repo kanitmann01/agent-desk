@@ -211,6 +211,35 @@ def test_widened_update_holds_with_exact_capability_diff(running, tmp_path):
     assert record["active_version"] == "1.2.1"
 
 
+def test_widened_install_over_holds_with_the_update_consent_card(running, tmp_path):
+    """The Install button is not an Update bypass (audit F1): installing a
+    widening release over an installed plugin through the install route
+    holds for consent and raises the same update_consent card the update
+    route raises."""
+    running.post("/api/plugins/install",
+                 {"zip_path": str(valid_zip(tmp_path / "v1.zip")), "source": "zip"})
+    status, out = running.post("/api/plugins/install",
+                               {"zip_path": str(widened_zip(tmp_path / "wide.zip")),
+                                "source": "zip"})
+    assert status == 200, out
+    assert out["applied"] is False
+    assert out["status"] == "pending-consent"
+    assert out["added_scopes"] == ["filesystem.read: ${workspace}/reports/*.pdf"]
+    _, record = running.get("/api/plugins/sales-delta-widget")
+    assert record["active_version"] == "1.2.0"
+
+    cards = running.server.inbox.waiting()
+    consent_cards = [card for card in cards if card.kind == "update_consent"]
+    assert len(consent_cards) == 1
+    assert "reports/*.pdf" in consent_cards[0].body
+
+    status, out = running.post("/api/plugins/sales-delta-widget/consent", {})
+    assert status == 200
+    _, record = running.get("/api/plugins/sales-delta-widget")
+    assert record["active_version"] == "1.2.1"
+    assert [v["version"] for v in record["versions"]] == ["1.2.0", "1.2.1"]
+
+
 def test_rollback_restores_prior_version_and_lockfile(running, tmp_path):
     running.post("/api/plugins/install",
                  {"zip_path": str(valid_zip(tmp_path / "v1.zip")), "source": "zip"})
@@ -287,3 +316,57 @@ def test_plugin_api_answers_without_an_injected_runtime(tmp_path, monkeypatch):
         assert booted.server.plugins.plugins_dir == tmp_path / "plugins"
     finally:
         booted.close()
+
+
+# -- the page door's notices survive the redirect chain (spec 017, 8b) ------
+
+# The shipped launcher serves the committed SPA build, and that build is the
+# page a plugin action's redirect lands on; conftest defaults SPA_DIR away
+# so the rendered pages stay covered, so these tests point it back.
+COMMITTED_SPA = ROOT / "src" / "agentdesk" / "server" / "static" / "spa"
+
+
+def _follow_page(running, method, path):
+    """A no-JS browser: one request, then every redirect to a page.
+
+    Returns (status, body text). This is exactly what a form post does with
+    JavaScript off, which is the only user the /plugins/<id>/<action> door
+    still answers with redirects.
+    """
+    headers = running.authed_headers()
+    status, resp_headers, body = running.request(method, path, headers=headers,
+                                                 body={} if method == "POST" else None)
+    hops = 0
+    while status in (301, 302, 303) and hops < 5:
+        status, resp_headers, body = running.request(
+            "GET", resp_headers["Location"], headers=headers)
+        hops += 1
+    assert status == 200, (status, hops)
+    return status, body
+
+
+def test_a_refused_page_action_names_its_cause_on_the_landing_page(
+        running, tmp_path, monkeypatch):
+    monkeypatch.setattr(server_app, "SPA_DIR", COMMITTED_SPA)
+    zip_path = valid_zip(tmp_path / "plugin.zip")
+    status, _ = running.post("/api/plugins/install",
+                             {"zip_path": str(zip_path), "source": "zip"})
+    assert status == 200
+
+    # A refusal: the unknown id's named cause must ride the chain
+    # (303 /plugins?notice=... -> 302 /marketplace/installed?notice=...)
+    # and be on the page the user lands on, not die in the double redirect.
+    _status, page = _follow_page(running, "POST", "/plugins/no-such-plugin/share")
+    assert "no installed plugin no-such-plugin" in page
+
+
+def test_a_confirmed_page_action_reports_the_outcome_on_the_landing_page(
+        running, tmp_path, monkeypatch):
+    monkeypatch.setattr(server_app, "SPA_DIR", COMMITTED_SPA)
+    zip_path = valid_zip(tmp_path / "plugin.zip")
+    status, _ = running.post("/api/plugins/install",
+                             {"zip_path": str(zip_path), "source": "zip"})
+    assert status == 200
+
+    _status, page = _follow_page(running, "POST", "/plugins/sales-delta-widget/share")
+    assert "sales-delta-widget is now shared with paired desks." in page

@@ -133,6 +133,20 @@ def test_a_fact_that_spans_lines_still_earns_its_receipt():
     assert receipt[0]["text"].startswith("Dana prefers")
 
 
+def test_a_fact_whose_text_holds_an_entry_line_still_earns_its_receipt():
+    # The pasted-text case: a fact containing a newline followed by "- "
+    # renders as two block entries, so a parser that re-reads the block
+    # finds no entry carrying its whole text. The receipt reads the
+    # block's own line slices, so block and receipt still agree.
+    ranked = _ranked("Q3 revenue is pending\n- see the finance sheet",
+                     "revenue is up")
+    block, receipt = runner.recall_block(ranked)
+    assert "- Q3 revenue is pending" in block
+    assert "- see the finance sheet" in block
+    assert [row["id"] for row in receipt] == [1, 2]
+    assert receipt[0]["text"] == "Q3 revenue is pending\n- see the finance sheet"
+
+
 def test_no_recall_means_no_block_and_an_empty_receipt():
     block, receipt = runner.recall_block([])
     assert block == ""

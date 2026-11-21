@@ -52,27 +52,74 @@ def _read_shared_strings(zf: zipfile.ZipFile) -> list[str]:
     return strings
 
 
+_R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+
+def _declared_first_sheet(zf: zipfile.ZipFile, names: list[str]) -> str | None:
+    """The first worksheet by the workbook's declared tab order.
+
+    workbook.xml lists the tabs in display order; its rels map each
+    sheet's r:id to the worksheet part. None when the declaration or the
+    rels cannot be read, or when no declared sheet resolves to a part we
+    carry: the caller falls back to the archive-name order.
+    """
+    try:
+        workbook = ET.fromstring(zf.read("xl/workbook.xml"))
+        rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+    except (KeyError, ET.ParseError):
+        return None
+    targets = {
+        rel.get("Id"): rel.get("Target") or ""
+        for rel in rels
+        if _local(rel.tag) == "Relationship"
+    }
+    carried = set(names)
+    for sheet in workbook.iter():
+        if _local(sheet.tag) != "sheet":
+            continue
+        target = targets.get(sheet.get(_R_NS + "id") or "")
+        if not target:
+            continue
+        part = target[1:] if target.startswith("/") else f"xl/{target}"
+        if part in carried:
+            return part
+    return None
+
+
 def _first_sheet_name(zf: zipfile.ZipFile) -> str:
     """The archive path of the worksheet to read.
 
-    The choice is by archive path, not by the workbook's declared sheet order.
-    A workbook with no worksheet raises WorkbookUnreadable.
+    The workbook's declared tab order decides (a tab reorder in Excel
+    keeps part names but rewrites workbook.xml); only when the
+    declaration cannot be resolved does the sorted archive name pick. A
+    workbook with no worksheet raises WorkbookUnreadable.
     """
     names = sorted(n for n in zf.namelist() if n.startswith("xl/worksheets/") and n.endswith(".xml"))
     if not names:
         raise WorkbookUnreadable("no worksheet inside the workbook")
-    return names[0]
+    return _declared_first_sheet(zf, names) or names[0]
 
 
 def parse_workbook_bytes(data: bytes) -> list[list]:
-    """Parse the first worksheet into rows of float/str values."""
+    """Parse the first worksheet into rows of float/str values.
+
+    File input is a trust boundary: anything malformed in the parts a
+    real workbook needs (torn XML, a shared-string index pointing past
+    the table) becomes WorkbookUnreadable, the amber cause, never an
+    exception escaping to the page.
+    """
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as exc:
         raise WorkbookUnreadable("that file is not a .xlsx workbook") from exc
-    with zf:
-        shared = _read_shared_strings(zf)
-        sheet_raw = zf.read(_first_sheet_name(zf))
+    try:
+        with zf:
+            shared = _read_shared_strings(zf)
+            sheet_raw = zf.read(_first_sheet_name(zf))
+    except WorkbookUnreadable:
+        raise
+    except (KeyError, ET.ParseError, IndexError, ValueError) as exc:
+        raise WorkbookUnreadable("the workbook's parts could not be read") from exc
 
     rows: list[list] = []
     row: list = []
@@ -102,8 +149,8 @@ def parse_workbook_bytes(data: bytes) -> list[list]:
                     rows.append(row)
                 row = []
                 elem.clear()
-    except ET.ParseError as exc:
-        raise WorkbookUnreadable("the worksheet xml is malformed") from exc
+    except (ET.ParseError, IndexError, ValueError) as exc:
+        raise WorkbookUnreadable(f"the worksheet could not be parsed: {exc}") from exc
     return rows
 
 

@@ -28,8 +28,8 @@ from agentdesk.validator import lint  # noqa: E402
 SAMPLES = {
     "metric": {"kind": "metric", "value": "12", "label": "<script>alert(1)</script>"},
     "text": {"kind": "text", "text": "<script>alert(1)</script>"},
-    "delta": {"kind": "delta", "label": "Change", "value": "<script>alert(1)</script>",
-              "direction": "up"},
+    "delta": {"kind": "delta", "label": "<script>alert(1)</script>",
+              "value": "<script>alert(1)</script>", "direction": "up"},
     "progress": {"kind": "progress", "value": 6, "target": 10, "unit": "<script>alert(1)</script>"},
     "list": {"kind": "list", "title": "<script>alert(1)</script>",
              "rows": [{"primary": "Rows", "secondary": "8", "meta": "ok"}]},

@@ -395,12 +395,13 @@ class CalendarBridge:
     def _breakdown_for(self, key) -> dict:
         """Return the breakdown for one key event, generating it the first time.
 
-        The cache key carries the event's start time, so moving an event produces a
-        fresh breakdown instead of the old one. A failing or unparsable LLM answer
-        degrades to the generic breakdown rather than raising, and whichever answer is
-        used is cached for the same event.
+        The cache key carries the event's start time and subject, so moving or
+        renaming an event produces a fresh breakdown instead of the old one. A
+        failing or unparsable LLM answer degrades to the generic breakdown
+        rather than raising; a degraded answer is marked and never cached, so
+        the next poll or retest asks again instead of freezing the fallback.
         """
-        cache_key = f"{key.id}:{key.start.isoformat()}"
+        cache_key = f"{key.id}:{key.start.isoformat()}:{key.subject}"
         cached = store.cached_breakdown(self.conn, cache_key)
         if cached is not None:
             return cached
@@ -409,7 +410,8 @@ class CalendarBridge:
         except Exception:  # noqa: BLE001 - degrade, never break
             LOG.debug("breakdown fell back to generic", exc_info=True)
             breakdown = generic_breakdown()
-        store.save_breakdown(self.conn, cache_key, breakdown)
+        if not breakdown.get("fallback"):
+            store.save_breakdown(self.conn, cache_key, breakdown)
         return breakdown
 
     def toggle_check(self, event_id: str, idx: int, checked: bool) -> None:

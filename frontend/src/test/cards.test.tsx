@@ -156,6 +156,21 @@ describe('the sales card', () => {
     ).toBeInTheDocument();
     expect(onRefetch).not.toHaveBeenCalled();
   });
+
+  it('keeps a renamed title once the workbook is configured', () => {
+    // The rename must survive the states the source enters when it
+    // misbehaves, exactly because that is when the user is watching.
+    render(
+      <SalesCard
+        sales={{ enabled: true, mode: 'live', status: HEALTHY_SALES }}
+        title="Pipeline"
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Pipeline' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Sales, last 24 hours' })).toBeNull();
+  });
 });
 
 describe('the commitments card', () => {
@@ -201,6 +216,23 @@ describe('the commitments card', () => {
     expect(JSON.parse(String(checkCall?.[1]?.body)).checked).toBe(true);
     await vi.waitFor(() => expect(second).toHaveAttribute('aria-checked', 'true'));
     expect(onRefetch).toHaveBeenCalled();
+  });
+
+  it('keeps a renamed title in the unreadable state', () => {
+    render(
+      <CommitmentsCard
+        commitments={{
+          enabled: true,
+          mode: 'live',
+          status: { ...STATUS, state: 'unreadable', cause: 'The file is not calendar data.' },
+        }}
+        title="Today"
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Today' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: "Today's key commitment" })).toBeNull();
   });
 });
 
@@ -373,8 +405,9 @@ describe('the plugin card', () => {
     );
     await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
-    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/plugins/p1/retest');
-    expect(retestCall?.[0]).toBe('/api/plugins/p1/retest');
+    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/marketplace/retest');
+    expect(retestCall?.[0]).toBe('/api/marketplace/retest');
+    expect(retestCall?.[1]?.body).toBe(JSON.stringify({ id: 'p1' }));
     await vi.waitFor(() => expect(onRefetch).toHaveBeenCalled());
   });
 

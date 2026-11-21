@@ -34,6 +34,20 @@ CHANGED_ROWS = [
 ]
 
 
+def _torn_workbook_bytes() -> bytes:
+    """A genuine fixture whose first shared-string cell points past the
+    table: zip-valid, parse-torn."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(base_workbook())) as src, zipfile.ZipFile(buffer, "w") as out:
+        for info in src.infolist():
+            out.writestr(info, src.read(info).decode("utf-8").replace(
+                '<c r="A1" t="s"><v>0</v></c>', '<c r="A1" t="s"><v>999</v></c>'))
+    return buffer.getvalue()
+
+
 class FakeClock:
     def __init__(self) -> None:
         self.now = 1_000_000.0
@@ -406,24 +420,63 @@ class TestPickerDialogVisibility:
         assert snippet.index("json.dumps") < snippet.index("root.destroy")
 
 
-def test_pick_failure_is_never_silent_in_the_page_script():
+def test_pick_failure_is_never_silent_and_never_teaches_a_typed_path():
     from agentdesk.server import pages
 
     script = pages.APP_JS
-    # A null path reveals the manual fallback with the amber note.
-    assert "The file dialog did not open. Type the workbook path below and press Connect." in script
+    # A null path is its own honest amber note: try again, never type.
+    assert "The file dialog did not open" in script
+    assert "Type the workbook path" not in script
+    assert "data-manual-connect" not in script
+    assert "workbook-path" not in script
     # Fetch and HTTP failures surface inline instead of disappearing.
     assert script.count(".catch(") >= 3
     assert "res.data.error" in script
-    assert "data-manual-connect" in script
 
 
-def test_unconfigured_card_carries_the_manual_fallback(env, auth):
+def test_unconfigured_card_is_picker_only(env, auth):
+    """The native picker is the contract: the card offers the dialog and
+    an amber note for its failure, and no typed-path form anywhere."""
     page = env.request("GET", "/", auth)[2].decode("utf-8")
+    assert 'data-pick' in page
     assert 'id="pick-note" hidden' in page
-    assert 'id="manual-connect" hidden' in page
-    assert 'data-manual-connect' in page
-    assert 'id="workbook-path"' in page
-    # The fallback is the same endpoint the picker uses, so validation
-    # and success rendering are identical either way.
-    assert ".xlsx or .xlsm" in page
+    assert "manual-connect" not in page
+    assert 'id="workbook-path"' not in page
+    assert "Type the workbook path" not in page
+
+
+def test_a_malformed_workbook_registers_into_the_amber_state_not_a_500(
+        env, auth, tmp_path):
+    """A zip-valid but torn workbook (shared-string index past the table)
+    lands in the designed unreadable amber with a cause; the register
+    route and the dashboard answer, never the generic error page."""
+    torn_path = tmp_path / "torn.xlsx"
+    torn_path.write_bytes(_torn_workbook_bytes())
+    status, _h, body = env.post_json("/sources/excel-watch", {"path": str(torn_path)}, auth)
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["state"] == "unreadable"
+    assert "Can't read the workbook" in payload["cause"]
+    page_status, _h, page_body = env.request("GET", "/", auth)
+    page = page_body.decode("utf-8")
+    assert page_status == 200
+    assert "Check it is a valid .xlsx" in page  # the amber cause, escaped
+    assert "Something broke" not in page
+
+
+def test_the_delta_label_names_the_actual_window_after_a_long_gap(env, auth):
+    """A closed laptop over a weekend: the diff is still against the
+    newest snapshot before the 24-hour mark, and the card says which
+    window that was instead of claiming '24 hours'."""
+    env.post_json("/sources/excel-watch", {"path": str(env.workbook)}, auth)
+    env.workbook.write_bytes(make_xlsx(CHANGED_ROWS))
+    env.clock.advance(3 * 24 * 3600)
+    status, _h, body = env.post_json("/sources/excel-watch/retest", {}, auth)
+    payload = json.loads(body)
+    assert status == 200
+    assert payload["state"] == "healthy"
+    assert payload["reference_ts"] is not None
+    assert payload["last_ok_ts"] - payload["reference_ts"] > 2 * 24 * 3600
+    page = env.request("GET", "/", auth)[2].decode("utf-8")
+    assert "Rows changed, 24 h" not in page
+    assert "newest snapshot before the 24-hour mark" in page

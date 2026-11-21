@@ -1,0 +1,17 @@
+== anchor.json contains '{broken' (present but unreadable) and a valid signed bundle sits in policy.json ==
+
+\$ curl -s http://127.0.0.1:8792/api/marketplace/policy
+{
+  "mode": "curated",
+  "source": "built-in",
+  "signatureStatus": "unknown-key",
+  "warning": "the trust anchor exists but cannot be read; no signing key is trusted and signed policies are rejected until the anchor file is repaired or removed. The built-in curated policy stays active.",
+  "epoch": 0
+}
+
+\$ curl -s http://127.0.0.1:8792/api/marketplace/trust  (anchor block)
+{
+  "epoch": 0,
+  "fingerprints": [],
+  "corrupt": true
+}

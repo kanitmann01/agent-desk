@@ -641,6 +641,50 @@ def test_edit_merge_prunes_observations_cited_only_by_the_edited_fact():
     assert citations == [(2, kept.id), (2, other.id)]
 
 
+def test_editing_a_superseding_fact_onto_another_facts_text_releases_the_replaced_one():
+    store = _store()
+    old = store.add("The Acme renewal is due December 1.")
+    new = store.add("The Acme renewal is due December 15.")
+    other = store.add("The Zenith deal closed.")
+    store.mark_superseded(old.id, new.id)
+    result = store.edit(new.id, "The Zenith deal closed.")
+    assert result.merged_into is True
+    # The merge deleted the superseder, so the replaced fact's pointer is
+    # released (not left dangling at a dead id): recall returns the older
+    # true value instead of skipping it forever.
+    assert store.superseded_map() == {}
+    hits = [fact.id for _score, fact in store.recall("acme renewal due")]
+    assert hits == [old.id]
+
+
+def test_the_conversion_dedupe_repoints_superseded_facts_at_the_keeper(tmp_path):
+    path = tmp_path / "memory.sqlite3"
+    with contextlib.closing(
+        sqlite3.connect(str(path), check_same_thread=False)
+    ) as conn:
+        store = MemoryStore(conn, FakeClock(), key_path=tmp_path / "memory.key")
+        old = store.add("The Acme renewal is due December 1.")
+        keeper = store.add("The Acme renewal is due December 15.")
+        # A foreign duplicate of the newer fact, younger than the keeper:
+        # the shape a v2-era writer left behind, which the conversion's
+        # dedupe collapses into the oldest row.
+        store.conn.execute(
+            "INSERT INTO facts (text, source, created_ts, kind) VALUES"
+            " ('  the acme renewal is due december 15.  ', 'page', 200.0, 'world')"
+        )
+        store.conn.commit()
+        duplicate = store.conn.execute(
+            "SELECT id FROM facts ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        store.mark_superseded(old.id, duplicate)
+        store.encrypt_all()
+        # The copy is gone; the fact it replaced points at the keeper, the
+        # row that now carries the replacing text, never at a dead id.
+        assert store.superseded_map() == {old.id: keeper.id}
+        hits = [fact.id for _score, fact in store.recall("acme renewal due")]
+        assert hits == [keeper.id]
+
+
 # -- hygiene (ticket #92): entity merge ---------------------------------------
 
 
@@ -706,6 +750,35 @@ def test_merge_entities_refuses_unknown_ids():
         store.merge_entities(999, entity_id)
     assert len(_entities(store.conn)) == 1
     assert _edges(store.conn) == []
+
+
+def test_merge_entities_deletes_both_sides_observations():
+    from agentdesk.memory.loop import entity_scope
+
+    store = _store()
+    acme_a = store.add("Acme signed the renewal.")
+    acme_b = store.add("Acme hired Maya.")
+    globex_a = store.add("Globex shipped the widget.")
+    globex_b = store.add("Globex opened the office.")
+    store.resolve_and_link(acme_a.id, [("Acme", "org")])
+    store.resolve_and_link(acme_b.id, [("Acme", "org")])
+    store.resolve_and_link(globex_a.id, [("Globex", "org")])
+    store.resolve_and_link(globex_b.id, [("Globex", "org")])
+    store.save_observation(
+        entity_scope(1), "2 facts about Acme.", 0.7, (acme_a.id, acme_b.id), now=1.0
+    )
+    store.save_observation(
+        entity_scope(2), "2 facts about Globex.", 0.7, (globex_a.id, globex_b.id),
+        now=1.0,
+    )
+    store.merge_entities(1, 2)
+    # The absorbed entity's scope is deleted in the same transaction (no
+    # reconcile ever looks at a dead entity's scope again), and the
+    # survivor's stale text goes with it, so the rebuild never has to
+    # compete with a derived row the bank no longer supports.
+    assert store.observation_ids_in_scope(entity_scope(2)) == []
+    assert store.observation_ids_in_scope(entity_scope(1)) == []
+    assert store.observations() == []
 
 
 # -- hygiene (ticket #92): the entity list -------------------------------------
@@ -846,6 +919,59 @@ def test_remove_facts_refuses_an_empty_id_list():
         store.remove_facts([])
 
 
+# -- removal undo: the restore refuses a reused id (spec 017, 4a) --------------
+
+
+def test_restore_refuses_when_a_removed_entitys_id_was_reused():
+    store = _store()
+    keep = store.add("Acme signed the renewal.", source="page")
+    gone = store.add("Beta review is due December 2.", source="page")
+    later = store.add("Zenith closed the deal.", source="page")
+    store.resolve_and_link(keep.id, [("Acme", "org")])
+    store.resolve_and_link(gone.id, [("Beta Ltd", "org")])
+    result = store.remove_with_effects([gone.id])
+    assert result["entity_ids"], "Beta went edge-less and was deleted"
+    # A new fact's entity takes the freed id (SQLite reuses the max rowid),
+    # exactly the audit's repro: the new fact's own id does not collide.
+    fresh = store.add("Delta signed the deal.", source="page")
+    store.resolve_and_link(fresh.id, [("Delta Corp", "org")])
+    assert fresh.id == later.id + 1
+    entities = {entity.id for entity in store.entities()}
+    assert result["entity_ids"][0] in entities, "the removed entity's id was taken"
+    with pytest.raises(ValueError, match="no longer be undone"):
+        store.restore_dump(result["dump"])
+
+
+def test_restore_refuses_when_a_removed_sources_id_was_reused():
+    store = _store()
+    excerpt = store.add_source("You: The Berlin office has 40 people.")
+    fact = store.add("The Berlin office has 40 people.", source="page",
+                     source_id=excerpt)
+    result = store.remove_with_effects([fact.id])
+    assert result["source_ids"] == [excerpt], "the excerpt lost its last fact"
+    assert store.add_source("You: A new conversation.") == excerpt
+    with pytest.raises(ValueError, match="no longer be undone"):
+        store.restore_dump(result["dump"])
+
+
+def test_restore_refuses_when_a_removed_observations_id_was_reused():
+    store = _store()
+    left = store.add("Maya left Acme")
+    right = store.add("Acme ships widgets")
+    standing = store.add("The Berlin office has 40 people.")
+    saved = store.save_observation(
+        "scope-a", "Acme churns", 0.9, (left.id, right.id), now=100.0
+    )
+    result = store.remove_with_effects([left.id, right.id])
+    assert result["observation_ids"] == [saved.observation.id]
+    # The re-derived row takes the freed id; the undo must not delete it
+    # to make room for the old one.
+    fresh = store.save_observation(
+        "scope-b", "Berlin keeps growing", 0.9, (standing.id,), now=200.0
+    )
+    assert fresh.observation.id == saved.observation.id
+    with pytest.raises(ValueError, match="no longer be undone"):
+        store.restore_dump(result["dump"])
 
 
 # -- observations (ticket #93): the reflect write path ------------------------

@@ -1,8 +1,9 @@
 // One consent sheet for installs, updates and packs. It never invents a
 // scope: every line comes from the server's scope list, and a widening is
 // marked in text as well as colour.
-import { useEffect, useRef, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { describeScope, visibleScopes } from './permissions';
+import { useDialogFocus } from './useDialogFocus';
 
 export interface ConsentSheetProps {
   open: boolean;
@@ -32,59 +33,7 @@ export function ConsentSheet({
   open, title, intro, scopes, addedScopes = [], removedScopes = [],
   canNever, confirmLabel, busy = false, error = '', onCancel, onConfirm, children,
 }: ConsentSheetProps) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const restoreRef = useRef<HTMLElement | null>(null);
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
-  useEffect(() => {
-    if (!open) return undefined;
-    const previous = document.activeElement;
-    if (previous instanceof HTMLElement) restoreRef.current = previous;
-    closeRef.current?.focus();
-    /**
-     * Keep the keyboard inside the open sheet: Escape cancels, and Tab wraps at
-     * either end. With nothing focusable inside, focus stays on the sheet.
-     */
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCancelRef.current();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const sheet = sheetRef.current;
-      if (!sheet) return;
-      const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => element.getAttribute('aria-hidden') !== 'true');
-      if (focusable.length === 0) {
-        event.preventDefault();
-        sheet.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey) {
-        if (active === first || !sheet.contains(active)) {
-          event.preventDefault();
-          last.focus();
-        }
-      } else if (active === last || !sheet.contains(active)) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      const restore = restoreRef.current;
-      restoreRef.current = null;
-      if (restore && document.contains(restore)) restore.focus();
-    };
-  }, [open]);
+  const { sheetRef, firstRef } = useDialogFocus<HTMLButtonElement>(open, onCancel);
 
   if (!open) return null;
   const added = new Set(addedScopes);
@@ -97,7 +46,7 @@ export function ConsentSheet({
             <span className="mkt-eyebrow">Permission review</span>
             <h2 id="mkt-consent-title">{title}</h2>
           </div>
-          <button ref={closeRef} type="button" className="mkt-icon-btn"
+          <button ref={firstRef} type="button" className="mkt-icon-btn"
                   aria-label="Close permission review" onClick={onCancel}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -149,7 +98,7 @@ export function ConsentSheet({
         </div>
         <div className="mkt-sheet-foot">
           <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-          <button ref={confirmRef} type="button" className="btn btn-primary"
+          <button type="button" className="btn btn-primary"
                   disabled={busy} onClick={onConfirm}>
             {busy ? 'Working…' : confirmLabel}
           </button>

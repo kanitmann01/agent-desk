@@ -1,0 +1,26 @@
+HTTP/1.1 404 Not Found
+Server: AgentDesk/0.1.0 
+Date: Sat, 21 Nov 2026 15:07:26 GMT
+Content-Type: text/html; charset=utf-8
+Content-Security-Policy: default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Content-Length: 389
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nothing here, Nexuus Bot</title>
+<script src="/static/theme-boot.js"></script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="error-card">
+<h1>Nothing here</h1>
+<p>No skill lives at this address.</p>
+</div>
+</body>
+</html>

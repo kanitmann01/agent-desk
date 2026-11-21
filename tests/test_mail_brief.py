@@ -50,7 +50,7 @@ def test_top_message_prefers_high_importance_action_mail_over_quiet_mail():
         _msg("<3@x>", "Lunch on Friday?", "Ana <ana@northwind.example>",
              NOW - 20 * 3600),
     ])
-    top = top_message(messages, NOW)
+    top = top_message(messages, NOW, self_address="employee@example.com")
     assert top is not None
     assert top.message.id == "<1@x>"
     assert "high importance" in top.why

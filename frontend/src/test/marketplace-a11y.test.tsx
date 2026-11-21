@@ -1,11 +1,13 @@
 // Keyboard access on the marketplace: the skip link comes first, the
 // current route is exposed with aria-current (not colour alone), and the
-// consent sheet traps Tab, closes on Escape and returns focus.
+// consent sheet traps Tab, closes on Escape and returns focus. The
+// destructive dialogs (uninstall, rollback, purge) carry the same focus
+// contract via the shared hook the consent sheet implements.
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MarketplaceApp from '../marketplace/MarketplaceApp';
-import { catalog, detailResponse } from './marketplace-fixtures';
+import { catalog, detailResponse, installedResponse } from './marketplace-fixtures';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -85,6 +87,35 @@ describe('marketplace keyboard access', () => {
     await user.tab({ shift: true });
     expect(close).toHaveFocus();
 
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('gives the uninstall dialog the consent sheet focus contract', async () => {
+    window.history.replaceState({}, '', '/marketplace/installed');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(installedResponse())));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    await screen.findByRole('heading', { level: 1, name: 'Installed plugins' });
+
+    const trigger = screen.getByRole('button', { name: 'Uninstall' });
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Uninstall AR Aging' });
+    // Focus moves into the dialog, onto its first control.
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    const confirm = within(dialog).getByRole('button', { name: 'Uninstall' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+
+    // Tab cycles inside the dialog and wraps at both ends.
+    await user.tab();
+    expect(confirm).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+
+    // Escape closes and focus returns to the control that opened it.
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();

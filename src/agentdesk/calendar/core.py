@@ -68,8 +68,8 @@ def parse_calendar_document(raw: dict) -> CalendarDocument:
                     attendee_names=names,
                 )
             )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise CalendarUnreadable(f"an event is missing its time fields: {exc}") from exc
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise CalendarUnreadable(f"an event could not be read as a calendar entry: {exc}") from exc
     generated = raw.get("generatedAt")
     return CalendarDocument(
         generated_at=_parse_dt(generated) if generated else datetime.now().astimezone(),
@@ -78,16 +78,17 @@ def parse_calendar_document(raw: dict) -> CalendarDocument:
 
 
 def _parse_dt(value) -> datetime:
-    """Parse an ISO timestamp into an aware datetime.
+    """Parse an ISO timestamp into an aware local datetime.
 
     A trailing Z is read as UTC; a value carrying no offset is taken as local
     time, which is what the flow writes when it emits a naive timestamp.
+    Either way the event is normalized to the manager's local zone here, at
+    the parse boundary, so today-windowing, week load and display all work
+    in one zone instead of the zone each row happened to carry.
     """
     text = str(value).replace("Z", "+00:00")
     parsed = datetime.fromisoformat(text)
-    if parsed.tzinfo is None:
-        parsed = parsed.astimezone()  # naive flow output: treat as local
-    return parsed
+    return parsed.astimezone()  # naive flow output: treat as local
 
 
 def pick_key_event(events: list, now: datetime) -> CalendarEvent | None:

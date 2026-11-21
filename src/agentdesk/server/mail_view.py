@@ -102,6 +102,14 @@ def _followups_section(view: dict) -> str:
     """
     follow_ups = view.get("followUps") or []
     days = html.escape(str(view.get("followUpDays", "")))
+    if not follow_ups and view.get("selfDetection") is False:
+        return (
+            "<h2>Waiting on you</h2>"
+            "<p class='empty' id='mail-followups-off'>Mail self-detection is off "
+            "because no address is set, so this desk cannot know which threads "
+            "you already answered and files no follow-up cards. Save your own "
+            "address in <a href='/settings'>settings</a> to turn it on.</p>"
+        )
     if not follow_ups:
         return (
             "<h2>Waiting on you</h2>"

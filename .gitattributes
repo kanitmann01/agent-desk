@@ -29,10 +29,17 @@ licenses/third-party/*.txt text eol=lf
 frontend/public/licenses/*.txt text eol=lf
 src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
 # The registry trees are digest-pinned: index.json publishes a sha256 per
-# release and installs re-hash the working tree, so every checkout must
-# see the committed bytes. Pin LF under registry/ so core.autocrlf cannot
-# rewrite text files on Windows (LICENSE and NOTICE have no extension
-# rule of their own). eol=lf makes the checkout smudge a no-op for every
-# registry file, and text=auto keeps the .pptx shells and .png thumbs out
-# of newline conversion entirely.
+# release and every install re-hashes the working tree, so each checkout
+# must see the committed bytes. Pin LF under registry/ so core.autocrlf
+# cannot rewrite text files on Windows (LICENSE and NOTICE have no
+# extension rule of their own). eol=lf makes the checkout smudge a no-op
+# for every registry file, and text=auto keeps the .pptx shells and .png
+# thumbs out of newline conversion entirely.
 registry/** text=auto eol=lf
+# The same digest-pin hazard reaches extensionless LICENSE and NOTICE
+# files outside registry/ (the root LICENSE travels inside the
+# distribution bundle). The filename rules below cover any such file at
+# any depth; inside registry/ the registry/** rule above already pins
+# them, and the two rules agree so the overlap changes nothing.
+LICENSE text eol=lf
+NOTICE text eol=lf

@@ -1,0 +1,2 @@
+wrote C:\Users\mannk\AppData\Local\Temp\agentdesk-ev-01701\data\workspace\marketplace\policy.json
+policy.retentionDays = 30.5

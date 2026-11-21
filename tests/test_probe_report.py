@@ -114,7 +114,7 @@ class TestReportRendering:
     def test_report_includes_context_header(self):
         report = render_report(sample_results(), aggregate_verdict(sample_results()), CONTEXT)
 
-        assert "# Nexuus Bot environment probe" in report
+        assert "# Agent Desk environment probe" in report
         assert "2026-01-01 12:00:00" in report
         assert "3.14.0" in report
 

@@ -24,7 +24,6 @@ from agentdesk.inbox.store import InboxStore
 from agentdesk.mail.core import (
     DIGEST_HOURS,
     FOLLOW_UP_DAYS,
-    MAIL_USER,
     digest_details,
     follow_up_details,
     read_eml_folder_reported,
@@ -93,12 +92,15 @@ class MailWatch:
         audit_hook: Callable[[str, str, str], None] | None = None,
         follow_up_days: float = FOLLOW_UP_DAYS,
         digest_hours: float = DIGEST_HOURS,
-        self_address: str = MAIL_USER,
+        self_address: str = "",
+        self_address_provider: Callable[[], str] | None = None,
     ) -> None:
         """Wire the inbox, the handled store and the adapters for one folder.
 
         folder_provider is asked on every poll, so a folder chosen in settings
-        applies without a restart. Nothing polls until start_polling.
+        applies without a restart; self_address_provider is asked the same
+        way, and the constructor's self_address wins while the provider
+        stays empty. Nothing polls until start_polling.
         """
         self.inbox = inbox
         self.store = store
@@ -107,7 +109,8 @@ class MailWatch:
         self.audit_hook = audit_hook
         self.follow_up_days = follow_up_days
         self.digest_hours = digest_hours
-        self.self_address = self_address
+        self._self_address = self_address
+        self.self_address_provider = self_address_provider or (lambda: "")
         self._state = STATE_UNCONFIGURED
         self._cause = ""
         self._folder: str | None = None
@@ -119,6 +122,13 @@ class MailWatch:
         # manual retest all pass through here, and two overlapping polls
         # would race their check-then-file deltas into duplicate cards.
         self._poll_lock = threading.Lock()
+
+    @property
+    def self_address(self) -> str:
+        """The user's configured address, re-read on every use so a
+        setting saved in the app applies without a restart. Empty means
+        self-detection is off: an honest no-answer instead of a wrong one."""
+        return (self._self_address or self.self_address_provider() or "").strip()
 
     # -- the poll ---------------------------------------------------------
 
@@ -271,6 +281,7 @@ class MailWatch:
             "unparsedFiles": 0,
             "digest": [],
             "followUps": [],
+            "selfDetection": bool(self.self_address),
             "handled": sorted(self.store.handled()),
             "followUpDays": self.follow_up_days,
         }
@@ -310,6 +321,7 @@ class MailWatch:
             "unparsedFiles": self._unparsed,
             "digestThreads": list(self._digest),
             "followUps": list(self._follow_ups),
+            "selfDetection": bool(self.self_address),
             "handledCount": len(self.store.handled()),
         }
 

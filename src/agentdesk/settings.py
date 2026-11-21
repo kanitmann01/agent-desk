@@ -71,6 +71,7 @@ TEXT_KEYS = {
     "llm_model": "",  # empty means the adapter's default model
     "embeddings_model": EMBEDDINGS_MODEL_DEFAULT,  # the semantic recall model (#95)
     "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
+    "mail_self_address": "",  # the user's own address; empty means mail self-detection is off
     "registry_path": "",  # the local registry checkout the plugins page browses; empty means auto
     "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated
     # Presentation-agent calls only. Other agents stay on the 10s adapter cap.

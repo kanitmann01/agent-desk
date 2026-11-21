@@ -767,6 +767,7 @@ def render_settings_page(
     settings_values: dict | None = None,
     endpoint_status: dict | None = None,
     mail_folder: str = "",
+    mail_self_address: str = "",
     registry_status: dict | None = None,
     extra_hosts: str = "",
     server_port: int = 8765,
@@ -907,6 +908,15 @@ AGENTDESK_MAIL_FOLDER environment variable.</p>
 <input id="mail-folder" type="text" name="folder" value="{html.escape(mail_folder, quote=True)}" placeholder="C:/Users/you/mail-exports" autocomplete="off">
 <button class="btn btn-secondary" type="submit">Save folder</button>
 </form>
+<form method="post" action="/settings/mail/address" class="cardform">
+<label class="empty" for="mail-self-address">Your mail address</label>
+<input id="mail-self-address" type="text" name="address" value="{html.escape(mail_self_address, quote=True)}" placeholder="you@company.com" autocomplete="off">
+<button class="btn btn-secondary" type="submit">Save address</button>
+</form>
+<p class="empty">The address is how the desk recognises your own replies (the
+address inside the From header), so threads you already answered stop
+producing follow-up cards. With no address set, self-detection is simply
+off: the digest works, follow-up cards are not filed.</p>
 <p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
 </section>
 

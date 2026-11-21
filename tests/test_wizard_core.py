@@ -200,11 +200,10 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
 
 def test_a_json_build_keeps_the_watched_glob_shape():
     """Only workbook builds become config-backed instances (T2): a JSON
-    build composes today's declarative glob shape, byte-identical to
-    before, the read permission mirroring the data source file. (The
-    json-watch type wants a selector the deterministic composer never
-    invents, so that shape has always been the endpoint-repair path's
-    to finish; the composition itself is what must not drift.)"""
+    build composes the declarative glob shape, the read permission
+    mirroring the data source file, with the default selector the
+    json-watch type requires (a composer output the validator accepts,
+    017-02 2g)."""
     manifest, _ui = WizardCompiler(None)._compose(
         CANONICAL_DESCRIPTION, {"source": "A JSON file", "file": "data/*.json"}, {}
     )
@@ -216,7 +215,91 @@ def test_a_json_build_keeps_the_watched_glob_shape():
         "type": "json-watch",
         "file": "${workspace}/data/*.json",
         "deltaWindow": "24h",
+        "selector": "$.value",
     }
+
+
+def test_the_offered_json_and_web_options_build_valid_plugins(tmp_path):
+    """Picking the wizard's own menu options never dead-ends (audit F2):
+    the deterministic composer finishes json-watch (default selector) and
+    http-get (no read globs, url and allow parsed from the answers) so
+    both pass the shared validator the build already runs."""
+    json_session = make_store().create("Watch my sales totals.")
+    json_draft = WizardCompiler(None).build(
+        json_session, {"source": "A JSON file", "file": "data/*.json"})
+    assert json_draft["manifest"]["contributes"]["widgets"][0]["dataSource"][
+        "selector"] == "$.value"
+
+    web_session = make_store().create("Track the pricing page.")
+    web_draft = WizardCompiler(None).build(
+        web_session,
+        {"source": "A web page (HTTP GET)",
+         "url": "https://api.example.com/prices"})
+    manifest = web_draft["manifest"]
+    assert manifest["permissions"]["filesystem"]["read"] == []
+    data_source = manifest["contributes"]["widgets"][0]["dataSource"]
+    assert data_source["type"] == "http-get"
+    assert data_source["url"] == "https://api.example.com/prices"
+    assert data_source["allow"] == ["api.example.com"]
+    assert "file" not in data_source
+    # The network reach is an optional permission the consent flow shows,
+    # exactly like the registry's own network plugin.
+    assert manifest["optionalPermissions"]["network"]["allow"] == [
+        "api.example.com"]
+
+
+def test_the_web_option_defaults_when_no_url_was_answered():
+    """The default answers (no URL anywhere) still build: the composer
+    falls back to the neutral example host its vocabulary documents."""
+    manifest, _ui = WizardCompiler(None)._compose(
+        "Watch a web page.", {"source": "A web page (HTTP GET)"}, {})
+    data_source = manifest["contributes"]["widgets"][0]["dataSource"]
+    assert data_source["url"].startswith("https://example.com/")
+    assert manifest["permissions"]["filesystem"]["read"] == []
+
+
+def test_a_suggested_manifest_keeps_the_skeletons_network_allowance():
+    """The sanitizer pins the deterministic skeleton's optional
+    permissions like its config: an endpoint suggestion cannot widen or
+    drop the network reach the composed http-get source declared."""
+    def suggesting_llm(prompt):
+        return json.dumps({
+            "buildable": True,
+            "title": "Pricing pulse",
+            "description": "Daily pricing change",
+            "manifest": {
+                "schemaVersion": 1,
+                "id": "wizard-pricing",
+                "name": "Pricing pulse",
+                "version": "0.1.0",
+                "publisher": "someone-else",
+                "class": "declarative",
+                "engines": {"dashboardHost": ">=1.0.0 <2.0.0"},
+                "license": "MIT",
+                "optionalPermissions": {
+                    "network": {"allow": ["*"], "userPrompt": "let me out"}},
+                "contributes": {"widgets": [{
+                    "id": "pricing",
+                    "size": "2x1",
+                    "dataSource": {
+                        "type": "http-get",
+                        "url": "https://api.example.com/prices",
+                        "allow": ["api.example.com"],
+                    },
+                    "render": {"type": "ui-schema", "file": "widget.ui.json"},
+                }]},
+            },
+        })
+
+    session = make_store().create("Track the pricing page.")
+    draft = WizardCompiler(suggesting_llm).build(
+        session, {"source": "A web page (HTTP GET)",
+                  "url": "https://api.example.com/prices"})
+    manifest = draft["manifest"]
+    data_source = manifest["contributes"]["widgets"][0]["dataSource"]
+    assert data_source["url"] == "https://api.example.com/prices"
+    assert manifest["optionalPermissions"]["network"]["allow"] == [
+        "api.example.com"]
 
 
 # ---- building with a hostile endpoint --------------------------------------

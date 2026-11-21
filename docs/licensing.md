@@ -115,12 +115,14 @@ of its upstream licence text. `--check` fails if the committed file is stale.
 The generated notices deliberately omit the SBOM timestamp and serial so the
 file is stable across regeneration.
 
-The legacy `THIRD-PARTY-LICENSES.md` and `tools/license_manifest.py` are
-kept because existing tests and the older CI check depend on them. They are
-still generated and remain useful for the Python-only view, but
-`THIRD-PARTY-NOTICES.md` plus the SBOM are the authoritative distribution
-record. Do not create a root `NOTICE` file; an existing test asserts it does
-not exist, and the generated notices cover third-party attribution.
+The legacy `THIRD-PARTY-LICENSES.md` and `tools/license_manifest.py` were
+deleted once the local gate watched this SBOM chain (spec 017 6f): they were
+a second, weaker license record whose hardcoded SPA versions could be wrong
+and still pass their byte-diff gate. `THIRD-PARTY-NOTICES.md` plus the SBOM
+are the authoritative distribution record, checked by hosted CI and by the
+local `licenses` leg alike. Do not create a root `NOTICE` file; an existing
+test asserts it does not exist, and the generated notices cover third-party
+attribution.
 
 ## Landmine sweep
 
@@ -132,8 +134,7 @@ Finding: no react-bits source, vendored directory, or Commons Clause licence
 remains in the tree. A repository-wide search for
 `commons clause`, `commons-clause`, and `react-bits` finds no source or
 vendored directory. The remaining hits are historical or defensive:
-`THIRD-PARTY-LICENSES.md:45`, `tools/license_manifest.py:111`, the T14
-ticket and plan documents, this document, the gate fixtures in
+the T14 ticket and plan documents, this document, the gate fixtures in
 `tests/fixtures/license_gate/commons.cdx.json` and
 `tests/test_license_gate.py`, and the negative regression assertion in
 `frontend/src/test/tokens.test.ts:200-203`, which asserts that

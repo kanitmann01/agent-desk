@@ -1,10 +1,12 @@
 // Turns a workbook hash-diff into the morning brief: one net figure and
 // one row per deal. An edited row arrives once in `added` and once in
-// `removed`; those pair into a single change. A trailing "— 12" is the
-// sample workbook's row index, not a name, so it is never shown.
+// `removed`; those pair into a single change. A trailing "- 12" is the
+// sample workbook's row index, not a name, so it is never shown. Some CRM
+// exports spell the dash as an em dash, so the regex strips both; the
+// escape keeps that character out of this tree.
 import type { DeltaPayload, DeskCheckSummary } from '../types';
 
-const ROW_INDEX = /(?:—|-)\s*\d+$/;
+const ROW_INDEX = /(?:\u2014|-)\s*\d+$/;
 
 export type MoverKind = 'changed' | 'added' | 'removed';
 
@@ -89,7 +91,7 @@ function rowFields(row: unknown[]) {
 }
 
 /** Region and stage joined with a middle dot, skipping the cells that are empty. */
-export function dealMeta(row: unknown[]): string {
+function dealMeta(row: unknown[]): string {
   return [row[1], row[2]]
     .map((cell) => (cell == null ? '' : String(cell).trim()))
     .filter(Boolean)

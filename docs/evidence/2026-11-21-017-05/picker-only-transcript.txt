@@ -1,0 +1,16 @@
+booted a real server over a temp AGENTDESK_DATA (C:\Users\mannk\AppData\Local\Temp\ad01705-pick-lli5aik8)
+the native picker stands in for a dialog that does not open (pick_workbook -> None), as on a machine where Tk cannot start
+GET / -> 200
+  data-pick button present: True
+  pick-note amber slot present: True
+  manual-connect form present: False
+  workbook-path input present: False
+  typed-path copy present: False
+POST /sources/excel-watch/pick -> 200 {
+  "path": null
+}
+pages.APP_JS:
+  honest failure note present: True
+  typed-path fallback present: False
+  manual-connect handler present: False
+live click on [data-pick], the card's amber note says: 'The file dialog did not open. Try Connect a workbook again; if it keeps failing, restart the app.'

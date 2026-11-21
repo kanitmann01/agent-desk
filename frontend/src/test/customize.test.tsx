@@ -52,19 +52,19 @@ interface PostedLayout {
 // the same truth (visible cards only, plugin titles overridden).
 // The dashboard payload the server would render for a layout: visible
 // cards only, in order, plugin titles overridden.
-function payloadFor(layout: LayoutCardState[]): DashboardData {
+function payloadFor(layout: LayoutCardState[], base: DashboardData = BASE): DashboardData {
   const titles = new Map(
     layout.filter((c) => c.title).map((c) => [c.key, c.title as string]),
   );
   return {
-    ...BASE,
+    ...base,
     layout: {
       cards: layout
         .filter((c) => !c.hidden)
         .map((c) => ({ key: c.key, title: c.title })),
     },
     plugins: {
-      cards: BASE.plugins.cards.map((card) => ({
+      cards: base.plugins.cards.map((card) => ({
         ...card,
         title: titles.get(card.id) ?? card.title,
       })),
@@ -72,7 +72,7 @@ function payloadFor(layout: LayoutCardState[]): DashboardData {
   };
 }
 
-function bootLayoutServer(initial: LayoutCardState[] = DEFAULT_LAYOUT) {
+function bootLayoutServer(initial: LayoutCardState[] = DEFAULT_LAYOUT, base: DashboardData = BASE) {
   let layout = initial.map((c) => ({ ...c }));
   const posts: PostedLayout[] = [];
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -86,7 +86,7 @@ function bootLayoutServer(initial: LayoutCardState[] = DEFAULT_LAYOUT) {
     if (target === '/api/layout') {
       return Response.json({ cards: layout.map((c) => ({ ...c })) });
     }
-    return Response.json(payloadFor(layout));
+    return Response.json(payloadFor(layout, base));
   });
   vi.stubGlobal('fetch', fetchMock);
   return { posts, fetchMock };
@@ -354,5 +354,78 @@ describe('the save model', () => {
     await vi.waitFor(() => {
       expect(cellTexts()[0]).toContain(SALES);
     });
+  });
+});
+
+// The normal view (the Brief) must follow the same layout the customize
+// grid follows: hiding a card removes its cell after Done, and the saved
+// order is the order the plugin cells render in. A desk with three
+// plugin cards (two digests and a page watch) makes both observable.
+const PLUGIN_BASE: DashboardData = {
+  ...BASE,
+  plugins: {
+    cards: [
+      { ...BASE.plugins.cards[0], id: 'p1', title: 'Invoice tracker' },
+      { id: 'competitor-watch', title: 'Competitor watch', version: '1.0.0', pilot: false, state: 'active', freshness: 'fresh', cause: '' },
+      { id: 'p3', title: 'Notes digester', version: '1.0.0', pilot: false, state: 'active', freshness: 'fresh', cause: '' },
+    ],
+  },
+};
+
+const PLUGIN_LAYOUT: LayoutCardState[] = [
+  { key: 'sales', hidden: false, title: null },
+  { key: 'commitments', hidden: false, title: null },
+  { key: 'research', hidden: false, title: null },
+  { key: 'skills', hidden: false, title: null },
+  { key: 'p1', hidden: false, title: null },
+  { key: 'competitor-watch', hidden: false, title: null },
+  { key: 'p3', hidden: false, title: null },
+];
+
+/** The lower row's cell texts, in render order: what Done must change. */
+function briefCellTexts(): string[] {
+  return Array.from(document.querySelectorAll('.brief > .cell')).map(
+    (cell) => cell.textContent ?? '',
+  );
+}
+
+describe('the normal view follows the layout', () => {
+  it('hides the hidden card and keeps the saved order after Done', async () => {
+    bootLayoutServer(PLUGIN_LAYOUT, PLUGIN_BASE);
+    await renderDashboard();
+    await enterCustomize();
+    const user = userEvent.setup();
+    // Reorder first, while both cards are visible: Notes digester is
+    // dragged onto Invoice tracker's slot, so it takes the earlier place.
+    const grip = screen.getByRole('button', { name: 'Drag to reorder Notes digester' });
+    const dataTransfer = {
+      effectAllowed: '',
+      setData: vi.fn(),
+      getData: () => 'p3',
+    };
+    fireEvent.dragStart(grip, { dataTransfer });
+    const targetCell = screen.getByRole('button', { name: 'Drag to reorder Invoice tracker' })
+      .closest('.cust-cell') as Element;
+    fireEvent.dragOver(targetCell, { dataTransfer });
+    fireEvent.drop(targetCell, { dataTransfer });
+    await vi.waitFor(() => {
+      expect(cellTexts().findIndex((text) => text.includes('Notes digester')))
+        .toBeLessThan(cellTexts().findIndex((text) => text.includes('Invoice tracker')));
+    });
+    // Then hide the invoice tracker entirely.
+    await user.click(screen.getByRole('button', { name: 'Hide Invoice tracker' }));
+    await screen.findByRole('region', { name: 'Hidden cards' });
+    await user.click(screen.getByRole('button', { name: 'Done customizing' }));
+
+    // The normal view answers the clicks: the hidden card is gone (its
+    // cell and its health row), and the plugin cells keep the dragged
+    // order (the lower row's direct children, the health cell excluded).
+    const cells = briefCellTexts();
+    expect(cells.some((text) => text.includes('Invoice tracker'))).toBe(false);
+    const pluginCells = Array.from(document.querySelectorAll('.brief > .cell-digest, .brief > .cell-watch'));
+    expect(pluginCells.map((cell) => cell.textContent)).toEqual([
+      expect.stringContaining('Notes digester'),
+      expect.stringContaining('Competitor watch'),
+    ]);
   });
 });
