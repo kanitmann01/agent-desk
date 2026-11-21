@@ -33,6 +33,14 @@
       "computedHash": "d3c50339092b670cdda1ba2bed0bdee1c34247cdf70df475e8b7d83983a39e79",
       "installMode": "copy"
     },
+    "ponytail": {
+      "source": "DietrichGebert/ponytail",
+      "commit": "9b58c1ffb790c075ca32e70a89cf1d80588f4abf",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail/SKILL.md",
+      "computedHash": "3d8220ba82c8c708f0f16c2d0d14be3d3967b5b86085b00b64919511dfdf55a0",
+      "installMode": "copy"
+    },
     "to-spec": {
       "source": "mattpocock/skills",
       "commit": "5863806dd4e15c63174bee4e7515a4256792ecfa",
