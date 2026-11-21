@@ -619,61 +619,8 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
   });
 });
 
-// Endpoint form: Save and Clear reload (the masked key state re-renders),
-// Test answers inline using exactly what is typed, saved or not.
-(function () {
-  var save = document.querySelector('[data-endpoint-save]');
-  if (!save) return;
-  var note = document.getElementById('endpoint-note');
-  var show = function (text) {
-    if (note) { note.hidden = false; note.textContent = text; }
-  };
-  var typed = function () {
-    return {
-      base: (document.getElementById('llm-base') || {}).value || '',
-      key: (document.getElementById('llm-key') || {}).value || '',
-      model: (document.getElementById('llm-model') || {}).value || '',
-      presentationTimeout: (document.getElementById('presentation-timeout') || {}).value || '30',
-      researchUrl: (document.getElementById('research-url') || {}).value || '',
-      researchKey: (document.getElementById('research-key') || {}).value || ''
-    };
-  };
-  save.addEventListener('click', function () {
-    post('/settings/endpoint/save', typed()).then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { show(d.error); return; }
-        location.reload();
-      })
-      .catch(function () { show('The dashboard could not reach its own server; nothing was saved.'); });
-  });
-  var test = document.querySelector('[data-endpoint-test]');
-  if (test) test.addEventListener('click', function () {
-    show('Testing the connection');
-    post('/settings/endpoint/test', typed()).then(function (r) { return r.json(); })
-      .then(function (d) {
-        // The cause is a full sentence from the adapter's vocabulary;
-        // it already says what to fix, so it is shown as-is.
-        show(d.ok ? 'The endpoint answered.' : (d.cause || 'The test did not run.'));
-      })
-      .catch(function () { show('The dashboard could not reach its own server; the test did not run.'); });
-  });
-  var clear = document.querySelector('[data-endpoint-clear]');
-  if (clear) clear.addEventListener('click', function () {
-    post('/settings/endpoint/save', {base: '', key: '', model: ''})
-      .then(function () { location.reload(); })
-      .catch(function () { show('The dashboard could not reach its own server; nothing was cleared.'); });
-  });
-  var clearResearch = document.querySelector('[data-research-clear]');
-  if (clearResearch) clearResearch.addEventListener('click', function () {
-    post('/settings/endpoint/save', {researchClear: true})
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { show(d.error); return; }
-        location.reload();
-      })
-      .catch(function () { show('The dashboard could not reach its own server; the research key was not cleared.'); });
-  });
-})();
+// The endpoint fields retired to the Connections card (spec 018 #234);
+// the presentation timeout is a plain form post and needs no script.
 
 // Connections (spec 018): the key field reveals only while the box is
 // checked (the full value is visible exactly once, in the form), and

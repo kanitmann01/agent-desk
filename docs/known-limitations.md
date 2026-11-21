@@ -57,6 +57,14 @@ Honest gaps in the marketplace branch as of 2026-11-16. Each item is verified in
 - The consent sheet traps Tab and Shift+Tab, closes on Escape and restores focus to its trigger. Initial focus lands on the close button, not the confirm button, so the first keypress cannot accidentally accept a widening.
 - The source filter is supplied as described above, so one visible option can never produce results.
 
+## Keys, connections and the legacy upgrade (spec 018)
+
+- The legacy endpoint rows (`llm_base`, `llm_key`, `llm_model`, `research_provider_url`, `research_provider_key`) stay in the settings database forever: no surface removes them, and the migration keeps representing them as "Migrated endpoint" and "Migrated research provider" connections on every boot while their base/URL rows are non-empty. A desk that has fully moved on to its own connections still sees the migrated connections reappear in the list after a delete-plus-restart (that delete is the recovery path; see below). Only hand-editing the settings sqlite removes the fallback.
+- Deleting a migrated connection never deletes its key: the keychain entry survives so the next boot can put the connection back without a retype. A user who wants the key truly gone from the keychain has no button for it while the legacy rows exist.
+- On a machine with no usable keychain, the migrated connections are created disabled and unbound (masked hint only) and the legacy secret columns are NOT cleared, so the environment leg keeps serving exactly as before the upgrade. The connections stay disabled even if a keychain appears later; the user must edit the connection and paste the key (or delete it and hand-build their own).
+- A recovery boot restores a migrated connection's binding only when that job is unbound and takes the default star only when no connection holds it. A user who deleted a migrated connection and bound the job elsewhere keeps their choice, but the migrated connection still reappears (unstarred, unbound) in the list.
+- The migrated connections carry the custom preset and the legacy base URLs verbatim; nothing re-validates them at migration time, so a row that was already wrong (a portal URL, a dead key) migrates as a connection with an unknown badge, exactly as wrong as it was before.
+
 ## Operations
 
 - No autostart, no Windows service, no scheduled task and no tray helper. The app starts when the user launches it.

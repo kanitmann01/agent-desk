@@ -61,8 +61,13 @@ CHOICES = {
 # holds the same constant, and a test pins the two together.
 EMBEDDINGS_MODEL_DEFAULT = "text-embedding-3-small"
 TEXT_KEYS = {
+    # The legacy endpoint rows (spec 018 #234): read-only fallback since
+    # the connections surface landed. The migration leaves base, model
+    # and the research URL in place (the resolution hub's environment
+    # leg still reads them) and clears the two secret columns once the
+    # keys have landed in the keychain.
     "llm_base": "",  # OpenAI-compatible base URL
-    "llm_key": "",   # API key; secret, rendered only in masked form
+    "llm_key": "",   # legacy API key; cleared on migration, masked wherever rendered
     "llm_model": "",  # empty means the adapter's default model
     "embeddings_model": EMBEDDINGS_MODEL_DEFAULT,  # the semantic recall model (#95)
     "mail_folder": "",  # the .eml folder the mail watcher polls when enabled
@@ -70,9 +75,9 @@ TEXT_KEYS = {
     "extra_allowed_hosts": "",  # host[:port] entries the guard admits beyond loopback (#61); comma or space separated
     # Presentation-agent calls only. Other agents stay on the 10s adapter cap.
     "presentation_timeout_s": "30",
-    # Web research for a presentation run. Off until a URL is saved.
+    # Web research for a presentation run (the migrated pair's fallback half).
     "research_provider_url": "",
-    "research_provider_key": "",
+    "research_provider_key": "",  # legacy research key; cleared on migration
 }
 DEFAULTS = {**TOGGLES, "daily_cap": 3, "plugin_instance_cap": 6, **TEXT_KEYS}
 

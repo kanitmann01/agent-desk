@@ -82,6 +82,7 @@ from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
 from agentdesk.keys import health
+from agentdesk.keys.migrate import MIGRATED_CONNECTION_IDS, migrate_legacy_settings
 from agentdesk.keys.presets import PRESETS, preset_for
 from agentdesk.keys.resolve import (
     DEFAULT_JOB,
@@ -117,7 +118,6 @@ from agentdesk.mail.watcher import (
     MailWatch,
 )
 from agentdesk.llm import (
-    DEFAULT_MODEL,
     LlmUnavailable,
     NO_ENDPOINT_CAUSE,
     REQUEST_TIMEOUT_S,
@@ -3200,9 +3200,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return values
 
     def _endpoint_status(self) -> dict:
-        """Configured or not, the form's current values, and the truth
-        about the last call. A down endpoint shows degraded, never a
-        false green; the key answers only in its masked state."""
+        """Configured or not, and the truth about the last call. A down
+        endpoint shows degraded, never a false green. The form values
+        retired to the connections surface (spec 018 #234); the legacy
+        rows themselves stay in the store, read-only."""
         server = self.server  # type: ignore[attr-defined]
         settings = server.settings
         saved_base = settings.get("llm_base") if settings is not None else ""
@@ -3213,20 +3214,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if entry["action"].startswith("llm."):
                     last = entry["status"]
                     break
-        saved_model = settings.get("llm_model") if settings is not None else ""
-        key_state = mask_llm_key(settings.get("llm_key")) if settings is not None else ""
         timeout = settings.get("presentation_timeout_s") if settings is not None else "30"
-        research_url = settings.get("research_provider_url") if settings is not None else ""
-        research_key = mask_llm_key(settings.get("research_provider_key")) if settings is not None else ""
         return {
             "configured": configured,
             "last": last,
-            "base": saved_base or server.llm_endpoint,
-            "model": saved_model or server.llm_model,
-            "keyState": key_state,
             "presentationTimeout": timeout or "30",
-            "researchUrl": research_url or "",
-            "researchKeyState": research_key,
         }
 
     def _send_settings_values(self) -> None:
@@ -3243,48 +3235,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, self._settings_public_values())
 
     def _endpoint_save(self) -> None:
-        """Save (or clear, with empty strings) the three endpoint rows.
+        """Save the one field the endpoint route still carries: the
+        presentation timeout.
 
-        Unknown field names are a 400 naming the accepted fields, and a
-        base that is not a full http(s) address is refused: a silent ok
-        is how a typo'd field name loses a key."""
+        The base, key, model and research fields retired to the
+        connections surface (spec 018 #234), and the legacy settings
+        rows are read-only fallback now, so every other field name is
+        refused with the accepted names: a silent ok with dropped values
+        is how a typo loses data."""
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None:
             self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         unknown = sorted(
-            name for name in body if name not in (
-                "base", "key", "model", "presentationTimeout", "researchUrl", "researchKey",
-                "researchClear",
-            )
+            name for name in body if name != "presentationTimeout"
         )
         if unknown:
             self._send_json(400, {"error": (
                 "unknown endpoint field(s): " + ", ".join(unknown)
-                + "; accepted fields are base, key, model, presentationTimeout, researchUrl, researchKey, researchClear"
+                + "; accepted fields are presentationTimeout"
             )})
             return
-        clearing_research = (
-            body.get("researchClear") is True
-            or str(body.get("researchClear") or "").lower() in ("1", "true", "on")
-        )
-        if clearing_research and "base" not in body:
-            settings.set("research_provider_key", "")
-            self._send_json(200, {
-                "ok": True,
-                "base": settings.get("llm_base"),
-                "model": settings.get("llm_model"),
-                "keyState": mask_llm_key(settings.get("llm_key")),
-                "researchKeyState": "",
-            })
-            return
-        base = str(body.get("base", "")).strip()
-        problem = base_url_problem(base)
-        if problem:
-            self._send_json(400, {"error": problem})
-            return
-        timeout_raw = None
         if "presentationTimeout" in body:
             timeout_raw = str(body.get("presentationTimeout") or "").strip()
             try:
@@ -3292,47 +3264,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except ValueError:
                 seconds = 0
             if seconds < 5 or seconds > 300:
-                self._send_json(400, {"error": "presentation timeout must be a number of seconds from 5 to 300"})
+                refusal = {"error": "presentation timeout must be a number of seconds from 5 to 300"}
+                if self._is_form_submit():
+                    self._send_redirect(
+                        "/settings?connections_error=" + quote(refusal["error"]))
+                    return
+                self._send_json(400, refusal)
                 return
-        saved = {
-            "llm_base": base,
-            "llm_key": str(body.get("key", "")).strip(),
-            "llm_model": str(body.get("model", "")).strip(),
-        }
-        for key, value in saved.items():
-            settings.set(key, value)
-        if timeout_raw is not None:
             settings.set("presentation_timeout_s", timeout_raw)
-        if "researchUrl" in body:
-            settings.set("research_provider_url", str(body.get("researchUrl") or "").strip())
-        if str(body.get("researchClear") or "").lower() in ("1", "true", "on") or body.get("researchClear") is True:
-            settings.set("research_provider_key", "")
-        elif "researchKey" in body and str(body.get("researchKey") or "").strip():
-            settings.set("research_provider_key", str(body.get("researchKey")).strip())
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
         self._send_json(200, {
             "ok": True,
-            "base": saved["llm_base"],
-            "model": saved["llm_model"],
-            "keyState": mask_llm_key(saved["llm_key"]),
-            "researchKeyState": mask_llm_key(settings.get("research_provider_key")),
+            "presentationTimeout": settings.get("presentation_timeout_s"),
         })
-
-    def _endpoint_test(self) -> None:
-        """One minimal chat request against the SUBMITTED values, not the
-        saved ones, so the connection can be checked before saving."""
-        body = self._read_json_body() or {}
-        base = str(body.get("base", "")).strip()
-        if not base:
-            self._send_json(200, {"ok": False, "cause": "Type a base URL first: there is nothing to test."})
-            return
-        key = str(body.get("key", "")).strip()
-        model = str(body.get("model", "")).strip() or DEFAULT_MODEL
-        try:
-            chat(base, key, model, "ping", timeout=REQUEST_TIMEOUT_S, max_tokens=1)
-        except LlmUnavailable as exc:
-            self._send_json(200, {"ok": False, "cause": str(exc)})
-            return
-        self._send_json(200, {"ok": True})
 
     # -- named connections (spec 018) -------------------------------------
 
@@ -3489,7 +3435,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         (spec 018 story 10): a first post about a connection that serves
         jobs answers the warning naming them (a no-JS confirmation page
         for a form post, a 409 carrying them for JSON), and only a
-        confirmed post deletes."""
+        confirmed post deletes.
+
+        A migrated connection (spec 018 #234) is the one exception: its
+        keychain entry survives the delete, because the legacy settings
+        rows stay in place and the next boot's migration step puts the
+        connection back with its key: that delete is the recovery path,
+        and both confirmations say so."""
         server = self.server  # type: ignore[attr-defined]
         if server.keys is None:
             self._send_json(503, {"error": "the connections store is not available"})
@@ -3499,27 +3451,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except UnknownConnection:
             self._send_json(404, {"error": f"no connection {connection_id}"})
             return
+        migrated = connection.id in MIGRATED_CONNECTION_IDS
         jobs = server.keys.bound_jobs(connection.id)
         confirmed = _flag(self._read_json_body() or {}, "confirm")
         if jobs and not confirmed:
-            sentence = (
-                f"the {connection.label} connection serves the"
-                f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
-                " deleting it unbinds them")
+            if migrated:
+                sentence = (
+                    f"the {connection.label} connection serves the"
+                    f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
+                    " deleting it unbinds them. It came from the upgrade"
+                    " migration: the key stays in the keychain and the"
+                    " connection comes back with its bindings on the next"
+                    " start, so nothing needs retyping")
+            else:
+                sentence = (
+                    f"the {connection.label} connection serves the"
+                    f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
+                    " deleting it unbinds them")
             if self._is_form_submit():
                 page = render_connection_delete_warning(
-                    _connection_payload(connection), jobs, agentdesk.__version__)
+                    _connection_payload(connection), jobs, agentdesk.__version__,
+                    migrated=migrated)
                 self._send_bytes(200, page.encode("utf-8"),
                                  "text/html; charset=utf-8")
                 return
             self._send_json(409, {"error": sentence, "boundJobs": jobs})
             return
-        server.keychain.forget(connection.id)
+        if not migrated:
+            server.keychain.forget(connection.id)
         server.keys.delete(connection.id)  # the bindings cascade inside
-        self._audit(
-            "keys.delete", target=connection.id,
-            detail=connection.label + (f"; unbound {', '.join(jobs)}" if jobs else ""),
-        )
+        detail = connection.label + (f"; unbound {', '.join(jobs)}" if jobs else "")
+        if migrated:
+            detail += "; the keychain entry stayed (it comes back on restart)"
+        self._audit("keys.delete", target=connection.id, detail=detail)
         if self._is_form_submit():
             self._send_redirect("/settings")
             return
@@ -8026,7 +7990,38 @@ def create_server(
     else:
         server = construct(port)
     _wire_audit(server)
+    _migrate_legacy_endpoints(server)
     return server
+
+
+def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:
+    """Run the legacy-endpoint migration (spec 018 #234) once per boot.
+
+    The step is idempotent by label (a live migrated connection means a
+    no-op) and doubles as the recovery path after a delete. It is boot
+    plumbing, not request handling: it runs before the first request can
+    arrive, it never probes an endpoint, and any failure is logged and
+    left behind rather than failing the boot.
+    """
+    try:
+        migrate_legacy_settings(
+            server.settings, server.keys, server.keychain,
+            record=_migration_audit(server.audit_conn))
+    except Exception:  # noqa: BLE001 - a migration problem never fails a boot
+        LOG.exception("the legacy endpoint migration did not complete")
+
+
+def _migration_audit(conn):
+    """The audit callback for the migration's keys.create rows, or None
+    without an audit store. No secret material ever rides the detail."""
+    if conn is None:
+        return None
+
+    def record(action: str, target: str, detail: str) -> None:
+        """Record one migration row in the shared audit store."""
+        audit_store.record(conn, action, target=target, detail=detail)
+
+    return record
 
 
 def _wire_audit(server: AgentDeskServer) -> None:

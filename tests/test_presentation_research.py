@@ -264,30 +264,18 @@ def test_cancel_stops_the_run_and_a_second_submit_does_not_fill_again():
         assert second["status"] == "ok"
         assert len(calls) == after_first
         assert after_first > before
-        settings = json.loads(again.post_json(
-            "/settings/endpoint/save",
-            {"base": "http://127.0.0.1:9/v1", "key": "", "model": "m",
-             "researchUrl": "https://research.example/v1", "researchKey": "secret-key-9876"},
-            auth2,
-        )[2])
-        assert settings["researchKeyState"] == "Set. Ends with 9876."
-        assert "secret-key-9876" not in json.dumps(settings)
+        # The legacy research rows are read-only fallback since the
+        # connections surface landed (spec 018 #234): the desk seeds them
+        # through the store here, they still serve, and the page renders
+        # neither the fields that used to edit them nor the raw key.
+        again.server.settings.set("research_provider_url", "https://research.example/v1")
+        again.server.settings.set("research_provider_key", "secret-key-9876")
+        values = json.loads(again.request("GET", "/widgets/settings", auth2)[2])
+        assert values["research_provider_url"] == "https://research.example/v1"
+        assert values["research_provider_key"] == "Set. Ends with 9876."
         page = again.request("GET", "/settings", auth2)[2].decode("utf-8")
-        assert "id='research-url'" in page
+        assert "id='research-url'" not in page
         assert "secret-key-9876" not in page
-        kept = json.loads(again.post_json(
-            "/settings/endpoint/save",
-            {"base": "http://127.0.0.1:9/v1", "key": "", "model": "m", "researchKey": ""},
-            auth2,
-        )[2])
-        assert kept["researchKeyState"] == "Set. Ends with 9876."
-        cleared = json.loads(again.post_json(
-            "/settings/endpoint/save", {"researchClear": True}, auth2,
-        )[2])
-        assert cleared["researchKeyState"] == ""
-        assert again.server.settings.get("llm_base") == "http://127.0.0.1:9/v1"
-        page = again.request("GET", "/settings", auth2)[2].decode("utf-8")
-        assert "data-research-clear" in page
     finally:
         booted.close()
         if "again" in dir():

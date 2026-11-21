@@ -92,167 +92,72 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
     assert json.loads(env.request("GET", "/widgets/settings", auth)[2])["excel_enabled"] is False
 
 
-def test_endpoint_save_and_clear_round_trip_with_masking(env, auth):
-    status, _h, body = env.post_json("/settings/endpoint/save", {
-        "base": "https://llm.corp.example/v1",
-        "key": "super-secret-key-4321",
-        "model": "claude-sonnet-4-5",
-    }, auth)
-    payload = json.loads(body)
-    assert status == 200
-    assert payload["ok"] is True
-    assert payload["base"] == "https://llm.corp.example/v1"
-    # The response carries the masked state, never the key.
-    assert "super-secret" not in json.dumps(payload)
-    assert "4321" in payload["keyState"]
-    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
-    assert values["llm_base"] == "https://llm.corp.example/v1"
-    assert values["llm_model"] == "claude-sonnet-4-5"
-    assert values["llm_key"] == "Set. Ends with 4321."
-
-    # Empty strings clear each row; the store is empty again.
-    status, _h, _b = env.post_json("/settings/endpoint/save", {
-        "base": "", "key": "", "model": "",
-    }, auth)
-    assert status == 200
-    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
-    assert values["llm_base"] == "" and values["llm_key"] == "" and values["llm_model"] == ""
-
-
-def test_saved_key_is_never_rendered_back(env, auth):
-    env.post_json("/settings/endpoint/save", {
-        "base": "https://llm.corp.example/v1",
-        "key": "sk-totally-hidden-value-99aa",
-        "model": "m",
-    }, auth)
-    settings_page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert "sk-totally-hidden-value" not in settings_page
-    assert "99aa" in settings_page  # the masked tail is the only trace
-    assert "id='llm-key' type='password'" in settings_page
-    values_page = json.loads(env.request("GET", "/widgets/settings", auth)[2])
-    assert values_page["llm_key"] == "Set. Ends with 99aa."
-
-
-def test_endpoint_section_has_save_test_clear_and_the_hint(env, auth):
+def test_the_settings_page_no_longer_renders_the_retired_endpoint_fields(env, auth):
+    """The old endpoint form retired to the Connections card (spec 018
+    #234): no base URL, key, model or research fields, and no save, test
+    or clear buttons for them. The endpoint on/off toggle survives in
+    the Desk card and the presentation timeout in the Endpoint card."""
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert "data-endpoint-save" in page
-    assert "data-endpoint-test" in page
-    assert "data-endpoint-clear" in page
-    assert "Test connection" in page
-    # The hint names the compatible surfaces, including Anthropic's URL.
-    assert "OpenAI-compatible" in page
-    assert "https://api.anthropic.com/v1" in page
-    assert "OpenRouter" in page and "LiteLLM" in page
-    assert "Azure AI Foundry" in page or "Foundry" in page
-    # The base URL contract is in the copy: a full address, /v1 guidance.
-    assert "starts with http:// or https://" in page
-    # Saving with an empty key field clears it: the page says so.
-    assert "clears the saved key" in page
+    for retired in ("id='llm-base'", "id='llm-key'", "id='llm-model'",
+                    "id='research-url'", "id='research-key'",
+                    "data-endpoint-save", "data-endpoint-test",
+                    "data-endpoint-clear", "data-research-clear",
+                    "endpoint-note"):
+        assert retired not in page, retired
+    assert "Company endpoint calls" in page
+    assert "id='presentation-timeout'" in page
+    assert "name='presentationTimeout'" in page
+    assert "action='/settings/endpoint/save'" in page
+    # The card names where endpoint configuration went, and that the
+    # legacy rows remain as fallback.
+    assert "Connections card" in page
+    assert "read-only fallback" in page
 
 
-def test_endpoint_test_uses_submitted_values_against_a_real_stub(env, auth):
-    from test_server_research_api import StubEndpoint
-
-    stub = StubEndpoint("pong")
-    try:
-        # A save first, so the test request must NOT use the saved key.
-        env.post_json("/settings/endpoint/save", {
-            "base": "https://saved.example/v1", "key": "saved-key", "model": "saved-model",
-        }, auth)
-        status, _h, body = env.post_json("/settings/endpoint/test", {
-            "base": stub.base_url, "key": "typed-key", "model": "typed-model",
-        }, auth)
-        payload = json.loads(body)
-        assert status == 200
-        assert payload["ok"] is True
-        # The minimal probe really went to the submitted endpoint.
-        assert stub.requests[-1]["path"] == "/chat/completions"
-        assert stub.requests[-1]["auth"] == "Bearer typed-key"
-        assert stub.requests[-1]["body"]["messages"][0]["content"] == "ping"
-        assert stub.requests[-1]["body"]["max_tokens"] == 1
-
-        # A down endpoint answers ok=false with the honest cause.
-        status, _h, body = env.post_json("/settings/endpoint/test", {
-            "base": "http://127.0.0.1:9", "key": "k", "model": "m",
-        }, auth)
-        payload = json.loads(body)
-        assert status == 200
-        assert payload["ok"] is False
-        assert "endpoint" in payload["cause"]
-    finally:
-        stub.close()
-
-
-def test_endpoint_test_without_a_base_says_so(env, auth):
-    status, _h, body = env.post_json("/settings/endpoint/test", {"base": ""}, auth)
-    payload = json.loads(body)
+def test_the_presentation_timeout_remains_settable_through_the_reduced_save(env, auth):
+    status, _h, body = env.post_json(
+        "/settings/endpoint/save", {"presentationTimeout": "45"}, auth)
     assert status == 200
-    assert payload["ok"] is False
-    assert "base URL" in payload["cause"]
+    assert json.loads(body) == {"ok": True, "presentationTimeout": "45"}
+    assert env.server.settings.get("presentation_timeout_s") == "45"
+
+    # Out of range, or not a number, is refused with the rule named.
+    for raw in ("4", "301", "soon"):
+        status, _h, body = env.post_json(
+            "/settings/endpoint/save", {"presentationTimeout": raw}, auth)
+        assert status == 400
+        assert "5 to 300" in json.loads(body)["error"]
+    assert env.server.settings.get("presentation_timeout_s") == "45"
+
+    # A plain form post (no JavaScript) saves and lands back on the page.
+    status, headers, _b = _post_form(
+        env, "/settings/endpoint/save", {"presentationTimeout": "60"}, auth)
+    assert status == 303
+    assert headers["Location"] == "/settings"
+    assert env.server.settings.get("presentation_timeout_s") == "60"
 
 
-def test_endpoint_save_refuses_unknown_field_names_instead_of_dropping_them(env, auth):
-    status, _h, body = env.post_json("/settings/endpoint/save", {
-        "base_url": "https://llm.corp.example/v1",
-        "api_key": "typed-key",
-        "model": "m",
-    }, auth)
-    payload = json.loads(body)
-    assert status == 400
-    # The refusal names the typos and the accepted names, both.
-    assert "base_url" in payload["error"] and "api_key" in payload["error"]
-    assert "researchClear" in payload["error"]
-    # And nothing was saved: refusing beats a silent ok with dropped values.
+def test_the_reduced_save_refuses_retired_and_unknown_field_names(env, auth):
+    for legacy in ("base", "key", "model", "researchUrl", "researchKey",
+                   "researchClear", "base_url", "api_key"):
+        status, _h, body = env.post_json(
+            "/settings/endpoint/save", {legacy: "typed"}, auth)
+        assert status == 400, legacy
+        error = json.loads(body)["error"]
+        assert legacy in error
+        assert "presentationTimeout" in error
+    # Refusing beats a silent ok with dropped values: nothing was saved.
     values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
     assert values["llm_base"] == "" and values["llm_key"] == ""
 
 
-def test_endpoint_save_refuses_a_base_without_a_scheme_or_host(env, auth):
-    for bad in ("llm.corp.example/v1", "https://", "ftp://llm.corp.example/v1",
-                "https://[::1/v1"):
-        status, _h, body = env.post_json("/settings/endpoint/save", {"base": bad}, auth)
-        assert status == 400, bad
-        assert "http" in json.loads(body)["error"]
-    # Nothing from the refused saves landed.
-    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
-    assert values["llm_base"] == ""
-
-
-def test_endpoint_test_names_the_exact_cause_for_each_failure_shape(env, auth):
-    from test_llm_chat import ScriptedEndpoint
-
-    redirect = ScriptedEndpoint(status=302, body=b"", extra_headers={"Location": "/sso"})
-    login_page = ScriptedEndpoint(content_type="text/html",
-                                  body=b"<html><body>Sign in</body></html>")
-    rejected = ScriptedEndpoint(status=401, body=b'{"error": "bad key"}')
-    wrong_shape = ScriptedEndpoint(body=b'{"ok": true}')
-    try:
-        for stub, expected in (
-            (redirect, "redirect"),
-            (login_page, "web page"),
-            (rejected, "rejected the API key"),
-            (wrong_shape, "not an OpenAI chat reply"),
-        ):
-            status, _h, body = env.post_json("/settings/endpoint/test", {
-                "base": stub.base_url, "key": "k", "model": "m",
-            }, auth)
-            payload = json.loads(body)
-            assert status == 200
-            assert payload["ok"] is False, expected
-            assert expected in payload["cause"], payload["cause"]
-    finally:
-        for stub in (redirect, login_page, rejected, wrong_shape):
-            stub.close()
-
-
-def test_endpoint_test_surfaces_a_malformed_base_as_a_named_cause(env, auth):
-    status, _h, body = env.post_json("/settings/endpoint/test", {
-        "base": "llm.corp.example/v1", "key": "k", "model": "m",
-    }, auth)
-    payload = json.loads(body)
-    assert status == 200
-    assert payload["ok"] is False
-    assert "must start with http" in payload["cause"]
+def test_a_legacy_saved_key_still_never_renders_back(env, auth):
+    env.server.settings.set("llm_key", "sk-totally-hidden-value-99aa")
+    settings_page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "sk-totally-hidden-value" not in settings_page
+    assert "99aa" not in settings_page  # no key state renders anywhere now
+    values_page = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values_page["llm_key"] == "Set. Ends with 99aa."  # the widget still masks
 
 
 def test_research_uses_saved_settings_without_a_restart(env, auth, monkeypatch):
@@ -264,10 +169,9 @@ def test_research_uses_saved_settings_without_a_restart(env, auth, monkeypatch):
         # The environment points at a dead port; the saved settings must
         # win, on the very next request, with no restart.
         monkeypatch.setenv("AGENTDESK_LLM_BASE", "http://127.0.0.1:9")
-        status, _h, body = env.post_json("/settings/endpoint/save", {
-            "base": stub.base_url, "key": "settings-key", "model": "settings-model",
-        }, auth)
-        assert status == 200
+        env.server.settings.set("llm_base", stub.base_url)
+        env.server.settings.set("llm_key", "settings-key")
+        env.server.settings.set("llm_model", "settings-model")
         status, _h, body = env.post_json("/research", {"question": "q"}, auth)
         payload = json.loads(body)
         assert status == 200
@@ -277,7 +181,8 @@ def test_research_uses_saved_settings_without_a_restart(env, auth, monkeypatch):
 
         # Clearing the rows hands control back to the environment, which
         # is dead here, so research degrades again.
-        env.post_json("/settings/endpoint/save", {"base": "", "key": "", "model": ""}, auth)
+        env.server.settings.set("llm_base", "")
+        env.server.settings.set("llm_key", "")
         payload = json.loads(env.post_json("/research", {"question": "q"}, auth)[2])
         assert payload["status"] == "degraded"
     finally:
@@ -290,11 +195,9 @@ def test_health_reflects_saved_settings_and_their_clearing(env, auth):
         return next(s for s in payload["sources"] if s["id"] == "research-endpoint")
 
     assert research_source()["status"] == "not_connected"
-    env.post_json("/settings/endpoint/save", {
-        "base": "https://llm.corp.example/v1", "key": "k", "model": "m",
-    }, auth)
+    env.server.settings.set("llm_base", "https://llm.corp.example/v1")
     assert research_source()["status"] == "connected"
-    env.post_json("/settings/endpoint/save", {"base": "", "key": "", "model": ""}, auth)
+    env.server.settings.set("llm_base", "")
     assert research_source()["status"] == "not_connected"
 
 
@@ -336,9 +239,7 @@ def test_default_calendar_bridge_uses_the_settings_aware_client(env, monkeypatch
 
 
 def test_widget_settings_values_never_carry_the_raw_key(env, auth):
-    env.post_json("/settings/endpoint/save", {
-        "base": "https://x.example/v1", "key": "raw-secret-key-abcd", "model": "",
-    }, auth)
+    env.server.settings.set("llm_key", "raw-secret-key-abcd")
     raw = env.request("GET", "/widgets/settings", auth)[2].decode("utf-8")
     assert "raw-secret-key" not in raw
     assert "Set. Ends with abcd." in raw

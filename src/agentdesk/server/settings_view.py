@@ -1,9 +1,10 @@
-"""The settings page: toggles, the endpoint form, the visible parts.
+"""The settings page: toggles, connections, the visible parts.
 
 Data sources, quiet hours and the notification budget are toggles or
-small choices; the endpoint section takes a base URL, an API key and a
-model, and tells the truth about the last call under failure. The key is
-secret: this module renders only its masked state, never the value. The
+small choices; endpoints and their keys live on the Connections card
+(spec 018), and the endpoint card keeps the state line and the
+presentation timeout, the one field its route still saves. A key is
+secret: this module renders only masked hints, never a value. The
 activity log, skills, audit export and the what-this-touches statement
 are reachable from here. The preferences card is the only place the desk
 is told what to assume about its reader; its values are read back from the
@@ -34,13 +35,10 @@ _LABELS = {
 }
 
 ENDPOINT_HINT = (
-    "<p>Any OpenAI-compatible endpoint works: your company gateway, "
-    "OpenAI, OpenRouter, LiteLLM, Azure AI Foundry, or Anthropic at "
-    "https://api.anthropic.com/v1. Use the full API address: it starts "
-    "with http:// or https:// and usually ends in /v1; a portal sign-in "
-    "page is not an API base. The key and URL are the whole login. "
-    "Saving with an empty key field clears the saved key. Saved settings "
-    "win over environment variables.</p>"
+    "<p>Endpoints and their keys are named connections now: configure "
+    "them on the Connections card above. The legacy endpoint rows stay "
+    "in the settings database as a read-only fallback, and the desk "
+    "still answers on them when no connection serves a job.</p>"
 )
 
 
@@ -93,52 +91,25 @@ def mask_llm_key(key: str) -> str:
 
 
 def _endpoint_form(status: dict) -> str:
-    """Three fields, three buttons, and the masked key state.
+    """The reduced endpoint card body: the migration pointer, the
+    read-only fallback statement, and the presentation timeout form,
+    the one field the endpoint route still saves (spec 018 #234).
 
-    The key field is always empty when rendered: the masked line and the
-    placeholder are the only evidence a key is saved. Saving with the
-    field empty clears the key, so the page says so plainly.
+    The base URL, API key, model, research URL and research key fields
+    retired to the Connections card. The timeout form is a plain form
+    post, so it works with no script at all.
     """
-    esc_base = html.escape(status.get("base", ""))
-    esc_model = html.escape(status.get("model", ""))
-    key_state = status.get("keyState", "")
-    esc_hint = html.escape(key_state) if key_state else "Not set"
     return (
         ENDPOINT_HINT
-        + f"<p class='empty'>API key: {esc_hint}. "
-        "Saving with the key field empty clears the saved key.</p>"
-        + "<div class='settings-block'>"
-        "<label class='field'>Base URL"
-        f"<input id='llm-base' type='text' value='{esc_base}' "
-        "placeholder='https://llm.yourcompany.example/v1' autocomplete='off'></label>"
-        "<label class='field'>API key"
-        "<input id='llm-key' type='password' "
-        f"placeholder='{esc_hint}' autocomplete='new-password'></label>"
-        "<label class='field'>Model"
-        f"<input id='llm-model' type='text' value='{esc_model}' "
-        "placeholder='gpt-4o-mini' autocomplete='off'></label>"
-        "<label class='field'>Presentation timeout (seconds)"
-        f"<input id='presentation-timeout' type='text' value='{_esc_timeout(status)}' "
-        "placeholder='30' autocomplete='off'></label>"
-        "<label class='field'>Web research URL"
-        f"<input id='research-url' type='text' value='{html.escape(str(status.get('researchUrl') or ''))}' "
-        "placeholder='https://research.example/v1' autocomplete='off'></label>"
-        "<label class='field'>Web research key"
-        "<input id='research-key' type='password' "
-        f"placeholder='{html.escape(str(status.get('researchKeyState') or 'Not set'))}' "
-        "autocomplete='new-password'></label>"
-        "</div>"
-        + "<p class='empty'>The research key is shown only as set or not set. "
-        "Leaving the field empty keeps the saved key. "
-        "Clear research key removes it. "
-        "Web research stays off until a presentation run turns it on.</p>"
-        + "<div class='cardrow'>"
-        "<button class='btn btn-primary' data-endpoint-save>Save</button>"
-        "<button class='btn btn-secondary' data-endpoint-test>Test connection</button>"
-        "<button class='btn btn-secondary' data-endpoint-clear>Clear</button>"
-        "<button class='btn btn-secondary' type='button' data-research-clear>Clear research key</button>"
-        "</div>"
-        + "<div class='alert' id='endpoint-note' hidden></div>"
+        + "<form method='post' action='/settings/endpoint/save' class='cardform'>"
+        "<label class='empty' for='presentation-timeout'>Presentation timeout (seconds)</label>"
+        f"<input id='presentation-timeout' type='text' name='presentationTimeout' "
+        f"value='{_esc_timeout(status)}' placeholder='30' autocomplete='off'>"
+        "<button class='btn btn-secondary' type='submit'>Save timeout</button>"
+        "</form>"
+        "<p class='empty'>How long presentation calls wait before the desk "
+        "gives up, from 5 to 300 seconds; every other call keeps the "
+        "10 second cap.</p>"
     )
 
 
@@ -471,19 +442,38 @@ binding, then the single enabled connection, then the environment.</p>
 
 
 def render_connection_delete_warning(connection: dict, jobs: list[str],
-                                     version: str) -> str:
+                                     version: str,
+                                     migrated: bool = False) -> str:
     """The no-JS confirmation page a bound connection's first delete post
     answers with: the jobs named before anything lands, one form that
-    posts the same delete with confirm, and one link back."""
+    posts the same delete with confirm, and one link back.
+
+    A migrated connection (spec 018 #234) gets the honest variant: its
+    keychain entry survives and the connection returns on the next
+    start, because the delete is the recovery path."""
     connection_id = html.escape(str(connection.get("id", "")), quote=True)
     label = html.escape(str(connection.get("label", "")))
     named = ", ".join(html.escape(job) for job in jobs)
+    if migrated:
+        consequence = (
+            f"<p><b>{label}</b> came from the upgrade migration (the legacy"
+            " endpoint rows). Deleting it removes the connection and those"
+            " bindings, but the key stays in this machine's keychain, and"
+            " on the next start the migration step sees the legacy rows and"
+            " puts the connection back with its key and its jobs: nothing"
+            " needs retyping. The jobs you left bound to your own"
+            " connections stay exactly as they are.</p>"
+        )
+    else:
+        consequence = (
+            f"<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}."
+            "Deleting it removes the connection, its keychain entry and those"
+            "bindings; the jobs fall back to the default binding, the single"
+            "remaining connection, or the environment, and a job with none of those"
+            "answers with a named unbound error instead of a silent one.</p>"
+        )
     content = f"""<h1>Delete a connection that serves jobs</h1>
-<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}.
-Deleting it removes the connection, its keychain entry and those
-bindings; the jobs fall back to the default binding, the single
-remaining connection, or the environment, and a job with none of those
-answers with a named unbound error instead of a silent one.</p>
+{consequence}
 <form method='post' action='/api/connections/{connection_id}/delete' class='cardform'>
 <input type='hidden' name='confirm' value='1'>
 <button class='btn btn-primary' type='submit'>Delete {label} and unbind {named}</button>

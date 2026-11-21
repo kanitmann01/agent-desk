@@ -217,13 +217,18 @@ the server the panel says so and changes nothing.
 
 ## Beat 10: endpoint honesty in Settings (1 minute)
 
-CLICKS: `/settings`, section `Endpoint`. Type a base URL without a
-scheme (`llm.corp.example/v1`) and click `Save`: the refusal names the
-rule (it must start with http:// or https://) and saves nothing. Now
-paste the corporate SSO front-door URL and click `Test connection`:
-the answer is `ok: no` with the precise cause (it answered with a web
-page, not an API). A real OpenAI-compatible endpoint saves here with
-Test connection green, the key masked from then on.
+CLICKS: `/settings`, section `Connections` (endpoints and their keys
+live here since spec 018; the old Endpoint form retired, and its card
+keeps only the presentation timeout). Save a connection with a base URL
+without a scheme (`llm.corp.example/v1`): the refusal names the rule
+(it must start with http:// or https://) and saves nothing. Now save a
+local (Ollama) connection pointed at the corporate SSO front-door URL
+and press its `Test` button: the badge turns to `error` with the
+precise cause (it answered with a web page, not an API), and `Delete`
+removes it. (The edit form's own `Test connection` button makes the
+same free model-list request with the saved key.) A real
+OpenAI-compatible endpoint saves with its key in the machine's
+keychain, only a masked hint ever shown.
 
 SAY: configuration fails loudly and specifically. No silent saves, no
 false greens, the key never rendered back after saving.

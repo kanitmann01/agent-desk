@@ -365,14 +365,14 @@ def test_a_presentation_timeout_outside_the_range_is_refused():
         for raw in ("4", "301", "soon"):
             status, _h, body = booted.post_json(
                 "/settings/endpoint/save",
-                {"base": "http://127.0.0.1:9/v1", "key": "", "model": "m", "presentationTimeout": raw},
+                {"presentationTimeout": raw},
                 auth,
             )
             assert status == 400, body
             assert "5 to 300" in body.decode("utf-8")
         status, _h, body = booted.post_json(
             "/settings/endpoint/save",
-            {"base": "http://127.0.0.1:9/v1", "key": "", "model": "m", "presentationTimeout": "45"},
+            {"presentationTimeout": "45"},
             auth,
         )
         assert status == 200

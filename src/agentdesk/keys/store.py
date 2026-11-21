@@ -152,6 +152,7 @@ class KeysStore:
         headers: dict | None = None,
         is_default: bool = False,
         connection_id: str | None = None,
+        enabled: bool = True,
     ) -> Connection:
         """Insert one connection and return it as the store now holds it.
 
@@ -159,7 +160,9 @@ class KeysStore:
         key/<id>, so the keychain entry is derivable from the row alone. A label
         another connection already has is refused (ValueError): labels are how a
         user tells two keys for the same provider apart, so duplicates cannot
-        silently merge.
+        silently merge. enabled starts True everywhere except the migration's
+        keychain-less rows (spec 018 #234), which step aside so the
+        environment leg keeps serving.
         """
         connection_id = connection_id or uuid.uuid4().hex
         now = self.clock()
@@ -167,13 +170,13 @@ class KeysStore:
             with self.conn:
                 self.conn.execute(
                     "INSERT INTO connections (id, label, provider, base_url,"
-                    " keychain_ref, masked_key, headers, is_default,"
+                    " keychain_ref, masked_key, headers, is_default, enabled,"
                     " created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (connection_id, label, provider, base_url,
                      f"key/{connection_id}", masked_key,
                      json.dumps(headers or {}, ensure_ascii=False),
-                     1 if is_default else 0, now, now),
+                     1 if is_default else 0, 1 if enabled else 0, now, now),
                 )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"the label {label!r} is already used by another"
