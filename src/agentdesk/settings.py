@@ -78,6 +78,14 @@ TOGGLES = {
     # newer version, but copies and runs nothing.
     "auto_update": False,
     "auto_update_plugins": False,
+    # The self-improving skills (spec 016 section 8, confirmed by Kanit):
+    # a repeated ask becomes an active skill by itself, queued feedback
+    # refines desk-made skills through the endpoint, and the weekly
+    # curator moves unused unpinned desk-made skills toward archived.
+    # All three touch only agent-made skills.
+    "skills_auto_create": True,
+    "skills_auto_refine": True,
+    "skills_curator": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only

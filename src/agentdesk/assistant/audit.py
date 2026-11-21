@@ -147,6 +147,14 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("agentloop.step-failed", "decision", "One step of the agent loop failed; the other steps still ran."),
     ("ledger.undo", "decision", "You pressed Undo on a change the desk made by itself; the earlier state was put back, and the undo is itself recorded and undoable."),
 
+    # The self-improving skills vocabulary (spec 016, ticket 10): rows name
+    # the skill and counts, never the prompt or the feedback's words. Only
+    # agent-made skills are ever created, refined or curated by the desk.
+    ("skill.created", "decision", "The desk noticed the same ask coming back and made it a skill by itself, active immediately, with an Undo on Activity. The row names the skill, never the ask's words."),
+    ("skill.refined", "decision", "The desk rewrote one of its own skills from the queued feedback through the endpoint, as a new version with an Undo that restores the earlier prompt. The row names the skill, never the prompt or the feedback."),
+    ("llm.skill-refine", "endpoint", "One desk-made skill's prompt and the queued feedback about it were sent to the company LLM endpoint so the skill can be rewritten. The row names the model and the request's size, never the prompt or the feedback's words."),
+    ("skill.curated", "decision", "The weekly curator moved unused, unpinned, desk-made skills between active, stale and archived, after writing a snapshot. The row carries the pass's counts; each move is its own Undo row on Activity."),
+
     # The key lifecycle (spec 018): a saved, changed or deleted model
     # connection. The rows name the label and the preset only; the key
     # itself lives in the OS keychain and never reaches the trail.

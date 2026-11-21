@@ -474,3 +474,35 @@ def _run_deskcheck(ctx: LoopContext) -> dict:
 # (ticket 02) and their fixes (ticket 03). Later tickets append below.
 register_step(Step(name="deskcheck", enabled=_deskcheck_enabled,
                    run=_run_deskcheck))
+
+
+def _skills_enabled(settings: Any) -> bool:
+    """The skills step runs whenever the loop itself runs: consolidate is
+    gated by its own create_directly switch, and the feedback drain by
+    skills_auto_refine and the endpoint switch, both read at pass time."""
+    return True
+
+
+def _run_skills(ctx: LoopContext) -> dict:
+    """Consolidate the asks, then drain the skill feedback queue."""
+    from agentdesk.server.app import skills_step_run
+
+    return skills_step_run(ctx)
+
+
+def _curator_enabled(settings: Any) -> bool:
+    """The curator step runs only with the skills_curator switch on."""
+    return settings is not None and bool(settings.get("skills_curator"))
+
+
+def _run_curator(ctx: LoopContext) -> dict:
+    """The weekly curation pass, on its own interval."""
+    from agentdesk.server.app import curator_step_run
+
+    return curator_step_run(ctx)
+
+
+# Ticket 10 appends the skills step (consolidation plus refine) and the
+# curator step (the weekly lifecycle pass), in that order.
+register_step(Step(name="skills", enabled=_skills_enabled, run=_run_skills))
+register_step(Step(name="curator", enabled=_curator_enabled, run=_run_curator))

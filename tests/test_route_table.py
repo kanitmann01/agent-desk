@@ -120,6 +120,8 @@ EXPECTED_POST_ROUTES = (
     ("POST", "/inbox/consolidate", "_inbox_consolidate", False, "none", ""),
     ("POST", "/skills/", "_skill_run_rest", True, "rest", "/run"),
     ("POST", "/skills/", "_skill_undo_rest", True, "rest", "/undo"),
+    ("POST", "/skills/", "_skill_pin_rest", True, "rest", "/pin"),
+    ("POST", "/skills/", "_skill_feedback_rest", True, "rest", "/feedback"),
     ("POST", "/settings/toggle", "_settings_toggle", False, "none", ""),
     ("POST", "/api/connections", "_connection_create", False, "none", ""),
     ("POST", "/api/connections/", "_connection_update", True, "rest", "/update"),
