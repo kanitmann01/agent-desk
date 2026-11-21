@@ -429,6 +429,12 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .preset-tile{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--hairline);border-radius:var(--r-inner);background:var(--surface);font-size:13px;color:var(--ink-1)}
 .preset-tile:has(input:checked){border-color:var(--accent);color:var(--accent-text)}
 .inlineform{display:inline-block;margin:0 0 0 6px}
+/* The health badge (spec 018): one pill per state, colored like the
+   delta arrows (good, bad) with unknown in the quiet ink; the inline
+   cause under it is plain text, not part of the pill. */
+.conn-status{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);color:var(--ink-3)}
+.conn-ok{color:var(--good)}
+.conn-error{color:var(--bad)}
 """
 
 # The scripts the shell ships: the workbook picker flow, the Re-test

@@ -340,6 +340,42 @@ def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth
     assert f"/api/connections/{created['id']}/delete" in page  # the delete form
 
 
+def test_settings_page_renders_the_badge_states_server_side(env, auth):
+    """The badge is server-rendered from the row (spec 018 #232): unknown
+    before any check, error with the cause inline, ok clean. The same
+    page works with no script because the state is in the markup."""
+    created = json.loads(_create(env, auth)[2])
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "conn-unknown" in page
+    assert f"/api/connections/{created['id']}/test' class='inlineform'" in page
+    env.server.keys.record_check(
+        created["id"], status="error",
+        note="the endpoint rejected the API key (HTTP 401); check the key")
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "conn-error" in page
+    assert "the endpoint rejected the API key (HTTP 401)" in page
+    assert "conn-unknown" not in page
+    env.server.keys.record_check(created["id"], status="ok", note="")
+    env.server.keys.set_models(created["id"], ["gpt-4o-mini"])
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "conn-ok" in page
+    assert "1 model cached" in page
+
+
+def test_edit_form_offers_the_test_and_manual_model_entry(env, auth):
+    """Manual model entry is always available and never gated on a
+    discovery listing: the deeper-check form carries a plain text input
+    and posts it to the explicit one-token route (spec 018 #232)."""
+    created = json.loads(_create(env, auth)[2])
+    page = env.request("GET", f"/settings?connection={created['id']}", auth)[2]
+    text = page.decode("utf-8")
+    assert f"action='/api/connections/{created['id']}/test'" in text
+    assert f"action='/api/connections/{created['id']}/check'" in text
+    assert "name='model'" in text
+    assert "never completes a chat" in text
+    assert "exactly one token" in text
+
+
 def test_edit_form_is_prefilled_and_posts_to_the_update_route(env, auth):
     created = json.loads(_create(env, auth)[2])
     page = env.request("GET", f"/settings?connection={created['id']}", auth)[2]

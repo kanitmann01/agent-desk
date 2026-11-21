@@ -379,8 +379,10 @@ deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 
 def _connection_rows(connections: list[dict]) -> str:
     """The saved-connections table: label, preset, masked key, base URL,
-    default star, edit and delete. A raw key never reaches this markup;
-    the masked hint is the only key-shaped thing on the page."""
+    status badge with its inline cause, default star, Test, edit and
+    delete. A raw key never reaches this markup; the masked hint is the
+    only key-shaped thing on the page, and the badge state renders from
+    the row alone, so the page works with no script at all."""
     rows = []
     for c in connections:
         preset = preset_for(c.get("provider", ""))
@@ -392,13 +394,34 @@ def _connection_rows(connections: list[dict]) -> str:
             "<span class='empty'>no key</span>"
         base = html.escape(str(c.get("baseUrl", "")))
         connection_id = html.escape(str(c.get("id", "")), quote=True)
+        status = html.escape(str(c.get("status") or "unknown"))
+        cause = html.escape(str(c.get("lastError", "") or ""))
+        cause_line = f"<br><span class='empty'>{cause}</span>" if cause else ""
+        checked = c.get("lastCheckedAt")
+        when = (
+            f"<br><span class='empty mono'>checked "
+            + datetime.fromtimestamp(float(checked)).strftime("%m-%d %H:%M")
+            + "</span>" if checked else ""
+        )
+        models = c.get("models") or []
+        fetched = c.get("modelsFetchedAt")
+        models_line = (
+            f"<br><span class='empty'>{len(models)} model"
+            f"{'s' if len(models) != 1 else ''} cached</span>"
+            if fetched else ""
+        )
         rows.append(
             "<tr>"
             f"<td><b>{label}</b>{star}</td>"
             f"<td>{html.escape(preset_name)}</td>"
             f"<td>{key_cell}</td>"
             f"<td class='mono'>{base}</td>"
-            f"<td><a class='btn btn-secondary' href='/settings?connection={connection_id}'>Edit</a> "
+            f"<td><span class='conn-status conn-{status}'>{status}</span>"
+            f"{cause_line}{when}{models_line}</td>"
+            f"<td><form method='post' action='/api/connections/{connection_id}/test'"
+            " class='inlineform'>"
+            "<button class='btn btn-secondary' type='submit'>Test</button></form> "
+            f"<a class='btn btn-secondary' href='/settings?connection={connection_id}'>Edit</a> "
             f"<form method='post' action='/api/connections/{connection_id}/delete' class='inlineform'>"
             "<button class='btn btn-secondary' type='submit'>Delete</button></form></td>"
             "</tr>"
@@ -406,7 +429,8 @@ def _connection_rows(connections: list[dict]) -> str:
     return (
         "<table class='rows'><thead><tr><th scope='col'>Connection</th>"
         "<th scope='col'>Preset</th><th scope='col'>Key</th>"
-        "<th scope='col'>Base URL</th><th scope='col'>Actions</th></tr></thead>"
+        "<th scope='col'>Base URL</th><th scope='col'>Status</th>"
+        "<th scope='col'>Actions</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
     )
 
@@ -441,6 +465,35 @@ def _console_links() -> str:
         for preset in PRESETS if preset.console_url
     )
     return f"<div class='settings-links'>{links}</div>"
+
+
+def _health_forms(editing: dict | None) -> str:
+    """The two check forms for one saved connection, or "" while adding.
+
+    Test posts the free model-list request and never completes a chat.
+    The deeper check takes the model typed by hand, always available and
+    never gated on a listing existing, and completes exactly one token
+    with it. Both are plain form posts, so the badge they refresh and
+    the cause it shows render server-side on the redirect back."""
+    if editing is None:
+        return ""
+    connection_id = html.escape(str(editing.get("id", "")), quote=True)
+    return f"""<h3>Check the key</h3>
+<form method='post' action='/api/connections/{connection_id}/test' class='cardform'>
+<p class='empty'>Test makes one free model-list request with the saved
+key; it never completes a chat. The badge in the list above shows the
+outcome with its cause.</p>
+<button class='btn btn-secondary' type='submit'>Test connection</button>
+</form>
+<form method='post' action='/api/connections/{connection_id}/check' class='cardform'>
+<label class='empty' for='conn-check-model'>Model, typed by hand (the
+deeper check completes exactly one token with it)</label>
+<input id='conn-check-model' type='text' name='model'
+ placeholder='for example gpt-4o-mini' autocomplete='off'>
+<p class='empty'>For endpoints with no model listing, this one-token
+completion is the only way to verify the key.</p>
+<button class='btn btn-secondary' type='submit'>Deeper check (one-token completion)</button>
+</form>"""
 
 
 def _connections_section(
@@ -527,6 +580,7 @@ def _connections_section(
 <p class='empty'>Saving with the key field empty keeps the stored key;
 Remove the stored key is the only action that deletes it. Leave the base
 URL empty to use the preset's own address.</p>
+{_health_forms(editing)}
 <h3>Where to get a key</h3>
 {_console_links()}"""
         stamp = f"{len(connections)} SAVED" if connections else "NONE YET"

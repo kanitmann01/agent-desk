@@ -128,6 +128,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("keys.create", "decision", "You saved a named model connection: its label and provider preset are recorded here, its key went to this machine's keychain, and only the masked hint (first three, last four) is kept beside it."),
     ("keys.update", "decision", "You changed a saved connection (its label, base URL, headers, default star or key). The row names the connection; an empty key field kept the stored key, and the stored key changed only when you typed a new one or pressed clear."),
     ("keys.delete", "decision", "You deleted a saved connection; its row and its keychain entry went together, and no secret material is recorded here."),
+    ("keys.test", "decision", "You checked a saved connection: the desk made one free model-list request against its endpoint with its key (or, only when you pressed the deeper check, one one-token completion with the model you typed), and recorded the outcome and its plain-language cause. The row names the connection; no key material is ever recorded."),
 ]
 
 ACTOR = "agent-desk"

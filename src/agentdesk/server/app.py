@@ -81,9 +81,10 @@ from agentdesk.insight.service import attach_cards
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
+from agentdesk.keys import health
 from agentdesk.keys.presets import PRESETS, preset_for
 from agentdesk.keys.secrets import KeychainSecrets
-from agentdesk.keys.store import KeysStore, UnknownConnection, mask_key
+from agentdesk.keys.store import Connection, KeysStore, UnknownConnection, mask_key
 from agentdesk.layout import (
     BUILTIN_KEYS as BUILTIN_LAYOUT_KEYS,
     LayoutError,
@@ -3413,6 +3414,116 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_redirect("/settings")
             return
         self._send_json(200, {"ok": True, "id": connection.id})
+
+    def _connection_test(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/test: the free model-list GET.
+
+        The check happens server-side only, with the connection's own key
+        from the keychain, and it is never a chat completion: the listing
+        alone answers whether the key works. The outcome lands in status,
+        last_checked_at and last_error per the spec's mapping, a
+        discovered listing refreshes the models cache, and a keys.test
+        audit row records the check with no secret material. A form post
+        lands back on Settings, where the badge re-renders from the row.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        result = health.check_models(
+            connection.base_url,
+            server.keychain.fetch(connection.id) or "",
+            extra_headers=connection.headers,
+        )
+        connection = _apply_health(server.keys, connection, result)
+        self._audit("keys.test", target=connection.id,
+                    status="error" if result.outcome == health.OUTCOME_ERROR else "ok",
+                    detail=f"{connection.label}: {result.cause or result.outcome}")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _connection_payload(connection))
+
+    def _connection_deep_check(self, connection_id: str) -> None:
+        """POST /api/connections/<id>/check: the explicit deeper check.
+
+        One max_tokens=1 chat completion with the model typed by hand,
+        the only chat the keys surface ever sends, and only because the
+        button was pressed: save and Test never complete one. This is
+        the one way a key gets verified on an endpoint without a model
+        listing (the Anthropic compatibility case), and its outcome
+        stamps the row exactly like the free check's.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        body = self._read_json_body() or {}
+        model = str(body.get("model", "") or "").strip()
+        if not model:
+            self._connections_refusal("the deeper check needs a model name to complete")
+            return
+        result = health.deep_check(
+            connection.base_url,
+            server.keychain.fetch(connection.id) or "",
+            model,
+            extra_headers=connection.headers,
+        )
+        connection = _apply_health(server.keys, connection, result)
+        self._audit("keys.test", target=connection.id,
+                    status="error" if result.outcome == health.OUTCOME_ERROR else "ok",
+                    detail=f"{connection.label}: deeper check"
+                           f" ({result.cause or result.outcome})")
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _connection_payload(connection))
+
+    def _connection_models(self, connection_id: str) -> None:
+        """GET /api/connections/<id>/models: the cached model list with
+        its fetched-at time; ?refresh re-fetches server-side first.
+
+        The upstream GET happens here and in the Test route only, never
+        in the browser; a connection whose endpoint offers no listing
+        answers its empty cache rather than an error, because typing the
+        model by hand is always the allowed path.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        refresh = str(
+            parse_qs(self.path.partition("?")[2]).get("refresh", [""])[0]
+        ).lower() in ("1", "true", "yes", "on")
+        if refresh:
+            result = health.check_models(
+                connection.base_url,
+                server.keychain.fetch(connection.id) or "",
+                extra_headers=connection.headers,
+            )
+            connection = _apply_health(server.keys, connection, result)
+        self._send_json(200, {
+            "id": connection.id,
+            "models": connection.models,
+            "fetchedAt": connection.models_fetched_at,
+            "status": connection.status,
+            "lastError": connection.last_error,
+        })
 
     def _settings_toggle(self) -> None:
         """Flip one named switch and let the change take effect before answering.
@@ -8074,9 +8185,30 @@ def _connection_payload(connection) -> dict:
         "enabled": connection.enabled,
         "status": connection.status,
         "lastError": connection.last_error,
+        "lastCheckedAt": connection.last_checked_at,
+        "lastUsedAt": connection.last_used_at,
+        "models": connection.models,
+        "modelsFetchedAt": connection.models_fetched_at,
         "createdAt": connection.created_at,
         "updatedAt": connection.updated_at,
     }
+
+
+def _apply_health(keys: KeysStore, connection: Connection,
+                  result: health.ProbeResult) -> Connection:
+    """Stamp one probe's outcome into the row and return it re-read.
+
+    status moves only for the outcomes that know it (ok, ok-with-limit,
+    error); transient and no-models keep the stored status, the spec's
+    mapping, while the check time and the inline note always refresh. A
+    successful listing refreshes the models cache with its fetched-at,
+    so the Test button and the refresh route land in the same place.
+    """
+    status = {"ok": "ok", "limited": "ok", "error": "error"}.get(result.outcome)
+    connection = keys.record_check(connection.id, status=status, note=result.cause)
+    if result.outcome == health.OUTCOME_OK:
+        connection = keys.set_models(connection.id, result.models)
+    return connection
 
 
 def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | None, str | None]:

@@ -144,6 +144,82 @@ def test_delete_removes_the_row(tmp_path):
         store.get(conn.id)
 
 
+# -- health stamps (spec 018 #232) -------------------------------------------
+
+
+def test_record_check_stamps_status_note_and_time(tmp_path):
+    clock = FrozenClock()
+    store = KeysStore(_open(tmp_path), clock)
+    conn = store.add(label="One", provider="openai",
+                     base_url="https://api.openai.com/v1")
+    clock.now += 10
+    checked = store.record_check(conn.id, status="error",
+                                 note="the endpoint rejected the API key")
+    assert checked.status == "error"
+    assert checked.last_error == "the endpoint rejected the API key"
+    assert checked.last_checked_at == 1_010.0
+    # An ok check clears the note, like the badge expects.
+    clock.now += 10
+    checked = store.record_check(conn.id, status="ok", note="")
+    assert checked.status == "ok"
+    assert checked.last_error == ""
+    assert checked.last_checked_at == 1_020.0
+
+
+def test_record_check_with_no_status_keeps_the_last_one(tmp_path):
+    """The transient mapping: a 5xx or a timeout stamps the check time
+    and the note, but the status only a real answer set survives."""
+    clock = FrozenClock()
+    store = KeysStore(_open(tmp_path), clock)
+    conn = store.add(label="One", provider="openai",
+                     base_url="https://api.openai.com/v1")
+    clock.now += 10
+    store.record_check(conn.id, status="ok", note="")
+    clock.now += 10
+    transient = store.record_check(conn.id, status=None,
+                                   note="the endpoint failed on its own side")
+    assert transient.status == "ok"  # kept
+    assert transient.last_error == "the endpoint failed on its own side"
+    assert transient.last_checked_at == 1_020.0
+    # The unknown state keeps too: a missing listing verifies nothing.
+    fresh = KeysStore(_open(tmp_path, "second.sqlite3"), lambda: 0.0)
+    other = fresh.add(label="Two", provider="anthropic-compat",
+                      base_url="https://api.anthropic.com/v1/")
+    noted = fresh.record_check(other.id, status=None, note="no model listing")
+    assert noted.status == "unknown"
+    with pytest.raises(UnknownConnection):
+        store.record_check("no-such-id", status="ok")
+
+
+def test_record_use_stamps_only_last_used_at(tmp_path):
+    """The live-traffic leg: record_use is the one write the call path
+    makes, and it never claims the key was checked."""
+    clock = FrozenClock()
+    store = KeysStore(_open(tmp_path), clock)
+    conn = store.add(label="One", provider="openai",
+                     base_url="https://api.openai.com/v1")
+    clock.now += 10
+    used = store.record_use(conn.id)
+    assert used.last_used_at == 1_010.0
+    assert used.last_checked_at is None
+    assert used.status == "unknown"
+
+
+def test_set_models_caches_the_listing_with_its_fetched_at(tmp_path):
+    clock = FrozenClock()
+    store = KeysStore(_open(tmp_path), clock)
+    conn = store.add(label="One", provider="openai",
+                     base_url="https://api.openai.com/v1")
+    assert store.get(conn.id).models == []
+    assert store.get(conn.id).models_fetched_at is None
+    clock.now += 10
+    cached = store.set_models(conn.id, ["gpt-4o-mini", "gpt-4o"])
+    assert cached.models == ["gpt-4o-mini", "gpt-4o"]
+    assert cached.models_fetched_at == 1_010.0
+    clock.now += 10
+    assert store.set_models(conn.id, []).models == []  # an empty listing caches too
+
+
 # -- the masking rule -------------------------------------------------------
 
 

@@ -250,6 +250,66 @@ class KeysStore:
             self.conn.execute("DELETE FROM connections WHERE id = ?", (connection_id,))
         return connection
 
+    @_serialized
+    def record_check(self, connection_id: str, status: str | None,
+                     note: str = "") -> Connection:
+        """Stamp one health check's outcome onto the row.
+
+        last_checked_at and last_error always take the check's time and
+        note (the note is the inline cause the badge shows, empty when
+        all is clear). status is written only when it is not None: a
+        transient failure or a missing listing keeps the last status, so
+        one bad minute never flips a badge a real answer set.
+        """
+        self.get(connection_id)  # unknown ids raise before any write
+        now = self.clock()
+        if status is None:
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE connections SET last_checked_at = ?,"
+                    " last_error = ?, updated_at = ? WHERE id = ?",
+                    (now, note, now, connection_id),
+                )
+        else:
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE connections SET status = ?, last_checked_at = ?,"
+                    " last_error = ?, updated_at = ? WHERE id = ?",
+                    (status, now, note, now, connection_id),
+                )
+        return self.get(connection_id)
+
+    @_serialized
+    def record_use(self, connection_id: str) -> Connection:
+        """Stamp last_used_at: live traffic served a call on this row.
+
+        The one write the call path makes (spec 018's live-traffic leg);
+        tests and the Test button never touch it.
+        """
+        self.get(connection_id)
+        now = self.clock()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE connections SET last_used_at = ?, updated_at = ?"
+                " WHERE id = ?",
+                (now, now, connection_id),
+            )
+        return self.get(connection_id)
+
+    @_serialized
+    def set_models(self, connection_id: str, models: list) -> Connection:
+        """Cache one discovered model list with its fetched-at time."""
+        self.get(connection_id)
+        now = self.clock()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE connections SET models = ?, models_fetched_at = ?,"
+                " updated_at = ? WHERE id = ?",
+                (json.dumps(list(models), ensure_ascii=False), now, now,
+                 connection_id),
+            )
+        return self.get(connection_id)
+
     def _clear_other_defaults(self, connection_id: str) -> None:
         """The default star belongs to one connection at a time."""
         with self.conn:
