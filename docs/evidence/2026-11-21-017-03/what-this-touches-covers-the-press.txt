@@ -1,0 +1,16 @@
+The one-page IT review (GET /what-this-touches), generated from the
+audit vocabulary. One press happened on this desk first, so the
+press row shows the in-use badge; the other rows the audit found
+missing render as 'not observed yet' instead of not rendering at all.
+
+insight.press: row present, badge 'in use'
+llm.observe: row present, badge 'not observed yet'
+memory.capture: row present, badge 'not observed yet'
+memory.keep: row present, badge 'not observed yet'
+memory.remove: row present, badge 'not observed yet'
+memory.undo: row present, badge 'not observed yet'
+settings.preferences: row present, badge 'not observed yet'
+settings.hosts: row present, badge 'not observed yet'
+agents.download: row present, badge 'not observed yet'
+
+(Full HTML kept beside this transcript for the table statements.)

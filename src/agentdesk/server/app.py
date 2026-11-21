@@ -1646,16 +1646,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _insight_draft(self) -> None:
         """Draft the press reply for the posted insight body."""
+        body = self._read_json_body()
+        kind = str((body or {}).get("kind") or "")
         try:
             answer = draft_reply(
                 self.server,
-                self._read_json_body(),
+                body,
                 preferences=PreferenceStore(default_data_dir()).read(),
                 complete=self._insight_complete(),
             )
         except InsightError as exc:
+            # The no-JS twin audits both outcomes as insight.press; the
+            # JSON door writes the same rows, a refusal as an error.
+            self._audit("insight.press", target=kind or "press",
+                        detail=exc.code, status="error")
             self._send_json(exc.status, {"error": exc.message, "code": exc.code})
             return
+        thread = answer.get("thread") if isinstance(answer.get("thread"), dict) else None
+        staged = str(answer.get("cardId") or "") if answer.get("staged") else ""
+        # The audit names the thread and the source, never the words: a
+        # draft is the user's to send, so the log records the act alone.
+        self._audit(
+            "insight.press",
+            target=str(thread.get("id")) if thread is not None else (kind or "press"),
+            detail=kind + ":" + str(answer.get("source") or "none")
+            + (": staged " + staged if staged else ""),
+        )
         self._send_json(200, answer)
 
     def _excel_watch_pick(self) -> None:
@@ -2012,19 +2028,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """The bounded recalled-facts block for the assistant prompt,
         ranked against the user's question. Recall only: this path never
         creates a fact; the bounds live in memory/service. A locked
-        memory store (ticket #94) contributes no block: the assistant
-        keeps answering, the bank is never read in plaintext. The
-        semantic half is derived per turn like every memory action (the
-        review's finding 5): the assistant's recall gains the vector
-        leg on the same terms as the memory page's, not only after some
-        memory route happens to run first."""
+        memory store (ticket #94), or one that cannot be read just now
+        (a transient lock), contributes no block: the assistant keeps
+        answering, the bank is never read in plaintext. The semantic
+        half is derived per turn like every memory action (the review's
+        finding 5): the assistant's recall gains the vector leg on the
+        same terms as the memory page's, not only after some memory
+        route happens to run first."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return ""
         self._configure_memory_embeddings()
         try:
             return build_facts_block(memory.recall(question))
-        except MemoryEncryptedError:
+        except Exception:  # noqa: BLE001 - recall must never take the answer down
+            LOG.warning("the memory store could not be read just now;"
+                        " the answer proceeds without recalled facts")
             return ""
 
     def _effective_llm(self) -> tuple:
@@ -2747,14 +2766,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return wanted
 
     def _agent_fact_ranks_plain(self, brief: str) -> list:
-        """Memory facts for a presentation, as {id, text} rows."""
+        """Memory facts for a presentation, as {id, text} rows. A store
+        that cannot be read just now contributes nothing: the run keeps
+        going, like every agents recall."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return []
         self._configure_memory_embeddings()
         try:
             ranked = memory.recall(f"Presentation {brief}")
-        except MemoryEncryptedError:
+        except Exception:  # noqa: BLE001 - recall must never take the run down
+            LOG.warning("the memory store could not be read just now;"
+                        " the run proceeds without recalled facts")
             return []
         return [{"id": fact.id, "text": fact.text} for _score, fact in ranked[:5]]
 
@@ -2961,7 +2984,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _agent_fact_ranks(self, kind, brief: str) -> list:
         """The ranked recall for one agent run: the agent's name joined
         to the brief is the query, the same hybrid recall and embedding
-        derivation the assistant's turns use. A locked memory store
+        derivation the assistant's turns use. A locked memory store, or
+        one that cannot be read just now (a transient lock),
         contributes nothing: the run keeps going, the bank is never read
         in plaintext."""
         memory = self.server.memory  # type: ignore[attr-defined]
@@ -2970,7 +2994,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._configure_memory_embeddings()
         try:
             return memory.recall(f"{kind.name} {brief}")
-        except MemoryEncryptedError:
+        except Exception:  # noqa: BLE001 - recall must never take the run down
+            LOG.warning("the memory store could not be read just now;"
+                        " the run proceeds without recalled facts")
             return []
 
     def _send_audit_tail(self) -> None:
@@ -5693,7 +5719,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 complete=self._insight_complete(),
             )
         except InsightError as exc:
-            self._audit("insight.press", target=kind or "press", detail=exc.code)
+            # A refused press spent no call and staged no card, so it is
+            # an error row, never a working one (agents.run sets the same
+            # status for a degraded run).
+            self._audit("insight.press", target=kind or "press", detail=exc.code,
+                        status="error")
             page = pages.render_press_page(
                 label, [], agentdesk.__version__, refusal=exc.message
             )
