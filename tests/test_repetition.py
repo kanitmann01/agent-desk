@@ -93,7 +93,9 @@ def test_five_similar_asks_propose_exactly_once(tmp_path):
 def test_five_similar_asks_propose_from_normal_use_without_the_endpoint(tmp_path):
     # The detector rides the inbox's catch-up-on-read: the asks go through
     # the real research surface, one ordinary page read proposes, and
-    # nothing calls POST /inbox/consolidate.
+    # nothing calls POST /inbox/consolidate. The card path needs the
+    # auto-create switch off: with the defaults the desk would make the
+    # skill itself (that behaviour has its own test below).
     clock = FakeClock(NOW)
     activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
     inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
@@ -101,6 +103,7 @@ def test_five_similar_asks_propose_from_normal_use_without_the_endpoint(tmp_path
     booted = server_harness.Booted(
         activity_log=activity, inbox_store=inbox, skill_store=skills, llm=ReplyStub()
     )
+    booted.server.settings.set("skills_auto_create", False)
     try:
         auth = booted.exchange()
         for text in SIMILAR_ASKS:
@@ -199,6 +202,8 @@ def test_accept_activate_run_undo_over_http(tmp_path):
     booted = server_harness.Booted(
         activity_log=activity, inbox_store=inbox, skill_store=skills, llm=Stub()
     )
+    # The accept-a-card flow is the switch-off path since ticket 10.
+    booted.server.settings.set("skills_auto_create", False)
     try:
         auth = booted.exchange()
         for text in SIMILAR_ASKS:
@@ -233,7 +238,7 @@ def test_accept_activate_run_undo_over_http(tmp_path):
 def test_undo_starts_the_cooldown_so_consolidation_does_not_repropose(tmp_path):
     # Accept then undo is a declined proposal: undo must start the dismiss
     # cooldown, or the next consolidation run re-proposes the identical
-    # skill and asks all over again.
+    # skill and asks all over again. The card path needs the switch off.
     clock = FakeClock(NOW)
     activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
     inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
@@ -241,6 +246,7 @@ def test_undo_starts_the_cooldown_so_consolidation_does_not_repropose(tmp_path):
     booted = server_harness.Booted(
         activity_log=activity, inbox_store=inbox, skill_store=skills, llm=ReplyStub()
     )
+    booted.server.settings.set("skills_auto_create", False)
     try:
         auth = booted.exchange()
         for text in SIMILAR_ASKS:
@@ -319,5 +325,76 @@ def test_a_malformed_id_in_the_skill_undo_address_answers_404():
         status, _h, body = booted.post_json("/skills/abc/undo", {}, auth)
         assert status == 404
         assert b"No skill lives at this address" in body
+    finally:
+        booted.close()
+
+
+# ---- autonomy: the desk creates the skill itself (ticket 10) ---------------
+
+
+def test_autonomy_creates_skill_directly_with_undo(tmp_path):
+    """Five similar asks with autonomy on: an active agent skill, no card,
+    a ledger entry whose Undo deactivates it, and undoing that undo
+    reactivates it."""
+    clock = FakeClock(NOW)
+    activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    skills = SkillStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    booted = server_harness.Booted(
+        activity_log=activity, inbox_store=inbox, skill_store=skills, llm=ReplyStub()
+    )
+    try:
+        auth = booted.exchange()
+        for text in SIMILAR_ASKS:
+            booted.post_json("/research", {"question": text}, auth)
+        result = json.loads(booted.post_json("/inbox/consolidate", {}, auth)[2])
+        assert result["created"] is True and result["proposed"] is False
+        assert [c for c in inbox.waiting() if c.kind == "skill_proposal"] == []
+        active = skills.active()
+        assert len(active) == 1
+        skill = skills.get(active[0]["id"])
+        assert skill["created_by"] == "agent"
+
+        # The creation is in the ledger with an Undo that deactivates.
+        entry = next(e for e in booted.server.ledger.entries(10)
+                     if e.action == "skill.created")
+        assert entry.undo_kind == "skill-version"
+        status, _h, _b = booted.post_json("/api/ledger/undo", {"id": entry.id}, auth)
+        assert status == 200
+        assert skills.active() == []
+        # The undo also starts the pattern's cooldown, so the next
+        # consolidation run does not re-create the identical skill.
+        again = json.loads(booted.post_json("/inbox/consolidate", {}, auth)[2])
+        assert again["proposed"] is False and again.get("created") is not True
+        # Undoing the undo reactivates it.
+        redo = next(e for e in booted.server.ledger.entries(10) if e.undoes == entry.id)
+        status, _h, _b = booted.post_json("/api/ledger/undo", {"id": redo.id}, auth)
+        assert status == 200
+        assert len(skills.active()) == 1
+    finally:
+        booted.close()
+
+
+def test_autonomy_off_keeps_proposal_card(tmp_path):
+    """skills_auto_create off: today's proposal card, byte for byte."""
+    clock = FakeClock(NOW)
+    activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    skills = SkillStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    booted = server_harness.Booted(
+        activity_log=activity, inbox_store=inbox, skill_store=skills, llm=ReplyStub()
+    )
+    try:
+        auth = booted.exchange()
+        booted.server.settings.set("skills_auto_create", False)
+        for text in SIMILAR_ASKS:
+            booted.post_json("/research", {"question": text}, auth)
+        result = json.loads(booted.post_json("/inbox/consolidate", {}, auth)[2])
+        assert result["proposed"] is True and "cardId" in result
+        card = inbox.get(result["cardId"])
+        assert "5th time" in card.origin
+        assert "Turn this into one click?" in card.title
+        assert "will not" in card.body
+        assert skills.active() == []
     finally:
         booted.close()
