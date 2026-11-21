@@ -47,6 +47,13 @@ class FakeClock:
         self.now = when.timestamp()
 
 
+class ReplyStub:
+    """An llm double whose canned reply keeps research turns 'ok'."""
+
+    def __call__(self, prompt: str) -> str:
+        return json.dumps({"summary": "Five of nine partners updated.", "sources": ["memo.pdf"]})
+
+
 def make_setup(start: datetime = NOW):
     clock = FakeClock(start)
     activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
@@ -81,6 +88,31 @@ def test_five_similar_asks_propose_exactly_once(tmp_path):
     assert len(cards) == 1
     # A second run does not double-propose the same pattern.
     assert consolidator.consolidate(NOW)["proposed"] is False
+
+
+def test_five_similar_asks_propose_from_normal_use_without_the_endpoint(tmp_path):
+    # The detector rides the inbox's catch-up-on-read: the asks go through
+    # the real research surface, one ordinary page read proposes, and
+    # nothing calls POST /inbox/consolidate.
+    clock = FakeClock(NOW)
+    activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    skills = SkillStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    booted = server_harness.Booted(
+        activity_log=activity, inbox_store=inbox, skill_store=skills, llm=ReplyStub()
+    )
+    try:
+        auth = booted.exchange()
+        for text in SIMILAR_ASKS:
+            booted.post_json("/research", {"question": text}, auth)
+        # No read has happened yet, so no consolidation has run either.
+        assert [c for c in inbox.waiting() if c.kind == "skill_proposal"] == []
+        page = booted.request("GET", "/inbox", auth)[2].decode("utf-8")
+        assert "Turn this into one click?" in page
+        cards = [c for c in inbox.waiting() if c.kind == "skill_proposal"]
+        assert len(cards) == 1
+    finally:
+        booted.close()
 
 
 def test_four_similar_asks_do_not_propose(tmp_path):
@@ -194,6 +226,37 @@ def test_accept_activate_run_undo_over_http(tmp_path):
         assert booted.post_json(f"/skills/{active[0]['id']}/run", {}, auth)[0] == 409
         history = skills.history(active[0]["id"])
         assert [h["active"] for h in history] == [True, False]
+    finally:
+        booted.close()
+
+
+def test_undo_starts_the_cooldown_so_consolidation_does_not_repropose(tmp_path):
+    # Accept then undo is a declined proposal: undo must start the dismiss
+    # cooldown, or the next consolidation run re-proposes the identical
+    # skill and asks all over again.
+    clock = FakeClock(NOW)
+    activity = ActivityLog(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    skills = SkillStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    booted = server_harness.Booted(
+        activity_log=activity, inbox_store=inbox, skill_store=skills, llm=ReplyStub()
+    )
+    try:
+        auth = booted.exchange()
+        for text in SIMILAR_ASKS:
+            booted.post_json("/research", {"question": text}, auth)
+        result = json.loads(booted.post_json("/inbox/consolidate", {}, auth)[2])
+        assert result["proposed"] is True
+        status, _h, _b = booted.post_json(f"/inbox/cards/{result['cardId']}/accept", {}, auth)
+        assert status == 200
+        skill_id = skills.active()[0]["id"]
+        status, _h, _b = booted.post_json(f"/skills/{skill_id}/undo", {}, auth)
+        assert status == 200
+        assert skills.active() == []
+        # The pattern is cooled down: the next consolidation run proposes
+        # nothing, although the five asks are still in the log.
+        again = json.loads(booted.post_json("/inbox/consolidate", {}, auth)[2])
+        assert again["proposed"] is False
     finally:
         booted.close()
 

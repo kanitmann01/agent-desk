@@ -59,3 +59,20 @@ def test_reopen_skips_the_30_day_recovery_window() -> None:
     reopened = inbox.reopen(agent_card.id)
     assert reopened.status == STATUS_WAITING
     assert reopened.dismissed_ts is None
+
+
+def test_the_dismissed_shelf_purges_past_the_retention_window() -> None:
+    # The shelf lists what dismissed() returns, so a card past its 30 days
+    # is pruned at that read instead of sitting there with a restore button
+    # that answers gone.
+    clock = FakeClock(MORNING)
+    inbox = _store(clock)
+    card = inbox.add("suggestion", "excel", "Old card")
+    inbox.dismiss(card.id)
+    clock.advance(86400 * RECOVERY_DAYS)
+    # Exactly 30 days is still inside the window, the same side restore uses.
+    assert [c.id for c in inbox.dismissed()] == [card.id]
+    clock.advance(86400)
+    assert inbox.dismissed() == []
+    with pytest.raises(UnknownCard):
+        inbox.get(card.id)  # pruned, not merely hidden

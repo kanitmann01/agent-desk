@@ -120,15 +120,11 @@ def generate_briefs(bridge, inbox: InboxStore, activity: ActivityLog, clock, lea
 
 
 def _has_brief(inbox: InboxStore, meeting_id: str) -> bool:
-    """Return True when a card already carries this meeting's id.
+    """Return True when a card in any status carries this meeting's id.
 
-    Meta is free-form, so the test is a substring search of the serialized
-    meta rather than a field read. Snoozed and dismissed cards count: hiding
-    a brief for an hour must not mint a twin of it.
+    Every status counts: one brief per meeting, ever. Accepted cards are
+    read here too, so a "Got it" cannot mint a twin of the brief it
+    answered, and snoozed and dismissed cards count as before (hiding a
+    brief for an hour must not mint a twin of it).
     """
-    needle = f'"meetingId": "{meeting_id}"'
-    # Snoozed briefs included: hiding one for an hour must not mint a twin.
-    for card in inbox.waiting(include_snoozed=True) + inbox.dismissed():
-        if needle in json.dumps(card.meta, ensure_ascii=False):
-            return True
-    return False
+    return any(card.meta.get("meetingId") == meeting_id for card in inbox.all_cards())

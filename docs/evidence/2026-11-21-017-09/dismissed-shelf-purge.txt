@@ -1,0 +1,58 @@
+Evidence for 9f of spec 017 (#217, ticket #229): the dismissed shelf
+purges past the 30-day retention window instead of listing a restore
+button that answers gone. Same shape as the audit's 60-day repro (here
+the card is aged 45 days), on a real server with a temp AGENTDESK_DATA.
+
+Phase 1: a card is added and dismissed, and the shelf lists it, inside
+its recovery window.
+
+    $ curl -b jar -X POST http://127.0.0.1:8790/inbox/cards \
+        -d '{"kind":"suggestion","origin":"You asked for this breakdown 5 times in two weeks.",
+             "title":"Turn the channel report into one click?"}'
+    { "id": "card-LJrudyo23Gnn", "kind": "suggestion", "status": "waiting", ... }
+    add: 201
+
+    $ curl -b jar -X POST http://127.0.0.1:8790/inbox/cards/card-LJrudyo23Gnn/dismiss
+    dismiss: 200
+
+    $ curl -b jar http://127.0.0.1:8790/widgets/inbox
+    { "waiting": 1, "notified": 1, "dismissed": 1 }
+
+    $ curl -b jar http://127.0.0.1:8790/inbox   (shelf section)
+    Dismissed</h2><div class='ask'><b>Turn the channel report into one click?</b>
+    <span class='empty'>dismissed 0 days ago, recoverable for 30 days total</span>
+    <button class='btn btn-secondary btn-start' data-restore='card-LJrudyo23Gnn'>Restore</button></div>
+
+Phase 2: the server stops, the card's dismissed_ts is moved 45 days back
+in that store (the audit's repro was a store aged past the window), and
+the server restarts on the same data dir.
+
+    before aging: ('card-LJrudyo23Gnn', 'dismissed', 1795281712.986264)
+    after aging (45 days back): ('card-LJrudyo23Gnn', 'dismissed', 1791393712.986264)
+
+First read after restart: the badge count no longer knows the card, and
+the shelf is back to its empty state. The row was pruned by that first
+dismissed read, not merely hidden:
+
+    $ curl -b jar http://127.0.0.1:8791/widgets/inbox
+    { "waiting": 1, "notified": 1, "dismissed": 0 }
+
+    $ curl -b jar http://127.0.0.1:8791/inbox   (shelf section)
+    Dismissed cards stay recoverable here for 30 days. Nothing expires silently.</p>
+
+The old id no longer answers 410 with a shelf that still offered it; the
+row is gone, so the store says so plainly:
+
+    $ curl -b jar -X POST http://127.0.0.1:8791/inbox/dismissed/card-LJrudyo23Gnn/restore
+    { "error": "no card card-LJrudyo23Gnn" }
+    restore: 404
+
+    rows left in cards table: [('card-2lD3hGtj8S2m', 'waiting')]   # the skill proposal from the 9a evidence
+
+Before the fix, the shelf listed the card forever and its Restore button
+answered 410 on every click. The pinning test is
+tests/test_inbox_reopen.py::test_the_dismissed_shelf_purges_past_the_retention_window,
+which fails on the pre-fix code (the shelf still lists the card at 31
+days, and the row survives). The 410 restore branch itself is untouched
+and stays covered by
+tests/test_server_inbox_api.py::test_dismissed_cards_recover_within_30_days_and_are_gone_after.
