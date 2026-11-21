@@ -250,8 +250,14 @@ def chat(
     prompt: str,
     timeout: float = REQUEST_TIMEOUT_S,
     max_tokens: int | None = None,
+    extra_headers: dict | None = None,
 ) -> str:
-    """One completion against the OpenAI-compatible chat endpoint."""
+    """One completion against the OpenAI-compatible chat endpoint.
+
+    extra_headers are the connection's gateway headers (spec 018): they
+    ride on top of the auth headers, so a corporate gateway that needs
+    its own header (even one named Authorization) is served as written.
+    """
     if not base_url:
         raise LlmUnavailable(NO_ENDPOINT_CAUSE)
     problem = base_url_problem(base_url)
@@ -264,10 +270,13 @@ def chat(
     }
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
+    headers = auth_headers(base_url, api_key)
+    if extra_headers:
+        headers.update(extra_headers)
     request = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
-        headers=auth_headers(base_url, api_key),
+        headers=headers,
         method="POST",
     )
     host = _host_of(base_url)
@@ -295,7 +304,8 @@ def chat(
         raise LlmUnavailable(transport_cause(exc, host=host, timeout=timeout)) from exc
 
 
-def chat_client(base_url: str, api_key: str, model: str):
+def chat_client(base_url: str, api_key: str, model: str,
+                extra_headers: dict | None = None):
     """A prompt-to-text callable bound to one endpoint config."""
     def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
         """One completion against the endpoint this client was built with.
@@ -303,7 +313,8 @@ def chat_client(base_url: str, api_key: str, model: str):
         Callers that omit timeout keep the 10 second cap. The presentation
         agent passes its own, longer, timeout.
         """
-        return chat(base_url, api_key, model, prompt, timeout=timeout)
+        return chat(base_url, api_key, model, prompt, timeout=timeout,
+                    extra_headers=extra_headers)
 
     return complete
 
@@ -315,10 +326,17 @@ def env_chat():
 
 def settings_chat(settings_store=None):
     """A prompt-to-text callable that resolves settings over env on every
-    call, so an endpoint saved in the app applies without a restart."""
-    def complete(prompt: str) -> str:
+    call, so an endpoint saved in the app applies without a restart.
+
+    The explicit timeout parameter (spec 018 #233) is the one adapters
+    honor by contract: a caller hands the seconds it is willing to wait
+    and the socket cap is really set to them, which is what let the
+    presentations pipeline drop the introspection it used to paper over
+    this closure's fixed cap.
+    """
+    def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
         """One completion, resolving the endpoint from settings over env right now."""
         base, key, model = effective_llm_config(settings_store)
-        return chat(base, key, model, prompt)
+        return chat(base, key, model, prompt, timeout=timeout)
 
     return complete

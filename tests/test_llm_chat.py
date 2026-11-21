@@ -25,7 +25,15 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.llm import LlmUnavailable, auth_headers, chat, transport_cause, uses_azure_api_key
+from agentdesk.llm import (
+    LlmUnavailable,
+    auth_headers,
+    chat,
+    chat_client,
+    settings_chat,
+    transport_cause,
+    uses_azure_api_key,
+)
 
 
 class GarbageEndpoint:
@@ -306,3 +314,125 @@ def test_auth_headers_send_api_key_for_azure_and_bearer_otherwise():
     assert other["Content-Type"] == "application/json"
     assert other["Authorization"] == "Bearer secret"
     assert "api-key" not in other
+
+
+# -- the client contract (spec 018 #233) -------------------------------------
+
+
+class RecordingSettings:
+    """The settings-store shape the adapter reads: three rows in a dict."""
+
+    def __init__(self, values: dict) -> None:
+        """Hold the rows the test wants the adapter to see."""
+        self._values = values
+
+    def get(self, key: str, default: str = "") -> str:
+        """One row, or the caller's default when it is unset."""
+        return self._values.get(key, default)
+
+
+def test_settings_chat_honours_an_explicit_timeout():
+    """The settings-bound closure takes the seconds itself (spec 018's
+    veto point, resolved yes): a caller that passes a short cap really
+    waits only that long, with the adapter's own timeout sentence."""
+    stub = ScriptedEndpoint(delay=1.5, body=valid_body())
+    try:
+        settings = RecordingSettings(
+            {"llm_base": stub.base_url, "llm_key": "sk-x", "llm_model": "m"})
+        client = settings_chat(settings)
+        with pytest.raises(LlmUnavailable) as raised:
+            client("ping", timeout=0.25)
+        assert "did not answer within" in str(raised.value)
+        assert "0.25" in str(raised.value)
+    finally:
+        stub.close()
+
+
+def test_settings_chat_and_chat_client_default_to_the_ten_second_cap():
+    """Omitting the keyword keeps the adapter's 10 second cap: the default
+    is on the closure's signature, which is exactly the contract the
+    introspection-free presentation calls rely on."""
+    import inspect
+
+    from agentdesk.llm import REQUEST_TIMEOUT_S, env_chat
+
+    settings = RecordingSettings({})
+    for client in (settings_chat(settings),
+                   chat_client("http://127.0.0.1:9/v1", "k", "m"),
+                   env_chat()):
+        default = inspect.signature(client).parameters["timeout"].default
+        assert default == REQUEST_TIMEOUT_S == 10
+
+
+def test_gateway_headers_ride_on_top_of_the_auth_headers():
+    """A connection's corporate-gateway headers (spec 018) travel with the
+    chat call and win over the adapter's own, so a gateway that replaces
+    Authorization is served as written."""
+    seen = {}
+
+    class HeaderEcho(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            seen["Authorization"] = self.headers.get("Authorization")
+            seen["X-Gateway"] = self.headers.get("X-Gateway")
+            reply = valid_body("pong")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(reply)))
+            self.end_headers()
+            self.wfile.write(reply)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HeaderEcho)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        client = chat_client(
+            base, "sk-x", "m",
+            extra_headers={"X-Gateway": "corp", "Authorization": "GatewayToken t"},
+        )
+        assert client("ping") == "pong"
+        assert seen["Authorization"] == "GatewayToken t"
+        assert seen["X-Gateway"] == "corp"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_gateway_headers_really_arrive_on_the_wire():
+    seen = {}
+
+    class HeaderEcho(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            seen.update({name: self.headers.get(name)
+                         for name in ("Authorization", "X-Gateway", "api-key")})
+            reply = valid_body("pong")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(reply)))
+            self.end_headers()
+            self.wfile.write(reply)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HeaderEcho)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        client = chat_client(base, "sk-x", "m",
+                             extra_headers={"X-Gateway": "corp"})
+        assert client("ping") == "pong"
+        assert seen["Authorization"] == "Bearer sk-x"
+        assert seen["X-Gateway"] == "corp"
+        assert seen.get("api-key") is None
+    finally:
+        server.shutdown()
+        server.server_close()

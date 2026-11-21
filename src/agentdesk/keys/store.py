@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS connections (
   created_at REAL NOT NULL,
   updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS job_bindings (
+  job_key TEXT PRIMARY KEY,
+  connection_id TEXT NOT NULL,
+  model_id TEXT NOT NULL DEFAULT '',
+  updated_at REAL NOT NULL,
+  FOREIGN KEY (connection_id) REFERENCES connections (id) ON DELETE CASCADE
+);
 """
 
 _COLUMNS = (
@@ -47,6 +54,21 @@ _COLUMNS = (
 
 class UnknownConnection(Exception):
     """No connection carries the id (or it is not readable here)."""
+
+
+@dataclass
+class JobBinding:
+    """One job's assignment: which connection serves it, with which model.
+
+    The seven jobs (default, assistant, agents, presentations, memory,
+    insights, research-web) are the keys this table can carry; the store
+    keeps no registry of them, the routes and the resolver do.
+    """
+
+    job_key: str
+    connection_id: str
+    model_id: str = ""
+    updated_at: float = 0.0
 
 
 @dataclass
@@ -244,11 +266,83 @@ class KeysStore:
 
     @_serialized
     def delete(self, connection_id: str) -> Connection:
-        """Remove the row and return it, so the caller can drop its secret."""
+        """Remove the row and return it, so the caller can drop its secret.
+
+        The row's job bindings go in the same transaction: the schema's
+        cascade, executed here rather than trusted to SQLite's optional
+        per-connection foreign-keys pragma, so no binding can outlive its
+        connection whatever opened the file.
+        """
         connection = self.get(connection_id)
         with self.conn:
+            self.conn.execute(
+                "DELETE FROM job_bindings WHERE connection_id = ?", (connection_id,))
             self.conn.execute("DELETE FROM connections WHERE id = ?", (connection_id,))
         return connection
+
+    # -- job bindings (spec 018 #233) -------------------------------------
+
+    @_serialized
+    def bind(self, job_key: str, connection_id: str,
+             model_id: str = "") -> JobBinding:
+        """Point one job at one connection (and a model), replacing any
+        earlier binding the same job held.
+
+        The write is an upsert on the job's primary key; an unknown
+        connection raises before anything is written, so a binding can
+        never name a row the store does not have.
+        """
+        self.get(connection_id)  # unknown ids raise before any write
+        now = self.clock()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO job_bindings (job_key, connection_id, model_id,"
+                " updated_at) VALUES (?, ?, ?, ?)"
+                " ON CONFLICT (job_key) DO UPDATE SET"
+                " connection_id = excluded.connection_id,"
+                " model_id = excluded.model_id,"
+                " updated_at = excluded.updated_at",
+                (job_key, connection_id, model_id, now),
+            )
+        return JobBinding(job_key, connection_id, model_id, now)
+
+    @_serialized
+    def bindings(self) -> list[JobBinding]:
+        """Every binding, job_key order (the Settings page's job order)."""
+        rows = self.conn.execute(
+            "SELECT job_key, connection_id, model_id, updated_at"
+            " FROM job_bindings ORDER BY job_key ASC"
+        ).fetchall()
+        return [JobBinding(*row) for row in rows]
+
+    @_serialized
+    def binding(self, job_key: str) -> JobBinding | None:
+        """One job's binding, or None when the job is unbound."""
+        row = self.conn.execute(
+            "SELECT job_key, connection_id, model_id, updated_at"
+            " FROM job_bindings WHERE job_key = ?",
+            (job_key,),
+        ).fetchone()
+        return JobBinding(*row) if row is not None else None
+
+    @_serialized
+    def unbind(self, job_key: str) -> bool:
+        """Remove one job's binding; False when there was none to remove."""
+        with self.conn:
+            cursor = self.conn.execute(
+                "DELETE FROM job_bindings WHERE job_key = ?", (job_key,))
+        return cursor.rowcount > 0
+
+    @_serialized
+    def bound_jobs(self, connection_id: str) -> list[str]:
+        """The job keys bound to one connection, job_key order; the delete
+        warning's content, so nothing goes quiet without its jobs named."""
+        rows = self.conn.execute(
+            "SELECT job_key FROM job_bindings WHERE connection_id = ?"
+            " ORDER BY job_key ASC",
+            (connection_id,),
+        ).fetchall()
+        return [row[0] for row in rows]
 
     @_serialized
     def record_check(self, connection_id: str, status: str | None,

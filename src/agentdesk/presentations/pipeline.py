@@ -6,13 +6,9 @@ Numbers that no kept source contains are replaced with a data-needed marker.
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
-import threading
 from pathlib import Path
-
-from agentdesk.llm import LlmUnavailable
 
 DEFAULT_TIMEOUT_S = 30.0
 _DIGITS = re.compile(r"\d[\d,.]*")
@@ -32,45 +28,14 @@ def timeout_seconds(raw) -> float:
 def call_model(llm, prompt: str, timeout: float) -> str:
     """One model call bounded by `timeout` seconds.
 
-    The request thread waits at most that long. A callable whose
-    signature accepts `timeout` is given it (the real client applies it
-    to the socket). Anything else is run in a daemon thread and abandoned
-    if it overruns. A TypeError raised by the call itself is that call's
-    failure, not a reason to try again.
+    The client contract carries an explicit timeout keyword (spec 018
+    #233): every client the desk builds (the hub's connection clients,
+    the settings closure) applies it to the socket, so the introspection
+    and the daemon-thread abandonment this function used to paper over a
+    fixed-cap closure are gone. A TypeError raised by the call itself is
+    that call's failure, not a reason to try again.
     """
-    if _accepts_timeout(llm):
-        return llm(prompt, timeout=timeout)
-    box: dict = {}
-
-    def run() -> None:
-        """The model call, off the request thread so a hang can be abandoned."""
-        try:
-            box["value"] = llm(prompt)
-        except Exception as exc:  # noqa: BLE001 - handed back to the caller
-            box["error"] = exc
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    thread.join(timeout)
-    if thread.is_alive():
-        raise LlmUnavailable(
-            f"the endpoint did not answer within {timeout:g} seconds (timeout)"
-        )
-    if "error" in box:
-        raise box["error"]
-    return box.get("value", "")
-
-
-def _accepts_timeout(llm) -> bool:
-    """Whether `llm` can be called with a timeout keyword."""
-    try:
-        signature = inspect.signature(llm)
-    except (TypeError, ValueError):
-        return False
-    for param in signature.parameters.values():
-        if param.kind is inspect.Parameter.VAR_KEYWORD or param.name == "timeout":
-            return True
-    return False
+    return llm(prompt, timeout=timeout)
 
 
 def gather(memory: list, excel: dict | None, watch: dict | None,

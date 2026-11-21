@@ -83,8 +83,22 @@ from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
 from agentdesk.keys import health
 from agentdesk.keys.presets import PRESETS, preset_for
+from agentdesk.keys.resolve import (
+    DEFAULT_JOB,
+    JOBS,
+    JOB_LABELS,
+    JobUnbound,
+    Resolution,
+    resolve_job,
+)
 from agentdesk.keys.secrets import KeychainSecrets
-from agentdesk.keys.store import Connection, KeysStore, UnknownConnection, mask_key
+from agentdesk.keys.store import (
+    Connection,
+    JobBinding,
+    KeysStore,
+    UnknownConnection,
+    mask_key,
+)
 from agentdesk.layout import (
     BUILTIN_KEYS as BUILTIN_LAYOUT_KEYS,
     LayoutError,
@@ -207,7 +221,11 @@ from agentdesk.server.research import (
     render_research_disabled,
     render_research_widget,
 )
-from agentdesk.server.settings_view import mask_llm_key, render_settings_page
+from agentdesk.server.settings_view import (
+    mask_llm_key,
+    render_connection_delete_warning,
+    render_settings_page,
+)
 from agentdesk.server.wizard_view import (
     approval_summary,
     preview_lines,
@@ -902,6 +920,11 @@ class AgentDeskServer(ThreadingHTTPServer):
         # copy (the wizard) take their deterministic path instead of
         # consulting a client that can only raise.
         self.llm_defaulted_to_env = llm is None
+        # The client construction built, remembered so the resolution hub
+        # (spec 018 #233) can tell a startup env default from a client a
+        # caller swapped in later: a replaced llm is an injected llm, and
+        # an injected client is never silently replaced by the hub.
+        self._startup_llm = self.llm
         self.audit_conn = audit_conn
         self.ledger = ledger
         env_endpoint, _key, env_model = env_config()
@@ -2012,7 +2035,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.calendar.status() if server.calendar is not None else None,
             facts_block=self._facts_block(question) if not summary_mode else "",
         )
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("assistant")
         common = {
             "llm": llm,
             "audit_conn": server.audit_conn,
@@ -2049,18 +2072,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except MemoryEncryptedError:
             return ""
 
-    def _effective_llm(self) -> tuple:
-        """The client this request uses, resolved per call: saved settings
-        win over the startup-resolved endpoint, so an endpoint entered in
-        the settings page applies without a restart. With nothing saved
-        the startup client (env/config.env, or a test injection) is kept.
+    def _job_resolution(self, job: str) -> Resolution | None:
+        """The pure resolution for one job, or None when nothing serves it.
+
+        The keys store may be absent (its sqlite could not open), which is
+        exactly an empty store's answer: no connections, no bindings, only
+        the environment leg and the named unbound error remain.
         """
         server = self.server  # type: ignore[attr-defined]
-        settings = server.settings
-        if settings is not None and settings.get("llm_base"):
-            base, key, model = effective_llm_config(settings)
-            return chat_client(base, key, model), base, model
-        return server.llm, server.llm_endpoint, server.llm_model
+        return _server_resolution(server, job)
+
+    def _effective_llm(self, job: str = DEFAULT_JOB) -> tuple:
+        """The resolution hub (spec 018 #233): the client, the serving
+        name and the model for one job's next call.
+
+        Every model call-site in the desk asks here, passing its job. The
+        order is the spec's, resolved per call: the job's binding, the
+        default binding, the single enabled connection, then the
+        environment with the saved settings rows over it (config.env
+        rides that leg; saved wins over env, the documented precedence).
+        A saved connection serves through its own base URL, its keychain
+        key and its gateway headers, stamps the row's last_used_at, and
+        answers to its label, so every llm.* audit row names it. An
+        unbound job gets a client that raises LlmUnavailable naming the
+        job, unless a client was injected at construction: an injected
+        client is never silently replaced.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        return _job_llm_parts(server, job)
 
     def _declared_length(self) -> int:
         """The Content-Length header as an int, 0 when absent or malformed.
@@ -2270,7 +2309,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         research_url = ""
         if server.settings is not None:
             research_url = server.settings.get("research_provider_url") or ""
-        research_ready = bool(research_url) or getattr(server, "research_fetch", None) is not None
+        resolved = self._job_resolution("research-web")
+        connection_serves = resolved is not None and resolved.connection is not None
+        research_ready = (
+            bool(research_url)
+            or getattr(server, "research_fetch", None) is not None
+            or connection_serves
+        )
         page = render_agents_page(
             ROSTER, runs, agentdesk.__version__,
             inbox_count=self._inbox_waiting_count(),
@@ -2331,7 +2376,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = endpoint_off_run()
         else:
             result = run_agent(
-                kind, brief, self._effective_llm()[0],
+                kind, brief, self._effective_llm("agents")[0],
                 ranked_facts=self._agent_fact_ranks(kind, brief),
                 excel_status=(
                     server.excel.status() if server.excel is not None else None
@@ -2375,14 +2420,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _presentation_endpoint(self) -> tuple[bool, str]:
         """Whether a presentation may run, and the sentence when it may not.
 
-        The switch uses the pinned endpoint-off sentence. An empty base
-        uses the same unconfigured sentence as the rest of the desk.
+        The switch uses the pinned endpoint-off sentence. Configuration is
+        the hub's answer now (spec 018): a job binding, a default binding,
+        a single saved connection, the saved settings rows or the startup
+        endpoint each count; only a fully unbound presentations job uses
+        the unconfigured sentence.
         """
         server = self.server  # type: ignore[attr-defined]
         settings = server.settings
         enabled = True if settings is None else bool(settings.get("endpoint_enabled"))
-        saved = settings.get("llm_base") if settings is not None else ""
-        configured = bool(saved) or bool(getattr(server, "llm_endpoint", ""))
+        configured = (
+            self._job_resolution("presentations") is not None
+            or (bool(settings.get("llm_base")) if settings is not None else False)
+            or bool(getattr(server, "llm_endpoint", ""))
+        )
         if not enabled:
             return False, ENDPOINT_OFF_CAUSE
         if not configured:
@@ -2459,7 +2510,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         timeout = timeout_seconds(
             server.settings.get("presentation_timeout_s") if server.settings is not None else "30"
         )
-        llm = self._effective_llm()[0]
+        llm = self._effective_llm("presentations")[0]
         try:
             parsed = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
             if not parsed:
@@ -2545,11 +2596,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _pause_for_research(self, server, brief, pack, variant, recipe, planned, sources, timeout,
                             deck_title: str = "") -> None:
-        """Store the gathered web sources and wait. The request is not held."""
+        """Store the gathered web sources and wait. The request is not held.
+
+        The provider rides the research-web job's resolution (spec 018):
+        a bound connection serves with its own base URL and key, and only
+        with no connection does the legacy research-provider settings row
+        keep serving (its migration is ticket #234).
+        """
         fetch = getattr(server, "research_fetch", None)
         url = ""
         key = ""
-        if server.settings is not None:
+        resolved = self._job_resolution("research-web")
+        if resolved is not None and resolved.connection is not None:
+            url = resolved.connection.base_url
+            key = server.keychain.fetch(resolved.connection.id) or ""
+            try:
+                server.keys.record_use(resolved.connection.id)
+            except Exception:  # noqa: BLE001 - the stamp never fails the fetch
+                LOG.debug("could not stamp last_used_at", exc_info=True)
+        elif server.settings is not None:
             url = server.settings.get("research_provider_url") or ""
             key = server.settings.get("research_provider_key") or ""
         titles = [section["title"] for section in planned]
@@ -2666,7 +2731,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "the template for that run is no longer installed"})
             return
         timeout = timeout_seconds(artifact.get("timeout") or 30)
-        llm = self._effective_llm()[0]
+        llm = self._effective_llm("assistant")[0]
         planned = artifact.get("plan") or []
         try:
             filled = []
@@ -3083,6 +3148,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             [_connection_payload(c) for c in server.keys.all()]
             if server.keys is not None else None
         )
+        bindings = (
+            [_binding_payload(b) for b in server.keys.bindings()]
+            if server.keys is not None else None
+        )
         editing_id = parse_qs(self.path.partition("?")[2]).get("connection", [""])[0]
         editing = next((c for c in (connections or []) if c["id"] == editing_id), None)
         page = render_settings_page(
@@ -3101,6 +3170,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             desk_check=self._desk_check_for_page(server),
             connections=connections,
             editing_connection=editing,
+            bindings=bindings,
             keychain_available=bool(server.keychain.available()),
             connections_notice=self._connections_notice(),
         )
@@ -3414,7 +3484,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, _connection_payload(connection))
 
     def _connection_delete(self, connection_id: str) -> None:
-        """POST /api/connections/<id>/delete: the row and its secret go together."""
+        """POST /api/connections/<id>/delete: the row, its secret and its
+        bindings go together, but not before the bound jobs are named
+        (spec 018 story 10): a first post about a connection that serves
+        jobs answers the warning naming them (a no-JS confirmation page
+        for a form post, a 409 carrying them for JSON), and only a
+        confirmed post deletes."""
         server = self.server  # type: ignore[attr-defined]
         if server.keys is None:
             self._send_json(503, {"error": "the connections store is not available"})
@@ -3424,9 +3499,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except UnknownConnection:
             self._send_json(404, {"error": f"no connection {connection_id}"})
             return
+        jobs = server.keys.bound_jobs(connection.id)
+        confirmed = _flag(self._read_json_body() or {}, "confirm")
+        if jobs and not confirmed:
+            sentence = (
+                f"the {connection.label} connection serves the"
+                f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
+                " deleting it unbinds them")
+            if self._is_form_submit():
+                page = render_connection_delete_warning(
+                    _connection_payload(connection), jobs, agentdesk.__version__)
+                self._send_bytes(200, page.encode("utf-8"),
+                                 "text/html; charset=utf-8")
+                return
+            self._send_json(409, {"error": sentence, "boundJobs": jobs})
+            return
         server.keychain.forget(connection.id)
-        server.keys.delete(connection.id)
-        self._audit("keys.delete", target=connection.id, detail=connection.label)
+        server.keys.delete(connection.id)  # the bindings cascade inside
+        self._audit(
+            "keys.delete", target=connection.id,
+            detail=connection.label + (f"; unbound {', '.join(jobs)}" if jobs else ""),
+        )
         if self._is_form_submit():
             self._send_redirect("/settings")
             return
@@ -3541,6 +3634,77 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "status": connection.status,
             "lastError": connection.last_error,
         })
+
+    # -- job bindings (spec 018 #233) --------------------------------------
+
+    def _send_bindings_json(self) -> None:
+        """GET /api/bindings: every job binding. 503 without a store, the
+        honest unavailable state every keys route uses."""
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        self._send_json(200, {
+            "bindings": [_binding_payload(b) for b in server.keys.bindings()],
+            "jobs": list(JOBS),
+        })
+
+    def _binding_write(self) -> None:
+        """POST /api/bindings: point one job at one connection and model.
+
+        The endpoint-save pattern throughout: unknown fields are a 400
+        naming the typos and the accepted names, a job outside the seven
+        is a 400 naming them, an unknown connection is a 404, and an
+        empty connectionId unbinds the job (the picker's Not bound
+        choice). A form post lands back on Settings; JSON gets the
+        binding back.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.keys is None:
+            self._send_json(503, {"error": "the connections store is not available"})
+            return
+        body = self._read_json_body() or {}
+        unknown = sorted(name for name in body if name not in BINDING_FIELDS)
+        if unknown:
+            self._connections_refusal(
+                "unknown binding field(s): " + ", ".join(unknown)
+                + "; accepted fields are " + ", ".join(BINDING_FIELDS))
+            return
+        job = str(body.get("job", "") or "").strip()
+        if job not in JOBS:
+            self._connections_refusal(
+                "unknown job: " + (job or "(none)")
+                + "; jobs are " + ", ".join(JOBS))
+            return
+        connection_id = str(body.get("connectionId", "") or "").strip()
+        model = str(body.get("model", "") or "").strip()
+        if not connection_id:
+            removed = server.keys.unbind(job)
+            self._audit(
+                "keys.update", target=job,
+                detail=(f"unbound the {job} job" if removed
+                        else f"the {job} job was already unbound"),
+            )
+            if self._is_form_submit():
+                self._send_redirect("/settings")
+                return
+            self._send_json(200, {"job": job, "connectionId": "", "model": model})
+            return
+        try:
+            connection = server.keys.get(connection_id)
+        except UnknownConnection:
+            self._send_json(404, {"error": f"no connection {connection_id}"})
+            return
+        binding = server.keys.bind(job, connection_id, model)
+        self._audit(
+            "keys.update", target=connection_id,
+            detail=f"bound the {job} job to {connection.label}"
+                   + (f" (model {model})" if model else ""),
+        )
+        if self._is_form_submit():
+            self._send_redirect("/settings")
+            return
+        self._send_json(200, _binding_payload(binding))
 
     def _settings_toggle(self) -> None:
         """Flip one named switch and let the change take effect before answering.
@@ -3742,7 +3906,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             server.calendar.status() if server.calendar is not None else None,
             facts_block=self._facts_block(skill["prompt"]),
         )
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("agents")
         answer = research(
             skill["prompt"], context, llm=llm, audit_conn=server.audit_conn,
             endpoint=endpoint, model=model,
@@ -4083,12 +4247,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
         cache = server.capabilities_cache
         cached = cache.cached("embeddings") if cache is not None else None
         passed = cached is not None and cached.result.status == GATE_PASS
-        base, key, _model = effective_llm_config(settings)
+        # The embeddings ride the memory job through the hub (spec 018
+        # #233): a bound connection serves with its own base and key, and
+        # its label is the name the llm.embeddings rows carry; with no
+        # connection the settings-over-environment leg keeps answering.
+        resolved = self._job_resolution("memory")
+        base = key = serving_name = ""
+        if resolved is not None:
+            if resolved.connection is not None:
+                connection = resolved.connection
+                base = connection.base_url
+                key = server.keychain.fetch(connection.id) or ""
+                serving_name = connection.label
+            else:
+                base = resolved.base_url
+                key = resolved.api_key
+                serving_name = resolved.base_url
         embedder = None
         if active and passed and base:
             embedder = _AuditedEmbedder(
                 EndpointEmbedder(base, key, effective_embeddings_model(settings)),
-                base_url=base,
+                base_url=serving_name or base,
                 audit_conn=server.audit_conn,
             )
         memory.embedder = embedder
@@ -4377,7 +4556,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         if not self._source_allowed("endpoint_enabled"):
             return None, "", ""
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("memory")
         if server.summarizer is not None:
             return server.summarizer, endpoint or "", model or ""
         if endpoint or not server.llm_defaulted_to_env:
@@ -4481,7 +4660,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         if not self._source_allowed("endpoint_enabled"):
             return None, "", ""
-        llm, endpoint, model = self._effective_llm()
+        llm, endpoint, model = self._effective_llm("memory")
         if server.extractor is not None:
             return server.extractor, endpoint or "", model or ""
         if endpoint or not server.llm_defaulted_to_env:
@@ -4979,7 +5158,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "this surface is paused. Everything else keeps working.",
             )
             return
-        _llm, endpoint, model = self._effective_llm()
+        _llm, endpoint, model = self._effective_llm("memory")
         extractor = server.extractor
         if extractor is None:
             extractor = EndpointExtractor(_llm)
@@ -5118,7 +5297,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # Refused before any model call, so nothing to audit.
             self._reflect_error_response(502, str(exc))
             return
-        _llm, endpoint, model = self._effective_llm()
+        _llm, endpoint, model = self._effective_llm("memory")
         reflector = server.reflector
         if reflector is None:
             reflector = EndpointReflector(_llm)
@@ -5933,13 +6112,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return False
 
     def _suggestion_complete(self):
-        """The completion callable an endpoint-backed suggestion gets, or None.
+        """The completion callable an endpoint-backed suggestion gets, or
+        None.
 
-        None means no client or no endpoint, which is how the setup flow is told to use
-        its deterministic heuristics instead of waiting on a call that would fail.
+        None means no client or no endpoint, which is how the setup flow
+        is told to use its deterministic heuristics instead of waiting on
+        a call that would fail. The client comes from the resolution hub
+        (spec 018 #233): suggestions honor the insights job's saved
+        connection like every other call-site, the old bypass that
+        ignored saved settings is gone.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.llm is None or not server.llm_endpoint:
+        if self._job_resolution("insights") is None and not server.llm_endpoint:
             return None
 
         def complete(prompt: str) -> str:
@@ -5948,7 +6132,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             It is a closure so the flow receives a plain callable and never the handler
             or the server.
             """
-            return server.llm(prompt)
+            client, _name, _model = self._effective_llm("insights")
+            return client(prompt)
         return complete
 
     def _insight_press_page(self) -> None:
@@ -6034,22 +6219,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _insight_complete(self):
         """The one model call a reading may offer, or None when this desk
-        has no endpoint or the user turned model calls off. A reading that
-        gets None keeps its local elements and offers no press."""
+        has nothing configured for the insights job or the user turned
+        model calls off. A reading that gets None keeps its local
+        elements and offers no press. The client comes from the
+        resolution hub (spec 018 #233): readings honor the insights job's
+        saved connection like every other call-site, fixing the known
+        bypass where they ignored saved settings entirely."""
         server = self.server  # type: ignore[attr-defined]
-        if server.llm is None or not server.llm_endpoint:
-            return None
         if not self._source_allowed("endpoint_enabled"):
+            return None
+        if self._job_resolution("insights") is None and not server.llm_endpoint:
             return None
 
         def complete(prompt: str) -> str:
-            """One model call over the desk's endpoint, raw.
+            """One model call over whatever serves the insights job, raw.
 
             A failing endpoint raises: each caller decides its own
             fallback, so the same adapter serves drafts that fall back to
             the template and explanations that refuse.
             """
-            return server.llm(prompt)
+            client, _name, _model = self._effective_llm("insights")
+            return client(prompt)
 
         return complete
 
@@ -7292,31 +7482,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.server.wizard_store.save(session)  # type: ignore[attr-defined]
 
     def _wizard_compiler(self):
-        """The compiler's endpoint client, audited: the settings-saved
-        endpoint over the startup one. None when nothing is configured
-        anywhere, so the deterministic path runs on purpose instead of a
-        client that raises on every call; the wizard never blocks on
-        the llm."""
+        """The compiler's endpoint client, audited, through the resolution
+        hub on the default job (spec 018 #233): a bound connection, the
+        saved settings rows, then the startup endpoint. None when nothing
+        is configured anywhere, so the deterministic path runs on purpose
+        instead of a client that raises on every call; the wizard never
+        blocks on the llm."""
         server = self.server  # type: ignore[attr-defined]
         if server.audit_conn is None:
             return WizardCompiler(None)
-        settings = server.settings
-        if settings is not None and settings.get("llm_base"):
-            base, _key, model = effective_llm_config(settings)
-            inner, endpoint = settings_chat(settings), base
-        elif getattr(server, "llm_defaulted_to_env", False) and not server.llm_endpoint:
+        resolved = self._job_resolution(DEFAULT_JOB)
+        if (resolved is None and getattr(server, "llm_defaulted_to_env", False)
+                and not server.llm_endpoint):
             return WizardCompiler(None)
-        else:
-            inner = server.llm
-            endpoint, _key, model = env_config()
+        inner, endpoint, model = self._effective_llm(DEFAULT_JOB)
         conn = server.audit_conn
 
         def audited_llm(prompt: str) -> str:
             """The wizard's prompt call, recorded as llm.wizard.
 
             Endpoint and model are those resolved when the compiler was built, so the
-            row names the client that actually answered. A failure records the error
-            text and re-raises, leaving the wizard's own error handling intact.
+            row names the client that actually answered (a saved connection answers
+            to its label, spec 018). A failure records the error text and re-raises,
+            leaving the wizard's own error handling intact.
             """
             try:
                 result = inner(prompt)
@@ -7871,16 +8059,32 @@ def _wire_audit(server: AgentDeskServer) -> None:
 
         def audited_llm(prompt: str) -> str:
             """Wrap the calendar's breakdown client so each call is recorded as
-            llm.breakdown.
+            llm.breakdown, through the resolution hub on the default job
+            (spec 018 #233).
 
-            The endpoint is resolved per call with the same settings-over-environment
-            order the inner client uses, so the row names what was really hit. The
-            failure path records the error text and re-raises, so the caller still sees
-            the real exception.
+            A saved connection serving the default job answers with its own
+            base URL and key and the row names its label; with no
+            connection the bridge's own client keeps serving and the
+            endpoint is resolved per call with the same settings-over-
+            environment order that client uses, so the row names what was
+            really hit either way. The failure path records the error text
+            and re-raises, so the caller still sees the real exception.
             """
-            endpoint, _key, model = effective_llm_config(server.settings)
+            resolved = _server_resolution(server, DEFAULT_JOB)
+            model = ""
+            if resolved is not None and resolved.connection is not None:
+                connection = resolved.connection
+                client = _connection_client(
+                    server, connection,
+                    server.keychain.fetch(connection.id) or "",
+                    resolved.model)
+                endpoint = connection.label
+                model = resolved.model
+            else:
+                client = inner_llm
+                endpoint, _key, model = effective_llm_config(server.settings)
             try:
-                result = inner_llm(prompt)
+                result = client(prompt)
             except Exception as exc:  # noqa: BLE001 - audit then re-raise
                 audit_store.record(conn, "llm.breakdown", target=endpoint,
                                    status="error", model=model,
@@ -8177,6 +8381,97 @@ def _default_keys_store() -> KeysStore | None:
         return None
 
 
+# -- the resolution hub (spec 018 #233) ------------------------------------
+
+
+def _server_resolution(server, job: str) -> Resolution | None:
+    """The pure resolver over one server's current rows, or None when the
+    job is unbound. Shared by the handler hub and the call sites that
+    need the raw parts (web research's provider, the embeddings client);
+    the keys store being absent reads as an empty one."""
+    connections = server.keys.all() if server.keys is not None else []
+    bindings = server.keys.bindings() if server.keys is not None else []
+    try:
+        return resolve_job(job, connections=connections, bindings=bindings,
+                           env=effective_llm_config(server.settings))
+    except JobUnbound:
+        return None
+
+
+def _connection_client(server, connection: Connection, api_key: str,
+                       model: str):
+    """One connection's serving client: its base URL, its key, its gateway
+    headers, and last_used_at stamped by the live traffic it serves (the
+    one write the call path makes, spec 018's live-traffic leg). The
+    stamp is best-effort: a failed bookkeeping write must never fail the
+    call it is bookkeeping for."""
+
+    def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
+        """One completion on the connection the hub resolved to."""
+        try:
+            return chat(connection.base_url, api_key, model, prompt,
+                        timeout=timeout,
+                        extra_headers=connection.headers or None)
+        finally:
+            try:
+                server.keys.record_use(connection.id)
+            except Exception:  # noqa: BLE001 - bookkeeping, never the call
+                LOG.debug("could not stamp last_used_at for %s",
+                          connection.id, exc_info=True)
+
+    return complete
+
+
+def _unbound_client(job: str):
+    """The client an unbound job answers with: every call raises the
+    adapter's own error type carrying the named unbound sentence, so each
+    surface degrades in its own words exactly as it does for an
+    unconfigured endpoint, and the job is named on the way out."""
+
+    def complete(prompt: str, timeout: float = REQUEST_TIMEOUT_S) -> str:
+        """Refuse, naming the job nothing is bound to."""
+        raise LlmUnavailable(str(JobUnbound(job)))
+
+    return complete
+
+
+def _job_llm_parts(server, job: str) -> tuple:
+    """(client, serving_name, model) for one job on one server: the whole
+    hub in one place, so the request handler and the calendar's audited
+    wrapper can never drift apart.
+
+    A resolved connection serves with its own client and answers to its
+    label. The environment leg keeps the pre-hub posture exactly: a
+    settings-saved endpoint builds a fresh client per call, and with
+    nothing saved the startup client (env/config.env, or a test's
+    injection) keeps serving. An unbound job raises by name, again unless
+    a client was injected: at construction, or later by assignment to
+    server.llm (the injection seam several suites and callers use), which
+    is why the startup client is remembered and compared by identity.
+    """
+    resolved = _server_resolution(server, job)
+    if resolved is not None and resolved.connection is not None:
+        connection = resolved.connection
+        api_key = server.keychain.fetch(connection.id) or ""
+        return (_connection_client(server, connection, api_key,
+                                   resolved.model),
+                connection.label, resolved.model)
+    if resolved is not None:
+        settings = server.settings
+        if settings is not None and settings.get("llm_base"):
+            return (chat_client(resolved.base_url, resolved.api_key,
+                                resolved.model),
+                    resolved.base_url, resolved.model)
+        return server.llm, server.llm_endpoint, server.llm_model
+    injected = (
+        not getattr(server, "llm_defaulted_to_env", False)
+        or server.llm is not getattr(server, "_startup_llm", None)
+    )
+    if injected:
+        return server.llm, server.llm_endpoint, server.llm_model
+    return _unbound_client(job), "", ""
+
+
 # The connections API's field whitelist (the endpoint-save pattern: an
 # unknown field name is a 400 naming the typos and the accepted names,
 # never a silent ok with dropped values) and the no-keychain notice.
@@ -8184,6 +8479,8 @@ CONNECTION_CREATE_FIELDS = (
     "label", "provider", "baseUrl", "apiKey", "headers", "isDefault",
 )
 CONNECTION_UPDATE_FIELDS = CONNECTION_CREATE_FIELDS + ("keyClear",)
+# The job-binding write's whitelist, the same pattern one surface over.
+BINDING_FIELDS = ("job", "connectionId", "model")
 NO_KEYCHAIN_NOTICE = (
     "This machine has no keychain, so a key cannot be stored here. Save the"
     " connection without one (local presets need no key) or resolve keys"
@@ -8210,6 +8507,17 @@ def _connection_payload(connection) -> dict:
         "modelsFetchedAt": connection.models_fetched_at,
         "createdAt": connection.created_at,
         "updatedAt": connection.updated_at,
+    }
+
+
+def _binding_payload(binding: JobBinding) -> dict:
+    """The wire shape of one job binding: the job, the connection and the
+    model, nothing else."""
+    return {
+        "job": binding.job_key,
+        "connectionId": binding.connection_id,
+        "model": binding.model_id,
+        "updatedAt": binding.updated_at,
     }
 
 

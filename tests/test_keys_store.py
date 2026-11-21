@@ -220,6 +220,88 @@ def test_set_models_caches_the_listing_with_its_fetched_at(tmp_path):
     assert store.set_models(conn.id, []).models == []  # an empty listing caches too
 
 
+# -- job bindings (spec 018 #233) ------------------------------------------
+
+
+def test_bind_and_read_back_every_field(tmp_path):
+    clock = FrozenClock()
+    store = KeysStore(_open(tmp_path), clock)
+    conn = store.add(label="OpenAI personal", provider="openai",
+                     base_url="https://api.openai.com/v1")
+    clock.now += 10
+    binding = store.bind("assistant", conn.id, "gpt-4o-mini")
+    assert binding.job_key == "assistant"
+    assert binding.connection_id == conn.id
+    assert binding.model_id == "gpt-4o-mini"
+    assert binding.updated_at == 1_010.0
+    clock.now += 10
+    assert store.binding("assistant").updated_at == 1_010.0  # stamps never rewrite
+    assert store.binding("presentations") is None
+
+
+def test_rebinding_a_job_replaces_the_earlier_binding(tmp_path):
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    first = store.add(label="One", provider="openai",
+                      base_url="https://a.example/v1")
+    second = store.add(label="Two", provider="groq",
+                       base_url="https://b.example/v1")
+    store.bind("assistant", first.id, "m-one")
+    store.bind("assistant", second.id, "m-two")
+    binding = store.binding("assistant")
+    assert (binding.connection_id, binding.model_id) == (second.id, "m-two")
+    assert [b.job_key for b in store.bindings()] == ["assistant"]
+
+
+def test_bind_refuses_an_unknown_connection(tmp_path):
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    with pytest.raises(UnknownConnection):
+        store.bind("assistant", "no-such-id", "m")
+
+
+def test_bindings_list_is_job_ordered_and_unbind_removes(tmp_path):
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    conn = store.add(label="One", provider="openai",
+                     base_url="https://a.example/v1")
+    store.bind("research-web", conn.id)
+    store.bind("assistant", conn.id, "m")
+    assert [b.job_key for b in store.bindings()] == ["assistant", "research-web"]
+    assert store.unbind("assistant") is True
+    assert store.binding("assistant") is None
+    assert store.unbind("assistant") is False  # already gone
+    assert [b.job_key for b in store.bindings()] == ["research-web"]
+
+
+def test_bound_jobs_names_the_jobs_a_connection_serves(tmp_path):
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    keeper = store.add(label="One", provider="openai",
+                       base_url="https://a.example/v1")
+    other = store.add(label="Two", provider="groq",
+                      base_url="https://b.example/v1")
+    store.bind("assistant", keeper.id)
+    store.bind("memory", keeper.id)
+    store.bind("presentations", other.id)
+    assert sorted(store.bound_jobs(keeper.id)) == ["assistant", "memory"]
+    assert store.bound_jobs(other.id) == ["presentations"]
+
+
+def test_deleting_a_connection_takes_its_bindings_with_it(tmp_path):
+    """The cascade the schema promises, asserted without relying on
+    SQLite's per-connection foreign_keys pragma: the store's own delete
+    removes the bindings in the same transaction."""
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    conn = store.add(label="One", provider="openai",
+                     base_url="https://a.example/v1")
+    store.bind("assistant", conn.id)
+    store.bind("default", conn.id)
+    store.delete(conn.id)
+    assert store.bindings() == []
+    row = _open(tmp_path).execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'"
+        " AND name = 'job_bindings'"
+    ).fetchone()
+    assert row[0] == 1  # the table itself survives; only the rows cascade
+
+
 # -- the masking rule -------------------------------------------------------
 
 

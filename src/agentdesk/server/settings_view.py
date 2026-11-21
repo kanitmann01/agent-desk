@@ -15,6 +15,7 @@ from datetime import datetime
 
 from agentdesk.insight.preferences import PreferenceStore, changed
 from agentdesk.keys.presets import PRESETS, preset_for
+from agentdesk.keys.resolve import JOB_LABELS
 from agentdesk.repetition.skills import render_skill_md
 from agentdesk.server import audit_view
 from agentdesk.server.pages import page_shell
@@ -377,6 +378,120 @@ deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 </section>"""
 
 
+def _jobs_section(bindings: list[dict] | None,
+                  connections: list[dict] | None) -> str:
+    """The per-job picker: which connection and model serves which job.
+
+    One plain form per job (the house rule: the page works with no
+    script at all), the connection select grouped by provider, and the
+    model offered as a text input with a datalist of every cached model,
+    so choosing from the cached list and typing by hand are the same
+    control. The current binding reads back under each row, so the page
+    always states what serves what.
+    """
+    if bindings is None or connections is None:
+        body = (
+            "<div class='alert'><p>The connections store is not available,"
+            " so jobs cannot be bound here.</p></div>"
+        )
+        stamp = "UNAVAILABLE"
+    else:
+        by_job = {binding["job"]: binding for binding in bindings}
+        by_id = {connection["id"]: connection for connection in connections}
+        cached = []
+        for connection in connections:
+            for model in connection.get("models") or []:
+                if model not in cached:
+                    cached.append(model)
+        groups: dict[str, list[dict]] = {}
+        for connection in connections:
+            preset = preset_for(connection.get("provider", ""))
+            name = preset.name if preset else str(connection.get("provider", ""))
+            groups.setdefault(name, []).append(connection)
+        options = ["<option value=''>Not bound (default connection or environment)</option>"]
+        for provider, rows in groups.items():
+            items = "".join(
+                f"<option value='{html.escape(row['id'], quote=True)}'>"
+                f"{html.escape(str(row.get('label', '')))}</option>"
+                for row in rows
+            )
+            options.append(
+                f"<optgroup label='{html.escape(provider)}'>{items}</optgroup>")
+        choices = "".join(options)
+        datalist = "".join(
+            f"<option value='{html.escape(str(model), quote=True)}'></option>"
+            for model in cached)
+        forms = []
+        for job in ("default", "assistant", "agents", "presentations",
+                    "memory", "insights", "research-web"):
+            binding = by_job.get(job)
+            selected = str(binding.get("connectionId") or "") if binding else ""
+            model = str(binding.get("model") or "") if binding else ""
+            if selected and selected in by_id:
+                current = (
+                    f"<span class='empty'>Serves through"
+                    f" <b>{html.escape(str(by_id[selected].get('label', '')))}</b>"
+                    + (f", model <span class='mono'>{html.escape(model)}</span>"
+                       if model else "")
+                    + ".</span>")
+            elif binding:
+                current = "<span class='empty'>Bound to a connection that is gone.</span>"
+            else:
+                current = "<span class='empty'>Unbound: the default binding, the single saved connection or the environment serves it.</span>"
+            list_id = f"job-{job}-models"
+            forms.append(f"""<div class='settings-block'>
+<form method='post' action='/api/bindings' class='cardform job-form'>
+<input type='hidden' name='job' value='{job}'>
+<label class='empty' for='job-{job}-connection'><b>{JOB_LABELS[job]}</b></label>
+<select id='job-{job}-connection' name='connectionId'>{choices}</select>
+<label class='empty' for='job-{job}-model'>Model (picked from the cached lists or typed)</label>
+<input id='job-{job}-model' type='text' name='model' list='{list_id}'
+ value='{html.escape(model, quote=True)}' autocomplete='off'>
+<datalist id='{list_id}'>{datalist}</datalist>
+<button class='btn btn-secondary' type='submit'>Save the {job} job</button>
+</form>
+{current}
+</div>""")
+        bound = sum(1 for job in by_job)
+        stamp = f"{bound} BOUND" if bound else "NONE BOUND"
+        body = (
+            "<p class='empty'>Saving with Not bound chosen removes the job's"
+            " binding; the default binding, a single saved connection or the"
+            " environment then serves it.</p>"
+            + "".join(forms)
+        )
+    return f"""<section class='card settings-card' id='jobs'>
+<div class='w-head'><h2>Jobs</h2><span class='stamp'>{stamp}</span></div>
+<p>Assign the desk's jobs to connections: the assistant on a personal
+key, presentations on a work key, web research on a third. Every model
+call asks one resolution hub: the job's binding here, then the default
+binding, then the single enabled connection, then the environment.</p>
+{body}
+</section>"""
+
+
+def render_connection_delete_warning(connection: dict, jobs: list[str],
+                                     version: str) -> str:
+    """The no-JS confirmation page a bound connection's first delete post
+    answers with: the jobs named before anything lands, one form that
+    posts the same delete with confirm, and one link back."""
+    connection_id = html.escape(str(connection.get("id", "")), quote=True)
+    label = html.escape(str(connection.get("label", "")))
+    named = ", ".join(html.escape(job) for job in jobs)
+    content = f"""<h1>Delete a connection that serves jobs</h1>
+<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}.
+Deleting it removes the connection, its keychain entry and those
+bindings; the jobs fall back to the default binding, the single
+remaining connection, or the environment, and a job with none of those
+answers with a named unbound error instead of a silent one.</p>
+<form method='post' action='/api/connections/{connection_id}/delete' class='cardform'>
+<input type='hidden' name='confirm' value='1'>
+<button class='btn btn-primary' type='submit'>Delete {label} and unbind {named}</button>
+</form>
+<p><a class='btn btn-secondary' href='/settings'>Keep it</a></p>"""
+    return page_shell("Connections", "/settings", content, version)
+
+
 def _connection_rows(connections: list[dict]) -> str:
     """The saved-connections table: label, preset, masked key, base URL,
     status badge with its inline cause, default star, Test, edit and
@@ -650,6 +765,7 @@ def render_settings_page(
     desk_check: dict | None = None,
     connections: list[dict] | None = None,
     editing_connection: dict | None = None,
+    bindings: list[dict] | None = None,
     keychain_available: bool = True,
     connections_notice: str = "",
 ) -> str:
@@ -751,6 +867,8 @@ data tag, and turning it off removes exactly what it added.</p>
 
 {_connections_section(connections, editing_connection, keychain_available,
                       connections_notice)}
+
+{_jobs_section(bindings, connections)}
 
 <section class='card settings-card' id='endpoint'>
 <div class='w-head'><h2>Endpoint</h2><span class='stamp'>{endpoint_stamp}</span></div>

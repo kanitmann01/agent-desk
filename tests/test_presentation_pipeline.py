@@ -18,8 +18,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tools"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
+import pytest
 from agentdesk.assistant import audit as audit_store
-from agentdesk.llm import REQUEST_TIMEOUT_S, chat_client
+from agentdesk.llm import REQUEST_TIMEOUT_S, LlmUnavailable, chat_client
 from agentdesk.presentations.pipeline import call_model, gather, guard_numbers, outline_from_fill
 from agentdesk.presentations.writer import read_parts, slide_texts
 from mock_endpoint import MockEndpointHandler
@@ -150,8 +151,17 @@ def test_disabled_sources_are_not_read_and_the_receipt_names_what_was():
 
 
 def test_a_call_near_the_timeout_succeeds_and_past_it_degrades():
-    def llm(prompt):
+    """The timeout really reaches the client's socket cap (spec 018 #233
+    removed the introspection and the thread-join fallback, so the client
+    contract is the only clock): the client is handed the seconds and a
+    client that honours them degrades the run exactly as a real socket
+    timeout would."""
+
+    def llm(prompt, timeout=30):
         time.sleep(0.2)
+        if timeout < 0.15:
+            raise LlmUnavailable(
+                f"the endpoint did not answer within {timeout:g} seconds (timeout)")
         if "Presentation plan" in prompt:
             return json.dumps({"sections": [
                 {"id": "context", "title": "Context"},
@@ -172,9 +182,38 @@ def test_a_call_near_the_timeout_succeeds_and_past_it_degrades():
         payload = json.loads(body)
         assert payload["status"] == "degraded"
         assert "timeout" in payload["cause"]
+        assert "0.05" in payload["cause"]
         assert payload["artifact"] is None
     finally:
         booted.close()
+
+
+def test_every_client_the_desk_builds_takes_the_timeout_keyword():
+    """The client contract behind the introspection's removal: the three
+    factories every call-site can reach all accept the keyword (no
+    TypeError, only the endpoint's own named refusal), so call_model
+    never needs to guess again."""
+    from agentdesk.llm import env_chat, settings_chat
+
+    for client in (chat_client("http://127.0.0.1:9/v1", "k", "m"),
+                   settings_chat(None), env_chat()):
+        with pytest.raises(LlmUnavailable):
+            client("ping", timeout=0.25)
+
+
+def test_call_model_hands_the_timeout_to_the_client_unchanged():
+    """One call, one keyword: the seconds the run configured are the
+    seconds the client sees on its socket cap."""
+    from agentdesk.presentations.pipeline import call_model
+
+    seen = []
+
+    def llm(prompt, timeout=30):
+        seen.append(timeout)
+        return "[]"
+
+    assert call_model(llm, "hello", 45) == "[]"
+    assert seen == [45]
 
 
 def test_worksheet_brief_stays_on_the_ten_second_cap():
