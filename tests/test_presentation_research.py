@@ -281,6 +281,13 @@ def test_cancel_stops_the_run_and_a_second_submit_does_not_fill_again():
             auth2,
         )[2])
         assert kept["researchKeyState"] == "Set. Ends with 9876."
+        cleared = json.loads(again.post_json(
+            "/settings/endpoint/save", {"researchClear": True}, auth2,
+        )[2])
+        assert cleared["researchKeyState"] == ""
+        assert again.server.settings.get("llm_base") == "http://127.0.0.1:9/v1"
+        page = again.request("GET", "/settings", auth2)[2].decode("utf-8")
+        assert "data-research-clear" in page
     finally:
         booted.close()
         if "again" in dir():

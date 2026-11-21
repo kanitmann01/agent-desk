@@ -3048,13 +3048,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         unknown = sorted(
             name for name in body if name not in (
                 "base", "key", "model", "presentationTimeout", "researchUrl", "researchKey",
+                "researchClear",
             )
         )
         if unknown:
             self._send_json(400, {"error": (
                 "unknown endpoint field(s): " + ", ".join(unknown)
-                + "; accepted fields are base, key, model, presentationTimeout, researchUrl, researchKey"
+                + "; accepted fields are base, key, model, presentationTimeout, researchUrl, researchKey, researchClear"
             )})
+            return
+        clearing_research = (
+            body.get("researchClear") is True
+            or str(body.get("researchClear") or "").lower() in ("1", "true", "on")
+        )
+        if clearing_research and "base" not in body:
+            settings.set("research_provider_key", "")
+            self._send_json(200, {
+                "ok": True,
+                "base": settings.get("llm_base"),
+                "model": settings.get("llm_model"),
+                "keyState": mask_llm_key(settings.get("llm_key")),
+                "researchKeyState": "",
+            })
             return
         base = str(body.get("base", "")).strip()
         problem = base_url_problem(base)
@@ -3082,7 +3097,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             settings.set("presentation_timeout_s", timeout_raw)
         if "researchUrl" in body:
             settings.set("research_provider_url", str(body.get("researchUrl") or "").strip())
-        if "researchKey" in body and str(body.get("researchKey") or "").strip():
+        if str(body.get("researchClear") or "").lower() in ("1", "true", "on") or body.get("researchClear") is True:
+            settings.set("research_provider_key", "")
+        elif "researchKey" in body and str(body.get("researchKey") or "").strip():
             settings.set("research_provider_key", str(body.get("researchKey")).strip())
         self._send_json(200, {
             "ok": True,

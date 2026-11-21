@@ -650,6 +650,16 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
       .then(function () { location.reload(); })
       .catch(function () { show('The dashboard could not reach its own server; nothing was cleared.'); });
   });
+  var clearResearch = document.querySelector('[data-research-clear]');
+  if (clearResearch) clearResearch.addEventListener('click', function () {
+    post('/settings/endpoint/save', {researchClear: true})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { show(d.error); return; }
+        location.reload();
+      })
+      .catch(function () { show('The dashboard could not reach its own server; the research key was not cleared.'); });
+  });
 })();
 
 // Skills: one click re-runs the saved ask; undo is on the settings page.
