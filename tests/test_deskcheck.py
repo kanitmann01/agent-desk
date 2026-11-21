@@ -39,6 +39,7 @@ CHECK_IDS = [
     "source-on-not-connected",
     "retired-plugins-installed",
     "sample-plugin-not-installed",
+    "fix-failing",
 ]
 
 
@@ -480,20 +481,19 @@ def test_dashboard_payload_carries_the_desk_check_summary(booted, auth):
     assert payload["deskCheck"]["top"]["severity"] == "attention"
 
 
-def test_settings_page_lists_the_desk_check_without_fix_buttons(booted, auth):
+def test_settings_page_offers_fix_for_an_automatic_finding(booted, auth):
+    """A finding the desk is sure about carries its Fix it button."""
     raw_inbox_row(booted.server.inbox)
     status, _headers, body = booted.request("GET", "/settings", auth)
     page = body.decode()
-
     assert status == 200
     start = page.index("id='desk-check'")
     section = page[start:page.index("<section", start + 1)]
-    assert "Desk check" in section
     assert "1 inbox card this version cannot read" in section
     assert "no card kind called commitment" in section
     assert "Last run" in section
-    assert "<button" not in section
-
+    assert "action='/api/desk-check/fix'" in section
+    assert ">Fix it</button>" in section
 
 def test_settings_page_stays_up_when_the_desk_check_cannot_run(booted, auth, monkeypatch):
     import agentdesk.server.app as app

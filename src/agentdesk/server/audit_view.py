@@ -31,6 +31,7 @@ KINDS = (
     ("registry.", "Registry"),
     ("settings.", "Settings"),
     ("peer.", "Peer"),
+    ("deskcheck.", "Desk check"),
 )
 
 

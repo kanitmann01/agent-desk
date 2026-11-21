@@ -1209,11 +1209,11 @@ def desk_check_context(server: AgentDeskServer) -> "DeskContext":
     )
 
 
-def desk_check_result(server: AgentDeskServer) -> "CheckResult":
-    """One run of every desk check: detection only, never a fix."""
+def desk_check_result(server: AgentDeskServer, should_fix: bool = False) -> "CheckResult":
+    """One run of every desk check; with should_fix, confident fixes may run."""
     from agentdesk.deskcheck import run_checks
 
-    return run_checks(desk_check_context(server))
+    return run_checks(desk_check_context(server), should_fix=should_fix)
 
 
 def desk_check_api_payload(server: AgentDeskServer) -> dict:
@@ -1589,6 +1589,48 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send_desk_check_api(self) -> None:
         """Serve one read-only run of every desk check as JSON."""
         self._send_json(200, desk_check_api_payload(self.server))
+
+    def _desk_check_fix(self) -> None:
+        """Run one finding's automatic fix, exactly as its Fix it button does.
+
+        The finding is looked up from a fresh read-only run, so a stale id
+        cannot run an old fix, and only an automatic, confident finding is
+        fixable here. The answer is the same JSON the button's page needs:
+        whether it is fixed, which ledger entry records it, and the cause
+        when it is not.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        body = self._read_json_body() or {}
+        finding_id = body.get("id")
+        if not isinstance(finding_id, str) or not finding_id:
+            self._send_json(400, {"error": 'expected {"id": "<finding id>"}'})
+            return
+        from agentdesk.deskcheck import FIX_AUTO, apply_fix, run_checks
+
+        ctx = desk_check_context(server)
+        finding = next(
+            (item for item in run_checks(ctx).findings if item.id == finding_id),
+            None,
+        )
+        if finding is None:
+            payload = {"fixed": False, "entry": None,
+                       "cause": "That finding is not there any more."}
+        elif finding.fix != FIX_AUTO or not finding.confident:
+            payload = {"fixed": False, "entry": None,
+                       "cause": "That finding is not one the desk can fix by itself."}
+        else:
+            outcome = apply_fix(ctx, finding)
+            payload = {"fixed": outcome.fixed, "entry": outcome.entry,
+                       "cause": outcome.cause}
+            self._audit(
+                "deskcheck.fixed" if outcome.fixed else "deskcheck.fix-failed",
+                target=finding_id,
+                detail=(outcome.entry or outcome.cause or ""),
+            )
+        if self._is_form_submit():
+            self._send_redirect("/settings#desk-check")
+            return
+        self._send_json(200, payload)
 
     def _send_preferences_values(self) -> None:
         """Serve the stored insight preferences."""
@@ -3275,8 +3317,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """On seeds the labelled sample set into the real stores; off
         removes exactly what the Sample markers identify. Both turns
         write their audit row, so the decision log says what happened
-        and the activity page shows it."""
+        and the activity page shows it.
+
+        Turning the switch on also wires the sources at the sample files
+        (that is what makes the pipeline and moves cards fill), and off
+        detaches only wiring that points into the sample folder. That
+        wiring is recorded in the ledger first, so Activity can undo it;
+        a wiring change the ledger cannot record is put back.
+        """
         server = self.server  # type: ignore[attr-defined]
+        if not value:
+            wiring = demo_data.unwire_sample_sources(server)
+            if wiring is not None:
+                self._record_sample_wiring(wiring, value)
         result = (
             demo_data.seed(server.inbox, default_data_dir()) if value
             else demo_data.clear(server.inbox, default_data_dir())
@@ -3290,8 +3343,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if memories:
             verb = "seeded" if value else "removed"
             result = dict(result, detail=f"{result['detail']} Memory: {verb} {memories} sample facts.")
+        if value:
+            wiring = demo_data.wire_sample_sources(server)
+            if wiring is not None:
+                self._record_sample_wiring(wiring, value)
         self._audit("demo.seeded" if value else "demo.cleared",
                     target="sample_data", detail=result["detail"])
+
+    def _record_sample_wiring(self, wiring: dict, value: bool) -> None:
+        """Record one sample-wiring change in the ledger, or put it back.
+
+        The entry carries the paths that were registered before the change,
+        which is exactly what Undo needs. Without a ledger the desk cannot
+        promise Undo, so the wiring is put back instead of left unrecorded.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        ledger = getattr(server, "ledger", None)
+        if ledger is None:
+            self._restore_sample_wiring(wiring, value)
+            return
+        why = (
+            "Sample data was turned on, so the desk attached the sample workbook and calendar."
+            if value else
+            "Sample data was turned off, so the desk detached the sample workbook and calendar."
+        )
+        try:
+            entry = ledger.record(
+                actor="desk",
+                action="deskcheck.fixed",
+                subject="sample-data-wiring",
+                why=why,
+                undo_kind="wiring",
+                before=json.dumps(wiring, sort_keys=True).encode("utf-8"),
+                detail={"finding": "sample-not-wired", "switch": "sample_data"},
+            )
+        except Exception:  # noqa: BLE001 - nothing may stay without Undo
+            self._restore_sample_wiring(wiring, value)
+            return
+        self._audit("deskcheck.fixed", target="sample-data-wiring",
+                    detail=entry.id)
+
+    def _restore_sample_wiring(self, wiring: dict, value: bool) -> None:
+        """Put the wiring back to the captured paths after a failed record."""
+        server = self.server  # type: ignore[attr-defined]
+        if value:
+            demo_data.unwire_sample_sources(server)
+        else:
+            demo_data.restore_sample_wiring(server, wiring)
 
     def _layout_save(self) -> None:
         """Save the full desired dashboard layout (issue #66).
@@ -3594,6 +3692,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._on_update_consent_decided(card, decision, body)
         if card.kind == KIND_MAIL_FOLLOW_UP:
             self._on_mail_follow_up_decided(card)
+        if isinstance(card.meta.get("ask"), str):
+            self._on_ask_card_decided(card, decision)
         if decision == "accept":
             self._on_fact_carried(card)
         self._audit(
@@ -3601,6 +3701,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
             target=card.id, detail=card.title,
         )
         self._inbox_action_response(card.to_json(inbox.now_ts()))
+
+    def _on_ask_card_decided(self, card, decision: str) -> None:
+        """Carry out the one ask-first question the desk check asks.
+
+        The retired-plugins card is the only path that calls uninstall from
+        a check finding, and it only runs when the user accepts the card:
+        every listed plugin is uninstalled with its data folder kept, one
+        audit row per plugin. Dismissing it latches the question so a later
+        check run does not ask again for the same ids.
+        """
+        if card.meta.get("ask") != "retired-plugins":
+            return
+        server = self.server  # type: ignore[attr-defined]
+        ids = [item for item in card.meta.get("ids") or [] if isinstance(item, str)]
+        if decision != "accept":
+            ledger = getattr(server, "ledger", None)
+            if ledger is not None:
+                from agentdesk.deskcheck.checks import retired_ask_latch_key
+
+                ledger.latch(retired_ask_latch_key(ids), "dismissed")
+            return
+        plugins = server.plugins
+        if plugins is None:
+            return
+        for plugin_id in ids:
+            try:
+                result = plugins.uninstall(plugin_id)
+            except Exception as exc:  # noqa: BLE001 - one row per plugin
+                self._audit("plugin.uninstall", target=plugin_id,
+                            status="error", detail=str(exc)[:200])
+                continue
+            self._audit("plugin.uninstall", target=plugin_id,
+                        detail=_plugin_audit_detail("uninstall", result))
 
     def _inbox_edit(self, card_id: str) -> None:
         """Update the card's draft; the decision vocabulary calls it

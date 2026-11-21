@@ -536,3 +536,123 @@ def clear_memory(memory) -> int:
          if excerpt.context == SAMPLE_MEMORY_SOURCE]
     )
     return len(ids)
+
+
+# -- sample source wiring --------------------------------------------------
+#
+# Turning Sample data on used to seed the files and the cards only, so the
+# pipeline and moves cards stayed empty; these helpers point the two sources
+# at the sample fixtures, and the switch's own handler records that change in
+# the ledger so Activity can undo it. Unwiring is deliberately narrow: a path
+# is cleared only when it points inside this desk's sample folder, so a real
+# workbook or calendar is never touched.
+
+SAMPLE_WORKBOOK_NAME = "sample-sales.xlsx"
+SAMPLE_CALENDAR_NAME = "sample-calendar.json"
+
+
+def _default_data_dir() -> Path:
+    """The app's data folder, imported lazily to avoid an import cycle."""
+    from agentdesk.server.app import default_data_dir
+
+    return default_data_dir()
+
+
+def sample_workbook_path(data_dir: Path | None = None) -> Path:
+    """The sample workbook's path under the desk's data folder."""
+    return sample_folder(Path(data_dir) if data_dir is not None else _default_data_dir()) / SAMPLE_WORKBOOK_NAME
+
+
+def sample_calendar_path(data_dir: Path | None = None) -> Path:
+    """The sample calendar fixture's path under the desk's data folder."""
+    return sample_folder(Path(data_dir) if data_dir is not None else _default_data_dir()) / SAMPLE_CALENDAR_NAME
+
+
+def _under_sample_folder(path: str, data_dir: Path | None) -> bool:
+    """Whether a registered path lives inside this desk's sample folder."""
+    folder = sample_folder(Path(data_dir) if data_dir is not None else _default_data_dir()).resolve()
+    try:
+        return Path(path).resolve().is_relative_to(folder)
+    except OSError:
+        return False
+
+
+def wire_sample_sources(server, data_dir: Path | None = None) -> dict | None:
+    """Attach the sample files to any enabled source that has nothing attached.
+
+    Returns the paths that were there before, or None when nothing needed
+    wiring. Only a source whose registered path is None is touched, so a real
+    workbook or calendar already attached stays exactly as it was.
+    """
+    settings = getattr(server, "settings", None)
+    if settings is None:
+        return None
+    before = {"excel": None, "calendar": None}
+    changed = False
+    excel = getattr(server, "excel", None)
+    workbook = sample_workbook_path(data_dir)
+    if excel is not None:
+        before["excel"] = excel.registered_path
+        if (settings.get("excel_enabled") and excel.registered_path is None
+                and workbook.exists()):
+            excel.register(str(workbook))
+            changed = True
+    calendar = getattr(server, "calendar", None)
+    fixture = sample_calendar_path(data_dir)
+    if calendar is not None:
+        before["calendar"] = calendar.explicit_path()
+        if (settings.get("calendar_enabled") and calendar.explicit_path() is None
+                and fixture.exists()):
+            calendar.set_explicit_path(str(fixture))
+            calendar.retest()
+            changed = True
+    return before if changed else None
+
+
+def unwire_sample_sources(server, data_dir: Path | None = None) -> dict | None:
+    """Detach only wiring that points into the sample folder.
+
+    Returns the paths that were registered before, or None when nothing was
+    wired to the sample files. A real source path is never cleared, whatever
+    the switch says.
+    """
+    before = {"excel": None, "calendar": None}
+    changed = False
+    excel = getattr(server, "excel", None)
+    if excel is not None:
+        path = excel.registered_path
+        before["excel"] = path
+        if path is not None and _under_sample_folder(path, data_dir):
+            excel.clear_registered_path()
+            changed = True
+    calendar = getattr(server, "calendar", None)
+    if calendar is not None:
+        path = calendar.explicit_path()
+        before["calendar"] = path
+        if path is not None and _under_sample_folder(path, data_dir):
+            calendar.clear_explicit_path()
+            changed = True
+    return before if changed else None
+
+
+def restore_sample_wiring(server, paths: dict) -> None:
+    """Put the workbook and calendar wiring back to a captured state.
+
+    Used when a wiring change could not be recorded in the ledger: the
+    change is put back so the desk never keeps something it cannot undo.
+    """
+    excel = getattr(server, "excel", None)
+    if excel is not None and "excel" in paths:
+        path = paths.get("excel")
+        if path:
+            excel.register(str(path))
+        else:
+            excel.clear_registered_path()
+    calendar = getattr(server, "calendar", None)
+    if calendar is not None and "calendar" in paths:
+        path = paths.get("calendar")
+        if path:
+            calendar.set_explicit_path(str(path))
+        else:
+            calendar.clear_explicit_path()
+        calendar.retest()
