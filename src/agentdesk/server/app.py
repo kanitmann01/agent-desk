@@ -661,6 +661,13 @@ def _memory_id_from_path(path: str, suffix: str) -> int | None:
     return int(raw) if raw.isascii() and raw.isdigit() else None
 
 
+def _skill_id_from_path(rest: str) -> int | None:
+    """The skill id a /skills/<id>/... address names (the table hands the
+    middle over), or None when it names no skill."""
+    raw = rest.strip("/")
+    return int(raw) if raw.isascii() and raw.isdigit() else None
+
+
 def _fact_json(fact) -> dict:
     """A fact as the API answers it."""
     return {
@@ -1510,10 +1517,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send_skill_markdown_rest(self, rest: str) -> None:
         """Serve the generated markdown for the skill id in the path.
 
-        The table hands over the text between /skills/ and /skill.md; a non-numeric id
-        raises the ValueError the page always answered with.
+        The table hands over the text between /skills/ and /skill.md; a
+        malformed id is a 404 page, not a crash.
         """
-        self._send_skill_markdown(int(rest.strip("/")))
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        self._send_skill_markdown(skill_id)
 
     def _wizard_request(self) -> None:
         """Hand a /wizard path to the wizard router, with its query string removed.
@@ -1878,11 +1890,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _skill_run_rest(self, rest: str) -> None:
         """Run the repetition skill whose id the path names."""
-        self._skill_run(int(rest.strip("/")))
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        self._skill_run(skill_id)
 
     def _skill_undo_rest(self, rest: str) -> None:
         """Undo the last run of the repetition skill whose id the path names."""
-        self._skill_undo(int(rest.strip("/")))
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        self._skill_undo(skill_id)
 
     def _plugins_page_action_request(self) -> None:
         """Hand a two-segment /plugins/<id>/<action> POST to the plugins page.
@@ -5818,8 +5840,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(400, {"error": "config:failed", "message": str(exc)})
 
     def _dispatch_plugin_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
-        """Deprecated: /api/plugins mutations stay for one release; new clients
-        use /api/marketplace/* (see marketplace/api.py)."""
+        """Deprecated: /api/plugins mutations are deleted in the 2026-Q4
+        release; new clients use /api/marketplace/* (see marketplace/api.py)."""
         parts = [part for part in path.split("/") if part]
         if "/instances" in path:
             self._plugin_setup_post(plugins, path, body)
@@ -5974,8 +5996,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _plugin_record_or_404(self, plugin_id: str) -> dict:
-        """Deprecated: /api/plugins/<id> stays for one release; the new detail
-        route is /api/marketplace/plugin/<id>."""
+        """Deprecated: /api/plugins/<id> is deleted in the 2026-Q4 release;
+        the new detail route is /api/marketplace/plugin/<id>."""
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             return {"error": "plugins:unavailable"}
@@ -6042,8 +6064,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return registry_source.resolve_registry_root(self.server.settings)  # type: ignore[attr-defined]
 
     def _registry_listing_for_request(self) -> dict:
-        """Deprecated: /api/registry stays for one release; new clients read
-        /api/marketplace/catalog."""
+        """Deprecated: /api/registry is deleted in the 2026-Q4 release; new
+        clients read /api/marketplace/catalog."""
         root, origin = self._registry_root_for_request()
         listing = registry_source.registry_listing(root)
         listing["origin"] = origin
@@ -6156,7 +6178,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         extraction, tree digest, the shared validator); the runtime owns
         the versioned install, pilot badge and consent flow. Forms get a
         redirect with the outcome as the notice line; JSON callers get
-        the record.
+        the record. Deprecated: both legacy addresses this handler serves
+        (/api/registry/install, /plugins/registry-install) are deleted in
+        the 2026-Q4 release; new clients POST /api/marketplace/install.
         """
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
@@ -7110,6 +7134,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         return WizardCompiler(audited_llm)
 
+    def _wizard_session_or_404(self, session_id: str):
+        """The session an action names, or None with the store's own
+        not-found sent: the honest 404 a stale link deserves, never the
+        generic restart page. A form post gets the error page, a JSON
+        client the store's named error."""
+        try:
+            return self.server.wizard_store.get(session_id)  # type: ignore[attr-defined]
+        except WizardError as exc:
+            if self._is_form_submit():
+                self._send_error_page(exc.status, "Nothing here", str(exc))
+            else:
+                self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+            return None
+
     def _wizard_answer(self, session_id: str) -> None:
         """Answers in, then build with capped self-repair. Redirects to the
         page so a plain form works without JavaScript."""
@@ -7125,7 +7163,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._advance_describe(session, description)
             self._send_redirect(f"/wizard/{session.id}")
             return
-        session = wizard.get(session_id)
+        session = self._wizard_session_or_404(session_id)
+        if session is None:
+            return
         body = self._read_json_body() or {}
         if "description" in body and body.get("description", "").strip():
             description = str(body["description"]).strip()
@@ -7164,7 +7204,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         redirect back to the session page, which renders the approved
         screen; a JSON client keeps the 200 install document."""
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
-        session = wizard.get(session_id)
+        session = self._wizard_session_or_404(session_id)
+        if session is None:
+            return
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             if self._is_form_submit():
@@ -7215,8 +7257,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         The session is loaded first, so the escalation is recorded against a real one;
         the redirect lands on the page that reads the new state.
         """
-        wizard = self.server.wizard_store  # type: ignore[attr-defined]
-        session = wizard.get(session_id)
+        session = self._wizard_session_or_404(session_id)
+        if session is None:
+            return
         self._escalate(session, WizardError("wizard:escalated", reason, 422))
         self._send_redirect(f"/wizard/{session_id}")
 
@@ -7346,8 +7389,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """Redirect with 303, for a form post that has been handled.
 
         303 is what makes the browser follow with a GET, so a reload repeats the page
-        rather than the action.
+        rather than the action. _responded is set first, so a later failure in the same
+        request will not try to answer over this one.
         """
+        self._responded = True
         self.send_response(303)
         self.send_header("Location", location)
         self._common_headers()
