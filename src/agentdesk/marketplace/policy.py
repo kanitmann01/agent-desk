@@ -85,13 +85,18 @@ def _apply_kill_switch(policy: Policy, workspace_dir) -> Policy:
     return signed_policy.apply_kill_switch(policy, workspace_dir)
 
 
-def _load_signed_policy(workspace_dir, raw: dict, path, verification: dict):
+def _load_signed_policy(workspace_dir, raw: dict, path, verification: dict,
+                        anchor: dict):
     """Verify a signed bundle and turn it into the effective policy."""
     from agentdesk.marketplace import signed_policy
     from agentdesk.trust import TrustError
 
-    anchor = signed_policy.load_anchor(workspace_dir)
-    trusted_keys = anchor["fingerprints"] or None
+    # A corrupt anchor means the pin list is required and empty: no key is
+    # trusted, never a silent reset to trust-on-first-use for any signer.
+    if anchor.get("corrupt"):
+        trusted_keys: list = []
+    else:
+        trusted_keys = anchor["fingerprints"] or None
     try:
         result = signed_policy.verify_policy_bundle(
             raw,
@@ -102,6 +107,8 @@ def _load_signed_policy(workspace_dir, raw: dict, path, verification: dict):
     except TrustError as exc:
         verification.update(
             signed_policy.failure_verification(exc, anchor, path))
+        if anchor.get("corrupt"):
+            verification["warning"] = signed_policy.corrupt_anchor_warning()
         signed_policy.append_audit(
             workspace_dir, "policy.verify", "", "rejected", exc.code, dedupe=True)
         # Fail closed on the built-in curated default, never the rejected body.
@@ -138,6 +145,10 @@ def load_effective_policy(workspace_dir) -> tuple[Policy, dict]:
     }
     if workspace_dir is None:
         return policy, verification
+    from agentdesk.marketplace import signed_policy
+    anchor = signed_policy.load_anchor(workspace_dir)
+    if anchor.get("corrupt"):
+        verification["warning"] = signed_policy.corrupt_anchor_warning()
     path = Path(workspace_dir) / "marketplace" / POLICY_FILE
     verification["path"] = str(path)
     if not path.is_file():
@@ -154,15 +165,15 @@ def load_effective_policy(workspace_dir) -> tuple[Policy, dict]:
             f"policy at {path} must be a JSON object; using the built-in default"
         )
         return _apply_kill_switch(policy, workspace_dir), verification
-    from agentdesk.marketplace import signed_policy
     if signed_policy.looks_signed(raw):
-        return _load_signed_policy(workspace_dir, raw, path, verification)
+        return _load_signed_policy(workspace_dir, raw, path, verification,
+                                   anchor)
 
+    # signatureStatus and source are loader-owned: an unsigned overlay
+    # cannot claim a signature or a provenance nobody verified.
     for key, expected in (
         ("mode", str),
         ("riskCeiling", str),
-        ("signatureStatus", str),
-        ("source", str),
         ("updateChannel", str),
         ("versionPolicy", str),
     ):
@@ -192,8 +203,7 @@ def load_effective_policy(workspace_dir) -> tuple[Policy, dict]:
         policy.riskCeiling = "T1"
     else:
         policy.riskCeiling = RISK_TIERS[risk_rank(policy.riskCeiling)]
-    if not isinstance(raw.get("source"), str):
-        policy.source = "local-admin"
+    policy.source = "local-admin"
     return _apply_kill_switch(policy, workspace_dir), verification
 
 

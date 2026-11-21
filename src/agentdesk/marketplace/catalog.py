@@ -11,11 +11,11 @@ detail route draw from.
 from __future__ import annotations
 
 import importlib.util
-import json
 from fnmatch import fnmatch
 from pathlib import Path
 
 from .policy import RISK_TIERS, risk_rank
+from .signed_policy import read_json
 
 SCHEMA_VERSION = 2
 SOURCES = ("bundled", "org", "peer", "installed")
@@ -45,14 +45,6 @@ def _load_build_callable():
         build = getattr(module, "build_catalog", None)
         return build if callable(build) else None
     except Exception:  # noqa: BLE001 - an absent or broken build never crashes the API
-        return None
-
-
-def _read_json(path: Path):
-    """Parse a JSON file, or None when it is missing or malformed."""
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
 
 
@@ -295,7 +287,7 @@ def bundled_catalog_path() -> Path:
 
 def _committed_bundled() -> dict:
     """The build-time catalog and its independent digest pins."""
-    document = _read_json(bundled_catalog_path())
+    document = read_json(bundled_catalog_path(), None)
     if not isinstance(document, dict):
         return {"schemaVersion": SCHEMA_VERSION, "generatedAt": None,
                 "plugins": []}
@@ -350,7 +342,7 @@ def build_bundled_catalog(registry_root) -> dict:
             if isinstance(built, dict):
                 if not catalog.get("generatedAt"):
                     catalog["generatedAt"] = built.get("generatedAt")
-                index = _read_json(root / "index.json")
+                index = read_json(root / "index.json", None)
                 index_plugins = {}
                 if isinstance(index, dict) and isinstance(index.get("plugins"), list):
                     for plugin in index["plugins"]:
@@ -368,15 +360,15 @@ def build_bundled_catalog(registry_root) -> dict:
                         # The one-line purpose lives on the manifest, which
                         # the pin does not carry.
                         enriched = dict(pinned)
-                        manifest = _read_json(
-                            root / "plugins" / plugin_id / "manifest.json")
+                        manifest = read_json(
+                            root / "plugins" / plugin_id / "manifest.json", None)
                         if isinstance(manifest, dict):
                             for key in ("summary", "description", "highlights"):
                                 if not enriched.get(key) and manifest.get(key):
                                     enriched[key] = manifest[key]
                         entries.append(enriched)
                         continue
-                    manifest = _read_json(root / "plugins" / plugin_id / "manifest.json")
+                    manifest = read_json(root / "plugins" / plugin_id / "manifest.json", None)
                     if isinstance(manifest, dict):
                         raw = _merge_manifest(raw, manifest)
                     indexed = index_plugins.get(plugin_id)
@@ -410,7 +402,7 @@ def resolve_registry_root(workspace_dir):
 
 def load_catalog_file(path, source: str) -> list:
     """Read an org/peer catalog JSON file; a missing or bad file is empty."""
-    document = _read_json(Path(path))
+    document = read_json(Path(path), None)
     if document is None:
         return []
     entries = []

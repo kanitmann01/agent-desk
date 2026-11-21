@@ -1,0 +1,58 @@
+== GET /api/marketplace/trust (policy block) with a float-bearing policy.json in the data dir ==
+{
+  "policy": {
+    "mode": "curated",
+    "allowedPublishers": [],
+    "allowedCategories": [],
+    "riskCeiling": "T1",
+    "networkAllowlist": [],
+    "enabledSources": [
+      "bundled",
+      "org",
+      "peer",
+      "excel-watch",
+      "json-watch",
+      "http-get",
+      "calendar-read",
+      "mail-digest",
+      "outlook-brief",
+      "research-brief",
+      "csv-watch",
+      "markdown-watch",
+      "manual-metric",
+      "desk-state",
+      "compare",
+      "aggregate"
+    ],
+    "killSwitch": [],
+    "retentionDays": 30,
+    "bodyIngest": false,
+    "updateChannel": "manual",
+    "versionPolicy": "pinned",
+    "platforms": [
+      "windows"
+    ],
+    "minRevocationEpoch": 0,
+    "requireSignatures": true,
+    "signatureStatus": "tampered",
+    "source": "built-in",
+    "warning": "the imported policy bundle was rejected (policy:bad-signature): the policy bundle body is not canonical JSON (floats are not allowed in canonical JSON at policy.retentionDays). The built-in curated policy stays active.",
+    "epoch": 0,
+    "signerFingerprint": null,
+    "expiresAt": null
+  },
+  "anchor": {
+    "epoch": 0,
+    "fingerprints": []
+  }
+}
+
+== GET /api/marketplace/catalog policy banner (no 500) ==
+{
+  "policy": {
+    "mode": "curated",
+    "source": "built-in",
+    "signatureStatus": "tampered"
+  },
+  "total": 3
+}
