@@ -35,3 +35,10 @@ src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
 # breaks the pin (the gate's registry legs fail on that machine alone).
 registry/plugins/presentation-starter/LICENSE text eol=lf
 registry/plugins/presentation-starter/NOTICE text eol=lf
+# Plugin trees are digest-pinned byte-exactly (registry/index.json,
+# bundled-catalog.json), and their LICENSE/NOTICE carry no extension, so
+# the text=auto default would flip them to CRLF on a Windows checkout
+# and break every pin. The generic rule covers future plugin trees; the
+# presentation-pack lines above stay for the tree already shipped.
+LICENSE text eol=lf
+NOTICE text eol=lf

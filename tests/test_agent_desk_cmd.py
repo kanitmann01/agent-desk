@@ -40,10 +40,23 @@ def test_agent_desk_cmd_never_elevates():
         assert marker not in text, f"elevation marker found: {marker}"
 
 
-def test_agent_desk_cmd_leaves_no_console_open():
+def test_agent_desk_cmd_success_paths_leave_no_console_open():
     # Unlike the probe (whose report must stay readable), the dashboard is
-    # the surface: the launcher window closes itself.
-    assert "pause" not in cmd_text()
+    # the surface: every rung that starts the server jumps past the
+    # failure tail, so the pause there can never catch a successful boot.
+    text = cmd_text()
+    launch, failure_tail = text.split("echo python not found", 1)
+    assert "pause" not in launch
+
+
+def test_agent_desk_cmd_pauses_on_the_python_not_found_path():
+    # The one failure the user cannot fix herself must stay readable: a
+    # double-clicked window closes when the script ends, so the honest
+    # message pauses like the probe's does (audit tooling F4; the old
+    # no-pause-everywhere test pinned that bug, not a contract).
+    text = cmd_text()
+    _launch, failure_tail = text.split("echo python not found", 1)
+    assert "pause" in failure_tail
 
 
 def test_agent_desk_cmd_prefers_the_windowless_interpreter():

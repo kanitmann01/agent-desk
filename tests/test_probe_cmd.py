@@ -54,3 +54,16 @@ def test_probe_cmd_gates_on_python_version_not_just_presence():
     """The Microsoft Store python.exe stub must not hijack the run."""
     text = cmd_text()
     assert "version_info >= (3, 10)" in text
+
+
+def test_probe_cmd_sets_the_same_tls_spellings_the_launcher_sets():
+    """Gate 2 must test uv the way the shipped launcher runs it.
+
+    The app launcher exports both TLS spellings so uv reads the corporate
+    trust store; a probe that launches uv without them fails under TLS
+    inspection and hands a supported network a false RESHAPE verdict
+    (audit plugins F5).
+    """
+    text = cmd_text()
+    assert "uv_system_certs=1" in text
+    assert "uv_native_tls=1" in text

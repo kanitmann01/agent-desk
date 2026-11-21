@@ -69,6 +69,18 @@ def test_every_bundled_plugin_installs_from_discover(booted):
     assert status == 200
     bundled = [entry["id"] for entry in catalog["entries"] if entry["source"] == "bundled"]
     assert bundled, "the fresh desk lists the shipped plugins"
+    # competitor-watch is the one network plugin, honestly tiered T2 since
+    # the registry sync reads optionalPermissions too (spec 017 6d): the
+    # default T1 ceiling refuses it, which is the admin approval its own
+    # README promises. The admin raises the ceiling the documented way
+    # (the local policy file) and every shipped plugin then installs.
+    status, body = _post(booted, "/api/marketplace/install", {"id": "competitor-watch"})
+    assert status == 403
+    assert body.get("error") == "policy:risk-ceiling"
+    admin_dir = Path(booted.server.plugins.workspace_dir) / "marketplace"
+    admin_dir.mkdir(parents=True, exist_ok=True)
+    (admin_dir / "policy.json").write_text(
+        json.dumps({"riskCeiling": "T2"}), encoding="utf-8")
     refused = {}
     for plugin_id in bundled:
         status, body = _post(booted, "/api/marketplace/install", {"id": plugin_id})

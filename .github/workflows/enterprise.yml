@@ -71,6 +71,32 @@ jobs:
           path: build/license-report.txt
           if-no-files-found: warn
 
+  registry:
+    name: Registry CI (append-only history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The append-only history check reads the base branch's
+          # registry/index.json, so the fetch must include its history.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve the base branch's registry index
+        run: |
+          mkdir -p build
+          git show "$(git merge-base HEAD origin/main):registry/index.json" > build/base-index.json
+      - name: Registry CI over every plugin
+        # The same tool the local gate runs, so the validator stays
+        # byte-identical between hosted and local review. A PR deleting
+        # an old release fails here, not on the desks pinned to it.
+        run: |
+          python tools/registry_ci.py --registry registry \
+            --plugins "$(ls -d registry/plugins/* | paste -sd,)" \
+            --archive archive/plugins \
+            --base-index build/base-index.json
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest
@@ -112,14 +138,17 @@ jobs:
       - name: Reject vendored Commons Clause or react-bits source
         # tokens.test.ts is excluded because it is the negative regression
         # guard: it asserts the vendored drawer and src/vendor are gone.
+        # AGPL and SSPL extend the sweep to licences the gate can never
+        # except, so a component pasted in beside the dependency chain
+        # cannot bypass the zero-exceptions rule.
         run: |
           if grep -RInE --exclude=tokens.test.ts \
-              '(commons[ -]?clause|react[-_ ]?bits)' \
+              '(commons[ -]?clause|react[-_ ]?bits|AGPL|SSPL)' \
               src frontend/src registry; then
-            echo "::error::Vendored Commons Clause or react-bits source found"
+            echo "::error::Vendored Commons Clause, react-bits, AGPL or SSPL source found"
             exit 1
           fi
-          echo "No vendored Commons Clause or react-bits source."
+          echo "No vendored Commons Clause, react-bits, AGPL or SSPL source."
       - name: Run gate and surface tests
         # Subset: the new gate tests, the local-CI contract, the
         # IT-facing surface that pins LICENSE/NOTICE behaviour, and the

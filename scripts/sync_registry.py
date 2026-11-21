@@ -40,15 +40,18 @@ def _manifest(plugin_dir: Path) -> dict:
 def _risk(manifest: dict) -> str:
     """Classify a plugin by whether its manifest asks for network access.
 
-    Returns "medium" when the permissions block allows any network host and
-    "low" otherwise; a missing or malformed permissions block counts as no
-    network. It never returns the higher levels, which need a reviewed
-    manifest rather than one derived here.
+    Returns "medium" when either the required or the optional permissions
+    block allows any network host (an optional grant still opens a
+    connection once the user consents) and "low" otherwise; a missing or
+    malformed permissions block counts as no network. It never returns
+    the higher levels, which need a reviewed manifest rather than one
+    derived here.
     """
-    permissions = manifest.get("permissions", {})
-    network = permissions.get("network", {}).get("allow", []) if isinstance(permissions, dict) else []
-    if network:
-        return "medium"
+    for block in ("permissions", "optionalPermissions"):
+        section = manifest.get(block, {})
+        network = section.get("network", {}).get("allow", []) if isinstance(section, dict) else []
+        if network:
+            return "medium"
     return "low"
 
 

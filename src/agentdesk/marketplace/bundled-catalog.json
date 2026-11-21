@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-19T21:14:06.429173+00:00",
+  "generatedAt": "2026-11-21T13:02:01.736530+00:00",
   "plugins": [
     {
       "category": "research",
@@ -10,7 +10,7 @@
       "minHost": "",
       "name": "Competitor Watch",
       "publisher": "agent-desk",
-      "risk": "low",
+      "risk": "medium",
       "signature": "",
       "tags": [
         "competitor",

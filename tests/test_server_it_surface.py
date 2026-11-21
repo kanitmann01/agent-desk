@@ -16,11 +16,10 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-for _p in (str(ROOT / "src"), str(ROOT / "tests"), str(ROOT / "tools")):
+for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import license_manifest
 import server_harness
 from agentdesk.excel.watcher import Adapters, ExcelWatch
 from agentdesk.excel.xlsx import parse_workbook_bytes
@@ -121,7 +120,7 @@ def test_touches_page_is_generated_from_the_vocabulary(env, auth):
     assert "Processes started:" in page and "none" in page
     assert "Persistence:" in page and "No Run key" in page
     assert "delete the folder" in page
-    # The claim matches THIRD-PARTY-LICENSES.md: the Python runtime
+    # The claim matches THIRD-PARTY-NOTICES.md: the Python runtime
     # carries exactly one dependency (ticket #94), the bundle carries
     # the documented, licensed set.
     assert "cryptography" in page
@@ -129,39 +128,30 @@ def test_touches_page_is_generated_from_the_vocabulary(env, auth):
     assert "No third-party components" not in page
 
 
-def test_license_manifest_gate():
-    # Clean: permissive annotations only.
-    assert license_manifest.check_dependencies({"x": "MIT", "y": "Apache-2.0"}) == []
-    # Fail closed: copyleft and restricted licenses bite.
-    assert license_manifest.check_dependencies({"x": "GPL-3.0-only"})
-    assert license_manifest.check_dependencies({"x": "SSPL-1.0"})
-
-
-def test_manifest_file_exists_and_states_the_allowlist():
-    manifest = (Path(__file__).resolve().parents[1] / "THIRD-PARTY-LICENSES.md").read_text(encoding="utf-8")
-    # The claim is split where the truth is: the Python runtime carries
+def test_notices_file_states_the_shipped_set():
+    notices = (Path(__file__).resolve().parents[1] / "THIRD-PARTY-NOTICES.md").read_text(encoding="utf-8")
+    # The notices file is the authoritative distribution record now the
+    # legacy manifest is gone (spec 017 6f): the Python runtime carries
     # one dependency (cryptography, ticket #94), the SPA bundle carries
-    # a documented set.
-    assert "cryptography" in manifest
-    assert "Apache-2.0 OR BSD-3-Clause" in manifest
-    assert "dashboard SPA bundle does ship third-party work" in manifest
-    assert "no third-party components" not in manifest
+    # a documented set, and every shipped component has a hashed
+    # upstream licence text.
+    assert "cryptography" in notices
+    assert "Apache-2.0 OR BSD-3-Clause" in notices
     # The bundle ships React and the warm-paper system fonts (the
     # dark-glass theme's fonts, its vendored effects drawer, motion,
     # Tailwind and clsx all left with that theme; see DESIGN.md). The
-    # manifest's history note may name what left; the table must not
-    # claim any of it ships, so the shipped list here is the contract,
-    # and the replaced fonts must be gone from the file entirely.
+    # shipped list here is the contract, and the replaced fonts must be
+    # gone from the file entirely.
     for shipped in (
-        "react 19",
+        "react | 19",
         "@fontsource/geist",
         "@fontsource/geist-mono",
         "OFL-1.1",
     ):
-        assert shipped in manifest, shipped
+        assert shipped in notices, shipped
     for gone in ("@fontsource-variable/inter", "@fontsource-variable/space-grotesk"):
-        assert gone not in manifest, gone
-    assert "MIT" in manifest and "Apache-2.0" in manifest
+        assert gone not in notices, gone
+    assert "MIT" in notices and "Apache-2.0" in notices
 
 
 def test_license_and_notice_ship_in_the_install_folder():
