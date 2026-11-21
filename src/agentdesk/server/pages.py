@@ -424,6 +424,10 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .doc .settings-card h3{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
 .doc .settings-card .settings-block{max-width:none}
 .settings-links{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+/* The console deep-links fold into a native details disclosure (spec
+   019 #259): the summary carries the block-label style of the h3 it
+   replaced, and the open and close are the browser's own, no script. */
+.console-links summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0;width:fit-content}
 .settings-skill{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--hairline)}
 .settings-skill:first-of-type{border-top:none;padding-top:0}
 /* Connections (spec 018): the preset grid wraps as tiles so twelve

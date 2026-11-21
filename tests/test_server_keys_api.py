@@ -415,10 +415,17 @@ def test_settings_page_carries_the_preset_grid_and_console_deep_links(env, auth)
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
     for preset in PRESETS:
         assert f"value='{preset.id}'" in page, preset.id
-    # The console deep-links answer "where do I get a key" inline.
-    assert "https://platform.openai.com/api-keys" in page
-    assert "https://console.anthropic.com/settings/keys" in page
-    assert "https://openrouter.ai/settings/keys" in page
+    # The console deep-links answer "where do I get a key" inline, folded
+    # into a native disclosure (spec 019 #259): the summary names the
+    # block, the anchors stay plain links with their hrefs, and the open
+    # and close need no script.
+    start = page.index("<details class='console-links'>")
+    block = page[start:page.index("</details>", start)]
+    assert "<summary>Where to get a key</summary>" in block
+    for url in ("https://platform.openai.com/api-keys",
+                "https://console.anthropic.com/settings/keys",
+                "https://openrouter.ai/settings/keys"):
+        assert f"<a class='btn btn-secondary' href='{url}'>" in block, url
     # The form is a real form: it posts without any script.
     assert "action='/api/connections'" in page
     assert "name='label'" in page and "name='provider'" in page

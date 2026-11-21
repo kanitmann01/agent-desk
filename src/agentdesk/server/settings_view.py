@@ -438,7 +438,7 @@ def _jobs_section(bindings: list[dict] | None,
 <input type='hidden' name='job' value='{job}'>
 <label class='empty' for='job-{job}-connection'><b>{JOB_LABELS[job]}</b></label>
 <select id='job-{job}-connection' name='connectionId'>{choices}</select>
-<label class='empty' for='job-{job}-model'>Model (picked from the cached lists or typed)</label>
+<label class='empty' for='job-{job}-model'>Model</label>
 <input id='job-{job}-model' type='text' name='model' list='{list_id}'
  value='{html.escape(model, quote=True)}' autocomplete='off'>
 <datalist id='{list_id}'>{datalist}</datalist>
@@ -459,7 +459,8 @@ def _jobs_section(bindings: list[dict] | None,
 <p>Assign the desk's jobs to connections: the assistant on a personal
 key, presentations on a work key, web research on a third. Every model
 call asks one resolution hub: the job's binding here, then the default
-binding, then the single enabled connection, then the environment.</p>
+binding, then the single enabled connection, then the environment. Each
+model field is picked from the cached lists or typed.</p>
 {body}
 </section>"""
 
@@ -587,13 +588,20 @@ def _preset_grid(selected: str) -> str:
 
 
 def _console_links() -> str:
-    """One deep-link per hosted preset: where its keys are issued."""
+    """One deep-link per hosted preset, folded into a native disclosure:
+    the summary names the block, the anchors stay plain links, and the
+    open and close work with no script at all."""
     links = "".join(
         f"<a class='btn btn-secondary' href='{preset.console_url}'>"
         f"{html.escape(preset.name)}</a>"
         for preset in PRESETS if preset.console_url
     )
-    return f"<div class='settings-links'>{links}</div>"
+    return (
+        "<details class='console-links'>"
+        "<summary>Where to get a key</summary>"
+        f"<div class='settings-links'>{links}</div>"
+        "</details>"
+    )
 
 
 def _health_forms(editing: dict | None) -> str:
@@ -710,7 +718,6 @@ def _connections_section(
 Remove the stored key is the only action that deletes it. Leave the base
 URL empty to use the preset's own address.</p>
 {_health_forms(editing)}
-<h3>Where to get a key</h3>
 {_console_links()}"""
         stamp = f"{len(connections)} SAVED" if connections else "NONE YET"
         body = notice_block + keychain_block + listing + form

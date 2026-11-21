@@ -559,3 +559,7 @@ def test_the_settings_page_renders_the_jobs_section_with_seven_pickers(
     assert "Serves through <b>Work gateway</b>" in page
     assert "value='assistant-model'" in page
     assert "Unbound:" in page  # the six unbound jobs say so plainly
+    # The model label is short and the cached-lists-or-typed fact is the
+    # card intro's, stated once (spec 019 #259).
+    assert page.count(">Model</label>") == 7
+    assert page.count("picked from the cached lists or typed") == 1
