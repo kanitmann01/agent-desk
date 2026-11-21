@@ -11,6 +11,7 @@ import { MarketGrid, PublisherMark, SkeletonGrid, categoryLabel, riskLabel } fro
 import { canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { SamplePreview } from './Sample';
 import { SignatureChip, StatusChip } from './StatusChip';
+import { useDialogFocus } from './useDialogFocus';
 import type { DetailResponse, InstanceDocument, InstancesResponse, MarketDetail, InstalledSummary } from './types';
 
 type Load =
@@ -152,9 +153,10 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
 }) {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${id}`;
+  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(true, onCancel);
   return (
     <div className="mkt-scrim" role="presentation">
-      <div className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title">
+      <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
         <div className="mkt-sheet-head">
           <div>
             <span className="mkt-eyebrow">Destructive action</span>
@@ -165,7 +167,7 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
           <p>This deletes the plugin's data folder and its install record. There is no undo.</p>
           <label className="mkt-field">
             <span>Type <code>{expected}</code> to confirm</span>
-            <input value={typed} onChange={(event) => setTyped(event.target.value)}
+            <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
           {error && <p className="mkt-error" role="alert">{error}</p>}
@@ -255,6 +257,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeError, setPurgeError] = useState('');
   const [confirmAction, setConfirmAction] = useState<null | { action: 'rollback' | 'uninstall'; title: string; body: string }>(null);
+  const confirmFocus = useDialogFocus<HTMLButtonElement>(confirmAction !== null, () => setConfirmAction(null));
   // The manage view's instance setup (T5): the list, its load error, and
   // which sheet is open. instanceAttempt re-reads after a sheet finishes.
   const [instances, setInstances] = useState<InstancesResponse | null>(null);
@@ -808,14 +811,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
 
       {confirmAction && (
         <div className="mkt-scrim" role="presentation">
-          <div className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true"
-               aria-labelledby="mkt-confirm-title">
+          <div ref={confirmFocus.sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true"
+               aria-labelledby="mkt-confirm-title" tabIndex={-1}>
             <div className="mkt-sheet-head">
               <h2 id="mkt-confirm-title">{confirmAction.title}</h2>
             </div>
             <div className="mkt-sheet-body"><p>{confirmAction.body}</p></div>
             <div className="mkt-sheet-foot">
-              <button type="button" className="btn btn-secondary" onClick={() => setConfirmAction(null)}>Cancel</button>
+              <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary" onClick={() => setConfirmAction(null)}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={busy}
                       onClick={() => {
                         const action = confirmAction.action;

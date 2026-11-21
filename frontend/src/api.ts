@@ -89,4 +89,3 @@ export async function pressReading(route: string, body: PressBody): Promise<Pres
 
 export const SESSION_EXPIRED_TITLE = 'Session required';
 export const SESSION_EXPIRED_MESSAGE = 'Open Nexuus Bot from its shortcut to get a fresh link.';
-export const UNREACHABLE = 'The dashboard could not reach its own server';

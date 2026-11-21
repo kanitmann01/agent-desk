@@ -89,7 +89,7 @@ function rowFields(row: unknown[]) {
 }
 
 /** Region and stage joined with a middle dot, skipping the cells that are empty. */
-export function dealMeta(row: unknown[]): string {
+function dealMeta(row: unknown[]): string {
   return [row[1], row[2]]
     .map((cell) => (cell == null ? '' : String(cell).trim()))
     .filter(Boolean)

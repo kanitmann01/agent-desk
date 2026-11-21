@@ -308,7 +308,7 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
   // unreadable
   return (
     <WidgetCard
-      title="Today's key commitment"
+      title={heading}
       span="span-5"
       footLines={2}
       sparse

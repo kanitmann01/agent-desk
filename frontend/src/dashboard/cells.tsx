@@ -210,8 +210,8 @@ export function DigestList({ items }: { items: DigestItem[] }) {
           <time className="digest-time" dateTime={item.at.toISOString()}>{clock(item.at)}</time>
           <span className="digest-src">{item.source}</span>
           <span className="digest-text">
-            <span className="digest-title">{item.title}</span>
-            <span className="digest-detail">{item.detail}</span>
+            <span className="digest-title" title={item.title}>{item.title}</span>
+            <span className="digest-detail" title={item.detail || undefined}>{item.detail}</span>
           </span>
         </li>
       ))}
@@ -231,7 +231,7 @@ export function WatchDiff({ view }: { view: WatchView }) {
     <div className="watch">
       <div className="watch-title">
         <h3>{view.name}</h3>
-        <span className="watch-url mono">{view.url}</span>
+        <span className="watch-url mono" title={view.url}>{view.url}</span>
       </div>
       <div className="diff" role="group" aria-label={`${view.changes} changes since the last check`}>
         {view.lines.map((line, index) => (
@@ -285,7 +285,7 @@ export function HealthMatrix({ rows }: { rows: HealthRow[] }) {
       <tbody>
         {rows.map((row) => (
           <tr key={row.name}>
-            <th scope="row">{row.name}</th>
+            <th scope="row" title={row.name}>{row.name}</th>
             <td>
               <span className={row.live ? 'sq on' : 'sq'} aria-hidden="true" />
               {row.status}

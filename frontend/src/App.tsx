@@ -41,7 +41,7 @@ function Centered({
 }
 
 /** True for `/marketplace` and every path below it. */
-export function isMarketplacePath(pathname: string): boolean {
+function isMarketplacePath(pathname: string): boolean {
   return pathname === '/marketplace' || pathname.startsWith('/marketplace/');
 }
 

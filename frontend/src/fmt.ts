@@ -84,7 +84,7 @@ export function commitmentsStamp(
 
 // Cell value to display text: whole numbers grouped, text as is.
 /** Display text for one cell: whole numbers grouped, everything else as-is. */
-export function fmtCell(value: unknown): string {
+function fmtCell(value: unknown): string {
   if (typeof value === 'number' && Number.isInteger(value)) {
     return value.toLocaleString('en-US');
   }
