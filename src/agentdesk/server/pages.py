@@ -102,7 +102,7 @@ STYLES = """
   --hairline:#26272A; --heading:#FBFBFB;
   --primary:#FBFBFB; --primary-ink:#060609; --primary-soft:#1C1C20;
   --accent:#E1F56A; --accent-text:#E1F56A; --on-accent:#060609; --focus:#E1F56A;
-  --good:#E1F56A; --bad:#C8C8CC;
+  --good:#E1F56A; --bad:#E5484D;
   --attention-bg:#16161A; --attention-ink:#E1F56A;
  --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238E8E93' stroke-width='1.5' stroke-linecap='round'/></svg>");
 }
@@ -113,7 +113,7 @@ STYLES = """
   --hairline:#1E4472; --heading:#FFFFFF;
   --primary:#FFFFFF; --primary-ink:#082340; --primary-soft:#153A68;
   --accent:#F15840; --accent-text:#F68076; --on-accent:#082340; --focus:#F68076;
-  --good:#F68076; --bad:#CDCDCD;
+  --good:#F68076; --bad:#FF6B6B;
   --attention-bg:#10315A; --attention-ink:#F68076;
  --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23A0A1A2' stroke-width='1.5' stroke-linecap='round'/></svg>");
 }
@@ -124,7 +124,7 @@ STYLES = """
   --hairline:#D5DDE8; --heading:#082340;
   --primary:#1F6BA8; --primary-ink:#FFFFFF; --primary-soft:#EDF1F7;
   --accent:#2470B0; --accent-text:#1F6BA8; --on-accent:#FFFFFF; --focus:#2470B0;
-  --good:#1F6BA8; --bad:#5B6B82;
+  --good:#1F6BA8; --bad:#B42318;
   --attention-bg:#EDF1F7; --attention-ink:#1F6BA8;
  --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%235B6B82' stroke-width='1.5' stroke-linecap='round'/></svg>");
 }
@@ -440,7 +440,10 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .conn-actions{white-space:nowrap}
 /* The health badge (spec 018): one pill per state, colored like the
    delta arrows (good, bad) with unknown in the quiet ink; the inline
-   cause under it is plain text, not part of the pill. */
+   cause under it is plain text, not part of the pill. The failure
+   token (bad) stays a chromatic step apart from every quiet ink of
+   its theme and 4.5:1 on the surface, so error, unknown and ok read
+   as three colors in all three themes (spec 019). */
 .conn-status{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);color:var(--ink-3)}
 .conn-ok{color:var(--good)}
 .conn-error{color:var(--bad)}
