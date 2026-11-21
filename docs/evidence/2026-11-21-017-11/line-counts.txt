@@ -1,6 +1,6 @@
 Line counts for the 017-11 lean sweep (branch vs main fbe7d30)
 
-Branch total: 39 files changed, +2618 / -3102 = net -484 lines.
+Branch total: 48 files changed, +2696 / -3156 = net -460 lines.
 
 Per commit (git show <sha> --stat):
 
@@ -14,12 +14,18 @@ Per commit (git show <sha> --stat):
   11f    f31d800  peer-catalog claim aligned                2 files  +3 / -3      net 0
   rider  340bd08  em dash leaves the live trees, pinned    13 files  +83 / -44    net +39
   pin    15635cb  the pin names the ban by code point       1 file   +2 / -5      net -3
+  ev     c90b9bc  the evidence pack                        7 files  (screenshots and transcripts)
+  fb1    9055187  11a fix-back: the activity pair deletes  1 file   +0 / -47     net -47
+  fb2    3523326  8a fix-back: scripts stop Nexuus Bot     3 files  +16 / -14    net +2
 
 11c is near-zero net as the ticket requires: the memory api block (1143
 lines) and the peers api block (645 lines) moved verbatim (class bodies
 byte-identical to the parent revision, verified by diff), the module
 docstrings and resolved imports are the only additions, and app.py
 shrank from 8019 to 6000 lines.
+
+The 11a fix-back completes the item's largest deletion: activity_view.py
+is 20 lines now (73 at base), only the DECISIONS vocabulary.
 
 Growth outside 11c's movement and the doc rewrites, item by item:
 
