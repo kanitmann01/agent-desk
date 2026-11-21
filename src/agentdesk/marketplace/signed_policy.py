@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -274,6 +276,20 @@ def coerce_policy(raw: dict) -> Policy:
     return policy
 
 
+def _canonical_covered_bytes(bundle) -> bytes:
+    """The signed bytes, rejecting a body canonical JSON cannot carry.
+
+    canonical_bytes refuses floats with a plain ValueError; a hand-edited
+    bundle carrying one takes the same policy:bad-signature rejection as a
+    tampered body instead of crashing every route that loads the policy."""
+    try:
+        return canonical_bytes(bundle_payload(bundle))
+    except ValueError as exc:
+        raise PolicyBundleError(
+            "policy:bad-signature",
+            f"the policy bundle body is not canonical JSON ({exc})") from exc
+
+
 def verify_policy_bundle(bundle, *, now: datetime, pinned_epoch: int,
                          trusted_keys=None) -> dict:
     """Verify a signed bundle and return its policy fields plus verification.
@@ -289,7 +305,7 @@ def verify_policy_bundle(bundle, *, now: datetime, pinned_epoch: int,
             "policy:unknown-key",
             f"the policy bundle signer {parts['key_id']} is not a pinned key",
             {"signerFingerprint": signer_fingerprint})
-    covered = canonical_bytes(bundle_payload(bundle))
+    covered = _canonical_covered_bytes(bundle)
     if not verify(parts["key_bytes"], covered, parts["signature_bytes"]):
         raise PolicyBundleError(
             "policy:bad-signature",
@@ -358,30 +374,56 @@ def _marketplace_dir(workspace_dir) -> Path | None:
     return Path(workspace_dir) / "marketplace"
 
 
-def _read_json(path: Path, fallback):
+def read_json(path, fallback):
     """Parse a JSON file, returning the fallback for any read or parse failure."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return fallback
 
 
-def _write_json(path: Path, document) -> None:
-    """Write a document as pretty, key-sorted JSON, creating parent folders."""
+def write_json(path, document) -> None:
+    """Write a document as pretty, key-sorted JSON, atomically.
+
+    The body is written to a temp file beside the target and replaced into
+    place, so a crash mid-write leaves the prior content intact instead of
+    truncating state like the kill switch, the anchor or the audit log. This
+    is the marketplace's one JSON writer: every state file goes through it."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    text = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".",
+        suffix=".tmp", delete=False)
+    temp = Path(handle.name)
+    try:
+        with handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def load_anchor(workspace_dir) -> dict:
-    """Read the pinned anchor: the highest revocation epoch and key pins."""
+    """Read the pinned anchor: the highest revocation epoch and key pins.
+
+    A missing anchor is trust-on-first-use (epoch 0, no pins). An anchor
+    that exists but cannot be parsed is answered differently: corrupt is
+    set and no key may be trusted, because this desk had pins and nobody
+    knows which key was pinned."""
     root = _marketplace_dir(workspace_dir)
     fallback = {"epoch": 0, "fingerprints": []}
     if root is None:
         return fallback
-    raw = _read_json(root / ANCHOR_FILE, None)
-    if not isinstance(raw, dict):
+    path = root / ANCHOR_FILE
+    if not path.exists():
         return fallback
+    raw = read_json(path, None)
+    if not isinstance(raw, dict):
+        return {**fallback, "corrupt": True}
     epoch = raw.get("epoch")
     if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
         epoch = 0
@@ -390,6 +432,14 @@ def load_anchor(workspace_dir) -> dict:
         if isinstance(item, str) and item.strip()
     ]
     return {"epoch": epoch, "fingerprints": fingerprints}
+
+
+def corrupt_anchor_warning() -> str:
+    """The amber warning for an anchor that exists but cannot be read."""
+    return (
+        "the trust anchor exists but cannot be read; no signing key is "
+        "trusted and signed policies are rejected until the anchor file is "
+        "repaired or removed. The built-in curated policy stays active.")
 
 
 def write_anchor(workspace_dir, *, epoch: int, fingerprints) -> dict:
@@ -402,7 +452,7 @@ def write_anchor(workspace_dir, *, epoch: int, fingerprints) -> dict:
         "epoch": max(int(epoch), int(current["epoch"])),
         "fingerprints": sorted(set(current["fingerprints"]) | set(fingerprints)),
     }
-    _write_json(root / ANCHOR_FILE, anchor)
+    write_json(root / ANCHOR_FILE, anchor)
     return anchor
 
 
@@ -411,7 +461,7 @@ def load_kill_switch(workspace_dir) -> list:
     root = _marketplace_dir(workspace_dir)
     if root is None:
         return []
-    raw = _read_json(root / KILL_SWITCH_FILE, None)
+    raw = read_json(root / KILL_SWITCH_FILE, None)
     if isinstance(raw, list):
         return [str(item) for item in raw if isinstance(item, str) and item.strip()]
     if isinstance(raw, dict):
@@ -433,7 +483,7 @@ def set_kill_switch(workspace_dir, plugin_id: str, enabled: bool) -> list:
         current.discard(plugin_id)
     plugins = sorted(current)
     if root is not None:
-        _write_json(root / KILL_SWITCH_FILE, {"plugins": plugins,
+        write_json(root / KILL_SWITCH_FILE, {"plugins": plugins,
                                               "updatedAt": isoformat(utc_now())})
     return plugins
 
@@ -443,7 +493,7 @@ def read_audit(workspace_dir) -> list:
     root = _marketplace_dir(workspace_dir)
     if root is None:
         return []
-    raw = _read_json(root / AUDIT_FILE, [])
+    raw = read_json(root / AUDIT_FILE, [])
     return raw if isinstance(raw, list) else []
 
 
@@ -469,7 +519,7 @@ def append_audit(workspace_dir, action: str, plugin_id: str = "",
                 for key in ("action", "pluginId", "outcome", "detail")):
             return last
     events.append(event)
-    _write_json(root / AUDIT_FILE, events[-1000:])
+    write_json(root / AUDIT_FILE, events[-1000:])
     return event
 
 

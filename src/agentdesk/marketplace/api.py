@@ -357,7 +357,7 @@ class _API:
             folder = str(record.get("folder") or "")
         if not folder:
             return {}
-        document = self._read_json(Path(folder) / "manifest.json", {})
+        document = signed_policy.read_json(Path(folder) / "manifest.json", {})
         return document if isinstance(document, dict) else {}
 
     def _installed_summary(self, record: dict) -> dict:
@@ -589,7 +589,7 @@ class _API:
         root = self._registry_root()
         if root is None:
             return {"schemaVersion": 1, "packs": []}
-        document = self._read_json(Path(root) / "packs.json", {})
+        document = signed_policy.read_json(Path(root) / "packs.json", {})
         return document if isinstance(document, dict) else {"schemaVersion": 1, "packs": []}
 
     def get_packs(self) -> None:
@@ -716,9 +716,11 @@ class _API:
     def get_audit(self, query: dict) -> None:
         """One page of audit events after a cursor.
 
-        since is an index into the store and limit is clamped to 1..200; next is
-        the cursor for the following page, or null at the end. Malformed
-        parameters fall back to the first page."""
+        Admin only, like the export: with admin mode off nothing is served on
+        either audit read. since is an index into the store and limit is
+        clamped to 1..200; next is the cursor for the following page, or null
+        at the end. Malformed parameters fall back to the first page."""
+        self._require_admin()
         events = self._audit_events()
         try:
             since = max(int(query.get("since", 0) or 0), 0)
@@ -820,7 +822,7 @@ class _API:
     def _catalog_source(self) -> str:
         """Name the catalog the desk serves from: 'org' when an org entry exists,
         otherwise 'bundled'."""
-        document = self._read_json(self.marketplace_dir(ORG_CATALOG_FILE), None)
+        document = signed_policy.read_json(self.marketplace_dir(ORG_CATALOG_FILE), None)
         plugins = document.get("plugins") if isinstance(document, dict) else None
         if isinstance(plugins, list) and any(
                 isinstance(item, dict) and item.get("id") for item in plugins):
@@ -838,7 +840,7 @@ class _API:
         folder = record.get("folder")
         if not isinstance(folder, str) or not folder.strip():
             return {}
-        document = self._read_json(Path(folder) / "manifest.json", {})
+        document = signed_policy.read_json(Path(folder) / "manifest.json", {})
         return document if isinstance(document, dict) else {}
 
     def _pending_publications(self) -> list:
@@ -851,7 +853,7 @@ class _API:
             return []
         items = []
         for path in sorted(directory.glob("*.json")):
-            record = self._read_json(path, None)
+            record = signed_policy.read_json(path, None)
             if not isinstance(record, dict):
                 continue
             manifest = self._manifest_of(record)
@@ -922,7 +924,7 @@ class _API:
 
     def _record_validation(self, validation: dict, scope: str, subject: str) -> None:
         """Persist the last validator verdict the Trust Center reports."""
-        self._write_json(self.marketplace_dir(VALIDATION_FILE), {
+        signed_policy.write_json(self.marketplace_dir(VALIDATION_FILE), {
             "at": _now(),
             "ok": bool(validation.get("ok")),
             "failures": [failure for failure in validation.get("failures") or ()
@@ -933,7 +935,7 @@ class _API:
 
     def _last_validator_run(self) -> dict:
         """The last recorded validator verdict, or an all-null block when none ran."""
-        document = self._read_json(self.marketplace_dir(VALIDATION_FILE), None)
+        document = signed_policy.read_json(self.marketplace_dir(VALIDATION_FILE), None)
         if not isinstance(document, dict):
             return {"at": None, "ok": None, "failures": [], "scope": None}
         return {
@@ -947,28 +949,14 @@ class _API:
 
     # -- file-backed state ----------------------------------------------
 
-    def _read_json(self, path: Path, fallback):
-        """Parse a JSON file, returning the fallback for any read or parse failure."""
-        try:
-            return json.loads(Path(path).read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            return fallback
-
-    def _write_json(self, path: Path, document) -> None:
-        """Write a document as pretty, key-sorted JSON, creating parent folders."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n",
-                        encoding="utf-8")
-
     def _governance(self) -> dict:
         """The admin governance record; a missing or broken file is empty."""
-        document = self._read_json(self.marketplace_dir(GOVERNANCE_FILE), {})
+        document = signed_policy.read_json(self.marketplace_dir(GOVERNANCE_FILE), {})
         return document if isinstance(document, dict) else {}
 
     def _audit_events(self) -> list:
         """The local audit store's rows, dropping anything that is not an object."""
-        document = self._read_json(self.marketplace_dir(AUDIT_FILE), [])
+        document = signed_policy.read_json(self.marketplace_dir(AUDIT_FILE), [])
         return [item for item in document if isinstance(item, dict)] if isinstance(
             document, list) else []
 
@@ -980,7 +968,7 @@ class _API:
         events.append({"at": _now(), "action": action, "pluginId": plugin_id,
                        "actor": "local-admin", "outcome": outcome,
                        "detail": detail_text})
-        self._write_json(self.marketplace_dir(AUDIT_FILE), events[-1000:])
+        signed_policy.write_json(self.marketplace_dir(AUDIT_FILE), events[-1000:])
 
     def _deny(self, decision: dict) -> None:
         """Raise the first policy reason as a 403, carrying every reason in details.
@@ -1720,14 +1708,14 @@ class _API:
             raise MarketplaceError(
                 400, "marketplace:invalid-request",
                 "the report needs a reason", {"field": "reason"})
-        reports = self._read_json(self.marketplace_dir(REPORTS_FILE), [])
+        reports = signed_policy.read_json(self.marketplace_dir(REPORTS_FILE), [])
         if not isinstance(reports, list):
             reports = []
         report = {"id": plugin_id, "reason": reason.strip(),
                   "note": str(body.get("note") or ""), "at": _now(),
                   "actor": "local-admin"}
         reports.append(report)
-        self._write_json(self.marketplace_dir(REPORTS_FILE), reports[-1000:])
+        signed_policy.write_json(self.marketplace_dir(REPORTS_FILE), reports[-1000:])
         self.audit("report", plugin_id, "ok", report["reason"])
         self.send(200, {"ok": True, "report": report})
 
@@ -1785,8 +1773,8 @@ class _API:
         if inline:
             record["licenseGrant"] = True
             record["manifest"] = manifest
-        self._write_json(self.marketplace_dir(PENDING_DIR, f"{pending_id}.json"),
-                         record)
+        signed_policy.write_json(
+            self.marketplace_dir(PENDING_DIR, f"{pending_id}.json"), record)
         self.audit("publish", pending_id, "queued",
                    "ok" if validation.get("ok") else "validation-failed")
         self.send(202, {"pendingId": pending_id, "validation": validation,
@@ -1838,7 +1826,7 @@ class _API:
             self.audit("policy.import", "", "rejected", exc.code)
             raise MarketplaceError(
                 400, exc.code, exc.message, getattr(exc, "details", {}) or {})
-        self._write_json(self.marketplace_dir(POLICY_FILE), bundle)
+        signed_policy.write_json(self.marketplace_dir(POLICY_FILE), bundle)
         epoch = int(bundle.get("revocationEpoch") or 0)
         fingerprint = result["verification"].get("signerFingerprint")
         signed_policy.write_anchor(
@@ -1892,7 +1880,7 @@ class _API:
         self._require_admin()
         pending_id = pending_id.strip().strip("/")
         path = self.marketplace_dir(PENDING_DIR, f"{pending_id}.json")
-        record = self._read_json(path, None)
+        record = signed_policy.read_json(path, None)
         if not isinstance(record, dict):
             raise MarketplaceError(
                 404, "publish:not-found",
@@ -1939,12 +1927,12 @@ class _API:
         release["path"] = str(org_dir)
         release["digest"] = tree_digest(org_dir)
         release["sha256"] = release["digest"]
-        document = self._read_json(self.marketplace_dir(ORG_CATALOG_FILE), {})
+        document = signed_policy.read_json(self.marketplace_dir(ORG_CATALOG_FILE), {})
         plugins = document.get("plugins") if isinstance(document, dict) else None
         plugins = [item for item in plugins or () if isinstance(item, dict)]
         plugins = [item for item in plugins if item.get("id") != plugin_id]
         plugins.append(release)
-        self._write_json(self.marketplace_dir(ORG_CATALOG_FILE), {
+        signed_policy.write_json(self.marketplace_dir(ORG_CATALOG_FILE), {
             "schemaVersion": 2,
             "generatedAt": _now(),
             "plugins": plugins,
@@ -2062,7 +2050,7 @@ class _API:
         else:
             entry["advisory"] = reason.strip()
         record[action] = entry
-        self._write_json(self.marketplace_dir(GOVERNANCE_FILE), governance)
+        signed_policy.write_json(self.marketplace_dir(GOVERNANCE_FILE), governance)
         self.audit(action, plugin_id, "ok", version.strip())
         self.send(200, {"ok": True, "entry": {
             "id": plugin_id, "version": version.strip(),

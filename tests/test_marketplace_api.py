@@ -625,6 +625,42 @@ def test_policy_route_invalid_json_falls_back_with_warning(booted):
     assert body["warning"]
 
 
+def test_float_bearing_policy_keeps_marketplace_routes_alive(booted):
+    signer = make_key("policy-signer")
+    bundle = policy_bundle(signer)
+    bundle["policy"]["retentionDays"] = 30.5
+    write_policy(booted, bundle)
+
+    status, catalog = get_json(booted, "/api/marketplace/catalog")
+    assert status == 200
+    assert catalog["policy"] == {"mode": "curated", "source": "built-in",
+                                 "signatureStatus": "tampered"}
+
+    status, policy = get_json(booted, "/api/marketplace/policy")
+    assert status == 200
+    assert policy["mode"] == "curated"
+    assert policy["signatureStatus"] == "tampered"
+    assert "rejected" in policy["warning"]
+
+    status, trust = get_json(booted, "/api/marketplace/trust")
+    assert status == 200
+    assert trust["policy"]["signatureStatus"] == "tampered"
+
+
+def test_unsigned_overlay_cannot_forge_the_catalog_policy_banner(booted):
+    write_policy(booted, {"source": "signed", "signatureStatus": "signed"})
+
+    status, catalog = get_json(booted, "/api/marketplace/catalog")
+    assert status == 200
+    assert catalog["policy"] == {"mode": "curated", "source": "local-admin",
+                                 "signatureStatus": "unsigned"}
+
+    status, policy = get_json(booted, "/api/marketplace/policy")
+    assert status == 200
+    assert policy["source"] == "local-admin"
+    assert policy["signatureStatus"] == "unsigned"
+
+
 def test_unknown_plugin_and_route_are_catalog_not_found(booted):
     status, body = get_json(booted, "/api/marketplace/plugin/nope")
     assert status == 404
@@ -681,7 +717,7 @@ def test_plugin_detail_route_shape(booted):
     assert body["error"] == "catalog:not-found"
 
 
-def test_lifecycle_toggles_retest_uninstall_and_audit(booted):
+def test_lifecycle_toggles_retest_uninstall_and_audit(booted, admin):
     root = workspace(booted) / "fixtures"
     folder = make_plugin(root, "toggle")
     write_org_catalog(booted, [catalog_entry(folder, "toggle")])
@@ -917,7 +953,8 @@ def queue_publication(boot, plugin_id="pending-widget", **kwargs):
 def test_admin_is_403_without_the_environment(booted, monkeypatch):
     monkeypatch.delenv("AGENTDESK_MARKETPLACE_ADMIN", raising=False)
 
-    for path in ("/api/marketplace/admin", "/api/marketplace/audit/export"):
+    for path in ("/api/marketplace/admin", "/api/marketplace/audit",
+                 "/api/marketplace/audit/export"):
         status, body = get_json(booted, path)
         assert status == 403
         assert body["error"] == "admin:disabled"
