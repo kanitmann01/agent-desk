@@ -302,6 +302,39 @@ def test_an_installed_but_uninstalled_plugin_is_not_retired(tmp_path):
     assert fired("retired-plugins-installed", ctx) == []
 
 
+def test_an_empty_catalog_does_not_retire_every_plugin(tmp_path, monkeypatch):
+    import agentdesk.marketplace.catalog as catalog
+
+    monkeypatch.setattr(catalog, "load_catalog_file", lambda path, source: [])
+    ctx = context(
+        tmp_path,
+        plugins=plugin_runtime(tmp_path, **{"kept-plugin": "enabled"}),
+        catalog_ids=None,
+    )
+    result = run_checks(ctx)
+    assert [finding.id for finding in result.findings if "retired" in finding.id] == []
+
+
+def test_a_catalog_that_will_not_load_is_one_crashed_check(tmp_path, monkeypatch):
+    import agentdesk.marketplace.catalog as catalog
+
+    def unreadable(path, source):
+        raise RuntimeError("catalog unreadable")
+
+    monkeypatch.setattr(catalog, "load_catalog_file", unreadable)
+    ctx = context(
+        tmp_path,
+        plugins=plugin_runtime(tmp_path, **{"kept-plugin": "enabled"}),
+        catalog_ids=None,
+    )
+    result = run_checks(ctx)
+    crashed = [finding for finding in result.findings
+               if finding.id == "deskcheck-crashed:retired-plugins-installed"]
+    assert len(crashed) == 1
+    assert crashed[0].title == "Installed plugins the catalog no longer carries"
+    assert "retired-plugins-installed" not in crashed[0].title
+
+
 def test_every_check_skips_silently_without_its_collaborators(tmp_path):
     result = run_checks(DeskContext())
     assert result.findings == []
@@ -445,6 +478,20 @@ def test_settings_page_lists_the_desk_check_without_fix_buttons(booted, auth):
     assert "no card kind called commitment" in section
     assert "Last run" in section
     assert "<button" not in section
+
+
+def test_settings_page_stays_up_when_the_desk_check_cannot_run(booted, auth, monkeypatch):
+    import agentdesk.server.app as app
+
+    def down(server):
+        raise RuntimeError("desk check down")
+
+    monkeypatch.setattr(app, "desk_check_api_payload", down)
+    status, _headers, body = booted.request("GET", "/settings", auth)
+    page = body.decode()
+    assert status == 200
+    assert "id='desk-check'" in page
+    assert "The desk check could not finish" in page
 
 
 def test_settings_page_says_the_desk_check_found_nothing(booted, auth):

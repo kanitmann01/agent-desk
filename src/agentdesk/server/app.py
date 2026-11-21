@@ -1190,21 +1190,19 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
 def desk_check_context(server: AgentDeskServer) -> "DeskContext":
     """The desk check's view of this server: live collaborators, read only.
 
-    The bundled catalog ids come from the committed catalog file the
-    marketplace ships, loaded the same way the catalog page loads it; the
-    ledger is whatever this build has (None until the ledger ticket lands).
+    The catalog is left unset. The retired-plugin check loads the shipped
+    catalog itself, so a file that will not open is one crashed check and
+    an empty file retires nothing. The ledger is whatever this build has.
     """
     from agentdesk.deskcheck import DeskContext
-    from agentdesk.marketplace.catalog import bundled_catalog_path, load_catalog_file
 
-    catalog = load_catalog_file(bundled_catalog_path(), "bundled")
     return DeskContext(
         settings=server.settings,
         inbox=server.inbox,
         excel=server.excel,
         calendar=server.calendar,
         plugins=server.plugins,
-        catalog_ids=frozenset(entry["id"] for entry in catalog),
+        catalog_ids=None,
         data_dir=default_data_dir(),
         ledger=getattr(server, "ledger", None),
         clock=time.time,
@@ -3022,6 +3020,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return "Saved. The card below reads back what the store now holds."
         return ""
 
+    def _desk_check_for_page(self, server) -> dict | None:
+        """The desk check for the settings page, or nothing if it cannot run.
+
+        The page has to render either way. A failure here is the empty
+        section, not a 500.
+        """
+        try:
+            return desk_check_api_payload(server)
+        except Exception:
+            return {
+                "ranTs": time.time(),
+                "findings": [{
+                    "title": "The desk check could not finish",
+                    "cause": "Something went wrong running the check, so this page has no findings.",
+                }],
+                "failed": {},
+            }
+
     def _send_settings_page(self) -> None:
         """Render the settings page: sources, skills, endpoint, mail, registry, audit.
 
@@ -3054,7 +3070,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             audit_entries=audit_entries,
             audit_total=audit_total,
             preference_notice=self._preference_notice(),
-            desk_check=desk_check_api_payload(server),
+            desk_check=self._desk_check_for_page(server),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 

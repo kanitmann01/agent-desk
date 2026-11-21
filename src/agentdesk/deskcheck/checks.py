@@ -39,7 +39,7 @@ def _calendar_connected(calendar) -> bool:
     return status.get("state") not in (None, STATE_EMPTY)
 
 
-@register("inbox-unreadable-rows")
+@register("inbox-unreadable-rows", "Inbox cards this version cannot read")
 def inbox_unreadable_rows(ctx, should_fix: bool) -> CheckResult:
     """One row written by a build this one does not know is one card to set aside."""
     if ctx.inbox is None:
@@ -67,7 +67,7 @@ def inbox_unreadable_rows(ctx, should_fix: bool) -> CheckResult:
     )])
 
 
-@register("sample-not-wired")
+@register("sample-not-wired", "Sample data is on but the sample files are not wired")
 def sample_not_wired(ctx, should_fix: bool) -> CheckResult:
     """Sample data promises files; the toggles are on but nothing real is attached."""
     if ctx.settings is None:
@@ -102,7 +102,7 @@ def sample_not_wired(ctx, should_fix: bool) -> CheckResult:
     )])
 
 
-@register("source-on-not-connected")
+@register("source-on-not-connected", "A source is on but nothing is connected")
 def source_on_not_connected(ctx, should_fix: bool) -> CheckResult:
     """A real source switch is on, sample off, and nothing is connected behind it."""
     if ctx.settings is None:
@@ -139,15 +139,37 @@ def source_on_not_connected(ctx, should_fix: bool) -> CheckResult:
     )])
 
 
-@register("retired-plugins-installed")
+def _bundled_catalog_ids(ctx):
+    """Plugin ids from the shipped catalog, or None when it cannot be judged.
+
+    A caller that already resolved the catalog (the tests) passes that set,
+    including an empty one. None means nobody loaded it yet, so this check
+    loads the shipped file itself. An empty file is None and the check stays
+    quiet, instead of calling every installed plugin retired. A load that
+    raises leaves this function, and the runner records one crashed check.
+    """
+    if ctx.catalog_ids is not None:
+        return ctx.catalog_ids
+    from agentdesk.marketplace.catalog import bundled_catalog_path, load_catalog_file
+
+    catalog = load_catalog_file(bundled_catalog_path(), "bundled")
+    if not catalog:
+        return None
+    return frozenset(entry["id"] for entry in catalog)
+
+
+@register("retired-plugins-installed", "Installed plugins the catalog no longer carries")
 def retired_plugins_installed(ctx, should_fix: bool) -> CheckResult:
     """Installed plugins the bundled catalog no longer carries."""
     if ctx.plugins is None:
         return CheckResult()
+    catalog_ids = _bundled_catalog_ids(ctx)
+    if catalog_ids is None:
+        return CheckResult()
     retired = sorted(
         record["id"] for record in ctx.plugins.list_records()
         if record.get("state") != "uninstalled"
-        and record.get("id") not in ctx.catalog_ids
+        and record.get("id") not in catalog_ids
     )
     if not retired:
         return CheckResult()
@@ -165,7 +187,7 @@ def retired_plugins_installed(ctx, should_fix: bool) -> CheckResult:
     )])
 
 
-@register("sample-plugin-not-installed")
+@register("sample-plugin-not-installed", "The sample plugin is not installed")
 def sample_plugin_not_installed(ctx, should_fix: bool) -> CheckResult:
     """Sample data draws a plugin cell, but the sample plugin was never installed."""
     if ctx.settings is None or ctx.plugins is None:

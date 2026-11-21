@@ -69,7 +69,7 @@ class DeskContext:
     excel: object = None
     calendar: object = None
     plugins: object = None
-    catalog_ids: frozenset = frozenset()
+    catalog_ids: frozenset | None = frozenset()
     data_dir: object = None
     ledger: object = None
     clock: Callable[[], float] | None = None
@@ -81,10 +81,11 @@ CheckFn = Callable[[DeskContext, bool], CheckResult]
 REGISTRY: list[tuple[str, CheckFn]] = []
 
 
-def register(check_id: str):
-    """Register a check under its id, keeping the order it was written in."""
+def register(check_id: str, title: str):
+    """Register a check under its id, with the title a person would read."""
     def decorator(check: CheckFn) -> CheckFn:
         """Append the check under its id, keeping registration order."""
+        check.plain_title = title  # type: ignore[attr-defined]
         REGISTRY.append((check_id, check))
         return check
 
@@ -119,9 +120,10 @@ def run_checks(ctx: DeskContext, should_fix: bool = False) -> CheckResult:
             contribution = check(ctx, should_fix)
         except Exception as exc:  # one broken check must not break the report
             crashed_id = f"deskcheck-crashed:{check_id}"
+            plain = getattr(check, "plain_title", "") or "A desk check"
             result.findings.append(Finding(
                 id=crashed_id,
-                title=f"The {check_id} check crashed",
+                title=plain,
                 cause=f"The check raised {type(exc).__name__}, so its answer is missing.",
                 severity=SEVERITY_FATAL,
                 confident=False,
