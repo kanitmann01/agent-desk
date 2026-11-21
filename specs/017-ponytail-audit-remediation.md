@@ -41,45 +41,55 @@ Every fix is the ponytail fix, the same lens the audit used: the smallest comple
 16. As an IT reviewer, I want a refused press recorded with an error status, so that a log reader cannot call a refused press a working one.
 17. As an IT reviewer, I want the what-this-touches table to cover every action the app can record, so that the one-page review under-describes nothing.
 18. As the manager, I want a failed explanation to keep the endpoint's named cause, so that the recovery action is named instead of discarded.
-19. As the manager, I want undo to refuse when any removed row's id has been reused, so that undo can never wire a fact to the wrong entity.
-20. As the manager, I want a merge to delete the absorbed entity's consolidated observation and rebuild the survivor's at once, so that the page never states a conclusion the bank no longer supports.
-21. As the manager, I want deleting a superseding fact to release the fact it pointed at, so that recall returns the older true value instead of skipping it forever.
-22. As the manager, I want a corrupt memory key named as corrupt, so that I look for the right recovery instead of a file that exists.
-23. As the manager, I want calendar events normalized to my local time before the today window is computed, so that early and late meetings count and show at the right clock time.
-24. As the manager, I want mail self-detection to use my configured address against the address inside the From header, so that threads I already answered stop producing follow-up cards.
-25. As the manager, I want the workbook shadow copy to drop the source's read-only attribute, so that a read-only workbook is not a permanently locked card blaming an open Excel.
-26. As the manager, I want a degraded generic breakdown retried rather than cached, so that one endpoint outage does not freeze the fallback forever.
-27. As the manager, I want malformed workbooks and calendar files to land in the designed amber state with a cause, so that a torn file never becomes the generic error page.
-28. As the manager, I want old source snapshots pruned after seven days, so that the data directory does not bloat forever.
-29. As the manager, I want the first worksheet resolved by workbook order, so that a tab reorder does not silently change which sheet the delta reports.
-30. As the manager, I want the workbook path chosen only with the native picker, so that the product keeps its no-typed-paths promise.
-31. As the technical owner, I want the local gate to check every file even in worktree checkouts, so that a zero-file pass can never read as a green light.
-32. As the technical owner, I want the registry append-only history check running in automated CI, so that a refactor cannot break pinned desks with every light green.
-33. As the technical owner, I want the registry risk tier to see optional network permissions, so that the one network plugin is not indexed as low risk.
-34. As the manager, I want the launcher's Python-not-found message to stay on screen, so that the one failure I cannot fix myself is at least readable.
-35. As the technical owner, I want the local license leg watching the authoritative SBOM chain, so that a local green means what the hosted green means.
-36. As the manager, I want unknown skill and wizard addresses to answer not-found pages, so that a stale link is a client error, not a "restart the app" page.
-37. As a developer, I want the redirect helper to set the responded flag its twin sets, so that a later failure can never answer twice over a finished redirect.
-38. As a developer, I want deprecated alias routes to carry a named release or be deleted, so that "one release" finally falls due.
-39. As the manager, I want every surface to say Agent Desk, so that no page tells me to open a product that does not exist on my machine.
-40. As the manager, I want plugin action results to survive into the page I land on, so that publish confirmations and named refusals actually reach me.
-41. As a screen-reader user, I want the wizard's free-text fallback input to carry an accessible name, so that a degraded session never announces an unnamed field.
-42. As the manager, I want the repetition detector to actually run, so that five similar asks produce the skill proposal the product promises.
-43. As the manager, I want accepting a brief to prevent twins, so that an acknowledged meeting never costs another notification.
-44. As the manager, I want a bad window-hours payload rejected at the boundary, so that one malformed card cannot take down every page that shows the rail count.
-45. As the manager, I want undoing a skill to start the same cooldown as dismissing its proposal, so that the desk does not re-ask what I just declined twice.
-46. As the manager, I want the dismissed shelf to purge past the recovery window, so that restore buttons that cannot work are never shown.
-47. As the manager, I want Customize hide and reorder to change the dashboard I actually see, so that the click is the truth.
-48. As the manager, I want the tracker setup sheet to show its error and unblock when the server is unreachable, so that a restart mid-setup is not a silent wedge.
-49. As a keyboard user, I want the destructive dialogs to take focus, trap Tab, answer Escape and restore focus, so that uninstall, rollback and purge are keyboard-complete.
-50. As the manager, I want my card renames kept in every card state, so that the name does not revert exactly when the source misbehaves.
-51. As the manager, I want truncated labels to carry a tooltip, so that the full text is always reachable.
-52. As a developer, I want the two near-copy setup sheets merged, so that their error guards cannot drift again.
-53. As a developer, I want the verified-dead code deleted, so that every future reader has less to rule out.
-54. As a developer, I want the response, text and JSON state helpers each merged to one owner, so that a contract change is made once.
-55. As a developer, I want the server application module split by job, so that whole features stop accreting into one class.
-56. As a contributor, I want the design-language documents to describe the shipped three-theme system, so that following the contract does not fail the token tests.
-57. As the technical owner, I want the peer-catalog doc claim to match what ships, so that the sharing story tells the truth.
+19. As the manager, I want the run receipt to list every fact the prompt carried, so that a multiline fact cannot silently drop off the record of what shaped the artifact.
+20. As the manager, I want a transient memory hiccup to read as no facts on the assistant and agents surfaces, so that a busy store file never looks like an app crash.
+21. As the manager, I want undo to refuse when any removed row's id has been reused, so that undo can never wire a fact to the wrong entity.
+22. As the manager, I want a merge to delete the absorbed entity's consolidated observation and rebuild the survivor's at once, so that the page never states a conclusion the bank no longer supports.
+23. As the manager, I want deleting a superseding fact to release the fact it pointed at, so that recall returns the older true value instead of skipping it forever.
+24. As the manager, I want a corrupt memory key named as corrupt, so that I look for the right recovery instead of a file that exists.
+25. As the manager, I want calendar events normalized to my local time before the today window is computed, so that early and late meetings count and show at the right clock time.
+26. As the manager, I want mail self-detection to use my configured address against the address inside the From header, so that threads I already answered stop producing follow-up cards.
+27. As the manager, I want the workbook shadow copy to drop the source's read-only attribute, so that a read-only workbook is not a permanently locked card blaming an open Excel.
+28. As the manager, I want a degraded generic breakdown retried rather than cached, so that one endpoint outage does not freeze the fallback forever.
+29. As the manager, I want malformed workbooks and calendar files to land in the designed amber state with a cause, so that a torn file never becomes the generic error page.
+30. As the manager, I want old source snapshots pruned after seven days, so that the data directory does not bloat forever.
+31. As the manager, I want the first worksheet resolved by workbook order, so that a tab reorder does not silently change which sheet the delta reports.
+32. As the manager, I want the workbook path chosen only with the native picker, so that the product keeps its no-typed-paths promise.
+33. As the manager, I want a renamed meeting to get fresh subtasks, so that a same-slot rename does not keep serving the old meeting's prep.
+34. As the manager, I want the workbook delta's label to tell the truth after a long gap, so that "24 hours" never describes three days of changes.
+35. As the manager, I want shadow copies cleaned up after each poll, so that temp litter does not accumulate and same-named workbooks never read each other's copies.
+36. As the technical owner, I want the local gate to check every file even in worktree checkouts, so that a zero-file pass can never read as a green light.
+37. As the technical owner, I want the registry append-only history check running in automated CI, so that a refactor cannot break pinned desks with every light green.
+38. As the technical owner, I want the registry risk tier to see optional network permissions, so that the one network plugin is not indexed as low risk.
+39. As the manager, I want the launcher's Python-not-found message to stay on screen, so that the one failure I cannot fix myself is at least readable.
+40. As the technical owner, I want the local license leg watching the authoritative SBOM chain, so that a local green means what the hosted green means.
+41. As the technical owner, I want the probe to test the TLS configuration the launcher actually uses, so that a supported corporate network does not get a false no-go verdict.
+42. As the technical owner, I want the license watch extended to vendored files, so that a component pasted in beside the dependency chain cannot bypass the zero-exceptions rule.
+43. As the manager, I want unknown skill and wizard addresses to answer not-found pages, so that a stale link is a client error, not a "restart the app" page.
+44. As a developer, I want the redirect helper to set the responded flag its twin sets, so that a later failure can never answer twice over a finished redirect.
+45. As a developer, I want deprecated alias routes to carry a named release or be deleted, so that "one release" finally falls due.
+46. As the manager, I want every surface to say Agent Desk, so that no page tells me to open a product that does not exist on my machine.
+47. As the manager, I want plugin action results to survive into the page I land on, so that publish confirmations and named refusals actually reach me.
+48. As a screen-reader user, I want the wizard's free-text fallback input to carry an accessible name, so that a degraded session never announces an unnamed field.
+49. As the manager, I want the repetition detector to actually run, so that five similar asks produce the skill proposal the product promises.
+50. As the manager, I want accepting a brief to prevent twins, so that an acknowledged meeting never costs another notification.
+51. As the manager, I want a bad window-hours payload rejected at the boundary, so that one malformed card cannot take down every page that shows the rail count.
+52. As the manager, I want undoing a skill to start the same cooldown as dismissing its proposal, so that the desk does not re-ask what I just declined twice.
+53. As the manager, I want the dismissed shelf to purge past the recovery window, so that restore buttons that cannot work are never shown.
+54. As the manager, I want Customize hide and reorder to change the dashboard I actually see, so that the click is the truth.
+55. As the manager, I want the tracker setup sheet to show its error and unblock when the server is unreachable, so that a restart mid-setup is not a silent wedge.
+56. As a keyboard user, I want the destructive dialogs to take focus, trap Tab, answer Escape and restore focus, so that uninstall, rollback and purge are keyboard-complete.
+57. As the manager, I want my card renames kept in every card state, so that the name does not revert exactly when the source misbehaves.
+58. As the manager, I want truncated labels to carry a tooltip, so that the full text is always reachable.
+59. As a developer, I want the two near-copy setup sheets merged, so that their error guards cannot drift again.
+60. As a developer, I want the workbook connect flow written once, so that a copy fix or a new error code cannot land in one copy and not the other.
+61. As a developer, I want the verified-dead code deleted, so that every future reader has less to rule out.
+62. As a developer, I want the response, text and JSON state helpers each merged to one owner, so that a contract change is made once.
+63. As a developer, I want the server application module split by job, so that whole features stop accreting into one class.
+64. As a contributor, I want the design-language documents to describe the shipped three-theme system, so that following the contract does not fail the token tests.
+65. As the technical owner, I want the peer-catalog doc claim to match what ships, so that the sharing story tells the truth.
+66. As a developer, I want the four duplicated view blocks merged to single owners, so that copy and contract changes are made once.
+67. As a developer, I want every view id escaped by one rule, so that the day a string id arrives it cannot become markup.
 
 ## Implementation Decisions
 
@@ -109,6 +119,8 @@ Eleven workstreams. Each lands as its own PR with the gate green and evidence at
    - b. A refused press is recorded with an error status, not the success default.
    - c. The IT action vocabulary behind the what-this-touches page covers every action the app can record, the press included, so the generated table cannot under-describe the machine.
    - d. A failed explanation keeps the endpoint's named cause in its note instead of collapsing to the generic line.
+   - e. The run receipt states what the model actually read: the receipt is derived from the finished facts block itself, so a fact whose text spans multiple lines, or begins with another fact's text, cannot silently earn no receipt; the block and its receipt cannot disagree.
+   - f. A memory store failure beyond the sealed-bank case degrades in the surface's own voice on the assistant and the agents: no facts block, a logged warning, the answer proceeds; the posture the insight seam already takes, never the generic error page for a transient lock.
 
 4. **Memory bookkeeping.**
    - a. Undo refuses id reuse for entities, sources and observations, not just facts, so a restore can never wire rows to a new owner of a recycled id.
@@ -125,6 +137,9 @@ Eleven workstreams. Each lands as its own PR with the gate green and evidence at
    - f. Corrupt shared-string indexes and non-dict calendar events degrade to the designed amber state with a cause, not the generic 500 page; file input is a trust boundary.
    - g. The first worksheet resolves by workbook order (the declared sheet order), not by archive member name, so a tab reorder does not silently change which sheet the delta reports.
    - h. The typed workbook-path fallback is removed: the picker is the contract, and a picker failure gets its own honest amber state instead of teaching the banned behavior.
+   - i. The breakdown cache key includes the subject, so a meeting renamed or re-scoped in the same slot does not keep serving the old meeting's subtasks.
+   - j. The delta label tells the truth after a long gap: when the reference snapshot is days old (a closed laptop over a weekend), the copy names the window it actually diffed against instead of "24 hours".
+   - k. The shadow copy does not litter and does not collide: the copy is removed after the poll's parse, inside the poll, so stale copies stop accumulating and two watches on same-named workbooks can never read each other's half-written copies.
 
 6. **Gate integrity.**
    - a. The local gate relativizes path exclusion before testing it, so worktree checkouts get full coverage (the skip is proven to check zero files today), and the grammar gate fails on an empty file set.
@@ -133,6 +148,8 @@ Eleven workstreams. Each lands as its own PR with the gate green and evidence at
    - d. The registry sync indexes network-allowance risk from optional permissions as well as required ones, so the one network plugin is tiered honestly; the index is regenerated after the fix.
    - e. The launcher's Python-not-found message pauses on the failure path only, like the probe launcher does, so the person it was written for can read it.
    - f. The local licenses leg watches the authoritative SBOM chain (SBOM, license gate, notices check), and once it does, the legacy hardcoded license manifest and its tool are deleted.
+   - g. The Windows probe wrapper sets the same TLS environment variables the app launcher sets, so the probe's environment gate tests the TLS configuration the shipped launcher actually uses and TLS-inspected networks stop getting false RESHAPE verdicts.
+   - h. The license watch extends to vendored files (a few more grep patterns over the same roots), so a component pasted in beside the dependency chain cannot bypass the zero-exceptions rule. Not urgent: one owner call, recorded here, decides whether the grep is the right tripwire.
 
 7. **Unknown routes.**
    - a. Unknown skill and wizard subpaths answer 404, using the same parse-guard pattern the memory routes already use.
@@ -162,6 +179,7 @@ Eleven workstreams. Each lands as its own PR with the gate green and evidence at
     - e. Truncated labels carry title attributes, so a long or translated name is always readable in full.
     - f. The two near-copy setup sheets (the dashboard tracker sheet and the marketplace instance sheet) merge into one shared walk with app-specific slots; the drifted error guards come along, which is the point.
     - g. Dead exports delete.
+    - h. The workbook connect flow exists once: the connect, pick and recovery walk that the brief's decisions cell and the unconfigured tracker card both carry becomes one shared implementation, so a copy fix or a new error code cannot land in one copy and not the other.
 
 11. **Lean sweep (lands last, after 1 through 10).**
     - a. The roughly 700 lines of verified-dead code delete: the unreachable rendered plugins page (after 8b fixes the notice flow), the unused activity renderer, the rail icon constants the rail ignores, the dead polling helpers, the dead budget helpers, and the never-read column.
@@ -170,13 +188,16 @@ Eleven workstreams. Each lands as its own PR with the gate green and evidence at
     - d. The five copies of the count/plural/bounded text helpers merge.
     - e. The design-language documents are rewritten to tell the truth of the shipped three-theme Geist system; the code and the token tests are the reality the docs must match.
     - f. The peer-catalog claim in the docs aligns with what ships: the merge path stays, the sharing claim goes unless it is already true.
+    - g. Four view-level duplications merge to single owners: the settings questions table reuses the audit page's builder, the memory view interpolates its own intro and add-form blocks instead of repeating them verbatim, the mail card folds into the source card, and the document shells (the railed page, the dashboard, the error page, the wizard shell) share one head-and-footer helper.
+    - h. One escape rule for every id interpolated into a view (URLs, DOM ids, attributes): the currently unescaped spots join the discipline the inbox, plugins and mail views already follow; no behavior change for today's integer ids, and the day a string id arrives it cannot become markup.
+    - i. Three micro-leans are fixed when their module is next touched, never by a diff opened for them alone: the no-op context pass in the compare path, the test-only key shape in the trust helper, and the unreachable length check in the skill markdown renderer.
 
 ## Testing Decisions
 
 - Every fixed bug ships with the one test that fails without the fix. The audits name the missing tests; those are the tests to write, attached to the fixes, not coverage for its own sake.
 - Existing seams only, the highest one available: the server harness (real server on a real socket) for route behavior, status codes and audit rows; the stores directly for bookkeeping (undo id refusal, merge reconciliation, supersession release, cap atomicity, shelf purge, snapshot pruning); the validator harness for the trifecta refusal and wizard compositions; the SPA test stack for frontend behavior. No new seams, no new test frameworks, no new dependencies anywhere.
 - Prior art in the repo: the agents suite's audit-row assertions, the marketplace signed-policy and trust suites, the memory loop and store suites, the briefs and repetition suites, the registry hardening suite, the wizard view script-tag test, the customize, cards, marketplace-a11y and tokens frontend suites, and the walkthrough contract tests.
-- The audits' named gaps that become tests here: press audit rows on both doors (JSON and page) and the refusal status; undo id-reuse per table; merge with observations on both sides; the superseding-fact edit release; the calendar offset with a local now; mail self-detection with a display-name header and a configured address; the shared-string and non-dict-event ambers; the second poll of a read-only workbook; breakdown recovery after the endpoint returns; the float, corrupt-anchor, overlay-forgery and admin-gate trust tests; the accept-twin and undo-cooldown regressions plus the quiet-hours boundary pins; the end-to-end no-JS plugin action notice; the wizard no-options render; the optional-network risk tier fixture; the rollback digest re-verification; the customize return-to-normal view, the dialog focus walk, and the unreachable-server setup sheet.
+- The audits' named gaps that become tests here: press audit rows on both doors (JSON and page) and the refusal status; the multiline-fact receipt; undo id-reuse per table; merge with observations on both sides; the superseding-fact edit release; the calendar offset with a local now; mail self-detection with a display-name header and a configured address; the shared-string and non-dict-event ambers; the second poll of a read-only workbook; breakdown recovery after the endpoint returns; the renamed-meeting breakdown cache key; the float, corrupt-anchor, overlay-forgery and admin-gate trust tests; the accept-twin and undo-cooldown regressions plus the quiet-hours boundary pins; the end-to-end no-JS plugin action notice; the wizard no-options render; the optional-network risk tier fixture; the rollback digest re-verification; the customize return-to-normal view, the dialog focus walk, and the unreachable-server setup sheet.
 - Each workstream PR lands with the gate green. The gate-integrity workstream is verified by the gate itself: the empty-file-set failure and the registry job prove their own fixes.
 
 ## Out of Scope
@@ -191,7 +212,7 @@ Eleven workstreams. Each lands as its own PR with the gate green and evidence at
 ## Further Notes
 
 - The full audit pack lives outside the repository, in ponytail-audit-2026-11-21/ next to the repo: ten reports (intelligence, server core, server views, sources, nudges, plugins, distribution, memory, frontend, tooling), roughly ninety ranked findings, each reproduced on a worktree or traced to an exact input, plus per-component architectural-decision reviews and lean estimates.
-- The top claims were spot-verified in code before this spec was cut; every checked claim confirmed.
+- The top claims were spot-verified in code before this spec was cut; every checked claim confirmed. After review, every leftover finding was folded into a workstream; none was rejected.
 - Remediation PRs cite the finding they fix by workstream letter (for example 4c) and, where useful, the audit report and finding number from the pack.
 - The remediation honors the ponytail lens the audit used: smallest complete change, and the never-cut list (validation at trust boundaries, error handling that prevents data loss, security, accessibility, anything the user asked for) is never cut to make a diff smaller.
 - Workstreams are independently landable and priority-ordered; the lean sweep lands last because two of its deletions depend on earlier fixes (the rendered plugins page waits on 8b, the legacy license manifest on 6f).
