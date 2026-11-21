@@ -131,6 +131,24 @@ def test_brief_respects_the_interruption_budget():
     assert len(inbox.waiting()) == 1  # and is not lost
 
 
+def test_accepting_a_brief_prevents_the_twin():
+    # One brief per meeting, ever: an accepted card still counts, or every
+    # "Got it" would mint a twin of the brief it answered and spend another
+    # notification on it.
+    clock, bridge, inbox, activity = make_env()
+    save_breakdown(bridge.conn, "evt-review:2026", {
+        "subtasks": ["Pull the regional numbers Marco asked for"],
+        "followups": [],
+    })
+    from agentdesk.briefs import generate_briefs
+
+    assert generate_briefs(bridge, inbox, activity, clock) == 1
+    card = next(c for c in inbox.waiting() if c.kind == "brief")
+    inbox.accept(card.id)
+    assert generate_briefs(bridge, inbox, activity, clock) == 0
+    assert [c for c in inbox.waiting() if c.kind == "brief"] == []
+
+
 def test_no_code_path_reads_mail():
     # The brief module's only inputs are the bridge, the inbox, the
     # activity log and a clock: there is no mail-shaped parameter to abuse.

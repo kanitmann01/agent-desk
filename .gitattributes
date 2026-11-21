@@ -28,18 +28,18 @@
 licenses/third-party/*.txt text eol=lf
 frontend/public/licenses/*.txt text eol=lf
 src/agentdesk/server/static/spa/licenses/*.txt text eol=lf
+# The build-compare contract (a fresh vite build must diff clean against
+# this tree) needs LF bytes in index.html on every checkout; the generic
+# *.html rule missed a dirty blob already in the index, so the path pin.
+src/agentdesk/server/static/spa/index.html text eol=lf
 # The registry trees are digest-pinned: index.json publishes a sha256 per
 # release and every install re-hashes the working tree, so each checkout
 # must see the committed bytes. Pin LF under registry/ so core.autocrlf
 # cannot rewrite text files on Windows (LICENSE and NOTICE have no
 # extension rule of their own). eol=lf makes the checkout smudge a no-op
-# for every registry file, and text=auto keeps the .pptx shells and .png
-# thumbs out of newline conversion entirely.
+# for every registry file, text=auto keeps the .pptx shells and .png
+# thumbs out of newline conversion entirely, and the one rule covers
+# every plugin tree, present and future.
 registry/** text=auto eol=lf
-# The same digest-pin hazard reaches extensionless LICENSE and NOTICE
-# files outside registry/ (the root LICENSE travels inside the
-# distribution bundle). The filename rules below cover any such file at
-# any depth; inside registry/ the registry/** rule above already pins
-# them, and the two rules agree so the overlap changes nothing.
 LICENSE text eol=lf
 NOTICE text eol=lf

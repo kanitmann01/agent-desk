@@ -12,7 +12,7 @@ import sqlite3
 import threading
 from collections.abc import Callable
 
-from agentdesk.inbox.budget import new_card_id
+from agentdesk.inbox.budget import DAILY_CAP, decide_budget, new_card_id
 from agentdesk.inbox.core import (
     CARD_KINDS,
     RECOVERY_DAYS,
@@ -331,6 +331,27 @@ class InboxStore:
                 (self.clock(), kind, card_count),
             )
 
+    @_serialized
+    def spend_notification(
+        self, card_ids: list[str], now, quiet_hours: bool = True, cap: int = DAILY_CAP
+    ) -> bool:
+        """Decide and spend in one lock: judge quiet hours and the cap at
+        the same instant the ledger row is written.
+
+        Reading the ledger and spending in separate lock-scoped calls let
+        two concurrent evaluations both pass the cap check; here the
+        decision cannot observe anything but a committed spend. Returns
+        whether the spend happened; the cards are left unnotified when it
+        did not (they keep waiting, visibly).
+        """
+        if decide_budget(now, self.notified_today(now), quiet_hours, cap) != "notify":
+            return False
+        for card_id in card_ids:
+            self.mark_notified(card_id)
+        kind = "digest" if len(card_ids) > 1 else "card"
+        self.record_notification(kind, len(card_ids))
+        return True
+
     # -- reads ------------------------------------------------------------
 
     @_serialized
@@ -406,8 +427,25 @@ class InboxStore:
 
     @_serialized
     def dismissed(self) -> list[Card]:
-        """Return every dismissed card, oldest created first."""
-        return self._by_status(STATUS_DISMISSED)
+        """Return every dismissed card still inside its recovery window,
+        oldest created first.
+
+        A card past the 30 days is pruned here rather than listed with a
+        restore button that would answer gone: the shelf shows only what
+        can actually come back.
+        """
+        now = self.clock()
+        cards = self._by_status(STATUS_DISMISSED)
+        expired_ids = {
+            card.id for card in cards
+            if card.dismissed_for_days(now) > RECOVERY_DAYS
+        }
+        if expired_ids:
+            with self.conn:
+                self.conn.executemany(
+                    "DELETE FROM cards WHERE id = ?", ((i,) for i in expired_ids)
+                )
+        return [card for card in cards if card.id not in expired_ids]
 
     @_serialized
     def all_cards(self) -> list[Card]:

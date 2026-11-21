@@ -194,6 +194,7 @@ from agentdesk.peers.discovery import (
 from agentdesk.peers.store import PeerError, PeerStore, derive_token
 from agentdesk.registry.install import RegistryError, tree_digest
 from agentdesk.repetition.activity import ActivityLog
+from agentdesk.repetition.cluster import pattern_hash
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.audit_view import render_audit_page
@@ -3967,16 +3968,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(200, answer.to_json())
 
     def _skill_undo(self, skill_id: int) -> None:
-        """Deactivate a skill — this surface's only undo.
+        """Deactivate a skill, this surface's only undo.
 
-        A SkillError means the store cannot name that skill and answers 404; on success
-        the body is the store's own record of the deactivation.
+        Undo is a declined proposal: the pattern starts its dismiss cooldown
+        before the skill deactivates, so the next consolidation run does not
+        re-propose the identical ask. A SkillError means the store cannot
+        name that skill and answers 404; on success the body is the store's
+        own record of the deactivation.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
             self._send_json(503, {"error": "skills are not available"})
             return
         try:
+            skill = server.skills.get(skill_id)  # type: ignore[attr-defined]
+            if skill is None:
+                self._send_json(404, {"error": f"no skill {skill_id}"})
+                return
+            if server.consolidator is not None:
+                server.consolidator.dismiss_cooldown(pattern_hash(skill["prompt"]))
             self._send_json(200, server.skills.deactivate(skill_id))  # type: ignore[attr-defined]
         except SkillError as exc:
             self._send_json(404, {"error": str(exc)})
@@ -4012,13 +4022,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _maybe_briefs(self) -> None:
-        """A calendar read may owe the inbox a brief or two."""
+        """A calendar read may owe the inbox a brief or two, and any read
+        is when the repetition detector catches up on the asks logged so
+        far: the same catch-up-on-read pattern as the briefs themselves,
+        one guarded call, no scheduler."""
         server = self.server  # type: ignore[attr-defined]
         if server.calendar is not None and server.inbox is not None and server.activity_log is not None:
             try:
                 generate_briefs(server.calendar, server.inbox, server.activity_log, server.inbox.clock)
             except Exception:  # noqa: BLE001 - briefs must never break the inbox
                 LOG.exception("brief generation failed")
+        if server.consolidator is not None:
+            try:
+                server.consolidator.consolidate()
+            except Exception:  # noqa: BLE001 - consolidation must never break a read
+                LOG.exception("consolidation failed")
 
     def _send_inbox_page(self) -> None:
         """Render the inbox: waiting cards, dismissed ones and the sample-data switch.
