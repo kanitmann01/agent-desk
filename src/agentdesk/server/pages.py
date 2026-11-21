@@ -12,7 +12,7 @@ prohibited outright.
 import html
 from typing import Iterable
 
-from agentdesk.server.core import ATTENTION, FRESH, SAMPLE, SOURCE_IDS
+from agentdesk.server.core import ATTENTION, FRESH, SAMPLE, SOURCE_IDS, Freshness
 from agentdesk.server.demo import Widget
 
 ICON_OPTIONS = (
@@ -277,6 +277,15 @@ table.rows td.neg{color:var(--bad)}
 .badge-pilot{font-size:12px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
+.decisions{list-style:none;margin:0;padding:0}
+.decisions li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--hairline)}
+.decisions li:first-child{border-top:none;padding-top:0}
+.decision-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.decision-title{font-weight:600;color:var(--ink-1);font-size:14px}
+.decision-why{font-size:12.5px;color:var(--ink-3);line-height:1.4}
+.decision-actions{display:flex;align-items:center;gap:8px;flex:none}
+.decision-actions form{margin:0}
+.btn-sm{min-height:28px;padding:4px 10px;font-size:12.5px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
 .doc.doc-wide{max-width:1160px}
 .doc h1{font-size:20px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
@@ -906,6 +915,75 @@ def page_shell(
 </body>
 </html>
 """
+
+
+def render_decisions_widget(recommendations: list[dict], now, setup: list[dict] | None = None) -> Widget:
+    """The Decisions card for the server-rendered dashboard.
+
+    Shows the three soonest recommendations, each quoting the rule's own title
+    and why line, with Not now as a plain form post so the card is dismissible
+    without JavaScript. With no recommendations and a desk that is not set up
+    yet, it shows the same setup rows as the SPA; with neither, it says so in
+    the same words as the SPA: nothing is invented to fill it.
+    """
+    items = list(recommendations)
+    rows = []
+    for item in items[:3]:
+        sample = '<span class="tag-sample">SAMPLE DATA</span>' if item.get("sample") else ""
+        title = html.escape(str(item.get("title") or "A recommendation"))
+        why = html.escape(str(item.get("why") or ""))
+        href = html.escape(str(item.get("href") or "/agents"))
+        label = html.escape(str(item.get("actionLabel") or "Open Agents"))
+        card_id = html.escape(str(item.get("cardId") or ""))
+        rows.append(
+            "<li><div class=\"decision-text\">"
+            f'<span class="decision-title">{title} {sample}</span>'
+            f'<span class="decision-why">{why}</span></div>'
+            '<span class="decision-actions">'
+            f'<a class="btn btn-secondary btn-sm" href="{href}">{label}</a>'
+            f'<form method="post" action="/inbox/cards/{card_id}/dismiss">'
+            '<button class="btn btn-secondary btn-sm" type="submit">Not now</button>'
+            "</form></span></li>"
+        )
+    setup_rows = []
+    if not rows:
+        for item in list(setup or [])[:4]:
+            title = html.escape(str(item.get("title") or ""))
+            why = html.escape(str(item.get("why") or ""))
+            href = html.escape(str(item.get("href") or "/settings"))
+            label = html.escape(str(item.get("actionLabel") or "Open settings"))
+            setup_rows.append(
+                "<li><div class=\"decision-text\">"
+                f'<span class="decision-title">{title}</span>'
+                f'<span class="decision-why">{why}</span></div>'
+                '<span class="decision-actions">'
+                f'<a class="btn btn-secondary btn-sm" href="{href}">{label}</a>'
+                "</span></li>"
+            )
+    if rows:
+        body = '<ul class="decisions">' + "".join(rows) + "</ul>"
+        extra = len(items) - len(rows)
+        if extra > 0:
+            body += f'<p class="empty">{extra} more in inbox.</p>'
+    elif setup_rows:
+        body = '<ul class="decisions">' + "".join(setup_rows) + "</ul>"
+    else:
+        body = '<div class="well"><p class="q">Nothing needs a decision.</p></div>'
+    status = SAMPLE if any(item.get("sample") for item in items) else FRESH
+    if items:
+        stamp = f"{len(items)} waiting"
+    elif setup_rows:
+        stamp = "Getting set up"
+    else:
+        stamp = "Up to date"
+    return Widget(
+        id="decisions",
+        title="Decisions",
+        col="col-5",
+        freshness=Freshness(status, stamp, now.strftime("%Y-%m-%dT%H:%M:%S")),
+        body_html=body,
+        foot_html="Built from facts you saved. Nothing leaves this machine.",
+    )
 
 
 def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0) -> str:

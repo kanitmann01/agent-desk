@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dealName, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline } from '../dashboard/briefModel';
+import { decisionsEmptyText, dealName, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline, recommendationRows } from '../dashboard/briefModel';
 
 const atlas = (amount: number) => ['Halvorsen Freight renewal', 'AMER', 'Prospect', amount];
 const field = (amount: number) => ['Kestrel Foods pilot', 'EMEA', 'Qualify', amount];
@@ -80,5 +80,62 @@ describe('the morning brief desk check', () => {
   it('stays quiet when nothing wants attention', () => {
     expect(deskCheckAlert({ attention: 0, top: null })).toBeNull();
     expect(deskCheckAlert(undefined)).toBeNull();
+  });
+});
+
+describe('the morning brief decisions', () => {
+  const data = (recommendations?: unknown[], agentLoop?: unknown) => ({
+    recommendations,
+    agentLoop,
+  }) as never;
+
+  const halvorsen = {
+    cardId: 'card-1',
+    title: 'Halvorsen Freight: December 15 (in 24 days)',
+    why: 'You told the desk this deadline; it is 24 days away.',
+    whySource: 'rule' as const,
+    score: null,
+    due: '2026-12-15',
+    href: '/agents',
+    actionLabel: 'Open Agents',
+    sample: true,
+    cites: [3],
+  };
+
+  it('renders waiting recommendations before the setup decisions', () => {
+    const { rows, more } = recommendationRows(data([halvorsen]));
+    expect(rows).toEqual([{
+      key: 'card-1',
+      cardId: 'card-1',
+      title: 'Halvorsen Freight: December 15 (in 24 days)',
+      why: 'You told the desk this deadline; it is 24 days away.',
+      href: '/agents',
+      actionLabel: 'Open Agents',
+      sample: true,
+    }]);
+    expect(more).toBe(0);
+  });
+
+  it('shows three recommendation rows and counts the rest', () => {
+    const many = Array.from({ length: 5 }, (_, i) => ({ ...halvorsen, cardId: 'card-' + i }));
+    const { rows, more } = recommendationRows(data(many));
+    expect(rows).toHaveLength(3);
+    expect(more).toBe(2);
+  });
+
+  it('marks a model-ranked why line', () => {
+    const [row] = recommendationRows(data([{ ...halvorsen, whySource: 'model' }])).rows;
+    expect(row.why).toBe('You told the desk this deadline; it is 24 days away. · ranked by your endpoint');
+  });
+
+  it('falls back to the setup decisions when there are no recommendations', () => {
+    expect(recommendationRows(data()).rows).toEqual([]);
+    expect(decisionsEmptyText(undefined)).toBe('Nothing needs a decision.');
+  });
+
+  it('says when the desk checks again, or that automatic checks are off', () => {
+    expect(decisionsEmptyText({ lastRunTs: 0, nextRunTs: 0, enabled: false })).toBe('Automatic checks are off.');
+    expect(decisionsEmptyText({ lastRunTs: 0, nextRunTs: null, enabled: true })).toBe('Nothing needs a decision.');
+    expect(decisionsEmptyText({ lastRunTs: 0, nextRunTs: 4102444800, enabled: true })).toContain('Nothing needs a decision. The desk checks again at ');
   });
 });
