@@ -1,0 +1,32 @@
+F..s.                                                                    [100%]
+================================== FAILURES ===================================
+____________ test_a_fake_renderer_shows_a_preview_and_names_itself ____________
+
+    def test_a_fake_renderer_shows_a_preview_and_names_itself():
+        booted = server_harness.Booted()
+        _ready(booted, _fake)
+        try:
+            auth = booted.exchange()
+            status, _h, body = booted.post_json(
+                "/agents/run",
+                {"agent": "presentation", "brief": "the Q3 review",
+                 "template": "starter", "variant": "dark", "recipe": "briefing"},
+                auth,
+            )
+            payload = json.loads(body)
+            assert payload["status"] == "ok"
+            assert payload["artifact"]["renderer"] == "libreoffice"
+            page = booted.request("GET", "/agents", auth)[2].decode("utf-8")
+            assert "Download PDF" in page
+            assert "slide1.png" in page
+            run_id = payload["id"]
+            status, headers, png = booted.request(
+                "GET", f"/agents/runs/{run_id}/download?part=slide1.png", auth
+            )
+>           assert status == 200 and png.startswith(b"\x89PNG")
+E           assert (404 == 200)
+
+tests\test_presentation_render.py:78: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_presentation_render.py::test_a_fake_renderer_shows_a_preview_and_names_itself
+1 failed, 3 passed, 1 skipped in 2.62s

@@ -93,8 +93,12 @@ def test_installing_the_starter_uses_the_registry_pin(tmp_path):
 def test_the_shipped_shells_are_the_neutral_builder():
     dark = (PACK / "shells" / "starter-dark.pptx").read_bytes()
     light = (PACK / "shells" / "starter-light.pptx").read_bytes()
-    assert dark == build_shell(variant="dark", body_placeholder=True)
-    assert light == build_shell(variant="light", body_placeholder=True)
+    # Deflate bytes differ across zlib builds (zlib-ng); the shell is its
+    # part set and each part's decompressed content, so compare those.
+    assert read_parts(dark) == read_parts(
+        build_shell(variant="dark", body_placeholder=True))
+    assert read_parts(light) == read_parts(
+        build_shell(variant="light", body_placeholder=True))
     parts = read_parts(dark)
     joined = b"\n".join(parts.values())
     assert b"Title Slide" in joined and b"Content" in joined

@@ -1,0 +1,8 @@
+............................................                             [100%]
+============================== warnings summary ===============================
+tests/test_presentation_writer.py::test_package_problems_catches_duplicates_missing_types_and_skips_external_links
+  C:\Python314\Lib\zipfile\__init__.py:1722: UserWarning: Duplicate name: 'ppt/slides/slide1.xml'
+    return self._open_to_write(zinfo, force_zip64=force_zip64)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+44 passed, 1 warning in 52.26s
