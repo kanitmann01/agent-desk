@@ -118,7 +118,7 @@ def _rows(entries: list[dict]) -> str:
     )
 
 
-def _questions(questions: list[dict]) -> str:
+def questions_table(questions: list[dict]) -> str:
     """The questions table, newest first, or a one-line empty state.
 
     The activity log returns its rows oldest first, so the list is reversed here. The
@@ -252,7 +252,7 @@ def render_audit_page(
     questions_html = "" if kind else f"""<h2>Questions you asked</h2>
 <p>The asks that flowed through research and the assistant. No
 keystrokes, no screen, and this list is yours.</p>
-{_questions(questions)}
+{questions_table(questions)}
 """
     notice_html = f"<div class='alert'><p>{html.escape(notice)}</p></div>" if notice else ""
     content = f"""<h1>Activity</h1>

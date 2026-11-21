@@ -489,18 +489,10 @@ Assistant and Research when it is on in the memory settings.</p>"""
         )
     island_row = graph_island_html("page") if graph_island else ""
     content = f"""<h1>Memory</h1>
-{notice_row}<p>Facts saved on this machine. The assistant recalls at most five of
-them, 500 characters in total, as derived abstractions it may read.
-Facts arrive here, from an inbox card you accept, or by capture from the
-Assistant and Research when it is on in the memory settings.</p>
+{notice_row}{intro}
 {island_row}{_encrypt_section(encrypt)}
 {_recall_section(recall, query)}
-<h2>Add a fact</h2>
-<form method="post" action="/memory/add" class="cardform">
-<label class="empty" for="new-fact">Fact</label>
-<input id="new-fact" type="text" name="text" placeholder="The revenue total is 220.">
-<button class="btn btn-primary" type="submit">Save fact</button>
-</form>
+{add_form}
 <h2>Saved facts</h2>
 {_fact_rows(facts)}
 {observations_row}

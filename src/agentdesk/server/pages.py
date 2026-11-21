@@ -839,6 +839,40 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     )
 
 
+def document_head(title: str) -> str:
+    """The head every server-rendered document shares, through the four
+    shells: local stylesheet and theme boot only, nothing fetched from
+    the network, no inline script. The CSP story (script-src 'self', the
+    bundled .woff2 fonts, the hashed SPA bundles) is told here, once.
+
+    `title` is the raw document title; it is escaped here.
+    """
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}</title>
+<script src="/static/theme-boot.js"></script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>"""
+
+
+def page_footer(version: str, note: str = "", touches: bool = True) -> str:
+    """The shared footer line: the version, an optional page note, and
+    the what-this-touches link unless `touches` is False (the shells
+    that are not full app pages keep the version line only).
+    """
+    note_html = f"<span>{html.escape(note)}</span>" if note else ""
+    link = '<a href="/what-this-touches">What this app touches</a>' if touches else ""
+    return (
+        '<footer class="page-foot">'
+        f'<span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span>'
+        f"{note_html}{link}</footer>"
+    )
+
+
 def page_shell(
     title: str,
     active: str,
@@ -858,23 +892,13 @@ def page_shell(
     script ships with every page. `wide` widens the column for a page
     laid out as a grid of tiles (the Memory page).
     """
-    esc_version = html.escape(version)
     esc_title = html.escape(title)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc_title}, Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head(f"{title}, Agent Desk")}
 <div class="app">{_rail(active, inbox_count)}
 <main><div class="{'doc doc-wide' if wide else 'doc'}">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
+{page_footer(version)}
 </div>
 </main>
 <script src="/static/app.js"></script>
@@ -892,7 +916,6 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     state to confess in a banner.
     """
     cards = "".join(_widget_html(w) for w in widgets)
-    esc_version = html.escape(version)
     strip = ""
     if skills:
         buttons = "".join(
@@ -904,16 +927,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
         dot_class, source_line = "dot", f"Live: {connected_sources} of {len(SOURCE_IDS)} sources connected."
     else:
         dot_class, source_line = "dot sample", "Not connected yet: each card below has its own one-step connect."
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head("Agent Desk")}
 <div class="app">
 {_rail("/", inbox_count)}
 <main>
@@ -928,7 +942,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
+{page_footer(version, note="Cards show only what their connected sources report.")}
 </main>
 </div>
 <script src="/static/app.js"></script>
@@ -939,16 +953,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 
 def render_error_page(title: str, message: str) -> str:
     """The minimal same-language page for 401/403/404 answers."""
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}, Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head(f"{title}, Agent Desk")}
 <div class="error-card">
 <h1>{html.escape(title)}</h1>
 <p>{html.escape(message)}</p>

@@ -804,20 +804,7 @@ def render_settings_page(
         indicator = "Not configured. Research and the assistant run at reduced capacity until it is set."
     endpoint_html = f"<p>{indicator}</p>" + _endpoint_form(endpoint_status)
 
-    if activity_entries:
-        rows = "".join(
-            "<tr><td class='mono'>"
-            f"{datetime.fromtimestamp(e['ts']).strftime('%m-%d %H:%M')}</td>"
-            f"<td>{html.escape(e['kind'])}</td><td>{html.escape(e['text'][:120])}</td></tr>"
-            for e in reversed(activity_entries[-30:])
-        )
-        questions = (
-            "<table class='rows'><thead><tr><th scope='col'>When</th>"
-            "<th scope='col'>Kind</th><th scope='col'>What you asked</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
-        )
-    else:
-        questions = "<p class='empty'>Nothing asked yet. Research and assistant questions land here, for you to see.</p>"
+    questions = audit_view.questions_table(activity_entries[-30:])
 
     if skills:
         blocks = []
