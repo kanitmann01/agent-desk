@@ -201,6 +201,10 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .cardform .btn{align-self:flex-start}
 .cardform label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .cardform input,.cardform select,.cardform textarea{font:inherit;font-size:14px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;min-height:36px}
+/* Checkboxes and radios ride outside the text-field minimum: the 36px
+   height and its padding are for fields, never for the small controls
+   (the same release the inbox grid gives its consent checkbox). */
+.cardform input[type="checkbox"],.cardform input[type="radio"]{min-height:0;padding:0}
 .cardform input:focus,.cardform select:focus,.cardform textarea:focus{outline:2px solid var(--focus);outline-offset:1px}
 /* The inbox card's quick actions: one shared grid so the three forms
    keep proportional columns and land their labels, controls and buttons
