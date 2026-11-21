@@ -22,8 +22,6 @@ import threading
 import time
 import webbrowser
 import zipfile
-from dataclasses import replace
-from io import BytesIO
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -47,7 +45,6 @@ from agentdesk.assistant import threadlog
 from agentdesk.assistant.context import build_context
 from agentdesk.assistant.loop import STATUS_OK, assistant_reply, research
 from agentdesk.assistant.research_store import ResearchStore
-from agentdesk.calendar import store as calendar_store
 from agentdesk.calendar.core import (
     CalendarUnreadable,
     parse_calendar_document,
@@ -56,17 +53,13 @@ from agentdesk.calendar.watcher import (
     STATE_EMPTY,
     CalendarBridge,
     default_calendar_candidates,
-    default_read_calendar,
 )
 from agentdesk.capabilities import GATES, CapabilitiesCache, GateRunners, default_gate_runners
-from agentdesk.probe.core import PASS as GATE_PASS
 from agentdesk.consents import ConsentStore
 from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import (
     KIND_MAIL_FOLLOW_UP,
-    KIND_MEMORY_DRAFT,
-    KIND_MEMORY_REFLECTION,
     KIND_UPDATE_CONSENT,
     STATUS_WAITING,
     UnknownCard,
@@ -114,7 +107,6 @@ from agentdesk.mail.store import MailStore
 from agentdesk.mail.watcher import (
     STATE_ERROR,
     STATE_UNCONFIGURED,
-    STATE_WATCHING,
     MailWatch,
 )
 from agentdesk.llm import (
@@ -129,7 +121,6 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
-from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.presentations.deliver import deliver_deck
 from agentdesk.presentations.packs import load_packs
 from agentdesk.presentations.research import (
@@ -149,35 +140,15 @@ from agentdesk.presentations.pipeline import (
     receipt_lines,
     timeout_seconds,
 )
-from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
-    EmbedderUnavailable,
-    EndpointEmbedder,
-    effective_embeddings_model,
     settings_embedder,
 )
 from agentdesk.memory.extract import (
-    EndpointExtractor,
-    ExtractionFailed,
-    ExtractorUnavailable,
     FACT_KINDS,
-    facts_to_retain,
-    occurrence_from_source,
-)
-from agentdesk.memory.reflect import (
-    EndpointReflector,
-    ReflectEmpty,
-    ReflectFailed,
-    ReflectorUnavailable,
-    accept_observations,
-    gather_facts,
-    parse_scope_date,
-    scope_key,
 )
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
-from agentdesk.server.memory_loop_api import build_loop_state
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.html import element_html
@@ -186,19 +157,17 @@ from agentdesk.registry import source as registry_source
 from agentdesk.registry.index import RegistryIndexError
 from agentdesk.registry.install import RegistryError
 from agentdesk.registry.publish import publish_to_registry
-from agentdesk.peers.client import PeerClient, PeerClientError, extract_bundle
 from agentdesk.peers.discovery import (
     PREFERRED_ANNOUNCE_PORT,
     DiscoveryService,
 )
-from agentdesk.peers.store import PeerError, PeerStore, derive_token
-from agentdesk.registry.install import RegistryError, tree_digest
+from agentdesk.peers.store import PeerStore
+from agentdesk.registry.install import RegistryError
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.cluster import pattern_hash
 from agentdesk.repetition.service import Consolidator
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.audit_view import render_audit_page
-from agentdesk.server.activity_view import DECISIONS
 from agentdesk.server.agents_view import render_agents_page
 from agentdesk.server import pages
 from agentdesk.server import routes
@@ -209,14 +178,9 @@ from agentdesk.server.commitments import (
     render_commitments_widget,
 )
 from agentdesk.server.dashboard_state import build_dashboard_state
-from agentdesk.server.graph_view import parse_graph_query, render_graph_page
 from agentdesk.server.inbox_view import render_inbox_page
 from agentdesk.server.mail_view import render_mail_page
-from agentdesk.server.memory_graph_api import build_memory_graph
-from agentdesk.server.memory_view import EDIT_MERGE_NOTICE, render_memory_page
-from agentdesk.server.peers_view import render_peers_page
 from agentdesk.server.research import (
-    RETAIN_EXCERPT_MAX_CHARS,
     render_assistant_page,
     render_research_disabled,
     render_research_widget,
@@ -228,13 +192,13 @@ from agentdesk.server.settings_view import (
 )
 from agentdesk.server.wizard_view import (
     approval_summary,
-    preview_lines,
     render_wizard_page,
 )
 from agentdesk.wizard.core import WizardCompiler, WizardError, WizardStore
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     ATTENTION,
+    SPA_DIR,
     FRESH,
     PREFERRED_PORT,
     SRC_CALENDAR,
@@ -244,10 +208,14 @@ from agentdesk.server.core import (
     STATUS_NOT_CONNECTED,
     Freshness,
     SourceStatus,
+    _active_version_dir,
+    plain_preview,
 )
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
-from agentdesk.server.guard import GuardVerdict, check_peer_request, check_request
+from agentdesk.server.guard import GuardVerdict, check_request
+from agentdesk.server.memory_api import MemoryApiMixin
+from agentdesk.server.peers_api import PeersApiMixin
 from agentdesk.server.health import health_payload
 from agentdesk.server.sales import (
     render_sales_disabled,
@@ -313,7 +281,6 @@ WIZARD_DESCRIBING_PAYLOAD = {
 # keeping a localhost connection is never worth reading gigabytes.
 MAX_DRAIN_BYTES = 8 * MAX_BODY_BYTES
 
-
 def body_drain_plan(length: int, limit: int = MAX_BODY_BYTES) -> str:
     """What to do with a request body of this declared length: 'skip'
     (nothing declared), 'stash' it for the route, 'discard' it (over the
@@ -333,12 +300,9 @@ def body_drain_plan(length: int, limit: int = MAX_BODY_BYTES) -> str:
 # with zero node involvement. When index.html is missing (a source
 # checkout without a build), "/" falls back to the server-rendered
 # dashboard; tests re-point this path to simulate either case.
-SPA_DIR = Path(__file__).resolve().parent / "static" / "spa"
-
 _MARKETPLACE_SINGLE = {"search", "installed", "publishers", "studio", "admin",
                       "trust"}
 _MARKETPLACE_SECOND = {"category", "plugin", "pack", "publisher", "manage"}
-
 
 def _known_marketplace_path(path: str) -> bool:
     """Mirror the SPA parser so a typo gets an honest 404, not a 200."""
@@ -376,24 +340,9 @@ _SPA_MIME = {
     ".txt": "text/plain; charset=utf-8",
 }
 
-
-def memory_graph_island_built() -> bool:
-    """True when the committed SPA build carries the memory graph island
-    (a source checkout without a build keeps the static graph link)."""
-    return (SPA_DIR / "assets" / "memory-graph.js").is_file()
-
-
-def memory_loop_island_built() -> bool:
-    """True when the committed SPA build carries the Memory page island
-    (capture, review, knowledge, removal); without it /memory stays the
-    server-rendered page."""
-    return (SPA_DIR / "assets" / "memory-loop.js").is_file()
-
-
 def spa_index_path() -> Path:
     """The SPA shell, read through the module global so tests can re-point it."""
     return SPA_DIR / "index.html"
-
 
 def _greeting(now: datetime) -> str:
     """The time-of-day greeting for a timestamp.
@@ -407,11 +356,9 @@ def _greeting(now: datetime) -> str:
         return "Good afternoon"
     return "Good evening"
 
-
 def _local_now() -> datetime:
     """The current time as a timezone-aware datetime in the machine's local zone."""
     return datetime.now().astimezone()
-
 
 def default_data_dir() -> Path:
     """Where the watch keeps its snapshots. Provisional for v1: a folder
@@ -421,7 +368,6 @@ def default_data_dir() -> Path:
     if override:
         return Path(override)
     return Path(Path.home(), ".agent-desk")
-
 
 # The file dialogs run in a child interpreter, not in this process.
 # Tk must own the main thread on macOS, and the server's request threads
@@ -485,14 +431,12 @@ PLUGIN_FILE_PICK_SNIPPET = _PICKER_SNIPPET_TEMPLATE.format(
     ],
 )
 
-
 # The one sentence a dialog that cannot open is answered with, wherever
 # it surfaces: the parser, the refuse-on-spawn path and the setup route.
 _PICKER_UNAVAILABLE = (
     "The file dialog could not open on this computer. "
     "Type the file's path, or upload the file instead."
 )
-
 
 def _picker_outcome(stdout: str) -> str | None:
     """Which of the picker child's three answers arrived on stdout.
@@ -524,7 +468,6 @@ def _picker_outcome(stdout: str) -> str | None:
         return None
     raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE)
 
-
 def _tk_pick_file(snippet: str) -> str | None:
     """One child process per dialog call; the parent never imports Tk.
 
@@ -547,7 +490,6 @@ def _tk_pick_file(snippet: str) -> str | None:
         raise ConfigError("config:picker-unavailable", _PICKER_UNAVAILABLE) from None
     return _picker_outcome(completed.stdout or "")
 
-
 def tk_pick_workbook() -> str | None:
     """The native workbook dialog, one child process per call."""
     from ..plugins.config import ConfigError
@@ -556,7 +498,6 @@ def tk_pick_workbook() -> str | None:
         return _tk_pick_file(WORKBOOK_PICK_SNIPPET)
     except ConfigError:
         return None
-
 
 def tk_pick_calendar() -> str | None:
     """The native calendar-file dialog, same mechanism as the workbook."""
@@ -567,17 +508,14 @@ def tk_pick_calendar() -> str | None:
     except ConfigError:
         return None
 
-
 def tk_pick_plugin_file() -> str | None:
     """The instance setup dialog: a workbook, a CSV, or a JSON export."""
     return _tk_pick_file(PLUGIN_FILE_PICK_SNIPPET)
-
 
 # The stdlib xlsx reader opens zip-based workbooks only. .xls, .xlsb and
 # .csv look like workbooks to a manager but cannot be read; naming the
 # supported types up front beats an amber card after registration.
 WORKBOOK_SUFFIXES = (".xlsx", ".xlsm")
-
 
 def probe_readable(candidate: Path) -> bool:
     """One open of the file: the honest check that it can be read here
@@ -588,7 +526,6 @@ def probe_readable(candidate: Path) -> bool:
     except OSError:
         return False
     return True
-
 
 def workbook_path_problem(path_text: str) -> str:
     """'' when the path is watchable; otherwise the human cause."""
@@ -609,7 +546,6 @@ def workbook_path_problem(path_text: str) -> str:
         )
     return ""
 
-
 def calendar_document_problem(data: bytes) -> str:
     """'' when the bytes parse as a calendar document; otherwise the cause."""
     try:
@@ -617,7 +553,6 @@ def calendar_document_problem(data: bytes) -> str:
     except (CalendarUnreadable, ValueError) as exc:
         return f"That file is not a calendar document: {exc}"
     return ""
-
 
 def calendar_path_problem(path_text: str) -> str:
     """'' when the path names a readable calendar file; else the cause.
@@ -635,7 +570,6 @@ def calendar_path_problem(path_text: str) -> str:
         return f"The file could not be read (it may be locked by another program): {path_text}"
     return calendar_document_problem(data)
 
-
 def form_body_fields(raw: bytes) -> dict | None:
     """Form-urlencoded bytes as the dict the JSON handlers read: each
     field mapped to its first value. The fallback for bodies that declare
@@ -647,16 +581,6 @@ def form_body_fields(raw: bytes) -> dict | None:
         return None
     return {name: values[0] for name, values in fields.items() if values}
 
-
-def plain_preview(text: str, limit: int = 140) -> str:
-    """A one-line plain-text preview of a draft for the audit log: the
-    donor approvals module's plainText. Tags and entities out, whitespace
-    collapsed, capped, so the log never carries markup."""
-    stripped = re.sub(r"<[^>]*>", " ", text)
-    stripped = re.sub(r"&[a-zA-Z]+;", " ", stripped)
-    return re.sub(r"\s+", " ", stripped).strip()[:limit]
-
-
 def _flag(body: dict, *names: str) -> bool:
     """A checkbox-style flag from either a JSON body (true) or a form
     post ("1", "true", "on"): the same choice, two wire shapes."""
@@ -667,21 +591,11 @@ def _flag(body: dict, *names: str) -> bool:
             return True
     return False
 
-
-def _scope_text(value) -> str:
-    """An optional reflect scope field (ticket #93): anything that is
-    not a string, or is blank once trimmed, reads as absent."""
-    if not isinstance(value, str):
-        return ""
-    return value.strip()
-
-
 def _memory_id_from_path(path: str, suffix: str) -> int | None:
     """The fact id in /memory/<id>/edit (or /delete), or None when the
     address names no fact."""
     raw = path[len("/memory/"):-len(suffix)]
     return int(raw) if raw.isascii() and raw.isdigit() else None
-
 
 def _skill_id_from_path(rest: str) -> int | None:
     """The skill id a /skills/<id>/... address names (the table hands the
@@ -689,151 +603,12 @@ def _skill_id_from_path(rest: str) -> int | None:
     raw = rest.strip("/")
     return int(raw) if raw.isascii() and raw.isdigit() else None
 
-
-def _fact_json(fact) -> dict:
-    """A fact as the API answers it."""
-    return {
-        "id": fact.id,
-        "text": fact.text,
-        "source": fact.source,
-        "createdTs": fact.created_ts,
-    }
-
-
-def _memory_entity_id(value) -> int | None:
-    """A body's entity id, or None when it is not one (ticket #92's
-    merge form posts ids)."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
-
-
-class _AuditedEmbedder:
-    """The audit wrapper around the embeddings client (ticket #95): one
-    ``llm.embeddings`` row per endpoint call, the same fields the
-    assistant loop writes for every outbound model call (endpoint,
-    model, input size, status), never the text itself. The store calls
-    this object exactly like the raw client; injecting a raw client (a
-    test does) stays silent by design, the caller's audit, not the
-    port's."""
-
-    def __init__(self, inner, base_url: str, audit_conn) -> None:
-        """Wrap the client, naming the endpoint its audit rows will carry and the
-        connection to write them to.
-
-        An audit_conn of None turns the audit off for this instance and leaves the
-        embedding path untouched.
-        """
-        self._inner = inner
-        self._base_url = base_url
-        self._audit_conn = audit_conn
-
-    @property
-    def model(self) -> str:
-        """The wrapped client's model name, passed straight through.
-
-        It is copied onto every audit row, so the log names the model that answered.
-        """
-        return self._inner.model
-
-    @property
-    def last_request_bytes(self) -> int:
-        """The byte count of the wrapped client's last call, or 0 when it reports none.
-
-        Read with getattr because the port does not require the attribute.
-        """
-        return int(getattr(self._inner, "last_request_bytes", 0) or 0)
-
-    def embed(self, text: str):
-        """Embed one text, auditing the attempt even when it fails.
-
-        Success writes one row; either failure writes a row with the exception type or
-        message cut to 200 characters and then re-raises, so every endpoint call leaves
-        exactly one llm.embeddings row.
-        """
-        request_bytes = len(text.encode("utf-8"))
-        try:
-            vector = self._inner.embed(text)
-        except EmbedderUnavailable as exc:
-            self._record("error", request_bytes, str(exc)[:200])
-            raise
-        except Exception as exc:  # noqa: BLE001 - classified, then raised
-            self._record("error", request_bytes, f"{type(exc).__name__}: {exc}"[:200])
-            raise
-        self._record("ok", request_bytes)
-        return vector
-
-    def _record(self, status: str, request_bytes: int, detail: str = "") -> None:
-        """Write one llm.embeddings row, or nothing when no audit connection was injected.
-
-        Only sizes and status are recorded; the text being embedded never reaches the
-        log.
-        """
-        if self._audit_conn is None:
-            return
-        audit_store.record(
-            self._audit_conn,
-            "llm.embeddings",
-            target=self._base_url,
-            status=status,
-            model=self.model,
-            request_bytes=request_bytes,
-            detail=detail,
-        )
-
-
-_PEER_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-
-def _peer_plugin_path(path: str) -> tuple[str | None, str]:
-    """'/peer/plugins/<id>/<tail>' as (plugin_id, tail), with the id
-    checked against the safe-name rule before it ever names a file; a
-    path that is not that shape answers (None, '')."""
-    prefix = "/peer/plugins/"
-    if not path.startswith(prefix):
-        return None, ""
-    remainder = path[len(prefix):]
-    plugin_id, sep, tail = remainder.partition("/")
-    if not sep or not plugin_id or not _PEER_SAFE_NAME.match(plugin_id):
-        return None, ""
-    return plugin_id, tail
-
-
-def _active_version_dir(record: dict) -> Path:
-    """The directory of the version the user actually runs (the same
-    rule the runtime applies: after rollback that is not the newest)."""
-    active = record.get("active_version")
-    for version in record.get("versions", []):
-        if version["version"] == active:
-            return Path(version["dir"])
-    return Path(record["versions"][-1]["dir"])
-
-
 def _alias_instance_id(name: str) -> str:
     """The instance id an alias's named instance resolves to. Mirrors the
     runtime's derivation, so the manage view lists exactly the instance
     the install materialized."""
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-")
     return cleaned or "instance"
-
-
-def _normalize_peer_address(address: str) -> str | None:
-    """host:port with an optional http:// scheme stripped; None when the
-    shape is wrong (a hostname without a port is refused: the peer
-    surface always names its port)."""
-    text = address.strip()
-    for scheme in ("http://", "https://"):
-        if text.startswith(scheme):
-            text = text[len(scheme):]
-    text = text.rstrip("/")
-    host, sep, port_text = text.partition(":")
-    if not sep or not host or not port_text.isascii() or not port_text.isdigit():
-        return None
-    port = int(port_text)
-    if not (0 < port < 65536):
-        return None
-    return f"{host}:{port}"
-
 
 def _plugin_audit_detail(action: str, result: dict) -> str:
     """What each plugin lifecycle row says, from the action's own result."""
@@ -855,7 +630,6 @@ def _plugin_audit_detail(action: str, result: dict) -> str:
     if action == "retest":
         return f"data source: {result.get('status', '')}"
     return ""
-
 
 class AgentDeskServer(ThreadingHTTPServer):
     """The app server: sessions, source table, and the excel watch."""
@@ -1077,7 +851,6 @@ class AgentDeskServer(ThreadingHTTPServer):
             self.ledger.close()
         super().server_close()
 
-
 def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     """The source table computed at request time, from the real watches.
 
@@ -1124,7 +897,6 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
         ),
     ]
 
-
 def _plugin_element_html(element: dict) -> str:
     """One payload element as authored HTML, drawn by the plugin renderer.
 
@@ -1133,7 +905,6 @@ def _plugin_element_html(element: dict) -> str:
     grow separate vocabularies. Text arrives already escaped from there.
     """
     return element_html(element)
-
 
 def _receipt_line(payload: dict) -> str:
     """The reading's resolved lines under its card, as quiet paragraphs.
@@ -1159,7 +930,6 @@ def _receipt_line(payload: dict) -> str:
             # cannot smuggle markup onto the page.
             lines.append('<p class="w-note">' + html.escape(text, quote=False) + "</p>")
     return "".join(lines)
-
 
 def _press_form(card: dict, press: object) -> str:
     """A card's press as a real control: a plain form, no script.
@@ -1193,7 +963,6 @@ def _press_form(card: dict, press: object) -> str:
         + "</form>"
     )
 
-
 def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
     """Attach the coupled reading to cards as the dashboard state is built.
 
@@ -1206,7 +975,6 @@ def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
         build_insight_context(server, PreferenceStore(default_data_dir()).read()),
     )
     return cards
-
 
 def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
     """The plugin ids whose cards exist right now, in listing order.
@@ -1225,7 +993,6 @@ def enabled_plugin_ids(server: AgentDeskServer) -> list[str]:
         if entry.get("state") == "enabled"
     ]
 
-
 def dashboard_payload(server: AgentDeskServer) -> dict:
     """Everything the dashboard shows, as data: one JSON payload for the
     SPA shell (and any later client).
@@ -1237,7 +1004,6 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     pure read: a GET never spends a plugin's pilot view.
     """
     return build_dashboard_state(server).payload()
-
 
 def desk_check_context(server: AgentDeskServer) -> "DeskContext":
     """The desk check's view of this server: live collaborators, read only.
@@ -1260,13 +1026,11 @@ def desk_check_context(server: AgentDeskServer) -> "DeskContext":
         clock=time.time,
     )
 
-
 def desk_check_result(server: AgentDeskServer) -> "CheckResult":
     """One run of every desk check: detection only, never a fix."""
     from agentdesk.deskcheck import run_checks
 
     return run_checks(desk_check_context(server))
-
 
 def desk_check_api_payload(server: AgentDeskServer) -> dict:
     """GET /api/desk-check's JSON body: one read-only run of every check."""
@@ -1279,7 +1043,6 @@ def desk_check_api_payload(server: AgentDeskServer) -> dict:
         "failed": dict(result.failed),
     }
 
-
 def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
     """A handler with no request, for work that starts outside one (the
     workbook watch's poll thread). Only the helpers that read
@@ -1287,7 +1050,6 @@ def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
     handler = DashboardHandler.__new__(DashboardHandler)
     handler.server = server
     return handler
-
 
 def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, delta) -> None:
     """The memory loop's workbook channel: rows that changed since the
@@ -1306,8 +1068,7 @@ def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, de
         candidates=candidates,
     )
 
-
-class DashboardHandler(BaseHTTPRequestHandler):
+class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     """GET for the shell, health and statics; POST for state changes."""
 
     protocol_version = "HTTP/1.1"
@@ -1465,7 +1226,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._gate():
             return
         self._dispatch("GET", path, "No page lives at this address.")
-
 
     # -- POST ------------------------------------------------------------
 
@@ -4261,1170 +4021,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._respond_form_or_json(f"/settings/activity?notice={quote(sentence)}",
                                    {"error": sentence}, status)
 
-    # -- memory: the page and its actions (tickets #42, #94) --------------
-
-    def _configure_memory_embeddings(self) -> None:
-        """Derive the memory store's semantic half for this action
-        (ticket #95): the semantic_memory toggle (default on), the
-        embeddings probe's cached answer (a PASS only; the page's
-        re-test is what produced it), and a saved endpoint to ask. Any
-        miss leaves the store inert, so recall is the deterministic
-        hybrid exactly as before this ticket. The embedder is wrapped
-        in the audit rows every outbound call owes; the store is a
-        long-lived object, so the derived pair is written back onto it
-        per action rather than per boot."""
-        server = self.server  # type: ignore[attr-defined]
-        memory = server.memory
-        if memory is None or memory.locked_cause is not None:
-            return
-        settings = server.settings
-        active = True if settings is None else bool(settings.get("semantic_memory"))
-        cache = server.capabilities_cache
-        cached = cache.cached("embeddings") if cache is not None else None
-        passed = cached is not None and cached.result.status == GATE_PASS
-        # The embeddings ride the memory job through the hub (spec 018
-        # #233): a bound connection serves with its own base and key, and
-        # its label is the name the llm.embeddings rows carry; with no
-        # connection the settings-over-environment leg keeps answering.
-        resolved = self._job_resolution("memory")
-        base = key = serving_name = ""
-        if resolved is not None:
-            if resolved.connection is not None:
-                connection = resolved.connection
-                base = connection.base_url
-                key = server.keychain.fetch(connection.id) or ""
-                serving_name = connection.label
-                try:
-                    server.keys.record_use(connection.id)
-                except Exception:  # noqa: BLE001 - the stamp never fails the embeddings
-                    LOG.debug("could not stamp last_used_at for %s",
-                              connection.id, exc_info=True)
-            else:
-                base = resolved.base_url
-                key = resolved.api_key
-                serving_name = resolved.base_url
-        embedder = None
-        if active and passed and base:
-            embedder = _AuditedEmbedder(
-                EndpointEmbedder(base, key, effective_embeddings_model(settings)),
-                base_url=serving_name or base,
-                audit_conn=server.audit_conn,
-            )
-        memory.embedder = embedder
-        memory.embeddings_active = embedder is not None
-
-    def _memory_available(self):
-        """The store check every memory route rides: None means the
-        response is already sent. A locked store (a marker without its
-        key, a wrong key, a key on a populated plaintext bank) refuses
-        with its specific plain-language cause, never silently reading
-        or writing plaintext."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return None
-        if memory.locked_cause is not None:
-            self._send_json(503, {"error": memory.locked_cause})
-            return None
-        return memory
-
-    def _send_memory_page(
-        self,
-        recall: list | None = None,
-        query: str = "",
-        encrypt: dict | None = None,
-        sweep: list | None = None,
-        notice: str | None = None,
-    ) -> None:
-        """The memory page; with a recall preview when a query came in,
-        the encryption state alongside the facts, the entities with
-        their merge form (ticket #92), the junk-sweep preview when
-        asked, and the locked banner alone when the store is locked."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            page = render_memory_page(
-                [], agentdesk.__version__, locked=memory.locked_cause,
-                inbox_count=self._inbox_waiting_count(),
-            )
-        else:
-            if encrypt is None:
-                encrypt = {"already": True} if memory.is_sealed else {"link": True}
-            page = render_memory_page(
-                memory.all(), agentdesk.__version__, recall=recall, query=query,
-                encrypt=encrypt, entities=memory.entities(), sweep=sweep,
-                notice=notice, observations=memory.observations(),
-                embeddings=memory.embedding_counts(),
-                inbox_count=self._inbox_waiting_count(),
-                graph_island=memory_graph_island_built(),
-                loop_island=memory_loop_island_built(),
-            )
-        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
-
-    def _memory_add(self) -> None:
-        """The page's typed-fact path. (The Assistant and Research create
-        facts only through capture, which the memory settings govern and
-        review gates by default.) Ticket #95: the
-        semantic half is derived per action, so an active fact embeds
-        at write and a failure stores the fact without a vector."""
-        memory = self._memory_available()
-        if memory is None:
-            return
-        self._configure_memory_embeddings()
-        body = self._read_json_body() or {}
-        text = body.get("text")
-        if not isinstance(text, str) or not text.strip():
-            self._send_json(400, {"error": 'expected {"text": "..."}'})
-            return
-        # Typed facts keep the user's words; the names they mention link
-        # them to entities, so supersede and consolidation see them too.
-        outcome = memory_loop.store_fact(
-            memory, text.strip(), source="page", entities=memory_loop.names_in(text),
-        )
-        self._schedule_observation_pass()
-        self._respond_form_or_json("/memory", _fact_json(outcome.fact), 201)
-
-    def _memory_edit(self, fact_id: int | None) -> None:
-        """Rewrite one fact's text.
-
-        404 for an id that names no fact and 400 for a body with no text. An edit whose
-        new text matches another fact merges into it: a form post re-renders the page
-        with the merge notice, while JSON returns the surviving fact with
-        mergedIntoExisting set, so neither client has to guess which fact it now holds.
-        """
-        if fact_id is None:
-            self._send_error_page(404, "Nothing here", "No fact lives at this address.")
-            return
-        memory = self._memory_available()
-        if memory is None:
-            return
-        self._configure_memory_embeddings()
-        body = self._read_json_body() or {}
-        text = body.get("text")
-        if not isinstance(text, str) or not text.strip():
-            self._send_json(400, {"error": 'expected {"text": "..."}'})
-            return
-        try:
-            result = memory.edit(fact_id, text.strip())
-        except UnknownFact as exc:
-            self._send_json(404, {"error": str(exc)})
-            return
-        # Ticket #92: an edit that landed on another fact's text merged
-        # into it; a form post renders the page with the plain notice,
-        # JSON carries the flag alongside the surviving fact.
-        if result.merged_into and self._is_form_submit():
-            self._send_memory_page(notice=EDIT_MERGE_NOTICE)
-            return
-        payload = _fact_json(result.fact)
-        payload["mergedIntoExisting"] = result.merged_into
-        self._respond_form_or_json("/memory", payload)
-
-    def _memory_delete(self, fact_id: int | None) -> None:
-        """Remove one fact, holding it for undo.
-
-        The plan and the apply both receive the pending source ids, so a removal that
-        keeps some sources keeps the same set at both stages. The removal is audited by
-        count and followed by an observation pass; the answer names the deleted id.
-        """
-        if fact_id is None:
-            self._send_error_page(404, "Nothing here", "No fact lives at this address.")
-            return
-        memory = self._memory_available()
-        if memory is None:
-            return
-        try:
-            plan = memory_loop.plan_removal(
-                memory, "fact", fact_id, keep_source_ids=self._pending_source_ids())
-        except memory_loop.UnknownTarget as exc:
-            self._send_json(404, {"error": str(exc)})
-            return
-        memory_loop.apply_removal(memory, plan, keep_source_ids=self._pending_source_ids())
-        self._audit("memory.remove", target=f"fact {fact_id}", detail="1 fact")
-        self._schedule_observation_pass()
-        self._respond_form_or_json("/memory", {"deleted": fact_id})
-
-    def _memory_sweep_page(self) -> None:
-        """The sweep's dry run (ticket #92): the memory page with the
-        candidates, each carrying its reason and a checkbox. A locked
-        store renders the banner, like the main page does."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            self._send_memory_page()
-            return
-        self._send_memory_page(sweep=memory.sweep_candidates())
-
-    def _memory_graph_page(self) -> None:
-        """The memory graph page (ticket #96): the snapshot's static
-        SVG in this app's page style. A locked store renders the
-        memory page's banner, like the sweep's dry run does; the query
-        string parses defensively (memory dates, a clamped limit), so
-        the page renders whatever arrives."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            self._send_memory_page()
-            return
-        _path, _sep, query = self.path.partition("?")
-        since, until, limit = parse_graph_query(query)
-        snapshot = memory.graph_snapshot(since=since, until=until, limit=limit)
-        page = render_graph_page(
-            snapshot,
-            agentdesk.__version__,
-            since=since,
-            until=until,
-            inbox_count=self._inbox_waiting_count(),
-            island_query=query if memory_graph_island_built() else None,
-        )
-        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
-
-    def _memory_graph_json(self) -> None:
-        """The Memory page graph's data (GET /api/memory/graph): the
-        store's real facts, observations, entities, retained excerpts
-        and the actions that wrote them, with each node's provenance.
-        Same window vocabulary as the static graph page; a locked store
-        answers 423 with its cause and reads nothing."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"status": "unavailable",
-                                  "error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            self._send_json(423, {"status": "locked", "error": memory.locked_cause})
-            return
-        self._configure_memory_embeddings()
-        _path, _sep, query = self.path.partition("?")
-        since, until, limit = parse_graph_query(query)
-        payload = build_memory_graph(
-            memory,
-            inbox=self.server.inbox,  # type: ignore[attr-defined]
-            since=since,
-            until=until,
-            limit=limit,
-            semantic=bool(memory.embeddings_active),
-        )
-        self._send_json(200, payload)
-
-    # -- the memory loop: capture, the page's state, removal and undo ------
-
-    def _capture_memory(self, channel: str, excerpt: str, own_words: str,
-                        use_model: bool = True, candidates=None) -> None:
-        """Offer what just flowed through a channel to the memory loop.
-        Runs off the request thread (one capture at a time) so a reply is
-        never slowed by extraction; any failure is logged, never raised
-        into the turn that triggered it. A turn the endpoint just failed
-        (`use_model` false) goes straight to the rules instead of asking
-        the same endpoint again."""
-        server = self.server  # type: ignore[attr-defined]
-        memory = server.memory
-        if memory is None or memory.locked_cause is not None:
-            return
-        settings = memory_loop.capture_settings(server.settings)
-        if not settings.captures(channel):
-            return
-        if candidates is not None:
-            use_model = False  # the channel wrote its own candidates
-        extractor, endpoint, model = self._capture_extractor() if use_model else (None, "", "")
-        extract = extractor.extract if extractor is not None else None
-
-        def job() -> None:
-            """The capture itself, on the background runner's thread.
-
-            The lock is what keeps captures to one at a time. A failure is logged and
-            swallowed, because capture must never break the turn that triggered it. The
-            llm.retain row is written only when an extractor ran, so a rules-only
-            capture adds no model noise. The observation pass is scheduled after the
-            lock is released, so the next pass waits on the lock rather than on this
-            job.
-            """
-            with server.memory_capture_lock:
-                try:
-                    self._configure_memory_embeddings()
-                    outcome = memory_loop.capture(
-                        memory, server.inbox,
-                        channel=channel, excerpt=excerpt[:RETAIN_EXCERPT_MAX_CHARS],
-                        own_words=own_words, settings=settings, extract=extract,
-                        stage_card=self._capture_card,
-                        speaker="Workbook" if channel == "workbook" else "You",
-                        candidates=candidates,
-                    )
-                except Exception:  # noqa: BLE001 - capture must never break a turn
-                    LOG.exception("memory capture on %s failed", channel)
-                    return
-                if outcome is None:
-                    return
-                if extractor is not None:
-                    self._model_audit(
-                        "llm.retain", endpoint or "", model or "", self._port_bytes(extractor),
-                        status="ok" if outcome.method == memory_loop.METHOD_MODEL else "error",
-                        detail=outcome.cause,
-                    )
-                server.memory_last_capture = {
-                    "channel": channel,
-                    "channelLabel": memory_loop.CHANNEL_LABELS.get(channel, channel),
-                    "method": outcome.method,
-                    "cause": outcome.cause,
-                    "found": outcome.found,
-                    "skipped": outcome.skipped,
-                    "staged": len(outcome.card_ids),
-                    "stored": len(outcome.fact_ids),
-                    "ts": time.time(),
-                }
-                if outcome.card_ids or outcome.fact_ids:
-                    self._audit(
-                        "memory.capture", target=channel,
-                        detail=(f"{len(outcome.card_ids)} to review, "
-                                f"{len(outcome.fact_ids)} saved, by {outcome.method}"),
-                    )
-                if outcome.card_ids and server.inbox is not None:
-                    self._evaluate_inbox(server.inbox)
-            if outcome is not None and outcome.fact_ids:
-                self._schedule_observation_pass()
-
-        server.memory_capture_runner(job)
-
-    def _observation_summarizer(self) -> tuple:
-        """(summarizer, endpoint, model) for the per-entity observations,
-        or (None, "", "") when endpoint calls are off or none is
-        configured: then the rules write them."""
-        server = self.server  # type: ignore[attr-defined]
-        if not self._source_allowed("endpoint_enabled"):
-            return None, "", ""
-        llm, endpoint, model = self._effective_llm("memory")
-        if server.summarizer is not None:
-            return server.summarizer, endpoint or "", model or ""
-        if endpoint or not server.llm_defaulted_to_env:
-            return memory_loop.EndpointSummarizer(llm), endpoint or "", model or ""
-        return None, "", ""
-
-    def _observe_audit(self, summarizer, endpoint: str, model: str, written: int,
-                       failure: str) -> None:
-        """Record what an observation pass did: llm.observe with the count written.
-
-        The detail always names the written count and appends the first 160 characters
-        of the failure when there was one. A failed pass still writes a row, so a pass
-        that wrote nothing cannot look like a pass that never ran.
-        """
-        self._model_audit(
-            "llm.observe", endpoint or "", model or "", self._port_bytes(summarizer),
-            status="error" if failure else "ok",
-            detail=(f"{memory_loop.counted(written, 'observation')} written"
-                    + (f"; {failure[:160]}" if failure else "")),
-        )
-
-    def _schedule_observation_pass(self) -> None:
-        """After memory changes: let the endpoint rewrite the observations
-        the rules just wrote (or any built from changed facts), off the
-        request thread. Coalesced: one pending pass at a time; a change
-        during a pass schedules the next one."""
-        server = self.server  # type: ignore[attr-defined]
-        memory = server.memory
-        if memory is None or memory.locked_cause is not None:
-            return
-        summarizer, endpoint, model = self._observation_summarizer()
-        if summarizer is None or server.memory_observe_pending:
-            return
-        server.memory_observe_pending = True
-
-        def job() -> None:
-            """One coalesced observation pass, on the background runner's thread.
-
-            The pending flag is cleared first, so a change that arrives during the pass
-            schedules the next one instead of being lost. A failure is logged and leaves
-            the rules' text in place. The audit row is written only when the summarizer
-            reports calls, so a pass that needed no endpoint call is not recorded as
-            one.
-            """
-            server.memory_observe_pending = False
-            with server.memory_capture_lock:
-                try:
-                    outcome = memory_loop.reconcile_observations(memory, summarize=summarizer)
-                except Exception:  # noqa: BLE001 - a failed pass leaves the rules' text
-                    LOG.exception("memory observation pass failed")
-                    return
-            if getattr(summarizer, "calls", 1):
-                self._observe_audit(summarizer, endpoint, model,
-                                    outcome.model_written, outcome.model_failure)
-
-        server.memory_capture_runner(job)
-
-    def _capture_card(self, candidate, source_id: int, channel: str, method: str):
-        """The review card for one captured candidate: the same memory
-        draft card the manual save makes, with the channel and the
-        extraction method recorded so the page can say where it came
-        from and how."""
-        label = memory_loop.CHANNEL_LABELS.get(channel, channel)
-        names = ", ".join(name for name, _type in candidate.entities)
-        how = ("the company endpoint" if method == memory_loop.METHOD_MODEL
-               else "the built-in rules (no endpoint answered)")
-        return self.server.inbox.add(  # type: ignore[attr-defined]
-            kind=KIND_MEMORY_DRAFT,
-            origin=(f"Captured from your {label} activity by {how}. "
-                    "Approving saves this fact to memory; rejecting leaves nothing behind."),
-            title=f"Fact from {label}" + (f": {names}" if names else ""),
-            body=f"Captured from {label}." + (f" Mentions {names}." if names else ""),
-            action_label="Save to memory",
-            draft=candidate.text,
-            meta={"memoryFact": {
-                "kind": candidate.kind,
-                "occurrence_ts": candidate.occurrence_ts,
-                "entities": [[name, entity_type] for name, entity_type in candidate.entities],
-                "source_id": source_id,
-                "channel": channel,
-                "method": method,
-            }},
-        )
-
-    def _pending_source_ids(self) -> set[int]:
-        """Excerpts a waiting review card still points at: a removal
-        leaves them in place so approving the card later still links."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
-        if inbox is None:
-            return set()
-        ids: set[int] = set()
-        for card in inbox.waiting(include_snoozed=True):
-            meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
-            if isinstance(meta, dict) and isinstance(meta.get("source_id"), int):
-                ids.add(int(meta["source_id"]))
-        return ids
-
-    def _capture_extractor(self) -> tuple:
-        """(extractor, endpoint, model) capture asks first, or (None, "",
-        "") when endpoint calls are off or no endpoint is configured."""
-        server = self.server  # type: ignore[attr-defined]
-        if not self._source_allowed("endpoint_enabled"):
-            return None, "", ""
-        llm, endpoint, model = self._effective_llm("memory")
-        if server.extractor is not None:
-            return server.extractor, endpoint or "", model or ""
-        if endpoint or not server.llm_defaulted_to_env:
-            return EndpointExtractor(llm), endpoint or "", model or ""
-        return None, "", ""
-
-    def _extractor_status(self) -> dict:
-        """Which extraction method capture will use, with the reason, for the memory page.
-
-        A disabled endpoint or none saved means the built-in rules, each with its own
-        sentence; a configured endpoint means the model, naming it and warning that the
-        rules take over when it does not answer.
-        """
-        if not self._source_allowed("endpoint_enabled"):
-            return {"mode": memory_loop.METHOD_RULES,
-                    "detail": "Endpoint calls are off in Settings, so capture uses the built-in rules on your own words."}
-        extractor, _endpoint, model = self._capture_extractor()
-        if extractor is not None:
-            return {"mode": memory_loop.METHOD_MODEL,
-                    "detail": f"Extracting with {model or 'the default model'}. If the endpoint does not answer, the built-in rules take over."}
-        return {"mode": memory_loop.METHOD_RULES,
-                "detail": "No endpoint is saved in Settings, so capture uses the built-in rules on your own words."}
-
-    def _memory_loop_json(self) -> None:
-        """The memory loop's state as JSON, and a chance to re-offer rule-built
-        observations.
-
-        423 when the store is locked, carrying the store's own cause. When any
-        observation still carries the rules' mark — the bank predates the endpoint, or a
-        pass ran while it was down — one pass is scheduled, at most once a minute while
-        the page stays open, so looking at the page is what improves it.
-        """
-        server = self.server  # type: ignore[attr-defined]
-        memory = server.memory
-        if memory is None:
-            self._send_json(503, {"status": "unavailable", "error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            self._send_json(423, {"status": "locked", "error": memory.locked_cause})
-            return
-        # Observations the rules wrote (the endpoint was down, or the bank
-        # predates it) are offered to the endpoint again, at most once a
-        # minute while the page is open.
-        now = time.time()
-        if now >= server.memory_observe_after and any(
-            method == memory_loop.METHOD_RULES for method, _b in memory.observation_marks().values()
-        ):
-            server.memory_observe_after = now + 60.0
-            self._schedule_observation_pass()
-        settings = memory_loop.capture_settings(server.settings)
-        self._send_json(200, build_loop_state(
-            memory, server.inbox, settings.to_json(), self._extractor_status(),
-            server.memory_last_capture, server.memory_undo.window_s,
-        ))
-
-    def _memory_target(self, body: dict) -> tuple[str, int] | None:
-        """The (kind, id) a request names, or None when it names neither properly.
-
-        The id must be a true int: a bool is refused even though Python would accept it
-        as one, because a JSON true is not an id. A body without a target field falls
-        back to the body itself, so a flat request means what a nested one means.
-        """
-        target = body.get("target") if isinstance(body.get("target"), dict) else body
-        kind = target.get("type")
-        raw = target.get("id")
-        if kind not in memory_loop.TARGET_TYPES or isinstance(raw, bool) or not isinstance(raw, int):
-            return None
-        return kind, raw
-
-    def _memory_remove(self, preview: bool) -> None:
-        """Preview names everything a removal changes and writes nothing;
-        the removal itself writes once, holds an undo for the window and
-        records an audit row with counts, never memory text."""
-        server = self.server  # type: ignore[attr-defined]
-        memory = self._memory_available()
-        if memory is None:
-            return
-        body = self._read_json_body() or {}
-        target = self._memory_target(body)
-        if target is None:
-            self._send_json(400, {"error": 'expected {"target": {"type": "fact|source|entity|observation", "id": <id>}}'})
-            return
-        kind, target_id = target
-        if kind == "source" and not preview and server.inbox is not None:
-            # Removing an excerpt also rejects the cards still waiting on it.
-            for card in server.inbox.waiting(include_snoozed=True):
-                meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
-                if isinstance(meta, dict) and meta.get("source_id") == target_id:
-                    server.inbox.dismiss(card.id)
-        keep = self._pending_source_ids()
-        # The preview asks the endpoint for the observations' new text (so
-        # the dialog shows what they will read); the removal reuses it.
-        summarizer, endpoint, model = self._observation_summarizer() if preview else (None, "", "")
-        try:
-            plan = memory_loop.plan_removal(
-                memory, kind, target_id, keep_source_ids=keep,
-                summarize=summarizer,
-            )
-        except (memory_loop.UnknownTarget, UnknownEntity, UnknownFact) as exc:
-            self._send_json(404, {"error": str(exc)})
-            return
-        if summarizer is not None and getattr(summarizer, "calls", 0):
-            self._observe_audit(summarizer, endpoint, model, sum(
-                1 for _scope, summary in plan.after.values()
-                if summary.method == memory_loop.METHOD_MODEL
-            ), "")
-        if preview:
-            server.memory_previews.put(plan)
-            self._send_json(200, {"status": "ok", "plan": plan.to_json(memory)})
-            return
-        self._configure_memory_embeddings()
-        planned = server.memory_previews.take(kind, target_id)
-        result = memory_loop.apply_removal(memory, plan, keep_source_ids=keep, planned=planned)
-        self._schedule_observation_pass()
-        token, expires = server.memory_undo.hold(result, plan.label)
-        counts = (f"{memory_loop.counted(len(result.fact_ids), 'fact')}; observations:"
-                  f" {len(result.observations_removed)} removed, {len(result.observations_updated)} rewritten,"
-                  f" {len(result.observations_flagged)} flagged;"
-                  f" {memory_loop.counted(len(result.entities_removed), 'entity', 'entities')} forgotten")
-        self._audit("memory.remove", target=f"{kind} {target_id}", detail=counts)
-        self._send_json(200, {
-            "status": "ok",
-            "removed": result.to_json(),
-            "undo": {"token": token, "expiresTs": expires, "windowS": server.memory_undo.window_s},
-        })
-
-    def _memory_undo(self) -> None:
-        """Undo a removal inside its window.
-
-        The token is taken out of the buffer, so a second undo with the same token finds
-        nothing and answers 410 with the window message. A ValueError means the data
-        moved on since the preview and answers 409. A successful undo is audited and
-        followed by an observation pass.
-        """
-        server = self.server  # type: ignore[attr-defined]
-        memory = self._memory_available()
-        if memory is None:
-            return
-        body = self._read_json_body() or {}
-        token = body.get("token")
-        held = server.memory_undo.take(token) if isinstance(token, str) else None
-        if held is None:
-            self._send_json(410, {"error": "The undo window has passed, so that removal is final."})
-            return
-        try:
-            memory_loop.undo_removal(memory, held)
-        except ValueError as exc:
-            self._send_json(409, {"error": str(exc)})
-            return
-        self._schedule_observation_pass()
-        self._audit("memory.undo", target=memory_loop.counted(len(held.result.fact_ids), "fact"),
-                    detail="removal undone within the window")
-        self._send_json(200, {"status": "ok", "restored": held.result.to_json()})
-
-    def _memory_keep(self, raw_id: str) -> None:
-        """Keep both: a replaced fact rides recall again."""
-        memory = self._memory_available()
-        if memory is None:
-            return
-        if not raw_id.isdigit():
-            self._send_json(404, {"error": "no fact at this address"})
-            return
-        try:
-            memory.clear_superseded(int(raw_id))
-        except UnknownFact as exc:
-            self._send_json(404, {"error": str(exc)})
-            return
-        memory_loop.reconcile_observations(memory)
-        self._schedule_observation_pass()
-        self._audit("memory.keep", target=f"fact {raw_id}", detail="kept beside its replacement")
-        self._send_json(200, {"status": "ok", "kept": int(raw_id)})
-
-    def _memory_sweep(self) -> None:
-        """Delete the checked candidates through the donor's removeFacts
-        semantics (ticket #92): every id must be a current junk
-        candidate and must exist, or the whole call is refused before
-        anything is written. The audit row names counts, never fact
-        text."""
-        memory = self._memory_available()
-        if memory is None:
-            return
-        body = self._read_json_body() or {}
-        ids = self._sweep_ids_from_body(body)
-        if not ids:
-            self._memory_hygiene_error_response(
-                400, 'expected {"ids": [...]} or the preview checkboxes'
-            )
-            return
-        candidates = {c.fact.id: c.reason for c in memory.sweep_candidates()}
-        for fact_id in ids:
-            if fact_id in candidates:
-                continue
-            try:
-                memory.get(fact_id)
-            except UnknownFact:
-                self._memory_hygiene_error_response(404, f"no fact {fact_id}")
-                return
-            self._memory_hygiene_error_response(
-                400,
-                "That fact is not a junk candidate; delete it from the "
-                "fact list instead.",
-            )
-            return
-        try:
-            removed = memory.remove_facts(ids)
-        except UnknownFact as exc:
-            # A candidate vanished between the preview and this post.
-            self._memory_hygiene_error_response(404, str(exc))
-            return
-        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
-            audit_store.record(
-                self.server.audit_conn, "memory.sweep",
-                target=f"{len(removed.fact_ids)} facts",
-                detail=(f"swept {len(removed.observation_ids)} orphaned"
-                        f" observations and {len(removed.entity_ids)} orphaned"
-                        " entities"),
-            )
-        self._respond_form_or_json("/memory", {
-            "status": "ok",
-            "deleted": len(removed.fact_ids),
-            "removedFactIds": list(removed.fact_ids),
-            "removedObservationIds": list(removed.observation_ids),
-            "removedEntityIds": list(removed.entity_ids),
-        })
-
-    def _sweep_ids_from_body(self, body: dict) -> list[int]:
-        """The checked candidate ids: a JSON id list, or one checkbox
-        per candidate (the no-JS form's unique names). Anything that is
-        not a fact id is a refused call, never a partial delete."""
-        raw = body.get("ids")
-        if isinstance(raw, list):
-            ids: list[int] = []
-            for value in raw:
-                if isinstance(value, bool) or not isinstance(value, int):
-                    return []
-                ids.append(value)
-            return sorted(set(ids))
-        checked: set[int] = set()
-        for name, value in body.items():
-            if not name.startswith("sweep_") or not value:
-                continue
-            suffix = name[len("sweep_"):]
-            if not suffix.isdigit():
-                return []
-            checked.add(int(suffix))
-        return sorted(checked)
-
-    def _memory_entities_merge(self) -> None:
-        """The page's entity merge (ticket #92): union the aliases,
-        relink every fact, one entity remains. The audit row names ids,
-        never entity names."""
-        memory = self._memory_available()
-        if memory is None:
-            return
-        body = self._read_json_body() or {}
-        survivor = _memory_entity_id(body.get("survivor"))
-        removed = _memory_entity_id(body.get("removed"))
-        if survivor is None or removed is None:
-            self._memory_hygiene_error_response(
-                400, 'expected {"survivor": <id>, "removed": <id>}'
-            )
-            return
-        try:
-            merged = memory.merge_entities(survivor, removed)
-        except ValueError as exc:
-            self._memory_hygiene_error_response(400, str(exc))
-            return
-        except UnknownEntity as exc:
-            self._memory_hygiene_error_response(404, str(exc))
-            return
-        # The merge deleted both sides' observations inside its
-        # transaction; this is the rebuild line every other write runs.
-        memory_loop.reconcile_observations(memory)
-        self._schedule_observation_pass()
-        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
-            audit_store.record(
-                self.server.audit_conn, "memory.merge",
-                target=str(survivor),
-                detail=f"merged entity {removed} into entity {survivor}",
-            )
-        self._respond_form_or_json("/memory", {
-            "status": "ok",
-            "survivor": merged.id,
-            "survivorName": merged.canonical_name,
-            "aliases": list(merged.aliases),
-            "type": merged.type,
-            "merged": removed,
-        })
-
-    def _memory_hygiene_error_response(self, status: int, cause: str) -> None:
-        """A refused hygiene action: the error page for a form post, the
-        JSON cause for an API call."""
-        if self._is_form_submit():
-            self._send_error_page(status, "Memory hygiene", cause)
-            return
-        self._send_json(status, {"error": cause})
-
-    def _memory_recall(self) -> None:
-        """The preview: render the page with the ranked answers, best
-        first, so the manager sees exactly what the assistant would
-        ride. Ticket #95: the query embeds once when the semantic half
-        is active; a failure simply leaves the deterministic legs."""
-        memory = self._memory_available()
-        if memory is None:
-            return
-        self._configure_memory_embeddings()
-        body = self._read_json_body() or {}
-        query = body.get("query")
-        if not isinstance(query, str) or not query.strip():
-            self._send_json(400, {"error": 'expected {"query": "..."}'})
-            return
-        query = query.strip()
-        self._send_memory_page(recall=memory.recall(query), query=query)
-
-    def _memory_encrypt_page(self) -> None:
-        """The dry run: the memory page with the conversion form and the
-        per-table counts of what would be sealed. An already-encrypted
-        bank says so; a locked one renders the banner."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            self._send_memory_page()
-            return
-        if memory.is_sealed:
-            self._send_memory_page(encrypt={"already": True})
-            return
-        self._send_memory_page(encrypt={"counts": memory.plain_field_counts()})
-
-    def _memory_encrypt(self) -> None:
-        """The one-action conversion, confirm-gated (ticket #94).
-
-        The checkbox is the settings confirmation the spec asks for: no
-        confirm field, no conversion. The key file is ensured before the
-        transaction, the conversion is one transaction, and the audit
-        row names the field count, never a key byte or a fact text."""
-        memory = self.server.memory  # type: ignore[attr-defined]
-        if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return
-        if memory.locked_cause is not None:
-            self._memory_error_response(503, memory.locked_cause)
-            return
-        if memory.is_sealed:
-            self._memory_error_response(
-                409, "The memory database is already encrypted."
-            )
-            return
-        body = self._read_json_body() or {}
-        if not body.get("confirm"):
-            self._memory_error_response(
-                400,
-                "Tick the confirm checkbox: the conversion rewrites every "
-                "stored text and cannot be undone without the key.",
-            )
-            return
-        if memory.key_path is None:
-            self._memory_error_response(
-                503, "No key file location is configured for this memory store."
-            )
-            return
-        try:
-            result = memory.encrypt_all()
-        except MemoryEncryptedError as exc:
-            self._memory_error_response(409, str(exc))
-            return
-        except (OSError, ValueError) as exc:
-            self._memory_error_response(
-                503, f"The key file could not be written or read: {exc}"
-            )
-            return
-        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
-            audit_store.record(
-                self.server.audit_conn, "memory.encrypt",
-                target=f"{result['fields']} fields",
-                detail=("memory.sqlite3 encrypted at rest; the key stays"
-                        " in memory.key"),
-            )
-        self._respond_form_or_json("/memory", {"status": "ok", "fields": result["fields"]})
-
-    def _memory_error_response(self, status: int, cause: str) -> None:
-        """A refused memory action: the error page for a form post, the
-        JSON cause for an API call."""
-        if self._is_form_submit():
-            self._send_error_page(status, "Memory encryption", cause)
-            return
-        self._send_json(status, {"error": cause})
-
-    # -- embeddings backfill (ticket #95) ----------------------------------
-
-    def _memory_embeddings_backfill(self) -> None:
-        """The memory page's backfill action (ticket #95, the donor's
-        backfillEmbeddings): every fact missing a vector embeds
-        oldest-first, one committed UPDATE per row, so a mid-run
-        failure leaves the prior rows embedded and a retry finishes
-        the job. The answer carries the counts either way (embedded N,
-        remaining M) and, when the run stopped early, the endpoint's
-        plain-language cause. The action's audit row names the counts,
-        never a fact text; the individual endpoint calls ride the
-        llm.embeddings rows the audited embedder writes."""
-        server = self.server  # type: ignore[attr-defined]
-        memory = self._memory_available()
-        if memory is None:
-            return
-        self._configure_memory_embeddings()
-        if not (memory.embeddings_active and memory.embedder is not None):
-            self._memory_embeddings_error_response(
-                409,
-                "Semantic memory is not active: pass the embeddings probe"
-                " on the capabilities page, keep semantic memory on in"
-                " settings, and save an endpoint first.",
-            )
-            return
-        try:
-            result = memory.backfill_embeddings()
-        except MemoryEncryptedError as exc:
-            self._memory_embeddings_error_response(503, str(exc))
-            return
-        counts = f"{result['embedded']} embedded, {result['remaining']} remaining"
-        cause = result.get("cause")
-        if server.audit_conn is not None:
-            audit_store.record(
-                server.audit_conn, "memory.embeddings",
-                target=counts,
-                status="ok" if cause is None else "error",
-                detail=cause or "",
-            )
-        notice = f"Embeddings backfill: {counts}."
-        if cause is not None:
-            notice = f"Embeddings backfill stopped early: {cause} Counts: {counts}"
-            if self._is_form_submit():
-                self._send_memory_page(notice=notice)
-                return
-            self._send_json(200, {
-                "status": "error",
-                "embedded": result["embedded"],
-                "remaining": result["remaining"],
-                "cause": cause,
-            })
-            return
-        if self._is_form_submit():
-            self._send_memory_page(notice=notice)
-            return
-        self._send_json(200, {
-            "status": "ok",
-            "embedded": result["embedded"],
-            "remaining": result["remaining"],
-            "cause": None,
-        })
-
-    def _memory_embeddings_error_response(self, status: int, cause: str) -> None:
-        """A refused embeddings action: the error page for a form post,
-        the JSON cause for an API call."""
-        if self._is_form_submit():
-            self._send_error_page(status, "Embeddings", cause)
-            return
-        self._send_json(status, {"error": cause})
-
-    # -- retain: the chat surface's save-to-memory action (ticket #91) ----
-
-    def _memory_retain(self) -> None:
-        """Turn a conversation excerpt into inbox cards, one per
-        surviving candidate fact, all sharing one source id.
-
-        The donor writes extracted facts directly; here nothing is
-        written until a card is accepted (spec decision 9), and both
-        extractor failure classes leave the bank untouched with a
-        plain-language error: JSON answers degraded like every LLM
-        turn, a form post gets the error page. The endpoint gate and
-        the llm.retain audit match every other model call. With no
-        extractor injected at construction, an EndpointExtractor is
-        built from the effective llm client per call.
-        """
-        server = self.server  # type: ignore[attr-defined]
-        memory = self._memory_available()
-        if memory is None:
-            return
-        if server.inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
-            return
-        body = self._read_json_body() or {}
-        excerpt = body.get("excerpt")
-        if not isinstance(excerpt, str) or not excerpt.strip():
-            self._send_json(400, {"error": 'expected {"excerpt": "..."}: the conversation you want to save'})
-            return
-        excerpt = excerpt.strip()[:RETAIN_EXCERPT_MAX_CHARS]
-        if not self._source_allowed("endpoint_enabled"):
-            self._retain_error_response(
-                409,
-                "Company endpoint calls are turned off in settings, so "
-                "this surface is paused. Everything else keeps working.",
-            )
-            return
-        _llm, endpoint, model = self._effective_llm("memory")
-        extractor = server.extractor
-        if extractor is None:
-            extractor = EndpointExtractor(_llm)
-        try:
-            candidates = extractor.extract(excerpt)
-        except (ExtractorUnavailable, ExtractionFailed) as exc:
-            self._model_audit("llm.retain", endpoint, model,
-                              self._port_bytes(extractor),
-                              status="error", detail=str(exc)[:200])
-            self._retain_error_response(502, str(exc))
-            return
-        self._model_audit("llm.retain", endpoint, model,
-                          self._port_bytes(extractor))
-        kept = [
-            replace(candidate, occurrence_ts=occurrence_from_source(excerpt, candidate.occurrence_ts))
-            for candidate in facts_to_retain(candidates)
-        ]
-        if not kept:
-            # Nothing survived the donor's filters: no source row, no
-            # cards, no writes at all.
-            self._respond_form_or_json("/inbox", {"status": "ok", "cards": [], "sourceId": None})
-            return
-        source_id = memory.add_source(excerpt)
-        cards = [self._memory_draft_card(candidate, source_id) for candidate in kept]
-        self._evaluate_inbox(server.inbox)
-        self._respond_form_or_json("/inbox", {
-            "status": "ok",
-            "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
-            "sourceId": source_id,
-        })
-
-    def _port_bytes(self, port) -> int:
-        """The bytes of the prompt that went out, when the port can say
-        (the built-in ones record it; an injected one may not)."""
-        return int(getattr(port, "last_request_bytes", 0) or 0)
-
-    def _model_audit(self, action: str, endpoint: str, model: str,
-                     request_bytes: int, status: str = "ok",
-                     detail: str = "") -> None:
-        """A model call's audit row (llm.retain, llm.reflect), the _ask
-        pattern's fields."""
-        if self.server.audit_conn is not None:  # type: ignore[attr-defined]
-            audit_store.record(
-                self.server.audit_conn, action, target=endpoint,
-                status=status, model=model, request_bytes=request_bytes, detail=detail,
-            )
-
-    def _memory_draft_card(self, candidate, source_id: int):
-        """One approval card per candidate: the editable draft is the
-        fact text, the meta carries what acceptance writes."""
-        names = ", ".join(name for name, _type in candidate.entities)
-        mentioned = names if names else "nothing named"
-        kind_word = "Experience" if candidate.kind == "experience" else "World"
-        return self.server.inbox.add(  # type: ignore[attr-defined]
-            kind=KIND_MEMORY_DRAFT,
-            origin=("Extracted from a conversation you chose to save. "
-                    "Accepting writes this fact to memory; dismissing "
-                    "leaves nothing behind."),
-            title=f"{kind_word} fact: {mentioned}",
-            body=f"From the conversation you saved. Mentions {mentioned}.",
-            action_label="Save to memory",
-            draft=candidate.text,
-            meta={"memoryFact": {
-                "kind": candidate.kind,
-                "occurrence_ts": candidate.occurrence_ts,
-                "entities": [[name, entity_type] for name, entity_type in candidate.entities],
-                "source_id": source_id,
-            }},
-        )
-
-    def _retain_error_response(self, status: int, cause: str) -> None:
-        """A failed retain says so in plain language and writes nothing:
-        the error page for a form post, the degraded turn shape for JSON."""
-        if self._is_form_submit():
-            self._send_error_page(status, "Save to memory", cause)
-            return
-        self._send_json(200, {"status": "degraded", "cause": cause})
-
-    # -- reflect: the memory page's derive-observations action (ticket #93)
-
-    def _memory_reflect(self) -> None:
-        """Gather the bank's facts, ask the reflector for observations,
-        and stage one approval card per survivor. Nothing lands in the
-        memory bank here (spec decision 24): acceptance writes the
-        observation, with its citations, through the card's meta. The
-        donor writes its accepted observations directly; here both
-        reflector failure classes and every filtered-out draft leave
-        the bank untouched with a plain-language notice, and the
-        endpoint gate and the llm.reflect audit match every other
-        model call. With no reflector injected at construction, an
-        EndpointReflector is built from the effective llm client per
-        call, exactly like the retain route's extractor. Ticket #95:
-        when the semantic half is active, every draft also embeds (one
-        audited call each, failures degrade) so the near-duplicate
-        rule's cosine leg can join.
-        """
-        server = self.server  # type: ignore[attr-defined]
-        memory = self._memory_available()
-        if memory is None:
-            return
-        self._configure_memory_embeddings()
-        if server.inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
-            return
-        body = self._read_json_body() or {}
-        topic = _scope_text(body.get("topic"))
-        entity = _scope_text(body.get("entity"))
-        try:
-            since = parse_scope_date(body.get("since"))
-            until = parse_scope_date(body.get("until"))
-        except ValueError as exc:
-            self._send_json(400, {"error": str(exc)})
-            return
-        if not self._source_allowed("endpoint_enabled"):
-            self._reflect_error_response(
-                409,
-                "Company endpoint calls are turned off in settings, so "
-                "this surface is paused. Everything else keeps working.",
-            )
-            return
-        query = " ".join(part for part in (topic, entity) if part)
-        try:
-            gathered = gather_facts(
-                query, memory.recall(query), memory.all(),
-                since=since, until=until,
-            )
-        except ReflectEmpty as exc:
-            # Refused before any model call, so nothing to audit.
-            self._reflect_error_response(502, str(exc))
-            return
-        _llm, endpoint, model = self._effective_llm("memory")
-        reflector = server.reflector
-        if reflector is None:
-            reflector = EndpointReflector(_llm)
-        try:
-            drafts = reflector.reflect(topic or entity, gathered)
-        except (ReflectFailed, ReflectorUnavailable) as exc:
-            self._model_audit(
-                "llm.reflect", endpoint, model, self._port_bytes(reflector),
-                status="error", detail=str(exc)[:200],
-            )
-            self._reflect_error_response(502, str(exc))
-            return
-        self._model_audit(
-            "llm.reflect", endpoint, model, self._port_bytes(reflector)
-        )
-        try:
-            survivors = accept_observations(
-                list(drafts), {fact.id for fact in gathered},
-                single_entity=bool(entity), vectors=self._draft_vectors(memory, drafts),
-            )
-        except ReflectFailed as exc:
-            # The call itself succeeded and is already audited; the
-            # model's answers just did not survive the donor's filters.
-            self._reflect_error_response(502, str(exc))
-            return
-        scope = scope_key(entity=entity, topic=topic, since=since, until=until)
-        gathered_by_id = {fact.id: fact for fact in gathered}
-        subject = topic or entity
-        title = f"Observation: {subject}" if subject else "Observation"
-        cards = [
-            self._reflection_card(draft, title, scope, gathered_by_id)
-            for draft in survivors
-        ]
-        self._evaluate_inbox(server.inbox)
-        self._respond_form_or_json("/inbox", {
-            "status": "ok",
-            "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
-            "rejected": len(drafts) - len(survivors),
-        })
-
-    def _draft_vectors(self, memory, drafts) -> dict[str, list[float]]:
-        """Each reflector draft's embedding, keyed by its normalized
-        text (ticket #95, the donor's reflect: every draft embeds
-        through the bank's one embedder, so the map is same-model by
-        construction). A failed embed leaves that draft out, which the
-        near-duplicate cosine leg reads as no vector, never an error.
-        The calls ride the audited wrapper like every other endpoint
-        call."""
-        vectors: dict[str, list[float]] = {}
-        if not (memory.embeddings_active and memory.embedder is not None):
-            return vectors
-        for draft in drafts:
-            key = normalize_fact_text(draft.text)
-            if not key or key in vectors:
-                continue
-            try:
-                vectors[key] = list(memory.embedder.embed(draft.text))
-            except Exception:  # noqa: BLE001 - the donor's vectorFor
-                continue
-        return vectors
-
-    def _reflection_card(self, draft, title: str, scope: str,
-                         gathered_by_id: dict):
-        """One approval card per surviving observation: the editable
-        draft is the observation text, the body names the cited facts,
-        and the meta carries what acceptance writes (the scope the run
-        ran in, the confidence to store, the citations)."""
-        cited = [
-            fact for fact in
-            (gathered_by_id.get(fact_id) for fact_id in draft.fact_ids)
-            if fact is not None
-        ]
-        listing = " | ".join(plain_preview(fact.text) for fact in cited)
-        return self.server.inbox.add(  # type: ignore[attr-defined]
-            kind=KIND_MEMORY_REFLECTION,
-            origin=("Derived from the facts on your memory page. "
-                    "Accepting writes this observation with its "
-                    "citations; dismissing leaves nothing behind."),
-            title=title,
-            body=f"Derived from {len(cited)} gathered facts: {listing}",
-            action_label="Save observation",
-            draft=draft.text,
-            meta={"memoryObservation": {
-                "scope_key": scope,
-                "confidence": draft.confidence,
-                "source_fact_ids": list(draft.fact_ids),
-            }},
-        )
-
-    def _reflect_error_response(self, status: int, cause: str) -> None:
-        """A failed reflect says so in plain language and writes
-        nothing: the error page for a form post, the degraded turn
-        shape for JSON, like retain's."""
-        if self._is_form_submit():
-            self._send_error_page(status, "Reflect", cause)
-            return
-        self._send_json(200, {"status": "degraded", "cause": cause})
-
     # -- capabilities: the cached page and the one probing path (ticket #43)
 
     def _send_capabilities_page(self) -> None:
@@ -6795,652 +5391,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._respond_form_or_json("/settings",
                                    {"key": "extra_allowed_hosts", "value": hosts.strip()})
 
-    # -- the peer-to-peer surface (issue #67) ------------------------------
-
-    def _peer_bearer_token(self) -> str:
-        """The channel token from the one transport the peer surface
-        accepts: an Authorization: Bearer header. There is no
-        query-string form by design (tokens must not land in logs)."""
-        header = self.headers.get("Authorization") or ""
-        scheme, _, value = header.partition(" ")
-        if scheme.lower() == "bearer" and value.strip():
-            return value.strip()
-        return ""
-
-    def _route_peer_get(self, path: str) -> None:
-        """Serve one peer GET, gated for a paired desk rather than a browser session.
-
-        The guard weighs Host, Origin and the pairing token together, and a request
-        failing it gets a peer:blocked 403 with the reason. The three read paths —
-        /peer/info, a plugin's manifest and its bundle — each check the token again
-        before answering, because the guard's token test is also what a desk without a
-        token fails. Every read is audited as peer.read, so another desk's access shows
-        up in this desk's trail.
-        """
-        token = self._peer_bearer_token()
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        token_ok = bool(store is not None and token
-                        and store.token_valid(token))
-        verdict = check_peer_request(
-            self.headers.get("Host"), self.headers.get("Origin"),
-            self.server.port, token_ok=token_ok)  # type: ignore[attr-defined]
-        if not verdict.allowed:
-            self._send_json(403, {
-                "error": "peer:blocked",
-                "message": ("This request did not come from a paired desk: "
-                            + verdict.reason)})
-            return
-        if path == "/peer/info":
-            if not self._peer_token_passed(token, token_ok):
-                return
-            self._audit("peer.read", target="info",
-                        detail="a paired desk listed shared plugins")
-            self._send_json(200, self._peer_info_payload())
-            return
-        plugin_id, tail = _peer_plugin_path(path)
-        if plugin_id is not None and tail == "manifest":
-            if not self._peer_token_passed(token, token_ok):
-                return
-            self._peer_serve_manifest(plugin_id)
-            return
-        if plugin_id is not None and tail == "bundle":
-            if not self._peer_token_passed(token, token_ok):
-                return
-            self._peer_serve_bundle(plugin_id)
-            return
-        self._send_json(404, {"error": "peer:not-found",
-                              "message": "No peer path lives at " + path})
-
-    def _peer_token_passed(self, token: str, token_ok: bool) -> bool:
-        """403 with the named reason when the token is missing or wrong."""
-        if token_ok:
-            return True
-        if not token:
-            self._send_json(403, {
-                "error": "peer:token-required",
-                "message": "This surface is for paired desks: send the "
-                           "channel token as an Authorization: Bearer "
-                           "header."})
-        else:
-            self._send_json(403, {
-                "error": "peer:token-unknown",
-                "message": "That channel token does not name a paired "
-                           "desk here."})
-        return False
-
-    def _route_peer_post(self, path: str) -> None:
-        """Handle the one peer POST that exists, pairing, and refuse everything else.
-
-        Pairing has no token to present — its code is the gate — so it takes the plain
-        Host and Origin guard. Any other peer POST is a 405 explaining that the surface
-        reads and pairs and changes nothing else.
-        """
-        if path == "/peer/pair":
-            # The pairing path has no token (its code is the gate), so
-            # it takes the plain guard, unchanged.
-            verdict = check_request(
-                self.headers.get("Host"), self.headers.get("Origin"),
-                self.server.port)  # type: ignore[attr-defined]
-            if not verdict.allowed:
-                self._send_json(403, {
-                    "error": "peer:blocked",
-                    "message": ("This request did not come from a paired "
-                                "desk: " + verdict.reason)})
-                return
-            self._peer_pair()
-            return
-        self._send_json(405, {
-            "error": "peer:read-only",
-            "message": "The peer surface serves reads and one pairing "
-                       "path; nothing else changes anything here."})
-
-    def _peer_pair(self) -> None:
-        """Another desk submits a pairing code plus its own identity."""
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        if store is None:
-            self._send_json(503, {"error": "peers:unavailable",
-                                  "message": "The peer store is not "
-                                             "available on this desk."})
-            return
-        body = self._read_json_body() or {}
-        code = str(body.get("code", "")).strip()
-        peer_id = str(body.get("peer_id", "")).strip()
-        name = str(body.get("name", "")).strip()
-        host = str(body.get("host", "")).strip()
-        port = body.get("port")
-        if not code or not peer_id or not name or not host \
-                or not isinstance(port, int):
-            self._send_json(400, {
-                "error": "pairing:bad-request",
-                "message": 'expected {"code", "peer_id", "name", "host",'
-                           ' "port"}'})
-            return
-        try:
-            store.exchange_pairing_code(
-                code, peer_id=peer_id, name=name,
-                base_url=f"{host}:{port}")
-        except PeerError as exc:
-            self._send_json(403, {"error": exc.code, "message": str(exc)})
-            return
-        desk = store.desk()
-        self._audit("peer.paired", target=peer_id,
-                    detail=f"{name} at {host}:{port} redeemed a pairing code")
-        self._send_json(200, {"ok": True, "app": "agent-desk",
-                              "peer_id": desk["peer_id"],
-                              "name": desk["name"]})
-
-    def _peer_shared_plugins(self) -> list[dict]:
-        """The shared-plugin list computed live from the runtime: ids the
-        user marked shared, installed, with the active version and its
-        digest. A shared id that is no longer installed is honestly
-        absent, not invented."""
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
-        if store is None or plugins is None:
-            return []
-        out = []
-        for plugin_id in sorted(store.shared_ids()):
-            try:
-                record = plugins.record(plugin_id)
-            except PluginError:
-                continue
-            if record.get("state") == "uninstalled" or not record.get("versions"):
-                continue
-            out.append({
-                "id": plugin_id,
-                "name": str(record.get("name", plugin_id)),
-                "version": str(record.get("active_version", "")),
-                "sha256": str(record.get("sha256", "")),
-            })
-        return out
-
-    def _peer_info_payload(self) -> dict:
-        """What this desk tells a paired peer: its identity and the plugins it shares.
-
-        A missing store still yields the same shape with an empty identity, so the
-        guard, not the payload, is what refuses an unpaired reader.
-        """
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        desk = store.desk() if store is not None else {"peer_id": "",
-                                                       "name": ""}
-        return {"ok": True, "app": "agent-desk",
-                "peer_id": desk["peer_id"], "name": desk["name"],
-                "plugins": self._peer_shared_plugins()}
-
-    def _peer_plugin_record(self, plugin_id: str) -> dict | None:
-        """The shared, installed record for one plugin id, or None."""
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
-        if store is None or plugins is None:
-            return None
-        if plugin_id not in store.shared_ids():
-            return None
-        try:
-            record = plugins.record(plugin_id)
-        except PluginError:
-            return None
-        if record.get("state") == "uninstalled" or not record.get("versions"):
-            return None
-        return record
-
-    def _peer_serve_manifest(self, plugin_id: str) -> None:
-        """Serve one shared plugin's manifest.json.
-
-        An unknown plugin and a manifest that cannot be read answer the same 404,
-        because from the other desk both mean there is nothing to install; a successful
-        read is audited as peer.read.
-        """
-        record = self._peer_plugin_record(plugin_id)
-        if record is None:
-            self._send_json(404, {"error": "peer:unknown-plugin",
-                                  "message": f"{plugin_id} is not a shared "
-                                             "plugin on this desk."})
-            return
-        manifest_path = _active_version_dir(record) / "manifest.json"
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            self._send_json(404, {"error": "peer:unknown-plugin",
-                                  "message": f"{plugin_id}'s manifest could "
-                                             "not be read."})
-            return
-        self._audit("peer.read", target=plugin_id, detail="manifest")
-        self._send_json(200, manifest)
-
-    def _peer_serve_bundle(self, plugin_id: str) -> None:
-        """Zip one shared plugin's active version and serve it.
-
-        The archive is built in memory from that version directory, with entry names
-        relative to it, so the other desk can install exactly the files this desk holds.
-        An unknown plugin is a 404 and the transfer is audited as peer.read.
-        """
-        record = self._peer_plugin_record(plugin_id)
-        if record is None:
-            self._send_json(404, {"error": "peer:unknown-plugin",
-                                  "message": f"{plugin_id} is not a shared "
-                                             "plugin on this desk."})
-            return
-        version_dir = _active_version_dir(record)
-        buffer = BytesIO()
-        with zipfile.ZipFile(buffer, "w") as archive:
-            for file in sorted(version_dir.rglob("*")):
-                if file.is_file():
-                    archive.write(file,
-                                  file.relative_to(version_dir).as_posix())
-        self._audit("peer.read", target=plugin_id, detail="bundle")
-        self._send_bytes(200, buffer.getvalue(), "application/zip")
-
-    # -- the peers page and its flows ---------------------------------------
-
-    def _send_peers_page(self, notice: str = "") -> None:
-        """Render the peers page, starting discovery first if it never started.
-
-        Discovery is lazy by design: a desk that never opens this page announces
-        nothing, so the page rather than the constructor is where announcing begins.
-        """
-        self.server.ensure_peer_discovery()  # type: ignore[attr-defined]
-        page = render_peers_page(
-            self._peers_catalog(), agentdesk.__version__, notice=notice,
-            inbox_count=self._inbox_waiting_count())
-        self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
-
-    def _peers_catalog(self) -> dict:
-        """Everything the peers page and /api/peers show, as data: this
-        desk, its live pairing code, discovered desks, and paired peers
-        with their shared plugins and the honest reachability state."""
-        self.server.ensure_peer_discovery()  # type: ignore[attr-defined]
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        if store is None:
-            return {"ok": False, "error": "peers:unavailable",
-                    "message": "The peer store is not available."}
-        plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
-        code = store.active_pairing_code()
-        discovery = self.server.peer_discovery  # type: ignore[attr-defined]
-        subscriptions = {}
-        for sub in store.subscriptions():
-            subscriptions.setdefault(sub["peer_id"], []).append(sub)
-        paired = []
-        for peer in store.peers():
-            peer_id = peer["peer_id"]
-            plugin_rows = []
-            for sub in subscriptions.get(peer_id, []):
-                record = None
-                if plugins is not None:
-                    try:
-                        record = plugins.record(sub["plugin_id"])
-                    except PluginError:
-                        record = None
-                installed_here = bool(
-                    record is not None
-                    and record.get("state") != "uninstalled"
-                    and record.get("versions"))
-                installed_version = (str(record.get("active_version", ""))
-                                     if installed_here else None)
-                local_sha = (str(record.get("sha256", ""))
-                             if installed_here else "")
-                plugin_rows.append({
-                    "id": sub["plugin_id"],
-                    "version": sub["seen_version"],
-                    "sha256": sub["seen_sha256"],
-                    "installed_here": installed_here,
-                    "installed_version": installed_version,
-                    # update-available only when the publisher's version
-                    # or digest truly differs from what runs here
-                    "update_available": bool(
-                        installed_here
-                        and (installed_version != sub["seen_version"]
-                             or local_sha != sub["seen_sha256"])),
-                })
-            paired.append({
-                "peer_id": peer_id,
-                "name": peer["name"],
-                "base_url": peer["base_url"],
-                "state": store.peer_state(peer_id),
-                "plugins": plugin_rows,
-            })
-        return {
-            "ok": True,
-            "desk": store.desk(),
-            "pairingCode": {"code": code["code"],
-                            "expires_at": code["expires_at"]}
-            if code else None,
-            "discovered": discovery.discovered() if discovery else [],
-            "discovery_running": bool(discovery and discovery.running()),
-            "paired": paired,
-        }
-
-    def _peers_redirect(self, message: str) -> None:
-        """Send the browser back to the peers page carrying a notice.
-
-        Every peer action posted as a form answers this way, so a client without
-        JavaScript sees the outcome as text on the page it came from.
-        """
-        self._send_redirect(f"/peers?notice={quote(message)}")
-
-    def _peers_refuse(self, code: str, message: str,
-                      status: int = 409) -> None:
-        """The peers page's own refusals: forms get the notice line,
-        JSON callers get the named error."""
-        self._respond_form_or_json(f"/peers?notice={quote(message)}",
-                                   {"error": code, "message": message}, status)
-
-    def _peers_code_generate(self) -> None:
-        """Mint a single-use pairing code and tell the user what it is.
-
-        The store gives it a ten-minute life and one redemption; a form post redirects
-        with the code in the notice, while a fetch gets the store's own JSON. Both are
-        audited, because minting a code is the moment this desk offers another desk
-        access.
-        """
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        if store is None:
-            self._peers_refuse("peers:unavailable",
-                               "The peer store is not available.")
-            return
-        out = store.create_pairing_code()
-        self._audit("peer.code", target="pairing-code",
-                    detail="a single-use pairing code was generated")
-        self._respond_form_or_json(
-            "/peers?notice=" + quote(
-                f"Pairing code {out['code']}. Another desk can redeem it "
-                "for the next ten minutes; it works once."), out)
-
-    def _peers_pair(self) -> None:
-        """This desk types the other desk's code: submit it, then pin the
-        peer identity and the shared channel token."""
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        if store is None:
-            self._peers_refuse("peers:unavailable",
-                               "The peer store is not available.")
-            return
-        body = self._read_json_body() or {}
-        typed_address = str(body.get("address", "")).strip()
-        code = str(body.get("code", "")).strip()
-        if not typed_address or not code:
-            self._peers_refuse(
-                "peer:bad-request",
-                "Type both the other desk's address (host:port) and its "
-                "pairing code.", 400)
-            return
-        address = _normalize_peer_address(typed_address)
-        if address is None:
-            self._peers_refuse(
-                "peer:bad-address",
-                f"{typed_address!r} is not a host:port address.", 400)
-            return
-        desk = store.desk()
-        try:
-            answer = PeerClient().pair(
-                address, code=code, my_peer_id=desk["peer_id"],
-                my_name=desk["name"], my_host="127.0.0.1",
-                my_port=self.server.port)  # type: ignore[attr-defined]
-        except PeerClientError as exc:
-            self._peers_refuse(exc.code, str(exc))
-            return
-        store.add_peer(peer_id=str(answer.get("peer_id", "")),
-                       name=str(answer.get("name", "peer")),
-                       base_url=address, token=derive_token(code))
-        self._audit("peer.pair", target=str(answer.get("peer_id", "")),
-                    detail=f"paired with {answer.get('name', '')} at {address}")
-        # One honest refresh right away, so the page shows the peer's
-        # shares (or the cause it could not be read).
-        self._refresh_one_peer(str(answer.get("peer_id", "")))
-        self._respond_form_or_json(
-            "/peers?notice=" + quote(
-                f"Paired with {answer.get('name', 'the other desk')}."),
-            {"ok": True, "peer_id": answer.get("peer_id"),
-             "name": answer.get("name")})
-
-    def _refresh_one_peer(self, peer_id: str) -> bool:
-        """Fetch one peer's shared-plugin list into the subscription
-        snapshot; record the honest outcome either way."""
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        peer = store.peer(peer_id) if store is not None else None
-        if peer is None:
-            return False
-        token = store.channel_token(peer_id) if store is not None else None
-        try:
-            info = PeerClient().info(peer["base_url"], token=token or "")
-        except PeerClientError as exc:
-            store.record_peer_refresh(peer_id, ok=False, cause=str(exc))
-            return False
-        for plugin in info.get("plugins", []):
-            if not isinstance(plugin, dict):
-                continue
-            store.record_seen(str(plugin.get("id", "")), peer_id,
-                              str(plugin.get("version", "")),
-                              str(plugin.get("sha256", "")))
-        store.record_peer_refresh(peer_id, ok=True, cause="")
-        return True
-
-    def _peers_refresh(self) -> None:
-        """Ask every paired desk for its current listing, then report how many answered.
-
-        Each peer is refreshed on its own, so one unreachable desk does not stop the
-        rest; the notice counts reached against total and, when any failed, points at
-        the per-peer causes the page lists.
-        """
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        if store is None:
-            self._peers_refuse("peers:unavailable",
-                               "The peer store is not available.")
-            return
-        reached = 0
-        peers = store.peers()
-        for peer in peers:
-            if self._refresh_one_peer(peer["peer_id"]):
-                reached += 1
-        message = (f"Refreshed {reached} of {len(peers)} paired desks.")
-        if reached < len(peers):
-            message += " The unreachable ones list their cause below."
-        self._peers_redirect(message)
-
-    def _peers_install(self) -> None:
-        """Install one shared plugin from a paired peer: download the
-        bundle, recompute the tree digest against the publisher's, run
-        the shared validator through the runtime, and record the peer
-        as the source."""
-        store, plugins, peer, plugin_id, names_ok = self._peers_flow_args()
-        if not names_ok:
-            return  # the refusal already went out
-        if store is None:
-            self._peers_refuse("peers:unavailable",
-                               "The peer store is not available.")
-            return
-        if peer is None:
-            self._peers_refuse("peer:unknown-peer",
-                               "No paired desk matches that request.")
-            return
-        if plugins is None:
-            self._peers_refuse("plugins:unavailable",
-                               "No plugin runtime is configured.")
-            return
-        if not plugin_id:
-            self._peers_refuse("peer:bad-request",
-                               "Which plugin, from which desk?", 400)
-            return
-        try:
-            existing = plugins.record(plugin_id)
-            already = bool(existing.get("versions")
-                           and existing.get("state") != "uninstalled")
-        except PluginError:
-            already = False
-        if already:
-            self._peers_refuse(
-                "peer:already-installed",
-                f"{plugin_id} is already installed here; use Update to "
-                "move to the peer's version.")
-            return
-        with tempfile.TemporaryDirectory(prefix="agentdesk-peer-") as tmp:
-            staged = self._peer_stage(plugins, peer, plugin_id, Path(tmp))
-            if staged is None:
-                return  # the refusal already went out
-            try:
-                result = plugins.install(staged["dir"],
-                                         source=f"peer:{peer['name']}")
-            except PluginError as exc:
-                self._audit("peer.install", target=plugin_id,
-                            status="error",
-                            detail=f"refused by the shared validator: "
-                                   f"{exc.code}")
-                self._peers_refuse(exc.code, str(exc), exc.status)
-                return
-        store.record_seen(plugin_id, peer["peer_id"], staged["version"],
-                          staged["sha256"])
-        store.set_installed(plugin_id, peer["peer_id"], result["version"])
-        self._audit("peer.install", target=plugin_id,
-                    detail=f"from {peer['name']} v{result['version']} "
-                           f"digest {staged['sha256'][:12]} verified")
-        self._respond_form_or_json(
-            "/peers?notice=" + quote(
-                f"Installed {plugin_id} v{result['version']} from "
-                f"{peer['name']}."), result)
-
-    def _peers_update(self) -> None:
-        """One click to the publisher's newer version: same staging and
-        verification, then the runtime's own update path (a widened
-        permission set still holds for consent)."""
-        store, plugins, peer, plugin_id, names_ok = self._peers_flow_args()
-        if not names_ok:
-            return  # the refusal already went out
-        if store is None:
-            self._peers_refuse("peers:unavailable",
-                               "The peer store is not available.")
-            return
-        if peer is None:
-            self._peers_refuse("peer:unknown-peer",
-                               "No paired desk matches that request.")
-            return
-        if plugins is None:
-            self._peers_refuse("plugins:unavailable",
-                               "No plugin runtime is configured.")
-            return
-        if not plugin_id:
-            self._peers_refuse("peer:bad-request",
-                               "Which plugin, from which desk?", 400)
-            return
-        with tempfile.TemporaryDirectory(prefix="agentdesk-peer-") as tmp:
-            staged = self._peer_stage(plugins, peer, plugin_id, Path(tmp))
-            if staged is None:
-                return
-            zip_path = Path(tmp) / f"{plugin_id}.zip"
-            zip_path.write_bytes(staged["bundle"])
-            try:
-                result = plugins.update(plugin_id, zip_path)
-            except PluginError as exc:
-                self._audit("peer.update", target=plugin_id,
-                            status="error",
-                            detail=f"refused: {exc.code}")
-                self._peers_refuse(exc.code, str(exc), exc.status)
-                return
-        if isinstance(result, dict) and result.get("status") == "pending-consent":
-            result = self._hold_update_for_consent(plugins, plugin_id, result)
-        if isinstance(result, dict) and result.get("applied"):
-            store.record_seen(plugin_id, peer["peer_id"], staged["version"],
-                              staged["sha256"])
-            store.set_installed(plugin_id, peer["peer_id"],
-                                str(result.get("version", "")))
-        self._audit("peer.update", target=plugin_id,
-                    detail=f"from {peer['name']} to v{staged['version']}")
-        if self._is_form_submit():
-            if isinstance(result, dict) and result.get("applied"):
-                self._peers_redirect(
-                    f"Updated {plugin_id} to v{result.get('version', '')} "
-                    f"from {peer['name']}.")
-            else:
-                self._peers_redirect(
-                    f"The update to {staged['version']} waits for your OK: "
-                    "it asks for more access. Decide it on the inbox.")
-            return
-        self._send_json(200, result if isinstance(result, dict) else {})
-
-    def _peers_flow_args(self):
-        """(store, plugins, peer, plugin_id, names_ok) for the install
-        and update flows. ids that are not safe names are refused here,
-        before either can name a file (a planted ../id would otherwise
-        escape the staging dir) or a store row."""
-        body = self._read_json_body() or {}
-        peer_id = str(body.get("peer_id", "")).strip()
-        plugin_id = str(body.get("plugin_id", "")).strip()
-        names_ok = self._peer_flow_names_ok(peer_id, plugin_id)
-        store: PeerStore | None = self.server.peer_store  # type: ignore[attr-defined]
-        peer = store.peer(peer_id) if store is not None and names_ok else None
-        return (store, self.server.plugins, peer, plugin_id, names_ok)  # type: ignore[attr-defined]
-
-    def _peer_flow_names_ok(self, peer_id: str, plugin_id: str) -> bool:
-        """Whether the peer and plugin ids of a flow are safe to place in a path.
-
-        An unsafe name is refused with a 400 and a quoted, shortened excerpt rather than
-        silently sanitised, so the answer tells the truth about what was rejected. An
-        empty name passes: whether one is required is the next check's business, not
-        this one's.
-        """
-        for name, what in ((peer_id, "peer id"), (plugin_id, "plugin id")):
-            if name and not _PEER_SAFE_NAME.match(name):
-                self._peers_refuse(
-                    "peer:unsafe-name",
-                    f"The {what} is not a safe name: {name[:40]!r}.", 400)
-                return False
-        return True
-
-    def _peer_stage(self, plugins: PluginRuntime, peer: dict,
-                    plugin_id: str, tmp: Path) -> dict | None:
-        """Download, verify and stage one plugin from a peer. Returns the
-        staged {dir, bundle, version, sha256}, or None after sending the
-        named refusal."""
-        token = self.server.peer_store.channel_token(peer["peer_id"])  # type: ignore[attr-defined]
-        client = PeerClient()
-        try:
-            info = client.info(peer["base_url"], token=token or "")
-            bundle = client.bundle(peer["base_url"], token=token or "",
-                                   plugin_id=plugin_id)
-        except PeerClientError as exc:
-            self._peers_refuse(exc.code, str(exc))
-            return None
-        offered = next((p for p in info.get("plugins", [])
-                        if isinstance(p, dict)
-                        and str(p.get("id", "")) == plugin_id), None)
-        if offered is None:
-            self._peers_refuse(
-                "peer:plugin-not-shared",
-                f"{peer['name']} does not share {plugin_id}.")
-            return None
-        staged_dir = tmp / "plugin"
-        staged_dir.mkdir()
-        try:
-            extract_bundle(bundle, staged_dir)
-        except PeerClientError as exc:
-            self._peers_refuse(exc.code, str(exc))
-            return None
-        digest = tree_digest(staged_dir)
-        expected = str(offered.get("sha256", ""))
-        if not expected:
-            # No announced digest means nothing to verify against: a
-            # refusal, never a silent skip that the audit row would
-            # then call verified.
-            self._audit("peer.install", target=plugin_id, status="error",
-                        detail=f"{peer['name']} publishes no digest for "
-                               f"{plugin_id}; refused")
-            self._peers_refuse(
-                "peer:digest-unknown",
-                f"{peer['name']} publishes no digest for {plugin_id}, so "
-                "this desk cannot verify the bundle against anything. "
-                "Nothing was installed.")
-            return None
-        if digest != expected:
-            self._audit("peer.install", target=plugin_id, status="error",
-                        detail=f"bundle digest {digest[:12]} does not match "
-                               f"the published {expected[:12]}; refused")
-            self._peers_refuse(
-                "peer:digest-mismatch",
-                f"The bundle from {peer['name']} does not match the "
-                f"digest it publishes ({digest[:12]} vs {expected[:12]}). "
-                "Nothing was installed.")
-            return None
-        return {"dir": staged_dir, "bundle": bundle,
-                "version": str(offered.get("version", "")),
-                "sha256": digest}
-
     def _route_wizard(self, method: str, path: str) -> None:
         """The wizard surface: describe, answer, build, preview, approve."""
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
@@ -7901,11 +5851,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # close_connection).
             self.send_header("Connection", "close")
 
-
 def _background_runner(job) -> None:
     """Run a memory capture off the request thread."""
     threading.Thread(target=job, name="memory-capture", daemon=True).start()
-
 
 def create_server(
     host: str = "127.0.0.1",
@@ -8188,7 +6136,6 @@ def _wire_audit(server: AgentDeskServer) -> None:
 
         server.calendar.llm = audited_llm
 
-
 def _wire_mail_audit(server: AgentDeskServer) -> None:
     """The mail watcher's audit hook, for watches constructed after boot
     (the mail toggle turning on mid-session). Read-only polls say so;
@@ -8198,7 +6145,6 @@ def _wire_mail_audit(server: AgentDeskServer) -> None:
     conn = server.audit_conn
     server.mail.audit_hook = lambda action, target, status="ok": audit_store.record(
         conn, action, target=target, status=status)
-
 
 def _default_audit_conn():
     """The local audit store, or None when it cannot open."""
@@ -8211,7 +6157,6 @@ def _default_audit_conn():
     except (OSError, sqlite3.Error):
         LOG.exception("audit store unavailable")
         return None
-
 
 def _default_ledger() -> Ledger | None:
     """The action ledger, or None when it cannot open.
@@ -8228,7 +6173,6 @@ def _default_ledger() -> Ledger | None:
         LOG.exception("ledger unavailable")
         return None
 
-
 def _default_excel_watch() -> ExcelWatch | None:
     """A real watch over the persistent store, or None when it cannot open."""
     try:
@@ -8239,7 +6183,6 @@ def _default_excel_watch() -> ExcelWatch | None:
     except (OSError, sqlite3.Error):
         LOG.exception("excel watch unavailable")
         return None
-
 
 def _default_inbox_store() -> InboxStore | None:
     """The inbox over the persistent store, or None when it cannot open."""
@@ -8252,7 +6195,6 @@ def _default_inbox_store() -> InboxStore | None:
         LOG.exception("inbox unavailable")
         return None
 
-
 def _default_wizard_store() -> WizardStore | None:
     """Wizard sessions over the persistent store, or None when it cannot open."""
     try:
@@ -8263,7 +6205,6 @@ def _default_wizard_store() -> WizardStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("wizard store unavailable")
         return None
-
 
 def _default_memory_store() -> MemoryStore | None:
     """Facts over the persistent store (they outlive a restart by
@@ -8293,7 +6234,6 @@ def _default_memory_store() -> MemoryStore | None:
         LOG.exception("memory store unavailable")
         return None
 
-
 def _default_layout_store() -> LayoutStore | None:
     """The dashboard card arrangement over the persistent store, or None
     when it cannot open (reads then resolve the canonical default)."""
@@ -8306,12 +6246,10 @@ def _default_layout_store() -> LayoutStore | None:
         LOG.exception("layout store unavailable")
         return None
 
-
 def _default_outbox_dir() -> Path:
     """Where accepted reply drafts land as .eml files: a folder beside
     the other data, AGENTDESK_DATA moves it like everything else."""
     return default_data_dir() / "outbox"
-
 
 def _default_mail_store() -> MailStore | None:
     """Handled-thread markers over the persistent store, or None when it
@@ -8324,7 +6262,6 @@ def _default_mail_store() -> MailStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("mail store unavailable")
         return None
-
 
 def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
     """The real mail watcher: settings decide the folder and the user's
@@ -8341,7 +6278,6 @@ def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | 
         LOG.exception("mail watcher unavailable")
         return None
 
-
 def _default_capabilities_cache() -> CapabilitiesCache | None:
     """Cached gate results over the persistent store, or None when it
     cannot open. A missing cache degrades the page to never-tested
@@ -8354,7 +6290,6 @@ def _default_capabilities_cache() -> CapabilitiesCache | None:
     except (OSError, sqlite3.Error):
         LOG.exception("capabilities cache unavailable")
         return None
-
 
 def _default_gate_runners(settings_store=None) -> GateRunners:
     """The real probe bundle over a workdir beside the other data,
@@ -8369,7 +6304,6 @@ def _default_gate_runners(settings_store=None) -> GateRunners:
         default_data_dir() / "probe-run",
         embeddings=lambda: settings_embedder(settings_store),
     )
-
 
 def _default_plugins(calendar: CalendarBridge | None = None,
                      mail: MailWatch | None = None,
@@ -8395,7 +6329,6 @@ def _default_plugins(calendar: CalendarBridge | None = None,
         LOG.exception("plugin runtime unavailable")
         return None
 
-
 def _default_research_store() -> ResearchStore | None:
     """The latest sourced research answer over the persistent store, or
     None when it cannot open."""
@@ -8407,7 +6340,6 @@ def _default_research_store() -> ResearchStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("research store unavailable")
         return None
-
 
 def _default_agents_store() -> AgentRunStore | None:
     """The agent runs over the persistent store (they outlive a restart
@@ -8422,7 +6354,6 @@ def _default_agents_store() -> AgentRunStore | None:
         LOG.exception("agents store unavailable")
         return None
 
-
 def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]:
     """The activity log and skill store over one file, or Nones."""
     try:
@@ -8433,7 +6364,6 @@ def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]
     except (OSError, sqlite3.Error):
         LOG.exception("repetition stores unavailable")
         return None, None
-
 
 def _default_settings_store() -> SettingsStore | None:
     """Settings over the persistent store, or None when it cannot open."""
@@ -8446,7 +6376,6 @@ def _default_settings_store() -> SettingsStore | None:
     except (OSError, sqlite3.Error):
         LOG.exception("settings unavailable")
         return None
-
 
 def _default_peer_store() -> PeerStore | None:
     """The peer store over the persistent store (peers.sqlite3 beside
@@ -8735,7 +6664,6 @@ def default_calendar_hint(explicit: str | None = None) -> Path:
             return candidate
     return candidates[0]
 
-
 def _default_calendar_bridge(settings_store=None) -> CalendarBridge | None:
     """A real bridge over the persistent store, or None when it cannot open.
 
@@ -8755,11 +6683,9 @@ def _default_calendar_bridge(settings_store=None) -> CalendarBridge | None:
         LOG.exception("calendar bridge unavailable")
         return None
 
-
 def auth_url(server: AgentDeskServer) -> str:
     """The URL the start command opens in the default browser."""
     return f"http://127.0.0.1:{server.port}{server.sessions.auth_path()}"
-
 
 def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     """Serve until interrupted, opening the dashboard once bound."""
@@ -8779,7 +6705,6 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
         pass
     finally:
         server.server_close()
-
 
 def start_background_polls(server: AgentDeskServer) -> None:
     """Both watches poll once, right now, on daemon threads.
@@ -8816,14 +6741,12 @@ def start_background_polls(server: AgentDeskServer) -> None:
         # already polled once at attach, so no immediate poll is needed.
         plugins.start_widget_polls()
 
-
 def _poll_mail_once(watch: MailWatch) -> None:
     """One immediate read so the first inbox look already sees the digest."""
     try:
         watch.poll()
     except Exception:  # noqa: BLE001 - startup must not crash on a poll
         LOG.exception("mail startup poll failed")
-
 
 def _poll_calendar_once(bridge) -> None:
     """One immediate read so the first page load already knows the day."""
