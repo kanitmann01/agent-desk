@@ -405,8 +405,9 @@ describe('the plugin card', () => {
     );
     await user.click(screen.getByRole('button', { name: /^Widget options/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Re-test now' }));
-    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/plugins/p1/retest');
-    expect(retestCall?.[0]).toBe('/api/plugins/p1/retest');
+    const retestCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/marketplace/retest');
+    expect(retestCall?.[0]).toBe('/api/marketplace/retest');
+    expect(retestCall?.[1]?.body).toBe(JSON.stringify({ id: 'p1' }));
     await vi.waitFor(() => expect(onRefetch).toHaveBeenCalled());
   });
 

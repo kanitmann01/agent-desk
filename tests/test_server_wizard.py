@@ -330,14 +330,24 @@ def test_second_approve_form_post_refuses_and_never_installs_twice(env, auth):
     assert len(env.server.plugins.list_records()) == 1
 
 
-def test_unknown_session_approve_still_serves_the_error_page(env, auth):
-    """A stale or wrong session id keeps today's error-page behavior for
-    both client kinds: the error page family is untouched (T1)."""
+def test_unknown_session_actions_answer_the_stores_404(env, auth):
+    """A stale or wrong session id is a client error: every wizard action
+    surfaces the store's own not-found, never the generic restart page.
+    The form client gets the honest error page, the JSON client the
+    store's named error (spec 017, 7b)."""
     status, _h, body = post_form(env, "/wizard/wiz-missing/approve", {}, auth)
-    assert status == 500
-    assert "Something broke" in body.decode("utf-8")
-    status, _h, _b = env.post_json("/wizard/wiz-missing/approve", {}, auth)
-    assert status == 500
+    assert status == 404
+    page = body.decode("utf-8")
+    assert "Nothing here" in page
+    assert "no wizard session wiz-missing" in page
+    status, _h, body = env.post_json("/wizard/wiz-missing/approve", {}, auth)
+    assert status == 404
+    payload = json.loads(body)
+    assert payload["error"] == "wizard:unknown"
+    assert payload["message"] == "no wizard session wiz-missing"
+    # The other two actions answer the same store error, not a 500.
+    assert env.post_json("/wizard/wiz-missing/answer", {}, auth)[0] == 404
+    assert env.post_json("/wizard/wiz-missing/escalate", {}, auth)[0] == 404
 
 
 def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
