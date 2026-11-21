@@ -22,9 +22,10 @@ ICON_OPTIONS = (
     '<circle cx="19" cy="12" r="1.7"/></svg></button>'
 )
 
-# The design language tokens, verbatim from docs/design-language.md. Font
-# families resolve locally: the named faces when installed, otherwise the
-# OS fallbacks. Nothing is fetched from the network.
+# The design language tokens: the server sheet's statement of the
+# three-theme system in docs/design-language.md. Font families resolve
+# locally: the named faces when installed, otherwise the OS fallbacks.
+# Nothing is fetched from the network.
 STYLES = """
 :root,:root[data-theme="unkey"],[data-theme-preview="unkey"]{
   color-scheme:dark;
