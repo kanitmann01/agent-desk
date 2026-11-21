@@ -243,6 +243,7 @@ POST_ROUTES: tuple[Route, ...] = (
     Route("POST", "/api/memory/remove/preview", "_memory_remove_preview"),
     Route("POST", "/api/memory/remove", "_memory_remove_apply"),
     Route("POST", "/api/memory/undo", "_memory_undo"),
+    Route("POST", "/api/desk-check/fix", "_desk_check_fix"),
     Route("POST", "/api/ledger/undo", "_ledger_undo"),
     Route("POST", "/api/memory/facts/", "_memory_keep", prefix=True, arg="rest",
           suffix="/keep"),
