@@ -4,7 +4,9 @@ A pattern that has reached about five similar asks proposes once; a
 dismissed pattern stays quiet for its cooldown while a genuinely new
 pattern can still propose. The proposal carries the pattern, the count,
 and an honest will/will-not body, and its metadata is everything Accept
-needs to activate the skill.
+needs to activate the skill. With autonomy on and skills_auto_create
+set, the same pattern becomes an active agent-made skill on the spot
+(spec 016 section 6.6), and the proposal card is never made.
 """
 
 import sqlite3
@@ -38,15 +40,24 @@ class Consolidator:
         inbox: InboxStore,
         skills: SkillStore,
         clock: Callable[[], float] = time.time,
+        create_directly: Callable[[], bool] | None = None,
+        on_created: Callable[[dict], None] | None = None,
     ) -> None:
         """Wire the three stores and create the cooldown table on the activity db.
 
         clock is injectable so cooldown expiry is testable without waiting.
+        create_directly is read on every consolidate run: when true the
+        pattern becomes an active agent-made skill on the spot instead of a
+        proposal card (spec 016 section 6.6); on_created then lets the
+        server record the skill.created ledger entry. Both default off, so
+        a Consolidator built the old way keeps today's card behaviour.
         """
         self.activity = activity
         self.inbox = inbox
         self.skills = skills
         self.clock = clock
+        self.create_directly = create_directly
+        self.on_created = on_created
         with activity.conn:
             activity.conn.executescript(_COOLDOWN_SCHEMA)
 
@@ -69,6 +80,8 @@ class Consolidator:
             count = len(cluster)
             sample = seed_text.strip()
             name = _skill_name(sample)
+            if self.create_directly is not None and self.create_directly():
+                return self._create_skill(pattern, count, name, sample)
             card = self.inbox.add(
                 kind="skill_proposal",
                 origin=f"Pattern noticed, {count}th time: you keep asking to {sample[:80]}",
@@ -85,6 +98,31 @@ class Consolidator:
             )
             return {"proposed": True, "cardId": card.id, "pattern": pattern, "count": count}
         return {"proposed": False}
+
+    def _create_skill(self, pattern: str, count: int, name: str, sample: str) -> dict:
+        """Activate the pattern's skill directly, as the desk's own change.
+
+        The description is exactly what accepting the proposal card would
+        have written (its title and origin), so the desk-made skill and the
+        accepted one are the same skill. A ledger entry that cannot be
+        recorded un-creates the skill: an unrecorded autonomous change is
+        not allowed to stand.
+        """
+        description = (
+            f"Turn this into one click? ({count} times): Pattern noticed,"
+            f" {count}th time: you keep asking to {sample[:80]}"
+        )[:1024]
+        skill = self.skills.activate(
+            name=name, description=description, prompt=sample, created_by="agent"
+        )
+        if self.on_created is not None:
+            try:
+                self.on_created(skill)
+            except Exception:
+                self.skills.deactivate(skill["id"])
+                raise
+        return {"proposed": False, "created": True, "skillId": skill["id"],
+                "pattern": pattern, "count": count}
 
     def dismiss_cooldown(self, pattern: str) -> None:
         """Start the cooldown for one pattern, replacing any earlier dismissal."""
