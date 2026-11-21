@@ -95,6 +95,7 @@ class ExcelWatch:
         self._path: str | None = None
         self._last_result: PollResult | None = None
         self._last_ok_ts: float | None = None
+        self._last_reference_ts: float | None = None
         self._last_rows: list = []
         self.audit_hook = audit_hook
         # Called with (workbook file name, header row, delta) after a poll
@@ -161,14 +162,18 @@ class ExcelWatch:
         A locked or unreadable workbook becomes a state and a plain-language cause
         instead of an exception, and the stored snapshot is left untouched. A
         healthy poll always overwrites it, so the next diff is against this read.
+        The shadow copy lives exactly as long as the poll: it is removed
+        after the parse, inside the poll, so copies never accumulate.
         """
         if self._path is None:
             raise RuntimeError("no workbook registered")
         ts = self.adapters.clock()
+        shadow_path = None
         try:
             shadow_path = self.adapters.copy_shadow(self._path)
             rows = self.adapters.parse_workbook(shadow_path)
         except WorkbookLocked:
+            self._last_reference_ts = None
             result = PollResult(
                 STATE_LOCKED,
                 cause=(
@@ -178,6 +183,7 @@ class ExcelWatch:
             )
             self._audit("excel.poll", "blocked")
         except WorkbookUnreadable as exc:
+            self._last_reference_ts = None
             result = PollResult(
                 STATE_UNREADABLE,
                 cause=f"Can't read the workbook: {exc}. Check it is a valid .xlsx.",
@@ -186,17 +192,22 @@ class ExcelWatch:
         else:
             reference = store.load_reference(self.conn, self._source, ts)
             if reference is None:
+                self._last_reference_ts = None
                 result = PollResult(STATE_FIRST_SNAPSHOT, rows_seen=len(rows))
             else:
+                self._last_reference_ts, reference_rows = reference
                 result = PollResult(
                     STATE_HEALTHY,
-                    delta=compute_delta(reference, rows),
+                    delta=compute_delta(reference_rows, rows),
                     rows_seen=len(rows),
                 )
             store.save_snapshot(self.conn, self._source, ts, rows, row_hash)
             self._last_ok_ts = ts
             self._last_rows = rows
             self._audit("excel.poll", "ok")
+        finally:
+            if shadow_path is not None:
+                shadow_mod.remove_shadow(shadow_path)
         self._last_result = result
         return result
 
@@ -251,6 +262,7 @@ class ExcelWatch:
                 "delta": None,
                 "rowsSeen": 0,
                 "last_ok_ts": None,
+                "reference_ts": None,
             }
         state = result.state
         if state in (STATE_HEALTHY, STATE_FIRST_SNAPSHOT) and self._last_ok_ts is not None:
@@ -266,6 +278,7 @@ class ExcelWatch:
             "examples": [list(r[:4]) for r in self._last_rows[:3]],
             "grid": self._grid_locked(),
             "last_ok_ts": self._last_ok_ts,
+            "reference_ts": self._last_reference_ts,
         }
 
     def resume(self) -> bool:

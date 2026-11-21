@@ -83,6 +83,8 @@ class WatchCase:
             adapters=adapters,
             folder_provider=lambda: str(self.folder),
             audit_hook=lambda action, target, status: self.audit.append((action, target, status)),
+            # The fixture mailbox's user, as the settings field configures it.
+            self_address="employee@example.com",
         )
 
     def _read(self, folder):
@@ -341,3 +343,36 @@ def test_harness_never_boots_a_mail_watch_by_default():
         assert booted.server.outbox_dir.is_dir()  # tmp-owned, not the real outbox
     finally:
         booted.close()
+
+
+def test_without_a_configured_address_no_follow_up_cards_and_the_status_says_so(tmp_path):
+    """Self-detection off is honest: the digest still works, the
+    follow-up set stays empty (it cannot know which threads the user
+    answered), and the status names the missing configuration."""
+    case = WatchCase(tmp_path)
+    case.watch._self_address = ""  # as an unset settings field reads
+    write_message(case.folder, "<f1@example.com>", "Thread one", "Thu, 05 Nov 2026 12:00:00 GMT")
+    write_message(case.folder, "<f2@example.com>", "Re: Thread one", "Fri, 06 Nov 2026 12:00:00 GMT",
+                  in_reply_to="<f1@example.com>")
+    # A thread active today, so the digest has something to file.
+    write_message(case.folder, "<f3@example.com>", "Today", "Wed, 11 Nov 2026 08:00:00 GMT")
+    status = case.watch.poll()
+    assert status["state"] == STATE_WATCHING
+    assert status["selfDetection"] is False
+    assert status["followUps"] == []
+    kinds = [c.kind for c in case.inbox.waiting()]
+    assert KIND_MAIL_FOLLOW_UP not in kinds
+    assert KIND_MAIL_DIGEST in kinds  # the digest never needed the address
+
+
+def test_the_self_address_is_re_read_from_the_provider_each_poll(tmp_path):
+    """A settings save applies without a restart, like the folder."""
+    case = WatchCase(tmp_path)
+    case.watch._self_address = ""
+    case.watch.self_address_provider = lambda: "employee@example.com"
+    write_message(case.folder, "<f2@example.com>", "Re: Thread one", "Fri, 06 Nov 2026 12:00:00 GMT")
+    case.watch.poll()
+    case.watch.self_address_provider = lambda: ""
+    assert case.watch.self_address == ""
+    status = case.watch.status()
+    assert status["selfDetection"] is False

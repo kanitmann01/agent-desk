@@ -19,9 +19,9 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from agentdesk.mail.core import (
+    DAY_S,
     DIGEST_HOURS,
     FOLLOW_UP_DAYS,
-    MAIL_USER,
     Message,
     digest_details,
     follow_ups,
@@ -38,6 +38,9 @@ from agentdesk.mail.core import (
 )
 
 FIXTURES = ROOT / "tests" / "fixtures" / "mail"
+
+# The fixture mailbox's user: the address the tests configure as self.
+MAIL_USER = "employee@example.com"
 
 # The donor's frozen sample moment: 2026-11-11T12:00:00Z.
 SAMPLE_NOW = datetime(2026, 11, 11, 12, 0, tzinfo=timezone.utc).timestamp()
@@ -238,7 +241,8 @@ def test_recent_threads_empty_when_nothing_is_active():
 
 
 def test_follow_ups_match_the_donor_expectations():
-    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW) == ["North contract", "Q4 plan", "West renewal"]
+    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW,
+                     self_address=MAIL_USER) == ["North contract", "Q4 plan", "West renewal"]
 
 
 def test_follow_up_days_defaults_to_two():
@@ -247,28 +251,34 @@ def test_follow_up_days_defaults_to_two():
 
 def test_follow_ups_exclude_threads_whose_latest_is_from_the_user():
     # South invoice's latest message is the user's own reply.
-    assert "South invoice" not in follow_ups(_full_mailbox(), set(), SAMPLE_NOW)
+    assert "South invoice" not in follow_ups(_full_mailbox(), set(), SAMPLE_NOW,
+                                           self_address=MAIL_USER)
 
 
 def test_follow_ups_exclude_handled_threads():
     handled = {"North contract"}
-    assert follow_ups(_full_mailbox(), handled, SAMPLE_NOW) == ["Q4 plan", "West renewal"]
+    assert follow_ups(_full_mailbox(), handled, SAMPLE_NOW,
+                     self_address=MAIL_USER) == ["Q4 plan", "West renewal"]
 
 
 def test_follow_ups_honour_a_custom_threshold():
     # The threshold waits N days past the latest message: a bigger N is
     # a stricter cutoff (fewer threads qualify), the donor's arithmetic.
-    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=1) == [
+    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=1,
+                     self_address=MAIL_USER) == [
         "North contract", "Q4 plan", "West renewal",
     ]
     # days=8 puts the cutoff at 11-03, so West renewal (latest 11-05)
     # drops out; days=12 (cutoff 10-30) also drops North (latest 11-01);
     # days=45 (cutoff 09-27) finally drops the 10-01 Q4 plan.
-    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=8) == [
+    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=8,
+                     self_address=MAIL_USER) == [
         "North contract", "Q4 plan",
     ]
-    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=12) == ["Q4 plan"]
-    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=45) == []
+    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=12,
+                     self_address=MAIL_USER) == ["Q4 plan"]
+    assert follow_ups(_full_mailbox(), set(), SAMPLE_NOW, days=45,
+                     self_address=MAIL_USER) == []
 
 
 def test_digest_details_carry_metadata_only():
@@ -291,7 +301,9 @@ def test_reply_recipients_is_reply_all_minus_self_deduped():
         f"{MAIL_USER}, b@example.com, B@example.com", "Tue, 28 Oct 2026 12:00:00 GMT",
         cc="c@example.com; d@example.com",
     ))
-    assert reply_recipients(message) == "a@example.com, b@example.com, c@example.com, d@example.com"
+    assert reply_recipients(message, self_address=MAIL_USER) == (
+        "a@example.com, b@example.com, c@example.com, d@example.com"
+    )
 
 
 def test_reply_recipients_raises_when_nobody_else_is_left():
@@ -300,7 +312,7 @@ def test_reply_recipients_raises_when_nobody_else_is_left():
         "Tue, 28 Oct 2026 12:00:00 GMT",
     ))
     with pytest.raises(ValueError):
-        reply_recipients(message)
+        reply_recipients(message, self_address=MAIL_USER)
 
 
 def test_reply_subject_prefixes_re_once():
@@ -395,3 +407,55 @@ def test_write_reply_rejects_line_breaks_in_header_fields(tmp_path, field, smugg
         write_reply(tmp_path / "outbox", clock=lambda: 0.0, **kwargs)
     assert "line break" in str(raised.value)
     assert not (tmp_path / "outbox").exists()  # refused before any write
+
+
+# -- self detection compares the configured address, inside the header ----
+
+
+def test_follow_ups_treat_a_display_name_from_header_as_answered():
+    """The user's own reply carries a display name; the address inside
+    the angle brackets is what self-detection must compare."""
+    mine = "priya@corp.com"
+    original = parse_eml(eml(
+        "<a-1@example.com>", "North contract", "a@example.com",
+        mine, "Mon, 27 Oct 2026 12:00:00 GMT",
+    ))
+    replied = parse_eml(eml(
+        "<p-2@corp.com>", "Re: North contract", f"Priya Sharma <{mine}>",
+        "team@corp.com", "Tue, 28 Oct 2026 12:00:00 GMT",
+        in_reply_to="<a-1@example.com>",
+    ))
+    messages = with_threads([original, replied])
+    now = replied.date_ts + 3 * DAY_S
+    assert follow_ups(messages, set(), now, self_address=mine) == []
+
+
+def test_reply_recipients_drop_self_with_a_display_name():
+    message = parse_eml(eml(
+        "<r-3@corp.com>", "Party", "Priya Sharma <priya@corp.com>",
+        "priya@corp.com, team@corp.com", "Tue, 28 Oct 2026 12:00:00 GMT",
+    ))
+    assert reply_recipients(message, self_address="priya@corp.com") == "team@corp.com"
+
+
+def test_an_unconfigured_address_disables_self_detection():
+    """No address configured: the follow-up set cannot claim 'nothing
+    from you on this thread', so it stays empty instead of nagging on
+    threads the user may already have answered."""
+    from_other = parse_eml(eml(
+        "<a-9@example.com>", "North contract", "a@example.com",
+        "employee@example.com", "Tue, 28 Oct 2026 12:00:00 GMT",
+    ))
+    messages = with_threads([from_other])
+    now = from_other.date_ts + 3 * DAY_S
+    assert follow_ups(messages, set(), now, self_address="") == []
+
+
+def test_write_reply_uses_the_configured_address_as_from(tmp_path):
+    path = write_reply(
+        tmp_path / "outbox", "<a-1@example.com>", "a@example.com",
+        "Re: North contract", "Here is my reply.",
+        clock=lambda: 0.0, self_address="priya@corp.com",
+    )
+    headers = path.read_bytes().decode("utf-8").split("\r\n\r\n", 1)[0]
+    assert "From: priya@corp.com" in headers

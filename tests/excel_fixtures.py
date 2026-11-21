@@ -126,3 +126,86 @@ BASE_ROWS = [
 
 def base_workbook() -> bytes:
     return make_xlsx(BASE_ROWS)
+
+
+def make_xlsx_reversed_tabs(first_part_rows: list[list], second_part_rows: list[list]) -> bytes:
+    """A two-sheet workbook whose declared tab order is the reverse of
+    its archive part names: the first declared tab lives in sheet2.xml.
+
+    This is the shape a tab reorder in Excel produces (part names keep
+    creation order, workbook.xml carries the display order), so a reader
+    that picks a sheet by sorted archive name reads the wrong tab."""
+    shared: list[str] = []
+    shared_index: dict[str, int] = {}
+
+    def sheet_xml(rows: list[list]) -> str:
+        body_rows = []
+        for r, row in enumerate(rows, start=1):
+            cells = []
+            for c, value in enumerate(row):
+                ref = f"{_column_letters(c)}{r}"
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    cells.append(f'<c r="{ref}"><v>{value!r}</v></c>')
+                elif isinstance(value, str) and value != "":
+                    if value not in shared_index:
+                        shared_index[value] = len(shared)
+                        shared.append(value)
+                    cells.append(f'<c r="{ref}" t="s"><v>{shared_index[value]}</v></c>')
+            body_rows.append(f'<row r="{r}">{"".join(cells)}</row>')
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f"<sheetData>{''.join(body_rows)}</sheetData></worksheet>"
+        )
+
+    sheet1 = sheet_xml(first_part_rows)
+    sheet2 = sheet_xml(second_part_rows)
+    shared_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        f'count="{len(shared)}" uniqueCount="{len(shared)}">'
+        f"{''.join(f'<si><t>{_xml_escape(s)}</t></si>' for s in shared)}</sst>"
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
+        "</Types>"
+    )
+    workbook = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets>'
+        '<sheet name="Declared first" sheetId="2" r:id="rId2"/>'
+        '<sheet name="Archive first" sheetId="1" r:id="rId1"/>'
+        "</sheets></workbook>"
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+        '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>'
+        "</Relationships>"
+    )
+    entries = {
+        "[Content_Types].xml": content_types,
+        "_rels/.rels": _RELS,
+        "xl/workbook.xml": workbook,
+        "xl/_rels/workbook.xml.rels": workbook_rels,
+        "xl/sharedStrings.xml": shared_xml,
+        "xl/worksheets/sheet1.xml": sheet1,
+        "xl/worksheets/sheet2.xml": sheet2,
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, content in entries.items():
+            info = zipfile.ZipInfo(name, date_time=_FIXED_DATE)
+            zf.writestr(info, content)
+    return buffer.getvalue()

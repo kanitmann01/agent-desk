@@ -54,6 +54,7 @@ def env(tmp_path):
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
     settings.set("mail_enabled", True)
     settings.set("mail_folder", str(folder))
+    settings.set("mail_self_address", "employee@example.com")
     inbox = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
     store = MailStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
     outbox = tmp_path / "outbox"

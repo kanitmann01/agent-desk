@@ -85,6 +85,7 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "presentation_timeout_s": "30",
         "research_provider_url": "",
         "research_provider_key": "",
+        "mail_self_address": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

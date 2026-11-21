@@ -15,7 +15,7 @@ plugin manifest declares llm false and this module imports no client.
 import re
 from dataclasses import dataclass
 
-from agentdesk.mail.core import MAIL_USER, Message, latest_by_thread, recent_threads
+from agentdesk.mail.core import Message, latest_by_thread, recent_threads
 
 TOP_HOURS = 72  # the most-important window: long enough to survive a quiet day
 
@@ -98,7 +98,7 @@ def _importance_bonus(message: Message) -> int:
 
 
 def score_message(message: Message, now: float,
-                  self_address: str = MAIL_USER) -> tuple[int, list[str]]:
+                  self_address: str = "") -> tuple[int, list[str]]:
     """A small, explainable score and the reasons that produced it."""
     score = 0
     reasons: list[str] = []
@@ -158,7 +158,7 @@ def digest_rows(messages: list[Message], now: float,
 
 
 def top_message(messages: list[Message], now: float,
-                self_address: str = MAIL_USER) -> TopMessage | None:
+                self_address: str = "") -> TopMessage | None:
     """The message most worth opening in the last three days, or None."""
     cutoff = now - TOP_HOURS * 3600
     candidates = [message for message in messages
@@ -205,7 +205,7 @@ def reply_starters(top: TopMessage | None) -> list[dict]:
 
 
 def brief(messages: list[Message], now: float,
-          self_address: str = MAIL_USER, hours: float = 24) -> dict:
+          self_address: str = "", hours: float = 24) -> dict:
     """Every binding the Outlook Brief renders, from one folder read."""
     threads = digest_rows(messages, now, hours=hours)
     top = top_message(messages, now, self_address)

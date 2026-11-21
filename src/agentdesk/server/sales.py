@@ -14,6 +14,7 @@ from agentdesk.excel.core import (
     STATE_LOCKED,
     STATE_UNREADABLE,
 )
+from agentdesk.excel.store import WINDOW_24H
 from agentdesk.server.core import ATTENTION, FRESH, Freshness
 from agentdesk.server.demo import Widget
 
@@ -40,8 +41,8 @@ def render_sales_disabled(now: datetime) -> Widget:
 
 def render_sales_unconfigured(now: datetime) -> Widget:
     """The honest not-connected state: no numbers exist yet, so none are
-    shown; the real actions are the workbook picker and, hidden until the
-    dialog fails, the manual path fallback beneath it."""
+    shown; the native picker is the only connect path, and its failure
+    gets the amber note, never a typed-path form (the product line)."""
     return Widget(
         id="sales-24h",
         title="Sales, last 24 hours",
@@ -53,14 +54,8 @@ def render_sales_unconfigured(now: datetime) -> Widget:
             "reports what changed in the file over the last 24 hours.</p></div>"
             '<button class="btn btn-primary btn-start" data-pick>Connect a workbook</button>'
             '<div class="alert" id="pick-note" hidden></div>'
-            '<div class="well" id="manual-connect" hidden>'
-            '<input id="workbook-path" class="well-input" type="text" '
-            'placeholder="Full path to the .xlsx or .xlsm workbook" '
-            'aria-label="Workbook path">'
-            '<button class="btn btn-primary" data-manual-connect>Connect</button>'
-            "</div>"
         ),
-        foot_html="Read-only: the file is copied before parsing, never opened in place.",
+        foot_html="Read-only: the file is picked with the file dialog, copied before parsing, never opened in place.",
     )
 
 
@@ -97,23 +92,52 @@ def freshness_for(state: str, last_ok_ts: float | None) -> Freshness:
     return Freshness(FRESH, f"Updated {hhmm}", updated)
 
 
-def _healthy_body(status: dict) -> str:
-    """Body HTML for a healthy poll: the 24-hour row-change count and examples.
+def _window_label(status: dict) -> "tuple[str, str, str]":
+    """The KPI label, its sub line and the zero-change line, truthful
+    about the diff window.
 
-    added and removed are the row-hash delta against the snapshot from 24 hours ago. At
-    most MAX_EXAMPLE_ROWS of each are listed, and the remainder is counted in one
-    trailing line so the card never implies it showed everything.
+    The reference is the newest snapshot at or before the 24-hour mark, so
+    up to one poll interval past 24 h is still the promised window; a
+    longer gap (a closed laptop over a weekend) is named with its own
+    length and moment, never rounded down to '24 hours'.
+    """
+    ref_ts = status.get("reference_ts")
+    last_ok = status.get("last_ok_ts")
+    if not ref_ts or not last_ok or (last_ok - ref_ts) <= WINDOW_24H + 3600.0:
+        return (
+            "Rows changed, 24 h",
+            "Row-hash diff against the snapshot from 24 hours ago",
+            "No changes in the last 24 hours.",
+        )
+    hours = int((last_ok - ref_ts) // 3600) + 1  # rounded up, never understated
+    when = datetime.fromtimestamp(ref_ts).strftime("%b %d, %H:%M")
+    return (
+        f"Rows changed, {hours} h",
+        f"Row-hash diff against the newest snapshot before the 24-hour mark ({when})",
+        f"No changes in the last {hours} hours.",
+    )
+
+
+def _healthy_body(status: dict) -> str:
+    """Body HTML for a healthy poll: the row-change count and examples.
+
+    added and removed are the row-hash delta against the reference snapshot,
+    whose true window _window_label names. At most MAX_EXAMPLE_ROWS of each
+    are listed, and the remainder is counted in one trailing line so the
+    card never implies it showed everything.
     """
     delta = status["delta"] or {"added": [], "removed": [], "unchanged": 0}
     added, removed = delta["added"], delta["removed"]
     changed = len(added) + len(removed)
+    label, sub, empty_line = _window_label(status)
     parts = [
-        '<div class="kpi"><div><div class="label">Rows changed, 24 h</div>'
+        '<div class="kpi"><div><div class="label">'
+        f"{html.escape(label)}</div>"
         f'<div class="value">{changed}</div>'
-        '<div class="sub">Row-hash diff against the snapshot from 24 hours ago</div></div></div>'
+        f'<div class="sub">{html.escape(sub)}</div></div></div>'
     ]
     if changed == 0:
-        parts.append('<p class="empty">No changes in the last 24 hours.</p>')
+        parts.append(f'<p class="empty">{html.escape(empty_line)}</p>')
         return "".join(parts)
     examples = [
         f'<span class="delta up">+</span> {_row_line(r)}' for r in added[:MAX_EXAMPLE_ROWS]
