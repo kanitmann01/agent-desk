@@ -16,8 +16,9 @@ URL, update this table, and re-run `python scripts/third_party_notices.py`.
 | `react-dom-19.3.1-LICENSE.txt` | https://unpkg.com/react-dom@19.3.1/LICENSE | 1088 | `da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93` |
 | `scheduler-0.28.0-LICENSE.txt` | https://unpkg.com/scheduler@0.28.0/LICENSE | 1088 | `da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93` |
 | `python-LICENSE.txt` | `C:\Python314\LICENSE.txt` (CPython 3.14.5) | 34824 | `939d8e9fa591cbaff0d51e777edb4c1002045d2600ce43a1ae28530cecfc5b88` |
+| `hermes-agent-LICENSE.txt` | https://github.com/NousResearch/hermes-agent/blob/f6c3eb1/LICENSE (commit `f6c3eb1`) | 1070 | `821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6` |
 
-Retrieved 2026-11-16 (cryptography 2026-11-18). React, React DOM and
+Retrieved 2026-11-16 (cryptography 2026-11-18; Hermes Agent 2026-11-20). React, React DOM and
 Scheduler are MIT; CPython is the Python Software Foundation License
 (PSF-2.0); cryptography is dual licensed Apache-2.0 OR BSD-3-Clause and its
 file carries both texts behind the package's own pointer note; Apache-2.0

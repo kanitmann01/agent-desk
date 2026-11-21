@@ -31,6 +31,22 @@ BSD-3-Clause, and ISC for plugins. That allowlist is enforced by the core
 validator and is unchanged by this work. In-box plugins keep their existing
 MIT notices.
 
+## Adapted source
+
+Hermes Agent (github.com/NousResearch/hermes-agent, commit `f6c3eb1`,
+Copyright (c) 2025 Nous Research) is MIT-licensed. Portions adapted in
+`src/agentdesk/{ledger,deskcheck,agentloop,recommend,safety,update}`,
+`memory/profile*.py` and `repetition/curator.py`. The upstream licence text
+is vendored verbatim at `licenses/third-party/hermes-agent-LICENSE.txt`
+(sha256 `821556e6...5ab6`), and every adapted file's module docstring names
+the upstream path it came from and points at that file.
+
+This is adapted source, not a package dependency. It is vendored by
+adaptation rather than installed, so it is not a component in the SBOM, adds
+no entry to `THIRD-PARTY-NOTICES.md`, and passes the licence gate without an
+exception; the vendored licence text is the notice that travels with the
+adapted code.
+
 ## Plugin authors keep their copyright
 
 Plugin authors retain all right, title, and interest in their plugins.

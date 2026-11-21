@@ -140,14 +140,14 @@ def _endpoint_form(status: dict) -> str:
     )
 
 
-def _toggle_button(key: str, value) -> str:
+def _toggle_button(key: str, value, label: str | None = None) -> str:
     """One settings row: its label and a button showing the current value.
 
     daily_cap is shown as a named level, plugin_instance_cap as a plain count, and every
     other key as On or Off, so the button text reads as the state the next click
     changes. data-setting names the key the client posts back.
     """
-    label = _LABELS.get(key, key)
+    label = label or _LABELS.get(key, key)
     if key == "daily_cap":
         shown = {3: "3 (normal)", 1: "1 (quiet)", 0: "0 (inbox only)"}[value]
         state = shown
@@ -355,6 +355,27 @@ recorded with its time and status, and nothing here can be edited.</p>
 </section>"""
 
 
+def _agent_section(settings_values: dict) -> str:
+    """The Agent switch: whether the desk acts on its own.
+
+    This ticket ships the stub only: the switch and the help text naming
+    the four things that still ask first. The rest of the section lands
+    with the tickets that give the autonomous loop something to act on.
+    """
+    on = bool(settings_values.get("autonomy", True))
+    stamp = "AUTONOMY ON" if on else "AUTONOMY OFF"
+    return f"""<section class='card settings-card' id='agent'>
+<div class='w-head'><h2>Agent</h2><span class='stamp'>{stamp}</span></div>
+<div class='settings-block'>
+{_toggle_button("autonomy", on, label="Act on its own")}
+</div>
+<p class='empty'>On by default: the desk acts on its own, and every change it
+makes by itself is recorded on <a href="/settings/activity">Activity</a> with
+an Undo button. It still asks first before sending email or messages,
+deleting your data, uninstalling a plugin, or installing a new plugin.</p>
+</section>"""
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -465,6 +486,8 @@ and sample files (a workbook, a calendar file, header-only mail) so every
 inbox action can be tried safely. Every cell it fills carries a Sample
 data tag, and turning it off removes exactly what it added.</p>
 </section>
+
+{_agent_section(settings_values)}
 
 <section class='card settings-card' id='endpoint'>
 <div class='w-head'><h2>Endpoint</h2><span class='stamp'>{endpoint_stamp}</span></div>

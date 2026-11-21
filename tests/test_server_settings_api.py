@@ -68,6 +68,9 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         # carries the spec's documented default.
         "semantic_memory": True,
         "embeddings_model": "text-embedding-3-small",
+        # Autonomy (spec 016 §8): on by default; the desk acts by itself
+        # and every change it makes is logged in the action ledger.
+        "autonomy": True,
         "suggest_headers_only": False,
         "plugin_instance_cap": 6,
         # The memory loop: capture on, review before saving, every

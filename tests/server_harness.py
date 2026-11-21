@@ -33,6 +33,7 @@ from agentdesk.excel.watcher import Adapters as ExcelAdapters
 from agentdesk.excel.watcher import ExcelWatch
 from agentdesk.inbox.store import InboxStore
 from agentdesk.layout import LayoutStore
+from agentdesk.ledger.store import Ledger
 from agentdesk.mail.store import MailStore
 from agentdesk.memory.store import MemoryStore
 from agentdesk.peers.store import PeerStore
@@ -97,6 +98,13 @@ def _inert_agents_store():
     create_server's _default_agents_store(), which writes the real
     ~/.agent-desk/agents.sqlite3."""
     return AgentRunStore(sqlite3.connect(":memory:", check_same_thread=False))
+
+def _inert_ledger():
+    """The action ledger joins the inert in-memory defaults: without this, a
+    boot with no injection falls through to create_server's _default_ledger(),
+    which writes the real ~/.agent-desk/ledger.sqlite3."""
+    return Ledger(":memory:")
+
 
 def _inert_peer_store():
     return PeerStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
@@ -194,6 +202,9 @@ class Booted:
         # The agent runs store joins the inert in-memory defaults, so no
         # boot in the suite touches the real ~/.agent-desk/agents.sqlite3.
         kwargs.setdefault("agents_store", _inert_agents_store())
+        # The ledger joins the inert defaults for the same reason: a boot
+        # with no injection must never create the real ledger.sqlite3.
+        kwargs.setdefault("ledger", _inert_ledger())
 
         # The peer store joins the inert in-memory defaults: without
         # this, a boot with no injection falls through to

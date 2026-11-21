@@ -21,6 +21,7 @@ from agentdesk.server.pages import page_shell
 KINDS = (
     ("inbox.", "Decision"),
     ("demo.", "Decision"),
+    ("ledger.", "Decision"),
     ("memory.", "Memory"),
     ("llm.", "Model call"),
     ("excel.", "File"),
@@ -164,12 +165,62 @@ def _filter_bar(entries: list[dict], kind: str | None) -> str:
     return "<p class='settings-links'>" + "".join(links) + "</p>"
 
 
+def _ledger_section(ledger_entries: list) -> str:
+    """The top section: what the desk changed by itself, with Undo.
+
+    The rows come from the action ledger, newest first. An entry that can
+    still be undone carries a POST form (so the page works without
+    JavaScript); once undone, the row says when, taken from the undo entry
+    when it is still in the page window.
+    """
+    if not ledger_entries:
+        return (
+            "<h2>Changes the desk made by itself</h2>\n"
+            "<p>Every change the desk made on its own is listed here, newest "
+            "first, with the state it replaced so Undo can put it back.</p>\n"
+            "<p class='empty'>The desk hasn't changed anything by itself yet.</p>"
+        )
+    stamps = {entry.id: entry.ts for entry in ledger_entries}
+    rows = []
+    for entry in ledger_entries:
+        cells = [
+            f"<td class='mono'>{html.escape(when_text(entry.ts))}</td>",
+            f"<td>{html.escape(entry.why)}<br><span class='empty mono'>"
+            f"{html.escape(entry.subject)} · {html.escape(entry.action)}</span></td>",
+        ]
+        if entry.undoable:
+            cells.append(
+                '<td><form method="post" action="/api/ledger/undo">'
+                f'<input type="hidden" name="id" value="{html.escape(entry.id, quote=True)}">'
+                '<input type="hidden" name="return_to" value="/settings/activity">'
+                '<button class="btn btn-secondary" type="submit">Undo</button>'
+                "</form></td>"
+            )
+        elif entry.undone_by:
+            when = stamps.get(entry.undone_by)
+            cells.append(
+                f"<td>Undone{(' ' + when_text(when)) if when is not None else ''}</td>"
+            )
+        else:
+            cells.append("<td class='empty'>—</td>")
+        rows.append("<tr>" + "".join(cells) + "</tr>")
+    return (
+        "<h2>Changes the desk made by itself</h2>\n"
+        "<p>Every change the desk made on its own is listed here, newest "
+        "first, with the state it replaced so Undo can put it back.</p>\n"
+        "<table class='rows'><tr><th>When</th><th>What changed</th>"
+        "<th>Undo</th></tr>" + "".join(rows) + "</table>"
+    )
+
+
 def render_audit_page(
     entries: list[dict],
     questions: list[dict],
     version: str,
     inbox_count: int = 0,
     kind: str | None = None,
+    ledger_entries: list | None = None,
+    notice: str = "",
 ) -> str:
     """The full trail document, newest first, inside the Settings rail."""
     # The filter names a family; an unknown name shows the whole trail
@@ -202,13 +253,16 @@ def render_audit_page(
 keystrokes, no screen, and this list is yours.</p>
 {_questions(questions)}
 """
+    notice_html = f"<div class='alert'><p>{html.escape(notice)}</p></div>" if notice else ""
     content = f"""<h1>Activity</h1>
+{notice_html}
 <p class='empty'><a href="/settings">Back to settings</a></p>
 <p>Everything the desk recorded, newest first: inbox decisions, model
 calls, file reads, mail, plugin and registry changes, settings saves and
 peer traffic, plus the questions you typed. This is the screen behind the
 <a href="/audit/export.csv">CSV export</a> Security reads; both show the
 same rows.</p>
+{"" if kind else _ledger_section(ledger_entries or [])}
 {_filter_bar(entries, kind)}
 <p class='empty'>{html.escape(summary_line)}</p>
 {trail}

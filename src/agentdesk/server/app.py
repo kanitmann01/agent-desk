@@ -88,6 +88,8 @@ from agentdesk.layout import (
     parse_layout,
     resolved_layout,
 )
+from agentdesk.ledger import Ledger, LedgerError
+from agentdesk.ledger import undo as ledger_undo
 from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
 from agentdesk.mail.store import MailStore
 from agentdesk.mail.watcher import (
@@ -842,6 +844,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         calendar: CalendarBridge | None = None,
         llm=None,
         audit_conn=None,
+        ledger: Ledger | None = None,
         llm_endpoint: str | None = None,
         llm_model: str | None = None,
         inbox_store: InboxStore | None = None,
@@ -893,6 +896,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         # consulting a client that can only raise.
         self.llm_defaulted_to_env = llm is None
         self.audit_conn = audit_conn
+        self.ledger = ledger
         env_endpoint, _key, env_model = env_config()
         self.llm_endpoint = llm_endpoint if llm_endpoint is not None else env_endpoint
         self.llm_model = llm_model if llm_model is not None else env_model
@@ -1017,6 +1021,8 @@ class AgentDeskServer(ThreadingHTTPServer):
         discovery = getattr(self, "peer_discovery", None)
         if discovery is not None:
             discovery.stop()
+        if self.ledger is not None:
+            self.ledger.close()
         super().server_close()
 
 
@@ -1508,6 +1514,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send_dashboard_api(self) -> None:
         """Serve the dashboard payload as JSON."""
         self._send_json(200, dashboard_payload(self.server))
+
+    def _send_ledger_api(self) -> None:
+        """Serve the action ledger newest first: what the desk changed by
+        itself, why, and whether each change can still be undone.
+
+        limit is the one query parameter; it is clamped to what Activity
+        shows so a client cannot ask for an unbounded read.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        limit = 50
+        _, _sep, query = self.path.partition("?")
+        raw_limit = parse_qs(query).get("limit", [""])[0] if query else ""
+        if raw_limit.isdigit():
+            limit = max(1, min(200, int(raw_limit)))
+        ledger = getattr(server, "ledger", None)
+        entries = ledger.entries(limit=limit) if ledger is not None else []
+        self._send_json(200, {"entries": [
+            {
+                "id": entry.id,
+                "ts": entry.ts,
+                "actor": entry.actor,
+                "action": entry.action,
+                "subject": entry.subject,
+                "why": entry.why,
+                "undoable": entry.undoable,
+                "undoneBy": entry.undone_by,
+                "undoes": entry.undoes,
+            }
+            for entry in entries
+        ]})
 
     def _send_preferences_values(self) -> None:
         """Serve the stored insight preferences."""
@@ -3141,7 +3177,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "suggest_headers_only", "plugin_instance_cap",
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents"):
@@ -3157,13 +3193,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # the next memory action re-derives the store's semantic
             # half from this value and the probe's cached answer.
             pass
-        elif key in ("suggest_headers_only", "plugin_instance_cap") or key.startswith("memory_"):
-            # The memory loop reads its switches on every capture.
+        elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap") or key.startswith("memory_"):
+            # The memory loop reads its switches on every capture, and the
+            # autonomy switch is read by ledger.may_act before each action.
             pass
         else:
             self._apply_source_toggles(key, value)
-        # The one form poster is the inbox empty state's offer, so a
-        # no-JS post lands back on the inbox it came from.
+        # A no-JS post lands back on the page it came from: settings
+        # pages name themselves with return_to, and the inbox empty
+        # state's offer (the only other form poster) defaults to /inbox.
         if self._is_form_submit():
             self._send_redirect("/inbox")
             return
@@ -3588,11 +3626,61 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if self.server.activity_log is not None else []  # type: ignore[attr-defined]
         )
         _, _sep, query = self.path.partition("?")
-        kind = parse_qs(query).get("kind", [""])[0] if query else ""
+        parsed = parse_qs(query) if query else {}
+        kind = parsed.get("kind", [""])[0]
+        notice = parsed.get("notice", [""])[0]
+        ledger = getattr(self.server, "ledger", None)  # type: ignore[attr-defined]
+        ledger_entries = ledger.entries(limit=50) if ledger is not None else []
         page = render_audit_page(entries, questions, agentdesk.__version__,
                                  inbox_count=self._inbox_waiting_count(),
-                                 kind=kind or None)
+                                 kind=kind or None,
+                                 ledger_entries=ledger_entries,
+                                 notice=notice)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _ledger_undo(self) -> None:
+        """Undo one recorded change (the Activity page's Undo button).
+
+        A missing entry is a 404; every refusal to undo (already undone, no
+        undo kind, or the current state could not be captured) is a 409 with
+        the plain sentence to show. The undo is itself recorded and undoable.
+        A form post goes back to the page it came from, JSON gets the ids.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        ledger = getattr(server, "ledger", None)
+        if ledger is None:
+            self._ledger_undo_error(503, "The ledger is not available, so nothing was changed.")
+            return
+        body = self._read_json_body() or {}
+        entry_id = body.get("id")
+        if not isinstance(entry_id, str) or not entry_id:
+            self._ledger_undo_error(400, "Name the change to undo.")
+            return
+        try:
+            recorded = ledger_undo.undo(server, ledger, entry_id)
+        except LookupError as exc:
+            self._ledger_undo_error(404, str(exc))
+            return
+        except LedgerError as exc:
+            self._ledger_undo_error(409, str(exc))
+            return
+        self._audit("ledger.undo", target=entry_id,
+                    detail=f"undo entry {recorded.id}")
+        if self._is_form_submit():
+            self._send_redirect(self._form_return_to(body, "/settings/activity"))
+            return
+        self._send_json(200, {"undone": entry_id, "entry": recorded.id})
+
+    def _ledger_undo_error(self, status: int, sentence: str) -> None:
+        """A failed undo: JSON for a fetch, a notice redirect for a form.
+
+        The sentence is what the page shows. A form post must not be left
+        looking at a raw JSON body.
+        """
+        if self._is_form_submit():
+            self._send_redirect(f"/settings/activity?notice={quote(sentence)}")
+            return
+        self._send_json(status, {"error": sentence})
 
     # -- memory: the page and its actions (tickets #42, #94) --------------
 
@@ -7081,6 +7169,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _form_return_to(self, body: dict, default: str) -> str:
+        """The local page a no-JS form post came back to, or the default.
+
+        Only /settings paths are honored: those are the pages that post a form
+        here, and the allowlist keeps a crafted return_to from bouncing the
+        browser to another origin (no open redirect).
+        """
+        target = body.get("return_to")
+        if isinstance(target, str) and re.fullmatch(
+            r"/settings(/[A-Za-z0-9_\-/]*)?(#[A-Za-z0-9_-]+)?", target,
+        ):
+            return target
+        if isinstance(target, str):
+            return "/settings"
+        return default
+
     def _send_redirect(self, location: str) -> None:
         """Redirect with 303, for a form post that has been handled.
 
@@ -7185,6 +7289,7 @@ def create_server(
     calendar: CalendarBridge | None = None,
     llm=None,
     audit_conn=None,
+    ledger: Ledger | None = None,
     llm_endpoint: str | None = None,
     llm_model: str | None = None,
     inbox_store: InboxStore | None = None,
@@ -7235,6 +7340,8 @@ def create_server(
         calendar = _default_calendar_bridge(settings_store)
     if audit_conn is None:
         audit_conn = _default_audit_conn()
+    if ledger is None:
+        ledger = _default_ledger()
     if inbox_store is None:
         inbox_store = _default_inbox_store()
     if activity_log is None or skill_store is None:
@@ -7304,6 +7411,7 @@ def create_server(
             calendar=calendar,
             llm=llm,
             audit_conn=audit_conn,
+            ledger=ledger,
             llm_endpoint=llm_endpoint,
             llm_model=llm_model,
             inbox_store=inbox_store,
@@ -7416,6 +7524,22 @@ def _default_audit_conn():
         return conn
     except (OSError, sqlite3.Error):
         LOG.exception("audit store unavailable")
+        return None
+
+
+def _default_ledger() -> Ledger | None:
+    """The action ledger, or None when it cannot open.
+
+    The ledger records what the desk changed by itself together with the
+    before and after state, so the Activity page can undo it; a failure to
+    open leaves the desk usable, just without the trail.
+    """
+    try:
+        data_dir = default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return Ledger(data_dir / "ledger.sqlite3")
+    except (OSError, sqlite3.Error):
+        LOG.exception("ledger unavailable")
         return None
 
 
