@@ -1,0 +1,59 @@
+Evidence for 9a of spec 017 (#217, ticket #229): the repetition detector
+runs from normal use. Five similar asks go through the real research
+surface (POST /research) of a real server on a real socket, with the
+mock endpoint (tools/mock_endpoint.py) standing in for the company LLM.
+Nothing calls POST /inbox/consolidate anywhere in this transcript: the
+proposal appears on the first ordinary read (the badge poll and the
+inbox page), which is the catch-up-on-read hook in _maybe_briefs.
+
+Setup (temp AGENTDESK_DATA, worktree checkout, server on 127.0.0.1):
+
+    PYTHONPATH=src python tools/mock_endpoint.py --port 8788
+    PYTHONPATH=src AGENTDESK_DATA=<temp dir> python -m agentdesk.server --port 8790 --no-browser
+
+    mock endpoint listening on http://127.0.0.1:8788/v1
+    Agent Desk is running: http://127.0.0.1:8790/auth/<one-time token, redacted>
+
+    $ curl -c jar "http://127.0.0.1:8790/auth/<token>"          # start link exchange
+    auth-exchange: 303
+    $ curl -b jar -X POST http://127.0.0.1:8790/settings/endpoint/save \
+        -d '{"base":"http://127.0.0.1:8788/v1"}'
+    { "ok": true, "base": "http://127.0.0.1:8788/v1", ... }
+
+Five similar asks through the research surface (every answer is a real
+mock-endpoint turn, status ok):
+
+    $ curl -b jar -X POST http://127.0.0.1:8790/research -d '{"question":"What changed in the EU channel this week?"}'
+    { "status": "ok", "summary": "The mock endpoint answers a plain prompt with this sentence.",
+      "sources": ["company endpoint"], ... }
+    $ ... same for "what changed in the EU channel?"
+    $ ... same for "What changed in the EU channel since Monday?"
+    $ ... same for "Tell me what changed in the EU channel"
+    $ ... same for "What changed in the EU channel today?"
+
+The first ordinary read after the asks (the rail's badge poll) catches
+the pattern up; no consolidate call was made:
+
+    $ curl -b jar http://127.0.0.1:8790/widgets/inbox
+    {
+      "waiting": 1,
+      "notified": 1,
+      "dismissed": 0
+    }
+
+The inbox page carries the proposal card, assembled by the detector:
+
+    $ curl -b jar http://127.0.0.1:8790/inbox
+    (markers found in the returned HTML:)
+      "Turn this into one click?"   -> True
+      "Pattern noticed"             -> True
+      "5th time"                    -> True
+      "card-stack"                  -> True
+      "Accept skill"                -> True
+
+The card's origin line reads "Pattern noticed, 5th time: you keep asking
+to What changed in the EU channel..." and its Accept skill button
+activates the skill, exactly the flow the consolidation endpoint used to
+be the only door to. The pinning end-to-end test is
+tests/test_repetition.py::test_five_similar_asks_propose_from_normal_use_without_the_endpoint,
+which fails on the pre-fix code (nothing ever ran the detector).

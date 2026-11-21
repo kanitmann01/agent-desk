@@ -8,6 +8,7 @@ later agent systems (#13, #14) will meet them.
 import json
 import sqlite3
 import sys
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -54,6 +55,49 @@ def test_budget_notifies_within_the_day_and_caps_at_three():
     assert decide_budget(MORNING, 0) == "notify"
     assert decide_budget(MORNING, 2) == "notify"
     assert decide_budget(MORNING, 3) == "queue"
+
+
+def test_quiet_hour_boundaries_are_pinned():
+    # Exactly 18:00 is already quiet; the minute before it is not.
+    assert decide_budget(MORNING.replace(hour=17, minute=59), 0) == "notify"
+    assert decide_budget(MORNING.replace(hour=18, minute=0), 0) == "queue"
+    # Exactly 08:00 is already working hours; the minute before is not.
+    assert decide_budget(MORNING.replace(hour=7, minute=59), 0) == "queue"
+    assert decide_budget(MORNING.replace(hour=8, minute=0), 0) == "notify"
+
+
+def test_notified_today_rolls_over_at_local_midnight():
+    clock = FakeClock(MORNING)
+    store = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    store.record_notification("card", 1)
+    late = MORNING.replace(hour=23, minute=59)
+    clock.advance_to(late)
+    assert store.notified_today(late) == 1  # today's spend is today's ledger
+    next_day = (MORNING + timedelta(days=1)).replace(hour=0)
+    clock.advance_to(next_day)
+    assert store.notified_today(next_day) == 0  # it does not carry over
+
+
+def test_concurrent_spends_cannot_overspend_the_day():
+    # The ledger read, the decision and the spend used to be separate
+    # lock-scoped calls, so two near-simultaneous evaluations could both
+    # pass the cap check. One serialized decide-and-spend ends that.
+    clock = FakeClock(MORNING)
+    store = InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock)
+    cards = [store.add("suggestion", f"origin {i}", f"card {i}") for i in range(2)]
+    spent: list[bool] = []
+
+    def tab() -> None:
+        spent.append(store.spend_notification(
+            [c.id for c in cards], MORNING, quiet_hours=False, cap=1))
+
+    threads = [threading.Thread(target=tab), threading.Thread(target=tab)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert spent.count(True) == 1
+    assert store.notified_today(MORNING) == 1  # one digest row, not two
 
 
 def test_quiet_hours_queue_then_digest_on_first_morning_read(tmp_path):
@@ -172,6 +216,20 @@ def test_time_bound_cards_carry_their_window_and_expire_visibly(env, auth):
     page = env.request("GET", "/inbox", auth)[2].decode("utf-8")
     assert "window passed" in page
     assert "Time window: 2h" in page
+
+
+def test_a_string_window_hours_is_refused_at_the_boundary(env, auth):
+    # A string window would otherwise be stored and raise in is_expired on
+    # every page that shows the rail count: the card constructor refuses
+    # it, and the route answers 400 instead of bricking the reads.
+    status, _h, body = env.post_json(
+        "/inbox/cards",
+        {"kind": "brief", "origin": "Before your 14:00.", "title": "Q4 review",
+         "windowHours": "2"},
+        auth,
+    )
+    assert status == 400
+    assert "window hours" in json.loads(body)["error"]
 
 
 def test_dismissed_cards_recover_within_30_days_and_are_gone_after(env, auth):
