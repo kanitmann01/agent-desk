@@ -1,10 +1,10 @@
 # Known limitations
 
-Honest gaps in the marketplace branch as of 2026-11-16. Each item is verified in this tree or comes from the ticket reports. None of these is a promise of future work.
+Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in this tree or comes from the ticket reports. None of these is a promise of future work.
 
 ## Distribution and legal
 
-- No Nuitka artifact exists. Nuitka is not installed in this environment, so `python scripts/build_bundle.py build` prints `SKIP: Nuitka is not installed` and exits 3. There is no `dist/agent-desk`, no `manifest.json`, no signature and no working AppLocker publisher rule. The rule in `docs/ops/distribution.md` is a template.
+- No Nuitka artifact ships. Where Nuitka is not installed, `python scripts/build_bundle.py build` prints `SKIP: Nuitka is not installed ...` and exits 3; there is no released `dist/agent-desk`, no `manifest.json` on a release, no signature and no working AppLocker publisher rule, and the rule in `docs/ops/distribution.md` is a template. The build path itself is exercised: the enterprise workflow's `nuitka-probe` and `nuitka-build-smoke` jobs install Nuitka and run the build, the manifest verify and the `/health` smoke when the toolchain allows, and that leg ran locally with keyring present on 2026-11-21 (`docs/evidence/byok-2026-11-21/nuitka-smoke.md`).
 - There is no installer, no MSI and no per-machine deployment. The app is an on-demand executable launched from a folder.
 - No legal review has happened. `LICENSE` is a draft with `[COUNSEL: ...]` placeholders, the plugin SDK boundary in `docs/licensing.md` is not counsel-approved, and the distribution grant in the draft is not implemented as an acceptance flow. The Apache-2.0 boundary mentions an `sdk/` directory that does not exist; the published boundary is the manifest schema and the files marked Apache-2.0.
 - No SBOM ships yet because no build ships. `scripts/sbom.py` can generate one, and `scripts/license_gate.py` can check it, but there is no artifact to attach it to.

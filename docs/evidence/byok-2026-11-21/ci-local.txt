@@ -1,0 +1,13 @@
+agent-desk local CI  (data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-ci-gwrs2tlc)
+checkout: D:\20-projects\Personal Agents\.worktrees\byok
+------------------------------------------------------------------------
+PASS  py-grammar          0.0s  0 files parse under 3.10
+PASS  pytest            579.1s  2741 passed, 2 skipped, 10 warnings in 577.10s (0:09:37)
+PASS  frontend-check      3.0s  tsc --noEmit clean
+PASS  frontend-tests     10.4s  [2m      Tests [22m [1m[32m307 passed[39m[22m[90m (307)[39m
+PASS  licenses            0.1s  manifest clean and current
+PASS  registry-ci         0.3s  REGISTRY-CI PASS
+PASS  brand-leak          0.1s  BRAND-LEAK PASS (1 pack(s), 0 hash(es))
+------------------------------------------------------------------------
+7/7 gates passed in 593s
+CI PASS

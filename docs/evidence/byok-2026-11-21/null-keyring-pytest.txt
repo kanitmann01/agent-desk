@@ -1,0 +1,30 @@
+null-keyring pytest run (spec 018 #235, CI parity with no OS keychain)
+
+command:
+  PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring \
+    python -m pytest tests -q --no-header
+  (fresh AGENTDESK_DATA temp dir, AGENTDESK_* overrides emptied)
+
+backend probe before the run (python -c "import keyring; print(keyring.get_keyring())"):
+  keyring.backends.fail.Keyring (priority: 0)
+
+stderr: empty
+
+tail of the run (the 10 warnings are the suite's known
+PytestUnhandledThreadExceptionWarning noise on teardown; the run's
+verdict line is the last line):
+
+  OSError: [WinError 10038] An operation was attempted on something that is not a socket
+
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings
+2741 passed, 2 skipped, 10 warnings in 570.22s (0:09:30)
+
+VERDICT: the full suite passes with the fail keyring backend forced
+into the environment, proving the CI-parity criterion: with no OS
+keychain anywhere, connections still exist (no secret), the settings
+page names the state, and every test that needs a keychain injects a
+fake one.
