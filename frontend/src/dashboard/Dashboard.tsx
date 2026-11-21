@@ -590,7 +590,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
         ) : null}
         <footer className="page-foot">
           <p>
-            Nexuus Bot <span className="mono">{data.version}</span>. Workbooks are copied before they
+            Agent Desk <span className="mono">{data.version}</span>. Workbooks are copied before they
             are read. Calendar setup stays in the browser. Research calls are logged; file contents
             stay here. <a href="/what-this-touches">What this app touches</a>
           </p>

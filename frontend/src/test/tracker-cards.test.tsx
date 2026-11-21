@@ -1,4 +1,4 @@
-// Ticket 05: the workbook card draws the reading the server already drew —
+// Ticket 05: the workbook card draws the reading the server already drew:
 // its appended elements through the same view the plugin card uses, the
 // receipt line with the server's own words, and nothing at all when there is
 // no reading to draw.

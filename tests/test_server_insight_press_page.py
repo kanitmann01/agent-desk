@@ -291,7 +291,7 @@ def test_a_refused_page_press_records_an_error_row(tmp_path, monkeypatch):
     booted = Booted()
     try:
         auth = booted.exchange()
-        status, _headers, _body = _post_form(
+        status, _headers, body = _post_form(
             booted, auth,
             {"kind": "explain-range", "text": "Booked falls as Margin rises."},
         )
@@ -299,8 +299,14 @@ def test_a_refused_page_press_records_an_error_row(tmp_path, monkeypatch):
         rows = _press_rows(booted)
     finally:
         booted.close()
-    # Refused before any call: the error row is the only one, and it
-    # names the refusal, never a spend.
+    # What the user sees matches what the log says: the page carries the
+    # named refusal sentence (never a bare status), and the row the audit
+    # page shows for the same press is an error, not a working one
+    # (spec 017 workstream 8d; the SPA door pins the same pairing in
+    # frontend press tests, the alert role with the desk's sentence).
+    page = body.decode("utf-8")
+    assert "Nothing was explained: model calls are off on this desk" in page
+    assert '<div class="alert"><p>' in page
     assert len(rows) == 1
     assert rows[0]["status"] == "error"
     assert rows[0]["detail"] == "insight:model-off"

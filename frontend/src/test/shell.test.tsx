@@ -53,7 +53,7 @@ describe('the rail', () => {
     render(<Rail inboxWaiting={2} />);
     // The brand carries no gradient: a plain span in the ink.
     const brand = document.querySelector<HTMLElement>('.brand-name');
-    expect(brand).toHaveTextContent('Nexuus Bot');
+    expect(brand).toHaveTextContent('Agent Desk');
     expect(brand?.style.backgroundImage).toBe('');
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(nav).toHaveTextContent('Dashboard');

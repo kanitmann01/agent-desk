@@ -1,0 +1,36 @@
+# No-JS transcript: a plugin action POST, redirects followed, notice on the landing page.
+# Session: the bootstrap link curl'd once, cookie jar carried from there (what a
+# browser does when the launched link opens). Commands shown, then raw output.
+# The hops are spelled the way a browser performs them: the action POST is
+# answered with 303, and everything after that is a GET.
+
+$ curl -s -i -c jar "http://127.0.0.1:8901/auth/<bootstrap-token>"
+HTTP/1.1 303 See Other
+Server: AgentDesk/0.1.0 
+Date: Sat, 21 Nov 2026 16:08:23 GMT
+Location: /
+Set-Cookie: agentdesk_session=jTbMoqMUPXVmfi0YktkhiVlJB6Z6Vb35-3QYKIraLOc; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200
+Content-Security-Policy: default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+
+$ curl -s -i -b jar -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data '' "http://127.0.0.1:8901/plugins/no-such-plugin/share"
+HTTP/1.1 303 See Other
+Server: AgentDesk/0.1.0 
+Date: Sat, 21 Nov 2026 16:08:23 GMT
+Location: /plugins?notice=no%20installed%20plugin%20no-such-plugin
+Content-Security-Policy: default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+
+# The browser now GETs the Location it was handed, following every redirect:
+$ curl -s -b jar -o final.html -w 'final status: %{http_code}  landed on: %{url_effective}\n' -L \
+    "http://127.0.0.1:8901/plugins?notice=no%20installed%20plugin%20no-such-plugin"
+final status: 200  landed on: http://127.0.0.1:8901/marketplace/installed?notice=no%20installed%20plugin%20no-such-plugin
+
+The landing page (the committed SPA shell for /marketplace/installed) carries the
+action's named refusal server-side, visible with JavaScript off:
+
+<div class="alert" role="status" style="padding:16px 20px"><p>no installed plugin no-such-plugin</p></div>

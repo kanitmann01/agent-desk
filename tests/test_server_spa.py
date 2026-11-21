@@ -33,7 +33,7 @@ SYNTHETIC_INDEX = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Nexuus Bot</title>
+<title>Agent Desk</title>
 <script type="module" crossorigin src="/static/spa/assets/index-deadbeef.js"></script>
 <link rel="stylesheet" href="/static/spa/assets/index-deadbeef.css">
 </head>

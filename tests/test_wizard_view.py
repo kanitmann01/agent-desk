@@ -80,6 +80,26 @@ def test_questions_state_renders_every_question_as_radio_forms():
     assert page.count("Ask</button>") == 2
 
 
+def test_a_question_without_options_names_its_free_text_input():
+    """The no-options fallback input carries the question as its name.
+
+    A screen reader on a degraded session must announce what the field
+    asks, never an unnamed text box (spec 017 workstream 8c).
+    """
+    session = {
+        "id": "wiz-7",
+        "state": "questions",
+        "description": "A widget that watches one number.",
+        "questions": [
+            {"question": "Which workbook column holds the number?",
+             "options": [], "default": ""},
+        ],
+    }
+    page = render_wizard_page(session, VERSION)
+    assert '<input type="text" name="answer"' in page
+    assert 'aria-label="Which workbook column holds the number?"' in page
+
+
 def test_describing_state_echoes_the_description_and_keeps_asking():
     session = dict(QUESTIONS_SESSION, state="describing")
     page = render_wizard_page(session, VERSION)
