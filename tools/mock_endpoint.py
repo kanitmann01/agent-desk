@@ -145,24 +145,47 @@ def _presentation_fill(prompt: str) -> str:
             section = line.split("Section: ", 1)[1].strip() or section
             break
     numbers = re.findall(r"\d+", prompt.split("Sources:", 1)[-1])
-    figure = f"The source says {numbers[0]}." if numbers else ""
+    figure = (
+        f"The source says {numbers[0]}, and that is the only figure this section uses."
+        if numbers else ""
+    )
+    first_title, second_title = _slide_titles(section)
     first = [
-        f"{section} starts from the brief, not from a figure the desk did not supply.",
-        "The situation is the part a listener can repeat after the meeting.",
-        "What changed is the second point, said in one sentence.",
-        "The constraint on the next step stays visible on this slide.",
+        figure or (
+            f"{section} starts from the brief, not from a figure the desk did not supply, "
+            "and a listener should be able to restate that in one breath."
+        ),
+        "The situation includes what did not change and what is still open, so the slide is not only the good news.",
+        "The constraint on the next step stays here, next to the decision it limits.",
     ]
-    if figure:
-        first[0] = figure
     second = [
-        f"One example makes {section.lower()} easier to retell.",
-        "The example belongs to this section, so the deck does not repeat itself.",
-        "The last line is what the room should remember without the notes.",
+        f"One example makes {section.lower()} easier to retell, and it belongs to this section so later slides do not echo it.",
+        "What the room should remember without the notes is the choice, the reason, and the thing we are deliberately not doing.",
     ]
     return json.dumps({"slides": [
-        {"title": section, "bullets": first, "citations": [1] if numbers else []},
-        {"title": f"More on {section}", "bullets": second, "citations": []},
+        {"title": first_title, "bullets": first, "citations": [1] if numbers else []},
+        {"title": second_title, "bullets": second, "citations": []},
     ]})
+
+
+def _slide_titles(section: str) -> tuple[str, str]:
+    """Two titles that are not the section name with a prefix."""
+    own = {
+        "context": ("Where things stand", "The decision in front of us"),
+        "findings": ("What turned up", "What follows from that"),
+        "what we do next": ("The next move", "What we will leave"),
+        "snapshot": ("The quarter on one page", "What the quarter is not"),
+        "performance": ("How the work went", "Where it slowed"),
+        "wins": ("What held", "What we can repeat"),
+        "risks": ("What could slip", "What we would notice first"),
+        "asks": ("What we need", "What we can do without"),
+        "landscape": ("The field", "Where we sit in it"),
+        "profile": ("Who this is", "How they compete"),
+        "gaps": ("What is missing", "What that costs"),
+        "implications": ("What it means for us", "What it does not mean"),
+        "moves": ("The move", "The move after that"),
+    }
+    return own.get(section.lower(), (section, f"The point of {section}"))
 
 
 def reply_for(prompt: str) -> str:
