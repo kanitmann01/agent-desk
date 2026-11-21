@@ -7328,7 +7328,7 @@ def _drain_skill_feedback(ctx) -> dict:
     if not settings.get("endpoint_enabled"):
         return {}  # endpoint off: nothing leaves the machine, queue stays
     llm = settings_chat(settings)
-    _base, _key, model = effective_llm_config(settings)
+    base, _key, model = effective_llm_config(settings)
     refined = 0
     for skill in skills.agent_skills():
         if skill["pinned"]:
@@ -7354,10 +7354,10 @@ def _drain_skill_feedback(ctx) -> dict:
         try:
             new_prompt = skill_refine.parse_reply(llm(prompt))
         except Exception as exc:  # noqa: BLE001 - a failed call retries later
-            _audit_llm_refine(server, model, request_bytes, str(exc)[:200])
+            _audit_llm_refine(server, base, model, request_bytes, str(exc)[:200])
             continue
         if new_prompt is None:
-            _audit_llm_refine(server, model, request_bytes,
+            _audit_llm_refine(server, base, model, request_bytes,
                               "the endpoint's reply was not strict JSON")
             continue
         old_prompt = skill["prompt"]
@@ -7365,7 +7365,7 @@ def _drain_skill_feedback(ctx) -> dict:
             skills.refine(skill["id"], new_prompt,
                           note=f"feedback: {feedback[0][:160]}")
         except SkillError as exc:
-            _audit_llm_refine(server, model, request_bytes, str(exc)[:200])
+            _audit_llm_refine(server, base, model, request_bytes, str(exc)[:200])
             ctx.ledger.unlatch(key)  # a refusal is a definite answer
             continue
         try:
@@ -7377,19 +7377,20 @@ def _drain_skill_feedback(ctx) -> dict:
             skills.refine(skill["id"], old_prompt, note="refine undone: no ledger entry")
             LOG.warning("a refinement could not be recorded, so it was not applied")
             continue
-        _audit_llm_refine(server, model, request_bytes, "")
+        _audit_llm_refine(server, base, model, request_bytes, "")
         ctx.remember_input("skills-refine", payload)
         ctx.ledger.unlatch(key)
         refined += 1
     return {"refined": refined} if refined else {}
 
 
-def _audit_llm_refine(server, model: str, request_bytes: int, cause: str) -> None:
-    """One llm.skill-refine audit row: the model and the request's size,
-    never the prompt or the feedback text."""
+def _audit_llm_refine(server, base: str, model: str,
+                       request_bytes: int, cause: str) -> None:
+    """One llm.skill-refine audit row: the endpoint, the model and the
+    request's size, never the prompt or the feedback text."""
     if server.audit_conn is not None:
         audit_store.record(
-            server.audit_conn, "llm.skill-refine", target="endpoint",
+            server.audit_conn, "llm.skill-refine", target=base,
             status="error" if cause else "ok", model=model,
             request_bytes=request_bytes, detail=cause)
 
