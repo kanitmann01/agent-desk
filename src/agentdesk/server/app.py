@@ -101,7 +101,7 @@ from agentdesk.layout import (
     parse_layout,
     resolved_layout,
 )
-from agentdesk.ledger import Ledger, LedgerError
+from agentdesk.ledger import Ledger, LedgerError, may_act
 from agentdesk.ledger import undo as ledger_undo
 from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
 from agentdesk.mail.store import MailStore
@@ -165,6 +165,8 @@ from agentdesk.registry import source as registry_source
 from agentdesk.registry.index import RegistryIndexError
 from agentdesk.registry.install import RegistryError
 from agentdesk.registry.publish import publish_to_registry
+from agentdesk.repetition import curator as skill_curator
+from agentdesk.repetition import refine as skill_refine
 from agentdesk.peers.discovery import (
     PREFERRED_ANNOUNCE_PORT,
     DiscoveryService,
@@ -264,6 +266,11 @@ SECURITY_HEADERS = (
 )
 
 MAX_BODY_BYTES = 1024 * 1024
+
+# The skill feedback queue (spec 016 section 6.6): each skillfb:<id> latch
+# holds at most 5 items, each 1000 characters or fewer.
+SKILL_FEEDBACK_MAX_ITEMS = 5
+SKILL_FEEDBACK_MAX_CHARS = 1000
 
 # The setup upload carries the file's bytes, so it drains under its own
 # cap; every other POST keeps the bound above.
@@ -749,6 +756,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         extractor=None,
         reflector=None,
         announce_port: int | None = None,
+        skills_snapshots_dir: Path | str | None = None,
     ) -> None:
         """Bind the ports the handler set shares, then start listening on address.
 
@@ -851,6 +859,11 @@ class AgentDeskServer(ThreadingHTTPServer):
             connection_check if connection_check is not None else health.check_models
         )
         self.announce_port = announce_port
+        # Where the curator's snapshots land; None resolves to
+        # <data>/skills-snapshots at step time (tests inject their own).
+        self.skills_snapshots_dir = (
+            Path(skills_snapshots_dir) if skills_snapshots_dir is not None else None
+        )
         self.peer_discovery: DiscoveryService | None = None
         self._peer_discovery_lock = threading.Lock()
         self.mail_store = mail_store
@@ -863,8 +876,42 @@ class AgentDeskServer(ThreadingHTTPServer):
         # the agents page says so while the roster still renders.
         self.agents = agents_store
         self.outbox_dir = Path(outbox_dir) if outbox_dir is not None else _default_outbox_dir()
+
+        def _record_skill_created(skill: dict) -> None:
+            """The ledger entry for a skill the desk made by itself, plus
+            its audit row (spec 016 section 6.6). The before capture is
+            the not-active state the undo restores."""
+            before = json.dumps({
+                "id": skill["id"], "name": skill["name"],
+                "description": skill.get("description", ""),
+                "prompt": skill.get("prompt", ""),
+                "active": False, "created_by": skill.get("created_by", "agent"),
+            }, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            entry = self.ledger.record(
+                actor="agent",
+                action="skill.created",
+                subject=f"skill:{skill['id']}",
+                why=(f"Made the skill {skill['name']} by itself after the same"
+                     " ask kept coming back."),
+                undo_kind="skill-version",
+                before=before,
+                detail={"skill": skill["name"], "version": skill.get("version", 1)},
+            )
+            if self.audit_conn is not None:
+                audit_store.record(
+                    self.audit_conn, "skill.created", target=skill["name"],
+                    detail=f"skill {skill['id']}; ledger {entry.id}")
+
         self.consolidator = (
-            Consolidator(activity_log, inbox_store, skill_store, activity_log.clock)
+            Consolidator(
+                activity_log, inbox_store, skill_store, activity_log.clock,
+                create_directly=lambda: (
+                    settings_store is not None
+                    and may_act(settings_store, "skill.create")
+                    and bool(settings_store.get("skills_auto_create"))
+                ),
+                on_created=_record_skill_created,
+            )
             if activity_log is not None and inbox_store is not None and skill_store is not None
             else None
         )
@@ -3182,7 +3229,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """
         server = self.server  # type: ignore[attr-defined]
         entries = server.activity_log.entries() if server.activity_log is not None else []
-        skills = server.skills.active() if server.skills is not None else []
+        skills = server.skills.all_skills() if server.skills is not None else []
         histories = {s["id"]: server.skills.history(s["id"]) for s in skills}
         audit_entries = (
             audit_store.entries(server.audit_conn, 60)
@@ -3231,6 +3278,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             agent_loop=(server.agent_loop.status()
                         if getattr(server, "agent_loop", None) is not None else None),
             update=update_payload(server),
+            curator_last_run=(server.skills.curator_state_value("last_run_at")
+                              if server.skills is not None else None),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3774,10 +3823,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents", "learn_topics", "learn_profile",
-                       "recommendations",
-                       "recommend_deadlines", "recommend_meetings",
+                       "recommendations", "recommend_deadlines", "recommend_meetings",
                        "recommend_horizon_days", "recommend_model_rank",
-                       "recommend_threshold", "auto_update", "auto_update_plugins"):
+                       "recommend_threshold", "auto_update", "auto_update_plugins",
+                       "skills_auto_create", "skills_auto_refine", "skills_curator"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -3798,13 +3847,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
                      "agent_loop_minutes", "auto_update",
-                     "auto_update_plugins", "learn_topics", "learn_profile") \
-                or key.startswith("memory_"):
-            # The memory loop reads its switches on every capture,
-            # the autonomy switch is read by ledger.may_act before each action,
-            # the agent loop re-reads its interval on every wake, and the
+                     "auto_update_plugins", "learn_topics", "learn_profile",
+                     "skills_auto_create", "skills_auto_refine",
+                     "skills_curator") or key.startswith("memory_"):
+            # The memory loop reads its switches on every capture, the
+            # autonomy switch is read by ledger.may_act before each action,
+            # the agent loop re-reads its interval on every wake, the
+            # update switches gate the update step's installs, the
             # learn-topics and profile-review steps read their switches at
-            # every pass.
+            # every pass, and the skills switches are read by the
+            # consolidator and the loop's skills and curator steps.
             pass
         else:
             self._apply_source_toggles(key, value)
@@ -4031,6 +4083,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             skill["prompt"], context, llm=llm, audit_conn=server.audit_conn,
             endpoint=endpoint, model=model,
         )
+        # The run counts as use (spec 016 section 6.6): the curator's
+        # staleness clock reads it, and a used stale skill reactivates.
+        server.skills.record_use(skill_id)
         self._send_json(200, answer.to_json())
 
     def _skill_undo(self, skill_id: int) -> None:
@@ -4038,9 +4093,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
         Undo is a declined proposal: the pattern starts its dismiss cooldown
         before the skill deactivates, so the next consolidation run does not
-        re-propose the identical ask. A SkillError means the store cannot
-        name that skill and answers 404; on success the body is the store's
-        own record of the deactivation.
+        re-propose the identical ask. Undoing a desk-made skill also queues
+        "The user undid the last run of this skill." as feedback, so the
+        next refinement pass learns from it (spec 016 section 6.6). A
+        SkillError means the store cannot name that skill and answers 404;
+        on success the body is the store's own record of the deactivation.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.skills is None:
@@ -4053,9 +4110,85 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 return
             if server.consolidator is not None:
                 server.consolidator.dismiss_cooldown(pattern_hash(skill["prompt"]))
-            self._send_json(200, server.skills.deactivate(skill_id))  # type: ignore[attr-defined]
+            result = server.skills.deactivate(skill_id)  # type: ignore[attr-defined]
+            if skill.get("created_by") == "agent" and server.ledger is not None:
+                enqueue_skill_feedback(
+                    server.ledger, skill_id,
+                    "The user undid the last run of this skill.")
+            self._send_json(200, result)
         except SkillError as exc:
             self._send_json(404, {"error": str(exc)})
+
+    def _skill_pin_rest(self, rest: str) -> None:
+        """Pin (or release) the skill the path names, per the posted flag.
+
+        A pinned skill is exempt from the curator and from refine. The
+        answer is {"pinned": bool}; a no-JS form post goes back to the
+        settings page's Skills section.
+        """
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        server = self.server  # type: ignore[attr-defined]
+        if server.skills is None:
+            self._send_json(503, {"error": "skills are not available"})
+            return
+        body = self._read_json_body() or {}
+        raw = body.get("pinned")
+        if raw is True or (isinstance(raw, str) and raw.strip().lower() in ("1", "true", "on")):
+            pinned = True
+        elif raw is False or (isinstance(raw, str) and raw.strip().lower() in ("0", "false", "off")):
+            pinned = False
+        else:
+            self._send_json(400, {"error": "expected pinned true or false"})
+            return
+        try:
+            result = server.skills.pin(skill_id, pinned)  # type: ignore[attr-defined]
+        except SkillError as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        self._respond_form_or_json(self._form_return_to(body, "/settings#skills"),
+                                   {"pinned": result["pinned"]})
+
+    def _skill_feedback_rest(self, rest: str) -> None:
+        """Queue the posted feedback for the desk-made skill the path names.
+
+        409 when the skill is not agent-made or is pinned: those never
+        reach a model. The text is capped at 1000 characters; the queue
+        latch holds the rest until the skills loop step drains it.
+        """
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        server = self.server  # type: ignore[attr-defined]
+        if server.skills is None or server.ledger is None:
+            self._send_json(503, {"error": "skills are not available"})
+            return
+        skill = server.skills.get(skill_id)  # type: ignore[attr-defined]
+        if skill is None:
+            self._send_json(404, {"error": f"no skill {skill_id}"})
+            return
+        if skill.get("created_by") != "agent":
+            self._send_json(409, {"error": "only skills the desk made take feedback"})
+            return
+        if skill.get("pinned"):
+            self._send_json(409, {"error": "a pinned skill is not refined"})
+            return
+        body = self._read_json_body() or {}
+        text = body.get("text") if isinstance(body.get("text"), str) else None
+        if text is None or not text.strip():
+            self._send_json(400, {"error": "expected feedback text"})
+            return
+        if len(text) > SKILL_FEEDBACK_MAX_CHARS:
+            self._send_json(400, {"error": "feedback is capped at 1000 characters"})
+            return
+        enqueue_skill_feedback(server.ledger, skill_id, text)
+        self._respond_form_or_json(self._form_return_to(body, "/settings#skills"),
+                                   {"queued": True}, status=200)
 
     def _send_skill_markdown(self, skill_id: int) -> None:
         """One skill's prompt as plain markdown, for copying out of the app.
@@ -6269,6 +6402,7 @@ def create_server(
     extractor=None,
     reflector=None,
     announce_port: int | None = None,
+    skills_snapshots_dir: Path | str | None = None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -6419,6 +6553,7 @@ def create_server(
             extractor=extractor,
             reflector=reflector,
             announce_port=announce_port,
+            skills_snapshots_dir=skills_snapshots_dir,
         )
 
     if port is None:
@@ -7114,6 +7249,219 @@ def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]
     except (OSError, sqlite3.Error):
         LOG.exception("repetition stores unavailable")
         return None, None
+
+
+# -- the skills and curator loop steps (spec 016 sections 5.5 and 6.6) -----
+
+
+def enqueue_skill_feedback(ledger: Ledger, skill_id: int, text: str) -> None:
+    """Append one feedback line to a skill's queue latch.
+
+    The latch skillfb:<id> holds a JSON list capped at 5 items of 1000
+    characters or fewer: the improve field's posts and the undo-of-a-run
+    notice both land here, and the skills loop step drains it one
+    endpoint call per skill.
+    """
+    text = (text or "").strip()[:SKILL_FEEDBACK_MAX_CHARS]
+    if not text:
+        return
+    key = f"skillfb:{skill_id}"
+    items: list[str] = []
+    raw = ledger.latch_value(key)
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                items = [item for item in parsed if isinstance(item, str)]
+        except ValueError:
+            items = []  # a damaged queue starts over rather than blocks
+    items.append(text)
+    ledger.latch(key, json.dumps(items[-SKILL_FEEDBACK_MAX_ITEMS:]))
+
+
+def _record_skill_refined(server, skill: dict, old_prompt: str,
+                          note: str) -> object:
+    """The ledger entry for one applied refinement, plus its audit row.
+
+    The before capture holds the prompt the refine replaced, which is
+    exactly what the skill-version undo restores. A ledger that cannot
+    record the change refuses it: the caller compensates.
+    """
+    before = json.dumps({
+        "id": skill["id"], "name": skill["name"],
+        "description": skill["description"], "prompt": old_prompt,
+        "active": bool(skill["active"]), "created_by": skill.get("created_by", "agent"),
+    }, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    entry = server.ledger.record(
+        actor="agent",
+        action="skill.refined",
+        subject=f"skill:{skill['id']}",
+        why=(f"Improved the skill {skill['name']} from the queued feedback"
+             " through the endpoint."),
+        undo_kind="skill-version",
+        before=before,
+        detail={"skill": skill["name"], "note": note[:200]},
+    )
+    if server.audit_conn is not None:
+        audit_store.record(server.audit_conn, "skill.refined",
+                           target=skill["name"],
+                           detail=f"skill {skill['id']}; ledger {entry.id}")
+    return entry
+
+
+def _drain_skill_feedback(ctx) -> dict:
+    """One pass over the feedback queues: one endpoint call per queued
+    skill, audited as llm.skill-refine with the request's size, never its
+    text (spec 016 sections 6.6 and 6.7).
+
+    A call that fails or cannot be parsed leaves the queue queued for a
+    later pass; a definite answer (applied or refused by the store)
+    clears it. Identical input is skipped by hash, the loop's own rule.
+    """
+    server = ctx.server
+    skills = getattr(server, "skills", None)
+    settings = getattr(server, "settings", None)
+    if skills is None or ctx.ledger is None or settings is None:
+        return {}
+    if not settings.get("skills_auto_refine"):
+        return {}
+    if not settings.get("endpoint_enabled"):
+        return {}  # endpoint off: nothing leaves the machine, queue stays
+    llm = settings_chat(settings)
+    _base, _key, model = effective_llm_config(settings)
+    refined = 0
+    for skill in skills.agent_skills():
+        if skill["pinned"]:
+            continue
+        key = f"skillfb:{skill['id']}"
+        raw = ctx.ledger.latch_value(key)
+        feedback: list[str] = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    feedback = [item for item in parsed if isinstance(item, str)]
+            except ValueError:
+                feedback = []
+        if not feedback:
+            continue
+        payload = {"skill": skill["id"], "prompt": skill["prompt"],
+                   "feedback": feedback}
+        if ctx.input_unchanged("skills-refine", payload):
+            continue
+        prompt = skill_refine.build_input(skill, feedback)
+        request_bytes = len(prompt.encode("utf-8"))
+        try:
+            new_prompt = skill_refine.parse_reply(llm(prompt))
+        except Exception as exc:  # noqa: BLE001 - a failed call retries later
+            _audit_llm_refine(server, model, request_bytes, str(exc)[:200])
+            continue
+        if new_prompt is None:
+            _audit_llm_refine(server, model, request_bytes,
+                              "the endpoint's reply was not strict JSON")
+            continue
+        old_prompt = skill["prompt"]
+        try:
+            skills.refine(skill["id"], new_prompt,
+                          note=f"feedback: {feedback[0][:160]}")
+        except SkillError as exc:
+            _audit_llm_refine(server, model, request_bytes, str(exc)[:200])
+            ctx.ledger.unlatch(key)  # a refusal is a definite answer
+            continue
+        try:
+            _record_skill_refined(server, skill, old_prompt,
+                                  note=f"feedback: {feedback[0][:160]}")
+        except LedgerError:
+            # The change cannot be recorded, so it does not stand: put the
+            # earlier prompt back and keep the queue for a retry.
+            skills.refine(skill["id"], old_prompt, note="refine undone: no ledger entry")
+            LOG.warning("a refinement could not be recorded, so it was not applied")
+            continue
+        _audit_llm_refine(server, model, request_bytes, "")
+        ctx.remember_input("skills-refine", payload)
+        ctx.ledger.unlatch(key)
+        refined += 1
+    return {"refined": refined} if refined else {}
+
+
+def _audit_llm_refine(server, model: str, request_bytes: int, cause: str) -> None:
+    """One llm.skill-refine audit row: the model and the request's size,
+    never the prompt or the feedback text."""
+    if server.audit_conn is not None:
+        audit_store.record(
+            server.audit_conn, "llm.skill-refine", target="endpoint",
+            status="error" if cause else "ok", model=model,
+            request_bytes=request_bytes, detail=cause)
+
+
+def skills_step_run(ctx) -> dict:
+    """The `skills` loop step: consolidate, then drain the feedback queue.
+
+    Consolidate runs every pass exactly as the read path runs it; whether
+    it makes a card or a skill directly is the create_directly switch's
+    answer at that moment (autonomy and skills_auto_create).
+    """
+    server = ctx.server
+    counts: dict = {}
+    consolidator = getattr(server, "consolidator", None)
+    if consolidator is not None:
+        outcome = consolidator.consolidate()
+        if outcome.get("created"):
+            counts["created"] = 1
+        elif outcome.get("proposed"):
+            counts["proposed"] = 1
+    counts.update(_drain_skill_feedback(ctx))
+    return counts
+
+
+def curator_step_run(ctx) -> dict:
+    """The `curator` loop step: the weekly pass over desk-made skills.
+
+    Gated by the skills_curator switch (read here, per pass) and the
+    curator's own interval. Each transition is one undoable ledger entry;
+    the run is one skill.curated audit row carrying the counts.
+    """
+    server = ctx.server
+    skills = getattr(server, "skills", None)
+    ledger = getattr(server, "ledger", None)
+    settings = getattr(server, "settings", None)
+    if skills is None or ledger is None or settings is None:
+        return {}
+    if not skill_curator.due(skills, ctx.now):
+        return {}
+
+    def record(before: dict, detail: dict) -> str:
+        """One undoable ledger entry per transition (undo_kind skill-state)."""
+        entry = ledger.record(
+            actor="agent",
+            action="skill.curated",
+            subject=f"skill:{before['id']}",
+            why=(f"Moved the skill {detail.get('skill', '')} to"
+                 f" {detail.get('to', '')} (the weekly curator)."),
+            undo_kind="skill-state",
+            before=json.dumps(before, sort_keys=True).encode("utf-8"),
+            detail=detail,
+        )
+        return entry.id
+
+    try:
+        snapshots_dir = getattr(server, "skills_snapshots_dir", None) or (
+            default_data_dir() / "skills-snapshots")
+        counts = skill_curator.run_curator(
+            skills, snapshots_dir, record, ctx.now.timestamp())
+    except OSError as exc:
+        if server.audit_conn is not None:
+            audit_store.record(
+                server.audit_conn, "skill.curated", status="error",
+                detail=f"the snapshot failed, no skill was changed: {exc}"[:300])
+        LOG.exception("the curator run aborted")
+        return {"failed": 1}
+    if server.audit_conn is not None:
+        audit_store.record(
+            server.audit_conn, "skill.curated",
+            detail=json.dumps(counts, sort_keys=True))
+    return counts
+
 
 def _default_settings_store() -> SettingsStore | None:
     """Settings over the persistent store, or None when it cannot open."""
