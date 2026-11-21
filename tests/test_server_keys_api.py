@@ -434,6 +434,10 @@ def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth
     assert "sk-live-quietly" not in page
     assert f"/settings?connection={created['id']}" in page  # the edit link
     assert f"/api/connections/{created['id']}/delete" in page  # the delete form
+    # The row compacts by layout (spec 019 #256): the URL cell takes the
+    # wrapping class and the actions cell takes the one-line class.
+    assert "class='mono conn-url'" in page
+    assert "class='conn-actions'" in page
 
 
 def test_settings_page_renders_the_badge_states_server_side(env, auth):

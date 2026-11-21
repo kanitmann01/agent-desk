@@ -433,6 +433,11 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .preset-tile{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--hairline);border-radius:var(--r-inner);background:var(--surface);font-size:13px;color:var(--ink-1)}
 .preset-tile:has(input:checked){border-color:var(--accent);color:var(--accent-text)}
 .inlineform{display:inline-block;margin:0 0 0 6px}
+/* A row scans one line tall (spec 019): the base URL wraps anywhere so
+   a mono URL cannot dictate the column widths, and the three actions
+   hold one line per row. */
+.conn-url{overflow-wrap:anywhere}
+.conn-actions{white-space:nowrap}
 /* The health badge (spec 018): one pill per state, colored like the
    delta arrows (good, bad) with unknown in the quiet ink; the inline
    cause under it is plain text, not part of the pill. */
