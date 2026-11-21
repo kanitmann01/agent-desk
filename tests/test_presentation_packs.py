@@ -20,7 +20,9 @@ import server_harness
 from agentdesk.llm import NO_ENDPOINT_CAUSE
 from agentdesk.presentations import leak
 from agentdesk.presentations.leak import load_hashes, scan
-from agentdesk.presentations.ooxml import SAMPLE_TEXT, build_shell, read_parts
+from agentdesk.presentations.ooxml import (
+    SAMPLE_TEXT, build_shell, pack_zip, read_parts,
+)
 from agentdesk.presentations.packs import load_packs
 from agentdesk.registry.install import install_from_registry, tree_digest
 from agentdesk.registry.index import load_index
@@ -63,6 +65,17 @@ def _scripted_llm():
     return llm
 
 
+def _same_parts(shipped: bytes, built: bytes) -> bool:
+    """Whether two .pptx packages carry the same parts.
+
+    Whole-file bytes are not the identity of a shell: the deflate stream
+    inside the zip container depends on the zlib in use (zlib-ng on
+    Python 3.14 deflates to different bytes than the stock encoder), so
+    the comparison is the OOXML itself: same part names, same part bytes.
+    """
+    return read_parts(shipped) == read_parts(built)
+
+
 def _ready(env):
     env.server.llm_endpoint = "http://127.0.0.1:9/v1"
     env.server.llm = _scripted_llm()
@@ -93,13 +106,23 @@ def test_installing_the_starter_uses_the_registry_pin(tmp_path):
 def test_the_shipped_shells_are_the_neutral_builder():
     dark = (PACK / "shells" / "starter-dark.pptx").read_bytes()
     light = (PACK / "shells" / "starter-light.pptx").read_bytes()
-    assert dark == build_shell(variant="dark", body_placeholder=True)
-    assert light == build_shell(variant="light", body_placeholder=True)
+    assert _same_parts(dark, build_shell(variant="dark", body_placeholder=True))
+    assert _same_parts(light, build_shell(variant="light", body_placeholder=True))
     parts = read_parts(dark)
     joined = b"\n".join(parts.values())
     assert b"Title Slide" in joined and b"Content" in joined
     assert SAMPLE_TEXT.encode() in parts["ppt/slides/slide1.xml"]
     assert b"Thank you" in parts["ppt/slideLayouts/slideLayout4.xml"]
+
+
+def test_the_parts_check_fails_a_tampered_part():
+    dark = (PACK / "shells" / "starter-dark.pptx").read_bytes()
+    parts = read_parts(dark)
+    parts["ppt/slides/slide1.xml"] = parts["ppt/slides/slide1.xml"].replace(
+        SAMPLE_TEXT.encode(), b"Tampered title")
+    tampered = pack_zip(parts)
+    assert tampered != dark
+    assert not _same_parts(tampered, dark)
 
 
 def test_the_loader_lists_the_starter_and_lets_an_install_win(tmp_path):

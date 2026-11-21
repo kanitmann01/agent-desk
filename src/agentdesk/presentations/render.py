@@ -84,8 +84,13 @@ def _render_deck(pptx: Path, out_dir: Path, runner, timeout: float) -> dict:
     pdfs = sorted(out_dir.glob("*.pdf"))
     if pdfs and not list(out_dir.glob("*.png")):
         _rasterize(pdfs[0], out_dir)
-    images = sorted(str(path.relative_to(out_dir.parent)) for path in out_dir.glob("*.png"))
-    pdf = str(pdfs[0].relative_to(out_dir.parent)) if pdfs else ""
+    # Stored paths stay posix: the artifact JSON, the run page, and the
+    # download route all match on forward slashes, so a Windows backslash
+    # here would 404 the preview and slip past the route's traversal guard.
+    images = sorted(
+        path.relative_to(out_dir.parent).as_posix() for path in out_dir.glob("*.png")
+    )
+    pdf = pdfs[0].relative_to(out_dir.parent).as_posix() if pdfs else ""
     used = name if runner is None else getattr(result, "renderer", "libreoffice")
     note = "" if pdf or images else "Previews are unavailable."
     return {"renderer": used, "pdf": pdf, "images": images, "note": note}
