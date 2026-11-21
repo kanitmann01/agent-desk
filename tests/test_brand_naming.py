@@ -1,13 +1,14 @@
 """The brand rules, pinned (spec 017 workstreams 8a and the 017-11 rider).
 
 Two greps, pinned. First: no user-visible surface carries the retired
-working name. Second: no live file carries the em dash, the mark the
-writing rules ban; the walk covers the same surfaces plus the scripts,
-the test tree and docs/docstrings.md. The dated archives (docs/evidence,
-docs/tickets, docs/plans, docs/ideas, docs/superpowers, docs/plugins and
-the design records) are records of what was produced then and stay
-untouched. Case-insensitive on the name on purpose: a mixed-case
-occurrence is still the retired name on screen.
+working name; the walk covers the shipped string sources plus the build
+scripts, whose bundle metadata names the exe a person installs. Second:
+no live file carries the em dash, the mark the writing rules ban; that
+walk adds the test tree and docs/docstrings.md. The dated archives
+(docs/evidence, docs/tickets, docs/plans, docs/ideas, docs/superpowers,
+docs/plugins and the design records) are records of what was produced
+then and stay untouched. Case-insensitive on the name on purpose: a
+mixed-case occurrence is still the retired name on screen.
 """
 
 from pathlib import Path
@@ -19,6 +20,7 @@ EM_DASH = chr(0x2014)
 NAME_ROOTS = (
     ROOT / "src",
     ROOT / "tools",
+    ROOT / "scripts",
     ROOT / "frontend" / "src",
 )
 LIVE_ROOTS = NAME_ROOTS + (
