@@ -274,13 +274,13 @@ def build_shell(*, variant: str = "dark", body_placeholder: bool = True) -> byte
         'xmlns:dc="http://purl.org/dc/elements/1.1/" '
         'xmlns:dcterms="http://purl.org/dc/terms/" '
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-        "<dc:title>Starter</dc:title><dc:creator>Nexuus Bot</dc:creator>"
-        "<cp:lastModifiedBy>Nexuus Bot</cp:lastModifiedBy>"
+        "<dc:title>Starter</dc:title><dc:creator>Agent Desk</dc:creator>"
+        "<cp:lastModifiedBy>Agent Desk</cp:lastModifiedBy>"
         "</cp:coreProperties>"
     )
     parts["docProps/app.xml"] = _xml(
         '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
-        "<Application>Nexuus Bot</Application></Properties>"
+        "<Application>Agent Desk</Application></Properties>"
     )
     parts["_rels/.rels"] = _rels([
         ("rId1", _REL_OFFICE, "ppt/presentation.xml"),

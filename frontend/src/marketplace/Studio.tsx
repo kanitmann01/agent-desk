@@ -46,7 +46,7 @@ function buildManifest(draft: Draft) {
   const highlights = [
     summary || `${name} runs on this desk.`,
     'It reads only the scopes you approve.',
-    'It runs only while Nexuus Bot is open.',
+    'It runs only while Agent Desk is open.',
   ].map((line) => line.slice(0, 120));
   return {
     schemaVersion: 2,
@@ -262,8 +262,8 @@ export function StudioPage() {
   /**
    * Submit the plugin for marketplace review.
    *
-   * Three refusals happen here first — no passing verdict, an empty changelog,
-   * and no license grant — because each is something only the author can fix.
+   * Three refusals happen here first (no passing verdict, an empty changelog,
+   * and no license grant) because each is something only the author can fix.
    * Success stores the pending record, and the page reports review as pending
    * rather than the plugin as published.
    */

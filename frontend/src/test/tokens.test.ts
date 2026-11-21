@@ -21,7 +21,7 @@ const pkg = JSON.parse(readFileSync(resolve(frontend, 'package.json'), 'utf8')) 
   devDependencies: Record<string, string>;
   scripts: Record<string, string>;
 };
-const manifest = readFileSync(resolve(repo, 'THIRD-PARTY-LICENSES.md'), 'utf8');
+const notices = readFileSync(resolve(repo, 'THIRD-PARTY-NOTICES.md'), 'utf8');
 const licenses = readdirSync(resolve(frontend, 'public', 'licenses'));
 
 // The committed bundle stylesheet, wherever the build put it.
@@ -483,12 +483,12 @@ describe('the toolchain matches the system', () => {
     expect(css).not.toContain('tailwindcss');
   });
 
-  it('records the system fonts in the license manifest', () => {
-    expect(manifest).toContain('Geist');
-    expect(manifest).toContain('Geist Mono');
-    expect(manifest).not.toContain('Plus Jakarta Sans');
-    expect(manifest).not.toContain('Space Grotesk');
-    expect(manifest).not.toContain('Inter Variable');
+  it('records the system fonts in the license notices', () => {
+    expect(notices).toContain('Geist');
+    expect(notices).toContain('Geist Mono');
+    expect(notices).not.toContain('Plus Jakarta Sans');
+    expect(notices).not.toContain('Space Grotesk');
+    expect(notices).not.toContain('Inter Variable');
   });
 
   it('ships the fonts\u2019 OFL files and not the drift fonts\u2019', () => {

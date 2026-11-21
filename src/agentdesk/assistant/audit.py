@@ -46,6 +46,10 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("llm.assistant", "endpoint", "Assistant questions are sent to the company LLM endpoint, with widget context attached."),
     ("llm.breakdown", "endpoint", "Meeting breakdowns are sent to the company LLM endpoint, meeting name only."),
     ("llm.wizard", "endpoint", "Your plain-English plugin description, with the app's fixed list of data-source kinds, is sent to the company LLM endpoint so the wizard can draft its questions and the plugin manifest. No workbook, calendar or mail data is attached."),
+    # The pressed-card press (spec 017 workstream 3): the reply draft or
+    # explanation a pressed card spends, audited on both doors (the SPA's
+    # JSON route and the no-JS page) with the same row.
+    ("insight.press", "endpoint", "A pressed card sends what its disclosure named (a thread's subject, sender and last line, or one finding sentence) to the company LLM endpoint; the row names the kind and the source, never the words."),
     # The mail vocabulary (ticket #44), off by default in settings. The
     # mail path is metadata-only by construction: bodies are discarded
     # at parse time and no LLM call exists anywhere in it.
@@ -64,7 +68,11 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # The memory vocabulary (ticket #42): the one non-page creation path.
     # The row names the fact's source, never the fact's text.
     ("memory.fact", "decision", "An accepted inbox card carried a fact, and it was saved to the memory store. The row names where the fact came from, never the fact itself."),
+    ("memory.capture", "decision", "A conversation excerpt from one of the desk's surfaces (the assistant, research, the workbook tracker or the agents) was scanned for durable facts; candidates wait as inbox cards until you accept them. The row names the channel and how many went to review or were saved, never the excerpt."),
     ("llm.retain", "endpoint", "A conversation excerpt you chose to save was sent to the company LLM endpoint to be turned into candidate facts; the excerpt is all the endpoint sees, and the candidates wait as inbox cards until you accept them."),
+    # The background observation pass (spec 017 workstream 3): after
+    # memory changes the endpoint redrafts the derived observations.
+    ("llm.observe", "endpoint", "Facts already stored on this desk are sent to the company LLM endpoint so the observations derived from them stay current; the row names how many observations were written, never their text."),
     # The encryption action (ticket #94): a local rewrite of the memory
     # database, no network anywhere in it. The row names the field count,
     # never a stored text, and never any part of the key.
@@ -74,6 +82,11 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # stored text.
     ("memory.sweep", "decision", "You ran the junk sweep after its preview: the listed knowledge-gap facts were deleted together with their orphaned citations, observations and entities. The row counts what went, never what it said."),
     ("memory.merge", "decision", "You merged two duplicate entities on the memory page: their aliases were unioned and every fact mention relinked to the survivor. The row names the two ids, never a name."),
+    # The memory page's removal bookkeeping (spec 017 workstream 3):
+    # every row names ids and counts, never the stored text.
+    ("memory.remove", "decision", "Rows were deleted from the memory store through the memory page's delete or the junk sweep: the row names the kind, the id and the counts that went, never the stored text."),
+    ("memory.keep", "decision", "You kept a replaced fact in the bank beside its replacement, so both stay recallable and reviewable. The row names the fact's id, never its text."),
+    ("memory.undo", "decision", "You undid a removal within its window: the removed rows were put back into the memory store. The row counts what came back, never the text."),
     ("llm.reflect", "endpoint", "Facts you already accepted were sent to the company LLM endpoint to draft observations; only those facts and the topic you typed reach the endpoint, and the drafts wait as inbox cards until you accept them."),
     ("memory.observation", "decision", "An accepted card carried an observation: it was saved to the memory store with its citations. The row counts the citations, never their text."),
     # The semantic recall vocabulary (ticket #95): every outbound
@@ -95,6 +108,9 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # Publishing (ticket #63): the create-to-publish loop, local only.
     ("registry.publish", "plugin", "An installed plugin is validated and copied into the local registry checkout as a new release pinned by a tree digest; the index entry is appended. No network anywhere in it."),
     ("settings.registry", "decision", "The registry checkout folder was saved or cleared in settings; the choice itself is the record."),
+    # The remaining settings decisions (spec 017 workstream 3).
+    ("settings.preferences", "decision", "Your working preferences (quiet hours, channel switches, preparation minutes and the like) were saved in settings; the row names which keys changed, never any text you typed."),
+    ("settings.hosts", "decision", "The list of extra host names the server may accept was saved or cleared in settings; the row says whether it was updated or cleared, not the names."),
     # The demo vocabulary (ticket #68): the Sample data switch is a
     # decision like the others, and both turns say exactly what happened.
     ("demo.seeded", "decision", "The Sample data switch was turned on: labelled sample cards and sample fixtures (a workbook, a calendar file, header-only mail files) were created under the app's sample folder. Everything is marked Sample; none of it is live."),
@@ -107,6 +123,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # any fact's text or the feedback's words.
     ("agents.run", "decision", "You ran one of the desk's agents on a brief. The brief, at most five recalled facts and the agent's instructions were sent to the company LLM endpoint as one prompt; the row names the agent, whether the run succeeded and how many facts it used, never the brief or the artifact."),
     ("agents.feedback", "decision", "You said how an agent run landed. The feedback is stored on the run and offered to the memory loop on the agents channel as a review card you accept or reject; the row names the agent, the run and the feedback's length, never its words."),
+    ("agents.download", "file", "A run's presentation files (the deck, its PDF or an image) were served for download from this desk's own data folder. The row names the agent, the run and the file kind, never the content."),
 
     # The peer-to-peer vocabulary (ticket #67): sharing plugins between
     # desks with nothing centralized. Discovery announces on the local

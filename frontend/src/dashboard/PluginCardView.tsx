@@ -347,7 +347,7 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
     setBusy(true);
     let res;
     try {
-      res = await postJson(`/api/plugins/${encodeURIComponent(card.id)}/retest`);
+      res = await postJson('/api/marketplace/retest', { id: card.id });
     } catch {
       setBusy(false);
       setNote('The dashboard could not reach its own server; the re-test did not run.');

@@ -7,6 +7,9 @@ deliberate edit here as well, and the dispatcher keeps answering the same
 wire statuses it did before.
 """
 
+import http.client
+from urllib.parse import quote, urlencode
+
 import pytest
 
 from agentdesk.server import app as server_app
@@ -385,3 +388,40 @@ def test_exact_post_routes_answer_as_before_the_refactor(booted):
         if status != expected:
             mismatches[path] = (status, expected)
     assert not mismatches
+
+
+def test_a_failure_after_a_redirect_cannot_answer_twice(booted, monkeypatch):
+    """The 303 redirect marks its request answered (spec 017, 7c): a
+    failure raised after it can never write a 500 over the finished
+    response, so the next request on the keep-alive connection reads its
+    own answer instead of the smuggled one."""
+    original = server_app.DashboardHandler._send_redirect
+
+    def redirect_then_break(self, location):
+        original(self, location)
+        raise RuntimeError("injected failure after the redirect")
+
+    monkeypatch.setattr(server_app.DashboardHandler, "_send_redirect",
+                        redirect_then_break)
+    auth = booted.exchange()
+
+    conn = http.client.HTTPConnection("127.0.0.1", booted.port, timeout=5)
+    try:
+        form = urlencode({"prepMinutes": "abc"}).encode("utf-8")
+        headers = dict(auth)
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        conn.request("POST", "/settings/preferences", body=form, headers=headers)
+        first = conn.getresponse()
+        first.read()
+        assert first.status == 303
+        assert first.getheader("Location") == (
+            "/settings?preferences_error=" + quote(
+                "Preparation minutes must be a whole number from 0 to 120."))
+        # The same connection asks again: it must read health's answer,
+        # not the 500 a double response would have left in the stream.
+        conn.request("GET", "/health", headers=auth)
+        second = conn.getresponse()
+        second.read()
+        assert second.status == 200
+    finally:
+        conn.close()

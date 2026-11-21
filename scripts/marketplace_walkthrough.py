@@ -278,6 +278,15 @@ def main() -> int:
             check(packs.get("total") == 0, f"expected no bundled packs, got {packs.get('total')}")
 
             step += 1
+            # competitor-watch is honestly tiered T2 now the sync reads
+            # optionalPermissions (spec 017 6d), so the default ceiling
+            # refuses it; the admin raises the ceiling the documented way,
+            # the local policy file, before the desk installs the network
+            # plugin.
+            policy_dir = workspace / "marketplace"
+            policy_dir.mkdir(parents=True, exist_ok=True)
+            (policy_dir / "policy.json").write_text(
+                json.dumps({"riskCeiling": "T2"}), encoding="utf-8")
             desk_plugins = ("excel-report", "competitor-watch")
             installed_ids = []
             for plugin_id in desk_plugins:

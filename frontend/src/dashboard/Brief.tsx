@@ -51,19 +51,19 @@ function isTracker(card: PluginCard): boolean {
   return card.id === 'excel-report' || card.id.startsWith('excel-report~');
 }
 
-/** A clock time for an epoch-seconds stamp, or an em dash when it is absent. */
+/** A clock time for an epoch-seconds stamp, or a hyphen when it is absent. */
 function fromEpoch(ts: number | null | undefined): string {
-  if (ts == null || !Number.isFinite(ts)) return '—';
+  if (ts == null || !Number.isFinite(ts)) return '-';
   return clock(new Date(ts * 1000));
 }
 
 /**
- * A clock time for an ISO timestamp, or an em dash when it is missing or unreadable.
+ * A clock time for an ISO timestamp, or a hyphen when it is missing or unreadable.
  */
 function fromIso(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return '-';
   const at = new Date(value);
-  return Number.isNaN(at.getTime()) ? '—' : clock(at);
+  return Number.isNaN(at.getTime()) ? '-' : clock(at);
 }
 
 interface Lower {
@@ -189,28 +189,28 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       live: configured && status?.state !== 'unreadable' && status?.state !== 'locked',
       status: !configured ? 'off' : status?.state === 'healthy' || status?.state === 'first' ? 'live' : (status?.state ?? 'off').replace('_', ' '),
       lastRun: fromEpoch(status?.last_ok_ts ?? null),
-      items: configured ? (status?.rowsSeen ?? 0).toLocaleString('en-US') : '—',
+      items: configured ? (status?.rowsSeen ?? 0).toLocaleString('en-US') : '-',
     },
     {
       name: 'Calendar',
       live: sourceStatus('calendar-bridge') === 'connected',
       status: sourceStatus('calendar-bridge') === 'connected' ? 'live' : 'off',
       lastRun: fromIso(commitments?.generatedAt ?? null),
-      items: event ? '1' : '—',
+      items: event ? '1' : '-',
     },
     {
       name: 'Research',
       live: researchEnabled && sourceStatus('research-endpoint') === 'connected',
       status: researchEnabled && sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
       lastRun: fromEpoch(data.research.lastAnsweredTs),
-      items: '—',
+      items: '-',
     },
     ...pluginCards.map((card) => ({
       name: card.title,
       live: card.freshness === 'fresh',
       status: card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
       lastRun: fromIso(card.checkedAt || null),
-      items: card.payload?.setup ? '—' : String(card.payload?.elements?.length ?? 0),
+      items: card.payload?.setup ? '-' : String(card.payload?.elements?.length ?? 0),
     })),
   ];
 
@@ -363,7 +363,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
           ) : (
             <div className="hero-grid">
               <div className="hero-figure">
-                <div className="kpi"><div className="value flat ghost">—</div></div>
+                <div className="kpi"><div className="value flat ghost">-</div></div>
                 <p className="brief-label">Net pipeline, last 24 hours</p>
                 <p className="brief-quiet">No sales workbook is connected, so there is no pipeline figure yet.</p>
               </div>
@@ -401,8 +401,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
                           <span className="deal">{mover.deal}</span>
                           {mover.previousName ? <span className="deal-was">was {mover.previousName}</span> : null}
                         </th>
-                        <td className="stage-cell">{mover.stage || '—'}<span className="region mono">{mover.region}</span></td>
-                        <td className="num mono">{mover.close || '—'}</td>
+                        <td className="stage-cell">{mover.stage || '-'}<span className="region mono">{mover.region}</span></td>
+                        <td className="num mono">{mover.close || '-'}</td>
                         <td className="num mono was-now">
                           {mover.kind === 'changed' ? (
                             <>{formatAmount(mover.oldAmount)} <span aria-label="to">→</span> {formatAmount(mover.newAmount)}</>

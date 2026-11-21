@@ -661,6 +661,13 @@ def _memory_id_from_path(path: str, suffix: str) -> int | None:
     return int(raw) if raw.isascii() and raw.isdigit() else None
 
 
+def _skill_id_from_path(rest: str) -> int | None:
+    """The skill id a /skills/<id>/... address names (the table hands the
+    middle over), or None when it names no skill."""
+    raw = rest.strip("/")
+    return int(raw) if raw.isascii() and raw.isdigit() else None
+
+
 def _fact_json(fact) -> dict:
     """A fact as the API answers it."""
     return {
@@ -1326,7 +1333,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._authenticated():
             self._refuse_and_close(
                 401, "Session required",
-                "Open Nexuus Bot from its shortcut to get a fresh link.",
+                "Open Agent Desk from its shortcut to get a fresh link.",
             )
             return False
         return True
@@ -1498,8 +1505,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         One release of continuity: the legacy address names the new installed surface
         with a permanent-enough 302. The SPA route owns everything past this point.
+        A notice query rides along: the lifecycle actions below redirect back to
+        /plugins?notice=..., and the sentence must survive into the page the user
+        lands on, not die in this hop.
         """
-        self._send_redirect_302("/marketplace/installed")
+        _, _sep, query = self.path.partition("?")
+        notice = parse_qs(query).get("notice", [""])[0] if query else ""
+        target = "/marketplace/installed"
+        if notice:
+            target += "?notice=" + quote(notice)
+        self._send_redirect_302(target)
 
     def _send_peers_page_request(self) -> None:
         """Serve the peers page, carrying its optional notice query field."""
@@ -1510,10 +1525,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send_skill_markdown_rest(self, rest: str) -> None:
         """Serve the generated markdown for the skill id in the path.
 
-        The table hands over the text between /skills/ and /skill.md; a non-numeric id
-        raises the ValueError the page always answered with.
+        The table hands over the text between /skills/ and /skill.md; a
+        malformed id is a 404 page, not a crash.
         """
-        self._send_skill_markdown(int(rest.strip("/")))
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        self._send_skill_markdown(skill_id)
 
     def _wizard_request(self) -> None:
         """Hand a /wizard path to the wizard router, with its query string removed.
@@ -1632,10 +1652,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         Deep links are the SPA's routes, so the server hands the shell to every known
         marketplace GET after the session gate. An unknown marketplace path gets the
         same shell with a 404 status, so a typo is honest to clients and crawlers; /api
-        paths still answer 404 elsewhere and never the shell.
+        paths still answer 404 elsewhere and never the shell. A notice query arrives
+        from the plugin lifecycle actions' redirect chain; the shell renders it
+        server-side, so the sentence is on the page with JavaScript off too.
         """
-        path, _, _query = self.path.partition("?")
-        self._send_marketplace_shell(200 if _known_marketplace_path(path) else 404)
+        path, _, query = self.path.partition("?")
+        notice = parse_qs(query).get("notice", [""])[0] if query else ""
+        self._send_marketplace_shell(200 if _known_marketplace_path(path) else 404,
+                                     notice=notice)
 
     def _preferences_write(self) -> None:
         """Store the posted insight preferences, reporting a rejection as JSON."""
@@ -1646,16 +1670,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _insight_draft(self) -> None:
         """Draft the press reply for the posted insight body."""
+        body = self._read_json_body()
+        kind = str((body or {}).get("kind") or "")
         try:
             answer = draft_reply(
                 self.server,
-                self._read_json_body(),
+                body,
                 preferences=PreferenceStore(default_data_dir()).read(),
                 complete=self._insight_complete(),
             )
         except InsightError as exc:
+            # The no-JS twin audits both outcomes as insight.press; the
+            # JSON door writes the same rows, a refusal as an error.
+            self._audit("insight.press", target=kind or "press",
+                        detail=exc.code, status="error")
             self._send_json(exc.status, {"error": exc.message, "code": exc.code})
             return
+        thread = answer.get("thread") if isinstance(answer.get("thread"), dict) else None
+        staged = str(answer.get("cardId") or "") if answer.get("staged") else ""
+        # The audit names the thread and the source, never the words: a
+        # draft is the user's to send, so the log records the act alone.
+        self._audit(
+            "insight.press",
+            target=str(thread.get("id")) if thread is not None else (kind or "press"),
+            detail=kind + ":" + str(answer.get("source") or "none")
+            + (": staged " + staged if staged else ""),
+        )
         self._send_json(200, answer)
 
     def _excel_watch_pick(self) -> None:
@@ -1862,11 +1902,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _skill_run_rest(self, rest: str) -> None:
         """Run the repetition skill whose id the path names."""
-        self._skill_run(int(rest.strip("/")))
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        self._skill_run(skill_id)
 
     def _skill_undo_rest(self, rest: str) -> None:
         """Undo the last run of the repetition skill whose id the path names."""
-        self._skill_undo(int(rest.strip("/")))
+        skill_id = _skill_id_from_path(rest)
+        if skill_id is None:
+            self._send_error_page(404, "Nothing here",
+                                  "No skill lives at this address.")
+            return
+        self._skill_undo(skill_id)
 
     def _plugins_page_action_request(self) -> None:
         """Hand a two-segment /plugins/<id>/<action> POST to the plugins page.
@@ -2012,19 +2062,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """The bounded recalled-facts block for the assistant prompt,
         ranked against the user's question. Recall only: this path never
         creates a fact; the bounds live in memory/service. A locked
-        memory store (ticket #94) contributes no block: the assistant
-        keeps answering, the bank is never read in plaintext. The
-        semantic half is derived per turn like every memory action (the
-        review's finding 5): the assistant's recall gains the vector
-        leg on the same terms as the memory page's, not only after some
-        memory route happens to run first."""
+        memory store (ticket #94), or one that cannot be read just now
+        (a transient lock), contributes no block: the assistant keeps
+        answering, the bank is never read in plaintext. The semantic
+        half is derived per turn like every memory action (the review's
+        finding 5): the assistant's recall gains the vector leg on the
+        same terms as the memory page's, not only after some memory
+        route happens to run first."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return ""
         self._configure_memory_embeddings()
         try:
             return build_facts_block(memory.recall(question))
-        except MemoryEncryptedError:
+        except Exception:  # noqa: BLE001 - recall must never take the answer down
+            LOG.warning("the memory store could not be read just now;"
+                        " the answer proceeds without recalled facts")
             return ""
 
     def _effective_llm(self) -> tuple:
@@ -2747,14 +2800,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return wanted
 
     def _agent_fact_ranks_plain(self, brief: str) -> list:
-        """Memory facts for a presentation, as {id, text} rows."""
+        """Memory facts for a presentation, as {id, text} rows. A store
+        that cannot be read just now contributes nothing: the run keeps
+        going, like every agents recall."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             return []
         self._configure_memory_embeddings()
         try:
             ranked = memory.recall(f"Presentation {brief}")
-        except MemoryEncryptedError:
+        except Exception:  # noqa: BLE001 - recall must never take the run down
+            LOG.warning("the memory store could not be read just now;"
+                        " the run proceeds without recalled facts")
             return []
         return [{"id": fact.id, "text": fact.text} for _score, fact in ranked[:5]]
 
@@ -2961,7 +3018,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _agent_fact_ranks(self, kind, brief: str) -> list:
         """The ranked recall for one agent run: the agent's name joined
         to the brief is the query, the same hybrid recall and embedding
-        derivation the assistant's turns use. A locked memory store
+        derivation the assistant's turns use. A locked memory store, or
+        one that cannot be read just now (a transient lock),
         contributes nothing: the run keeps going, the bank is never read
         in plaintext."""
         memory = self.server.memory  # type: ignore[attr-defined]
@@ -2970,7 +3028,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._configure_memory_embeddings()
         try:
             return memory.recall(f"{kind.name} {brief}")
-        except MemoryEncryptedError:
+        except Exception:  # noqa: BLE001 - recall must never take the run down
+            LOG.warning("the memory store could not be read just now;"
+                        " the run proceeds without recalled facts")
             return []
 
     def _send_audit_tail(self) -> None:
@@ -5693,7 +5753,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 complete=self._insight_complete(),
             )
         except InsightError as exc:
-            self._audit("insight.press", target=kind or "press", detail=exc.code)
+            # A refused press spent no call and staged no card, so it is
+            # an error row, never a working one (agents.run sets the same
+            # status for a degraded run).
+            self._audit("insight.press", target=kind or "press", detail=exc.code,
+                        status="error")
             page = pages.render_press_page(
                 label, [], agentdesk.__version__, refusal=exc.message
             )
@@ -5788,8 +5852,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(400, {"error": "config:failed", "message": str(exc)})
 
     def _dispatch_plugin_post(self, plugins: PluginRuntime, path: str, body: dict) -> None:
-        """Deprecated: /api/plugins mutations stay for one release; new clients
-        use /api/marketplace/* (see marketplace/api.py)."""
+        """Deprecated: /api/plugins mutations are deleted in the 2026-Q4
+        release; new clients use /api/marketplace/* (see marketplace/api.py)."""
         parts = [part for part in path.split("/") if part]
         if "/instances" in path:
             self._plugin_setup_post(plugins, path, body)
@@ -5944,8 +6008,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _plugin_record_or_404(self, plugin_id: str) -> dict:
-        """Deprecated: /api/plugins/<id> stays for one release; the new detail
-        route is /api/marketplace/plugin/<id>."""
+        """Deprecated: /api/plugins/<id> is deleted in the 2026-Q4 release;
+        the new detail route is /api/marketplace/plugin/<id>."""
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             return {"error": "plugins:unavailable"}
@@ -6012,8 +6076,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return registry_source.resolve_registry_root(self.server.settings)  # type: ignore[attr-defined]
 
     def _registry_listing_for_request(self) -> dict:
-        """Deprecated: /api/registry stays for one release; new clients read
-        /api/marketplace/catalog."""
+        """Deprecated: /api/registry is deleted in the 2026-Q4 release; new
+        clients read /api/marketplace/catalog."""
         root, origin = self._registry_root_for_request()
         listing = registry_source.registry_listing(root)
         listing["origin"] = origin
@@ -6126,7 +6190,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         extraction, tree digest, the shared validator); the runtime owns
         the versioned install, pilot badge and consent flow. Forms get a
         redirect with the outcome as the notice line; JSON callers get
-        the record.
+        the record. Deprecated: both legacy addresses this handler serves
+        (/api/registry/install, /plugins/registry-install) are deleted in
+        the 2026-Q4 release; new clients POST /api/marketplace/install.
         """
         plugins: PluginRuntime | None = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
@@ -7080,6 +7146,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         return WizardCompiler(audited_llm)
 
+    def _wizard_session_or_404(self, session_id: str):
+        """The session an action names, or None with the store's own
+        not-found sent: the honest 404 a stale link deserves, never the
+        generic restart page. A form post gets the error page, a JSON
+        client the store's named error."""
+        try:
+            return self.server.wizard_store.get(session_id)  # type: ignore[attr-defined]
+        except WizardError as exc:
+            if self._is_form_submit():
+                self._send_error_page(exc.status, "Nothing here", str(exc))
+            else:
+                self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+            return None
+
     def _wizard_answer(self, session_id: str) -> None:
         """Answers in, then build with capped self-repair. Redirects to the
         page so a plain form works without JavaScript."""
@@ -7095,7 +7175,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._advance_describe(session, description)
             self._send_redirect(f"/wizard/{session.id}")
             return
-        session = wizard.get(session_id)
+        session = self._wizard_session_or_404(session_id)
+        if session is None:
+            return
         body = self._read_json_body() or {}
         if "description" in body and body.get("description", "").strip():
             description = str(body["description"]).strip()
@@ -7134,7 +7216,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         redirect back to the session page, which renders the approved
         screen; a JSON client keeps the 200 install document."""
         wizard = self.server.wizard_store  # type: ignore[attr-defined]
-        session = wizard.get(session_id)
+        session = self._wizard_session_or_404(session_id)
+        if session is None:
+            return
         plugins = self.server.plugins  # type: ignore[attr-defined]
         if plugins is None:
             if self._is_form_submit():
@@ -7185,8 +7269,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         The session is loaded first, so the escalation is recorded against a real one;
         the redirect lands on the page that reads the new state.
         """
-        wizard = self.server.wizard_store  # type: ignore[attr-defined]
-        session = wizard.get(session_id)
+        session = self._wizard_session_or_404(session_id)
+        if session is None:
+            return
         self._escalate(session, WizardError("wizard:escalated", reason, 422))
         self._send_redirect(f"/wizard/{session_id}")
 
@@ -7273,11 +7358,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "in Settings for questions tailored to your ask."
         )
 
-    def _send_marketplace_shell(self, status: int = 200) -> None:
-        """The SPA shell for a marketplace deep link, when the build exists."""
+    def _send_marketplace_shell(self, status: int = 200, notice: str = "") -> None:
+        """The SPA shell for a marketplace deep link, when the build exists.
+
+        A notice (a plugin action's confirmation or named refusal riding its
+        redirect chain) is rendered into the body server-side: the SPA mounts
+        into #root and leaves the sibling alone, and without JavaScript the
+        sentence is still on the page. The value is escaped, the slot is the
+        alert markup the server pages already use.
+        """
         index = spa_index_path()
         if index.is_file():
-            self._send_bytes(status, index.read_bytes(), "text/html; charset=utf-8")
+            page = index.read_text(encoding="utf-8")
+            if notice and '<div id="root">' in page:
+                banner = (
+                    '<div class="alert" role="status" '
+                    'style="padding:16px 20px"><p>'
+                    + html.escape(notice)
+                    + "</p></div>"
+                )
+                page = page.replace('<div id="root">', banner + '<div id="root">', 1)
+            self._send_bytes(status, page.encode("utf-8"),
+                             "text/html; charset=utf-8")
         else:
             self._send_error_page(
                 404, "Marketplace unavailable",
@@ -7316,8 +7418,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """Redirect with 303, for a form post that has been handled.
 
         303 is what makes the browser follow with a GET, so a reload repeats the page
-        rather than the action.
+        rather than the action. _responded is set first, so a later failure in the same
+        request will not try to answer over this one.
         """
+        self._responded = True
         self.send_response(303)
         self.send_header("Location", location)
         self._common_headers()
@@ -7955,7 +8059,7 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     if sys.stdout is not None:  # pythonw runs without a console stream
         # flush: launchers redirect this to a log file, where a buffered
         # print would hide the one-time start link until the process ends
-        print(f"Nexuus Bot is running: {url}", flush=True)
+        print(f"Agent Desk is running: {url}", flush=True)
     start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()

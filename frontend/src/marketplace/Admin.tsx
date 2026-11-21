@@ -94,8 +94,8 @@ function DiffTable({ rows }: { rows: PolicyDiffEntry[] }) {
  *
  * An `admin:disabled` refusal replaces the whole page with the instructions
  * for turning admin mode on; every other failure keeps the page and offers a
- * retry. Import is deliberately two POSTs — one to compute the diff, one to
- * apply it — so no file pick can change policy on its own.
+ * retry. Import is deliberately two POSTs (one to compute the diff, one to
+ * apply it) so no file pick can change policy on its own.
  */
 export default function AdminPage() {
   const [snapshot, setSnapshot] = useState<AdminSnapshot | null>(null);
@@ -277,7 +277,7 @@ export default function AdminPage() {
           <h2 id="mkt-admin-off">Admin mode is off</h2>
           <p>
             The admin surface is disabled on this desk. Set <code>AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
-            in the environment that starts Nexuus Bot, then reload this page.
+            in the environment that starts Agent Desk, then reload this page.
           </p>
           <p className="w-note">
             Nothing is served while admin mode is off: no snapshot, no mutation and no audit export.

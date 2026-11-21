@@ -620,6 +620,28 @@ def test_a_degraded_run_audits_as_an_error_naming_its_cause(env, auth):
     assert "degraded" in rows[0]["detail"]
 
 
+def test_a_transient_memory_failure_runs_the_agent_with_no_facts(env, auth, caplog):
+    # A locked store file raises OperationalError mid-read; the run must
+    # proceed with the designed empty receipt, the way a locked bank
+    # already does, never the generic error page.
+    import logging
+    import sqlite3
+
+    def locked(_query):
+        raise sqlite3.OperationalError("database is locked")
+
+    env.server.memory.recall = locked
+    with caplog.at_level(logging.WARNING, logger="agentdesk.server"):
+        status, _h, body = _run(env, auth)
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["status"] == "ok"
+    assert payload["facts"] == []
+    assert any("could not be read just now" in record.getMessage()
+               for record in caplog.records)
+    assert "Known facts about the user" not in env.server.llm.prompts[0]
+
+
 def test_a_boot_with_no_injection_never_writes_the_real_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
     booted = server_harness.Booted(llm=CaptureLlm(reply=WORKBOOK_BRIEFING))
