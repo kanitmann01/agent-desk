@@ -1,0 +1,15 @@
+# 10c evidence: the uninstall dialog carries the consent sheet focus contract
+# Surface: /marketplace/installed, plugin Workbook tracker. Session driven with playwright-cli.
+# Each step: the keyboard input, then document.activeElement and the dialog state.
+
+1. Keyboard-focus the Uninstall button, press Enter.
+"focus: <button> Cancel | dialog: open"
+2. Tab: focus must move to the dialog's last control.
+"focus: <button> Uninstall | dialog: open"
+3. Tab again: focus must wrap to the dialog's first control.
+"focus: <button> Cancel | dialog: open"
+4. Shift+Tab: focus must wrap forward to the dialog's last control.
+"focus: <button> Uninstall | dialog: open"
+5. Screenshot taken with the ring on the focused control (10c-dialog-focus-ring.png).
+6. Escape: the dialog must close and focus must return to the Uninstall button that opened it.
+"focus: <button> Uninstall | dialog: closed"

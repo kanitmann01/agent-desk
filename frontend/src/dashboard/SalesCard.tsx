@@ -4,8 +4,9 @@
 // stale/locked/unreadable amber with Re-test. Copy and flows follow
 // pages.py and sales.py exactly; every action refetches /api/dashboard
 // instead of reloading the page. Empty and single-message states are
-// composed as one centered row (icon, message, action).
-import { useState, type KeyboardEvent } from 'react';
+// composed as one centered row (icon, message, action). The connect
+// walk itself is the shared useWorkbookConnect hook.
+import { useState } from 'react';
 import { postJson } from '../api';
 import {
   fileNameOf, rowLine, salesStamp,
@@ -14,6 +15,7 @@ import type { DeltaPayload, SalesStatus } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import Button from '../components/Button';
 import EmptyState, { ICON_SHEET } from '../components/EmptyState';
+import { useWorkbookConnect } from './useWorkbookConnect';
 
 const MAX_EXAMPLE_ROWS = 8;
 
@@ -61,97 +63,33 @@ function DeltaRows({ delta }: { delta: DeltaPayload }) {
  * a 401 back to the caller.
  */
 export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesCardProps) {
-  const [note, setNote] = useState('');
-  const [manualOpen, setManualOpen] = useState(false);
-  const [pathInput, setPathInput] = useState('');
-  const [busy, setBusy] = useState(false);
+  const workbook = useWorkbookConnect(onExpired, onRefetch);
+  const { note, setNote, busy, manualOpen, pathInput, setPathInput, pick, connect, onPathKey } = workbook;
+  const [retestBusy, setRetestBusy] = useState(false);
   const heading = title ?? 'Sales, last 24 hours';
-
-  /** Put a message in the card's status line. */
-  const show = (text: string) => setNote(text);
-
-  /**
-   * Run a request with the busy flag set, returning its result or null when the server
-   * could not be reached.
-   */
-  async function guard<T>(run: () => Promise<T>): Promise<T | null> {
-    setBusy(true);
-    try {
-      return await run();
-    } catch {
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /**
-   * Connect a workbook by path and reload the dashboard; a note says why nothing
-   * changed.
-   */
-  async function connect(path: string) {
-    const res = await guard(() => postJson('/sources/excel-watch', { path }));
-    if (res === null) {
-      show('The dashboard could not reach its own server; nothing was connected.');
-      return;
-    }
-    if (res.status === 401) { onExpired(); return; }
-    const data = res.data as { error?: string };
-    if (!res.ok || data.error) {
-      show(data.error || 'The workbook was not connected; nothing changed.');
-      return;
-    }
-    setNote('');
-    setManualOpen(false);
-    setPathInput('');
-    await onRefetch();
-  }
-
-  /**
-   * Open the file dialog and connect the chosen workbook; a dialog that never opened
-   * falls back to the manual path input.
-   */
-  async function pick() {
-    const res = await guard(() => postJson('/sources/excel-watch/pick'));
-    if (res === null) {
-      show('The dashboard could not reach its own server; the file dialog was not opened.');
-      return;
-    }
-    if (res.status === 401) { onExpired(); return; }
-    const data = res.data as { path?: string | null };
-    if (!data.path) {
-      setManualOpen(true);
-      show('The file dialog did not open. Type the workbook path below and press Connect.');
-      return;
-    }
-    await connect(data.path);
-  }
 
   /** Connect the typed path, or say that the field is empty. */
   function manual() {
     const path = pathInput.trim();
     if (!path) {
-      show('Type the full path to the workbook first.');
+      setNote('Type the full path to the workbook first.');
       return;
     }
     void connect(path);
   }
 
-  /** Connect on Enter in the path field. */
-  function onInputKey(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      manual();
-    }
-  }
-
   /** Re-test the workbook read and reload the dashboard. */
   async function retest() {
-    const res = await guard(() => postJson('/sources/excel-watch/retest'));
-    if (res === null) {
-      show('The dashboard could not reach its own server; the re-test did not run.');
+    setRetestBusy(true);
+    let res;
+    try {
+      res = await postJson('/sources/excel-watch/retest');
+    } catch {
+      setRetestBusy(false);
+      setNote('The dashboard could not reach its own server; the re-test did not run.');
       return;
     }
+    setRetestBusy(false);
     if (res.status === 401) { onExpired(); return; }
     await onRefetch();
   }
@@ -197,7 +135,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
         <EmptyState
           icon={ICON_SHEET}
           action={(
-            <Button tone="primary" onClick={pick} disabled={busy}>
+            <Button tone="primary" onClick={() => void pick()} disabled={busy}>
               Connect a workbook
             </Button>
           )}
@@ -216,7 +154,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
               aria-label="Workbook path"
               value={pathInput}
               onChange={(e) => setPathInput(e.target.value)}
-              onKeyDown={onInputKey}
+              onKeyDown={onPathKey}
             />
             <button className="btn btn-primary" type="button" onClick={manual} disabled={busy}>
               Connect
@@ -277,7 +215,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
           This data is old, so it is shown as stale rather than current.
           Re-test to refresh it now.
         </span></div>
-        <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
+        <Button className="btn-start" onClick={retest} disabled={retestBusy}>Re-test now</Button>
         {note ? <div className="alert" role="status">{note}</div> : null}
       </>
     );
@@ -285,7 +223,7 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     body = (
       <>
         <div className="alert" role="status"><span>{status.cause}</span></div>
-        <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
+        <Button className="btn-start" onClick={retest} disabled={retestBusy}>Re-test now</Button>
         {note ? <div className="alert" role="status">{note}</div> : null}
       </>
     );
@@ -293,14 +231,14 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
 
   return (
     <WidgetCard
-      title="Sales, last 24 hours"
+      title={heading}
       span="span-7"
       footLines={2}
       sparse={status.state !== 'healthy'}
       stamp={stamp}
       amber={amber}
       menuItems={[
-        { label: 'Re-test now', onSelect: retest, disabled: busy },
+        { label: 'Re-test now', onSelect: retest, disabled: retestBusy },
         { label: 'Open settings', href: '/settings' },
       ]}
       foot={`Watches ${fileNameOf(status.path)}, hourly, read-only. The file is copied before parsing, never opened in place.`}

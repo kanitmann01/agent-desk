@@ -7,13 +7,13 @@
 //
 // While the Sample data switch is on, a cell with no real source shows
 // the sample world (sampleDesk.ts) and says so once, in its header.
-import { useState, type KeyboardEvent, type ReactNode } from 'react';
-import { postJson } from '../api';
+import { useState, type ReactNode } from 'react';
 import type { DashboardData, PluginCard } from '../types';
 import Button from '../components/Button';
 import TrackerCard from './TrackerCard';
 import PluginCardView from './PluginCardView';
 import { pluginKind, kindTag } from './pluginKind';
+import { useWorkbookConnect } from './useWorkbookConnect';
 import {
   MOVER_CAP,
   deskCheckAlert,
@@ -90,12 +90,10 @@ function lowerSpans(count: number): number[] {
   * back to the caller.
  */
 export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
-  const [note, setNote] = useState('');
-  const [manualOpen, setManualOpen] = useState(false);
-  const [pathInput, setPathInput] = useState('');
-  const [busy, setBusy] = useState(false);
   const [movesOpen, setMovesOpen] = useState(false);
   const [now] = useState(() => new Date());
+  const workbook = useWorkbookConnect(onExpired, onRefetch);
+  const { note, busy, manualOpen, pathInput, setPathInput, pick, connect, onPathKey } = workbook;
 
   const sample = Boolean(data.sample);
   const sales = data.sales;
@@ -109,7 +107,16 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const changedCount = movers.filter((mover) => mover.kind === 'changed').length;
   const addedCount = movers.filter((mover) => mover.kind === 'added').length;
   const removedCount = movers.filter((mover) => mover.kind === 'removed').length;
-  const trackers = data.plugins.cards.filter(isTracker);
+  // The layout is the truth the Customize panel saves: a plugin card the
+  // layout does not list is hidden, and the layout's order is the order
+  // the plugin cells render in. The server resolves every installed
+  // plugin into the layout, so a card is missing from this list only
+  // because the user hid it.
+  const layoutOrder = new Map(data.layout.cards.map((card, index) => [card.key, index]));
+  const pluginCards = data.plugins.cards
+    .filter((card) => layoutOrder.has(card.id))
+    .sort((a, b) => (layoutOrder.get(a.id) ?? 0) - (layoutOrder.get(b.id) ?? 0));
+  const trackers = pluginCards.filter(isTracker);
   const salesNeedsConnect = trackers.length === 0 && sales.mode !== 'disabled'
     && (sales.mode === 'unconfigured' || status === null || !status.configured);
   const calendarNeedsConnect = data.commitments.mode !== 'live'
@@ -119,63 +126,6 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   // card follows; a disabled source is asked to be turned on, not asked.
   const researchEnabled = data.research.enabled;
   const researchNeedsAsk = researchEnabled && data.research.lastAnsweredTs == null;
-
-  /**
-   * Connect a sales workbook by path and reload the dashboard; a note says why nothing
-   * changed.
-   */
-  async function connect(path: string) {
-    setBusy(true);
-    try {
-      const res = await postJson('/sources/excel-watch', { path });
-      if (res.status === 401) { onExpired(); return; }
-      const body = res.data as { error?: string };
-      if (!res.ok || body.error) {
-        setNote(body.error || 'The workbook was not connected; nothing changed.');
-        return;
-      }
-      setNote('');
-      setManualOpen(false);
-      setPathInput('');
-      await onRefetch();
-    } catch {
-      setNote('The dashboard could not reach its own server; nothing was connected.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /**
-   * Open the file dialog and connect the chosen workbook; a dialog that never opened
-   * falls back to the manual path input.
-   */
-  async function pick() {
-    setBusy(true);
-    try {
-      const res = await postJson('/sources/excel-watch/pick');
-      if (res.status === 401) { onExpired(); return; }
-      const body = res.data as { path?: string | null };
-      if (!body.path) {
-        setManualOpen(true);
-        setNote('The file dialog did not open. Type the workbook path below and press Connect.');
-        return;
-      }
-      await connect(body.path);
-    } catch {
-      setNote('The dashboard could not reach its own server; the file dialog was not opened.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Connect the typed workbook path when Enter is pressed. */
-  function onPathKey(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const path = pathInput.trim();
-      if (path) void connect(path);
-    }
-  }
 
   /** Focus the command bar so the user can ask a first research question. */
   function askFirst() {
@@ -255,7 +205,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       lastRun: fromEpoch(data.research.lastAnsweredTs),
       items: '—',
     },
-    ...data.plugins.cards.map((card) => ({
+    ...pluginCards.map((card) => ({
       name: card.title,
       live: card.freshness === 'fresh',
       status: card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
@@ -313,7 +263,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
         ),
       });
     }
-  } else {
+  } else if (!data.plugins.cards.some(isTracker)) {
+    // The placeholder asks for a first tracker, so it shows only when no
+    // tracker exists at all: a hidden tracker card must not bring back
+    // the setup nudge the user just put away.
     lower.push({
       key: 'tracker',
       kind: 'tracker',
@@ -334,8 +287,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       ),
     });
   }
-  const watchCards = data.plugins.cards.filter((card) => !isTracker(card) && pluginKind(card.id) === 'watch');
-  if (watchCards.length === 0) {
+  const anyWatch = data.plugins.cards.some((card) => !isTracker(card) && pluginKind(card.id) === 'watch');
+  if (!anyWatch) {
     lower.push({
       key: 'watch',
       kind: 'watch',
@@ -357,7 +310,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       ),
     });
   }
-  for (const card of data.plugins.cards.filter((c) => !isTracker(c))) {
+  for (const card of pluginCards.filter((c) => !isTracker(c))) {
     const kind = pluginKind(card.id);
     lower.push({
       key: card.id,

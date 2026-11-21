@@ -27,7 +27,7 @@ function SkillRow({ skill, busy, onRun }: { skill: DashboardData['skills'][numbe
         aria-label={`Run ${skill.name}`}
       >
         <span className="skill-text">
-          <span className="skill-name">{skill.name}</span>
+          <span className="skill-name" title={skill.name}>{skill.name}</span>
           {skill.description ? <span className="skill-desc">{skill.description}</span> : null}
         </span>
         {ICON_RUN}

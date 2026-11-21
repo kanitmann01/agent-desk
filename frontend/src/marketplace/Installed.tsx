@@ -9,6 +9,7 @@ import { ConsentSheet } from './ConsentSheet';
 import { MarketLink } from './context';
 import { canNeverFromScopes, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { StatusChip } from './StatusChip';
+import { useDialogFocus } from './useDialogFocus';
 import type { InstalledResponse, InstalledSummary } from './types';
 
 type Load =
@@ -37,9 +38,10 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
 }) {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${record.id}`;
+  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(true, onCancel);
   return (
     <div className="mkt-scrim" role="presentation">
-      <div className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title">
+      <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
         <div className="mkt-sheet-head">
           <div>
             <span className="mkt-eyebrow">Destructive action</span>
@@ -50,7 +52,7 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
           <p>This deletes {formatBytes(record.dataDirSize)} of plugin data and its install record. There is no undo.</p>
           <label className="mkt-field">
             <span>Type <code>{expected}</code> to confirm</span>
-            <input value={typed} onChange={(event) => setTyped(event.target.value)}
+            <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
           {error && <p className="mkt-error" role="alert">{error}</p>}
@@ -87,6 +89,7 @@ export function InstalledPage() {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [purgeRecord, setPurgeRecord] = useState<InstalledSummary | null>(null);
   const [purgeError, setPurgeError] = useState('');
+  const confirmFocus = useDialogFocus<HTMLButtonElement>(confirm !== null, () => setConfirm(null));
 
   const loadList = useCallback(async () => {
     try {
@@ -413,7 +416,7 @@ export function InstalledPage() {
 
       {confirm && (
         <div className="mkt-scrim" role="presentation">
-          <div className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-confirm-title">
+          <div ref={confirmFocus.sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-confirm-title" tabIndex={-1}>
             <div className="mkt-sheet-head">
               <h2 id="mkt-confirm-title">
                 {confirm.kind === 'rollback' ? `Roll back ${confirm.record.name}` : `Uninstall ${confirm.record.name}`}
@@ -425,7 +428,7 @@ export function InstalledPage() {
                 : 'The plugin stops running. Its data folder is kept until you purge it.'}</p>
             </div>
             <div className="mkt-sheet-foot">
-              <button type="button" className="btn btn-secondary" onClick={() => setConfirm(null)}>Cancel</button>
+              <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary" onClick={() => setConfirm(null)}>Cancel</button>
               <button type="button" className="btn btn-primary" onClick={doConfirm}>
                 {confirm.kind === 'rollback' ? 'Roll back' : 'Uninstall'}
               </button>

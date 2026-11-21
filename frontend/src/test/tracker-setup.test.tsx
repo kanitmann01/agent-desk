@@ -341,4 +341,35 @@ describe('tracker setup sheet', () => {
     expect(screen.getByRole('button', { name: 'Type a path or upload instead' }))
       .toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('says so and unblocks when the server goes unreachable mid-setup', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (String(url).includes('/widgets/settings')) {
+        return jsonResponse({ suggest_headers_only: false });
+      }
+      if (String(url).endsWith('/pick')) {
+        return jsonResponse({ preview: openPreview });
+      }
+      // The desk server restarts exactly when Suggest is pressed.
+      if (String(url).endsWith('/suggest')) {
+        throw new TypeError('network down');
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Suggest what to track' }));
+
+    // The sheet degrades visibly: the error slot fills, busy clears, and
+    // the sheet stays operable instead of wedging on a disabled screen.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The dashboard could not reach its own server; nothing was suggested.');
+    expect(screen.getByRole('button', { name: 'Suggest what to track' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Close dialog' })).toBeEnabled();
+  });
 });
