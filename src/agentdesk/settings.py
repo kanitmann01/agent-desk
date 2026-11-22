@@ -58,7 +58,8 @@ TOGGLES = {
     # loop sends the last 24 to the company endpoint and applies only
     # grounded, injection-scanned learned lines. Off stops the review;
     # what was learned stays until removed. Needs an endpoint too (the
-    # endpoint_enabled and llm_base gates), not just this switch.
+    # endpoint_enabled switch and a connection or startup endpoint the
+    # hub can resolve), not just this switch.
     "learn_profile": True,
     # Spec §8: the desk acts by itself and every change it makes is logged
     # in the action ledger with Undo. The four ask-first classes are

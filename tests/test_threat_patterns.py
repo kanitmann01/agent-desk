@@ -1,11 +1,9 @@
 """The injected threat-pattern port (spec 016 section 10, ticket 09).
 
 Hermes' tools/threat_patterns.py, ported whole: the pattern table, the
-invisible-unicode set, the chunked scan and the first-hit message. The
-one deliberate change is the default scope: Hermes defaults to
-"context" (warn-level scans of context files); agent-desk callers always
-mean the strict memory-write scan, so the default here is "strict" and a
-test pins that.
+invisible-unicode set, the chunked scan and the first-hit message. It is
+the shared module the desk's other callers use; the strict memory-write
+scan is requested explicitly by the profile review and the ranker.
 """
 
 import sys
@@ -73,15 +71,12 @@ def test_zero_width_space_is_reported():
     assert "invisible_unicode_U+200B" in findings
 
 
-def test_the_default_scope_is_strict():
-    # The strict-only patterns fire with no scope argument at all, which
-    # is the deliberate change from Hermes' warn-level "context" default.
-    assert threat_patterns.scan_for_threats("authorized_keys") \
-        == ["ssh_backdoor"]
-    assert threat_patterns.first_threat_message("authorized_keys") \
-        == ("Blocked: content matches threat pattern 'ssh_backdoor'. "
-            "Content is injected into the system prompt and must not "
-            "contain injection or exfiltration payloads.")
+def test_the_default_scope_is_the_shared_context_scan():
+    # The strict-only patterns stay out of the default scan; a caller
+    # that writes memory asks for strict explicitly.
+    assert threat_patterns.scan_for_threats("authorized_keys") == []
+    assert "sys_prompt_override" in threat_patterns.scan_for_threats(
+        "system prompt override")
 
 
 def test_first_threat_message_names_the_first_hit_or_none():

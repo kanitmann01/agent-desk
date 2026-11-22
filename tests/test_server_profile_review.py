@@ -162,6 +162,33 @@ def test_ten_asks_and_a_pass_learn_one_line(env, auth):
     assert env.server.learned_profile.document()["entries"][0]["text"] == LINE
 
 
+def test_a_hub_connection_serves_the_review_through_its_own_endpoint(env):
+    """A fresh install has no llm_base row any more: the connections hub
+    is the only endpoint the user configures. The review must use that
+    resolved connection, with its own base URL, key and label, instead
+    of replacing it with the settings client and failing as unconfigured.
+    """
+    _ten_asks(env)
+    stub = OpsEndpoint(_grounded_reply(env))
+    try:
+        env.server.settings.set("llm_base", "")
+        connection = env.server.keys.add(
+            "Hub only", "custom", stub.base_url, is_default=True)
+        assert env.server.keychain.store(connection.id, "sk-hub-only-123456")
+        env.server.keys.bind("memory", connection.id, "hub-model")
+        outcome = server_app.review_profile(
+            env.server, env.server.ledger, env.server.settings,
+            audit_conn=env.server.audit_conn)
+    finally:
+        stub.close()
+    assert outcome == {"applied": 1, "dropped": 0}
+    assert len(stub.requests) == 1
+    row = env.server.audit_conn.execute(
+        "SELECT status, model, target FROM audit"
+        " WHERE action = 'llm.profile' ORDER BY id DESC LIMIT 1").fetchone()
+    assert row == ("ok", "hub-model", "Hub only")
+
+
 def test_the_third_switch_turns_the_review_off_and_on(env, auth):
     """The Settings switch is the user's off switch (spec 016 section
     6.5): the page renders it with data-setting='learn_profile', and the

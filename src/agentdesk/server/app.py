@@ -6660,7 +6660,6 @@ def _profile_review_client(server, settings, audit_conn=None):
         return None
     if client is None or not serving:
         return None
-    client = settings_chat(settings)
     if audit_conn is None:
         return client
     conn = audit_conn
@@ -6692,11 +6691,12 @@ def review_profile(server, ledger, settings, audit_conn=None) -> dict:
     only ever reaches the store through profile_review.apply, which
     drops every op that is not grounded in the window, fails the strict
     injection scan, or breaks the budget, and accepts no remove ops.
-    The latch advances to the window's max id on every due run, even
-    when nothing was applied or the reply was not JSON; the input hash
-    is remembered after a completed call so an unchanged window and
-    learned list never buy a second call. The stated preferences are
-    not an input and not a target anywhere in this path.
+    The latch advances to the window's max id after a review call
+    completes, even when nothing was applied or the reply was not JSON;
+    a failed call or an unchanged input leaves it so the window is
+    retried. The input hash is remembered after a completed call so an
+    unchanged window and learned list never buy a second call. The
+    stated preferences are not an input and not a target here.
     """
     store = getattr(server, "learned_profile", None)
     activity = getattr(server, "activity_log", None)
@@ -6719,10 +6719,10 @@ def review_profile(server, ledger, settings, audit_conn=None) -> dict:
     payload = profile_review.build_input(rows, store.document())
     client = _profile_review_client(server, settings, audit_conn)
     if client is None:
-        # The step is gated off (endpoint_enabled off, or no llm_base) in
-        # the loop path, so this only happens on a direct call; the
-        # window stays unconsumed, and the review still happens once an
-        # endpoint is configured.
+        # The step is gated off (endpoint_enabled off) or no endpoint can
+        # serve the call, in the loop path, so this only happens on a
+        # direct call; the window stays unconsumed, and the review still
+        # happens once an endpoint is configured.
         return {"applied": 0, "waiting": waiting}
     if context.input_unchanged("profile-review", payload):
         return {"applied": 0, "skipped": "input unchanged"}
