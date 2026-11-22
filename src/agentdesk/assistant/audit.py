@@ -139,6 +139,11 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("peer.update", "plugin", "A plugin that came from a paired desk was updated to the publisher's newer version, through the same validate-and-consent path as every update."),
     ("deskcheck.fixed", "decision", "The desk check found a problem it was sure about and fixed it by itself; the change is listed under Activity with Undo."),
     ("deskcheck.fix-failed", "decision", "A fix the desk tried did not work; the cause is shown in Settings › Desk check."),
+    # The supervised loop's own rows (spec 016, ticket 04): one per pass and
+    # one per step that raised. The pass row names each step's outcome and
+    # duration, never any data the step read.
+    ("agentloop.pass", "decision", "The agent loop ran one pass while the app was open; the row lists the steps and how long each took."),
+    ("agentloop.step-failed", "decision", "One step of the agent loop failed; the other steps still ran."),
     ("ledger.undo", "decision", "You pressed Undo on a change the desk made by itself; the earlier state was put back, and the undo is itself recorded and undoable."),
 
     # The key lifecycle (spec 018): a saved, changed or deleted model

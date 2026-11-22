@@ -77,6 +77,7 @@ class DashboardState:
     layout_entries: tuple[dict, ...]
     custom_titles: dict[str, str]
     desk_check: dict
+    agent_loop: dict
     recommendations: tuple[dict, ...]
     now: dt.datetime
 
@@ -116,6 +117,7 @@ class DashboardState:
             },
             "inbox": {"waiting": self.inbox_waiting},
             "deskCheck": dict(self.desk_check),
+            "agentLoop": dict(self.agent_loop),
             "recommendations": [dict(item) for item in self.recommendations],
             "skills": [
                 {"id": skill["id"], "name": skill["name"], "description": skill["description"]}
@@ -227,6 +229,20 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     except Exception:  # noqa: BLE001 - a check never breaks the dashboard
         desk_check = {"attention": 0, "top": None}
 
+    # The agent loop's summary is one more read of the same shape: when it
+    # last ran a pass, when the next one is due, and whether it is on. A
+    # loop that cannot answer must not break the dashboard either.
+    try:
+        loop = getattr(server, "agent_loop", None)
+        full = loop.status() if loop is not None else {}
+        agent_loop = {
+            "lastRunTs": full.get("lastRunTs"),
+            "nextRunTs": full.get("nextRunTs"),
+            "enabled": bool(full.get("enabled", False)),
+        }
+    except Exception:  # noqa: BLE001 - the loop never breaks the dashboard
+        agent_loop = {"lastRunTs": None, "nextRunTs": None, "enabled": False}
+
     # Recommendations are an enrichment of the same payload: a desk without a
     # builder (or a broken one) still renders every other decision.
     recommender = getattr(server, "recommender", None)
@@ -258,6 +274,7 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
         layout_entries=tuple(layout_entries),
         custom_titles=custom_titles,
         desk_check=desk_check,
+        agent_loop=agent_loop,
         recommendations=recommendations,
         now=instant,
     )

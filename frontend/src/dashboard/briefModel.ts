@@ -48,6 +48,26 @@ export function deskCheckAlert(
   };
 }
 
+// The agent loop's foot line uses the same clock spelling as the health
+// matrix (a local 24-hour HH:MM), kept here so the model stays import-free
+// of the component module.
+const LOOP_TIME = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/**
+ * The health cell's quiet "Agent checked at" line, or null when it stays quiet.
+ *
+ * Quiet before the first pass, and quiet again when the interval is Off:
+ * ticket #194's browser check asks the line to drop when "Check every" is
+ * Off, because there is no next check for it to reassure anyone about.
+ */
+export function agentCheckedLine(
+  agentLoop: AgentLoopSummary | null | undefined,
+): string | null {
+  if (!agentLoop || agentLoop.enabled === false) return null;
+  if (!agentLoop.lastRunTs || !Number.isFinite(agentLoop.lastRunTs)) return null;
+  return `Agent checked at ${LOOP_TIME.format(new Date(agentLoop.lastRunTs * 1000))}`;
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** A workbook date cell as "27 Jan", or "" when the value is not an ISO date. */

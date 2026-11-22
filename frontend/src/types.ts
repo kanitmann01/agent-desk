@@ -246,7 +246,10 @@ export interface Recommendation {
   cites: number[];
 }
 
-// The autonomous loop's schedule (ticket #194). Absent until it lands.
+// The agent loop's dashboard summary (spec 016 #194): when the supervised
+// loop last ran a pass and when the next one is due. enabled false means
+// the interval is Off in settings; the last-run time still shows, because
+// when the desk last checked does not depend on the cadence.
 export interface AgentLoopSummary {
   lastRunTs: number | null;
   nextRunTs: number | null;
