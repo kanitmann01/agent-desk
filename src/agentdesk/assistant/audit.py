@@ -45,6 +45,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("llm.research", "endpoint", "Research questions are sent to the company LLM endpoint, as derived text only."),
     ("llm.assistant", "endpoint", "Assistant questions are sent to the company LLM endpoint, with widget context attached."),
     ("llm.breakdown", "endpoint", "Meeting breakdowns are sent to the company LLM endpoint, meeting name only."),
+    ("llm.rank", "endpoint", "The desk sends the titles of waiting recommendations and the facts they cite to the company LLM endpoint so it can rank them; the row names the model and the request size, never the text."),
     ("llm.wizard", "endpoint", "Your plain-English plugin description, with the app's fixed list of data-source kinds, is sent to the company LLM endpoint so the wizard can draft its questions and the plugin manifest. No workbook, calendar or mail data is attached."),
     # The pressed-card press (spec 017 workstream 3): the reply draft or
     # explanation a pressed card spends, audited on both doors (the SPA's

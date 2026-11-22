@@ -90,6 +90,10 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "recommend_deadlines": True,
         "recommend_meetings": True,
         "recommend_horizon_days": 30,
+        # Ranking (spec 016 section 6.3): on by default, a card at or
+        # above 7 is shown with the endpoint's why line.
+        "recommend_model_rank": True,
+        "recommend_threshold": 7,
         # Presentation calls only. Other agents keep the 10 second cap.
         "presentation_timeout_s": "30",
         "research_provider_url": "",
@@ -451,3 +455,16 @@ def test_the_jobs_pickers_preselect_the_bound_connection_so_an_untouched_save_ke
     assert ("<option value='' selected>"
             "Not bound (default connection or environment)</option>") in picker
     assert f"<option value='{connection['id']}' selected" not in picker
+
+
+def test_the_settings_page_lists_the_ranking_controls(env, auth):
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "Rank with my endpoint" in page
+    assert "Rank at or above" in page
+    assert "7 or higher" in page
+    status, _h, body = env.post_json(
+        "/settings/toggle", {"key": "recommend_model_rank"}, auth)
+    assert status == 200
+    assert json.loads(body) == {"key": "recommend_model_rank", "value": False}
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "Rank with my endpoint" in page
