@@ -450,7 +450,7 @@ def test_missing_published_digest_is_a_named_refusal_never_verified(
         tmp_path, monkeypatch):
     """/peer/info without a sha256 must not skip verification while the
     audit row still says verified: it is a named refusal."""
-    from agentdesk.server import app as server_app
+    from agentdesk.server import peers_api as server_app
 
     booted = _boot()
     try:
@@ -481,7 +481,7 @@ def test_validator_refusal_on_peer_install_is_named_and_audited(
     """A bundle that fails the shared validator is a named refusal with
     an error audit row, never an unnamed 500."""
     from agentdesk.plugins.runtime import PluginError
-    from agentdesk.server import app as server_app
+    from agentdesk.server import peers_api as server_app
 
     booted = _boot()
     try:

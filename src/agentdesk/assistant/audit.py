@@ -137,6 +137,8 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("peer.read", "network", "A paired desk read this desk's shared plugin list, a manifest, or a bundle over the token-gated local peer endpoint. The row names what was read, not any content."),
     ("peer.install", "plugin", "A plugin was downloaded from a paired desk, verified against the publisher's recorded digest, validated by the shared validator, and installed with the peer recorded as its source."),
     ("peer.update", "plugin", "A plugin that came from a paired desk was updated to the publisher's newer version, through the same validate-and-consent path as every update."),
+    ("deskcheck.fixed", "decision", "The desk check found a problem it was sure about and fixed it by itself; the change is listed under Activity with Undo."),
+    ("deskcheck.fix-failed", "decision", "A fix the desk tried did not work; the cause is shown in Settings › Desk check."),
     ("ledger.undo", "decision", "You pressed Undo on a change the desk made by itself; the earlier state was put back, and the undo is itself recorded and undoable."),
 
     # The key lifecycle (spec 018): a saved, changed or deleted model

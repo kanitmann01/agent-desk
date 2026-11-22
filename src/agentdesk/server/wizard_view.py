@@ -29,6 +29,8 @@ than an error:
 
 import html
 
+from agentdesk.server.pages import document_head, page_footer
+
 STATE_DESCRIBING = "describing"
 STATE_QUESTIONS = "questions"
 STATE_PREVIEW = "preview"
@@ -424,24 +426,15 @@ def _escalated_html(session_json: dict) -> str:
 
 
 def _page_shell(title: str, body: str, version: str) -> str:
-    """The document shell: the local stylesheet only, nothing else. The
+    """The document shell over the shared head and footer helpers. The
     wizard keeps its focused no-rail shell, but carries the same
     breadcrumb so the way back is never a mystery."""
     esc_title = html.escape(title)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc_title}, Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head(f"{title}, Agent Desk")}
 <div class="doc">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {body}
-<footer class="page-foot"><span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span><span>Local only: nothing here reaches the internet.</span></footer>
+{page_footer(version, note="Local only: nothing here reaches the internet.", touches=False)}
 </div>
 </body>
 </html>

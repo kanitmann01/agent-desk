@@ -22,78 +22,10 @@ ICON_OPTIONS = (
     '<circle cx="19" cy="12" r="1.7"/></svg></button>'
 )
 
-_ICON_DASHBOARD = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
-    '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" '
-    'height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/>'
-    '<rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>'
-)
-_ICON_INBOX = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true"><path d="M3.5 13.5 5 20h14l1.5-6.5M3.5 13.5h17M12 15v-4"/>'
-    "</svg>"
-)
-_ICON_ASSISTANT = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true">'
-    '<path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-6.5L8 20.5v-4H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z"/>'
-    '<path d="M8.5 10h7M8.5 13h4"/>'
-    "</svg>"
-)
-_ICON_PLUGINS = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
-    '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>'
-)
-_ICON_SETTINGS = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
-    '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h9M17 17h3"/><circle cx="15" cy="7" r="2"/>'
-    '<circle cx="9" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg>'
-)
-_ICON_ACTIVITY = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true">'
-    '<path d="M3.5 12h4l2.5-6.5 4 13 2.5-6.5h4"/></svg>'
-)
-_ICON_MEMORY = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true">'
-    '<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/>'
-    '<path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13"/>'
-    '<path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/></svg>'
-)
-_ICON_MAIL = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true">'
-    '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/>'
-    '<path d="m4.5 8 7.5 5.5L19.5 8"/></svg>'
-)
-_ICON_CAPABILITIES = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true">'
-    '<path d="M12 3.5 5 6.2v4.6c0 4.6 3 8.6 7 9.7 4-1.1 7-5.1 7-9.7V6.2L12 3.5Z"/>'
-    '<path d="m9 11.5 2.2 2.2 3.8-4.4"/></svg>'
-)
-_ICON_PEERS = (
-    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-    'stroke-linejoin="round" aria-hidden="true">'
-    '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/>'
-    '<path d="M10.5 10.5 13.5 13.5"/><path d="M3.5 8h1.5M19 16h1.5"/>'
-    '</svg>'
-)
-
-# The design language tokens, verbatim from docs/design-language.md. Font
-# families resolve locally: the named faces when installed, otherwise the
-# OS fallbacks. Nothing is fetched from the network.
+# The design language tokens: the server sheet's statement of the
+# three-theme system in docs/design-language.md. Font families resolve
+# locally: the named faces when installed, otherwise the OS fallbacks.
+# Nothing is fetched from the network.
 STYLES = """
 :root,:root[data-theme="unkey"],[data-theme-preview="unkey"]{
   color-scheme:dark;
@@ -857,21 +789,20 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         '<span class="rail-toggle-label">Collapse</span></button>'
     )
 
-    def entry(href: str, icon: str, label: str, extra: str = "") -> str:
+    def entry(href: str, label: str, extra: str = "") -> str:
         """The markup for one rail link, including the name the collapsed rail still
         announces.
 
         The visible label hides when the rail narrows, so every link carries its own
         aria-label (the Inbox link adding its waiting count) and a single-letter mark
-        for the collapsed state; aria-current marks the page being viewed. The icon
-        argument is accepted and ignored, since the rail is words.
+        for the collapsed state; aria-current marks the page being viewed. The rail
+        is words: no icon rides in the markup.
         """
         current = ' aria-current="page"' if href == active else ""
         # The accessible name survives collapse: the visible label hides
         # with the wide rail, so every link carries its own aria-label,
         # and the Inbox link names its waiting count. The letter is the
-        # collapsed mark. The icon argument is ignored: the rail is words.
-        del icon
+        # collapsed mark.
         name = label
         if href == "/inbox" and inbox_count:
             name = f"{label}, {inbox_count} waiting"
@@ -901,25 +832,59 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     return (
         f'<nav class="rail" id="main-rail" aria-label="Main">{phone}'
         '<div class="brand"><b class="brand-name">Agent Desk</b></div>'
-        f'{entry("/", _ICON_DASHBOARD, "Dashboard")}'
+        f'{entry("/", "Dashboard")}'
         # The count rides inside the link: one row on the rail, and
         # the accessible name carries the waiting number.
-        f'{entry("/inbox", _ICON_INBOX, "Inbox", badge)}'
-        f'{entry("/assistant", _ICON_ASSISTANT, "Assistant")}'
+        f'{entry("/inbox", "Inbox", badge)}'
+        f'{entry("/assistant", "Assistant")}'
         # Agents beside Assistant: both are host surfaces over the one
         # endpoint, one per question, one per task.
-        f'{entry("/agents", _ICON_ASSISTANT, "Agents")}'
+        f'{entry("/agents", "Agents")}'
         # Activity, Capabilities and Peers moved under Settings: the rail
         # carries the surfaces a person uses every day, not every URL the
         # server can render. Their routes still answer for deep links.
-        f'{entry("/memory", _ICON_MEMORY, "Memory")}'
-        f'{entry("/mail", _ICON_MAIL, "Mail")}'
-        f'{entry("/marketplace", _ICON_PLUGINS, "Marketplace")}'
-        f'{entry("/settings", _ICON_SETTINGS, "Settings")}'
+        f'{entry("/memory", "Memory")}'
+        f'{entry("/mail", "Mail")}'
+        f'{entry("/marketplace", "Marketplace")}'
+        f'{entry("/settings", "Settings")}'
         f'{toggle}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
+    )
+
+
+def document_head(title: str) -> str:
+    """The head every server-rendered document shares, through the four
+    shells: local stylesheet and theme boot only, nothing fetched from
+    the network, no inline script. The CSP story (script-src 'self', the
+    bundled .woff2 fonts, the hashed SPA bundles) is told here, once.
+
+    `title` is the raw document title; it is escaped here.
+    """
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}</title>
+<script src="/static/theme-boot.js"></script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>"""
+
+
+def page_footer(version: str, note: str = "", touches: bool = True) -> str:
+    """The shared footer line: the version, an optional page note, and
+    the what-this-touches link unless `touches` is False (the shells
+    that are not full app pages keep the version line only).
+    """
+    note_html = f"<span>{html.escape(note)}</span>" if note else ""
+    link = '<a href="/what-this-touches">What this app touches</a>' if touches else ""
+    return (
+        '<footer class="page-foot">'
+        f'<span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span>'
+        f"{note_html}{link}</footer>"
     )
 
 
@@ -942,23 +907,13 @@ def page_shell(
     script ships with every page. `wide` widens the column for a page
     laid out as a grid of tiles (the Memory page).
     """
-    esc_version = html.escape(version)
     esc_title = html.escape(title)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc_title}, Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head(f"{title}, Agent Desk")}
 <div class="app">{_rail(active, inbox_count)}
 <main><div class="{'doc doc-wide' if wide else 'doc'}">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><a href="/what-this-touches">What this app touches</a></footer>
+{page_footer(version)}
 </div>
 </main>
 <script src="/static/app.js"></script>
@@ -976,11 +931,11 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     state to confess in a banner.
     """
     cards = "".join(_widget_html(w) for w in widgets)
-    esc_version = html.escape(version)
     strip = ""
     if skills:
         buttons = "".join(
-            f"<button class='skill-btn' data-skill-run='{s['id']}'>{html.escape(s['name'])}</button>"
+            f"<button class='skill-btn' data-skill-run='{html.escape(str(s['id']))}'>"
+            f"{html.escape(s['name'])}</button>"
             for s in skills
         )
         strip = f"<div class='skills-strip' aria-label='Your skills'>{buttons}</div>"
@@ -988,16 +943,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
         dot_class, source_line = "dot", f"Live: {connected_sources} of {len(SOURCE_IDS)} sources connected."
     else:
         dot_class, source_line = "dot sample", "Not connected yet: each card below has its own one-step connect."
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head("Agent Desk")}
 <div class="app">
 {_rail("/", inbox_count)}
 <main>
@@ -1012,7 +958,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 <section class="grid" aria-label="Dashboard">
 {cards}
 </section>
-<footer class="page-foot"><span>Agent Desk <span class="mono">{esc_version}</span>.</span><span>Cards show only what their connected sources report.</span><a href="/what-this-touches">What this app touches</a></footer>
+{page_footer(version, note="Cards show only what their connected sources report.")}
 </main>
 </div>
 <script src="/static/app.js"></script>
@@ -1023,16 +969,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 
 def render_error_page(title: str, message: str) -> str:
     """The minimal same-language page for 401/403/404 answers."""
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}, Agent Desk</title>
-<script src="/static/theme-boot.js"></script>
-<link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
+    return f"""{document_head(f"{title}, Agent Desk")}
 <div class="error-card">
 <h1>{html.escape(title)}</h1>
 <p>{html.escape(message)}</p>
@@ -1059,7 +996,7 @@ def render_press_page(
     The disclosure comes first and the answer second, because the promise
     and the result are read together: a person decides whether to press
     again from the same screen that shows what the press sent. A refusal
-    is the whole answer when it happens — the page keeps the sentence and
+    is the whole answer when it happens: the page keeps the sentence and
     offers nothing to press.
     """
     lines = "".join(

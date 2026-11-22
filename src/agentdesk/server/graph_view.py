@@ -27,6 +27,7 @@ from agentdesk.memory.graph import (
     MAX_GRAPH_LIMIT,
     GraphSnapshot,
 )
+from agentdesk.server.core import count_noun
 from agentdesk.server.pages import page_shell
 
 UTC = timezone.utc  # datetime.UTC needs 3.11; the declared floor is 3.10
@@ -58,11 +59,6 @@ _LEGEND = (
     ("derived", "Citation", "an observation pointing at the facts it cites"),
     ("semantic", "Semantic", "vectors within a 0.72 cosine of each other"),
 )
-
-
-def _count(value: int, noun: str) -> str:
-    """One counted noun, singular handled honestly."""
-    return f"{value} {noun}" + ("" if value == 1 else "s")
 
 
 def _parse_bound(value: str, extra_days: int) -> float | None:
@@ -181,7 +177,7 @@ def _node_groups(snapshot: GraphSnapshot, positions: dict) -> str:
         opacity = 0.25 + 0.75 * max(0.0, min(1.0, node.recency))
         label = html.escape(node.label)
         when = _show_date(node.instant)
-        citations = _count(node.source_fact_count, "citation")
+        citations = count_noun(node.source_fact_count, "citation")
         tooltip = html.escape(
             f"{node.label} ({when}, {citations})"
         )
@@ -253,9 +249,9 @@ def render_graph_page(
     facts = sum(1 for node in snapshot.nodes if not node.derived)
     observations = len(snapshot.nodes) - facts
     counts = (
-        f'<p class="mono" id="graph-counts">{_count(facts, "fact")}, '
-        f"{_count(observations, 'observation')}, "
-        f"{_count(len(snapshot.edges), 'edge')} shown</p>"
+        f'<p class="mono" id="graph-counts">{count_noun(facts, "fact")}, '
+        f"{count_noun(observations, 'observation')}, "
+        f"{count_noun(len(snapshot.edges), 'edge')} shown</p>"
     )
     window = ""
     if since is not None or until is not None:
@@ -289,8 +285,8 @@ links.</p>
     height = MARGIN * 2 + CELL_HEIGHT * ((len(snapshot.nodes) + COLUMNS - 1) // COLUMNS)
     width = MARGIN * 2 + CELL_WIDTH * COLUMNS
     aria = (
-        f"Memory graph with {_count(len(snapshot.nodes), 'node')} and "
-        f"{_count(len(snapshot.edges), 'edge')}"
+        f"Memory graph with {count_noun(len(snapshot.nodes), 'node')} and "
+        f"{count_noun(len(snapshot.edges), 'edge')}"
     )
     svg = (
         f'<svg id="memory-graph" width="{width:.0f}" height="{height:.0f}"'

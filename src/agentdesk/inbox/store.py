@@ -46,8 +46,7 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY,
   ts REAL NOT NULL,
-  kind TEXT NOT NULL,
-  card_count INTEGER NOT NULL DEFAULT 1
+  kind TEXT NOT NULL
 );
 """
 
@@ -323,12 +322,47 @@ class InboxStore:
             self.conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
 
     @_serialized
-    def record_notification(self, kind: str, card_count: int = 1) -> None:
+    def delete_rows(self, ids: list[str]) -> None:
+        """Delete the named cards outright, whatever their status.
+
+        Only the desk check's set-aside fix may call this: those rows cannot
+        be read by this build, so the user cannot dismiss them normally; the
+        fix keeps their exact content in a file and a ledger capture first.
+        """
+        with self.conn:
+            self.conn.executemany(
+                "DELETE FROM cards WHERE id = ?", [(card_id,) for card_id in ids]
+            )
+
+    @_serialized
+    def insert_raw(self, rows: list[dict]) -> None:
+        """Re-insert raw card rows with their exact ids and every column.
+
+        Undo of the set-aside fix calls this with the rows a previous run
+        captured; every column must be present, so a restored row is the one
+        that was removed, not a rebuild of it.
+        """
+        columns = ", ".join(_COLUMN_NAMES)
+        placeholders = ", ".join("?" for _ in _COLUMN_NAMES)
+        values = []
+        for row in rows:
+            missing = [name for name in _COLUMN_NAMES if name not in row]
+            if missing:
+                raise ValueError("raw card row is missing columns: " + ", ".join(missing))
+            values.append(tuple(row[name] for name in _COLUMN_NAMES))
+        with self.conn:
+            self.conn.executemany(
+                f"INSERT OR REPLACE INTO cards ({columns}) VALUES ({placeholders})",
+                values,
+            )
+
+    @_serialized
+    def record_notification(self, kind: str) -> None:
         """Append one notification to the ledger the daily budget counts."""
         with self.conn:
             self.conn.execute(
-                "INSERT INTO notifications (ts, kind, card_count) VALUES (?, ?, ?)",
-                (self.clock(), kind, card_count),
+                "INSERT INTO notifications (ts, kind) VALUES (?, ?)",
+                (self.clock(), kind),
             )
 
     @_serialized
@@ -349,7 +383,7 @@ class InboxStore:
         for card_id in card_ids:
             self.mark_notified(card_id)
         kind = "digest" if len(card_ids) > 1 else "card"
-        self.record_notification(kind, len(card_ids))
+        self.record_notification(kind)
         return True
 
     # -- reads ------------------------------------------------------------

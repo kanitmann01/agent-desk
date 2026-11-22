@@ -63,9 +63,12 @@ def undo(
         if entry.before_sha is not None and before is None:
             raise LedgerError("That change's earlier state was not captured, so it cannot be undone.")
         current = reverse(server, entry, before)
-        redo_kind = {"card-added": "card-dismissed", "card-dismissed": "card-added"}.get(
-            entry.undo_kind, entry.undo_kind,
-        )
+        redo_kind = {
+            "card-added": "card-dismissed",
+            "card-dismissed": "card-added",
+            "inbox-rows": "inbox-rows-deleted",
+            "inbox-rows-deleted": "inbox-rows",
+        }.get(entry.undo_kind, entry.undo_kind)
         recorded = ledger.record(
             actor=actor,
             action="ledger.undo",
@@ -176,3 +179,88 @@ def _undo_card_dismissed(server: "AgentDeskServer", entry: Entry, before: bytes 
     current = _capture_current(server, _card_json(server, card))
     server.inbox.reopen(card.id)
     return current
+
+
+# -- desk-check set-aside rows -------------------------------------------
+
+
+def _rows_payload(entry: Entry, before: bytes | None) -> list[dict]:
+    """The captured raw inbox rows a set-aside change removed, or a refusal."""
+    if before is None:
+        raise LedgerError("That change's earlier state was not captured, so it cannot be undone.")
+    try:
+        data = json.loads(before)
+    except ValueError:
+        data = None
+    if not isinstance(data, list) or not all(isinstance(row, dict) for row in data):
+        raise LedgerError("That change's earlier state was not captured, so it cannot be undone.")
+    return data
+
+
+@register("inbox-rows")
+def _undo_inbox_rows(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """Put the set-aside inbox rows back exactly as they were stored.
+
+    The rows are re-inserted with their ids and every column, so this build
+    detects them again and the next check offers to set them aside again.
+    """
+    rows = _rows_payload(entry, before)
+    inbox = getattr(server, "inbox", None)
+    if inbox is None:
+        raise LedgerError("The inbox is not available, so the rows cannot be put back.")
+    inbox.insert_raw(rows)
+    return _capture_current(server, before)
+
+
+@register("inbox-rows-deleted")
+def _undo_inbox_rows_deleted(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """The inverse used when undoing the undo: remove the rows again."""
+    rows = _rows_payload(entry, before)
+    inbox = getattr(server, "inbox", None)
+    if inbox is None:
+        raise LedgerError("The inbox is not available, so the rows cannot be put back.")
+    inbox.delete_rows([row["id"] for row in rows])
+    return _capture_current(server, before)
+
+
+# -- source wiring --------------------------------------------------------
+
+
+@register("wiring")
+def _undo_wiring(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """Point the workbook watch and calendar back at the paths it replaced.
+
+    The current paths are captured before anything is touched; a None path
+    means that source was not wired, so the reverse clears it (only through
+    the watcher's own clear call, never by guessing at stored rows).
+    """
+    data = _payload(entry, before)
+    excel = getattr(server, "excel", None)
+    calendar = getattr(server, "calendar", None)
+    current = {
+        "excel": excel.registered_path if excel is not None else None,
+        "calendar": calendar.explicit_path() if calendar is not None else None,
+    }
+    current_bytes = _capture_current(
+        server, json.dumps(current, sort_keys=True).encode("utf-8")
+    )
+    if "excel" in data:
+        path = data["excel"]
+        if excel is None and path is not None:
+            raise LedgerError("The workbook watch is not available, so the wiring cannot be put back.")
+        if excel is not None:
+            if path:
+                excel.register(str(path))
+            else:
+                excel.clear_registered_path()
+    if "calendar" in data:
+        path = data["calendar"]
+        if calendar is None and path is not None:
+            raise LedgerError("The calendar is not available, so the wiring cannot be put back.")
+        if calendar is not None:
+            if path:
+                calendar.set_explicit_path(str(path))
+            else:
+                calendar.clear_explicit_path()
+            calendar.retest()
+    return current_bytes

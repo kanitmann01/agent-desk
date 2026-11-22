@@ -6,6 +6,12 @@ finding. Importing this package imports checks, which is what registers them.
 """
 
 from agentdesk.deskcheck import checks  # noqa: F401  (import registers the checks)
+from agentdesk.deskcheck.fixes import (
+    FIXES,
+    MAX_FAILURES,
+    FixOutcome,
+    apply_fix,
+)
 from agentdesk.deskcheck.core import (
     FIX_ASK,
     FIX_AUTO,
@@ -26,10 +32,12 @@ from agentdesk.deskcheck.core import (
 )
 
 __all__ = [
+    "FIXES",
     "FIX_ASK",
     "FIX_AUTO",
     "FIX_LINK",
     "FIX_NONE",
+    "MAX_FAILURES",
     "REGISTRY",
     "SEVERITY_ATTENTION",
     "SEVERITY_FATAL",
@@ -38,6 +46,8 @@ __all__ = [
     "CheckResult",
     "DeskContext",
     "Finding",
+    "FixOutcome",
+    "apply_fix",
     "finding_to_api",
     "register",
     "run_checks",

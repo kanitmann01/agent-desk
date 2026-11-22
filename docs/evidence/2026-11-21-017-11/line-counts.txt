@@ -1,0 +1,45 @@
+Line counts for the 017-11 lean sweep (branch vs main)
+
+Rebased onto 8e91fae (spec 018 BYOK merged during review); the branch's
+sixteen commits replayed with one conflicted file (server/app.py).
+ Branch total vs origin/main: 52 files changed, +2739 / -3186 = net -447 lines.
+
+Per commit (git show <sha> --stat):
+
+  11a    1fe1ef7  delete the verified-dead code             9 files  +24 / -448   net -424
+  11b    1538ec9  one form-versus-JSON response helper      1 file   +106 / -207  net -101
+  11d    e3c60be  count/plural/bounded to single owners     5 files  +54 / -69    net -15
+  11g    699135c  four view-level dedups                    6 files  +60 / -86    net -26
+  11h    e6f64a7  one escape rule for view ids              4 files  +16 / -12    net +4
+  11c    a1de992  app.py splits by job exactly twice        8 files  +2191 / -2196  net -5 (replayed with the byok conflict resolution)
+  11e    3142f1c  design documents tell the truth           5 files  +140 / -92   net +48 (docs)
+  11f    6f81c37  peer-catalog claim aligned                2 files  +3 / -3      net 0
+  rider  baff013  em dash leaves the live trees, pinned    13 files  +83 / -44    net +39
+  pin    53f1e84  the pin names the ban by code point       1 file   +2 / -5      net -3
+  ev     d0c646e  the evidence pack                        7 files  (screenshots and transcripts)
+  fb1    0dabc87  11a fix-back: the activity pair deletes  1 file   +0 / -47     net -47
+  fb2    0d62f53  8a fix-back: scripts stop Nexuus Bot     3 files  +16 / -14    net +2
+
+11c is near-zero net as the ticket requires: the memory api block (1143
+lines) and the peers api block (645 lines) moved verbatim (class bodies
+byte-identical to the parent revision, verified by diff), the module
+docstrings and resolved imports are the only additions. After the rebase
+onto the byok tree, app.py is 6756 lines (the byok connections hub added
+its own ~750), memory_api.py is 1330 lines (carrying byok's five edits
+that landed inside the moved memory block: the embeddings resolution hub
+rewrite and four memory-job call sites) and peers_api.py is 714 (byok
+touched nothing inside the moved peers block).
+
+The 11a fix-back completes the item's largest deletion: activity_view.py
+is 20 lines now (73 at base), only the DECISIONS vocabulary.
+
+Growth outside 11c's movement and the doc rewrites, item by item:
+
+  +4   11h: escaping the ids split four f-strings onto two lines.
+  +39  the rider commit: the em-dash pin test and its walk plumbing in
+       tests/test_brand_naming.py (+52/-13). The sweep's thirty text
+       rewrites are line-neutral swaps (30 lines changed, 30 written).
+  +2/-5 pin follow-up: the ban is named by code point.
+
+app.py before: 8019 lines. After: 6000 lines, plus memory_api.py (1286)
+and peers_api.py (711), whose bodies are the moved blocks.

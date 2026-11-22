@@ -24,7 +24,7 @@ enforces it, and this page is the standard it enforces.
   contract; the code explains the steps.
 - Name the callers ("used by the settings page"). A docstring describes the
   function, not its neighbourhood.
-- Pad a trivial accessor with a restatement — `"""Get the store."""` is worse
+- Pad a trivial accessor with a restatement: `"""Get the store."""` is worse
   than nothing. Say what the store is for or what the call costs.
 
 ## Example
