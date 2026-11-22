@@ -241,7 +241,7 @@ def test_activity_rows_carry_ids():
 
 def test_the_step_is_registered_after_the_desk_check():
     assert [step.name for step in STEPS] == [
-        "deskcheck", "learn-topics", "rank", "update"]
+        "deskcheck", "learn-topics", "profile-review", "rank", "update"]
     assert STEPS[1].enabled(SettingsStore(
         sqlite3.connect(":memory:", check_same_thread=False))) is True
     assert STEPS[1].enabled(None) is False

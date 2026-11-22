@@ -54,6 +54,13 @@ TOGGLES = {
     # asks naming a memory entity add it to the learned profile. Off
     # stops the learning; what was learned stays until removed.
     "learn_topics": True,
+    # The profile review (spec 016 section 6.5): every ten new asks the
+    # loop sends the last 24 to the company endpoint and applies only
+    # grounded, injection-scanned learned lines. Off stops the review;
+    # what was learned stays until removed. Needs an endpoint too (the
+    # endpoint_enabled switch and a connection or startup endpoint the
+    # hub can resolve), not just this switch.
+    "learn_profile": True,
     # Spec §8: the desk acts by itself and every change it makes is logged
     # in the action ledger with Undo. The four ask-first classes are
     # enforced in code (ledger.may_act), not by this switch.

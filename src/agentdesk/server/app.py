@@ -151,6 +151,7 @@ from agentdesk.memory.extract import (
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
+from agentdesk.memory import profile_review
 from agentdesk.memory.profile import (
     MAX_TOPICS,
     LearnedProfileStore,
@@ -3772,7 +3773,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
-                       "memory_capture_agents", "learn_topics", "recommendations",
+                       "memory_capture_agents", "learn_topics", "learn_profile",
+                       "recommendations",
                        "recommend_deadlines", "recommend_meetings",
                        "recommend_horizon_days", "recommend_model_rank",
                        "recommend_threshold", "auto_update", "auto_update_plugins"):
@@ -3796,11 +3798,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
                      "agent_loop_minutes", "auto_update",
-                     "auto_update_plugins", "learn_topics") or key.startswith("memory_"):
+                     "auto_update_plugins", "learn_topics", "learn_profile") \
+                or key.startswith("memory_"):
             # The memory loop reads its switches on every capture,
             # the autonomy switch is read by ledger.may_act before each action,
             # the agent loop re-reads its interval on every wake, and the
-            # learn-topics step reads its switch at every pass.
+            # learn-topics and profile-review steps read their switches at
+            # every pass.
             pass
         else:
             self._apply_source_toggles(key, value)
@@ -6616,6 +6620,171 @@ def _run_learn_topics(ctx: LoopContext) -> dict:
 # later tickets register below in import order.
 register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
                    run=_run_learn_topics))
+
+
+# -- profile review (spec 016 section 6.5, the profile-review step) ---------
+
+# The latch that counts new activity rows between reviews: the id of the
+# newest row the last review was prompted with. Entries are not latched
+# the way topics are (a removed line can be relearned from a later,
+# different window; the user's removal already happened), and the
+# removal route keeps this latch alone.
+PROFILE_LATCH = "profile:last_activity_id"
+
+
+def _profile_review_client(server, settings, audit_conn=None):
+    """The endpoint client for one review, audited as llm.profile, or
+    None when no call may be made.
+
+    The review is served from the hub's memory job (the evidence run's
+    defect 7.2, resolved as its option 2): _job_llm_parts resolves the
+    job binding, the default binding, a single saved connection, the
+    legacy llm_base row or the startup endpoint, so the review is
+    reachable on a fresh install and not only on a folder with pre-hub
+    rows, and a saved connection answers to its label. The wrapper
+    follows the audited_llm pattern (llm.wizard): the row names the
+    serving endpoint or label, the model and the request's byte size,
+    never the prompt or reply, and a failure records its cause and
+    re-raises so the step fails loudly and leaves its latch alone."""
+    if settings is None:
+        return None
+    try:
+        if not bool(settings.get("endpoint_enabled")):
+            return None
+    except KeyError:
+        return None
+    try:
+        client, serving, model = _job_llm_parts(server, "memory")
+    except Exception:  # noqa: BLE001 - a broken hub reads as unconfigured
+        LOG.exception("the profile review could not resolve its endpoint")
+        return None
+    if client is None or not serving:
+        return None
+    if audit_conn is None:
+        return client
+    conn = audit_conn
+
+    def audited_llm(prompt: str) -> str:
+        """One review call, recorded as llm.profile with the size only."""
+        try:
+            result = client(prompt)
+        except Exception as exc:  # noqa: BLE001 - audit then re-raise
+            audit_store.record(conn, "llm.profile", target=serving,
+                               status="error", model=model,
+                               request_bytes=len(prompt.encode("utf-8")),
+                               detail=str(exc)[:200])
+            raise
+        audit_store.record(conn, "llm.profile", target=serving,
+                           status="ok", model=model,
+                           request_bytes=len(prompt.encode("utf-8")))
+        return result
+
+    return audited_llm
+
+
+def review_profile(server, ledger, settings, audit_conn=None) -> dict:
+    """One profile-review pass: the last 24 activity rows and the
+    current learned lines go to the company endpoint once ten or more
+    new rows have arrived (spec 016 section 6.5).
+
+    The endpoint's reply is the least trusted text on the desk, so it
+    only ever reaches the store through profile_review.apply, which
+    drops every op that is not grounded in the window, fails the strict
+    injection scan, or breaks the budget, and accepts no remove ops.
+    The latch advances to the window's max id after a review call
+    completes, even when nothing was applied or the reply was not JSON;
+    a failed call or an unchanged input leaves it so the window is
+    retried. The input hash is remembered after a completed call so an
+    unchanged window and learned list never buy a second call. The
+    stated preferences are not an input and not a target here.
+    """
+    store = getattr(server, "learned_profile", None)
+    activity = getattr(server, "activity_log", None)
+    if store is None or activity is None or ledger is None:
+        return {"applied": 0}
+    rows = activity.entries(profile_review.TAIL)
+    if not rows:
+        return {"applied": 0}
+    max_id = max(int(row["id"]) for row in rows)
+    stored = ledger.latch_value(PROFILE_LATCH)
+    try:
+        last_seen = int(stored or 0)
+    except ValueError:
+        last_seen = 0
+    waiting = max_id - last_seen
+    if waiting < profile_review.NUDGE:
+        return {"applied": 0, "waiting": waiting}
+    context = LoopContext(server=server, ledger=ledger, settings=settings,
+                          now=datetime.now().astimezone())
+    payload = profile_review.build_input(rows, store.document())
+    client = _profile_review_client(server, settings, audit_conn)
+    if client is None:
+        # The step is gated off (endpoint_enabled off) or no endpoint can
+        # serve the call, in the loop path, so this only happens on a
+        # direct call; the window stays unconsumed, and the review still
+        # happens once an endpoint is configured.
+        return {"applied": 0, "waiting": waiting}
+    if context.input_unchanged("profile-review", payload):
+        return {"applied": 0, "skipped": "input unchanged"}
+    prompt = f"{profile_review.PROMPT}\n{json.dumps(payload, ensure_ascii=False)}"
+    reply = client(prompt)
+    context.remember_input("profile-review", payload)
+
+    def record(before: bytes, after: bytes, note: str) -> str | None:
+        """One learned-profile ledger entry per applied op; Undo
+        restores the whole document, the way the removal route's
+        record does. A failed record never undoes the learning, and
+        one profile.learned audit row rides with the entry (the id
+        is named, never the line's text)."""
+        try:
+            entry = ledger.record(
+                actor="agent-desk",
+                action="profile.learned",
+                subject="learned profile:review",
+                why=note,
+                undo_kind="learned-profile",
+                before=before,
+                after=after,
+            )
+        except LedgerError:
+            LOG.exception("the learned-profile record for the review failed")
+            return None
+        if audit_conn is not None:
+            audit_store.record(audit_conn, "profile.learned",
+                               target=entry.id, detail="Learned from activity")
+        return entry.id
+
+    result = profile_review.apply(reply, store, record,
+                                  allowed_ids={int(row["id"]) for row in rows})
+    ledger.latch(PROFILE_LATCH, str(max_id))
+    return {"applied": result.applied,
+            "dropped": sum(result.dropped.values())}
+
+
+def _profile_review_enabled(settings) -> bool:
+    """The review runs when its switch is on and the endpoint switch is
+    on (spec 016 section 6.5). The base-URL check is not made here: the
+    step gate sees only the settings store, while the configured answer
+    needs the server (connections hub, legacy row, startup endpoint),
+    so _profile_review_client makes it and leaves the window
+    unconsumed when no channel can serve the call."""
+    if settings is None:
+        return False
+    try:
+        return bool(settings.get("learn_profile")) \
+            and bool(settings.get("endpoint_enabled"))
+    except KeyError:
+        return False
+
+
+def _run_profile_review(ctx: LoopContext) -> dict:
+    """The pass wrapper: review the loop context's desk."""
+    return review_profile(ctx.server, ctx.ledger, ctx.settings,
+                          audit_conn=getattr(ctx.server, "audit_conn", None))
+
+
+register_step(Step(name="profile-review", enabled=_profile_review_enabled,
+                   run=_run_profile_review))
 
 
 def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:
