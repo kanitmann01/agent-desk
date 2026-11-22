@@ -86,10 +86,6 @@ class ApplyResult:
     applied: int
     dropped: dict[str, int] = field(default_factory=dict)
 
-    def count(self, reason: str) -> int:
-        """Drops under one reason, for the step's note."""
-        return self.dropped.get(reason, 0)
-
 
 def apply(reply: str, store, record: Callable[[bytes, bytes, str], str],
           allowed_ids: set[int]) -> ApplyResult:
