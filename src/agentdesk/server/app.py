@@ -6776,24 +6776,33 @@ def _profile_review_client(server, settings, audit_conn=None):
     """The endpoint client for one review, audited as llm.profile, or
     None when no call may be made.
 
-    The gate is the settings rows only (spec 016 section 6.5):
-    endpoint_enabled on and a non-empty llm_base. The wrapper follows
-    the audited_llm pattern (llm.wizard): the row names the endpoint,
-    the model and the request's byte size, never the prompt or reply,
-    and a failure records its cause and re-raises so the step fails
-    loudly and leaves its latch alone."""
+    The review is served from the hub's memory job (the evidence run's
+    defect 7.2, resolved as its option 2): _job_llm_parts resolves the
+    job binding, the default binding, a single saved connection, the
+    legacy llm_base row or the startup endpoint, so the review is
+    reachable on a fresh install and not only on a folder with pre-hub
+    rows, and a saved connection answers to its label. The wrapper
+    follows the audited_llm pattern (llm.wizard): the row names the
+    serving endpoint or label, the model and the request's byte size,
+    never the prompt or reply, and a failure records its cause and
+    re-raises so the step fails loudly and leaves its latch alone."""
     if settings is None:
         return None
     try:
-        if not bool(settings.get("endpoint_enabled")) \
-                or not settings.get("llm_base"):
+        if not bool(settings.get("endpoint_enabled")):
             return None
     except KeyError:
+        return None
+    try:
+        client, serving, model = _job_llm_parts(server, "memory")
+    except Exception:  # noqa: BLE001 - a broken hub reads as unconfigured
+        LOG.exception("the profile review could not resolve its endpoint")
+        return None
+    if client is None or not serving:
         return None
     client = settings_chat(settings)
     if audit_conn is None:
         return client
-    endpoint, _key, model = effective_llm_config(settings)
     conn = audit_conn
 
     def audited_llm(prompt: str) -> str:
@@ -6801,12 +6810,12 @@ def _profile_review_client(server, settings, audit_conn=None):
         try:
             result = client(prompt)
         except Exception as exc:  # noqa: BLE001 - audit then re-raise
-            audit_store.record(conn, "llm.profile", target=endpoint,
+            audit_store.record(conn, "llm.profile", target=serving,
                                status="error", model=model,
                                request_bytes=len(prompt.encode("utf-8")),
                                detail=str(exc)[:200])
             raise
-        audit_store.record(conn, "llm.profile", target=endpoint,
+        audit_store.record(conn, "llm.profile", target=serving,
                            status="ok", model=model,
                            request_bytes=len(prompt.encode("utf-8")))
         return result
@@ -6893,15 +6902,17 @@ def review_profile(server, ledger, settings, audit_conn=None) -> dict:
 
 
 def _profile_review_enabled(settings) -> bool:
-    """The review runs when its switch is on, the endpoint is on, and a
-    base URL is configured (spec 016 section 6.5); without one of the
-    three there is nothing to send and nowhere to send it."""
+    """The review runs when its switch is on and the endpoint switch is
+    on (spec 016 section 6.5). The base-URL check is not made here: the
+    step gate sees only the settings store, while the configured answer
+    needs the server (connections hub, legacy row, startup endpoint),
+    so _profile_review_client makes it and leaves the window
+    unconsumed when no channel can serve the call."""
     if settings is None:
         return False
     try:
         return bool(settings.get("learn_profile")) \
-            and bool(settings.get("endpoint_enabled")) \
-            and bool(settings.get("llm_base"))
+            and bool(settings.get("endpoint_enabled"))
     except KeyError:
         return False
 
