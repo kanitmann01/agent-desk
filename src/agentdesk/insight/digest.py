@@ -424,4 +424,18 @@ def _prompt(facts: dict, preferences: dict) -> str:
         if len(text) + len(line) + 1 > MAX_PROMPT:
             break
         text = f"{text}\n{line}"
+    # What the desk learned (spec 016 section 6.5) rides after the stated
+    # preferences: the context's merged topics are already in prompt
+    # lines, and the learned lines follow under their own heading.
+    learned = (preferences or {}).get("learnedLines")
+    if isinstance(learned, list) and learned:
+        heading = "What the desk learned about you:"
+        if len(text) + len(heading) + 1 > MAX_PROMPT:
+            return text
+        text = f"{text}\n{heading}"
+        for entry in learned[:4]:
+            line = f"- {str(entry)[:160]}"
+            if len(text) + len(line) + 1 > MAX_PROMPT:
+                break
+            text = f"{text}\n{line}"
     return text

@@ -2,7 +2,9 @@
 review on the Memory page, removal with its preview, and undo."""
 
 import json
+import sqlite3
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.assistant import audit as audit_store
+from agentdesk.settings import SettingsStore
 
 
 class ReplyLlm:
@@ -36,9 +39,21 @@ class ReplyLlm:
         return "Noted."
 
 
+def _review_first_settings():
+    """The loop's switches as this suite has always assumed them: capture
+    on, auto-approve off, so facts stage as review cards unless a test
+    turns auto-approve on itself. Spec 016 flipped the stored default to
+    True for new folders, so the default alone no longer pins the flow."""
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    settings = SettingsStore(conn, time.time)
+    settings.set("memory_auto_approve", False)
+    return settings
+
+
 @pytest.fixture()
 def env():
-    booted = server_harness.Booted(llm=ReplyLlm(), llm_endpoint="http://endpoint.test/v1")
+    booted = server_harness.Booted(llm=ReplyLlm(), llm_endpoint="http://endpoint.test/v1",
+                                   settings_store=_review_first_settings())
     try:
         yield booted
     finally:

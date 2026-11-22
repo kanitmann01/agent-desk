@@ -54,9 +54,23 @@ WORKBOOK_BRIEFING = (
 )
 
 
+def _review_first_settings():
+    """The loop's switches as the capture tests assume them: auto-approve
+    off, so captured facts stage as review cards. Spec 016 flipped the
+    stored default to True for new folders, so the default no longer
+    pins the review flow these tests exercise."""
+    from agentdesk.settings import SettingsStore
+
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False),
+                             time.time)
+    settings.set("memory_auto_approve", False)
+    return settings
+
+
 @pytest.fixture()
 def env():
-    booted = server_harness.Booted(llm=CaptureLlm(reply=WORKBOOK_BRIEFING))
+    booted = server_harness.Booted(llm=CaptureLlm(reply=WORKBOOK_BRIEFING),
+                                   settings_store=_review_first_settings())
     try:
         yield booted
     finally:

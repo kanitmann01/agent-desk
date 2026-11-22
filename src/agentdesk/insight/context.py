@@ -10,6 +10,7 @@ from typing import Any
 
 from agentdesk.insight.types import InsightContext
 from agentdesk.memory.crypto import MemoryEncryptedError
+from agentdesk.memory.profile import learned_lines, merged_topics
 
 RECALL_LIMIT = 3
 
@@ -21,18 +22,43 @@ def build_context(
 
     Memory and the calendar are consulted here and nowhere else, so every
     card on one payload sees the same agenda and the same recall adapter,
-    and a family stays a pure function of its context. `now` defaults to
-    the wall clock and is injectable so a test can fix time."""
+    and a family stays a pure function of its context. The learned
+    profile (spec 016 section 6.5) is read here too: the context's topics
+    become the stated ones then the learned ones, and the learned lines
+    ride along under `learnedLines`. `now` defaults to the wall clock and
+    is injectable so a test can fix time."""
     recall, note = _memory(server)
     agenda, agenda_note = _agenda(server)
     return InsightContext(
-        preferences=dict(preferences),
+        preferences=_with_learned(server, preferences),
         now=time.time() if now is None else now,
         recall=recall,
         memory_note=note,
         agenda=agenda,
         agenda_note=agenda_note,
     )
+
+
+def _with_learned(server: Any, preferences: dict) -> dict:
+    """The preferences as the readings should see them, learned folded in.
+
+    The stored preferences file is never touched: this merges over the
+    copy the context carries. A desk with no learned store, or one that
+    cannot be read right now, gets the stated preferences unchanged."""
+    document = dict(preferences or {})
+    store = getattr(server, "learned_profile", None)
+    if store is None:
+        return document
+    try:
+        learned = store.document()
+    except Exception:  # noqa: BLE001 - a reading never takes a card down
+        return document
+    document["focusTopics"] = merged_topics(
+        document.get("focusTopics"), learned.get("focusTopics"))
+    lines = learned_lines(learned)
+    if lines:
+        document["learnedLines"] = lines
+    return document
 
 
 def _agenda(server: Any) -> tuple[dict | None, str]:
