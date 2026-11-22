@@ -380,6 +380,7 @@ def _undo_skill_state(server: "AgentDeskServer", entry: Entry, before: bytes | N
         skills.set_state(skill["id"], state, active=data["active"])
     except SkillError as exc:
         raise LedgerError(f"The skill refused the undo: {exc}") from None
+    return current
 
 
 # -- the learned profile (spec 016 ticket 08) ------------------------------
