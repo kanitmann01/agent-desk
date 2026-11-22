@@ -11,9 +11,10 @@ latch makes Not now permanent even if the card row is later removed.
 
 import json
 import time
+from datetime import datetime
 
 from agentdesk.inbox.core import KIND_SUGGESTION
-from agentdesk.recommend.rules import Candidate, deadline_candidates
+from agentdesk.recommend.rules import Candidate, deadline_candidates, meeting_candidates
 
 # Hermes cron/suggestions.py MAX_PENDING: the desk never stacks more than
 # this many waiting suggestions; the soonest deadline earns the slot.
@@ -23,6 +24,7 @@ MAX_PENDING = 5
 # shows in place of its original why line.
 LATCH_PREFIX = "rec:"
 WITHDRAWN_ORIGIN = "Withdrawn: the fact behind it was removed or replaced."
+MEETING_WITHDRAWN_ORIGIN = "Withdrawn: the meeting is no longer in the next 24 hours."
 
 
 def _recommendation(card) -> dict | None:
@@ -55,7 +57,9 @@ class RecommendationBuilder:
         if not self._settings.get("recommendations"):
             return {"added": 0, "withdrawn": 0}
         live = self._live()
-        withdrawn, live = self._withdraw_stale(live)
+        withdrawn, live = self._withdraw_stale(
+            live, self._meeting_candidate_keys()
+        )
         added = self._add_candidates(live)
         return {"added": added, "withdrawn": withdrawn}
 
@@ -85,13 +89,23 @@ class RecommendationBuilder:
         """Add cards for kept candidates until the pending cap is reached."""
         candidates: list[Candidate] = []
         if self._settings.get("recommend_deadlines"):
-            candidates = deadline_candidates(
+            candidates.extend(deadline_candidates(
                 self._memory.all(),
                 set(self._memory.superseded_map()),
                 self._entity_names(),
                 self._now(),
                 int(self._settings.get("recommend_horizon_days")),
+            ))
+        if self._settings.get("recommend_meetings"):
+            candidates.extend(
+                meeting_candidates(
+                    self._calendar_events(),
+                    self._entity_id_names(),
+                    self._facts_by_entity(),
+                    self._now_aware(),
+                )
             )
+        candidates.sort(key=lambda candidate: (candidate.due_ts or 0.0, candidate.key))
         taken = {self._key(card) for card in live}
         added = 0
         for candidate in candidates:
@@ -120,44 +134,54 @@ class RecommendationBuilder:
             added += 1
         return added
 
-    def _withdraw_stale(self, live: list) -> tuple[int, list]:
-        """Dismiss the cards whose cited facts are all gone, and count them.
+    def _withdraw_stale(self, live: list, meeting_keys: set[str] | None) -> tuple[int, list]:
+        """Dismiss cards whose facts are gone, or whose meeting left the window.
 
         A card with no cites cannot prove its fact went away, so it is left
-        alone rather than withdrawn on a guess.
+        alone rather than withdrawn on a guess. A meeting card whose start is
+        already past is kept too; the user may still want the prep notes.
         """
         existing = {fact.id for fact in self._memory.all()}
         superseded = set(self._memory.superseded_map())
+        now_ts = self._now_aware().timestamp()
         withdrawn = 0
         kept: list = []
         for card in live:
             metadata = _recommendation(card) or {}
             cites = [cite for cite in metadata.get("cites") or [] if isinstance(cite, int)]
-            if cites and all(cite in superseded or cite not in existing for cite in cites):
-                self._inbox.withdraw(card.id, WITHDRAWN_ORIGIN)
-                candidate = Candidate(
-                    rule=str(metadata.get("rule") or ""),
-                    key=str(metadata.get("key") or ""),
-                    title=card.title,
-                    why=WITHDRAWN_ORIGIN,
-                    body=card.body,
-                    cites=tuple(cites),
-                    href=str(metadata.get("href") or ""),
-                    action_label=card.action_label,
-                    due_ts=None,
-                    sample=bool(metadata.get("sample")),
-                )
-                self._record(
-                    "recommend.withdrawn",
-                    card,
-                    candidate,
-                    WITHDRAWN_ORIGIN,
-                    undo_kind="none",
-                )
+            rule = str(metadata.get("rule") or "")
+            due = metadata.get("dueTs")
+            meeting_gone = (
+                meeting_keys is not None
+                and rule == "meeting-prep"
+                and isinstance(due, (int, float))
+                and due >= now_ts
+                and str(metadata.get("key") or "") not in meeting_keys
+            )
+            if meeting_gone or (cites and all(cite in superseded or cite not in existing for cite in cites)):
+                origin = MEETING_WITHDRAWN_ORIGIN if meeting_gone else WITHDRAWN_ORIGIN
+                self._withdraw(card, metadata, origin)
                 withdrawn += 1
             else:
                 kept.append(card)
         return withdrawn, kept
+
+    def _withdraw(self, card, metadata: dict, origin: str) -> None:
+        """Dismiss one awaiting card and record why the desk took it back."""
+        self._inbox.withdraw(card.id, origin)
+        candidate = Candidate(
+            rule=str(metadata.get("rule") or ""),
+            key=str(metadata.get("key") or ""),
+            title=card.title,
+            why=origin,
+            body=card.body,
+            cites=tuple(metadata.get("cites") or ()),
+            href=str(metadata.get("href") or ""),
+            action_label=card.action_label,
+            due_ts=None,
+            sample=bool(metadata.get("sample")),
+        )
+        self._record("recommend.withdrawn", card, candidate, origin, undo_kind="none")
 
     def _record(self, action: str, card, candidate: Candidate, why: str, *, undo_kind: str) -> None:
         """Append the ledger entry that the Activity page shows.
@@ -194,6 +218,63 @@ class RecommendationBuilder:
             }
         }
 
+    def _calendar_events(self) -> list:
+        """The next 24 hours of events, or nothing when no calendar is wired."""
+        if self._calendar is None:
+            return []
+        return self._calendar.upcoming(self._now_aware(), within_hours=24)
+
+    def _meeting_candidate_keys(self) -> set[str] | None:
+        """The meeting keys still inside the window, for the withdrawal check.
+
+        None means there is no trustworthy view of the calendar yet, so the
+        meeting cards keep waiting. A bridge that has never read a document
+        answers with no events, which must not be mistaken for an empty day.
+        """
+        if not self._settings.get("recommend_meetings") or self._calendar is None:
+            return None
+        has_document = getattr(self._calendar, "has_document", None)
+        if callable(has_document) and not has_document():
+            return None
+        return {
+            candidate.key
+            for candidate in meeting_candidates(
+                self._calendar_events(),
+                self._entity_id_names(),
+                self._facts_by_entity(),
+                self._now_aware(),
+            )
+        }
+
+    def _entity_id_names(self) -> dict[int, str]:
+        """The account-like entities the meeting rule may match.
+
+        Concepts are deliberately left out: an event called "Q4 pipeline
+        review" names a topic, not an account to prepare for.
+        """
+        return {
+            entity.id: entity.canonical_name
+            for entity in self._memory.entities()
+            if entity.type in ("org", "person")
+        }
+
+    def _facts_by_entity(self) -> dict[int, list]:
+        """Each entity's linked facts, newest first, for the prep card body."""
+        by_id = {fact.id: fact for fact in self._memory.all()}
+        linked: dict[int, list] = {}
+        for fact_id, entity_ids in self._memory.fact_entity_ids().items():
+            fact = by_id.get(fact_id)
+            if fact is None:
+                continue
+            for entity_id in entity_ids:
+                linked.setdefault(entity_id, []).append(fact)
+        for facts in linked.values():
+            facts.sort(
+                key=lambda fact: (getattr(fact, "created_ts", 0.0), getattr(fact, "id", 0)),
+                reverse=True,
+            )
+        return linked
+
     def _entity_names(self) -> dict[int, str]:
         """Each linked fact's first entity name, for the card subject."""
         names = {entity.id: entity.canonical_name for entity in self._memory.entities()}
@@ -207,9 +288,11 @@ class RecommendationBuilder:
 
     def _now(self):
         """The local wall clock the deadline rule resolves dates against."""
-        from datetime import datetime
-
         return datetime.fromtimestamp(self._clock())
+
+    def _now_aware(self):
+        """The local wall clock, timezone-aware for comparing calendar starts."""
+        return datetime.fromtimestamp(self._clock()).astimezone()
 
     def _due_sort_key(self, card) -> tuple:
         """Soonest due first; a card with no due time sorts last."""

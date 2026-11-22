@@ -186,12 +186,13 @@ class _LiveWorkbook:
 def test_server_rendered_dashboard_says_nothing_needs_a_decision_once_set_up(desk):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    rec, _recs = _halvorsen(desk, auth)
+    _halvorsen(desk, auth)
     desk.server.calendar = _LiveCalendar()
     desk.server.excel = _LiveWorkbook()
     audit_store.record(desk.server.audit_conn, "llm.research", status="ok")
-    status, _headers, _body = _dismiss(desk, auth, rec["cardId"])
-    assert status == 303
+    for rec in _recommendations(desk, auth):
+        status, _headers, _body = _dismiss(desk, auth, rec["cardId"])
+        assert status == 303
     page = desk.request("GET", "/", auth)[2].decode("utf-8")
     assert ">Decisions</h2>" in page
     assert "Nothing needs a decision." in page
@@ -214,7 +215,9 @@ def test_not_now_removes_the_card_and_it_stays_gone_across_a_restart(desk, tmp_p
     booted = _boot(desk.stores, tmp_path)
     try:
         again = booted.exchange()
-        assert _recommendations(booted, again) == []
+        recs = _recommendations(booted, again)
+        assert all(r["cardId"] != rec["cardId"] for r in recs)
+        assert any(r["title"].startswith("Prep for ") for r in recs)
     finally:
         booted.close()
 
@@ -257,12 +260,12 @@ def test_recommendations_off_creates_no_new_cards_but_keeps_the_waiting_one(desk
     )
     assert status == 201
     recs = _recommendations(desk, auth)
-    assert [r["cardId"] for r in recs] == [rec["cardId"]]
+    assert all(not r["title"].startswith("Quarterly") for r in recs)
     recommendation_cards = [
         card for card in desk.server.inbox.waiting()
         if (card.meta or {}).get("recommendation")
     ]
-    assert len(recommendation_cards) == 1
+    assert len(recommendation_cards) == 2
 
 
 def test_ledger_recommend_rows_hold_fact_ids_only(desk):
@@ -273,10 +276,10 @@ def test_ledger_recommend_rows_hold_fact_ids_only(desk):
         entry for entry in desk.server.ledger.entries(limit=50)
         if entry.action == "recommend.added"
     ]
-    assert len(added) == 1
-    detail = added[0].detail
-    assert set(detail) == {"rule", "cites"}
-    assert detail["rule"] == "deadline"
-    assert all(isinstance(i, int) for i in detail["cites"])
-    assert "Halvorsen" not in json.dumps(detail)
-    assert "December 15" not in json.dumps(detail)
+    assert {entry.detail["rule"] for entry in added} == {"deadline", "meeting-prep"}
+    for entry in added:
+        detail = entry.detail
+        assert set(detail) == {"rule", "cites"}
+        assert all(isinstance(i, int) for i in detail["cites"])
+        assert "Halvorsen" not in json.dumps(detail)
+        assert "December 15" not in json.dumps(detail)
