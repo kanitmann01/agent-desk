@@ -196,9 +196,16 @@ def _collapse_ws(m: re.Match) -> str:
     return "\n" if "\n" in m.group() else " "
 
 
-def scan_for_threats(content: str, scope: str = "context") -> list[str]:
+def scan_for_threats(content: str, scope: str = "strict") -> list[str]:
     """Matched pattern IDs in ``content`` for ``scope``; invisible codepoints are
-    reported as ``"invisible_unicode_U+XXXX"``. Raises ValueError on an unknown scope."""
+    reported as ``"invisible_unicode_U+XXXX"``. Raises ValueError on an unknown
+    scope. The default is agent-desk's deliberate change from Hermes' warn-level
+    "context": every desk caller scans at "strict" (the ticket's port note), so
+    an omitted scope fails closed."""
+    if not content:
+        return []
+    if (patterns := _COMPILED.get(scope)) is None:
+        raise ValueError(f"scan_for_threats: unknown scope {scope!r}")
     if not content:
         return []
     if (patterns := _COMPILED.get(scope)) is None:

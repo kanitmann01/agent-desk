@@ -3845,27 +3845,17 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if key == "recommendations":
                 self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
-<<<<<<< HEAD
                      "agent_loop_minutes", "auto_update",
                      "auto_update_plugins", "learn_topics",
-                     "skills_auto_create", "skills_auto_refine",
-                     "skills_curator") or key.startswith("memory_"):
+                     "learn_profile", "skills_auto_create",
+                     "skills_auto_refine", "skills_curator") or key.startswith("memory_"):
             # The memory loop reads its switches on every capture, the
             # autonomy switch is read by ledger.may_act before each action,
             # the agent loop re-reads its interval on every wake, the
             # update switches gate the update step's installs, the
-            # learn-topics step reads its switch every pass, and the
-            # skills switches are read by the consolidator and the loop's
-            # skills and curator steps on every pass.
-=======
-                     "agent_loop_minutes", "learn_topics", "learn_profile") \
-                or key.startswith("memory_"):
-            # The memory loop reads its switches on every capture,
-            # the autonomy switch is read by ledger.may_act before each action,
-            # the agent loop re-reads its interval on every wake, and the
-            # learn-topics and profile-review steps read their switches at
-            # every pass.
->>>>>>> 601a881 (fix(server): the learn_profile toggle allowlist gap, and the mid-pass patch removal counts as unknown-id (review fix-back #199))
+            # learn-topics and profile-review steps read their switches
+            # every pass, and the skills switches are read by the
+            # consolidator and the loop's skills and curator steps.
             pass
         else:
             self._apply_source_toggles(key, value)
@@ -6923,8 +6913,10 @@ def _run_profile_review(ctx: LoopContext) -> dict:
                           audit_conn=getattr(ctx.server, "audit_conn", None))
 
 
-register_step(Step(name="profile-review", enabled=_profile_review_enabled,
-                   run=_run_profile_review))
+# Ticket 09's profile-review step is registered from the pass-order
+# block below, after the learn-topics step (spec 016 section 6.2):
+# registering where the wrapper is defined would put the review ahead
+# of the rank step, because app.py's own registrations come later.
 
 
 def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:
@@ -7882,6 +7874,11 @@ register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
 # heals, ranks, and only then learns a topic from what kept coming back.
 register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
                    run=_run_learn_topics))
+
+# Ticket 09 appends the profile-review step after the learning step: a
+# pass heals, ranks, learns topics, then reviews the profile.
+register_step(Step(name="profile-review", enabled=_profile_review_enabled,
+                   run=_run_profile_review))
 
 # Ticket 10 appends the skills step (consolidation plus refine) and the
 # curator step (the weekly lifecycle pass) after the rank step: the
