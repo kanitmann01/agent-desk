@@ -10,7 +10,6 @@ user's explicit choice always survives.
 import json
 import sqlite3
 import sys
-import time
 from pathlib import Path
 
 import pytest
