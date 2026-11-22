@@ -723,11 +723,38 @@ file. Local presets (Ollama, LM Studio, vLLM) need no key at all.</p>
 </section>"""
 
 
-def _desk_check_section(desk_check: dict | None) -> str:
-    """What the desk check last noticed, listed plainly.
+def _finding_action(finding: dict) -> str:
+    """The one action a finding offers: Fix it, Open, Review card, or nothing.
 
-    Read-only on this page: the check only detects, so a finding is its
-    title and cause, never a button that pretends to know the fix.
+    An automatic finding's button posts to the fix endpoint, so it works
+    without JavaScript; a link finding opens the page where the user connects
+    the source, and an ask finding points at the inbox card the check made.
+    """
+    fix = finding.get("fix")
+    finding_id = html.escape(str(finding.get("id", "")), quote=True)
+    if fix == "auto":
+        label = html.escape(str(finding.get("fixLabel") or "Fix it"))
+        return (
+            "<form method='post' action='/api/desk-check/fix' class='finding-fix'>"
+            f"<input type='hidden' name='id' value='{finding_id}'>"
+            f"<button class='btn btn-secondary' type='submit'>{label}</button>"
+            "</form>"
+        )
+    if fix == "link" and finding.get("href"):
+        label = html.escape(str(finding.get("fixLabel") or "Open"))
+        href = html.escape(str(finding["href"]), quote=True)
+        return f"<a class='btn btn-secondary' href='{href}'>{label}</a>"
+    if fix == "ask":
+        return "<a class='btn btn-secondary' href='/inbox'>Review card</a>"
+    return ""
+
+
+def _desk_check_section(desk_check: dict | None) -> str:
+    """What the desk check last noticed, each finding with its one action.
+
+    A finding the desk is sure about offers Fix it; a link finding opens the
+    page where the source is connected; an ask finding points at its inbox
+    card; anything else is title and cause only.
     """
     desk_check = desk_check or {}
     findings = desk_check.get("findings") or []
@@ -746,7 +773,8 @@ def _desk_check_section(desk_check: dict | None) -> str:
         rows = "".join(
             "<li class='settings-finding'>"
             f"<p class='finding-title'><b>{html.escape(finding['title'])}</b></p>"
-            f"<p class='empty'>{html.escape(finding['cause'])}</p></li>"
+            f"<p class='empty'>{html.escape(finding['cause'])}</p>"
+            f"{_finding_action(finding)}</li>"
             for finding in findings
         )
         findings_html = f"<ul class='findings'>{rows}</ul>"

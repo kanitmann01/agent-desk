@@ -113,3 +113,9 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
     """Return the stored value for a metadata key, or None when unset."""
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row[0] if row else None
+
+
+def clear_meta(conn: sqlite3.Connection, key: str) -> None:
+    """Delete a metadata value, so the next read sees nothing stored."""
+    with conn:
+        conn.execute("DELETE FROM meta WHERE key = ?", (key,))

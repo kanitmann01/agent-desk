@@ -1,23 +1,29 @@
-"""The five checks the desk runs today.
+"""The desk's checks, and the fixes they are sure about.
 
 Each check reads one part of the desk's own state and answers with findings.
-Detection only in this ticket: nothing here writes, installs, or fixes, and
-should_fix is accepted for the later ticket that offers the buttons. A check
-whose collaborator is absent (a half-configured desk, a fresh process) returns
-quietly rather than guessing.
+An automatic fix runs only when the check is confident, the caller asked for
+fixing, and the autonomy switch allows it; everything else is a finding the
+page offers to the user. A check whose collaborator is absent (a
+half-configured desk, a fresh process) returns quietly rather than guessing.
 """
 
+import hashlib
+
 from agentdesk.calendar.watcher import STATE_EMPTY
+from agentdesk.deskcheck import fixes as fixes_mod
 from agentdesk.deskcheck.core import (
     FIX_ASK,
     FIX_AUTO,
     FIX_LINK,
+    FIX_NONE,
     SEVERITY_ATTENTION,
     SEVERITY_INFO,
     CheckResult,
     Finding,
     register,
 )
+from agentdesk.inbox.core import KIND_SUGGESTION
+from agentdesk.ledger import may_act
 from agentdesk.server import demo_data
 
 
@@ -31,6 +37,53 @@ def _joined(words: list[str]) -> str:
     if len(words) <= 1:
         return "".join(words)
     return ", ".join(words[:-1]) + " and " + words[-1]
+
+
+RETIRED_ASK = "retired-plugins"
+
+
+def retired_ask_latch_key(ids: list[str]) -> str:
+    """The latch key remembering a dismissed retired-plugins ask card."""
+    joined = ",".join(sorted(ids))
+    return "ask:retired-plugins:" + hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+
+
+def _ensure_retired_ask_card(ctx, retired: list[str]) -> None:
+    """Keep exactly one waiting ask card about the retired plugins.
+
+    The card is the ask-first surface: nothing is uninstalled until the
+    user accepts it. A waiting card, or a latch from a dismissed one, means
+    the question was already asked; a later check run never asks twice.
+    """
+    if ctx.inbox is None:
+        return
+    if any(card.meta.get("ask") == RETIRED_ASK
+           for card in ctx.inbox.waiting(include_snoozed=True)):
+        return
+    if ctx.ledger is not None and ctx.ledger.latch_value(
+            retired_ask_latch_key(retired)) is not None:
+        return
+    count = len(retired)
+    ctx.inbox.add(
+        kind=KIND_SUGGESTION,
+        origin=("These plugins left the catalog in this version. "
+                "Removing them keeps their data folders."),
+        title=f"Remove {count} retired {_plural(count, 'plugin')}",
+        body="\n".join(retired),
+        action_label="Remove them",
+        meta={"ask": RETIRED_ASK, "ids": retired, "count": count},
+    )
+
+
+def _fix_allowed(ctx, finding: Finding, should_fix: bool) -> bool:
+    """Whether this finding may be fixed automatically on this run."""
+    return (
+        should_fix
+        and finding.confident
+        and finding.fix == FIX_AUTO
+        and ctx.settings is not None
+        and may_act(ctx.settings, "deskcheck.fix")
+    )
 
 
 def _calendar_connected(calendar) -> bool:
@@ -55,7 +108,7 @@ def inbox_unreadable_rows(ctx, should_fix: bool) -> CheckResult:
     else:
         cause = (f"This version has no card kind called {_joined(kinds)}, so those rows "
                  "stay in the inbox database, hidden from the list.")
-    return CheckResult(findings=[Finding(
+    finding = Finding(
         id="inbox-unreadable-rows",
         title=f"{count} {_plural(count, 'inbox card')} this version cannot read",
         cause=cause,
@@ -64,7 +117,13 @@ def inbox_unreadable_rows(ctx, should_fix: bool) -> CheckResult:
         fix=FIX_AUTO,
         fix_label="Fix it",
         detail={"count": count, "kinds": kinds},
-    )])
+    )
+    if _fix_allowed(ctx, finding, should_fix):
+        outcome = fixes_mod.apply_fix(ctx, finding)
+        if outcome.fixed:
+            return CheckResult(fixed=[outcome.entry_id] if outcome.entry_id else [])
+        return CheckResult(findings=[finding], failed={finding.id: outcome.cause or ""})
+    return CheckResult(findings=[finding])
 
 
 @register("sample-not-wired", "Sample data is on but the sample files are not wired")
@@ -90,7 +149,7 @@ def sample_not_wired(ctx, should_fix: bool) -> CheckResult:
     else:
         cause = (f"Sample data turns the {text} on, but neither is attached, "
                  "so the sample rows will not update.")
-    return CheckResult(findings=[Finding(
+    finding = Finding(
         id="sample-not-wired",
         title="Sample data is on but the sample files are not wired",
         cause=cause,
@@ -99,7 +158,13 @@ def sample_not_wired(ctx, should_fix: bool) -> CheckResult:
         fix=FIX_AUTO,
         fix_label="Fix it",
         detail={"sources": sources},
-    )])
+    )
+    if _fix_allowed(ctx, finding, should_fix):
+        outcome = fixes_mod.apply_fix(ctx, finding)
+        if outcome.fixed:
+            return CheckResult(fixed=[outcome.entry_id] if outcome.entry_id else [])
+        return CheckResult(findings=[finding], failed={finding.id: outcome.cause or ""})
+    return CheckResult(findings=[finding])
 
 
 @register("source-on-not-connected", "A source is on but nothing is connected")
@@ -174,6 +239,7 @@ def retired_plugins_installed(ctx, should_fix: bool) -> CheckResult:
     if not retired:
         return CheckResult()
     count = len(retired)
+    _ensure_retired_ask_card(ctx, retired)
     return CheckResult(findings=[Finding(
         id="retired-plugins-installed",
         title=f"{count} installed {_plural(count, 'plugin')} the catalog no longer carries",
@@ -211,3 +277,9 @@ def sample_plugin_not_installed(ctx, should_fix: bool) -> CheckResult:
         fix_label="Open",
         href=f"/marketplace/plugin/{demo_data.SAMPLE_PLUGIN_ID}",
     )])
+
+
+@register("fix-failing", "A fix the desk tried keeps failing")
+def fix_failing(ctx, should_fix: bool) -> CheckResult:
+    """Fixes that failed three times in a row, shown with their last cause."""
+    return CheckResult(findings=fixes_mod.fix_failing_findings(ctx))

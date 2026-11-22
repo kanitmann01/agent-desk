@@ -115,6 +115,21 @@ class ExcelWatch:
         """The workbook path this watch points at, or None before a register."""
         return self._path
 
+    def clear_registered_path(self) -> None:
+        """Forget the registered workbook and go back to not configured.
+
+        Undo of a source wiring uses this: the stored path is removed, the
+        poll timer stops, and the last result is reset, so status() tells the
+        truth (not_configured) instead of describing a workbook nobody watches.
+        """
+        with self._lock:
+            self._path = None
+            self.stop_polling()
+            self._last_result = None
+            self._last_rows = []
+            self._last_ok_ts = None
+            store.clear_meta(self.conn, store.WORKBOOK_PATH_KEY)
+
     def register(self, path: str) -> PollResult:
         """Point the watch at a workbook (the file picker's outcome)."""
         with self._lock:
