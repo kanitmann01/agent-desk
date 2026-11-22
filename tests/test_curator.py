@@ -277,3 +277,88 @@ def test_the_curator_step_records_ledger_entries_and_the_audit_row(tmp_path):
         assert curator_step.enabled(server.settings) is True
     finally:
         booted.close()
+
+
+def _due_ctx(booted, skills):
+    """A LoopContext with the curator interval due right now."""
+    from agentdesk.agentloop.loop import LoopContext
+
+    skills.set_curator_state("last_run_at",
+                             (NOW - timedelta(days=8)).isoformat())
+    server = booted.server
+    return LoopContext(server=server, ledger=server.ledger,
+                       settings=server.settings,
+                       now=datetime.fromtimestamp(NOW_TS).astimezone())
+
+
+def test_the_state_undo_restores_the_active_flag_both_ways(tmp_path):
+    """The skill-state undo restores the state AND the active flag the
+    capture holds: a stale skill the curator archived comes back stale
+    and running, and a deactivated skill the curator archived comes back
+    with its flag still off (never resurrected by set_state's rule)."""
+    import server_harness
+    from agentdesk.server.app import curator_step_run
+
+    def boot(skills):
+        booted = server_harness.Booted(
+            skill_store=skills, skills_snapshots_dir=tmp_path / "snaps-a")
+        return booted
+
+    # Direction 1: stale and running, then archived (active forced to 0).
+    skills = SkillStore(sqlite3.connect(":memory:", check_same_thread=False),
+                        lambda: NOW_TS)
+    skills.activate("running skill", "d", "p", created_by="agent")
+    skills.conn.execute("UPDATE skills SET created_ts = ? WHERE id = 1",
+                        (NOW_TS - 40 * DAY,))
+    skills.conn.commit()
+    skills.set_state(1, "stale")
+    assert skills.get(1)["active"] is True
+    booted = boot(skills)
+    try:
+        counts = curator_step_run(_due_ctx(booted, skills))
+        assert counts["archived"] == 1
+        assert skills.get(1)["active"] is False
+        entry = next(e for e in booted.server.ledger.entries(10)
+                     if e.action == "skill.curated")
+        before = json.loads(
+            booted.server.ledger.get_blob(entry.before_sha).decode("utf-8"))
+        assert before == {"id": 1, "state": "stale", "active": True}
+        auth = booted.exchange()
+        status, _h, _b = booted.post_json("/api/ledger/undo",
+                                          {"id": entry.id}, auth)
+        assert status == 200
+        restored = skills.get(1)
+        assert restored["state"] == "stale"
+        assert restored["active"] is True
+    finally:
+        booted.close()
+
+    # Direction 2: deactivated by the user (active=0), then archived; the
+    # undo must not switch the skill back on.
+    skills2 = SkillStore(sqlite3.connect(":memory:", check_same_thread=False),
+                         lambda: NOW_TS)
+    skills2.activate("off skill", "d", "p", created_by="agent")
+    skills2.conn.execute("UPDATE skills SET created_ts = ? WHERE id = 1",
+                         (NOW_TS - 40 * DAY,))
+    skills2.conn.commit()
+    skills2.deactivate(1)
+    assert skills2.get(1)["active"] is False
+    booted2 = server_harness.Booted(
+        skill_store=skills2, skills_snapshots_dir=tmp_path / "snaps-b")
+    try:
+        counts = curator_step_run(_due_ctx(booted2, skills2))
+        assert counts["archived"] == 1
+        entry = next(e for e in booted2.server.ledger.entries(10)
+                     if e.action == "skill.curated")
+        before = json.loads(
+            booted2.server.ledger.get_blob(entry.before_sha).decode("utf-8"))
+        assert before == {"id": 1, "state": "active", "active": False}
+        auth = booted2.exchange()
+        status, _h, _b = booted2.post_json("/api/ledger/undo",
+                                           {"id": entry.id}, auth)
+        assert status == 200
+        restored = skills2.get(1)
+        assert restored["state"] == "active"
+        assert restored["active"] is False
+    finally:
+        booted2.close()

@@ -313,3 +313,59 @@ def test_settings_page_shows_the_skills_section(tmp_path):
         assert "skills_curator" in page
     finally:
         booted.close()
+
+
+def test_request_path_writes_race_loop_path_writes_consistently():
+    """The one shared connection serializes: a request-thread record_use
+    (the run route) racing a loop-thread refine and set_state (the skills
+    and curator steps) leaves committed state exact and version numbers
+    unique, the settings store's own concurrency shape."""
+    import threading
+
+    from agentdesk.repetition.activity import ActivityLog
+
+    lock = threading.RLock()
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    skills = SkillStore(conn, _clock(), lock=lock)
+    activity = ActivityLog(conn, _clock(), lock=lock)
+    skills.activate("racy", "d", "p0", created_by="agent")
+    errors: list[Exception] = []
+    start = threading.Barrier(4)
+    OPS = 60
+
+    def run(job):
+        try:
+            start.wait()
+            for i in range(OPS):
+                job(i)
+        except Exception as exc:  # noqa: BLE001 - the test collects the misuse
+            errors.append(exc)
+
+    def request_path(i: int) -> None:
+        skills.record_use(1)
+        activity.record("research", f"ask {i}")
+
+    def loop_refine(i: int) -> None:
+        skills.refine(1, f"prompt {i}", "feedback")
+
+    def loop_curator(i: int) -> None:
+        skills.set_state(1, "stale" if i % 2 else "active")
+
+    threads = [
+        threading.Thread(target=run, args=(job,))
+        for job in (request_path, request_path, loop_refine, loop_curator)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == [], f"connection misuse under concurrency: {errors[:3]}"
+    assert skills.get(1)["use_count"] == 2 * OPS
+    assert len(activity.entries(500)) == 2 * OPS
+    versions = [row[0] for row in conn.execute(
+        "SELECT version FROM skill_versions WHERE skill_id = 1").fetchall()]
+    assert len(versions) == len(set(versions)), "duplicate version numbers"
+    assert versions == sorted(versions)
+    # Every committed state is one the writers actually write.
+    assert skills.get(1)["state"] in ("active", "stale")
