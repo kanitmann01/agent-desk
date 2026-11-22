@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -67,6 +68,13 @@ def _texts(document: dict) -> list[str]:
 class LearnedProfileStore:
     """Reads and writes `<data>/profile.learned.json`; one file, one desk.
 
+    Every mutating method holds one lock across its read-mutate-write:
+    the loop thread learns while request threads remove (the removal
+    route, Undo), and without it a removal landing between one writer's
+    document read and its save is silently overwritten. The tmp then
+    os.replace save already keeps a concurrent reader on the whole old
+    or whole new file; the lock is for the writers.
+
     `seal` and `unseal` are accepted for the open question this ticket
     leaves unverified (whether the file itself should be sealed when the
     memory bank is) and stay unused: the ledger already seals the
@@ -80,6 +88,10 @@ class LearnedProfileStore:
         self.clock = clock
         self.seal = seal
         self.unseal = unseal
+        # Held across every read-mutate-write below; reads (document,
+        # raw) stay outside it, since the atomic replace already gives
+        # them a whole file.
+        self._lock = threading.Lock()
 
     def document(self) -> dict:
         """The stored document over defaults, judged field by field.
@@ -119,7 +131,8 @@ class LearnedProfileStore:
         stored = json.loads(bytes(raw).decode("utf-8"))
         if not isinstance(stored, dict):
             raise ValueError("a learned profile capture must be an object")
-        self._save(stored)
+        with self._lock:
+            self._save(stored)
 
     # -- focus topics -------------------------------------------------------
 
@@ -127,32 +140,34 @@ class LearnedProfileStore:
         """Learn one focus topic; False when present, over the shared
         topic cap, or longer than the stated store allows."""
         line = str(topic or "").strip()
-        document = self.document()
-        topics = document["focusTopics"]
-        if not line or len(line) > MAX_TOPIC_CHARS:
-            return False
-        if any(str(t.get("topic", "")).lower() == line.lower() for t in topics):
-            return False
-        if len(topics) >= MAX_TOPICS:
-            return False
-        topics.append({"topic": line, "learnedFrom": {"asks": int(asks)},
-                       "ts": self.clock()})
-        document["updatedAt"] = self.clock()
-        self._save(document)
-        return True
+        with self._lock:
+            document = self.document()
+            topics = document["focusTopics"]
+            if not line or len(line) > MAX_TOPIC_CHARS:
+                return False
+            if any(str(t.get("topic", "")).lower() == line.lower() for t in topics):
+                return False
+            if len(topics) >= MAX_TOPICS:
+                return False
+            topics.append({"topic": line, "learnedFrom": {"asks": int(asks)},
+                           "ts": self.clock()})
+            document["updatedAt"] = self.clock()
+            self._save(document)
+            return True
 
     def remove_topic(self, topic: str) -> bool:
         """Drop one learned topic, case-insensitively; True when it went."""
         line = str(topic or "").strip().lower()
-        document = self.document()
-        kept = [t for t in document["focusTopics"]
-                if str(t.get("topic", "")).lower() != line]
-        if len(kept) == len(document["focusTopics"]):
-            return False
-        document["focusTopics"] = kept
-        document["updatedAt"] = self.clock()
-        self._save(document)
-        return True
+        with self._lock:
+            document = self.document()
+            kept = [t for t in document["focusTopics"]
+                    if str(t.get("topic", "")).lower() != line]
+            if len(kept) == len(document["focusTopics"]):
+                return False
+            document["focusTopics"] = kept
+            document["updatedAt"] = self.clock()
+            self._save(document)
+            return True
 
     # -- learned lines (used by ticket 09) ----------------------------------
 
@@ -162,54 +177,57 @@ class LearnedProfileStore:
         The refusal carries the current entries, the shape Hermes' add
         returns over budget, so ticket 09's apply step can merge."""
         line = str(text or "").strip()
-        document = self.document()
-        current = _texts(document)
-        if not line:
-            raise ValueError("a learned line cannot be empty")
-        if len(ENTRY_DELIMITER.join(current + [line])) > BUDGET_CHARS:
-            raise OverBudget(current)
-        entry = {
-            "id": f"p-{os.urandom(2).hex()}",
-            "text": line,
-            "learnedFrom": dict(learned_from or {}),
-            "ts": self.clock(),
-            "by": str(by or "review"),
-        }
-        document["entries"].append(entry)
-        document["updatedAt"] = self.clock()
-        self._save(document)
-        return entry
+        with self._lock:
+            document = self.document()
+            current = _texts(document)
+            if not line:
+                raise ValueError("a learned line cannot be empty")
+            if len(ENTRY_DELIMITER.join(current + [line])) > BUDGET_CHARS:
+                raise OverBudget(current)
+            entry = {
+                "id": f"p-{os.urandom(2).hex()}",
+                "text": line,
+                "learnedFrom": dict(learned_from or {}),
+                "ts": self.clock(),
+                "by": str(by or "review"),
+            }
+            document["entries"].append(entry)
+            document["updatedAt"] = self.clock()
+            self._save(document)
+            return entry
 
     def patch_entry(self, entry_id: str, text: str, learned_from: dict) -> dict:
         """Replace one line's text and provenance, budget checked first."""
         line = str(text or "").strip()
-        document = self.document()
-        index = self._index_of(document, entry_id)
-        if index is None:
-            raise LookupError(f"no learned line {entry_id!r}")
-        if not line:
-            raise ValueError("a learned line cannot be empty")
-        patched = _texts(document)
-        patched[index] = line
-        if len(ENTRY_DELIMITER.join(patched)) > BUDGET_CHARS:
-            raise OverBudget(_texts(document))
-        entry = document["entries"][index]
-        entry["text"] = line
-        entry["learnedFrom"] = dict(learned_from or {})
-        document["updatedAt"] = self.clock()
-        self._save(document)
-        return entry
+        with self._lock:
+            document = self.document()
+            index = self._index_of(document, entry_id)
+            if index is None:
+                raise LookupError(f"no learned line {entry_id!r}")
+            if not line:
+                raise ValueError("a learned line cannot be empty")
+            patched = _texts(document)
+            patched[index] = line
+            if len(ENTRY_DELIMITER.join(patched)) > BUDGET_CHARS:
+                raise OverBudget(_texts(document))
+            entry = document["entries"][index]
+            entry["text"] = line
+            entry["learnedFrom"] = dict(learned_from or {})
+            document["updatedAt"] = self.clock()
+            self._save(document)
+            return entry
 
     def remove_entry(self, entry_id: str) -> bool:
         """Drop one learned line; True when it went."""
-        document = self.document()
-        index = self._index_of(document, entry_id)
-        if index is None:
-            return False
-        del document["entries"][index]
-        document["updatedAt"] = self.clock()
-        self._save(document)
-        return True
+        with self._lock:
+            document = self.document()
+            index = self._index_of(document, entry_id)
+            if index is None:
+                return False
+            del document["entries"][index]
+            document["updatedAt"] = self.clock()
+            self._save(document)
+            return True
 
     # -- internals ----------------------------------------------------------
 

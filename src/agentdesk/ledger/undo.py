@@ -412,11 +412,12 @@ def _undo_memory_fact(server: "AgentDeskServer", entry: Entry,
     """The reverse of one auto-saved fact: delete exactly that fact.
 
     The capture names the fact id and nothing else, and the deletion is
-    the memory store's own fact removal (remove_facts: the mentions,
-    citations and orphaned observations go with it, the way the memory
-    page's delete does; the plain delete raises on any fact that still
-    has an entity mention). A fact that is already gone refuses the
-    undo instead of guessing."""
+    the memory store's own fact removal: remove_facts cleans the entity
+    edges, the observation citations, the orphaned observations and the
+    entities left with no mentions, which the store's plain delete
+    leaves dangling (it drops only the fact row and its observation
+    citations). A fact that is already gone refuses the undo instead of
+    guessing."""
     data = _payload(entry, before)
     memory = getattr(server, "memory", None)
     fact_id = data.get("id")

@@ -25,7 +25,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import server_harness
 from agentdesk.agentloop import STEPS
 from agentdesk.insight.preferences import PreferenceStore
-from agentdesk.ledger.store import Ledger
+from agentdesk.ledger.store import Ledger, LedgerError
 from agentdesk.memory import profile
 from agentdesk.memory.store import MemoryStore
 from agentdesk.repetition.activity import ActivityLog
@@ -160,6 +160,43 @@ def test_removed_topic_never_returns(tmp_path, monkeypatch):
     outcome, _ledger, _audit = _run(desk, bundle)
     assert outcome == {"topics": 0}
     assert desk.learned_profile.document()["focusTopics"] == []
+
+
+class _FailingCaptureLedger:
+    """A ledger whose captures cannot be stored (the blob cap gone, a
+    sealed store refusing): record raises before anything is written."""
+
+    def __init__(self) -> None:
+        self.latched: dict[str, str] = {}
+
+    def latch_value(self, key: str) -> str | None:
+        """The latched value, or None when never set."""
+        return self.latched.get(key)
+
+    def latch(self, key: str, value: str = "") -> None:
+        """Remember the latch, the way the ledger's own latch does."""
+        self.latched[key] = value
+
+    def record(self, **_kwargs):
+        """Always refuse, the way a required capture that cannot be
+        stored refuses the whole record."""
+        raise LedgerError("that capture no longer fits")
+
+
+def test_a_failed_record_leaves_the_topic_learned_and_the_pass_alive(
+        tmp_path, monkeypatch):
+    """A record that cannot keep its Undo promise must not fail the step
+    or undo the learning: the topic stays learned and latched, only its
+    Activity entry is lost, and the pass continues."""
+    desk = _desk(tmp_path, monkeypatch)
+    _seed_entity(desk.memory)
+    for _ in range(5):
+        desk.activity_log.record("research", ASK)
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
+    assert server_app.learn_focus_topics(
+        desk, _FailingCaptureLedger(), settings) == {"topics": 1}
+    assert [t["topic"] for t in desk.learned_profile.document()["focusTopics"]] \
+        == ["Kestrel Foods"]
 
 
 def test_stated_preferences_untouched(tmp_path, monkeypatch):

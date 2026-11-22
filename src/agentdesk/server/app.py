@@ -6703,17 +6703,23 @@ def learn_focus_topics(server, ledger, settings, audit_conn=None) -> dict:
         if not store.add_topic(subject, len(cluster)):
             continue
         ledger.latch(f"topic:{subject.lower()}", "learned")
-        ledger.record(
-            actor="agent-desk",
-            action="profile.learned",
-            subject=f"learned profile:{subject}",
-            why=f"Learned the focus topic {subject}: named in "
-                f"{len(cluster)} similar asks.",
-            undo_kind="learned-profile",
-            before=before,
-            after=store.raw(),
-            detail={"topic": subject, "asks": len(cluster)},
-        )
+        try:
+            ledger.record(
+                actor="agent-desk",
+                action="profile.learned",
+                subject=f"learned profile:{subject}",
+                why=f"Learned the focus topic {subject}: named in "
+                    f"{len(cluster)} similar asks.",
+                undo_kind="learned-profile",
+                before=before,
+                after=store.raw(),
+                detail={"topic": subject, "asks": len(cluster)},
+            )
+        except LedgerError:
+            # The topic stays learned and latched; only its Activity
+            # entry is lost, and the pass continues (the same guard the
+            # removal route gives its own record).
+            LOG.exception("the learned-profile record for %s failed", subject)
         if audit_conn is not None:
             audit_store.record(audit_conn, "profile.learned", target=subject,
                                detail=f"Learned from {len(cluster)} asks")
