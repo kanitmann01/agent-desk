@@ -68,7 +68,7 @@ Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in
 ## Operations
 
 - No autostart, no Windows service, no scheduled task and no tray helper. The app starts when the user launches it.
-- No auto-updater and no update check. Updates are a file-share procedure: publish a versioned folder and repoint the shortcut, as described in `docs/ops/distribution.md`.
+- Updates install only from the share path you set, only when Install updates is on (off by default), and roll back automatically. The launcher stub that switches to a staged version is still pending Security; until it ships, a staged version waits and the shortcut keeps the current one.
 - No telemetry, no crash reporting and no remote diagnostics. Support depends on the local data folder and the audit export.
 
 The operator procedures that work around several of these gaps are in `docs/ops/marketplace-operator.md`.

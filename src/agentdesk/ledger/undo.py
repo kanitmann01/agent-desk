@@ -226,6 +226,24 @@ def _undo_inbox_rows_deleted(server: "AgentDeskServer", entry: Entry, before: by
 # -- source wiring --------------------------------------------------------
 
 
+@register("version-pointer")
+def _undo_version_pointer(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """Point the launcher back at the version the update replaced."""
+    _payload(entry, before)
+    from agentdesk.server.app import default_data_dir
+    from agentdesk.update import rollback_now, stage
+
+    data_dir = default_data_dir()
+    pointer = stage.read_pointer(data_dir) or {}
+    current = _capture_current(
+        server, json.dumps(pointer, sort_keys=True).encode("utf-8")
+    )
+    # The same rollback a failed first start gets: pointer back, corrupt
+    # SQLite files restored from the snapshot, and the state names it.
+    rollback_now(server, data_dir)
+    return current
+
+
 @register("wiring")
 def _undo_wiring(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
     """Point the workbook watch and calendar back at the paths it replaced.

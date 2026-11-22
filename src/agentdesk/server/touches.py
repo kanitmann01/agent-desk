@@ -55,13 +55,14 @@ happened on this machine. Generated {html.escape(generated)}, version
 </table>
 <h2>The facts</h2>
 <ul>
-<li><b>Processes started:</b> none. The app never launches another program.</li>
+<li><b>Processes started:</b> the desk starts nothing by itself. When an update is staged with Install updates on, it runs the staged program's own <span class="mono">--self-check</span> against a copy of the data before pointing at it; nothing else is launched.</li>
 <li><b>Persistence:</b> none. No Run key, no scheduled task, no service. The app runs only while you keep it open.</li>
 <li><b>Network:</b> only the company LLM endpoint, only derived text, every call logged in the audit you can export as CSV.</li>
 <li><b>Mail:</b> off by default. When enabled, the app reads only the headers of the .eml files in a folder you choose (From, To, Cc, Subject, Date, Message-ID, In-Reply-To); message bodies are discarded at parse time and never reach any model, any store or any page, and accepted reply drafts are written as files to the local outbox folder for you to send yourself.</li>
 <li><b>Data location:</b> <span class="mono">{html.escape(data_dir_statement())}</span>. The watched workbook is copied to the temp folder before parsing and never modified.</li>
 <li><b>Change ledger:</b> every change the desk makes by itself is recorded in <span class="mono">ledger.sqlite3</span> in that folder, with the before and after state of each change so Undo can put it back; the undo is itself recorded and can be undone in turn.</li>
 <li><b>Run claim:</b> while the desk's supervised loop runs a pass, a small <span class="mono">agentloop.lock</span> file in that folder holds this process's id, so two desks on one folder never run two passes at once; the file is removed when the pass ends.</li>
+<li><b>Updates:</b> off by default. When Install updates is on and a share is set, the desk reads only that share, checks every file against the bundle's manifest, refuses paths that escape the archive, and runs the staged program's check against a copy of the data before writing <span class="mono">update/current.json</span>. A failed check or first start rolls the pointer back and repairs any SQLite store that no longer passes its integrity check. The desk never restarts itself, and nothing runs while it is closed.</li>
 <li><b>Uninstall:</b> delete the folder. Nothing is left behind, nothing to unregister.</li>
 <li><b>License:</b> the core app is proprietary, all rights reserved; the plugin SDK is Apache-2.0. The Python runtime ships two third-party dependencies, <span class="mono">cryptography</span> (memory encryption at rest; Apache-2.0 OR BSD-3-Clause) and <span class="mono">keyring</span> (model-connection API keys in the OS keychain; MIT), recorded with the dashboard bundle's documented, licensed set in <span class="mono">THIRD-PARTY-NOTICES.md</span>.</li>
 </ul>"""

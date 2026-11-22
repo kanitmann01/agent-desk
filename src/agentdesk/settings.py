@@ -59,6 +59,11 @@ TOGGLES = {
     # Ranking (spec 016 section 6.3): the endpoint rewrites a waiting
     # recommendation's why line. Off keeps the rule's own why line.
     "recommend_model_rank": True,
+    # Self-update (spec 016 section 6.8): shipped off until Security signs
+    # off on the launcher stub. Off still reads the share and reports a
+    # newer version, but copies and runs nothing.
+    "auto_update": False,
+    "auto_update_plugins": False,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
@@ -95,6 +100,8 @@ TEXT_KEYS = {
     # Web research for a presentation run (the migrated pair's fallback half).
     "research_provider_url": "",
     "research_provider_key": "",  # legacy research key; cleared on migration
+    # The share folder IT publishes versions to (spec 016 section 5.6).
+    "update_channel": "",
 }
 DEFAULTS = {
     **TOGGLES,

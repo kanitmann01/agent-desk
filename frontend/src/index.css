@@ -531,6 +531,7 @@ table.rows td.neg{color:var(--text-2)}
    plugin cells three across. */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .brief{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;align-items:stretch}
+.brief > .alert{grid-column:1/-1}
 .brief-col{display:flex;flex-direction:column;gap:12px;min-width:0}
 .brief-col > .cell:last-child{flex:1 1 auto}
 .brief-main{grid-column:span 8}

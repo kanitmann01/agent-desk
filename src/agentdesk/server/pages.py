@@ -1003,7 +1003,7 @@ def render_decisions_widget(recommendations: list[dict], now, setup: list[dict] 
     )
 
 
-def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0) -> str:
+def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0, banner: str = "") -> str:
     """The full dashboard document: rail, greeting, skills, widgets, footer.
 
     The one source line is only ever the truth: nothing connected gets a
@@ -1024,6 +1024,10 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
         dot_class, source_line = "dot", f"Live: {connected_sources} of {len(SOURCE_IDS)} sources connected."
     else:
         dot_class, source_line = "dot sample", "Not connected yet: each card below has its own one-step connect."
+    banner_html = (
+        f"<div class='alert' role='status'>{html.escape(banner)}</div>"
+        if banner else ""
+    )
     return f"""{document_head("Agent Desk")}
 <div class="app">
 {_rail("/", inbox_count)}
@@ -1035,6 +1039,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
   </div>
   <form method="post" action="/wizard/start" class="addplugin-form"><button class="btn btn-primary" type="submit">Add plugin</button></form>
 </div>
+{banner_html}
 {strip}
 <section class="grid" aria-label="Dashboard">
 {cards}

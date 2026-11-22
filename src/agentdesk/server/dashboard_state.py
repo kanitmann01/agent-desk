@@ -79,6 +79,7 @@ class DashboardState:
     desk_check: dict
     agent_loop: dict
     recommendations: tuple[dict, ...]
+    update: dict
     now: dt.datetime
 
     def payload(self) -> dict:
@@ -119,6 +120,7 @@ class DashboardState:
             "deskCheck": dict(self.desk_check),
             "agentLoop": dict(self.agent_loop),
             "recommendations": [dict(item) for item in self.recommendations],
+            "update": dict(self.update),
             "skills": [
                 {"id": skill["id"], "name": skill["name"], "description": skill["description"]}
                 for skill in self.skills
@@ -255,6 +257,14 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
         except Exception:  # noqa: BLE001 - a card never breaks the dashboard
             recommendations = ()
 
+    try:
+        from agentdesk.server.app import update_payload
+
+        update_state = update_payload(server)
+    except Exception:  # noqa: BLE001 - updates never break the dashboard
+        update_state = {"banner": None, "available": None, "autoUpdate": False,
+                        "channelSet": False, "lastResult": "none"}
+
     return DashboardState(
         version=agentdesk.__version__,
         sample=bool(settings.get("sample_data")) if settings is not None else False,
@@ -276,5 +286,6 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
         desk_check=desk_check,
         agent_loop=agent_loop,
         recommendations=recommendations,
+        update=update_state,
         now=instant,
     )

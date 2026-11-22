@@ -8,6 +8,7 @@ half-configured desk, a fresh process) returns quietly rather than guessing.
 """
 
 import hashlib
+from pathlib import Path
 
 from agentdesk.calendar.watcher import STATE_EMPTY
 from agentdesk.deskcheck import fixes as fixes_mod
@@ -283,3 +284,27 @@ def sample_plugin_not_installed(ctx, should_fix: bool) -> CheckResult:
 def fix_failing(ctx, should_fix: bool) -> CheckResult:
     """Fixes that failed three times in a row, shown with their last cause."""
     return CheckResult(findings=fixes_mod.fix_failing_findings(ctx))
+
+
+@register("update-failed", "An update check failed")
+def update_failed(ctx, should_fix: bool) -> CheckResult:
+    """The last update check could not read the share or refused the bundle."""
+    if ctx.data_dir is None:
+        return CheckResult()
+    from agentdesk.update import summary
+
+    result = summary(Path(ctx.data_dir))
+    if result.get("lastResult") not in ("channel-unreadable", "health-failed"):
+        return CheckResult()
+    cause = result.get("lastCause") or "The update share could not be read."
+    return CheckResult(findings=[Finding(
+        id="update-failed",
+        title="The last update check failed",
+        cause=cause,
+        severity=SEVERITY_ATTENTION,
+        confident=False,
+        fix=FIX_NONE,
+        fix_label="",
+        href="/settings#updates",
+        detail={"result": result.get("lastResult")},
+    )])

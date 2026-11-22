@@ -1094,6 +1094,21 @@ def dashboard_payload(server: AgentDeskServer) -> dict:
     """
     return build_dashboard_state(server).payload()
 
+def update_payload(server: AgentDeskServer) -> dict:
+    """The update state plus the two switches, for the page and the API."""
+    from agentdesk.update import summary
+
+    settings = getattr(server, "settings", None)
+    channel = ""
+    if settings is not None:
+        value = settings.get("update_channel")
+        channel = value.strip() if isinstance(value, str) else ""
+    payload = summary(default_data_dir())
+    payload["autoUpdate"] = (
+        bool(settings.get("auto_update")) if settings is not None else False)
+    payload["channelSet"] = bool(channel)
+    return payload
+
 def desk_check_context(server: AgentDeskServer) -> "DeskContext":
     """The desk check's view of this server: live collaborators, read only.
 
@@ -1553,6 +1568,48 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_redirect("/settings#desk-check")
             return
         self._send_json(200, payload)
+
+    def _send_update_api(self) -> None:
+        """Serve the update state, whether the share is set, and the banner."""
+        self._send_json(200, update_payload(self.server))  # type: ignore[attr-defined]
+
+    def _update_check(self) -> None:
+        """Read the share now, staging only when Install updates is on."""
+        server = self.server  # type: ignore[attr-defined]
+        from agentdesk.update import run_update, summary
+
+        result = run_update(server)
+        if self._is_form_submit():
+            body = self._read_json_body() or {}
+            self._send_redirect(self._form_return_to(body, "/settings#updates"))
+            return
+        payload = update_payload(server)
+        payload.update({key: value for key, value in result.items() if key not in payload})
+        self._send_json(200, payload)
+
+    def _update_channel_save(self) -> None:
+        """Save the share path, refusing relative paths and parent hops."""
+        from pathlib import PureWindowsPath
+
+        body = self._read_json_body() or {}
+        raw = body.get("path")
+        if not isinstance(raw, str):
+            self._send_json(400, {"error": 'expected {"path": "<folder>"}'})
+            return
+        path = raw.strip()
+        if path:
+            pure = PureWindowsPath(path)
+            absolute = (path.startswith("\\") or path.startswith("//")
+                        or pure.is_absolute() or os.path.isabs(path))
+            if not absolute or ".." in pure.parts:
+                self._send_json(400, {"error": "expected an absolute folder path without .."})
+                return
+        settings = self.server.settings  # type: ignore[attr-defined]
+        settings.set("update_channel", path)
+        if self._is_form_submit():
+            self._send_redirect(self._form_return_to(body, "/settings#updates"))
+            return
+        self._send_json(200, {"saved": True, "path": path})
 
     def _send_agent_loop_api(self) -> None:
         """Serve the agent loop's status payload (spec 016 sections 6.2 and 7)."""
@@ -2244,6 +2301,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             inbox_count=state.inbox_waiting,
             skills=list(state.skills),
             connected_sources=state.sources_connected,
+            banner=(state.update or {}).get("banner") or "",
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3156,6 +3214,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             connections_notice=self._connections_notice(),
             agent_loop=(server.agent_loop.status()
                         if getattr(server, "agent_loop", None) is not None else None),
+            update=update_payload(server),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3700,7 +3759,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents", "recommendations", "recommend_deadlines",
                        "recommend_meetings", "recommend_horizon_days",
-                       "recommend_model_rank", "recommend_threshold"):
+                       "recommend_model_rank", "recommend_threshold",
+                       "auto_update", "auto_update_plugins"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -3720,7 +3780,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if key == "recommendations":
                 self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
-                     "agent_loop_minutes") or key.startswith("memory_"):
+                     "agent_loop_minutes", "auto_update",
+                     "auto_update_plugins") or key.startswith("memory_"):
             # The memory loop reads its switches on every capture,
             # the autonomy switch is read by ledger.may_act before each action,
             # and the agent loop re-reads its interval on every wake.
@@ -6338,6 +6399,23 @@ def create_server(
             # A locked memory bank cannot be read; the rest of the desk still
             # starts, and the memory page explains the missing key.
             pass
+    # A version staged by an earlier run is checked in-process before this
+    # boot serves anything. A failure points the launcher back and repairs a
+    # store that no longer passes its integrity check (spec 016 section 6.8).
+    try:
+        from agentdesk.update import first_start
+
+        started = first_start(default_data_dir())
+        if started.get("lastResult") == "rolled-back" and server.audit_conn is not None:
+            from agentdesk.assistant import audit_store
+
+            audit_store.record(
+                server.audit_conn, "update.rolled-back",
+                target=str(started.get("current") or ""), status="error",
+                detail=str(started.get("lastCause") or "")[:300],
+            )
+    except Exception:  # noqa: BLE001 - an update check never blocks the desk
+        LOG.exception("first-start update check failed")
     # The supervised loop is built here and started in
     # start_background_polls, so it lives and dies with the server process
     # (spec 016 section 6.2). Its run claim lives in the data folder.
@@ -7073,3 +7151,23 @@ def _poll_calendar_once(bridge) -> None:
 # Ticket 06 appends the ranking step after the desk check, so a pass
 # heals first and then asks the endpoint to rank what is still waiting.
 register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
+
+
+def _update_enabled(settings) -> bool:
+    """The update step checks whenever a share is set, even with installs off."""
+    if settings is None:
+        return False
+    channel = settings.get("update_channel")
+    return bool(channel.strip()) if isinstance(channel, str) else False
+
+
+def _run_update_step(ctx) -> dict:
+    """One update check; it stages only when Install updates is on."""
+    from agentdesk.update import run_update
+
+    return run_update(ctx.server)
+
+
+# Ticket 11 appends the update step last: a pass heals, ranks, and then
+# reads the share, which is the only step that can replace the program.
+register_step(Step(name="update", enabled=_update_enabled, run=_run_update_step))

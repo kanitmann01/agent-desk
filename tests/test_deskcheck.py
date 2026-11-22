@@ -40,6 +40,7 @@ CHECK_IDS = [
     "retired-plugins-installed",
     "sample-plugin-not-installed",
     "fix-failing",
+    "update-failed",
 ]
 
 
