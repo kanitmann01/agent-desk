@@ -441,3 +441,26 @@ def test_digest_includes_learned_lines():
     assert LINE in prompt
     assert prompt.index("What the desk learned about you:") \
         < prompt.index(LINE)
+
+
+def test_a_patch_removed_mid_pass_counts_as_unknown_id(store, monkeypatch):
+    """A removal landing between apply's unlocked _known check and the
+    locked write raises LookupError from patch_entry; the op must count
+    under unknown-id and the step must survive (the review's race note).
+    """
+    first = store.add_entry("First learned line", {"activity": [1]},
+                            by="review")
+    reply = json.dumps({"ops": [
+        {"op": "patch", "id": first["id"], "text": "Rewritten line",
+         "from": [2]},
+    ]})
+    real_patch = store.patch_entry
+
+    def patch_gone(entry_id, text, provenance):
+        store.remove_entry(entry_id)
+        return real_patch(entry_id, text, provenance)
+
+    monkeypatch.setattr(store, "patch_entry", patch_gone)
+    result = profile_review.apply(reply, store, lambda b, a, n: "e", {1, 2})
+    assert result.applied == 0
+    assert result.dropped == {"unknown-id": 1}
