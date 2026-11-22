@@ -1,9 +1,11 @@
 # 016-09: the profile review, end to end and in the browser
 
 Date: 2026-11-22. Branch `ticket/016-09-profile`, worktree
-`D:\20-projects\Personal Agents\agent-desk\.worktrees\016-09`, head `1ad81d9`
-(the review pass committed the switch fix from section 7.1 there, together
-with its own fix to `profile_review.apply`).
+`D:\20-projects\Personal Agents\agent-desk\.worktrees\016-09`, captured at
+head `1ad81d9` (the review pass committed the switch fix from section 7.1
+there, together with its own fix to `profile_review.apply`). The later
+strict-scan and hub-resolution fixes change no rendered surface; the final
+rebased head re-ran the full gate in `gate-transcript.txt`.
 
 The ticket's acceptance says: after ten asks and a pass against a stub
 endpoint, Settings shows a line with "Learned from activity on <date>";
