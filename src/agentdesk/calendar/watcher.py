@@ -256,6 +256,11 @@ class CalendarBridge:
         with self._lock:
             return self._upcoming_locked(now, within_hours)
 
+    def has_document(self) -> bool:
+        """Whether a calendar document has been read yet."""
+        with self._lock:
+            return self._document is not None
+
     def _upcoming_locked(self, now: datetime, within_hours: float = 1.0) -> list:
         """Return the events that start between now and within_hours from now, earliest
         first.

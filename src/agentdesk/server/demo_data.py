@@ -260,6 +260,14 @@ def sample_calendar_bytes(now: datetime) -> bytes:
                 "attendees": 6,
             },
             {
+                "id": "sample-evt-3",
+                "subject": "Halvorsen Freight renewal call",
+                "start": (now.replace(second=0, microsecond=0) + timedelta(hours=3)).isoformat(),
+                "end": (now.replace(second=0, microsecond=0) + timedelta(hours=3, minutes=30)).isoformat(),
+                "location": "Call",
+                "attendees": 4,
+            },
+            {
                 "id": "sample-evt-2",
                 "subject": "Care plan check-in",
                 "start": second.isoformat(),

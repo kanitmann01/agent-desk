@@ -197,6 +197,7 @@ def test_the_dismissed_shelf_labels_sample_cards_too(env, auth):
     # Two seeded titles carry no sample wording, so a bare shelf row
     # would surface them unlabelled. Every shelf row for a sample card
     # carries the same Sample tag the waiting card does.
+    env.post_json("/settings/toggle", {"key": "recommendations"}, auth)
     _toggle(env, auth)
     for card_id in SAMPLE_CARD_IDS:
         assert env.post_json(f"/inbox/cards/{card_id}/dismiss", {}, auth)[0] == 200
@@ -313,6 +314,7 @@ def test_the_empty_state_form_post_seeds_and_redirects_back(env, auth):
 # -- every card action on the sample cards -----------------------------------
 
 def test_every_card_action_works_on_the_sample_cards_and_audits(env, auth):
+    env.post_json("/settings/toggle", {"key": "recommendations"}, auth)
     _toggle(env, auth)
 
     # accept: the update card
