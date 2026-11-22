@@ -354,14 +354,16 @@ def _learned_section(document: dict | None, settings_values: dict) -> str:
         _toggle_button(key, values.get(key), label)
         for key, label in (
             ("learn_topics", "Learn focus topics from repeated asks"),
+            ("learn_profile", "Learn lines about you from your recent asks"),
             ("memory_auto_approve", "Save captured facts without asking"),
         )
     )
     return f"""<section class='card settings-card' id='learned'>
 <div class='w-head'><h2>What the desk learned about you</h2><span class='stamp'>{len(rows)} LEARNED</span></div>
 <p>The desk learns only from what you ask it: a topic shows up here when
-several of your questions named the same thing. Each line lists where it
-came from, and removing one keeps it from coming back.</p>
+several of your questions named the same thing, and a line only when a
+review of your recent asks cites them. Each line lists where it came
+from, and removing one keeps it from coming back.</p>
 {learned_html}
 <div class='settings-block'>
 {switches}

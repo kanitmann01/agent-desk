@@ -226,11 +226,11 @@ def test_activity_rows_carry_ids():
 
 
 def test_the_step_is_registered_after_the_desk_check():
-    # The spec 016 section 6.2 pass order: the learning step sits after
-    # the rank step (a pass heals and ranks before it learns) and before
-    # the skills and curator steps, which its topics feed.
+    # The spec 016 section 6.2 pass order: learning sits after rank and
+    # before the profile review and the skills/curator steps it feeds.
     assert [step.name for step in STEPS] == [
-        "deskcheck", "rank", "learn-topics", "skills", "curator", "update"]
+        "deskcheck", "rank", "learn-topics", "profile-review",
+        "skills", "curator", "update"]
     learn = [s for s in STEPS if s.name == "learn-topics"][0]
     assert learn.enabled(SettingsStore(
         sqlite3.connect(":memory:", check_same_thread=False))) is True

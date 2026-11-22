@@ -172,6 +172,10 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # from what you asked, and the fact auto-approve saved on its own.
     # Both rows name counts, ids or the topic, never a stored text.
     ("profile.learned", "decision", "The desk added a focus topic to its learned profile because several of your questions named the same thing; the row names the topic and how many asks taught it."),
+    # The profile review (spec 016, ticket 09): the endpoint call behind a
+    # learned line, audited by size like the other endpoint rows. The row
+    # holds the model and the request size, never the prompt or the reply.
+    ("llm.profile", "endpoint", "Your recent asks (text only, each cut at 300 characters) and the lines the desk already learned are sent to the company LLM endpoint so it can draft learned lines; the row names the endpoint, the model and the request size, never the words."),
     ("memory.auto-saved", "decision", "A captured fact was saved straight to memory because auto-approve is on; the row names the channel and how many were saved, never the fact itself."),
 ]
 
