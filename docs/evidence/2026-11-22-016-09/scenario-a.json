@@ -1,0 +1,79 @@
+{
+ "activity_has_learned_row": false,
+ "lastSteps": [
+  {
+   "ms": 1,
+   "name": "deskcheck",
+   "note": "failed 0, findings 1, fixed 0",
+   "ok": true
+  },
+  {
+   "ms": 0,
+   "name": "learn-topics",
+   "note": "topics 0",
+   "ok": true
+  }
+ ],
+ "learned_api": {
+  "body": {
+   "entries": [],
+   "focusTopics": [],
+   "updatedAt": 0.0,
+   "version": 1
+  },
+  "status": 200
+ },
+ "llm_base_row": "",
+ "port": 8792,
+ "recent_audit": {
+  "body": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Nothing here, Agent Desk</title>\n<script src=\"/static/theme-b",
+  "status": 404
+ },
+ "run_now": {
+  "body": {
+   "started": true
+  },
+  "status": 200
+ },
+ "scenario": "A: env-only endpoint, no legacy llm_base row",
+ "settings_has_line": false,
+ "settings_has_provenance": false,
+ "settings_has_review_switch": true,
+ "widgets": {
+  "agent_loop_minutes": 60,
+  "autonomy": true,
+  "calendar_enabled": true,
+  "daily_cap": 3,
+  "embeddings_model": "text-embedding-3-small",
+  "endpoint_enabled": true,
+  "excel_enabled": true,
+  "extra_allowed_hosts": "",
+  "learn_profile": true,
+  "learn_topics": true,
+  "llm_base": "",
+  "llm_key": "",
+  "llm_model": "",
+  "mail_enabled": false,
+  "mail_folder": "",
+  "mail_self_address": "",
+  "memory_auto_approve": true,
+  "memory_capture": true,
+  "memory_capture_agents": true,
+  "memory_capture_assistant": true,
+  "memory_capture_research": true,
+  "memory_capture_workbook": true,
+  "plugin_instance_cap": 6,
+  "presentation_timeout_s": "30",
+  "quiet_hours": true,
+  "recommend_deadlines": true,
+  "recommend_horizon_days": 30,
+  "recommend_meetings": true,
+  "recommendations": true,
+  "registry_path": "",
+  "research_provider_key": "",
+  "research_provider_url": "",
+  "sample_data": false,
+  "semantic_memory": true,
+  "suggest_headers_only": false
+ }
+}
