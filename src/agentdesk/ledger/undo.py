@@ -410,11 +410,20 @@ def _undo_skill_version(server: "AgentDeskServer", entry: Entry, before: bytes |
 
 @register("skill-state")
 def _undo_skill_state(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
-    """Put one skill back on the state a curator change replaced."""
+    """Put one skill back on the state and active flag a curator change
+    replaced.
+
+    The pair is restored together, never just the state word: a capture
+    that says stale and running must come back running (stale keeps the
+    flag it finds, so re-deriving it from the post-change row would leave
+    an archived-then-undone skill off the dashboard), and one that says a
+    state with active=0 (a deactivated skill the curator marked stale)
+    must not be resurrected by set_state's active=1 rule.
+    """
     data = _payload(entry, before)
     skills, skill = _skill_for_undo(server, data)
     state = data.get("state")
-    if not isinstance(state, str):
+    if not isinstance(state, str) or not isinstance(data.get("active"), bool):
         raise LedgerError("That change's earlier skill state was not captured, so it cannot be undone.")
     current = _capture_current(
         server,
@@ -422,6 +431,6 @@ def _undo_skill_state(server: "AgentDeskServer", entry: Entry, before: bytes | N
                     "active": bool(skill["active"])}, sort_keys=True).encode("utf-8"),
     )
     try:
-        skills.set_state(skill["id"], state)
+        skills.set_state(skill["id"], state, active=data["active"])
     except SkillError as exc:
         raise LedgerError(f"The skill refused the undo: {exc}") from None
