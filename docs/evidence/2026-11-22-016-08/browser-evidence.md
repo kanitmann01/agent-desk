@@ -1,7 +1,7 @@
 # Browser evidence: ticket 016-08, learned focus topics and memory auto-save
 
-Captured 2026-11-22 against branch `ticket/016-08-topics` at the fix-back
-head `b307031`, booted twice from throwaway `AGENTDESK_DATA` folders (no
+Captured 2026-11-22 against branch `ticket/016-08-topics` at head
+`29c7a6a`, booted twice from throwaway `AGENTDESK_DATA` folders (no
 endpoint configured; assistant replies degrade gracefully, which the topic
 learner does not read). Every claim below is tied to same-instant DOM text
 at capture.
@@ -27,8 +27,10 @@ at capture.
 
 ## Walkthrough 2: the auto-save switch by folder age
 
-- `settings-autosave-on-fresh.png`: fresh folder boot; the "Save captured
-  facts without asking" switch reads On (default True).
+- `settings-autosave-on-fresh.png`: fresh folder boot; the section reads
+  "0 LEARNED" with its verbatim empty state, and both "Learn focus topics
+  from repeated asks" and "Save captured facts without asking" read On
+  (default True).
 - `settings-autosave-off-existing.png`: the same folder copied with its
   `memory_auto_approve` settings row deleted (a faithful stand-in for a
   pre-016 folder: stores present, no explicit row); that boot shows the
@@ -39,5 +41,5 @@ at capture.
 
 - `boot-log-fresh.txt`, `boot-log-existing.txt`: sanitized boot
   transcripts (start-link tokens redacted; single-use).
-- `gate-transcript.txt`: `python tools/ci_local.py`, 7/7 PASS, 2922
-  passed / 1 conditionally skipped, at the fix-back head.
+- `gate-transcript.txt`: `python tools/ci_local.py`, 7/7 PASS at the code
+  head `29c7a6a`: pytest 2979 passed, 1 skipped; frontend 326 passed.
