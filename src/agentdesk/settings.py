@@ -51,10 +51,17 @@ TOGGLES = {
     # in the action ledger with Undo. The four ask-first classes are
     # enforced in code (ledger.may_act), not by this switch.
     "autonomy": True,
+    # Recommendations (spec 016 §8): deadlines saved in memory become
+    # inbox cards on their own. Off stops creating; existing cards stay.
+    "recommendations": True,
+    "recommend_deadlines": True,
+    "recommend_meetings": True,
 }
 CHOICES = {
     "daily_cap": [3, 1, 0],  # notifications per day; 0 means inbox only
     "plugin_instance_cap": [6, 5, 4, 3, 2, 1],
+    # How far ahead a saved deadline becomes a recommendation (spec 016 §8).
+    "recommend_horizon_days": [14, 7, 30],
 }
 # The embeddings model default below is the spec's Further Notes
 # default (decision: text-embedding-3-small); agentdesk.memory.embed
@@ -80,7 +87,13 @@ TEXT_KEYS = {
     "research_provider_url": "",
     "research_provider_key": "",  # legacy research key; cleared on migration
 }
-DEFAULTS = {**TOGGLES, "daily_cap": 3, "plugin_instance_cap": 6, **TEXT_KEYS}
+DEFAULTS = {
+    **TOGGLES,
+    "daily_cap": 3,
+    "plugin_instance_cap": 6,
+    "recommend_horizon_days": 30,
+    **TEXT_KEYS,
+}
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:

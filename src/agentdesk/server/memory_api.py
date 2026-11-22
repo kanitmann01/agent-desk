@@ -288,6 +288,7 @@ class MemoryApiMixin:
             memory, text.strip(), source="page", entities=memory_loop.names_in(text),
         )
         self._schedule_observation_pass()
+        self._after_memory_change()
         self._respond_form_or_json("/memory", _fact_json(outcome.fact), 201)
 
     def _memory_edit(self, fact_id: int | None) -> None:
@@ -315,6 +316,7 @@ class MemoryApiMixin:
         except UnknownFact as exc:
             self._send_json(404, {"error": str(exc)})
             return
+        self._after_memory_change()
         # Ticket #92: an edit that landed on another fact's text merged
         # into it; a form post renders the page with the plain notice,
         # JSON carries the flag alongside the surviving fact.
@@ -347,6 +349,7 @@ class MemoryApiMixin:
         memory_loop.apply_removal(memory, plan, keep_source_ids=self._pending_source_ids())
         self._audit("memory.remove", target=f"fact {fact_id}", detail="1 fact")
         self._schedule_observation_pass()
+        self._after_memory_change()
         self._respond_form_or_json("/memory", {"deleted": fact_id})
 
     def _memory_sweep_page(self) -> None:
@@ -725,6 +728,7 @@ class MemoryApiMixin:
                   f" {len(result.observations_flagged)} flagged;"
                   f" {memory_loop.counted(len(result.entities_removed), 'entity', 'entities')} forgotten")
         self._audit("memory.remove", target=f"{kind} {target_id}", detail=counts)
+        self._after_memory_change()
         self._send_json(200, {
             "status": "ok",
             "removed": result.to_json(),
@@ -757,6 +761,7 @@ class MemoryApiMixin:
         self._schedule_observation_pass()
         self._audit("memory.undo", target=memory_loop.counted(len(held.result.fact_ids), "fact"),
                     detail="removal undone within the window")
+        self._after_memory_change()
         self._send_json(200, {"status": "ok", "restored": held.result.to_json()})
 
     def _memory_keep(self, raw_id: str) -> None:

@@ -217,7 +217,9 @@ def test_every_rail_link_keeps_its_accessible_name(booted):
     for href in anchors:
         anchor = re.search(rf'<a href="{re.escape(href)}"[^>]*>', rail).group(0)
         assert 'aria-label="' in anchor, (href, anchor)
-    assert 'aria-label="Inbox, 4 waiting"' in rail, "the inbox link lost its count name"
+    # The sample desk's three waiting cards plus the Halvorsen deadline
+    # recommendation (spec 016 #195).
+    assert 'aria-label="Inbox, 5 waiting"' in rail, "the inbox link lost its count name"
 
 
 def test_the_collapse_state_persists_through_the_app_script(booted):

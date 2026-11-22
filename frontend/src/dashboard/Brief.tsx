@@ -10,18 +10,21 @@
 import { useState, type ReactNode } from 'react';
 import type { DashboardData, PluginCard } from '../types';
 import Button from '../components/Button';
+import { postJson } from '../api';
 import TrackerCard from './TrackerCard';
 import PluginCardView from './PluginCardView';
 import { pluginKind, kindTag } from './pluginKind';
 import { useWorkbookConnect } from './useWorkbookConnect';
 import {
   MOVER_CAP,
+  decisionsEmptyText,
   deskCheckAlert,
   formatAmount,
   formatSigned,
   moversFromDelta,
   netByStage,
   netPipeline,
+  recommendationRows,
 } from './briefModel';
 import {
   CellHead,
@@ -133,9 +136,11 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   }
 
   // ---- decisions ------------------------------------------------------
-  const decisions: Array<{ key: string; title: string; why: string; action: ReactNode }> = [];
+  // Setup decisions keep the desk usable before anything has been saved;
+  // a waiting recommendation takes the cell over once the desk has one.
+  const setupDecisions: Array<{ key: string; title: string; why: string; sample?: boolean; action: ReactNode }> = [];
   if (salesNeedsConnect) {
-    decisions.push({
+    setupDecisions.push({
       key: 'workbook',
       title: 'Connect a workbook',
       why: 'The pipeline figure and the moves come from it.',
@@ -143,7 +148,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     });
   }
   if (calendarNeedsConnect) {
-    decisions.push({
+    setupDecisions.push({
       key: 'calendar',
       title: 'Connect your calendar',
       why: 'The digest reads today’s meetings from it.',
@@ -151,7 +156,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     });
   }
   if (researchNeedsAsk) {
-    decisions.push({
+    setupDecisions.push({
       key: 'question',
       title: 'Ask your first question',
       why: 'Answers come from your company endpoint and are logged.',
@@ -159,13 +164,36 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     });
   }
   if (!researchEnabled) {
-    decisions.push({
+    setupDecisions.push({
       key: 'research-off',
       title: 'Turn research back on',
       why: 'Answers come from your company endpoint, and it is off in settings.',
       action: <Button tone="secondary" className="btn-sm" href="/settings">Open settings</Button>,
     });
   }
+  const recommendations = recommendationRows(data);
+  /** Dismiss one recommendation, then refresh the dashboard it was on. */
+  async function dismissRecommendation(cardId: string) {
+    const res = await postJson(`/inbox/cards/${cardId}/dismiss`);
+    if (res.ok) await onRefetch();
+  }
+  const recommendationDecisions: typeof setupDecisions = recommendations.rows.map((row) => ({
+    key: `rec-${row.key}`,
+    title: row.title,
+    why: row.why,
+    sample: row.sample,
+    action: (
+      <>
+        <Button tone="secondary" className="btn-sm" href={row.href}>{row.actionLabel}</Button>
+        <Button tone="secondary" className="btn-sm" onClick={() => void dismissRecommendation(row.cardId)}>Not now</Button>
+      </>
+    ),
+  }));
+  const decisions = recommendationDecisions.length > 0 ? recommendationDecisions : setupDecisions;
+  const decisionsEmpty = decisions.length === 0 ? decisionsEmptyText(data.agentLoop) : null;
+  const decisionsMeta = recommendationDecisions.length > 0
+    ? (recommendations.more > 0 ? <span className="mono">{recommendations.more} more in inbox</span> : undefined)
+    : (decisions.length > 0 ? <span className="mono">{decisions.length} open</span> : undefined);
   const connected = data.sources.connected;
   const total = data.sources.total;
 
@@ -442,24 +470,28 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
         </article>
       </div>
       <div className="brief-col brief-side">
-        {decisions.length > 0 ? (
+        {decisions.length > 0 || decisionsEmpty ? (
           <section className="cell cell-decisions" aria-label="Needs a decision">
-            <CellHead tag="DECISIONS" meta={<span className="mono">{decisions.length} open</span>} />
+            <CellHead tag="DECISIONS" meta={decisionsMeta} />
             <div className="setup-meter" role="img" aria-label={`${connected} of ${total} sources connected`}>
               {Array.from({ length: total }, (_, i) => <span key={i} className={i < connected ? 'on' : ''} />)}
               <span className="setup-meter-label mono">{connected}/{total} sources</span>
             </div>
-            <ul className="decisions">
-              {decisions.map((d) => (
-                <li key={d.key}>
-                  <div className="decision-text">
-                    <span className="decision-title">{d.title}</span>
-                    <span className="decision-why">{d.why}</span>
-                  </div>
-                  {d.action}
-                </li>
-              ))}
-            </ul>
+            {decisions.length > 0 ? (
+              <ul className="decisions">
+                {decisions.map((d) => (
+                  <li key={d.key}>
+                    <div className="decision-text">
+                      <span className="decision-title">{d.title}{d.sample ? <span className="sample-tag">SAMPLE DATA</span> : null}</span>
+                      <span className="decision-why">{d.why}</span>
+                    </div>
+                    {d.action}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty">{decisionsEmpty}</p>
+            )}
             {note ? <p className="alert" role="status">{note}</p> : null}
             {manualOpen ? (
               <div className="well">

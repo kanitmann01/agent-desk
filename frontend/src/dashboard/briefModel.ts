@@ -4,7 +4,7 @@
 // sample workbook's row index, not a name, so it is never shown. Some CRM
 // exports spell the dash as an em dash, so the regex strips both; the
 // escape keeps that character out of this tree.
-import type { DeltaPayload, DeskCheckSummary } from '../types';
+import type { AgentLoopSummary, DashboardData, DeltaPayload, DeskCheckSummary } from '../types';
 
 const ROW_INDEX = /(?:\u2014|-)\s*\d+$/;
 
@@ -246,4 +246,47 @@ export function formatCompact(value: number): string {
   if (abs >= 10_000) return `${Math.round(value / 1_000)}k`;
   if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
   return String(Math.round(value));
+}
+// ---- decisions -------------------------------------------------------
+
+// How many recommendation rows the Decisions cell shows before the rest
+// wait in the inbox.
+export const RECOMMENDATION_ROWS = 3;
+
+export interface RecommendationRow {
+  key: string;
+  cardId: string;
+  title: string;
+  why: string;
+  href: string;
+  actionLabel: string;
+  sample: boolean;
+}
+
+/** The Decisions rows for the waiting recommendations, soonest first. */
+export function recommendationRows(data: DashboardData): { rows: RecommendationRow[]; more: number } {
+  const recommendations = data.recommendations ?? [];
+  const rows = recommendations.slice(0, RECOMMENDATION_ROWS).map((item) => ({
+    key: item.cardId,
+    cardId: item.cardId,
+    title: item.title,
+    why: item.whySource === 'model' ? item.why + ' · ranked by your endpoint' : item.why,
+    href: item.href,
+    actionLabel: item.actionLabel,
+    sample: Boolean(item.sample),
+  }));
+  return { rows, more: Math.max(0, recommendations.length - rows.length) };
+}
+
+/** The empty Decisions line, from whatever the loop has said so far. */
+export function decisionsEmptyText(agentLoop?: AgentLoopSummary | null): string {
+  if (agentLoop && agentLoop.enabled === false) return 'Automatic checks are off.';
+  if (agentLoop && agentLoop.nextRunTs) {
+    const at = new Date(agentLoop.nextRunTs * 1000).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `Nothing needs a decision. The desk checks again at ${at}.`;
+  }
+  return 'Nothing needs a decision.';
 }

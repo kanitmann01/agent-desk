@@ -77,6 +77,7 @@ class DashboardState:
     layout_entries: tuple[dict, ...]
     custom_titles: dict[str, str]
     desk_check: dict
+    recommendations: tuple[dict, ...]
     now: dt.datetime
 
     def payload(self) -> dict:
@@ -84,7 +85,8 @@ class DashboardState:
 
         The key set is part of the API contract: version, sample, flags,
         sources, sales, commitments, research, inbox, deskCheck, skills,
-        layout and plugins, each with the nested shape the SPA reads.
+        layout, plugins and recommendations, each with the nested shape
+        the SPA reads.
         """
         return {
             "version": self.version,
@@ -114,6 +116,7 @@ class DashboardState:
             },
             "inbox": {"waiting": self.inbox_waiting},
             "deskCheck": dict(self.desk_check),
+            "recommendations": [dict(item) for item in self.recommendations],
             "skills": [
                 {"id": skill["id"], "name": skill["name"], "description": skill["description"]}
                 for skill in self.skills
@@ -132,6 +135,30 @@ class DashboardState:
                 ]
             },
         }
+
+
+def recommendation_payload(card) -> dict:
+    """Project one waiting recommendation card onto the dashboard's API shape.
+
+    The quoted fact text stays on the card body, which the inbox route already
+    serves; this payload names the card, the rule's own copy and the fact ids
+    only, so no memory text leaks through the dashboard.
+    """
+    meta = getattr(card, "meta", None) or {}
+    recommendation = meta.get("recommendation") or {}
+    due_ts = recommendation.get("dueTs")
+    return {
+        "cardId": card.id,
+        "title": card.title,
+        "why": card.origin,
+        "whySource": recommendation.get("whySource") or "rule",
+        "score": recommendation.get("score"),
+        "due": dt.datetime.fromtimestamp(due_ts).date().isoformat() if due_ts else None,
+        "href": recommendation.get("href") or "/agents",
+        "actionLabel": card.action_label,
+        "sample": bool(recommendation.get("sample")),
+        "cites": [int(fact_id) for fact_id in (recommendation.get("cites") or ())],
+    }
 
 
 def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardState:
@@ -200,6 +227,18 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     except Exception:  # noqa: BLE001 - a check never breaks the dashboard
         desk_check = {"attention": 0, "top": None}
 
+    # Recommendations are an enrichment of the same payload: a desk without a
+    # builder (or a broken one) still renders every other decision.
+    recommender = getattr(server, "recommender", None)
+    recommendations: tuple[dict, ...] = ()
+    if recommender is not None:
+        try:
+            recommendations = tuple(
+                recommendation_payload(card) for card in recommender.waiting()
+            )
+        except Exception:  # noqa: BLE001 - a card never breaks the dashboard
+            recommendations = ()
+
     return DashboardState(
         version=agentdesk.__version__,
         sample=bool(settings.get("sample_data")) if settings is not None else False,
@@ -219,5 +258,6 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
         layout_entries=tuple(layout_entries),
         custom_titles=custom_titles,
         desk_check=desk_check,
+        recommendations=recommendations,
         now=instant,
     )

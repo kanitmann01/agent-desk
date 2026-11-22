@@ -231,6 +231,28 @@ export interface DeskCheckSummary {
   top: DeskCheckFinding | null;
 }
 
+// A deadline the desk found in a saved fact, shaped by the screens #195
+// added to /api/dashboard. cites holds fact ids only, never the fact text.
+export interface Recommendation {
+  cardId: string;
+  title: string;
+  why: string;
+  whySource: 'rule' | 'model';
+  score: number | null;
+  due: string | null;
+  href: string;
+  actionLabel: string;
+  sample: boolean;
+  cites: number[];
+}
+
+// The autonomous loop's schedule (ticket #194). Absent until it lands.
+export interface AgentLoopSummary {
+  lastRunTs: number | null;
+  nextRunTs: number | null;
+  enabled: boolean;
+}
+
 export interface DashboardData {
   sample?: boolean;
   version: string;
@@ -260,6 +282,8 @@ export interface DashboardData {
   };
   inbox: { waiting: number };
   deskCheck?: DeskCheckSummary;
+  recommendations?: Recommendation[];
+  agentLoop?: AgentLoopSummary;
   skills: { id: number; name: string; description: string }[];
   layout: { cards: LayoutCard[] };
   plugins: { cards: PluginCard[] };

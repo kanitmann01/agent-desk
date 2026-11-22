@@ -286,7 +286,8 @@ def test_zero_row_one_row_and_huge_values_render(env, auth):
     _status, _h, page_body = env.request("GET", "/", auth)
     page = page_body.decode("utf-8")
     assert "12,345,678,901,234" in page  # huge values formatted, not broken
-    assert page.count('<article class="widget') == 3
+    # Sales, commitments, research, and the Decisions card (spec 016 #195).
+    assert page.count('<article class="widget') == 4
 
     # An unchanged re-poll is the designed zero state, not an empty card.
     env.clock.advance(24 * 3600)

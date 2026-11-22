@@ -60,6 +60,7 @@ from agentdesk.excel.watcher import ExcelWatch, default_adapters
 from agentdesk.inbox import service as inbox_service
 from agentdesk.inbox.core import (
     KIND_MAIL_FOLLOW_UP,
+    KIND_MEMORY_DRAFT,
     KIND_UPDATE_CONSENT,
     STATUS_WAITING,
     UnknownCard,
@@ -140,6 +141,7 @@ from agentdesk.presentations.pipeline import (
     receipt_lines,
     timeout_seconds,
 )
+from agentdesk.memory.crypto import MemoryEncryptedError
 from agentdesk.memory.embed import (
     settings_embedder,
 )
@@ -166,6 +168,7 @@ from agentdesk.registry.install import RegistryError
 from agentdesk.repetition.activity import ActivityLog
 from agentdesk.repetition.cluster import pattern_hash
 from agentdesk.repetition.service import Consolidator
+from agentdesk.recommend.builder import RecommendationBuilder
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.audit_view import render_audit_page
 from agentdesk.server.agents_view import render_agents_page
@@ -355,6 +358,68 @@ def _greeting(now: datetime) -> str:
     if now.hour < 18:
         return "Good afternoon"
     return "Good evening"
+
+def _setup_decisions(state) -> list[dict]:
+    """The setup rows the Decisions card shows before any recommendation.
+
+    These are the same four checks the SPA makes, in the same order and words:
+    the desk cannot recommend anything until it has a workbook, a calendar and
+    a working endpoint, and it says which of those is missing rather than
+    showing an empty card. Once all four pass the card is genuinely empty.
+    """
+    rows = []
+    trackers = {
+        str(card.get("id"))
+        for card in state.plugin_cards
+        if str(card.get("id", "")).startswith("excel-report")
+    }
+    sales = state.sales.status or {}
+    if (
+        not trackers
+        and state.sales.mode != "disabled"
+        and (state.sales.mode == "unconfigured" or not sales.get("configured"))
+    ):
+        rows.append(
+            {
+                "title": "Connect a workbook",
+                "why": "The pipeline figure and the moves come from it.",
+                "href": "/settings#sources",
+                "actionLabel": "Open settings",
+            }
+        )
+    calendar = state.commitments.status or {}
+    if (
+        state.commitments.mode != "live"
+        or calendar.get("state") == "empty"
+        or state.commitments.status is None
+    ):
+        rows.append(
+            {
+                "title": "Connect your calendar",
+                "why": "The digest reads today's meetings from it.",
+                "href": "/walkthrough/calendar",
+                "actionLabel": "Connect",
+            }
+        )
+    if state.research.enabled and state.research.last_answered_ts is None:
+        rows.append(
+            {
+                "title": "Ask your first question",
+                "why": "Answers come from your company endpoint and are logged.",
+                "href": "/assistant",
+                "actionLabel": "Ask",
+            }
+        )
+    if not state.research.enabled:
+        rows.append(
+            {
+                "title": "Turn research back on",
+                "why": "Answers come from your company endpoint, and it is off in settings.",
+                "href": "/settings#endpoint",
+                "actionLabel": "Open settings",
+            }
+        )
+    return rows
 
 def _local_now() -> datetime:
     """The current time as a timezone-aware datetime in the machine's local zone."""
@@ -807,6 +872,23 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.memory_observe_after = 0.0
         # Tests inject a summarizer port; None builds the endpoint one.
         self.summarizer = None
+        # The recommendation builder (spec 016 §6.3): turns deadlines in saved
+        # facts into waiting inbox cards. None only when a store it reads is absent.
+        self.recommender = (
+            RecommendationBuilder(
+                inbox=inbox_store,
+                memory=memory_store,
+                calendar=calendar,
+                settings=settings_store,
+                ledger=ledger,
+                clock=getattr(inbox_store, "clock", time.time),
+            )
+            if inbox_store is not None
+            and memory_store is not None
+            and settings_store is not None
+            and ledger is not None
+            else None
+        )
         self.started_monotonic = time.monotonic()
         super().__init__(address, DashboardHandler)
 
@@ -2105,6 +2187,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         else:
             widgets.append(render_research_disabled(now))
         widgets += [self._plugin_widget(card) for card in state.plugin_cards]
+        widgets.append(
+            pages.render_decisions_widget(
+                list(state.recommendations), now, _setup_decisions(state)
+            )
+        )
         page = pages.render_dashboard(
             widgets,
             state.version,
@@ -3565,7 +3652,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
-                       "memory_capture_agents"):
+                       "memory_capture_agents", "recommendations", "recommend_deadlines",
+                       "recommend_meetings", "recommend_horizon_days"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -3578,6 +3666,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # the next memory action re-derives the store's semantic
             # half from this value and the probe's cached answer.
             pass
+        elif key.startswith("recommend"):
+            # The recommendation switches are read by the builder on every
+            # refresh. Turning the feature back on runs the pass the next
+            # memory write would otherwise have to wait for.
+            if key == "recommendations":
+                self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap") or key.startswith("memory_"):
             # The memory loop reads its switches on every capture, and the
             # autonomy switch is read by ledger.may_act before each action.
@@ -3625,6 +3719,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 self._record_sample_wiring(wiring, value)
         self._audit("demo.seeded" if value else "demo.cleared",
                     target="sample_data", detail=result["detail"])
+        self._after_memory_change()
 
     def _record_sample_wiring(self, wiring: dict, value: bool) -> None:
         """Record one sample-wiring change in the ledger, or put it back.
@@ -3987,6 +4082,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._on_ask_card_decided(card, decision)
         if decision == "accept":
             self._on_fact_carried(card)
+        if card.kind == KIND_MEMORY_DRAFT:
+            self._after_memory_change()
         self._audit(
             "inbox.approved" if decision == "accept" else "inbox.denied",
             target=card.id, detail=card.title,
@@ -4608,6 +4705,21 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
         inbox_service.evaluate(inbox, _local_now(), on_snooze_return=on_return,
                                **self._budget_values())
+
+    def _after_memory_change(self) -> None:
+        """Keep recommendations caught up after a memory write.
+
+        The builder adds waiting cards for deadlines that just became known and
+        withdraws cards whose fact was just removed or replaced, then the inbox
+        spends its notification budget on whatever is new: quiet hours and the
+        daily cap therefore apply to recommendations exactly as to every card.
+        """
+        recommender = getattr(self.server, "recommender", None)  # type: ignore[attr-defined]
+        added = 0
+        if recommender is not None:
+            added = int(recommender.refresh().get("added") or 0)
+        if added and self.server.inbox is not None:  # type: ignore[attr-defined]
+            self._evaluate_inbox(self.server.inbox)  # type: ignore[attr-defined]
 
     def _audit(self, action: str, target: str = "", detail: str = "",
                status: str = "ok") -> None:
@@ -6168,6 +6280,15 @@ def create_server(
         server = construct(port)
     _wire_audit(server)
     _migrate_legacy_endpoints(server)
+    # The first recommendation pass runs once the desk is fully wired: facts
+    # saved by an earlier run become waiting cards before any page is read.
+    if server.recommender is not None:
+        try:
+            server.recommender.refresh()
+        except MemoryEncryptedError:
+            # A locked memory bank cannot be read; the rest of the desk still
+            # starts, and the memory page explains the missing key.
+            pass
     return server
 
 
