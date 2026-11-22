@@ -1,12 +1,22 @@
 """Portions adapted from Hermes Agent (github.com/NousResearch/hermes-agent, commit f6c3eb1, tools/threat_patterns.py), Copyright (c) 2025 Nous Research, MIT License; see licenses/third-party/hermes-agent-LICENSE.txt.
-Shared threat-pattern library (prompt injection / promptware / exfiltration).
-Each pattern is ``(regex, pattern_id, scope)``; scope is cumulative: ``"all"`` everywhere,
-``"context"`` adds promptware / C2 / role hijack for context files, memory and tool results
-(warn-level: that content is not user-authored), ``"strict"`` adds aggressive checks only for
-memory writes, where a block is resolvable. Skill installs are scanned by ``skills_guard``,
-not here. New patterns must
-anchor on C2 vocabulary or unambiguous attack behavior, NOT bossy English ("you must" is common
-in legitimate AGENTS.md); filler between tokens is the bounded ``_FILLER``."""
+
+Shared threat-pattern library (prompt injection / promptware / exfiltration),
+ported whole: the pattern table, the invisible-unicode set, the bounded
+chunked scan and the first-hit message. Each pattern is ``(regex,
+pattern_id, scope)``; scope is cumulative: ``"all"`` everywhere,
+``"context"`` adds promptware / C2 / role hijack for context files, memory
+and tool results (warn-level: that content is not user-authored),
+``"strict"`` adds aggressive checks only for memory writes, where a block
+is resolvable. Skill installs are scanned by skills_guard in Hermes, not
+here. New patterns must anchor on C2 vocabulary or unambiguous attack
+behavior, NOT bossy English ("you must" is common in legitimate
+AGENTS.md); filler between tokens is the bounded ``_FILLER``.
+
+The one deliberate change from Hermes: the default scope is "strict".
+Hermes defaults to "context" because it also scans warn-level context;
+agent-desk's one caller (the profile review) always means the strict
+memory-write scan, so the default here is "strict" and a test pins it.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +25,7 @@ import unicodedata
 from typing import Optional
 
 # Hard cap on scanned text: scanners are advisory, so bound worst-case runtime.
-# The whole input is still scanned - just in bounded chunks of this size - so a
+# The whole input is still scanned, just in bounded chunks of this size, so a
 # payload past the cap (which the renderer may still emit as a tail) is not
 # silently dropped, while worst-case per-chunk runtime stays predictable.
 MAX_SCAN_CHARS = 65_536
@@ -28,14 +38,17 @@ _CHUNK_OVERLAP = 4096
 _FILLER = r"(?:\w{1,64}\s{1,64}){0,8}"
 # Env var reference ending in a secret-ish suffix (see exfil comment below).
 _SECRET_VAR = r"\$\{?\w{0,256}(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)S?\b"
-# "forget your original instructions" (#26977); shared with tools/skills_guard.py and cron/prompt_scan.py.
+# "forget your original instructions" (#26977); shared with Hermes'
+# tools/skills_guard.py and cron/prompt_scan.py.
 # The word before `forget` is consumed rather than looked behind so a "don't / never / do not forget" exclusion holds
 # across any run of spaces or tabs. Negators are an explicit whole-word list (a suffix match let `IMPORTANT` / `Agent`
 # negate). `_` (Markdown emphasis) counts as punctuation, not as part of the neighbouring word.
 _NEGATOR = (r"(?:(?:do|does|did|ca|could|would|should|wo|must|need|is|are|was|were|ai|has|have|had)n[’']?t"
             r"|cannot|not|never)")
-# FORGET_RULES_RAW_RE is the unbounded rule for the raw-line scanners (tools/skills_guard.py,
-# cron/prompt_scan.py): they neither collapse whitespace nor chunk, so no width cap applies there.
+# FORGET_RULES_RAW_RE is the unbounded rule for raw-line scanners (Hermes'
+# skills_guard.py and prompt_scan.py): they neither collapse whitespace nor
+# chunk, so no width cap applies there. agent-desk has no raw-line scanner
+# today; the constant travels with the port so the two stay comparable.
 FORGET_RULES_RAW_RE = (rf"(?:(?<![^\W_])(?<![’'])(?!{_NEGATOR}[ \t])(?:[^\W_]|[’'])+[ \t]+"
                        r"|(?:^|[^\w’' \t]|_|(?<!\w)[’'])[ \t]*)"
                        r"forget\s+(?:about\s+)?(your|all|any|previous|prior|above|earlier)"
@@ -125,7 +138,7 @@ _PATTERNS: list[tuple[str, str, str]] = [
     (r'(send|post|upload|transmit)\s{1,64}[^\n]{0,2048}\s{1,64}(to|at)\s{1,64}https?://', "send_to_url", "strict"),
     (rf'(include|output|print|share)\s{{1,64}}{_FILLER}(conversation|chat\s{{1,64}}history|previous\s{{1,64}}messages|full\s{{1,64}}context|entire\s{{1,64}}context)', "context_exfil", "strict"),
 
-    # ── Persistence / SSH backdoor (strict scope - memory + skills) ──
+    # ── Persistence / SSH backdoor (strict scope: memory + skills) ──
     (r'authorized_keys', "ssh_backdoor", "strict"),
     # Write-verb gated like the *_config_mod rules: a bare path match blocked ordinary docs
     # ("check $HOME/.ssh is chmod 700"). ``>>?`` covers a leading redirect with no verb word;
@@ -142,8 +155,8 @@ _PATTERNS: list[tuple[str, str, str]] = [
     # The lookahead skips a value that is itself an environment-variable NAME
     # (SHOUTY_SNAKE, ≥2 underscore-separated segments): ENV_PASSWORD =
     # "MYPLUGIN_APP_PASSWORD" says where the credential lives, it does not embed
-    # one (#116221). Scoped case-sensitive on purpose - the pattern compiles with
-    # IGNORECASE and a lowercase snake value is the password-passphrase shape
+    # one (#116221). Scoped case-sensitive on purpose, though the pattern compiles with
+    # IGNORECASE: a lowercase snake value is the password-passphrase shape
     # ("correct_horse_battery_staple"); requiring an underscore segment keeps
     # underscore-free all-caps credentials (AWS AKIA…, base32) matched.
     (r'(?:api[_-]?key|token|secret|password)\s{0,64}[=:]\s{0,64}["\']'
@@ -153,7 +166,7 @@ _PATTERNS: list[tuple[str, str, str]] = [
 
 # Invisible / bidirectional unicode used in injection attacks: zero-width space/non-joiner/joiner,
 # word joiner, invisible times/separator/plus, BOM, LTR/RTL embedding + pop + overrides, LTR/RTL/
-# first-strong isolates + pop (the same set as skills_guard.py INVISIBLE_CHARS), plus the Unicode TAG
+# first-strong isolates + pop (the same set as Hermes' skills_guard.py INVISIBLE_CHARS), plus the Unicode TAG
 # block U+E0000–U+E007F: invisible, maps 1:1 onto ASCII ("ASCII smuggling"); skills_guard lacks it (#78952).
 INVISIBLE_CHARS = frozenset(
     "\u200b\u200c\u200d\u2060\u2062\u2063\u2064\ufeff"
@@ -172,7 +185,8 @@ _SCOPE_SETS = {"all": ("all", "context", "strict"), "context": ("context", "stri
 
 
 def _compile() -> dict[str, list[tuple[re.Pattern, str]]]:
-    """Compile the pattern table once per scope, checking each pattern width."""
+    """The pattern table compiled per scope at import; cumulative, and
+    every pattern's width is checked against the chunk overlap."""
     compiled: dict[str, list[tuple[re.Pattern, str]]] = {"all": [], "context": [], "strict": []}
     for pattern, pid, scope in _PATTERNS:
         if scope not in _SCOPE_SETS:
@@ -192,13 +206,16 @@ _WS_RUN = re.compile(r"\s{2,}")
 
 
 def _collapse_ws(m: re.Match) -> str:
-    """Collapse a match's whitespace to one newline or one space."""
+    """One whitespace run as a single newline or space, newline kept."""
     return "\n" if "\n" in m.group() else " "
 
 
-def scan_for_threats(content: str, scope: str = "context") -> list[str]:
+def scan_for_threats(content: str, scope: str = "strict") -> list[str]:
     """Matched pattern IDs in ``content`` for ``scope``; invisible codepoints are
-    reported as ``"invisible_unicode_U+XXXX"``. Raises ValueError on an unknown scope."""
+    reported as ``"invisible_unicode_U+XXXX"``. Raises ValueError on an unknown scope.
+
+    The default scope is "strict" (Hermes defaults to "context"): agent-desk's
+    callers scan memory writes, where the aggressive checks are the point."""
     if not content:
         return []
     if (patterns := _COMPILED.get(scope)) is None:
@@ -208,7 +225,7 @@ def scan_for_threats(content: str, scope: str = "context") -> list[str]:
     # the three RGI subdivision flags are blanked first (their TAG chars are legitimate).
     raw_chars = set(EMOJI_TAG_SEQUENCE_RE.sub(lambda m: " " * len(m[0]), content))
     findings: list[str] = [f"invisible_unicode_U+{ord(ch):04X}" for ch in raw_chars & INVISIBLE_CHARS]
-    # Threat patterns - scan the COMPLETE input in bounded chunks with overlap so a
+    # Threat patterns: scan the COMPLETE input in bounded chunks with overlap so a
     # payload past ``MAX_SCAN_CHARS`` (which the renderer may still emit as a tail)
     # is not silently skipped.  Findings are deduplicated: a pattern can legitimately
     # fire in more than one overlapping chunk.  The overlap is at least every
@@ -216,7 +233,7 @@ def scan_for_threats(content: str, scope: str = "context") -> list[str]:
     # a chunk edge is seen whole by the next chunk.
     # NFKC folds full-width / compatibility variants (ｃａｔ → cat) against
     # homograph bypass.  It does NOT fold cross-script confusables (Cyrillic
-    # ``а``) - that needs a TR#39 database.  Each whitespace run then collapses to
+    # ``а``); that needs a TR#39 database.  Each whitespace run then collapses to
     # one char (newline-preserving, for the ``[^\n]`` spans) so the bounded ``\s``
     # quantifiers still see arbitrarily long whitespace as a single separator.
     folded = unicodedata.normalize("NFKC", content)
@@ -241,7 +258,7 @@ def _window_has_match(compiled: re.Pattern, text: str, start: int, end: int) -> 
     ``pos`` keeps the preceding text visible to ``\\b`` and lookbehinds, but
     ``endpos`` makes the window end look like end-of-string, so a trailing
     ``\\b`` or a negative lookahead can accept a match the full text rejects
-    (``$MONKEY`` cut from ``$MONKEY_URL``) - a lookahead can read up to the
+    (``$MONKEY`` cut from ``$MONKEY_URL``): a lookahead can read up to the
     window end even when the match itself ends earlier.  Unless the window
     reaches the end of the text, each candidate is re-matched at its absolute
     position against the complete text (cheap: widths are bounded); a rejected
