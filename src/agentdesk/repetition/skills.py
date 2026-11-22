@@ -14,6 +14,8 @@ last_used_ts feed the staleness clock. Nothing here ever deletes a
 skills or skill_versions row.
 """
 
+from __future__ import annotations
+
 import functools
 import re
 import sqlite3
@@ -21,7 +23,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agentdesk.repetition.refine import first_threat
+from agentdesk.safety import first_threat_message
 
 NAME_MAX = 64
 DESCRIPTION_MAX = 1024
@@ -239,7 +241,7 @@ class SkillStore:
             raise SkillError("a refined prompt cannot be empty")
         if len(prompt) > PROMPT_MAX:
             raise SkillError(f"a refined prompt exceeds {PROMPT_MAX} characters")
-        threat = first_threat(prompt)
+        threat = first_threat_message(prompt, "strict")
         if threat is not None:
             raise SkillError(threat)
         now = self.clock()

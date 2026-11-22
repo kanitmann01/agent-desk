@@ -7,13 +7,11 @@ to one skill and one round of feedback; the cited fragments (the
 first-class style signals bullet, the pitfall rule from the lesson
 layer, and the no-PR-numbers rule) are kept word for word, with the
 em dashes Hermes wrote replaced by colons under this project's style
-rule. The scan is the strict scope of Hermes' shared threat-pattern
-library, trimmed to the patterns a 4000-character prompt can carry.
+rule. The scan itself is the shared strict scanner in agentdesk.safety,
+the same one ranking uses, so the pattern table has one home.
 """
 
 import json
-import re
-import unicodedata
 
 # The trimmed Hermes _SKILL_REVIEW_PROMPT: what a refined skill prompt
 # should be, and the signals that say it needs to change. Kept fragments
@@ -98,57 +96,3 @@ def parse_reply(text: str) -> str | None:
         return None
     return prompt
 
-
-# -- the strict threat scan ---------------------------------------------------
-
-# Hermes threat_patterns.py, the strict scope trimmed to what a bounded
-# prompt can carry: classic prompt injection everywhere-patterns, the
-# exfiltration shapes, hardcoded secrets, and the invisible-unicode
-# check. Bounded filler between key attack words, as Hermes has it.
-_FILLER = r"(?:\w{1,64}\s{1,64}){0,8}"
-_SECRET_VAR = r"\$\{?\w{0,256}(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)S?\b"
-_PATTERNS: tuple[tuple[re.Pattern, str], ...] = tuple(
-    (re.compile(pattern, re.IGNORECASE), name)
-    for pattern, name in (
-        (rf"ignore\s{{1,64}}{_FILLER}(previous|all|above|prior)\s{{1,64}}{_FILLER}instructions", "prompt_injection"),
-        (r"system\s{1,64}prompt\s{1,64}override", "sys_prompt_override"),
-        (rf"disregard\s{{1,64}}{_FILLER}(your|all|any)\s{{1,64}}{_FILLER}(instructions|rules|guidelines)", "disregard_rules"),
-        (rf"curl\s{{1,64}}[^\n]{{0,2048}}{_SECRET_VAR}", "exfil_curl"),
-        (rf"wget\s{{1,64}}[^\n]{{0,2048}}{_SECRET_VAR}", "exfil_wget"),
-        (r"cat\s{1,64}[^\n]{0,2048}(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)", "read_secrets"),
-        (r"(send|post|upload|transmit)\s{1,64}[^\n]{0,2048}\s{1,64}(to|at)\s{1,64}https?://", "send_to_url"),
-        (rf"(include|output|print|share)\s{{1,64}}{_FILLER}(conversation|chat\s{{1,64}}history|previous\s{{1,64}}messages|full\s{{1,64}}context|entire\s{{1,64}}context)", "context_exfil"),
-        (r"(?:api[_-]?key|token|secret|password)\s{0,64}[=:]\s{0,64}[\"']"
-         r"[A-Za-z0-9+/=_-]{20}", "hardcoded_secret"),
-    )
-)
-
-# Invisible / bidirectional unicode used in injection attacks (the Hermes
-# set, the tag block included).
-INVISIBLE_CHARS = frozenset(
-    "\u200b\u200c\u200d\u2060\u2062\u2063\u2064\ufeff"
-    "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
-) | frozenset(map(chr, range(0xE0000, 0xE0080)))
-
-
-def first_threat(content: str) -> str | None:
-    """The user-facing refusal for the first threat found, or None.
-
-    The text is scanned as given after an NFKC fold (full-width variants
-    cannot bypass the patterns) with whitespace runs collapsed, the same
-    normalization idea as Hermes scan_for_threats at prompt scale.
-    """
-    if not content:
-        return None
-    for char in content:
-        if char in INVISIBLE_CHARS:
-            return (f"Blocked: content contains invisible unicode character"
-                    f" U+{ord(char):04X} (possible injection).")
-    folded = unicodedata.normalize("NFKC", content)
-    normalised = re.sub(r"\s{2,}", lambda m: "\n" if "\n" in m.group() else " ", folded)
-    for compiled, name in _PATTERNS:
-        if compiled.search(normalised):
-            return (f"Blocked: content matches threat pattern '{name}'."
-                    " A refined prompt must not carry injection or"
-                    " exfiltration payloads.")
-    return None

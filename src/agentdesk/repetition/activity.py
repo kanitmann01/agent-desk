@@ -5,6 +5,8 @@ log never sees keystrokes or the screen. It is readable by the user on
 the settings page, because a log kept about you belongs to you.
 """
 
+from __future__ import annotations
+
 import contextlib
 import functools
 import sqlite3
