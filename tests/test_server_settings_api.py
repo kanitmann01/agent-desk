@@ -86,8 +86,11 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "memory_capture_research": True,
         "memory_capture_workbook": True,
         "memory_capture_agents": True,
-        # Learned focus topics (spec 016 §8): on by default.
+        # Learned focus topics (spec 016 §8): on by default, as is the
+        # profile review that learns lines (ticket 09; it also needs the
+        # endpoint switch and a configured base URL).
         "learn_topics": True,
+        "learn_profile": True,
         # Recommendations (spec 016 §8): on by default, deadlines and
         # meeting prep named separately, a 30-day look ahead.
         "recommendations": True,
