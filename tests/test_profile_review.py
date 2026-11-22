@@ -398,15 +398,17 @@ def test_stated_preferences_untouched_by_a_run(tmp_path, monkeypatch):
 
 def test_the_step_is_registered_after_learn_topics():
     assert [step.name for step in STEPS] == [
-        "deskcheck", "learn-topics", "profile-review", "rank", "update"]
+        "deskcheck", "skills", "curator", "learn-topics", "profile-review",
+        "rank", "update"]
+    reviewer = next(step for step in STEPS if step.name == "profile-review")
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
     settings.set("llm_base", "http://127.0.0.1:9/v1")
-    assert STEPS[2].enabled(settings) is True
+    assert reviewer.enabled(settings) is True
     settings.set("learn_profile", False)
-    assert STEPS[2].enabled(settings) is False
+    assert reviewer.enabled(settings) is False
     settings.set("learn_profile", True)
     settings.set("endpoint_enabled", False)
-    assert STEPS[2].enabled(settings) is False
+    assert reviewer.enabled(settings) is False
     settings.set("endpoint_enabled", True)
     # The base-URL leg moved to the client gate (the connections hub
     # serves it): an empty llm_base row no longer hides the step, and
