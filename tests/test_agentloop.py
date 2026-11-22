@@ -341,11 +341,12 @@ def test_startup_deskcheck_heals(tmp_path, monkeypatch):
                      wake_seconds=30, data_dir=tmp_path)
     loop.start()
     try:
-        assert _wait_until(lambda: inbox.unreadable() == [])
+        assert _wait_until(
+            lambda: inbox.unreadable() == []
+            and any(row["action"] == "agentloop.pass"
+                    and "deskcheck ok" in row["detail"]
+                    for row in audit_store.entries(server.audit_conn)))
         assert server.ledger.entries()[0].action == "deskcheck.fixed"
-        rows = audit_store.entries(server.audit_conn)
-        assert any(row["action"] == "agentloop.pass" and "deskcheck ok" in row["detail"]
-                   for row in rows)
         # The startup check is not a full pass: no interval time was stored.
         assert server.ledger.latch_value("loop:last_run_at") is None
         assert [row["name"] for row in loop.status()["lastSteps"]] == ["deskcheck"]
