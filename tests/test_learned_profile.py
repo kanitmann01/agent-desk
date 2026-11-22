@@ -10,6 +10,7 @@ prompt that states the learned lines after the stated ones.
 """
 
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,44 @@ def test_remove_entry_and_unknown_ids(store):
     assert store.remove_entry(entry["id"]) is False
     with pytest.raises(LookupError):
         store.patch_entry("p-none", "text", {"activity": [1]})
+
+
+def test_concurrent_add_and_remove_leaves_a_valid_document(tmp_path):
+    """The loop thread learns while a request thread removes; the lock
+    across each read-mutate-write keeps a removal landing between one
+    writer's read and its save from being silently overwritten, and the
+    document ends on one of exactly two valid states."""
+    store = profile.LearnedProfileStore(
+        tmp_path / "profile.learned.json", clock=lambda: NOW)
+    store.add_topic("Kestrel Foods", 5)
+    errors: list[Exception] = []
+
+    def adder() -> None:
+        try:
+            for _ in range(60):
+                store.add_topic("Kestrel Foods", 5)
+        except Exception as exc:  # noqa: BLE001 - collected and asserted below
+            errors.append(exc)
+
+    def remover() -> None:
+        try:
+            for _ in range(60):
+                store.remove_topic("kestrel foods")
+        except Exception as exc:  # noqa: BLE001 - collected and asserted below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=adder), threading.Thread(target=remover)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    topics = store.document()["focusTopics"]
+    # One of exactly two valid endings: the removal won, or the last add
+    # re-learned the topic. Nothing else may be in the file.
+    assert topics in ([], [{"topic": "Kestrel Foods",
+                            "learnedFrom": {"asks": 5}, "ts": NOW}])
 
 
 # -- the reads the rest of the desk uses -----------------------------------
