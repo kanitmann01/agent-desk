@@ -95,4 +95,3 @@ def parse_reply(text: str) -> str | None:
     if not isinstance(prompt, str) or not prompt.strip():
         return None
     return prompt
-
