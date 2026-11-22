@@ -408,9 +408,32 @@ def test_the_step_is_registered_after_learn_topics():
     settings.set("endpoint_enabled", False)
     assert STEPS[2].enabled(settings) is False
     settings.set("endpoint_enabled", True)
+    # The base-URL leg moved to the client gate (the connections hub
+    # serves it): an empty llm_base row no longer hides the step, and
+    # the client answers configured instead (the evidence run's defect
+    # 7.2, with its regression below).
     settings.set("llm_base", "")
-    assert STEPS[2].enabled(settings) is False
+    assert STEPS[2].enabled(settings) is True
     assert STEPS[2].enabled(None) is False
+
+
+def test_the_client_serves_a_fresh_install_through_the_startup_endpoint():
+    """The evidence run's defect 7.2: no surface writes the llm_base row
+    any more (the connections hub replaced it), so a gate reading that
+    row alone left the review unreachable on a fresh install. The
+    client gate must accept the startup endpoint channel, with no
+    llm_base row at all."""
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
+    fresh = type("S", (), {
+        "llm_endpoint": "http://127.0.0.1:8793/v1",
+        "llm_model": "stub-model",
+        "llm": lambda prompt: "The stub answers a plain prompt with this sentence.",
+        "keys": None, "settings": settings,
+    })()
+    assert server_app._profile_review_client(fresh, settings) is not None
+    bare = type("S", (), {"llm_endpoint": "", "llm_model": "", "llm": None,
+                          "keys": None, "settings": settings})()
+    assert server_app._profile_review_client(bare, settings) is None
 
 
 def test_learn_profile_defaults_on_and_is_a_toggle():

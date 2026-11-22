@@ -290,3 +290,18 @@ of the two that makes the feature reachable for a new user.
   the cookie and exchanging the link again; it is a development nuisance, not
   a product path, and is not addressed here.
 - No branch was pushed and no PR opened for this ticket.
+
+## 9. Addendum: defect 7.2 resolved as option 2
+
+Section 7.2's recommendation was taken: `_profile_review_client` now
+resolves through `_job_llm_parts(server, "memory")` (the same whole-hub
+builder the handler call sites use), so a job binding, a default binding,
+a single saved connection, the legacy `llm_base` row or the startup
+endpoint each serve the review, a saved connection answers to its label
+in the `llm.profile` row, and the step gate keeps only the two switches
+(`learn_profile`, `endpoint_enabled`). The scenario-A shape (startup
+endpoint, no `llm_base` row) is pinned by
+`test_the_client_serves_a_fresh_install_through_the_startup_endpoint`.
+The audit row now names the hub's serving name instead of the raw
+`effective_llm_config` base; on the env leg that is the same endpoint
+string scenario B recorded.
