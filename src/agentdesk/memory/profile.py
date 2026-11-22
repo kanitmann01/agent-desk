@@ -75,11 +75,12 @@ class LearnedProfileStore:
     os.replace save already keeps a concurrent reader on the whole old
     or whole new file; the lock is for the writers.
 
-    `seal` and `unseal` are accepted for the open question this ticket
-    leaves unverified (whether the file itself should be sealed when the
-    memory bank is) and stay unused: the ledger already seals the
-    captures recorded under a `learned` subject, which is the Undo path
-    this store actually feeds.
+    `seal` and `unseal` are accepted for this ticket's unverified point
+    (whether the live file itself should be sealed when the memory bank
+    is) and stay unused: the file is plaintext today. The ledger already
+    seals the captures recorded under a `learned` subject, which is the
+    Undo path this store feeds; wiring the live file to `CryptoBox` is
+    left open and listed in the PR's Skipped line.
     """
 
     def __init__(self, path: Path, *, clock=time.time, seal=None, unseal=None) -> None:

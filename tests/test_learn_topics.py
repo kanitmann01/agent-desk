@@ -144,6 +144,20 @@ def test_a_stated_topic_is_not_learned_again(tmp_path, monkeypatch):
     assert desk.learned_profile.document()["focusTopics"] == []
 
 
+def test_a_full_stated_list_leaves_no_room_to_learn(tmp_path, monkeypatch):
+    """The topic limit is counted over stated and learned together, so a
+    user with ten stated topics never gets an eleventh learned one that
+    readings would silently drop."""
+    stated = [f"topic {number}" for number in range(profile.MAX_TOPICS)]
+    desk = _desk(tmp_path, monkeypatch, stated=stated)
+    _seed_entity(desk.memory)
+    for _ in range(5):
+        desk.activity_log.record("research", ASK)
+    outcome, _ledger, _audit = _run(desk, _ledger_bundle())
+    assert outcome == {"topics": 0}
+    assert desk.learned_profile.document()["focusTopics"] == []
+
+
 def test_removed_topic_never_returns(tmp_path, monkeypatch):
     desk = _desk(tmp_path, monkeypatch)
     _seed_entity(desk.memory)

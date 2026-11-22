@@ -151,7 +151,11 @@ from agentdesk.memory.extract import (
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
-from agentdesk.memory.profile import LearnedProfileStore
+from agentdesk.memory.profile import (
+    MAX_TOPICS,
+    LearnedProfileStore,
+    merged_topics,
+)
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.html import element_html
@@ -6556,8 +6560,11 @@ def learn_focus_topics(server, ledger, settings, audit_conn=None) -> dict:
             continue
         if ledger.latch_value(f"topic:{subject.lower()}") is not None:
             continue
+        learned_topics = store.document()["focusTopics"]
         if any(str(t.get("topic", "")).lower() == subject.lower()
-               for t in store.document()["focusTopics"]):
+               for t in learned_topics):
+            continue
+        if len(merged_topics(stated, learned_topics)) >= MAX_TOPICS:
             continue
         before = store.raw()
         if not store.add_topic(subject, len(cluster)):
