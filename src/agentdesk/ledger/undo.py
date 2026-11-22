@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from agentdesk.inbox.core import UnknownCard
 from agentdesk.ledger.store import Entry, Ledger, LedgerError
+from agentdesk.memory.core import UnknownFact
 from agentdesk.repetition.cluster import pattern_hash
 from agentdesk.repetition.skills import SkillError
 
@@ -379,4 +380,56 @@ def _undo_skill_state(server: "AgentDeskServer", entry: Entry, before: bytes | N
         skills.set_state(skill["id"], state, active=data["active"])
     except SkillError as exc:
         raise LedgerError(f"The skill refused the undo: {exc}") from None
+
+
+# -- the learned profile (spec 016 ticket 08) ------------------------------
+
+
+@register("learned-profile")
+def _undo_learned_profile(server: "AgentDeskServer", entry: Entry,
+                          before: bytes | None) -> bytes | None:
+    """Put the whole learned profile document back, exactly as captured.
+
+    The capture is the store's own raw() bytes, so the restore rewrites
+    the document wholesale and no line or topic is reassembled by hand.
+    The latch written when the topic was learned is not touched, which
+    is what keeps a removed topic from ever coming back."""
+    store = getattr(server, "learned_profile", None)
+    if store is None:
+        raise LedgerError("The learned profile is not available, so nothing was changed.")
+    _payload(entry, before)  # a capture that is not an object fails closed
+    current = _capture_current(server, store.raw())
+    store.restore(before)
+    return current
+
+
+# -- memory auto-save (spec 016 ticket 08) ----------------------------------
+
+
+@register("memory-fact")
+def _undo_memory_fact(server: "AgentDeskServer", entry: Entry,
+                      before: bytes | None) -> bytes | None:
+    """The reverse of one auto-saved fact: delete exactly that fact.
+
+    The capture names the fact id and nothing else, and the deletion is
+    the memory store's own fact removal (remove_facts: the mentions,
+    citations and orphaned observations go with it, the way the memory
+    page's delete does; the plain delete raises on any fact that still
+    has an entity mention). A fact that is already gone refuses the
+    undo instead of guessing."""
+    data = _payload(entry, before)
+    memory = getattr(server, "memory", None)
+    fact_id = data.get("id")
+    if memory is None or isinstance(fact_id, bool) or not isinstance(fact_id, int):
+        raise LedgerError("That change's fact was not captured, so it cannot be undone.")
+    try:
+        stored = memory.get(fact_id)
+    except UnknownFact:
+        raise LedgerError(
+            "That fact is no longer in memory, so it cannot be undone.") from None
+    current = _capture_current(
+        server, json.dumps({"id": fact_id, "text": getattr(stored, "text", "")},
+                           ensure_ascii=False).encode("utf-8")
+    )
+    memory.remove_facts([fact_id])
     return current

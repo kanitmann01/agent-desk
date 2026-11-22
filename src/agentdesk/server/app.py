@@ -151,6 +151,7 @@ from agentdesk.memory.extract import (
 from agentdesk.memory.service import build_facts_block
 from agentdesk.memory.store import MemoryStore, key_file_path, read_key_file
 from agentdesk.memory import loop as memory_loop
+from agentdesk.memory.profile import LearnedProfileStore
 from agentdesk.plugins.config import MAX_UPLOAD_BYTES
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.plugins.html import element_html
@@ -168,8 +169,8 @@ from agentdesk.peers.discovery import (
 from agentdesk.peers.store import PeerStore
 from agentdesk.registry.install import RegistryError
 from agentdesk.repetition.activity import ActivityLog
-from agentdesk.repetition.cluster import pattern_hash
-from agentdesk.repetition.service import Consolidator
+from agentdesk.repetition.cluster import cluster_requests, pattern_hash
+from agentdesk.repetition.service import Consolidator, PROPOSAL_THRESHOLD
 from agentdesk.recommend.builder import RecommendationBuilder
 from agentdesk.repetition.skills import SkillError, SkillStore
 from agentdesk.server.audit_view import render_audit_page
@@ -217,6 +218,7 @@ from agentdesk.server.core import (
     plain_preview,
 )
 from agentdesk.agentloop import AgentLoop, Step, register_step
+from agentdesk.agentloop.loop import LoopContext
 from agentdesk.recommend.rank import rank_enabled, rank_step
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
@@ -733,6 +735,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         wizard_store: WizardStore | None = None,
         consents: ConsentStore | None = None,
         memory_store: MemoryStore | None = None,
+        learned_profile: LearnedProfileStore | None = None,
         layout_store: LayoutStore | None = None,
         capabilities_cache: CapabilitiesCache | None = None,
         gate_runners: GateRunners | None = None,
@@ -793,6 +796,10 @@ class AgentDeskServer(ThreadingHTTPServer):
         self.plugins = plugins
         self.wizard_store = wizard_store
         self.memory = memory_store
+        # The learned profile (spec 016 section 6.5): what the desk can
+        # honestly say it learned. None means the store could not open,
+        # and nothing is learned or served until it can.
+        self.learned_profile = learned_profile
         # The extractor port (ticket #91): None means the retain route
         # builds an EndpointExtractor from the effective llm client per
         # call; a test (or a future caller) injects its own.
@@ -3238,10 +3245,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         )
         editing_id = parse_qs(self.path.partition("?")[2]).get("connection", [""])[0]
         editing = next((c for c in (connections or []) if c["id"] == editing_id), None)
+        learned = (
+            server.learned_profile.document()
+            if server.learned_profile is not None else None
+        )
         page = render_settings_page(
             entries, skills, histories, agentdesk.__version__,
             settings_values=self._settings_public_values(),
             endpoint_status=self._endpoint_status(),
+            learned=learned,
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
             mail_self_address=(server.settings.get("mail_self_address")
                                if server.settings is not None else ""),
@@ -3806,8 +3818,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
-                       "memory_capture_agents", "recommendations", "recommend_deadlines",
-                       "recommend_meetings", "recommend_horizon_days",
+                       "memory_capture_agents", "learn_topics", "recommendations",
+                       "recommend_deadlines", "recommend_meetings",
+                       "recommend_horizon_days",
                        "recommend_model_rank", "recommend_threshold",
                        "auto_update", "auto_update_plugins",
                        "skills_auto_create", "skills_auto_refine", "skills_curator"):
@@ -3831,12 +3844,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
                      "agent_loop_minutes", "auto_update",
-                     "auto_update_plugins", "skills_auto_create",
-                     "skills_auto_refine", "skills_curator") or key.startswith("memory_"):
+                     "auto_update_plugins", "learn_topics",
+                     "skills_auto_create", "skills_auto_refine",
+                     "skills_curator") or key.startswith("memory_"):
             # The memory loop reads its switches on every capture, the
             # autonomy switch is read by ledger.may_act before each action,
             # the agent loop re-reads its interval on every wake, the
-            # update switches gate the update step's installs, and the
+            # update switches gate the update step's installs, the
+            # learn-topics step reads its switch every pass, and the
             # skills switches are read by the consolidator and the loop's
             # skills and curator steps on every pass.
             pass
@@ -6367,6 +6382,7 @@ def create_server(
     wizard_store: WizardStore | None = None,
     consents: ConsentStore | None = None,
     memory_store: MemoryStore | None = None,
+    learned_profile: LearnedProfileStore | None = None,
     layout_store: LayoutStore | None = None,
     capabilities_cache: CapabilitiesCache | None = None,
     gate_runners: GateRunners | None = None,
@@ -6399,6 +6415,16 @@ def create_server(
     resolved = "127.0.0.1" if host == "localhost" else host
     if resolved != "127.0.0.1":
         raise ValueError(f"refusing to bind non-loopback host: {host!r}")
+    # Spec 016 section 6.5, checked before any store opens: whether this
+    # data folder predates the auto-approve default. Opening the inbox or
+    # memory database would create the very file this check looks for,
+    # so it must run first; the migration itself writes only once the
+    # settings store is open.
+    folder_data_dir = default_data_dir()
+    pre_existing_folder = (
+        (folder_data_dir / "inbox.sqlite3").exists()
+        or (folder_data_dir / "memory.sqlite3").exists()
+    )
     sessions = SessionStore()
     if excel is None:
         excel = _default_excel_watch()
@@ -6406,6 +6432,11 @@ def create_server(
     # client to them, so saved endpoints apply without a restart.
     if settings_store is None:
         settings_store = _default_settings_store()
+        # The folder-age migration (spec 016 section 6.5) writes only the
+        # settings store this boot opened itself: an injected store belongs
+        # to its caller, who decides what its keys hold.
+        if pre_existing_folder and settings_store is not None:
+            _store_memory_auto_approve_false(settings_store)
     if calendar is None:
         calendar = _default_calendar_bridge(settings_store)
     if audit_conn is None:
@@ -6435,6 +6466,9 @@ def create_server(
         wizard_store = _default_wizard_store()
     if memory_store is None:
         memory_store = _default_memory_store()
+    if learned_profile is None:
+        learned_profile = LearnedProfileStore(
+            default_data_dir() / "profile.learned.json")
     if layout_store is None:
         layout_store = _default_layout_store()
     if capabilities_cache is None:
@@ -6499,6 +6533,7 @@ def create_server(
             wizard_store=wizard_store,
             consents=consents,
             memory_store=memory_store,
+            learned_profile=learned_profile,
             layout_store=layout_store,
             capabilities_cache=capabilities_cache,
             gate_runners=gate_runners,
@@ -6558,6 +6593,156 @@ def create_server(
     # (spec 016 section 6.2). Its run claim lives in the data folder.
     server.agent_loop = AgentLoop(server, data_dir=default_data_dir())
     return server
+
+
+# -- learned focus topics (spec 016 section 6.5, the learn-topics step) -----
+
+# The same ask window Consolidator.consolidate reads: the last 500 asks
+# through the app's own surfaces.
+_LEARN_TOPICS_WINDOW = 500
+
+
+def _store_memory_auto_approve_false(settings_store: SettingsStore) -> None:
+    """Store the explicit False a pre-existing desk keeps (spec 016 6.5).
+
+    The default flipped to True for folders born on this build; only a
+    missing row is written here, so a value the user set survives. The
+    read runs once at boot, before request threads exist, so the bare
+    statement on the shared connection is safe."""
+    row = settings_store.conn.execute(
+        "SELECT value FROM settings WHERE key = 'memory_auto_approve'"
+    ).fetchone()
+    if row is None:
+        settings_store.set("memory_auto_approve", False)
+
+
+def _entity_names(memory) -> dict[str, str]:
+    """Entity names (canonical and aliases) mapped to their canonical
+    name, lowercase keys, for the whole-word matching the step does. A
+    locked or unreadable bank learns nothing rather than failing a pass."""
+    names: dict[str, str] = {}
+    try:
+        summaries = memory.entities()
+    except Exception:  # noqa: BLE001 - a locked bank is a named skip, not a crash
+        return names
+    for summary in summaries:
+        canonical = str(getattr(summary, "canonical_name", "") or "").strip()
+        if not canonical:
+            continue
+        names[canonical.lower()] = canonical
+        for alias in getattr(summary, "aliases", None) or []:
+            alias_line = str(alias or "").strip()
+            if alias_line and alias_line.lower() not in names:
+                names[alias_line.lower()] = canonical
+    return names
+
+
+def _name_pattern(name: str) -> str:
+    """The whole-word regex for one entity name: word boundaries that
+    hold inside normalized lowercased text, so "Kestrel" never matches
+    "Kestrelshire" and multi-word names match in order."""
+    words = [re.escape(word) for word in name.lower().split()]
+    return r"(?<![a-z0-9])" + r"[\s]+".join(words) + r"(?![a-z0-9])"
+
+
+def _cluster_subject(texts: list[str], cluster: list[int],
+                     names: dict[str, str]) -> str | None:
+    """The memory entity named most often across one cluster's texts, or
+    None when no entity is named: no topic is learned from free text."""
+    counts: dict[str, int] = {}
+    for index in cluster:
+        lowered = texts[index].lower()
+        for name, canonical in names.items():
+            if re.search(_name_pattern(name), lowered):
+                counts[canonical] = counts.get(canonical, 0) + 1
+    if not counts:
+        return None
+    # The most-mentioned entity; ties break by name so a pass is stable.
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def learn_focus_topics(server, ledger, settings, audit_conn=None) -> dict:
+    """One learn-topics pass: clusters of similar asks that name a memory
+    entity become learned focus topics (spec 016 section 6.5).
+
+    Every mutation goes through the same one helper shape: capture
+    `raw()`, mutate, record `learned-profile` with the before and after
+    bytes, so Undo restores the whole document. The latch written at
+    learn time (`topic:<name>`) is what keeps a removed topic from ever
+    coming back, and the stated preferences are only ever read.
+    """
+    store = getattr(server, "learned_profile", None)
+    activity = getattr(server, "activity_log", None)
+    memory = getattr(server, "memory", None)
+    if store is None or activity is None or memory is None or ledger is None:
+        return {"topics": 0}
+    asks = [e for e in activity.entries(_LEARN_TOPICS_WINDOW)
+            if e["kind"] in ("research", "assistant")]
+    names = _entity_names(memory)
+    if not asks or not names:
+        return {"topics": 0}
+    texts = [e["text"] for e in asks]
+    stated = [str(t) for t in (PreferenceStore(default_data_dir()).read()
+                               .get("focusTopics") or [])]
+    stated_lower = {t.lower() for t in stated}
+    learned = 0
+    for cluster in cluster_requests(texts):
+        if len(cluster) < PROPOSAL_THRESHOLD:
+            continue
+        subject = _cluster_subject(texts, cluster, names)
+        if subject is None:
+            continue
+        if subject.lower() in stated_lower:
+            continue
+        if ledger.latch_value(f"topic:{subject.lower()}") is not None:
+            continue
+        if any(str(t.get("topic", "")).lower() == subject.lower()
+               for t in store.document()["focusTopics"]):
+            continue
+        before = store.raw()
+        if not store.add_topic(subject, len(cluster)):
+            continue
+        ledger.latch(f"topic:{subject.lower()}", "learned")
+        ledger.record(
+            actor="agent-desk",
+            action="profile.learned",
+            subject=f"learned profile:{subject}",
+            why=f"Learned the focus topic {subject}: named in "
+                f"{len(cluster)} similar asks.",
+            undo_kind="learned-profile",
+            before=before,
+            after=store.raw(),
+            detail={"topic": subject, "asks": len(cluster)},
+        )
+        if audit_conn is not None:
+            audit_store.record(audit_conn, "profile.learned", target=subject,
+                               detail=f"Learned from {len(cluster)} asks")
+        learned += 1
+    return {"topics": learned}
+
+
+def _learn_topics_enabled(settings) -> bool:
+    """The learn-topics step runs when its switch is on; a desk without
+    settings keeps everything it has already learned and learns no more."""
+    if settings is None:
+        return False
+    try:
+        return bool(settings.get("learn_topics"))
+    except KeyError:
+        return False
+
+
+def _run_learn_topics(ctx: LoopContext) -> dict:
+    """The pass wrapper: run the learning over the loop context's desk."""
+    return learn_focus_topics(
+        ctx.server, ctx.ledger, ctx.settings,
+        audit_conn=getattr(ctx.server, "audit_conn", None))
+
+
+# Ticket 08 appends its step after the desk check (spec 016 section 6.2);
+# later tickets register below in import order.
+register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
+                   run=_run_learn_topics))
 
 
 def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:

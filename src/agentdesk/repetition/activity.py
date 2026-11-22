@@ -81,10 +81,11 @@ class ActivityLog:
 
     @_serialized
     def entries(self, limit: int = 200) -> list[dict]:
-        """The newest `limit` entries, oldest first."""
+        """The newest `limit` entries, oldest first, each with its row id
+        (spec 016: the profile review and its latch count by id)."""
         rows = self.conn.execute(
-            "SELECT ts, kind, text FROM (SELECT * FROM activity ORDER BY id DESC LIMIT ?)"
+            "SELECT id, ts, kind, text FROM (SELECT * FROM activity ORDER BY id DESC LIMIT ?)"
             " ORDER BY id ASC",
             (limit,),
         ).fetchall()
-        return [{"ts": r[0], "kind": r[1], "text": r[2]} for r in rows]
+        return [{"id": r[0], "ts": r[1], "kind": r[2], "text": r[3]} for r in rows]

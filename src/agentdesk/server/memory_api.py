@@ -11,6 +11,7 @@ changed.
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import logging
 import time
 
@@ -18,6 +19,7 @@ import agentdesk
 
 from agentdesk.assistant import audit as audit_store
 from agentdesk.inbox.core import KIND_MEMORY_DRAFT, KIND_MEMORY_REFLECTION
+from agentdesk.ledger.store import LedgerError
 from agentdesk.memory import loop as memory_loop
 from agentdesk.memory.core import UnknownEntity, UnknownFact, normalize_fact_text
 from agentdesk.memory.crypto import MemoryEncryptedError
@@ -489,12 +491,102 @@ class MemoryApiMixin:
                         detail=(f"{len(outcome.card_ids)} to review, "
                                 f"{len(outcome.fact_ids)} saved, by {outcome.method}"),
                     )
+                if settings.auto_approve and outcome.fact_ids:
+                    self._record_auto_saved(channel, outcome.fact_ids)
                 if outcome.card_ids and server.inbox is not None:
                     self._evaluate_inbox(server.inbox)
             if outcome is not None and outcome.fact_ids:
                 self._schedule_observation_pass()
 
         server.memory_capture_runner(job)
+
+    def _record_auto_saved(self, channel: str, fact_ids: tuple[int, ...]) -> None:
+        """One ledger entry per auto-saved fact (spec 016 section 6.5).
+
+        The server layer records; the memory loop stays free of ledger
+        imports. The undo of an entry deletes exactly that fact; the
+        audit row names the channel and the count, never the fact text.
+        A failed record never fails the capture it describes."""
+        ledger = getattr(self.server, "ledger", None)  # type: ignore[attr-defined]
+        if ledger is None:
+            return
+        for fact_id in fact_ids:
+            try:
+                ledger.record(
+                    actor="agent-desk",
+                    action="memory.auto-saved",
+                    subject=f"memory:{fact_id}",
+                    why="Saved a captured fact without asking.",
+                    undo_kind="memory-fact",
+                    before=json.dumps({"id": int(fact_id)}).encode("utf-8"),
+                    detail={"factId": int(fact_id), "channel": channel,
+                            "saved": len(fact_ids)},
+                )
+            except LedgerError:
+                LOG.exception("the auto-save ledger entry for fact %s failed", fact_id)
+        self._audit("memory.auto-saved", target=channel,
+                    detail=f"{len(fact_ids)} saved without asking")
+
+    # -- the learned profile (spec 016 sections 6.5 and 7) -----------------
+
+    def _send_learned_profile(self) -> None:
+        """The learned profile document, exactly as it is stored."""
+        store = getattr(self.server, "learned_profile", None)  # type: ignore[attr-defined]
+        if store is None:
+            self._send_json(503, {"error": "the learned profile is not available"})
+            return
+        self._send_json(200, store.document())
+
+    def _learned_profile_remove(self) -> None:
+        """Remove one learned topic (`{"topic": ...}`) or line (`{"id": ...}`).
+
+        Removing is the user's own edit, so it is not ask-first, and the
+        latch set when the topic was learned stays: it never comes back.
+        The removal goes through the one helper shape (capture raw(),
+        mutate, record `learned-profile`) so Undo puts the document back
+        whole while the latch keeps the topic away."""
+        server = self.server  # type: ignore[attr-defined]
+        store = getattr(server, "learned_profile", None)
+        if store is None:
+            self._send_json(503, {"error": "the learned profile is not available"})
+            return
+        body = self._read_json_body() or {}
+        entry_id = body.get("id")
+        topic = body.get("topic")
+        if isinstance(entry_id, str) and entry_id.strip():
+            before = store.raw()
+            if not store.remove_entry(entry_id.strip()):
+                self._send_json(404, {"error": "That learned line is not in the profile."})
+                return
+            subject, target = f"learned profile:{entry_id.strip()}", entry_id.strip()
+        elif isinstance(topic, str) and topic.strip():
+            before = store.raw()
+            if not store.remove_topic(topic.strip()):
+                self._send_json(404, {"error": "That learned topic is not in the profile."})
+                return
+            subject, target = f"learned profile:{topic.strip()}", topic.strip()
+        else:
+            self._send_json(400, {"error": "Name the learned line (id) or topic to remove."})
+            return
+        entry_id_recorded = None
+        ledger = getattr(server, "ledger", None)
+        if ledger is not None:
+            try:
+                recorded = ledger.record(
+                    actor="user",
+                    action="profile.removed",
+                    subject=subject,
+                    why=f"You removed the learned topic or line: {target}.",
+                    undo_kind="learned-profile",
+                    before=before,
+                    after=store.raw(),
+                    detail={"removed": target},
+                )
+                entry_id_recorded = recorded.id
+            except LedgerError:
+                LOG.exception("the learned-profile removal record failed")
+        self._respond_form_or_json("/settings#learned",
+                                   {"removed": True, "entry": entry_id_recorded})
 
     def _observation_summarizer(self) -> tuple:
         """(summarizer, endpoint, model) for the per-entity observations,

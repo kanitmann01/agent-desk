@@ -167,6 +167,12 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("update.applied", "decision", "The desk staged a version from the update share after it passed its own check; the row names the version, and Undo puts the previous pointer back."),
     ("update.rolled-back", "decision", "A staged version failed its check at the first start, so the desk went back to the previous version and repaired any store that failed its integrity check."),
     ("update.check-failed", "decision", "An update check could not read the share or refused the bundle before running it; the row names the result, never file contents."),
+
+    # The learned profile (spec 016, ticket 08): the desk's own learning
+    # from what you asked, and the fact auto-approve saved on its own.
+    # Both rows name counts, ids or the topic, never a stored text.
+    ("profile.learned", "decision", "The desk added a focus topic to its learned profile because several of your questions named the same thing; the row names the topic and how many asks taught it."),
+    ("memory.auto-saved", "decision", "A captured fact was saved straight to memory because auto-approve is on; the row names the channel and how many were saved, never the fact itself."),
 ]
 
 ACTOR = "agent-desk"

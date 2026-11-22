@@ -82,14 +82,18 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "agent_loop_minutes": 60,
         "suggest_headers_only": False,
         "plugin_instance_cap": 6,
-        # The memory loop: capture on, review before saving, every
-        # channel read.
+        # The memory loop: capture on, every channel read. Auto-approve
+        # defaults on for a data folder born on this build (spec 016
+        # section 8); a folder an earlier build used keeps an explicit
+        # False, which create_server stores before anything reads it.
         "memory_capture": True,
-        "memory_auto_approve": False,
+        "memory_auto_approve": True,
         "memory_capture_assistant": True,
         "memory_capture_research": True,
         "memory_capture_workbook": True,
         "memory_capture_agents": True,
+        # Learned focus topics (spec 016 §8): on by default.
+        "learn_topics": True,
         # Recommendations (spec 016 §8): on by default, deadlines and
         # meeting prep named separately, a 30-day look ahead.
         "recommendations": True,

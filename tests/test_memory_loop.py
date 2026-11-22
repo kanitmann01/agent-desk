@@ -154,11 +154,14 @@ def test_capture_skips_what_is_stored_or_waiting_and_respects_channel_switches()
 def test_capture_settings_read_the_settings_store():
     from agentdesk.settings import SettingsStore
     settings = SettingsStore(sqlite3.connect(":memory:"))
-    assert loop.capture_settings(settings) == loop.CaptureSettings()
-    settings.set("memory_auto_approve", True)
+    read = loop.capture_settings(settings)
+    assert read.enabled is True
+    # Spec 016 flipped the stored default: a fresh folder auto-approves.
+    assert read.auto_approve is True
+    settings.set("memory_auto_approve", False)
     settings.set("memory_capture_research", False)
     read = loop.capture_settings(settings)
-    assert read.auto_approve and read.channels == frozenset(
+    assert read.auto_approve is False and read.channels == frozenset(
         {"assistant", "workbook", "agents"}
     )
     settings.set("memory_capture_workbook", False)

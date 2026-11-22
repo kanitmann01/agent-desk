@@ -27,6 +27,17 @@ from agentdesk.memory import profile
 NOW = 1763650000.0
 
 
+def test_the_topic_limits_match_the_stated_store():
+    # The constants are duplicated (insight/__init__ imports this
+    # module's readers, so memory importing back would close a circle);
+    # the pin keeps them from drifting, like the embeddings model pair.
+    from agentdesk.insight import preferences as stated_preferences
+    from agentdesk.memory import profile as learned
+
+    assert learned.MAX_TOPICS == stated_preferences.MAX_TOPICS
+    assert learned.MAX_TOPIC_CHARS == stated_preferences.MAX_TOPIC_CHARS
+
+
 @pytest.fixture()
 def store(tmp_path):
     """A store over a file that does not exist yet, on a frozen clock."""

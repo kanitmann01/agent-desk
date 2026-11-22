@@ -198,10 +198,10 @@ def test_release_never_deletes_a_successors_claim(tmp_path):
 
 
 def test_the_built_in_steps_are_registered():
-    # The spec 016 section 6.2 pass order: heal, rank, improve skills,
-    # curate, and only then read the update share.
+    # The spec 016 section 6.2 pass order: heal, rank, learn, improve
+    # skills, curate, and only then read the update share.
     assert [step.name for step in STEPS] == [
-        "deskcheck", "rank", "skills", "curator", "update"]
+        "deskcheck", "rank", "learn-topics", "skills", "curator", "update"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------

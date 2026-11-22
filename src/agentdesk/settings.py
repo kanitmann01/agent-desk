@@ -39,14 +39,21 @@ TOGGLES = {
     "suggest_headers_only": False,
     # The memory loop (memory/loop.py): capture facts from what you do,
     # review them before they are saved unless auto-approve is on, and
-    # one switch per channel capture reads.
+    # one switch per channel capture reads. Auto-approve defaults on for
+    # data folders born on this build (spec 016 section 8); create_server
+    # stores an explicit False for a folder an earlier build already
+    # used, so an existing desk keeps "ask me first".
     "memory_capture": True,
-    "memory_auto_approve": False,
+    "memory_auto_approve": True,
     "memory_capture_assistant": True,
     "memory_capture_research": True,
     "memory_capture_workbook": True,
     # Run feedback on the agents page captures on its own channel (#170).
     "memory_capture_agents": True,
+    # Learned focus topics (spec 016 section 8): five or more similar
+    # asks naming a memory entity add it to the learned profile. Off
+    # stops the learning; what was learned stays until removed.
+    "learn_topics": True,
     # Spec §8: the desk acts by itself and every change it makes is logged
     # in the action ledger with Undo. The four ask-first classes are
     # enforced in code (ledger.may_act), not by this switch.

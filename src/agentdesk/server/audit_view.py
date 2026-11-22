@@ -24,6 +24,7 @@ KINDS = (
     ("ledger.", "Decision"),
     ("keys.", "Decision"),
     ("memory.", "Memory"),
+    ("profile.", "Memory"),
     ("llm.", "Model call"),
     ("excel.", "File"),
     ("calendar.", "File"),
