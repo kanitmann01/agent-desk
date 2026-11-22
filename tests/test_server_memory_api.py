@@ -33,9 +33,25 @@ class CaptureLlm:
         return self.reply
 
 
+def _review_first_settings():
+    """The loop's switches as this suite assumes them: auto-approve off,
+    so a chat exchange stages candidates instead of saving. Spec 016
+    flipped the stored default to True for new folders."""
+    import sqlite3
+    import time
+
+    from agentdesk.settings import SettingsStore
+
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False),
+                             time.time)
+    settings.set("memory_auto_approve", False)
+    return settings
+
+
 @pytest.fixture()
 def env(tmp_path):
-    booted = server_harness.Booted(llm=CaptureLlm())
+    booted = server_harness.Booted(llm=CaptureLlm(),
+                                   settings_store=_review_first_settings())
     try:
         yield booted
     finally:
