@@ -7511,6 +7511,18 @@ def _poll_calendar_once(bridge) -> None:
 # heals first and then asks the endpoint to rank what is still waiting.
 register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
 
+# Ticket 10 appends the skills step (consolidation plus refine) and the
+# curator step (the weekly lifecycle pass) after the rank step: the
+# definitions live in agentloop/loop.py beside the desk check's.
+from agentdesk.agentloop.loop import (  # noqa: E402 - position is the order
+    _curator_enabled,
+    _run_curator,
+    _run_skills,
+    _skills_enabled,
+)
+register_step(Step(name="skills", enabled=_skills_enabled, run=_run_skills))
+register_step(Step(name="curator", enabled=_curator_enabled, run=_run_curator))
+
 
 def _update_enabled(settings) -> bool:
     """The update step checks whenever a share is set, even with installs off."""

@@ -1,8 +1,0 @@
-fix(repetition): the lock annotations wait for evaluation, so 3.12 boots (spec 016 #200)
-
-threading.RLock is a function, not a class, so "threading.RLock | None"
-raises TypeError the moment the annotation is evaluated. Python 3.14 defers
-annotations (PEP 649), which is why the local gates were green; CI runs 3.12,
-where both imports died and took the packaging tests and the Nuitka smoke
-with them. Both modules now defer their annotations, as 60 other modules in
-src/ already do.

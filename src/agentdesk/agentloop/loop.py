@@ -502,7 +502,8 @@ def _run_curator(ctx: LoopContext) -> dict:
     return curator_step_run(ctx)
 
 
-# Ticket 10 appends the skills step (consolidation plus refine) and the
-# curator step (the weekly lifecycle pass), in that order.
-register_step(Step(name="skills", enabled=_skills_enabled, run=_run_skills))
-register_step(Step(name="curator", enabled=_curator_enabled, run=_run_curator))
+# Ticket 10's skills and curator steps are registered from server/app.py
+# after the rank step and before the update step, so a pass heals, ranks,
+# improves skills, curates, and only then reads the update share (spec
+# 016 section 6.2's order; registering here would put them before rank,
+# because this module is imported before app.py registers its own).

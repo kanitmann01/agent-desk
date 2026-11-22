@@ -198,10 +198,10 @@ def test_release_never_deletes_a_successors_claim(tmp_path):
 
 
 def test_the_built_in_steps_are_registered():
-    # Import order after the stack: the shipped steps (deskcheck, rank,
-    # update) then this ticket's (skills, curator).
+    # The spec 016 section 6.2 pass order: heal, rank, improve skills,
+    # curate, and only then read the update share.
     assert [step.name for step in STEPS] == [
-        "deskcheck", "rank", "update", "skills", "curator"]
+        "deskcheck", "rank", "skills", "curator", "update"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------
