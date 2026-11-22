@@ -6745,10 +6745,9 @@ def _run_learn_topics(ctx: LoopContext) -> dict:
         audit_conn=getattr(ctx.server, "audit_conn", None))
 
 
-# Ticket 08 appends its step after the desk check (spec 016 section 6.2);
-# later tickets register below in import order.
-register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
-                   run=_run_learn_topics))
+# Ticket 08's learn-topics step is registered from the pass-order block
+# below, after the rank step (spec 016 section 6.2): registering where
+# the wrappers are defined would put learning ahead of ranking.
 
 
 def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:
@@ -7701,6 +7700,11 @@ def _poll_calendar_once(bridge) -> None:
 # Ticket 06 appends the ranking step after the desk check, so a pass
 # heals first and then asks the endpoint to rank what is still waiting.
 register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
+
+# Ticket 08 appends the learn-topics step after the rank step: a pass
+# heals, ranks, and only then learns a topic from what kept coming back.
+register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
+                   run=_run_learn_topics))
 
 # Ticket 10 appends the skills step (consolidation plus refine) and the
 # curator step (the weekly lifecycle pass) after the rank step: the

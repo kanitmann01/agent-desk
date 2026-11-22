@@ -226,13 +226,18 @@ def test_activity_rows_carry_ids():
 
 
 def test_the_step_is_registered_after_the_desk_check():
-    assert [step.name for step in STEPS] == ["deskcheck", "learn-topics"]
-    assert STEPS[1].enabled(SettingsStore(
+    # The spec 016 section 6.2 pass order: the learning step sits after
+    # the rank step (a pass heals and ranks before it learns) and before
+    # the skills and curator steps, which its topics feed.
+    assert [step.name for step in STEPS] == [
+        "deskcheck", "rank", "learn-topics", "skills", "curator", "update"]
+    learn = [s for s in STEPS if s.name == "learn-topics"][0]
+    assert learn.enabled(SettingsStore(
         sqlite3.connect(":memory:", check_same_thread=False))) is True
-    assert STEPS[1].enabled(None) is False
+    assert learn.enabled(None) is False
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
     settings.set("learn_topics", False)
-    assert STEPS[1].enabled(settings) is False
+    assert learn.enabled(settings) is False
 
 
 # -- the surfaces: routes and the settings section --------------------------
