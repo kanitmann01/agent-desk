@@ -116,6 +116,7 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
         "agentLoop", "commitments", "deskCheck", "flags", "inbox", "layout",
         "plugins", "recommendations", "research", "sales", "sample", "skills",
         "sources",
+        "update",
         "version",
     ]
     assert payload["version"]

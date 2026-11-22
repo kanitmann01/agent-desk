@@ -221,8 +221,7 @@ rebuild changes the hash, so they are not recommended as the primary rule.
 
 ## Update channel and rollback
 
-There is no auto-updater in this release. The update channel is a controlled
-file share, for example:
+The update channel is a controlled file share, for example:
 
 ```
 \\fileserver\AgentDesk\stable\<version>\agent-desk.zip
@@ -253,6 +252,26 @@ Rollback:
 
 No data migration is assumed by this document. Check each release's notes
 before rolling back across a version that changed stored data.
+
+### Automatic updates (off by default)
+
+The desk has a built-in updater, shipped off. In Settings > Updates, set the
+share folder and leave Install updates off to only report what the share
+holds. Turning Install updates on lets the desk stage a newer version, run
+that version's own `--self-check` against a copy of the data, and write
+`<data>/update/current.json` only when the check passes. A failed check
+deletes the staged copy. A staged version waits for a restart: the desk never
+restarts itself, and nothing runs while it is closed.
+
+The first start of a pending version repeats the check in-process. On failure
+the desk points `current.json` back at the previous version and restores any
+SQLite store whose `PRAGMA integrity_check` no longer passes from the snapshot
+taken before staging. The Settings page and dashboard name the rollback.
+
+The launcher stub that reads `current.json` and starts the version it names is
+pending Security review. Until it ships, the per-user shortcut still points at
+the current `AgentDesk.exe`; a staged version, its pointer and its previous
+version folder all remain on disk.
 
 ## Known gaps in this environment
 

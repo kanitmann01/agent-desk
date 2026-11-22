@@ -35,6 +35,7 @@ KINDS = (
     ("deskcheck.", "Desk check"),
     ("agentloop.", "Agent"),
     ("recommend.", "Agent"),
+    ("update.", "Update"),
 )
 
 

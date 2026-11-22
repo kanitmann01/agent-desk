@@ -60,6 +60,22 @@ describe('the Decisions cell', () => {
     expect(screen.queryByText('Nothing needs a decision.')).not.toBeInTheDocument();
   });
 
+  it('shows the staged update banner above the grid', () => {
+    show({
+      ...BASE,
+      update: {
+        banner: 'Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch.',
+        available: '0.1.1',
+        autoUpdate: true,
+        channelSet: true,
+        lastResult: 'staged',
+      },
+    });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch.',
+    );
+  });
+
   it('shows the empty state once the desk is set up', () => {
     show({
       ...BASE,

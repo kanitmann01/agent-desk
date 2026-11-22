@@ -99,6 +99,11 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         "research_provider_url": "",
         "research_provider_key": "",
         "mail_self_address": "",
+        # Updates (spec 016 section 6.8): shipped off until Security
+        # approves, with no share chosen.
+        "auto_update": False,
+        "auto_update_plugins": False,
+        "update_channel": "",
     }
     status, _h, body = env.post_json("/settings/toggle", {"key": "excel_enabled"}, auth)
     assert status == 200

@@ -367,6 +367,9 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
 
   return (
     <div className="brief">
+      {data.update?.banner ? (
+        <div className="alert" role="status">{data.update.banner}</div>
+      ) : null}
       <div className="brief-col brief-main">
         <article className="cell cell-hero" aria-labelledby="cell-brief">
           <CellHead id="cell-brief" tag="PIPELINE" sample={salesIsSample} meta={configured && status?.path ? <span className="mono">{status.path.split(/[\\/]/).pop()}</span> : undefined} />

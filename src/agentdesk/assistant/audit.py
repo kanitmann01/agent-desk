@@ -156,6 +156,9 @@ VOCABULARY: list[tuple[str, str, str]] = [
     ("keys.test", "decision", "You checked a saved connection: the desk made one free model-list request against its endpoint with its key (or, only when you pressed the deeper check, one one-token completion with the model you typed), and recorded the outcome and its plain-language cause. The row names the connection; no key material is ever recorded."),
     ("recommend.added", "decision", "The desk added a recommendation built from facts you saved; the row names the rule and the fact ids, never the fact text."),
     ("recommend.withdrawn", "decision", "A recommendation was withdrawn because the fact behind it was removed or replaced."),
+    ("update.applied", "decision", "The desk staged a version from the update share after it passed its own check; the row names the version, and Undo puts the previous pointer back."),
+    ("update.rolled-back", "decision", "A staged version failed its check at the first start, so the desk went back to the previous version and repaired any store that failed its integrity check."),
+    ("update.check-failed", "decision", "An update check could not read the share or refused the bundle before running it; the row names the result, never file contents."),
 ]
 
 ACTOR = "agent-desk"

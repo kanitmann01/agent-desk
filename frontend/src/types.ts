@@ -256,6 +256,17 @@ export interface AgentLoopSummary {
   enabled: boolean;
 }
 
+// The update summary (spec 016 #201): the staged-version banner, whether a
+// share is set, and whether installs are on. banner is null unless a version
+// is waiting for a restart or the last one rolled back.
+export interface UpdateSummary {
+  banner: string | null;
+  available: string | null;
+  autoUpdate: boolean;
+  channelSet: boolean;
+  lastResult: string;
+}
+
 export interface DashboardData {
   sample?: boolean;
   version: string;
@@ -287,6 +298,7 @@ export interface DashboardData {
   deskCheck?: DeskCheckSummary;
   recommendations?: Recommendation[];
   agentLoop?: AgentLoopSummary;
+  update?: UpdateSummary;
   skills: { id: number; name: string; description: string }[];
   layout: { cards: LayoutCard[] };
   plugins: { cards: PluginCard[] };

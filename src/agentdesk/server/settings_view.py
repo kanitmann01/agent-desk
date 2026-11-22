@@ -855,6 +855,70 @@ def _finding_action(finding: dict) -> str:
     return ""
 
 
+def _update_section(values: dict, update: dict) -> str:
+    """The update share, its switches, and what the last check found.
+
+    Everything here is a plain form post, so the section still works with no
+    script: the share path, the two switches, and Check now.
+    """
+    channel = str(values.get("update_channel") or "")
+    available = update.get("available") or ""
+    auto = bool(values.get("auto_update"))
+    last_result = str(update.get("lastResult") or "none")
+    cause = str(update.get("lastCause") or "")
+    check_ts = update.get("lastCheckTs")
+    checked = (
+        datetime.fromtimestamp(float(check_ts)).strftime("%Y-%m-%d %H:%M")
+        if check_ts else "never"
+    )
+    if not channel:
+        line = "No update share is set."
+    elif last_result in ("channel-unreadable", "health-failed") and cause:
+        line = cause
+    elif last_result == "channel-unreadable":
+        line = "The update share couldn't be read."
+    elif available and not auto:
+        line = f"Version {available} is on the share. Install updates is off."
+    elif available:
+        line = f"Version {available} is on the share."
+    else:
+        line = "No newer version is on the share."
+    result_line = {
+        "none": "Nothing staged.",
+        "up-to-date": "The share has no newer version.",
+        "staged": f"Version {available} is staged and ready.",
+        "health-failed": "The last staged version failed its check.",
+        "applied": "The last staged version is running.",
+        "rolled-back": "The last version went back to the one before it.",
+        "channel-unreadable": "The update share couldn't be read.",
+    }.get(last_result, "Nothing staged.")
+    return f"""<section class='card settings-card' id='updates'>
+<div class='w-head'><h2>Updates</h2><span class='stamp'>{html.escape(last_result.upper())}</span></div>
+<p>Updates come from a folder that IT publishes to. The desk reads only
+that folder, checks every file against the manifest, and never installs a
+version that fails its own check. It never restarts by itself.</p>
+<form method='post' action='/settings/update/channel' class='cardform'>
+<label class='empty' for='update-channel'>Update share</label>
+<input id='update-channel' type='text' name='path' value="{html.escape(channel, quote=True)}" placeholder="//fileserver/AgentDesk/stable" autocomplete='off'>
+<button class='btn btn-secondary' type='submit'>Save folder</button>
+</form>
+<div class='settings-block'>
+{_toggle_button("auto_update", auto, "Install updates")}
+{_toggle_button("auto_update_plugins", bool(values.get("auto_update_plugins")), "Update plugins too")}
+</div>
+<p class='empty'>Off until IT approves. When on, the desk installs only
+versions that pass their check, and keeps the previous version. Plugin
+updates are not installed automatically in this release.</p>
+<p>{html.escape(line)}</p>
+<p class='empty'>Current version <span class='mono'>{html.escape(str(update.get("current") or ""))}</span>.
+Last check <span class='mono'>{html.escape(checked)}</span>. {html.escape(result_line)}</p>
+<form method='post' action='/api/update/check' class='cardform'>
+<input type='hidden' name='return_to' value='/settings#updates'>
+<button class='btn btn-secondary' type='submit'>Check now</button>
+</form>
+</section>"""
+
+
 def _desk_check_section(desk_check: dict | None) -> str:
     """What the desk check last noticed, each finding with its one action.
 
@@ -917,6 +981,7 @@ def render_settings_page(
     keychain_available: bool = True,
     connections_notice: str = "",
     agent_loop: dict | None = None,
+    update: dict | None = None,
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -1044,6 +1109,8 @@ off: the digest works, follow-up cards are not filed.</p>
 </section>
 
 {_desk_check_section(desk_check)}
+
+{_update_section(settings_values, update or {})}
 
 <section class='card settings-card' id='registry'>
 <div class='w-head'><h2>Plugin registry</h2><span class='stamp'>{registry_stamp}</span></div>
