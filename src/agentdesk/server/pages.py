@@ -945,7 +945,10 @@ def render_decisions_widget(recommendations: list[dict], now, setup: list[dict] 
     for item in items[:3]:
         sample = '<span class="tag-sample">SAMPLE DATA</span>' if item.get("sample") else ""
         title = html.escape(str(item.get("title") or "A recommendation"))
-        why = html.escape(str(item.get("why") or ""))
+        why_text = str(item.get("why") or "")
+        if item.get("whySource") == "model":
+            why_text += " · ranked by your endpoint"
+        why = html.escape(why_text)
         href = html.escape(str(item.get("href") or "/agents"))
         label = html.escape(str(item.get("actionLabel") or "Open Agents"))
         card_id = html.escape(str(item.get("cardId") or ""))

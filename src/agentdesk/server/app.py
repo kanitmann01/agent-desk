@@ -214,7 +214,8 @@ from agentdesk.server.core import (
     _active_version_dir,
     plain_preview,
 )
-from agentdesk.agentloop.loop import AgentLoop
+from agentdesk.agentloop import AgentLoop, Step, register_step
+from agentdesk.recommend.rank import rank_enabled, rank_step
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
 from agentdesk.server.guard import GuardVerdict, check_request
@@ -3698,7 +3699,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents", "recommendations", "recommend_deadlines",
-                       "recommend_meetings", "recommend_horizon_days"):
+                       "recommend_meetings", "recommend_horizon_days",
+                       "recommend_model_rank", "recommend_threshold"):
             self._send_json(400, {"error": "unknown setting"})
             return
         value = server.settings.toggle(key)
@@ -7066,3 +7068,8 @@ def _poll_calendar_once(bridge) -> None:
         bridge.poll()
     except Exception:  # noqa: BLE001 - startup must not crash on a poll
         LOG.exception("calendar startup poll failed")
+
+
+# Ticket 06 appends the ranking step after the desk check, so a pass
+# heals first and then asks the endpoint to rank what is still waiting.
+register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))

@@ -37,6 +37,8 @@ _LABELS = {
     "recommend_deadlines": "Deadline recommendations",
     "recommend_meetings": "Meeting prep recommendations",
     "recommend_horizon_days": "Look ahead",
+    "recommend_model_rank": "Rank with my endpoint",
+    "recommend_threshold": "Rank at or above",
 }
 
 ENDPOINT_HINT = (
@@ -140,6 +142,8 @@ def _toggle_button(key: str, value, label: str | None = None) -> str:
         state = str(value)
     elif key == "recommend_horizon_days":
         state = f"{value} days"
+    elif key == "recommend_threshold":
+        state = f"{value} or higher"
     else:
         state = "On" if value else "Off"
     return (
@@ -392,10 +396,15 @@ def _agent_section(settings_values: dict, agent_loop: dict | None) -> str:
 {_toggle_button("recommend_deadlines", bool(settings_values.get("recommend_deadlines", True)))}
 {_toggle_button("recommend_meetings", bool(settings_values.get("recommend_meetings", True)))}
 {_toggle_button("recommend_horizon_days", int(settings_values.get("recommend_horizon_days", 30)))}
+{_toggle_button("recommend_model_rank", bool(settings_values.get("recommend_model_rank", True)))}
+{_toggle_button("recommend_threshold", int(settings_values.get("recommend_threshold", 7)))}
 </div>
 <p class='empty'>On by default: a deadline in a saved fact becomes a waiting
 card in Decisions, with the fact quoted and the day it was saved. Not now
-keeps one gone for good, and removing or replacing the fact withdraws it.</p>
+keeps one gone for good, and removing or replacing the fact withdraws it.
+With ranking on, the desk asks the company endpoint for a short reason and
+keeps a card at or above the chosen score; a lower score rests until the
+next morning.</p>
 <p class='empty'>On by default: the desk acts on its own, and every change it
 makes by itself is recorded on <a href="/settings/activity">Activity</a> with
 an Undo button. It still asks first before sending email or messages,

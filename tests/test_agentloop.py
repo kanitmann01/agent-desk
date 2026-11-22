@@ -197,8 +197,8 @@ def test_release_never_deletes_a_successors_claim(tmp_path):
 # ---- the step registry ---------------------------------------------------
 
 
-def test_only_the_deskcheck_step_is_registered():
-    assert [step.name for step in STEPS] == ["deskcheck"]
+def test_the_deskcheck_and_rank_steps_are_registered():
+    assert [step.name for step in STEPS] == ["deskcheck", "rank"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------

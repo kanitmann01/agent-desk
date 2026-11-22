@@ -209,6 +209,29 @@ class InboxStore:
         return self.get(card_id)
 
     @_serialized
+    def update_meta(self, card_id: str, meta: dict, origin: str | None = None) -> Card:
+        """Replace a card's meta, and its origin when one is given.
+
+        Ranking uses this to attach the model's score and why line without
+        changing the card's title or action. The card keeps waiting.
+        """
+        if not isinstance(meta, dict):
+            raise ValueError("meta must be a dict")
+        self.get(card_id)
+        document = json.dumps(meta, ensure_ascii=False)
+        with self.conn:
+            if origin is None:
+                self.conn.execute(
+                    "UPDATE cards SET meta = ? WHERE id = ?", (document, card_id)
+                )
+            else:
+                self.conn.execute(
+                    "UPDATE cards SET meta = ?, origin = ? WHERE id = ?",
+                    (document, origin, card_id),
+                )
+        return self.get(card_id)
+
+    @_serialized
     def snooze(self, card_id: str, until_ts: float) -> Card:
         """Hide a waiting card until `until_ts` passes. Not a status: the
         card stays waiting, merely out of sight; evaluation returns it
