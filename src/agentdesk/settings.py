@@ -62,6 +62,9 @@ CHOICES = {
     "plugin_instance_cap": [6, 5, 4, 3, 2, 1],
     # How far ahead a saved deadline becomes a recommendation (spec 016 §8).
     "recommend_horizon_days": [14, 7, 30],
+    # The agent loop's pass interval (spec 016 section 8); 0 turns the
+    # loop off, including the startup desk check.
+    "agent_loop_minutes": [60, 30, 240, 0],
 }
 # The embeddings model default below is the spec's Further Notes
 # default (decision: text-embedding-3-small); agentdesk.memory.embed
@@ -92,6 +95,8 @@ DEFAULTS = {
     "daily_cap": 3,
     "plugin_instance_cap": 6,
     "recommend_horizon_days": 30,
+    # The agent loop's pass interval in minutes (spec 016 section 8).
+    "agent_loop_minutes": 60,
     **TEXT_KEYS,
 }
 

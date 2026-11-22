@@ -342,20 +342,50 @@ recorded with its time and status, and nothing here can be edited.</p>
 </section>"""
 
 
-def _agent_section(settings_values: dict) -> str:
-    """The Agent switch: whether the desk acts on its own.
+def _agent_section(settings_values: dict, agent_loop: dict | None) -> str:
+    """The Agent section: autonomy, the loop cadence, and its last pass.
 
-    This ticket ships the stub only: the switch and the help text naming
-    the four things that still ask first. The rest of the section lands
-    with the tickets that give the autonomous loop something to act on.
+    Spec 016 section 9.3: the autonomy switch with the four ask-first
+    classes in its help text, the Check every cycle, the last and next
+    pass line with Run now, and the lastSteps table (step, ok, ms, note).
+    Before the first pass the section carries the empty state; at Check
+    every Off it says the automatic checks are off.
     """
     on = bool(settings_values.get("autonomy", True))
     stamp = "AUTONOMY ON" if on else "AUTONOMY OFF"
+    loop = agent_loop or {}
+    minutes = int(settings_values.get("agent_loop_minutes", 60) or 0)
+    interval = _INTERVAL_LABELS.get(minutes, str(minutes))
+    if minutes == 0:
+        cadence = "<p class='empty'>Automatic checks are off.</p>"
+    else:
+        last_ts = loop.get("lastRunTs")
+        next_ts = loop.get("nextRunTs")
+        if last_ts:
+            cadence = (f"<p class='empty'>Last pass <span class='mono'>"
+                       f"{_agent_clock(last_ts)}</span>")
+            if next_ts:
+                cadence += (f" · next <span class='mono'>"
+                            f"{_agent_clock(next_ts)}</span>")
+            cadence += ".</p>"
+        else:
+            cadence = ("<p class='empty'>The agent hasn't run yet. It runs "
+                       "about an hour after the app opens, or now.</p>")
+    steps = loop.get("lastSteps") or []
+    steps_html = _agent_steps_table(steps) if steps else ""
     return f"""<section class='card settings-card' id='agent'>
 <div class='w-head'><h2>Agent</h2><span class='stamp'>{stamp}</span></div>
 <div class='settings-block'>
 {_toggle_button("autonomy", on, label="Act on its own")}
+<div class='setting-row'><span>Check every</span>
+<button class='btn btn-secondary' data-setting='agent_loop_minutes'>{interval}</button></div>
 </div>
+{cadence}
+<form method="post" action="/api/agent-loop/run" class="cardform">
+<input type="hidden" name="return_to" value="/settings#agent">
+<button class="btn btn-secondary" type="submit">Run now</button>
+</form>
+{steps_html}
 <h3>Recommendations</h3>
 <div class='settings-block'>
 {_toggle_button("recommendations", bool(settings_values.get("recommendations", True)))}
@@ -371,6 +401,29 @@ makes by itself is recorded on <a href="/settings/activity">Activity</a> with
 an Undo button. It still asks first before sending email or messages,
 deleting your data, uninstalling a plugin, or installing a new plugin.</p>
 </section>"""
+
+
+# The Check every cycle's button words, keyed by the setting's minutes.
+_INTERVAL_LABELS = {60: "1 hour", 30: "30 min", 240: "4 hours", 0: "Off"}
+
+
+def _agent_clock(ts) -> str:
+    """An epoch stamp as the page's local wall-clock time, to the minute."""
+    return datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M")
+
+
+def _agent_steps_table(steps: list[dict]) -> str:
+    """The last pass's steps: name, outcome, duration and one note each."""
+    rows = "".join(
+        "<tr><td class='mono'>" + html.escape(str(step.get("name", ""))) + "</td>"
+        + ("<td>ok</td>" if step.get("ok") else "<td><b>failed</b></td>")
+        + f"<td class='mono'>{html.escape(str(step.get('ms', 0)))}</td>"
+        f"<td>{html.escape(str(step.get('note', '')))}</td></tr>"
+        for step in steps
+    )
+    return ("<table class='rows'><thead><tr><th scope='col'>Step</th>"
+            "<th scope='col'>Ok</th><th scope='col'>ms</th>"
+            f"<th scope='col'>Note</th></tr></thead><tbody>{rows}</tbody></table>")
 
 
 def _job_choices(connections: list[dict], selected: str) -> str:
@@ -854,6 +907,7 @@ def render_settings_page(
     bindings: list[dict] | None = None,
     keychain_available: bool = True,
     connections_notice: str = "",
+    agent_loop: dict | None = None,
 ) -> str:
     """The settings document: one card per concern, each stamped with
     the live state it actually reads (never a decoration)."""
@@ -937,7 +991,7 @@ inbox action can be tried safely. Every cell it fills carries a Sample
 data tag, and turning it off removes exactly what it added.</p>
 </section>
 
-{_agent_section(settings_values)}
+{_agent_section(settings_values, agent_loop)}
 
 {_connections_section(connections, editing_connection, keychain_available,
                       connections_notice)}

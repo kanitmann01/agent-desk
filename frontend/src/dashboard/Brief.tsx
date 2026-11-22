@@ -17,6 +17,7 @@ import { pluginKind, kindTag } from './pluginKind';
 import { useWorkbookConnect } from './useWorkbookConnect';
 import {
   MOVER_CAP,
+  agentCheckedLine,
   decisionsEmptyText,
   deskCheckAlert,
   formatAmount,
@@ -274,6 +275,13 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
               <a href={alert.href}>{alert.label}</a>
             </p>
           ) : null;
+        })()}
+        {(() => {
+          // The loop's quiet line (cell-foot is the muted tone): when the
+          // supervised loop last checked the desk, shown once a pass has
+          // run whatever the interval is set to now.
+          const checked = agentCheckedLine(data.agentLoop);
+          return checked ? <p className="cell-foot health-foot">{checked}</p> : null;
         })()}
       </>
     ),

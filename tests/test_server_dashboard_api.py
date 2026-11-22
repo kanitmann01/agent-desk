@@ -10,6 +10,7 @@ modes, and plugin cards are data only.
 import json
 import sqlite3
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -112,8 +113,9 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
     payload = get_dashboard(booted, auth)
     # The whole contract: nothing missing, nothing extra.
     assert sorted(payload) == [
-        "commitments", "deskCheck", "flags", "inbox", "layout", "plugins",
-        "recommendations", "research", "sales", "sample", "skills", "sources",
+        "agentLoop", "commitments", "deskCheck", "flags", "inbox", "layout",
+        "plugins", "recommendations", "research", "sales", "sample", "skills",
+        "sources",
         "version",
     ]
     assert payload["version"]
@@ -147,6 +149,11 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
         {"key": "research", "title": None},
         {"key": "skills", "title": None},
     ]
+    # Agent loop: on at the default interval, never run yet, so the
+    # health line and the settings empty state stay quiet (spec 016 #194).
+    assert payload["agentLoop"]["enabled"] is True
+    assert payload["agentLoop"]["lastRunTs"] is None
+    assert payload["agentLoop"]["nextRunTs"] > time.time() + 3500
 
 
 def test_payload_counts_connected_sources_when_one_exists(booted, auth):

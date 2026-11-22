@@ -1,0 +1,57 @@
+{
+  "branch": "ticket/016-04-agentloop",
+  "head": "850b45bcec96d65fe26a800e2718b6b983af5a20",
+  "port": 8766,
+  "capturedAt": "2026-11-22T04:53:04.427Z",
+  "afterRunNow": {
+    "enabled": true,
+    "intervalMinutes": 60,
+    "lastRunTs": 1795323190.2984197,
+    "nextRunTs": 1795326790.29842,
+    "running": false,
+    "lastSteps": [
+      {
+        "name": "deskcheck",
+        "ok": true,
+        "ms": 3,
+        "note": "failed 0, findings 1, fixed 0"
+      }
+    ]
+  },
+  "afterOff": {
+    "enabled": false,
+    "intervalMinutes": 0,
+    "lastRunTs": 1795323190.2984197,
+    "nextRunTs": null,
+    "running": false,
+    "lastSteps": [
+      {
+        "name": "deskcheck",
+        "ok": true,
+        "ms": 3,
+        "note": "failed 0, findings 1, fixed 0"
+      }
+    ]
+  },
+  "afterConfiguredDesk": {
+    "workbookStatus": 200,
+    "calendarState": "healthy",
+    "researchStatus": "ok",
+    "researchAnsweredTs": 1795323191.8780985,
+    "afterTurnedOn": {
+      "enabled": true,
+      "intervalMinutes": 60,
+      "lastRunTs": 1795323190.2984197,
+      "nextRunTs": 1795326790.29842,
+      "running": false,
+      "lastSteps": [
+        {
+          "name": "deskcheck",
+          "ok": true,
+          "ms": 3,
+          "note": "failed 0, findings 1, fixed 0"
+        }
+      ]
+    }
+  }
+}

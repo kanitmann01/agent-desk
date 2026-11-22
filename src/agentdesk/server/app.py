@@ -214,6 +214,7 @@ from agentdesk.server.core import (
     _active_version_dir,
     plain_preview,
 )
+from agentdesk.agentloop.loop import AgentLoop
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
 from agentdesk.server.guard import GuardVerdict, check_request
@@ -926,6 +927,11 @@ class AgentDeskServer(ThreadingHTTPServer):
     def server_close(self) -> None:
         """Stop announcing before the sockets close, so a test process
         never leaves a UDP listener behind on Windows."""
+        loop = getattr(self, "agent_loop", None)
+        if loop is not None:
+            # The loop's threads write to the ledger and the audit store, so
+            # they stop before either store closes (spec 016 section 6.2).
+            loop.stop(timeout=2)
         discovery = getattr(self, "peer_discovery", None)
         if discovery is not None:
             discovery.stop()
@@ -1460,7 +1466,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._send_json(200, self._peers_catalog())
 
     def _send_dashboard_api(self) -> None:
-        """Serve the dashboard payload as JSON."""
+        """Serve the dashboard payload as JSON.
+
+        The GET is also the supervisor's heartbeat: a loop thread that died
+        mid-target is respawned here, one thread, never a second beside the
+        first (spec 016 section 6.2).
+        """
+        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        if loop is not None:
+            loop.restart_if_dead()
         self._send_json(200, dashboard_payload(self.server))
 
     def _send_ledger_api(self) -> None:
@@ -1538,6 +1552,35 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_redirect("/settings#desk-check")
             return
         self._send_json(200, payload)
+
+    def _send_agent_loop_api(self) -> None:
+        """Serve the agent loop's status payload (spec 016 sections 6.2 and 7)."""
+        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        if loop is None:
+            self._send_json(503, {"error": "the agent loop is not available"})
+            return
+        self._send_json(200, loop.status())
+
+    def _agent_loop_run(self) -> None:
+        """Start one full pass now, on the loop's own claim.
+
+        The answer is immediate: {"started": true}, or 409 when a pass is
+        already running. A plain form post (the settings page's Run now
+        button) goes back to the agent section instead.
+        """
+        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        if loop is None:
+            self._send_json(503, {"error": "the agent loop is not available"})
+            return
+        started = loop.run_now()
+        if self._is_form_submit():
+            body = self._read_json_body() or {}
+            self._send_redirect(self._form_return_to(body, "/settings#agent"))
+            return
+        if not started:
+            self._send_json(409, {"error": "A pass is already running."})
+            return
+        self._send_json(200, {"started": True})
 
     def _send_preferences_values(self) -> None:
         """Serve the stored insight preferences."""
@@ -3110,6 +3153,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             bindings=bindings,
             keychain_available=bool(server.keychain.available()),
             connections_notice=self._connections_notice(),
+            agent_loop=(server.agent_loop.status()
+                        if getattr(server, "agent_loop", None) is not None else None),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3649,7 +3694,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap",
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents", "recommendations", "recommend_deadlines",
@@ -3672,9 +3717,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # memory write would otherwise have to wait for.
             if key == "recommendations":
                 self._after_memory_change()
-        elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap") or key.startswith("memory_"):
-            # The memory loop reads its switches on every capture, and the
-            # autonomy switch is read by ledger.may_act before each action.
+        elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
+                     "agent_loop_minutes") or key.startswith("memory_"):
+            # The memory loop reads its switches on every capture,
+            # the autonomy switch is read by ledger.may_act before each action,
+            # and the agent loop re-reads its interval on every wake.
             pass
         else:
             self._apply_source_toggles(key, value)
@@ -6289,6 +6336,10 @@ def create_server(
             # A locked memory bank cannot be read; the rest of the desk still
             # starts, and the memory page explains the missing key.
             pass
+    # The supervised loop is built here and started in
+    # start_background_polls, so it lives and dies with the server process
+    # (spec 016 section 6.2). Its run claim lives in the data folder.
+    server.agent_loop = AgentLoop(server, data_dir=default_data_dir())
     return server
 
 
@@ -6962,12 +7013,15 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
         server.server_close()
 
 def start_background_polls(server: AgentDeskServer) -> None:
-    """Both watches poll once, right now, on daemon threads.
+    """Both watches poll once, right now, on daemon threads, and the
+    supervised agent loop opens its thread.
 
     The recurring loops keep their own schedules (calendar every half
     hour, excel hourly); this only removes the empty first half hour on
     the commitments card and brings the registered workbook back after a
-    restart. A source turned off in settings is not touched at all.
+    restart. A source turned off in settings is not touched at all. The
+    agent loop thread always opens; at agent_loop_minutes 0 its startup
+    check and its ticks simply do nothing.
     """
 
     def allowed(key: str) -> bool:
@@ -6995,6 +7049,9 @@ def start_background_polls(server: AgentDeskServer) -> None:
         # Attached plugin data sources resume their hourly loops; each
         # already polled once at attach, so no immediate poll is needed.
         plugins.start_widget_polls()
+    loop = getattr(server, "agent_loop", None)
+    if loop is not None:
+        loop.start()
 
 def _poll_mail_once(watch: MailWatch) -> None:
     """One immediate read so the first inbox look already sees the digest."""

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decisionsEmptyText, dealName, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline, recommendationRows } from '../dashboard/briefModel';
+import { agentCheckedLine, decisionsEmptyText, dealName, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline, recommendationRows } from '../dashboard/briefModel';
 
 const atlas = (amount: number) => ['Halvorsen Freight renewal', 'AMER', 'Prospect', amount];
 const field = (amount: number) => ['Kestrel Foods pilot', 'EMEA', 'Qualify', amount];
@@ -80,6 +80,24 @@ describe('the morning brief desk check', () => {
   it('stays quiet when nothing wants attention', () => {
     expect(deskCheckAlert({ attention: 0, top: null })).toBeNull();
     expect(deskCheckAlert(undefined)).toBeNull();
+  });
+});
+
+describe('the morning brief agent loop line', () => {
+  it('shows the clock time of the last pass', () => {
+    expect(agentCheckedLine({ lastRunTs: 1732160400, nextRunTs: 1732164000, enabled: true }))
+      .toMatch(/^Agent checked at \d{1,2}:\d{2}$/);
+  });
+
+  it('stays quiet before the first pass', () => {
+    expect(agentCheckedLine(undefined)).toBeNull();
+    expect(agentCheckedLine({ lastRunTs: null, nextRunTs: null, enabled: true })).toBeNull();
+  });
+
+  it('drops the line when the interval is Off', () => {
+    // Ticket #194's browser check: with checks off the line goes away
+    // and the empty states say "Automatic checks are off."
+    expect(agentCheckedLine({ lastRunTs: 1732160400, nextRunTs: null, enabled: false })).toBeNull();
   });
 });
 

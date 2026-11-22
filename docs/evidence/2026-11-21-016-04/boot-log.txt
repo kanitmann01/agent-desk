@@ -1,0 +1,13 @@
+boot: AGENTDESK_DATA=<temp dir> PYTHONPATH=<worktree>/src python -m agentdesk.server --port 8766 --no-browser
+browser: Chrome (playwright 1.64.0-alpha-1790635538000) at 1440x900, signed in through the start link itself
+
+data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-evidence-01604-yUJtVr (throwaway, deleted after capture)
+worktree: branch ticket/016-04-agentloop at 850b45bcec96d65fe26a800e2718b6b983af5a20
+python: Python 3.14.5; node: v24.16.0
+captured: 2026-11-22T04:53:04.427Z
+llm endpoint: in-process mock at http://127.0.0.1:61107/v1 (evidence only; the desk reached it through its normal research path)
+configured desk: fixture workbook via POST /sources/excel-watch, a fresh calendar document via POST /sources/calendar-bridge/path, one research question via POST /research
+decisions empty state: dashboard-spa-decisions-empty-off.png (Check every Off) and dashboard-spa-decisions-empty-on.png (1 hour)
+
+--- server transcript (start-link token redacted; the link is single-use) ---
+Agent Desk is running: http://127.0.0.1:8766/auth/<redacted>

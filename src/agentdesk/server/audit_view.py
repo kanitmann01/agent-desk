@@ -33,6 +33,7 @@ KINDS = (
     ("settings.", "Settings"),
     ("peer.", "Peer"),
     ("deskcheck.", "Desk check"),
+    ("agentloop.", "Agent"),
     ("recommend.", "Agent"),
 )
 
