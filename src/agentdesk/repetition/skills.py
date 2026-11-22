@@ -14,6 +14,8 @@ last_used_ts feed the staleness clock. Nothing here ever deletes a
 skills or skill_versions row.
 """
 
+from __future__ import annotations
+
 import functools
 import re
 import sqlite3
