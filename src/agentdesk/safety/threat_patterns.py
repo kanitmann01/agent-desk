@@ -206,10 +206,6 @@ def scan_for_threats(content: str, scope: str = "strict") -> list[str]:
         return []
     if (patterns := _COMPILED.get(scope)) is None:
         raise ValueError(f"scan_for_threats: unknown scope {scope!r}")
-    if not content:
-        return []
-    if (patterns := _COMPILED.get(scope)) is None:
-        raise ValueError(f"scan_for_threats: unknown scope {scope!r}")
     # Invisible unicode is checked on the RAW content: NFKC below can strip these
     # codepoints.  Checked over the COMPLETE input, not just the first scan chunk;
     # the three RGI subdivision flags are blanked first (their TAG chars are legitimate).
