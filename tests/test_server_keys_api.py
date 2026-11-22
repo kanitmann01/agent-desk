@@ -411,14 +411,46 @@ def test_no_keychain_machine_names_the_state_and_still_saves_keyless_connections
 # -- the Settings page, server-rendered ---------------------------------------
 
 
-def test_settings_page_carries_the_preset_grid_and_console_deep_links(env, auth):
+def test_settings_page_carries_the_provider_select_and_console_deep_links(env, auth):
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    # The provider picker is one native select (spec 019 #263): a label
+    # names it, the form posts the same provider field the radios posted,
+    # and no radio grid remains on the page.
+    assert "<label class='empty' for='conn-provider'>Provider</label>" in page
+    assert "<select id='conn-provider' name='provider'>" in page
+    assert "preset-grid" not in page and "preset-tile" not in page
+    assert "<input type='radio' name='provider'" not in page
+    # Three optgroups in order: the hosted providers, the local servers
+    # whose labels carry the discovery fact, Custom last.
+    hosted = page.index("<optgroup label='Hosted providers'>")
+    local = page.index("<optgroup label='Local servers, no key needed'>")
+    custom = page.index("<optgroup label='Custom'>")
+    assert hosted < local < custom
     for preset in PRESETS:
-        assert f"value='{preset.id}'" in page, preset.id
-    # The console deep-links answer "where do I get a key" inline.
-    assert "https://platform.openai.com/api-keys" in page
-    assert "https://console.anthropic.com/settings/keys" in page
-    assert "https://openrouter.ai/settings/keys" in page
+        label = preset.name
+        if preset.local:
+            label += " (this machine, no key needed)"
+        chosen = " selected" if preset.id == PRESETS[0].id else ""
+        expected = (f"<option value='{preset.id}'{chosen}"
+                    f" data-base='{preset.base_url}'>{label}</option>")
+        assert expected in page, preset.id
+    # The create form opens on the first preset, where the checked radio
+    # used to sit, and Custom is the last option of all.
+    for preset in PRESETS[:-1]:
+        assert page.index(f"<option value='{preset.id}'") < custom, preset.id
+    assert ("<option value='openai' selected"
+            " data-base='https://api.openai.com/v1'>OpenAI</option>") in page
+    # The console deep-links answer "where do I get a key" inline, folded
+    # into a native disclosure (spec 019 #259): the summary names the
+    # block, the anchors stay plain links with their hrefs, and the open
+    # and close need no script.
+    start = page.index("<details class='console-links'>")
+    block = page[start:page.index("</details>", start)]
+    assert "<summary>Where to get a key</summary>" in block
+    for url in ("https://platform.openai.com/api-keys",
+                "https://console.anthropic.com/settings/keys",
+                "https://openrouter.ai/settings/keys"):
+        assert f"<a class='btn btn-secondary' href='{url}'>" in block, url
     # The form is a real form: it posts without any script.
     assert "action='/api/connections'" in page
     assert "name='label'" in page and "name='provider'" in page
@@ -434,6 +466,10 @@ def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth
     assert "sk-live-quietly" not in page
     assert f"/settings?connection={created['id']}" in page  # the edit link
     assert f"/api/connections/{created['id']}/delete" in page  # the delete form
+    # The row compacts by layout (spec 019 #256): the URL cell takes the
+    # wrapping class and the actions cell takes the one-line class.
+    assert "class='mono conn-url'" in page
+    assert "class='conn-actions'" in page
 
 
 def test_settings_page_renders_the_badge_states_server_side(env, auth):
@@ -478,11 +514,16 @@ def test_edit_form_offers_the_test_and_manual_model_entry(env, auth):
 
 
 def test_edit_form_is_prefilled_and_posts_to_the_update_route(env, auth):
-    created = json.loads(_create(env, auth)[2])
+    created = json.loads(_create(env, auth, provider="groq")[2])
     page = env.request("GET", f"/settings?connection={created['id']}", auth)[2]
     text = page.decode("utf-8")
     assert f"action='/api/connections/{created['id']}/update'" in text
     assert "OpenAI personal" in text
+    # The provider select mirrors the saved provider (spec 019 #263):
+    # groq carries selected and it is the only option that does.
+    assert ("<option value='groq' selected"
+            " data-base='https://api.groq.com/openai/v1'>Groq</option>") in text
+    assert text.count(" selected data-base=") == 1
     # The empty-key-keeps rule and the separate clear action are both stated.
     assert "keeps the stored key" in text
     assert "Remove the stored key" in text

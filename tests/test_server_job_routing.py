@@ -435,9 +435,44 @@ def test_a_no_js_delete_post_gets_the_warning_page_and_the_confirmed_post_delete
     assert "is bound to the" in page and "presentations" in page
     assert f"action='/api/connections/{connection['id']}/delete'" in page
     assert "name='confirm'" in page
+    # The whole consequence paragraph, pinned verbatim (spec 019 #258):
+    # a refactor that reflows the source fragments and drops one join
+    # space prints run-on words ("job.Deleting", "thosebindings") and
+    # fails here, so the one page that must read as carefully reviewed
+    # cannot regress by that class alone.
+    assert (
+        "<p><b>Work gateway</b> is bound to the <b>presentations</b> job."
+        " Deleting it removes the connection, its keychain entry and those"
+        " bindings; the jobs fall back to the default binding, the single"
+        " remaining connection, or the environment, and a job with none of"
+        " those answers with a named unbound error instead of a silent"
+        " one.</p>"
+    ) in page
+    for run_on in ("job.Deleting", "thosebindings", "singleremaining",
+                   "thoseanswers"):
+        assert run_on not in page, run_on
+    # The confirm reads as destructive; Keep it stays the quiet secondary.
+    assert ("<button class='btn btn-danger' type='submit'>"
+            "Delete Work gateway and unbind presentations</button>") in page
+    assert "<a class='btn btn-secondary' href='/settings'>Keep it</a>" in page
     labels = [c["label"] for c in json.loads(
         env.request("GET", "/api/connections", auth)[2])["connections"]]
     assert labels == ["Work gateway"]  # the warning answered, nothing landed
+
+    # The named-jobs sentence keeps its pluralization with two jobs
+    # bound (job_key order names them).
+    assert _bind(env, auth, "memory", connection["id"])[0] == 200
+    status, _h, body = _post_form(
+        env, auth, f"/api/connections/{connection['id']}/delete", {})
+    assert status == 200
+    plural_page = body.decode("utf-8")
+    assert (
+        "<b>Work gateway</b> is bound to the <b>memory, presentations</b>"
+        " jobs. Deleting it removes"
+    ) in plural_page
+    for run_on in ("job.Deleting", "thosebindings", "singleremaining",
+                   "thoseanswers"):
+        assert run_on not in plural_page, run_on
 
     status, headers, _b = _post_form(
         env, auth, f"/api/connections/{connection['id']}/delete",
@@ -524,3 +559,7 @@ def test_the_settings_page_renders_the_jobs_section_with_seven_pickers(
     assert "Serves through <b>Work gateway</b>" in page
     assert "value='assistant-model'" in page
     assert "Unbound:" in page  # the six unbound jobs say so plainly
+    # The model label is short and the cached-lists-or-typed fact is the
+    # card intro's, stated once (spec 019 #259).
+    assert page.count(">Model</label>") == 7
+    assert page.count("picked from the cached lists or typed") == 1

@@ -34,7 +34,7 @@ STYLES = """
   --hairline:#26272A; --heading:#FBFBFB;
   --primary:#FBFBFB; --primary-ink:#060609; --primary-soft:#1C1C20;
   --accent:#E1F56A; --accent-text:#E1F56A; --on-accent:#060609; --focus:#E1F56A;
-  --good:#E1F56A; --bad:#C8C8CC;
+  --good:#E1F56A; --bad:#E5484D;
   --attention-bg:#16161A; --attention-ink:#E1F56A;
  --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238E8E93' stroke-width='1.5' stroke-linecap='round'/></svg>");
 }
@@ -45,7 +45,7 @@ STYLES = """
   --hairline:#1E4472; --heading:#FFFFFF;
   --primary:#FFFFFF; --primary-ink:#082340; --primary-soft:#153A68;
   --accent:#F15840; --accent-text:#F68076; --on-accent:#082340; --focus:#F68076;
-  --good:#F68076; --bad:#CDCDCD;
+  --good:#F68076; --bad:#FF6B6B;
   --attention-bg:#10315A; --attention-ink:#F68076;
  --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23A0A1A2' stroke-width='1.5' stroke-linecap='round'/></svg>");
 }
@@ -56,7 +56,7 @@ STYLES = """
   --hairline:#D5DDE8; --heading:#082340;
   --primary:#1F6BA8; --primary-ink:#FFFFFF; --primary-soft:#EDF1F7;
   --accent:#2470B0; --accent-text:#1F6BA8; --on-accent:#FFFFFF; --focus:#2470B0;
-  --good:#1F6BA8; --bad:#5B6B82;
+  --good:#1F6BA8; --bad:#B42318;
   --attention-bg:#EDF1F7; --attention-ink:#1F6BA8;
  --chevron:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%235B6B82' stroke-width='1.5' stroke-linecap='round'/></svg>");
 }
@@ -133,6 +133,10 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .cardform .btn{align-self:flex-start}
 .cardform label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .cardform input,.cardform select,.cardform textarea{font:inherit;font-size:14px;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;min-height:36px}
+/* Checkboxes and radios ride outside the text-field minimum: the 36px
+   height and its padding are for fields, never for the small controls
+   (the same release the inbox grid gives its consent checkbox). */
+.cardform input[type="checkbox"],.cardform input[type="radio"]{min-height:0;padding:0}
 .cardform input:focus,.cardform select:focus,.cardform textarea:focus{outline:2px solid var(--focus);outline-offset:1px}
 /* The inbox card's quick actions: one shared grid so the three forms
    keep proportional columns and land their labels, controls and buttons
@@ -352,18 +356,28 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
 .doc .settings-card h3{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
 .doc .settings-card .settings-block{max-width:none}
 .settings-links{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+/* The console deep-links fold into a native details disclosure (spec
+   019 #259): the summary carries the block-label style of the h3 it
+   replaced, and the open and close are the browser's own, no script. */
+.console-links summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0;width:fit-content}
 .settings-skill{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--hairline)}
 .settings-skill:first-of-type{border-top:none;padding-top:0}
-/* Connections (spec 018): the preset grid wraps as tiles so twelve
-   providers stay one keyboard-reachable radiogroup, and a row's Delete
-   form sits inline with its Edit link instead of stacking. */
-.preset-grid{display:flex;flex-wrap:wrap;gap:8px;border:0;padding:0;margin:8px 0}
-.preset-tile{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--hairline);border-radius:var(--r-inner);background:var(--surface);font-size:13px;color:var(--ink-1)}
-.preset-tile:has(input:checked){border-color:var(--accent);color:var(--accent-text)}
+/* Connections (spec 018): a row's Delete form sits inline with its
+   Edit link instead of stacking. The provider picker is a native
+   select since #263, so it shares the .cardform select styling above
+   and needs no rules of its own. */
 .inlineform{display:inline-block;margin:0 0 0 6px}
+/* A row scans one line tall (spec 019): the base URL wraps anywhere so
+   a mono URL cannot dictate the column widths, and the three actions
+   hold one line per row. */
+.conn-url{overflow-wrap:anywhere}
+.conn-actions{white-space:nowrap}
 /* The health badge (spec 018): one pill per state, colored like the
    delta arrows (good, bad) with unknown in the quiet ink; the inline
-   cause under it is plain text, not part of the pill. */
+   cause under it is plain text, not part of the pill. The failure
+   token (bad) stays a chromatic step apart from every quiet ink of
+   its theme and 4.5:1 on the surface, so error, unknown and ok read
+   as three colors in all three themes (spec 019). */
 .conn-status{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);color:var(--ink-3)}
 .conn-ok{color:var(--good)}
 .conn-error{color:var(--bad)}
@@ -547,7 +561,7 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
 
 // Connections (spec 018): the key field reveals only while the box is
 // checked (the full value is visible exactly once, in the form), and
-// picking a preset fills its default base URL, editable afterwards.
+// picking a provider fills its default base URL, editable afterwards.
 // Both are enhancements; the form itself posts without any script.
 (function () {
   var reveal = document.querySelector('[data-key-reveal]');
@@ -556,10 +570,10 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     key.type = reveal.checked ? 'text' : 'password';
   });
   var base = document.getElementById('conn-base');
-  document.querySelectorAll("input[name='provider']").forEach(function (radio) {
-    radio.addEventListener('change', function () {
-      if (base && radio.dataset.base) base.value = radio.dataset.base;
-    });
+  var provider = document.getElementById('conn-provider');
+  if (base && provider) provider.addEventListener('change', function () {
+    var chosen = provider.selectedOptions[0];
+    if (chosen && chosen.dataset.base) base.value = chosen.dataset.base;
   });
 })();
 

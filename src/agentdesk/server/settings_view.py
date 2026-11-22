@@ -438,7 +438,7 @@ def _jobs_section(bindings: list[dict] | None,
 <input type='hidden' name='job' value='{job}'>
 <label class='empty' for='job-{job}-connection'><b>{JOB_LABELS[job]}</b></label>
 <select id='job-{job}-connection' name='connectionId'>{choices}</select>
-<label class='empty' for='job-{job}-model'>Model (picked from the cached lists or typed)</label>
+<label class='empty' for='job-{job}-model'>Model</label>
 <input id='job-{job}-model' type='text' name='model' list='{list_id}'
  value='{html.escape(model, quote=True)}' autocomplete='off'>
 <datalist id='{list_id}'>{datalist}</datalist>
@@ -459,7 +459,8 @@ def _jobs_section(bindings: list[dict] | None,
 <p>Assign the desk's jobs to connections: the assistant on a personal
 key, presentations on a work key, web research on a third. Every model
 call asks one resolution hub: the job's binding here, then the default
-binding, then the single enabled connection, then the environment.</p>
+binding, then the single enabled connection, then the environment. Each
+model field is picked from the cached lists or typed.</p>
 {body}
 </section>"""
 
@@ -490,16 +491,17 @@ def render_connection_delete_warning(connection: dict, jobs: list[str],
     else:
         consequence = (
             f"<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}."
-            "Deleting it removes the connection, its keychain entry and those"
-            "bindings; the jobs fall back to the default binding, the single"
-            "remaining connection, or the environment, and a job with none of those"
-            "answers with a named unbound error instead of a silent one.</p>"
+            " Deleting it removes the connection, its keychain entry and those"
+            " bindings; the jobs fall back to the default binding, the single"
+            " remaining connection, or the environment, and a job with none of"
+            " those answers with a named unbound error instead of a silent"
+            " one.</p>"
         )
     content = f"""<h1>Delete a connection that serves jobs</h1>
 {consequence}
 <form method='post' action='/api/connections/{connection_id}/delete' class='cardform'>
 <input type='hidden' name='confirm' value='1'>
-<button class='btn btn-primary' type='submit'>Delete {label} and unbind {named}</button>
+<button class='btn btn-danger' type='submit'>Delete {label} and unbind {named}</button>
 </form>
 <p><a class='btn btn-secondary' href='/settings'>Keep it</a></p>"""
     return page_shell("Connections", "/settings", content, version)
@@ -543,10 +545,10 @@ def _connection_rows(connections: list[dict]) -> str:
             f"<td><b>{label}</b>{star}</td>"
             f"<td>{html.escape(preset_name)}</td>"
             f"<td>{key_cell}</td>"
-            f"<td class='mono'>{base}</td>"
+            f"<td class='mono conn-url'>{base}</td>"
             f"<td><span class='conn-status conn-{status}'>{status}</span>"
             f"{cause_line}{when}{models_line}</td>"
-            f"<td><form method='post' action='/api/connections/{connection_id}/test'"
+            f"<td class='conn-actions'><form method='post' action='/api/connections/{connection_id}/test'"
             " class='inlineform'>"
             "<button class='btn btn-secondary' type='submit'>Test</button></form> "
             f"<a class='btn btn-secondary' href='/settings?connection={connection_id}'>Edit</a> "
@@ -563,36 +565,62 @@ def _connection_rows(connections: list[dict]) -> str:
     )
 
 
-def _preset_grid(selected: str) -> str:
-    """The provider radios: one tile per preset, the selected one checked.
+def _provider_select(selected: str) -> str:
+    """The provider picker: one native select, the presets grouped.
 
-    Each input carries its preset's default base URL as data, so the
-    script can fill the base field on choice; without script the server
-    fills the same default when the field arrives empty."""
-    tiles = []
+    Three optgroups in order: the hosted providers under their plain
+    names, the local servers whose labels carry the discovery fact
+    (this machine, no key needed), and Custom last. The hosted labels
+    stay bare because the console disclosure below the form answers
+    where keys come from. Each option carries its preset's default base
+    URL as data, so the script can fill the base field on choice;
+    without script the server fills the same default when the field
+    arrives empty. The saved provider's option carries selected on the
+    edit form, the first preset on the create form, exactly where the
+    checked radio used to sit (spec 019 #263)."""
+    groups: dict[str, list[str]] = {
+        "Hosted providers": [],
+        "Local servers, no key needed": [],
+        "Custom": [],
+    }
     for preset in PRESETS:
-        checked = " checked" if preset.id == selected else ""
-        tiles.append(
-            f"<label class='preset-tile'><input type='radio' name='provider'"
-            f" value='{preset.id}'{checked} data-base='{html.escape(preset.base_url, quote=True)}'>"
-            f"{html.escape(preset.name)}"
-            + (" <span class='empty'>(no key)</span>" if preset.key_optional else "")
-            + "</label>"
-        )
+        chosen = " selected" if preset.id == selected else ""
+        label = preset.name
+        if preset.local:
+            label += " (this machine, no key needed)"
+            group = "Local servers, no key needed"
+        elif preset.id == "custom":
+            group = "Custom"
+        else:
+            group = "Hosted providers"
+        groups[group].append(
+            f"<option value='{preset.id}'{chosen}"
+            f" data-base='{html.escape(preset.base_url, quote=True)}'>"
+            f"{html.escape(label)}</option>")
+    options = "".join(
+        f"<optgroup label='{html.escape(group)}'>{''.join(items)}</optgroup>"
+        for group, items in groups.items())
     return (
-        "<fieldset class='preset-grid'><legend class='empty'>Provider</legend>"
-        + "".join(tiles) + "</fieldset>"
+        "<label class='empty' for='conn-provider'>Provider</label>"
+        "<select id='conn-provider' name='provider'>" + options + "</select>"
     )
 
 
 def _console_links() -> str:
-    """One deep-link per hosted preset: where its keys are issued."""
+    """One deep-link per hosted preset, folded into a native disclosure:
+    the summary names the block, the anchors stay plain links, and the
+    open and close work with no script at all."""
     links = "".join(
         f"<a class='btn btn-secondary' href='{preset.console_url}'>"
         f"{html.escape(preset.name)}</a>"
         for preset in PRESETS if preset.console_url
     )
-    return f"<div class='settings-links'>{links}</div>"
+    return (
+        "<details class='console-links'>"
+        "<summary>Where to get a key</summary>"
+        f"<div class='settings-links'>{links}</div>"
+        "</details>"
+    )
 
 
 def _health_forms(editing: dict | None) -> str:
@@ -633,8 +661,9 @@ def _connections_section(
     """The keys card: the connections list, then the add/edit form.
 
     Server-rendered throughout: the form posts as a plain form, the
-    masked hints are printed, and the preset grid and console deep-links
-    answer the two first-run questions with no script at all. The edit
+    masked hints are printed, and the provider select and console
+    deep-links answer the two first-run questions with no script at
+    all. The edit
     semantic is the one rule everywhere: an empty key field keeps the
     stored key, and only the separate clear action removes it.
     """
@@ -691,7 +720,7 @@ def _connections_section(
             cancel = ""
         form = f"""<h3>{heading}</h3>
 <form method='post' action='{action}' class='cardform' id='connection-form'>
-{_preset_grid(selected)}
+{_provider_select(selected)}
 <label class='empty' for='conn-label'>Label</label>
 <input id='conn-label' type='text' name='label' value='{label_value}' placeholder='OpenAI personal' autocomplete='off'>
 <label class='empty' for='conn-base'>Base URL</label>
@@ -709,7 +738,6 @@ def _connections_section(
 Remove the stored key is the only action that deletes it. Leave the base
 URL empty to use the preset's own address.</p>
 {_health_forms(editing)}
-<h3>Where to get a key</h3>
 {_console_links()}"""
         stamp = f"{len(connections)} SAVED" if connections else "NONE YET"
         body = notice_block + keychain_block + listing + form
