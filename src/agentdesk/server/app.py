@@ -3819,7 +3819,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
-                       "memory_capture_agents", "learn_topics", "recommendations",
+                       "memory_capture_agents", "learn_topics", "learn_profile",
+                       "recommendations",
                        "recommend_deadlines", "recommend_meetings",
                        "recommend_horizon_days",
                        "recommend_model_rank", "recommend_threshold",
@@ -3844,6 +3845,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if key == "recommendations":
                 self._after_memory_change()
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
+<<<<<<< HEAD
                      "agent_loop_minutes", "auto_update",
                      "auto_update_plugins", "learn_topics",
                      "skills_auto_create", "skills_auto_refine",
@@ -3855,6 +3857,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # learn-topics step reads its switch every pass, and the
             # skills switches are read by the consolidator and the loop's
             # skills and curator steps on every pass.
+=======
+                     "agent_loop_minutes", "learn_topics", "learn_profile") \
+                or key.startswith("memory_"):
+            # The memory loop reads its switches on every capture,
+            # the autonomy switch is read by ledger.may_act before each action,
+            # the agent loop re-reads its interval on every wake, and the
+            # learn-topics and profile-review steps read their switches at
+            # every pass.
+>>>>>>> 601a881 (fix(server): the learn_profile toggle allowlist gap, and the mid-pass patch removal counts as unknown-id (review fix-back #199))
             pass
         else:
             self._apply_source_toggles(key, value)

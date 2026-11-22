@@ -142,6 +142,11 @@ def _apply_one(op, store, record, allowed_ids: set[int]) -> str | None:
             store.patch_entry(entry_id, text, provenance)
     except OverBudget:
         return "over-budget"
+    except LookupError:
+        # A removal landed between the check above and the locked write;
+        # patch_entry re-checks under the lock, and the same drop reason
+        # applies rather than failing the whole step.
+        return "unknown-id"
     if op["op"] == "add":
         note = (f"Learned a line about you from activity "
                 f"{', '.join(str(i) for i in sorted(grounded))}.")

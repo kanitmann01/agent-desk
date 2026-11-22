@@ -162,6 +162,36 @@ def test_ten_asks_and_a_pass_learn_one_line(env, auth):
     assert env.server.learned_profile.document()["entries"][0]["text"] == LINE
 
 
+def test_the_third_switch_turns_the_review_off_and_on(env, auth):
+    """The Settings switch is the user's off switch (spec 016 section
+    6.5): the page renders it with data-setting='learn_profile', and the
+    generic toggle post must reach it. It did not: the route's allowlist
+    named learn_topics but not learn_profile, so the switch answered
+    "unknown setting" and the third control on the page was dead. Off
+    takes the step's gate down with no pass to wait for; on puts it
+    back."""
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "data-setting='learn_profile'" in page
+    # The step's gate needs a base URL as well as the switch, so the
+    # switch is measured with one configured: it must turn the one thing
+    # the user controls off and on without waiting for a pass.
+    env.server.settings.set("llm_base", "http://127.0.0.1:9/v1")
+    assert server_app._profile_review_enabled(env.server.settings) is True
+    status, _h, body = env.post_json("/settings/toggle",
+                                     {"key": "learn_profile"}, auth)
+    assert status == 200
+    assert json.loads(body) == {"key": "learn_profile", "value": False}
+    assert env.server.settings.get("learn_profile") is False
+    assert server_app._profile_review_enabled(env.server.settings) is False
+    widgets = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert widgets["learn_profile"] is False
+    status, _h, body = env.post_json("/settings/toggle",
+                                     {"key": "learn_profile"}, auth)
+    assert status == 200
+    assert json.loads(body) == {"key": "learn_profile", "value": True}
+    assert server_app._profile_review_enabled(env.server.settings) is True
+
+
 def test_preferences_stay_byte_identical_through_it_all(env, auth):
     stated = server_app.default_data_dir() / "preferences.json"
     before = hashlib.sha256(stated.read_bytes()).hexdigest()
