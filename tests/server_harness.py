@@ -37,6 +37,7 @@ from agentdesk.keys.store import KeysStore
 from agentdesk.layout import LayoutStore
 from agentdesk.ledger.store import Ledger
 from agentdesk.mail.store import MailStore
+from agentdesk.memory.profile import LearnedProfileStore
 from agentdesk.memory.store import MemoryStore
 from agentdesk.peers.store import PeerStore
 from agentdesk.plugins.runtime import PluginRuntime
@@ -193,6 +194,15 @@ class Booted:
         kwargs.setdefault("settings_store", _inert_settings())
         kwargs.setdefault("inbox_store", _inert_inbox())
         kwargs.setdefault("memory_store", _inert_memory())
+        # The learned profile binds a JSON file, so a boot gets one under
+        # this boot's own temp folder: no suite touches the real
+        # ~/.agent-desk/profile.learned.json. Tests pass None explicitly
+        # to boot the default store over AGENTDESK_DATA.
+        self._profile_root = tempfile.TemporaryDirectory(prefix="agentdesk-profile-")
+        kwargs.setdefault(
+            "learned_profile",
+            LearnedProfileStore(
+                Path(self._profile_root.name) / "profile.learned.json"))
         # The layout store joins the inert in-memory defaults, so no boot
         # in the suite touches the real ~/.agent-desk/layout.sqlite3.
         kwargs.setdefault("layout_store", _inert_layout())
@@ -316,6 +326,9 @@ class Booted:
         root = getattr(self, "_plugins_root", None)
         if root is not None:
             root.cleanup()
+        profile_root = getattr(self, "_profile_root", None)
+        if profile_root is not None:
+            profile_root.cleanup()
         outbox_root = getattr(self, "_outbox_root", None)
         if outbox_root is not None:
             outbox_root.cleanup()

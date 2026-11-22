@@ -22,9 +22,15 @@ import os
 import time
 from pathlib import Path
 
-from agentdesk.insight.preferences import MAX_TOPICS, MAX_TOPIC_CHARS
-
 VERSION = 1
+
+# The topic limits, kept equal to insight/preferences.py's MAX_TOPICS and
+# MAX_TOPIC_CHARS (a test pins the two together, the way settings.py and
+# memory/embed.py pin their shared model default). They live here rather
+# than imported because insight/__init__ imports this module's readers,
+# and a memory module importing back would close a circle.
+MAX_TOPICS = 10
+MAX_TOPIC_CHARS = 40
 
 # The user-profile budget and entry delimiter, ported from Hermes'
 # tools/memory_tool_store.py (user_char_limit 1375, ENTRY_DELIMITER).

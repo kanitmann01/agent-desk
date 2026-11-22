@@ -303,6 +303,75 @@ preference as it was, and the reason appears above in the server's words.</p>
 </section>"""
 
 
+def _learned_section(document: dict | None, settings_values: dict) -> str:
+    """What the desk learned about you (spec 016 section 9.3), under the
+    stated preferences card.
+
+    The learned topics and lines come from profile.learned.json, each
+    with its provenance and a Remove button that posts to the JSON
+    route (a no-JS post redirects back here). The switches sit beside
+    them; memory_auto_approve speaks in the voice of the choice it
+    offers, not the name of its key. Every value here is server-rendered
+    from the stores, never guessed.
+    """
+    values = settings_values or {}
+    rows = []
+    for topic in (document or {}).get("focusTopics") or []:
+        name = html.escape(str(topic.get("topic", "")), quote=True)
+        asks = topic.get("learnedFrom", {}).get("asks")
+        provenance = f"Learned from {asks} asks" if isinstance(asks, int) else "Learned"
+        rows.append(
+            f"<div class='setting-row'><span>{name} "
+            f"<span class='empty'>{html.escape(provenance)}</span></span>"
+            "<form method='post' action='/api/profile/learned/remove' class='inlineform'>"
+            f"<input type='hidden' name='topic' value='{name}'>"
+            "<input type='hidden' name='return_to' value='/settings#learned'>"
+            "<button class='btn btn-secondary' type='submit'>Remove</button>"
+            "</form></div>"
+        )
+    for entry in (document or {}).get("entries") or []:
+        text = html.escape(str(entry.get("text", "")), quote=True)
+        stamp = entry.get("ts")
+        when = datetime.fromtimestamp(stamp).strftime("%d %b %Y") \
+            if isinstance(stamp, (int, float)) else "activity"
+        rows.append(
+            f"<div class='setting-row'><span>{text} "
+            f"<span class='empty'>Learned from activity on {html.escape(when)}</span></span>"
+            "<form method='post' action='/api/profile/learned/remove' class='inlineform'>"
+            f"<input type='hidden' name='id' value='{html.escape(str(entry.get('id', '')), quote=True)}'>"
+            "<input type='hidden' name='return_to' value='/settings#learned'>"
+            "<button class='btn btn-secondary' type='submit'>Remove</button>"
+            "</form></div>"
+        )
+    if rows:
+        learned_html = "".join(rows)
+    else:
+        learned_html = (
+            "<p class='empty'>Nothing learned yet. The desk learns from "
+            "what you ask it; nothing here is guessed.</p>"
+        )
+    switches = "".join(
+        _toggle_button(key, values.get(key), label)
+        for key, label in (
+            ("learn_topics", "Learn focus topics from repeated asks"),
+            ("memory_auto_approve", "Save captured facts without asking"),
+        )
+    )
+    return f"""<section class='card settings-card' id='learned'>
+<div class='w-head'><h2>What the desk learned about you</h2><span class='stamp'>{len(rows)} LEARNED</span></div>
+<p>The desk learns only from what you ask it: a topic shows up here when
+several of your questions named the same thing. Each line lists where it
+came from, and removing one keeps it from coming back.</p>
+{learned_html}
+<div class='settings-block'>
+{switches}
+</div>
+<p class='empty'>Saving captured facts without asking stores what the
+memory loop finds as soon as it finds it; off, everything waits for your
+review in the inbox. Both choices are recorded in the activity trail.</p>
+</section>"""
+
+
 def _record_card(audit_entries: list[dict], audit_total: int) -> str:
     """The trail's front door: the count, the last five rows, the links.
 
@@ -974,6 +1043,7 @@ def render_settings_page(
     audit_total: int | None = None,
     preferences: dict | None = None,
     preference_notice: str = "",
+    learned: dict | None = None,
     desk_check: dict | None = None,
     connections: list[dict] | None = None,
     editing_connection: dict | None = None,
@@ -1053,6 +1123,8 @@ have never touched is the right setting.</p>
 </section>
 
 {_preferences_section(preferences, preference_notice)}
+
+{_learned_section(learned, settings_values)}
 
 <section class='card settings-card' id='desk'>
 <div class='w-head'><h2>Desk</h2><span class='stamp'>{desk_stamp}</span></div>
