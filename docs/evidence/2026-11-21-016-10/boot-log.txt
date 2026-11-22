@@ -1,0 +1,15 @@
+Boot: 2026-11-22 00:57:15 UTC, branch ticket/016-10-skills at ae71cd5
+Command (from the worktree root):
+  AGENTDESK_DATA=<throwaway temp dir> AGENTDESK_LLM_BASE=http://127.0.0.1:8788/v1 \
+  PYTHONPATH=<worktree>/src python -m agentdesk.server --port 8805 --no-browser
+Mock endpoint: python tools/mock_endpoint.py --port 8788 (loopback only, throwaway session)
+AGENTDESK_LLM_BASE is the startup-endpoint channel effective_llm_config() reads;
+in this build no settings UI/route writes the llm_base row (spec 018 #234 retired it),
+so the env var is the one real runtime way to point the desk's chat endpoint at the stub,
+the same resolution chain the tests drive with settings llm_base.
+
+--- server output (start-link token redacted) ---
+Agent Desk is running: http://127.0.0.1:8805/auth/<redacted single-use token>
+
+--- mock endpoint output ---
+mock endpoint listening on http://127.0.0.1:8788/v1
