@@ -6878,12 +6878,20 @@ def _default_agents_store() -> AgentRunStore | None:
         return None
 
 def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]:
-    """The activity log and skill store over one file, or Nones."""
+    """The activity log and skill store over one file, or Nones.
+
+    Both stores share the connection, so they share its one lock: a
+    request-thread skill write and a loop-thread consolidation, refine or
+    curator pass serialize instead of interleaving on one implicit
+    transaction.
+    """
     try:
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(data_dir / "repetition.sqlite3", check_same_thread=False)
-        return ActivityLog(conn, time.time), SkillStore(conn, time.time)
+        lock = threading.RLock()
+        return (ActivityLog(conn, time.time, lock=lock),
+                SkillStore(conn, time.time, lock=lock))
     except (OSError, sqlite3.Error):
         LOG.exception("repetition stores unavailable")
         return None, None

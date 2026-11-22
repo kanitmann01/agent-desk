@@ -14,8 +14,10 @@ last_used_ts feed the staleness clock. Nothing here ever deletes a
 skills or skill_versions row.
 """
 
+import functools
 import re
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 
@@ -90,6 +92,23 @@ class SkillError(Exception):
     """The skill name or description breaks the format contract."""
 
 
+def _serialized(method):
+    """Every read and write holds the store's one lock, the inbox store's
+    pattern. The connection is shared (check_same_thread=False) by the
+    server's request threads and the agent loop's skills and curator
+    steps; Python's sqlite3 connection keeps one implicit transaction, so
+    a request-thread refine committing mid-way through a loop-thread
+    set_state can commit the other's half-done write, and the
+    MAX(version)+1 read races another writer. An RLock, because methods
+    call each other (markdown reads through get)."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        """Run one store method with the store's re-entrant lock held."""
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 def slugify(name: str) -> str:
     """A skill name as a stable slug: lower case, single dashes, length-capped.
 
@@ -117,12 +136,26 @@ def render_skill_md(name: str, description: str, prompt: str) -> str:
 
 
 class SkillStore:
-    def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time) -> None:
-        """Open the store on a connection, creating both tables if they are absent."""
+    """Skills and their versions, thread-safe: every method serializes on
+    one lock (see _serialized). The default lock is the store's own; two
+    stores sharing one connection (the default boot's repetition.sqlite3)
+    are handed the same lock so the connection really is serial."""
+
+    def __init__(self, conn: sqlite3.Connection, clock: Callable[[], float] = time.time,
+                 lock: threading.RLock | None = None) -> None:
+        """Open the store on a connection, creating both tables if they
+        are absent.
+
+        lock is injectable so stores sharing a connection can share its
+        one lock; the store's methods are re-entrant under it.
+        """
         self.conn = conn
         self.clock = clock
-        ensure_schema(conn)
+        self._lock = lock if lock is not None else threading.RLock()
+        with self._lock:
+            ensure_schema(conn)
 
+    @_serialized
     def activate(self, name: str, description: str, prompt: str,
                  created_by: str = "user") -> dict:
         """Create (or re-activate) a skill and record the version.
@@ -167,6 +200,7 @@ class SkillStore:
         return {"id": skill_id, "name": slug, "version": version, "active": True,
                 "description": description, "prompt": prompt, "created_by": created_by}
 
+    @_serialized
     def deactivate(self, skill_id: int) -> dict:
         """The undo: the prior state is the version history's to prove."""
         row = self.conn.execute("SELECT id, active, prompt FROM skills WHERE id = ?", (skill_id,)).fetchone()
@@ -183,6 +217,7 @@ class SkillStore:
             )
         return {"id": skill_id, "version": version, "active": False}
 
+    @_serialized
     def refine(self, skill_id: int, prompt: str, note: str) -> dict:
         """Store a better prompt as a new version row (spec 016 section 6.6).
 
@@ -219,13 +254,21 @@ class SkillStore:
             )
         return {"id": skill_id, "version": version, "prompt": prompt}
 
-    def set_state(self, skill_id: int, state: str) -> dict:
+    @_serialized
+    def set_state(self, skill_id: int, state: str, *,
+                  active: bool | None = None) -> dict:
         """Move a skill between the curator's states (spec 016 section 5.5).
 
         archived forces active=0; active sets active=1 (the pinned case is
         coming back from archived); stale keeps the active flag it finds,
         so a stale skill still runs. The change lands in the version
         history so the trail stays honest about when it stopped running.
+
+        active overrides the derived flag, for the skill-state undo alone:
+        the undo restores the exact pair its capture holds, because the
+        pair it found can no longer be re-derived (an archived skill that
+        was stale was running when it was captured, and stale keeps the
+        flag rather than setting it).
         """
         if state not in STATES:
             raise SkillError(f"unknown skill state {state}")
@@ -234,21 +277,25 @@ class SkillStore:
         ).fetchone()
         if row is None:
             raise SkillError(f"no skill {skill_id}")
-        active = 0 if state == STATE_ARCHIVED else (1 if state == STATE_ACTIVE else row[1])
+        if active is None:
+            active = 0 if state == STATE_ARCHIVED else (
+                1 if state == STATE_ACTIVE else row[1])
+        flag = 1 if active else 0
         now = self.clock()
         version = self._next_version(skill_id)
         with self.conn:
             self.conn.execute(
                 "UPDATE skills SET state = ?, active = ? WHERE id = ?",
-                (state, active, skill_id),
+                (state, flag, skill_id),
             )
             self.conn.execute(
                 "INSERT INTO skill_versions (skill_id, version, active, ts, note)"
                 " VALUES (?, ?, ?, ?, ?)",
-                (skill_id, version, active, now, f"state: {state}"),
+                (skill_id, version, flag, now, f"state: {state}"),
             )
-        return {"id": skill_id, "state": state, "active": bool(active)}
+        return {"id": skill_id, "state": state, "active": bool(flag)}
 
+    @_serialized
     def pin(self, skill_id: int, pinned: bool) -> dict:
         """Pin a skill out of the curator and out of refine, or release it."""
         row = self.conn.execute("SELECT id FROM skills WHERE id = ?", (skill_id,)).fetchone()
@@ -259,6 +306,7 @@ class SkillStore:
                               (1 if pinned else 0, skill_id))
         return {"id": skill_id, "pinned": bool(pinned)}
 
+    @_serialized
     def record_use(self, skill_id: int) -> None:
         """Count one run: use_count up by one, last_used_ts to now.
 
@@ -272,6 +320,7 @@ class SkillStore:
                 (self.clock(), skill_id),
             )
 
+    @_serialized
     def _next_version(self, skill_id: int) -> int:
         """The next version for a skill: its history's high-water mark plus one."""
         row = self.conn.execute(
@@ -280,6 +329,7 @@ class SkillStore:
         ).fetchone()
         return int(row[0])
 
+    @_serialized
     def active(self) -> list[dict]:
         """Every active skill, oldest first, each with the ask it re-runs."""
         rows = self.conn.execute(
@@ -287,11 +337,13 @@ class SkillStore:
         ).fetchall()
         return [{"id": r[0], "name": r[1], "description": r[2], "prompt": r[3]} for r in rows]
 
+    @_serialized
     def all_skills(self) -> list[dict]:
         """Every skill with its lifecycle columns, oldest first (the settings page)."""
         rows = self.conn.execute(_SKILL_COLUMNS + " ORDER BY id").fetchall()
         return [_skill_row(r) for r in rows]
 
+    @_serialized
     def agent_skills(self) -> list[dict]:
         """The desk-made skills with their lifecycle columns, oldest first."""
         rows = self.conn.execute(
@@ -299,6 +351,7 @@ class SkillStore:
         ).fetchall()
         return [_skill_row(r) for r in rows]
 
+    @_serialized
     def get(self, skill_id: int) -> dict | None:
         """One skill by id, active or not, or None when the id is unknown."""
         row = self.conn.execute(
@@ -308,6 +361,7 @@ class SkillStore:
             return None
         return _skill_row(row)
 
+    @_serialized
     def history(self, skill_id: int) -> list[dict]:
         """Every recorded version of a skill, oldest first, deactivations included."""
         rows = self.conn.execute(
@@ -329,6 +383,7 @@ class SkillStore:
 
     # -- the curator's snapshot and restore ---------------------------------
 
+    @_serialized
     def snapshot_rows(self) -> dict:
         """The agent skills and their version rows, as a snapshot payload.
 
@@ -367,6 +422,7 @@ class SkillStore:
             ],
         }
 
+    @_serialized
     def restore_rows(self, payload: dict) -> None:
         """Put a snapshot's rows back (Hermes rollback, row-shaped).
 
@@ -404,6 +460,7 @@ class SkillStore:
                      row.get("note", ""), row.get("prompt", "")),
                 )
 
+    @_serialized
     def curator_state_value(self, key: str) -> str | None:
         """One value from the curator's k/v table, or None when unset."""
         row = self.conn.execute(
@@ -411,6 +468,7 @@ class SkillStore:
         ).fetchone()
         return None if row is None else row[0]
 
+    @_serialized
     def set_curator_state(self, key: str, value: str) -> None:
         """Remember one curator value (the interval clock's home)."""
         with self.conn:

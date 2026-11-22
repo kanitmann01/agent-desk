@@ -58,8 +58,9 @@ class Consolidator:
         self.clock = clock
         self.create_directly = create_directly
         self.on_created = on_created
-        with activity.conn:
-            activity.conn.executescript(_COOLDOWN_SCHEMA)
+        with activity.locked():
+            with activity.conn:
+                activity.conn.executescript(_COOLDOWN_SCHEMA)
 
     def consolidate(self, now: datetime | None = None) -> dict:
         """One pass: cluster, find a countable new pattern, propose once."""
@@ -126,21 +127,23 @@ class Consolidator:
 
     def dismiss_cooldown(self, pattern: str) -> None:
         """Start the cooldown for one pattern, replacing any earlier dismissal."""
-        with self.activity.conn:
-            self.activity.conn.execute(
-                "INSERT INTO proposal_cooldowns (pattern, dismissed_ts) VALUES (?, ?)"
-                " ON CONFLICT(pattern) DO UPDATE SET dismissed_ts = excluded.dismissed_ts",
-                (pattern, self.clock()),
-            )
+        with self.activity.locked():
+            with self.activity.conn:
+                self.activity.conn.execute(
+                    "INSERT INTO proposal_cooldowns (pattern, dismissed_ts) VALUES (?, ?)"
+                    " ON CONFLICT(pattern) DO UPDATE SET dismissed_ts = excluded.dismissed_ts",
+                    (pattern, self.clock()),
+                )
 
     def _on_cooldown(self, pattern: str, now: datetime) -> bool:
         """Whether the pattern was dismissed inside the cooldown window.
 
         A dismissal older than COOLDOWN_DAYS no longer suppresses a proposal.
         """
-        row = self.activity.conn.execute(
-            "SELECT dismissed_ts FROM proposal_cooldowns WHERE pattern = ?", (pattern,)
-        ).fetchone()
+        with self.activity.locked():
+            row = self.activity.conn.execute(
+                "SELECT dismissed_ts FROM proposal_cooldowns WHERE pattern = ?", (pattern,)
+            ).fetchone()
         if row is None:
             return False
         dismissed = datetime.fromtimestamp(row[0]).astimezone()
