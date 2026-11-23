@@ -503,6 +503,7 @@ def _run_curator(ctx: LoopContext) -> dict:
 
 
 # Ticket 10's skills step (consolidation plus refine) and curator step (the
-# weekly lifecycle pass) are registered from server/app.py after the rank
-# step and before the update step. Registering them here would run them
-# before every step app.py appends, because this module is imported first.
+# weekly lifecycle pass) are registered from server/app.py in the order spec
+# 016 section 6.2 gives, after the learned-topics and profile-review steps.
+# Registering them here would run them before every step app.py appends,
+# because this module is imported first.

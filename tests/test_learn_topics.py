@@ -241,8 +241,8 @@ def test_activity_rows_carry_ids():
 
 def test_the_step_is_registered_after_the_desk_check():
     assert [step.name for step in STEPS] == [
-        "deskcheck", "learn-topics", "profile-review", "rank", "skills",
-        "curator", "update"]
+        "deskcheck", "recommend", "rank", "learn-topics", "profile-review",
+        "skills", "curator", "update"]
     taster = next(step for step in STEPS if step.name == "learn-topics")
     assert taster.enabled(SettingsStore(
         sqlite3.connect(":memory:", check_same_thread=False))) is True

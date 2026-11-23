@@ -6752,10 +6752,8 @@ def _run_learn_topics(ctx: LoopContext) -> dict:
         audit_conn=getattr(ctx.server, "audit_conn", None))
 
 
-# Ticket 08 appends its step after the desk check (spec 016 section 6.2);
-# later tickets register below in import order.
-register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
-                   run=_run_learn_topics))
+# Ticket 08's step is registered with the other ticket steps near the end of
+# this module, in the order spec 016 section 6.2 gives.
 
 
 # -- profile review (spec 016 section 6.5, the profile-review step) ---------
@@ -6919,8 +6917,8 @@ def _run_profile_review(ctx: LoopContext) -> dict:
                           audit_conn=getattr(ctx.server, "audit_conn", None))
 
 
-register_step(Step(name="profile-review", enabled=_profile_review_enabled,
-                   run=_run_profile_review))
+# Ticket 09's step is registered with the other ticket steps near the end
+# of this module, in the order spec 016 section 6.2 gives.
 
 
 def _migrate_legacy_endpoints(server: AgentDeskServer) -> None:
@@ -7870,13 +7868,27 @@ def _poll_calendar_once(bridge) -> None:
         LOG.exception("calendar startup poll failed")
 
 
-# Ticket 06 appends the ranking step after the desk check, so a pass
-# heals first and then asks the endpoint to rank what is still waiting.
+def _recommend_enabled(settings) -> bool:
+    """The recommendation step runs only with the recommendations switch on."""
+    return settings is not None and bool(settings.get("recommendations"))
+
+
+def _run_recommend(ctx) -> dict:
+    """Add or withdraw recommendation cards from the facts already saved."""
+    recommender = getattr(ctx.server, "recommender", None)
+    if recommender is None:
+        return {"added": 0, "withdrawn": 0}
+    return recommender.refresh()
+
+
+# Tickets 05 and 06 append their steps after the desk check, in the order
+# spec 016 section 6.2 gives: a pass heals, recommends, then ranks.
+register_step(Step(name="recommend", enabled=_recommend_enabled,
+                   run=_run_recommend))
 register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
 
-# Ticket 10 registers the skills step (consolidation plus refine) and the
-# curator step (the weekly lifecycle pass) after the rank step, so a pass
-# ranks first and improves skills next. The definitions stay in
+# Ticket 08's learned topics and ticket 09's profile review follow, then
+# ticket 10's skills and curator steps. The definitions stay in
 # agentloop/loop.py beside the desk check's.
 from agentdesk.agentloop.loop import (  # noqa: E402 - position is the order
     _curator_enabled,
@@ -7884,6 +7896,10 @@ from agentdesk.agentloop.loop import (  # noqa: E402 - position is the order
     _run_skills,
     _skills_enabled,
 )
+register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
+                   run=_run_learn_topics))
+register_step(Step(name="profile-review", enabled=_profile_review_enabled,
+                   run=_run_profile_review))
 register_step(Step(name="skills", enabled=_skills_enabled, run=_run_skills))
 register_step(Step(name="curator", enabled=_curator_enabled, run=_run_curator))
 
