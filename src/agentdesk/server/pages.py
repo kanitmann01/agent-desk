@@ -367,6 +367,26 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
    Every rule is scoped to .doc so it wins over the generic card rules. */
 .settings-stack{display:flex;flex-direction:column;gap:16px;margin-top:16px}
 .doc .settings-card{margin:0}
+/* Settings sections (spec 022): the bar names six sections. The page is
+   rendered whole, so with no script it is an index of six titled groups;
+   with script one section shows at a time and the titles step aside. A
+   control that needs script is hidden until the script runs, so the page
+   never offers a button that cannot work. */
+.settings-bar{display:flex;flex-wrap:wrap;gap:4px;margin-top:16px;margin-bottom:16px;border-bottom:1px solid var(--hairline)}
+.settings-bar a{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-bottom:2px solid transparent;margin-bottom:-1px;border-radius:var(--r-inner) var(--r-inner) 0 0;color:var(--ink-2);font-size:14px;font-weight:600;text-decoration:none}
+.settings-bar a:hover{background:var(--surface-2);color:var(--ink-1)}
+.settings-bar a[aria-current="page"]{color:var(--accent-text);border-bottom-color:var(--accent-text);background:var(--surface)}
+.settings-section{display:flex;flex-direction:column;gap:16px}
+.settings-section[hidden]{display:none}
+.settings-section-title{margin:8px 0 0;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase}
+.js-settings .settings-section-title{display:none}
+.settings-status{margin:0 0 -8px;font-size:15px}
+.needs-script{display:none}
+.js-settings .needs-script{display:inline-flex}
+.settings-disclosure{margin-top:4px}
+.settings-disclosure>summary{cursor:pointer;font-weight:600;color:var(--ink-2);width:fit-content}
+.settings-disclosure>summary:hover{color:var(--ink-1)}
+.settings-disclosure[open]>summary{margin-bottom:12px}
 .doc .settings-card h3{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
 .doc .settings-card .settings-block{max-width:none}
 .settings-links{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
@@ -570,6 +590,58 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
   });
 });
 
+// Settings sections (spec 022): the page is rendered whole, so with no
+// script it works as an index of six titled groups. With script the bar
+// shows one section at a time, and an address that names a card (a form's
+// return_to, a saved link) opens the section that holds it. A reload
+// keeps the address, so a switched toggle lands back on its section.
+(function () {
+  var bar = document.querySelector('[data-settings-bar]');
+  if (!bar) return;
+  var groups = Array.prototype.slice.call(document.querySelectorAll('[data-settings-section]'));
+  if (!groups.length) return;
+  document.documentElement.classList.add('js-settings');
+  var links = Array.prototype.slice.call(bar.querySelectorAll('a[href^="#"]'));
+  var owner = {};
+  groups.forEach(function (group) {
+    owner[group.getAttribute('data-settings-section')] = group;
+    Array.prototype.forEach.call(group.querySelectorAll('[id]'), function (el) {
+      owner[el.id] = group;
+    });
+  });
+  function show(group) {
+    groups.forEach(function (g) { g.hidden = g !== group; });
+    links.forEach(function (a) {
+      if (a.getAttribute('href') === '#' + group.getAttribute('data-settings-section')) {
+        a.setAttribute('aria-current', 'page');
+      } else {
+        a.removeAttribute('aria-current');
+      }
+    });
+  }
+  function sync() {
+    var id = (window.location.hash || '').slice(1);
+    var group = owner[id] || groups[0];
+    show(group);
+    // A section's own address shows the page from its top, so the bar that
+    // just changed stays in reach; a card's address brings that card into
+    // view inside the section that holds it.
+    if (id && group.getAttribute('data-settings-section') !== id) {
+      var target = document.getElementById(id);
+      if (target && target.scrollIntoView) target.scrollIntoView();
+    } else {
+      // The browser's own jump to the fragment runs after this script, so
+      // the return to the top waits one frame.
+      window.requestAnimationFrame(function () { window.scrollTo(0, 0); });
+    }
+  }
+  window.addEventListener('hashchange', sync);
+  // The browser jumps to the fragment once more when the page finishes
+  // loading, so the same address is settled again then.
+  window.addEventListener('load', sync);
+  sync();
+})();
+
 // The endpoint fields retired to the Connections card (spec 018 #234);
 // the presentation timeout is a plain form post and needs no script.
 
@@ -591,6 +663,13 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
   if (base && provider) provider.addEventListener('change', function () {
     var chosen = provider.selectedOptions[0];
     if (chosen && chosen.dataset.base) base.value = chosen.dataset.base;
+  });
+  // A provider without an address of its own (Custom) needs one, and the
+  // address sits under "More options" (spec 022): choosing it opens them.
+  var more = document.getElementById('conn-more');
+  if (more && provider) provider.addEventListener('change', function () {
+    var picked = provider.selectedOptions[0];
+    if (picked && !picked.dataset.base) more.open = true;
   });
   var model = document.getElementById('conn-model');
   if (model && provider) {

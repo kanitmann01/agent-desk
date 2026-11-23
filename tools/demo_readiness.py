@@ -486,7 +486,10 @@ def _fresh_desk(desk: Desk, report: Report) -> None:
         return ids == list(STEPS) and complete, f"steps={ids}"
     report.run(3, "three setup steps exist", three_steps)
 
-    settings_html = desk.get("/settings")[2].decode("utf-8")
+    # Attribute quotes are normalised to double quotes before the string
+    # searches below: the page quotes attributes with single quotes, and a
+    # check must read what an attribute says, not how it is quoted.
+    settings_html = desk.get("/settings")[2].decode("utf-8").replace("'", '"')
     report.run(4, "Settings opens on the AI", lambda: (
         _before(settings_html)('id="connection-form"', "data-setting="),
         "an on/off switch comes before the key form"))

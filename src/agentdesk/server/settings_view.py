@@ -25,7 +25,7 @@ from agentdesk.server.pages import page_shell
 _LABELS = {
     "excel_enabled": "Sales workbook watching",
     "calendar_enabled": "Calendar reading",
-    "endpoint_enabled": "Company endpoint calls",
+    "endpoint_enabled": "AI calls (assistant and research)",
     "quiet_hours": "Quiet hours (18:00-08:00)",
     "daily_cap": "Notifications per day",
     "mail_enabled": "Mail digest (headers only)",
@@ -37,7 +37,7 @@ _LABELS = {
     "recommend_deadlines": "Deadline recommendations",
     "recommend_meetings": "Meeting prep recommendations",
     "recommend_horizon_days": "Look ahead",
-    "recommend_model_rank": "Rank with my endpoint",
+    "recommend_model_rank": "Rank with my AI",
     "recommend_threshold": "Rank at or above",
 }
 
@@ -309,10 +309,10 @@ def _learned_section(document: dict | None, settings_values: dict) -> str:
 
     The learned topics and lines come from profile.learned.json, each
     with its provenance and a Remove button that posts to the JSON
-    route (a no-JS post redirects back here). The switches sit beside
-    them; memory_auto_approve speaks in the voice of the choice it
-    offers, not the name of its key. Every value here is server-rendered
-    from the stores, never guessed.
+    route (a no-JS post redirects back here). Every value here is
+    server-rendered from the stores, never guessed. The two learning
+    switches sit under Advanced and memory itself has its own card in the
+    Memory section (spec 022), so this card is only what was learned.
     """
     values = settings_values or {}
     rows = []
@@ -350,14 +350,6 @@ def _learned_section(document: dict | None, settings_values: dict) -> str:
             "<p class='empty'>Nothing learned yet. The desk learns from "
             "what you ask it; nothing here is guessed.</p>"
         )
-    switches = "".join(
-        _toggle_button(key, values.get(key), label)
-        for key, label in (
-            ("learn_topics", "Learn focus topics from repeated asks"),
-            ("learn_profile", "Learn lines about you from your recent asks"),
-            ("memory_auto_approve", "Save captured facts without asking"),
-        )
-    )
     return f"""<section class='card settings-card' id='learned'>
 <div class='w-head'><h2>What the desk learned about you</h2><span class='stamp'>{len(rows)} LEARNED</span></div>
 <p>The desk learns only from what you ask it: a topic shows up here when
@@ -365,12 +357,6 @@ several of your questions named the same thing, and a line only when a
 review of your recent asks cites them. Each line lists where it came
 from, and removing one keeps it from coming back.</p>
 {learned_html}
-<div class='settings-block'>
-{switches}
-</div>
-<p class='empty'>Saving captured facts without asking stores what the
-memory loop finds as soon as it finds it; off, everything waits for your
-review in the inbox. Both choices are recorded in the activity trail.</p>
 </section>"""
 
 
@@ -410,7 +396,7 @@ recorded with its time and status, and nothing here can be edited.</p>
 <h3>Review</h3>
 <div class='settings-links'>
 <a class='btn btn-secondary' href="/settings/activity">Open the activity trail</a>
-<a class='btn btn-secondary' href="/capabilities">Check the environment</a>
+<a class='btn btn-secondary' href="/capabilities">Computer check (for IT)</a>
 <a class='btn btn-secondary' href="/audit/export.csv">Export as CSV</a>
 </div>
 {recent}
@@ -424,7 +410,9 @@ def _agent_section(settings_values: dict, agent_loop: dict | None) -> str:
     classes in its help text, the Check every cycle, the last and next
     pass line with Run now, and the lastSteps table (step, ok, ms, note).
     Before the first pass the section carries the empty state; at Check
-    every Off it says the automatic checks are off.
+    every Off it says the automatic checks are off. The recommendation
+    switches are not here: they are rendered once, on the Desk card (spec
+    022).
     """
     on = bool(settings_values.get("autonomy", True))
     stamp = "AUTONOMY ON" if on else "AUTONOMY OFF"
@@ -461,21 +449,6 @@ def _agent_section(settings_values: dict, agent_loop: dict | None) -> str:
 <button class="btn btn-secondary" type="submit">Run now</button>
 </form>
 {steps_html}
-<h3>Recommendations</h3>
-<div class='settings-block'>
-{_toggle_button("recommendations", bool(settings_values.get("recommendations", True)))}
-{_toggle_button("recommend_deadlines", bool(settings_values.get("recommend_deadlines", True)))}
-{_toggle_button("recommend_meetings", bool(settings_values.get("recommend_meetings", True)))}
-{_toggle_button("recommend_horizon_days", int(settings_values.get("recommend_horizon_days", 30)))}
-{_toggle_button("recommend_model_rank", bool(settings_values.get("recommend_model_rank", True)))}
-{_toggle_button("recommend_threshold", int(settings_values.get("recommend_threshold", 7)))}
-</div>
-<p class='empty'>On by default: a deadline in a saved fact becomes a waiting
-card in Decisions, with the fact quoted and the day it was saved. Not now
-keeps one gone for good, and removing or replacing the fact withdraws it.
-With ranking on, the desk asks the company endpoint for a short reason and
-keeps a card at or above the chosen score; a lower score rests until the
-next morning.</p>
 <p class='empty'>On by default: the desk acts on its own, and every change it
 makes by itself is recorded on <a href="/settings/activity">Activity</a> with
 an Undo button. It still asks first before sending email or messages,
@@ -508,10 +481,11 @@ def _agent_steps_table(steps: list[dict]) -> str:
 
 def _job_choices(connections: list[dict], selected: str) -> str:
     """One job's connection options, grouped by provider, with the job's
-    bound connection preselected: the dropdown then tells the same truth
+    chosen connection preselected: the dropdown then tells the same truth
     the readback under the form tells, and an untouched save posts the
-    binding back instead of silently unbinding it (spec 018 #235). The
-    Not bound option is selected only when the job has no binding."""
+    choice back instead of silently clearing it (spec 018 #235). "Same as
+    everything else" is selected only when the place has no choice of its
+    own (spec 022: the page never says job, binding or bound)."""
     groups: dict[str, list[dict]] = {}
     for connection in connections:
         preset = preset_for(connection.get("provider", ""))
@@ -520,7 +494,7 @@ def _job_choices(connections: list[dict], selected: str) -> str:
     options = [
         "<option value=''"
         + (" selected" if not selected else "")
-        + ">Not bound (default connection or environment)</option>"
+        + ">Same as everything else</option>"
     ]
     for provider, rows in groups.items():
         items = "".join(
@@ -535,23 +509,24 @@ def _job_choices(connections: list[dict], selected: str) -> str:
 
 
 def _jobs_section(bindings: list[dict] | None,
-                  connections: list[dict] | None) -> str:
-    """The per-job picker: which connection and model serves which job.
+                  connections: list[dict] | None, ai: dict) -> str:
+    """What uses your AI: one sentence on what serves everything, and,
+    behind a disclosure, one form per place the desk uses a model.
 
-    One plain form per job (the house rule: the page works with no
-    script at all), the connection select grouped by provider and
-    preselected to the job's own binding, and the model offered as a
-    text input with a datalist of every cached model, so choosing from
-    the cached list and typing by hand are the same control. The current
-    binding reads back under each row, so the page always states what
-    serves what, and the select shows the same state.
+    The forms are the per-place picker of spec 018 (#235), in the words of
+    spec 022: one plain form per place, so the page works with no script;
+    the connection select grouped by provider and preselected to the
+    place's own choice; the model offered as a text input with a datalist
+    of every cached model, so choosing from the cached list and typing by
+    hand are the same control. What serves each place reads back under its
+    row, so the page always states what answers what. `ai` is the one
+    sentence's subject: whether an AI is saved, its label and its model.
     """
     if bindings is None or connections is None:
         body = (
             "<div class='alert'><p>The connections store is not available,"
-            " so jobs cannot be bound here.</p></div>"
+            " so this cannot be changed here.</p></div>"
         )
-        stamp = "UNAVAILABLE"
     else:
         by_job = {binding["job"]: binding for binding in bindings}
         by_id = {connection["id"]: connection for connection in connections}
@@ -572,15 +547,16 @@ def _jobs_section(bindings: list[dict] | None,
             choices = _job_choices(connections, selected)
             if selected and selected in by_id:
                 current = (
-                    f"<span class='empty'>Serves through"
+                    f"<span class='empty'>Answers through"
                     f" <b>{html.escape(str(by_id[selected].get('label', '')))}</b>"
                     + (f", model <span class='mono'>{html.escape(model)}</span>"
                        if model else "")
                     + ".</span>")
             elif binding:
-                current = "<span class='empty'>Bound to a connection that is gone.</span>"
+                current = ("<span class='empty'>The AI it used was removed, so it"
+                           " answers like everything else.</span>")
             else:
-                current = "<span class='empty'>Unbound: the default binding, the single saved connection or the environment serves it.</span>"
+                current = "<span class='empty'>Answers like everything else.</span>"
             list_id = f"job-{job}-models"
             forms.append(f"""<div class='settings-block'>
 <form method='post' action='/api/bindings' class='cardform job-form'>
@@ -591,26 +567,27 @@ def _jobs_section(bindings: list[dict] | None,
 <input id='job-{job}-model' type='text' name='model' list='{list_id}'
  value='{html.escape(model, quote=True)}' autocomplete='off'>
 <datalist id='{list_id}'>{datalist}</datalist>
-<button class='btn btn-secondary' type='submit'>Save the {job} job</button>
+<button class='btn btn-secondary' type='submit'>Save</button>
 </form>
 {current}
 </div>""")
-        bound = sum(1 for job in by_job)
-        stamp = f"{bound} BOUND" if bound else "NONE BOUND"
-        body = (
-            "<p class='empty'>Saving with Not bound chosen removes the job's"
-            " binding; the default binding, a single saved connection or the"
-            " environment then serves it.</p>"
-            + "".join(forms)
-        )
+        body = "".join(forms)
+    if ai.get("connected"):
+        serves = (f"<b>{html.escape(str(ai.get('label', '')))}</b> answers everything"
+                  + (f" with <span class='mono'>{html.escape(str(ai.get('model', '')))}</span>"
+                     if ai.get("model") else "")
+                  + ". Change one of these only if you want to, for example web"
+                    " research on a different key.")
+    else:
+        serves = "No AI key is saved yet. Add one above first."
     return f"""<section class='card settings-card' id='jobs'>
-<div class='w-head'><h2>Jobs</h2><span class='stamp'>{stamp}</span></div>
-<p>Assign the desk's jobs to connections: the assistant on a personal
-key, presentations on a work key, web research on a third. Every model
-call asks one resolution hub: the job's binding here, then the default
-binding, then the single enabled connection, then the environment. Each
-model field is picked from the cached lists or typed.</p>
+<div class='w-head'><h2>What uses your AI</h2></div>
+<p>{serves}</p>
+<details class='settings-disclosure'><summary>Use a different model for one of these</summary>
+<p class='empty'>Each model field is picked from the cached lists or typed.
+Leave "Same as everything else" to use the AI that serves the rest.</p>
 {body}
+</details>
 </section>"""
 
 
@@ -872,13 +849,11 @@ def _connections_section(
         if connections:
             listing = _connection_rows(connections)
         else:
-            listing = (
-                "<p class='empty'>No connections yet. Pick a provider below,"
-                " paste its key and save; it lands in this machine's"
-                " keychain, never in a file the desk writes.</p>"
-            )
+            # With nothing saved the status line above the card already says
+            # what to do, so the card goes straight to the form.
+            listing = ""
         if editing is not None:
-            heading = "Edit connection"
+            heading = "Edit this AI"
             action = f"/api/connections/{html.escape(str(editing['id']), quote=True)}/update"
             label_value = html.escape(str(editing.get("label", "")), quote=True)
             base_value = html.escape(str(editing.get("baseUrl", "")), quote=True)
@@ -897,49 +872,82 @@ def _connections_section(
             model_value = str(editing.get("model") or "")
             model_options = list(editing.get("models") or [])
         else:
-            heading = "Add a connection"
+            heading = "Add an AI"
             action = "/api/connections"
             label_value = ""
             base_value = ""
             selected = PRESETS[0].id
-            key_placeholder = "not required for local presets"
+            key_placeholder = "Paste the key from your provider"
             headers_text = ""
             default_checked = ""
             clear_row = ""
             cancel = ""
             model_value = ""
             model_options = []
+        # Three fields are all a person needs to add an AI: provider, key
+        # and model. The rest sit behind "More options" (spec 022). An
+        # address is the one field a provider without one of its own cannot
+        # do without, so for Custom it stays outside the disclosure. An edit
+        # shows every field, as before.
+        chosen_preset = preset_for(selected)
+        needs_address = not (chosen_preset and chosen_preset.base_url)
+        address = (
+            "<label class='empty' for='conn-base'>Address (base URL)</label>"
+            f"<input id='conn-base' type='text' name='baseUrl' value='{base_value}'"
+            " placeholder='https://your-gateway/v1' autocomplete='off'>")
+        name_field = (
+            "<label class='empty' for='conn-label'>Name (optional: the"
+            " provider's own name when left empty)</label>"
+            f"<input id='conn-label' type='text' name='label' value='{label_value}'"
+            f" placeholder='{html.escape(chosen_preset.name if chosen_preset else 'My AI', quote=True)}'"
+            " autocomplete='off'>")
+        rest = (
+            "<label class='empty' for='conn-headers'>Extra headers (corporate"
+            " gateways, one Name: Value per line)</label>"
+            f"<textarea id='conn-headers' name='headers' rows='2'"
+            f" placeholder='X-Gateway: corp'>{headers_text}</textarea>"
+            "<label class='empty'><input type='checkbox' name='isDefault'"
+            f" value='1'{default_checked}> Use this AI for everything by default</label>"
+            f"{clear_row}")
+        if editing is None:
+            shown_address = address if needs_address else ""
+            optional = (f"<details class='settings-disclosure' id='conn-more'>"
+                        "<summary>More options</summary>"
+                        + (name_field if needs_address else address + name_field)
+                        + rest + "</details>")
+        else:
+            shown_address = address
+            optional = name_field + rest
+        # Only an edit has a stored key to keep or remove, so only it states
+        # the rule.
+        keep_rule = (
+            "" if editing is None else
+            "<p class='empty'>Saving with the key field empty keeps the stored"
+            " key; Remove the stored key is the only action that deletes it.</p>")
         form = f"""<h3>{heading}</h3>
 <form method='post' action='{action}' class='cardform' id='connection-form'>
 {_provider_select(selected)}
-<label class='empty' for='conn-label'>Label</label>
-<input id='conn-label' type='text' name='label' value='{label_value}' placeholder='OpenAI personal' autocomplete='off'>
-<label class='empty' for='conn-base'>Base URL</label>
-<input id='conn-base' type='text' name='baseUrl' value='{base_value}' placeholder='filled from the preset when empty' autocomplete='off'>
 <label class='empty' for='conn-key'>API key</label>
 <input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
 <label class='empty' for='conn-key-show'><input type='checkbox' id='conn-key-show' data-key-reveal> Show the key while typing</label>
 {_model_field(model_value, model_options)}
-<label class='empty' for='conn-headers'>Extra headers (corporate gateways, one Name: Value per line)</label>
-<textarea id='conn-headers' name='headers' rows='2' placeholder='X-Gateway: corp'>{headers_text}</textarea>
-<label class='empty'><input type='checkbox' name='isDefault' value='1'{default_checked}> Make this the default connection</label>
-{clear_row}
-<button class='btn btn-primary' type='submit'>Save connection</button>{cancel}
+{shown_address}
+{optional}
+<button class='btn btn-primary' type='submit'>Save</button>{cancel}
 </form>
-<p class='empty'>Saving with the key field empty keeps the stored key;
-Remove the stored key is the only action that deletes it. Leave the base
-URL empty to use the preset's own address. Every call uses the model
-saved here; leave it empty for the default.</p>
+{keep_rule}
+<p class='empty'>The key is kept in this computer's keychain. The desk keeps
+a masked hint (first three and last four characters) and never writes the
+key to a file. Local servers (Ollama, LM Studio, vLLM) need no key.</p>
 {_health_forms(editing)}
 {_console_links()}"""
-        stamp = f"{len(connections)} SAVED" if connections else "NONE YET"
+        stamp = f"{len(connections)} SAVED" if connections else "NONE SAVED"
         body = notice_block + keychain_block + listing + form
     return f"""<section class='card settings-card' id='connections'>
-<div class='w-head'><h2>Connections</h2><span class='stamp'>{stamp}</span></div>
-<p>Named model connections: pick a preset, paste its key, save. The key
-lives in this machine's keychain; the desk keeps only a masked hint
-(first three and last four characters) and never writes the key to any
-file. Local presets (Ollama, LM Studio, vLLM) need no key at all.</p>
+<div class='w-head'><h2>Your AI</h2><span class='stamp'>{stamp}</span></div>
+<p>Pick who you have a key from, paste the key and save. One saved AI
+answers everything; add a second only if you want a different one for
+something.</p>
 {body}
 </section>"""
 
@@ -1072,6 +1080,159 @@ def _desk_check_section(desk_check: dict | None) -> str:
 </section>"""
 
 
+# The six Settings sections in bar order (spec 022). The key is the
+# wrapper's data-settings-section and, where no card inside needs that id,
+# the wrapper's own id; the address is what the bar links to. Preferences
+# links to its card's own anchor, because a section and its card cannot
+# share one id. Activity is the existing page of the same name.
+SETTINGS_SECTIONS = (
+    ("ai", "Your AI", "#ai"),
+    ("tools", "Your tools", "#tools"),
+    ("memory", "Memory", "#memory"),
+    ("preferences", "Preferences", "#preferences"),
+    ("activity", "Activity", "/settings/activity"),
+    ("advanced", "Advanced", "#advanced"),
+)
+_SECTION_TITLES = {key: title for key, title, _href in SETTINGS_SECTIONS}
+
+
+def _settings_section(key: str, cards_html: str) -> str:
+    """One Settings section: a group of cards the section bar shows alone.
+
+    The wrapper carries data-settings-section for the script and its own id
+    unless a card inside needs that id (Preferences keeps its card's). With
+    script one section shows at a time; without it every section renders,
+    each under its own title, so the page is its own index. The title is a
+    label, not a heading: the page keeps one display heading and its cards
+    as the second level.
+    """
+    wrapper_id = "" if key == "preferences" else f" id='{key}'"
+    return (f"<div class='settings-section' data-settings-section='{key}'{wrapper_id}>"
+            f"<p class='settings-section-title'>{_SECTION_TITLES[key]}</p>"
+            f"{cards_html}</div>")
+
+
+def _settings_bar() -> str:
+    """The section bar: six entries, one address each (Activity is a page)."""
+    links = "".join(
+        f"<a href='{href}'>{title}</a>" for _key, title, href in SETTINGS_SECTIONS)
+    return ("<nav class='settings-bar' data-settings-bar"
+            " aria-label='Settings sections'>" + links + "</nav>")
+
+
+def _tools_section(excel_status: dict | None, calendar_status: dict | None,
+                   settings_values: dict, mail_folder: str,
+                   mail_self_address: str) -> str:
+    """Your tools: the workbook, the calendar and the mail folder, each
+    with its live state and one action (spec 022).
+
+    Every state is the source's own status, read when the page rendered.
+    The workbook's one action is the picker, which needs script (hidden
+    without it, so the page never shows a control that cannot work); the
+    calendar's is its setup page; the mail's is its on/off switch. The
+    folder and address forms fold into a disclosure.
+    """
+    excel_status = excel_status or {}
+    calendar_status = calendar_status or {}
+    values = settings_values or {}
+    workbook_path = str(excel_status.get("path") or "")
+    if workbook_path:
+        name = html.escape(workbook_path.replace("\\", "/").rsplit("/", 1)[-1])
+        rows = excel_status.get("rowsSeen")
+        workbook_state = f"Watching <b>{name}</b>" + (
+            f", {rows} rows" if isinstance(rows, int) else "")
+        workbook_verb = "Change"
+    else:
+        workbook_state = "No sales workbook is connected."
+        workbook_verb = "Open a workbook"
+    if calendar_status.get("state") in (None, "empty"):
+        calendar_state = "No calendar is connected."
+        calendar_verb = "Set up"
+    else:
+        calendar_state = "Reading your calendar."
+        calendar_verb = "Change"
+    mail_on = bool(values.get("mail_enabled"))
+    folder = html.escape(mail_folder, quote=True)
+    mail_state = ("On. Only the headers of the .eml files in the folder are read."
+                  if mail_on else "Off. Nothing is read.")
+    mail_switch = _toggle_button("mail_enabled", mail_on)
+    return f"""<section class='card settings-card' id='sources'>
+<div class='w-head'><h2>Workbook, calendar and mail</h2></div>
+<div class='settings-block'>
+<div class='setting-row'><span>Workbook<br><span class='empty'>{workbook_state}</span></span>
+<button class='btn btn-secondary needs-script' data-pick type='button'>{workbook_verb}</button></div>
+<div class='setting-row'><span>Calendar<br><span class='empty'>{calendar_state}</span></span>
+<a class='btn btn-secondary' href='/walkthrough/calendar'>{calendar_verb}</a></div>
+<div class='setting-row'><span>Mail<br><span class='empty'>{mail_state}</span></span>
+{mail_switch}</div>
+</div>
+<p class='alert' id='pick-note' hidden></p>
+<details class='settings-disclosure'><summary>Mail folder and your address</summary>
+<p>The desk reads one folder of exported .eml files and only their headers
+(From, To, Cc, Subject, Date, Message-ID, In-Reply-To). Bodies are
+discarded as the file is read and nothing is sent to any model. Reply
+drafts you accept are written to the local outbox folder for you to send
+yourself. With the switch off, no watcher runs and no mail cards are
+created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
+<form method="post" action="/settings/mail/folder" class="cardform">
+<label class="empty" for="mail-folder">Mail folder</label>
+<input id="mail-folder" type="text" name="folder" value="{folder}" placeholder="C:/Users/you/mail-exports" autocomplete="off">
+<button class="btn btn-secondary" type="submit">Save folder</button>
+</form>
+<form method="post" action="/settings/mail/address" class="cardform">
+<label class="empty" for="mail-self-address">Your mail address</label>
+<input id="mail-self-address" type="text" name="address" value="{html.escape(mail_self_address, quote=True)}" placeholder="you@company.com" autocomplete="off">
+<button class="btn btn-secondary" type="submit">Save address</button>
+</form>
+<p class="empty">The address is how the desk recognises your own replies (the
+address inside the From header), so threads you already answered stop
+producing follow-up cards. With no address set, self-detection is simply
+off: the digest works, follow-up cards are not filed.</p>
+</details>
+</section>"""
+
+
+def _memory_card(settings_values: dict) -> str:
+    """The Memory card: how memory works in plain words, the learning
+    switches and the way to forget everything (spec 022).
+
+    Every switch is server-rendered from the store. "Forget everything"
+    posts to the Memory page's own form, which asks once before it acts,
+    so a click here can never delete anything on its own.
+    """
+    values = settings_values or {}
+    switches = "".join(
+        _toggle_button(key, values.get(key), label)
+        for key, label in (
+            ("memory_auto_approve", "Learn automatically"),
+            ("memory_capture_assistant", "Learn from Assistant conversations"),
+            ("memory_capture_research", "Learn from Research questions"),
+        )
+    )
+    return f"""<section class='card settings-card' id='memory-settings'>
+<div class='w-head'><h2>Memory</h2><span class='stamp'>ON THIS COMPUTER</span></div>
+<p>Agent Desk remembers facts about you and your work, such as who owns a
+renewal or when a deadline falls, and uses them when you ask a question.
+It learns as you work: from what you tell the Assistant and from what you
+ask in Research, and only while the switches below are on. Everything it
+holds is on the Memory page with where it came from, and you can edit or
+forget any of it.</p>
+<div class='settings-block'>
+{switches}
+</div>
+<p class='empty'>With Learn automatically on, a fact is saved as soon as the
+desk notices it. Off, it waits for you in the inbox.</p>
+<div class='settings-links'>
+<a class='btn btn-secondary' href='/memory'>Open the Memory page</a>
+</div>
+<form method='post' action='/memory/forget-all' class='cardform'>
+<button class='btn btn-secondary' type='submit'>Forget everything</button>
+</form>
+<p class='empty'>Forgetting cannot be undone, so the desk asks you to confirm
+on the Memory page first.</p>
+</section>"""
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -1099,28 +1260,23 @@ def render_settings_page(
     agent_loop: dict | None = None,
     update: dict | None = None,
     curator_last_run: str | None = None,
+    ai: dict | None = None,
+    excel_status: dict | None = None,
+    calendar_status: dict | None = None,
 ) -> str:
-    """The settings document: one card per concern, each stamped with
-    the live state it actually reads (never a decoration)."""
+    """The settings document: six sections, one card per concern, each
+    stamped with the live state it actually reads (never a decoration).
+
+    Your AI comes first (spec 022): the key form is the first thing on the
+    page. `ai` is what serves the desk (connected, label, model), read by
+    the same resolution hub every model call uses; `excel_status` and
+    `calendar_status` are the sources' own status for the Your tools rows.
+    """
     settings_values = settings_values or {}
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
     audit_entries = audit_entries or []
     audit_total = len(audit_entries) if audit_total is None else audit_total
     preferences = _stored_preferences() if preferences is None else preferences
-    toggles_html = "".join(
-        _toggle_button(key, settings_values[key]) for key in _LABELS
-    )
-
-    if endpoint_status["configured"]:
-        indicator = (
-            f"Configured. Last call: <b class='mono'>{html.escape(endpoint_status['last'])}</b>"
-            + (" (research and the assistant are running at reduced capacity)"
-               if endpoint_status["last"] == "error" else "")
-        )
-    else:
-        indicator = "Not configured. Research and the assistant run at reduced capacity until it is set."
-    endpoint_html = f"<p>{indicator}</p>" + _endpoint_form(endpoint_status)
-
     questions = audit_view.questions_table(activity_entries[-30:])
 
     if skills:
@@ -1205,78 +1361,97 @@ def render_settings_page(
     registry = registry_status or {}
     registry_stamp = "READY" if registry.get("ok") else "NOT CONFIGURED"
 
-    content = f"""<h1>Settings</h1>
-<p>Everything this desk does, set from one page. A card's stamp is its
-live state on this machine, read when the page rendered; a setting you
-have never touched is the right setting.</p>
-<div class='settings-stack'>
-<section class='card settings-card' id='appearance'>
+    ai = ai or {"connected": False, "label": "", "model": ""}
+    if ai.get("connected"):
+        ai_status = (f"<b>{html.escape(str(ai.get('label', '')))}</b> answers everything"
+                     + (f" with <span class='mono'>{html.escape(str(ai.get('model', '')))}</span>."
+                        if ai.get("model") else ".")
+                     # A saved AI whose last call failed never reads as healthy.
+                     + (" The last call did not succeed."
+                        if endpoint_status.get("last") == "error" else ""))
+    else:
+        ai_status = "No AI key is saved yet. Add one below; it takes a minute."
+    # The everyday switches a person rarely needs. The six recommendation
+    # switches are rendered here once (spec 022).
+    desk_toggles = "".join(
+        _toggle_button(key, settings_values[key]) for key in (
+            "excel_enabled", "calendar_enabled", "endpoint_enabled",
+            "quiet_hours", "daily_cap", "sample_data", "semantic_memory",
+            "suggest_headers_only", "plugin_instance_cap",
+        )
+    )
+    recommendation_toggles = "".join(
+        _toggle_button(key, settings_values[key]) for key in (
+            "recommendations", "recommend_deadlines", "recommend_meetings",
+            "recommend_horizon_days", "recommend_model_rank",
+            "recommend_threshold",
+        )
+    )
+    learning_toggles = "".join(
+        _toggle_button(key, settings_values.get(key), label)
+        for key, label in (
+            ("learn_topics", "Learn focus topics from repeated asks"),
+            ("learn_profile", "Learn lines about you from your recent asks"),
+        )
+    )
+    ai_html = (
+        f"<p class='settings-status' id='ai-status'>{ai_status}</p>"
+        + _connections_section(connections, editing_connection, keychain_available,
+                               connections_notice)
+        + _jobs_section(bindings, connections, ai))
+    tools_html = _tools_section(excel_status, calendar_status, settings_values,
+                                mail_folder, mail_self_address)
+    memory_html = _memory_card(settings_values) + _learned_section(learned, settings_values)
+    preferences_html = _preferences_section(preferences, preference_notice) + f"""<section class='card settings-card' id='appearance'>
 <div class='w-head'><h2>Appearance</h2><span class='stamp'>THIS BROWSER</span></div>
 {_theme_tiles()}
 <p class='empty'>The theme is kept in this browser and applies to every page of the desk.</p>
-</section>
-
-{_preferences_section(preferences, preference_notice)}
-
-{_learned_section(learned, settings_values)}
-
+</section>"""
+    advanced_html = f"""<p class='empty' id='settings-advanced'>The defaults are right for most people. Change these only if you know why.</p>
 <section class='card settings-card' id='desk'>
 <div class='w-head'><h2>Desk</h2><span class='stamp'>{desk_stamp}</span></div>
 <div class='settings-block'>
-{toggles_html}
+{desk_toggles}
 </div>
 <p class='empty'>Sample data fills a fresh desk with labelled example cards
 and sample files (a workbook, a calendar file, header-only mail) so every
 inbox action can be tried safely. Every cell it fills carries a Sample
 data tag, and turning it off removes exactly what it added.</p>
+<h3>Recommendations</h3>
+<div class='settings-block'>
+{recommendation_toggles}
+</div>
+<p class='empty'>On by default: a deadline in a saved fact becomes a waiting
+card in Decisions, with the fact quoted and the day it was saved. Not now
+keeps one gone for good, and removing or replacing the fact withdraws it.
+With ranking on, the desk asks your AI for a short reason and keeps a card
+at or above the chosen score; a lower score rests until the next
+morning.</p>
+<h3>Learning about you</h3>
+<div class='settings-block'>
+{learning_toggles}
+</div>
+<p class='empty'>These two shape what the desk learns from your questions
+over time (topics and short lines about you), shown in the Memory
+section. Facts themselves have their own switches on the Memory card.</p>
 </section>
 
 {_agent_section(settings_values, agent_loop)}
 
-{_connections_section(connections, editing_connection, keychain_available,
-                      connections_notice)}
-
-{_jobs_section(bindings, connections)}
-
-<section class='card settings-card' id='endpoint'>
-<div class='w-head'><h2>Endpoint</h2><span class='stamp'>{endpoint_stamp}</span></div>
-{endpoint_html}
-</section>
-
-<section class='card settings-card' id='sources'>
-<div class='w-head'><h2>Sources</h2><span class='stamp'>{mail_stamp}</span></div>
-<h3>Calendar source</h3>
-<p>Calendar reading follows the OneDrive sync file by default. To pick
-a different file, paste a path, upload the JSON by hand, or go back to
-automatic, open the <a href="/walkthrough/calendar">calendar source page</a>.</p>
-<h3>Mail source</h3>
-<p>Mail digest is <b>off by default</b>. When the toggle above is on,
-the app polls one folder of .eml files and reads only their headers
-(From, To, Cc, Subject, Date, Message-ID, In-Reply-To); bodies are
-discarded at parse time and nothing is sent to any model. Reply drafts
-you accept are written as files to the local outbox folder for you to
-send yourself. The folder is read from this setting first, then the
-AGENTDESK_MAIL_FOLDER environment variable.</p>
-<form method="post" action="/settings/mail/folder" class="cardform">
-<label class="empty" for="mail-folder">Mail folder</label>
-<input id="mail-folder" type="text" name="folder" value="{html.escape(mail_folder, quote=True)}" placeholder="C:/Users/you/mail-exports" autocomplete="off">
-<button class="btn btn-secondary" type="submit">Save folder</button>
-</form>
-<form method="post" action="/settings/mail/address" class="cardform">
-<label class="empty" for="mail-self-address">Your mail address</label>
-<input id="mail-self-address" type="text" name="address" value="{html.escape(mail_self_address, quote=True)}" placeholder="you@company.com" autocomplete="off">
-<button class="btn btn-secondary" type="submit">Save address</button>
-</form>
-<p class="empty">The address is how the desk recognises your own replies (the
-address inside the From header), so threads you already answered stop
-producing follow-up cards. With no address set, self-detection is simply
-off: the digest works, follow-up cards are not filed.</p>
-<p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
-</section>
-
 {_desk_check_section(desk_check)}
 
 {_update_section(settings_values, update or {})}
+
+<section class='card settings-card' id='endpoint'>
+<div class='w-head'><h2>Presentation timeout</h2></div>
+<form method='post' action='/settings/endpoint/save' class='cardform'>
+<label class='empty' for='presentation-timeout'>Presentation timeout (seconds)</label>
+<input id='presentation-timeout' type='text' name='presentationTimeout' value='{_esc_timeout(endpoint_status)}' placeholder='30' autocomplete='off'>
+<button class='btn btn-secondary' type='submit'>Save timeout</button>
+</form>
+<p class='empty'>How long presentation calls wait before the desk gives
+up, from 5 to 300 seconds; every other call keeps the 10 second cap.</p>
+</section>
 
 <section class='card settings-card' id='registry'>
 <div class='w-head'><h2>Plugin registry</h2><span class='stamp'>{registry_stamp}</span></div>
@@ -1285,7 +1460,7 @@ repository. Installs are pinned by content hash and verified with the
 same validator the registry's CI runs before anything executes. The
 path is read from this setting first, then the AGENTDESK_REGISTRY
 environment variable, then the app's own checkout.</p>
-{_registry_section(registry_status)}
+{_registry_section(registry)}
 </section>
 
 <section class='card settings-card' id='machine'>
@@ -1311,10 +1486,24 @@ keeps it out of both. Skills you made are never touched by either.</p>
 
 <section class='card settings-card' id='questions'>
 <div class='w-head'><h2>Activity log</h2><span class='stamp'>LOCAL ONLY</span></div>
-<p>Only what flows through the app: the asks you type into research and
-the assistant. No keystrokes, no screen, and this list is yours.</p>
+<p>Only what you typed into research and the assistant. No keystrokes, no
+screen, and this list is yours. The full trail is on
+<a href="/settings/activity">Activity</a>.</p>
 {questions}
-</section>
+</section>"""
+    content = f"""<h1>Settings</h1>
+<p>Everything this desk does, set from one page. Your AI comes first; the
+rest is grouped, so nothing you need every day sits under a switch you
+will touch once. A card's stamp is its live state on this machine, read
+when the page rendered, and a setting you have never touched is the right
+setting.</p>
+{_settings_bar()}
+<div class='settings-stack'>
+{_settings_section('ai', ai_html)}
+{_settings_section('tools', tools_html)}
+{_settings_section('memory', memory_html)}
+{_settings_section('preferences', preferences_html)}
+{_settings_section('advanced', advanced_html)}
 </div>
 """
     return page_shell("Settings", "/settings", content, version, inbox_count=inbox_count)

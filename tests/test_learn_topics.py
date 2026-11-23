@@ -285,7 +285,10 @@ def test_the_learned_settings_section_empty_state(env, auth):
     assert "What the desk learned about you" in page
     assert ("Nothing learned yet. The desk learns from what you ask it; "
             "nothing here is guessed.") in page
-    assert "Save captured facts without asking" in page
+    # Spec 022: memory's own switch lives on the Memory card, the two
+    # learning-about-you switches under Advanced.
+    assert "Learn automatically" in page
+    assert "data-setting='memory_auto_approve'" in page
     assert "data-setting='learn_topics'" in page
 
 

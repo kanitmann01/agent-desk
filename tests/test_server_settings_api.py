@@ -136,14 +136,15 @@ def test_the_settings_page_no_longer_renders_the_retired_endpoint_fields(env, au
                     "data-endpoint-clear", "data-research-clear",
                     "endpoint-note"):
         assert retired not in page, retired
-    assert "Company endpoint calls" in page
+    assert "AI calls (assistant and research)" in page
     assert "id='presentation-timeout'" in page
     assert "name='presentationTimeout'" in page
     assert "action='/settings/endpoint/save'" in page
-    # The card names where endpoint configuration went, and that the
-    # legacy rows remain as fallback.
-    assert "Connections card" in page
-    assert "read-only fallback" in page
+    # The timeout card sits under Advanced, behind the marker (spec 022),
+    # and the page no longer carries the old pointer to a "Connections
+    # card": Your AI is the first section now.
+    assert page.index("id='settings-advanced'") < page.index("id='endpoint'")
+    assert "Connections card" not in page
 
 
 def test_the_presentation_timeout_remains_settable_through_the_reduced_save(env, auth):
@@ -388,16 +389,21 @@ def test_endpoint_toggle_pauses_research_with_honest_status(env, auth):
     assert env.request("GET", "/widgets/sales-24h", auth)[0] == 200
 
 
-def test_endpoint_indicator_shows_degraded_not_a_false_green(env, auth):
+def test_the_your_ai_line_never_reads_as_a_false_green(env, auth):
+    """An AI that is saved but whose last call failed must not read as
+    healthy. The Your AI line keeps the old indicator's honesty (spec 022)
+    without its "not configured" words."""
     from agentdesk.llm import chat as real_chat
 
     env.server.llm = lambda prompt: real_chat("http://127.0.0.1:9", "k", "m", prompt)
     env.server.llm_endpoint = "http://127.0.0.1:9"  # configured, and down
     env.post_json("/research", {"question": "q"}, auth)  # fails, is audited
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert "Last call:" in page
-    assert "error" in page
-    assert "reduced capacity" in page
+    assert "The last call did not succeed." in page
+    your_ai = page[page.index("data-settings-section='ai'"):
+                   page.index("data-settings-section='tools'")].lower()
+    assert "not configured" not in your_ai
+    assert "not set" not in your_ai
 
 
 def test_quiet_hours_and_cap_set_here_are_what_the_inbox_enforces(env, auth):
@@ -459,11 +465,11 @@ def test_the_jobs_pickers_preselect_the_bound_connection_so_an_untouched_save_ke
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
     picker = _picker(page, "assistant")
     assert f"<option value='{connection['id']}' selected>Desk ollama</option>" in picker
-    assert "<option value=''>Not bound (default connection or environment)</option>" in picker
-    assert "<option value='' selected>" not in picker  # the job IS bound
-    assert "Serves through <b>Desk ollama</b>" in page  # the readback agrees
+    assert "<option value=''>Same as everything else</option>" in picker
+    assert "<option value='' selected>" not in picker  # the place HAS its own choice
+    assert "Answers through <b>Desk ollama</b>" in page  # the readback agrees
 
-    # Once the job is unbound, Not bound is what the picker shows selected.
+    # Once the choice is cleared, "Same as everything else" is selected.
     status, _h, _b = env.post_json("/api/bindings", {
         "job": "assistant", "connectionId": "", "model": "",
     }, auth)
@@ -471,13 +477,14 @@ def test_the_jobs_pickers_preselect_the_bound_connection_so_an_untouched_save_ke
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
     picker = _picker(page, "assistant")
     assert ("<option value='' selected>"
-            "Not bound (default connection or environment)</option>") in picker
+            "Same as everything else</option>") in picker
     assert f"<option value='{connection['id']}' selected" not in picker
+    assert "Answers like everything else." in page
 
 
 def test_the_settings_page_lists_the_ranking_controls(env, auth):
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert "Rank with my endpoint" in page
+    assert "Rank with my AI" in page
     assert "Rank at or above" in page
     assert "7 or higher" in page
     status, _h, body = env.post_json(
@@ -485,4 +492,4 @@ def test_the_settings_page_lists_the_ranking_controls(env, auth):
     assert status == 200
     assert json.loads(body) == {"key": "recommend_model_rank", "value": False}
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert "Rank with my endpoint" in page
+    assert "Rank with my AI" in page
