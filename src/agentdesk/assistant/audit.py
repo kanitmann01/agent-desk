@@ -177,6 +177,9 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # holds the model and the request size, never the prompt or the reply.
     ("llm.profile", "endpoint", "Your recent asks (text only, each cut at 300 characters) and the lines the desk already learned are sent to the company LLM endpoint so it can draft learned lines; the row names the endpoint, the model and the request size, never the words."),
     ("memory.auto-saved", "decision", "A captured fact was saved straight to memory because auto-approve is on; the row names the channel and how many were saved, never the fact itself."),
+    # The whole-bank removal (ticket #283): one local decision, no network
+    # anywhere in it. The row counts what went, never what it said.
+    ("memory.forget_all", "decision", "You chose Forget everything on the Memory page: every fact was deleted together with everything the desk made from it (the names it filed them under, the short summaries and the original words each was learned from), and any fact still waiting for your review was rejected. The row counts what went, never what it said. Your settings and the encryption key are not touched."),
 ]
 
 ACTOR = "agent-desk"

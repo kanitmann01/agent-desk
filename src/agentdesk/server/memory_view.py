@@ -6,6 +6,16 @@ style: everything escaped, every action a plain POST that lands back on
 the page. Facts are derived abstractions only: the assistant rides them
 in its prompt as one bounded block, nothing more.
 
+Ticket #283 gives the page its shape: it leads with the explanation
+("How memory works", under 90 words), then the facts with where each
+came from and its own edit and Forget, then the "Forget everything"
+control, which asks first. The maintenance tools (the graph, the recall
+check, search by meaning, encryption and the cleanup) sit behind one
+"Maintenance" disclosure at their existing addresses; a tool the user
+asks for shows its result inside the open disclosure. Everything the
+page must keep with or without scripting is rendered by the server
+outside the island root the build mounts over the forms.
+
 Ticket #94 adds the encryption surfaces: the dry-run conversion form
 (GET /memory/encrypt counts what would be sealed; the POST needs the
 confirm checkbox), the already-encrypted note, and the locked banner a
@@ -14,22 +24,20 @@ store never reads or writes plaintext, so the page shows the cause and
 nothing else.
 
 Ticket #92 adds the hygiene surfaces: an entities section (canonical
-name, aliases, type, fact count) with the two-entity merge form, the
+name, aliases, type, fact count) with the two-entity merge form, and the
 junk-sweep preview (GET /memory/sweep lists the candidates with their
-reasons and a checkbox each), and the plain notice an edit that merged
-into an existing duplicate renders.
+reasons and a checkbox each).
 
-Ticket #95 adds the embeddings section: the live embedded and
-remaining counts and the backfill action, a plain no-JS POST like
-every other button here.
+Ticket #95 adds the embeddings counts and the backfill action, a plain
+no-JS POST like every other button here.
 
-Ticket #96 adds the Graph action beside the entities section: the
-link to the server-rendered memory graph page.
+Ticket #96 adds the graph page; this page reaches it from Maintenance.
 """
 
 import html
 
 from agentdesk.server.core import count_noun
+from agentdesk.server.memory_loop_api import _card_for, origin_of
 from agentdesk.server.pages import page_shell
 from datetime import datetime
 
@@ -53,38 +61,89 @@ EDIT_MERGE_NOTICE = (
 )
 
 
-# The Graph action (ticket #96), rendered beside the entities section.
-GRAPH_LINK = (
-    '<p id="graph-link"><a href="/memory/graph">Graph</a>: the facts '
-    "and observations as one static picture, with their entity, "
-    "temporal, citation and semantic links.</p>"
+# The explanation that leads the page (ticket #283): under 90 words with
+# its heading, in plain words, answering what memory remembers, how it
+# learns and who controls it.
+HOW_MEMORY_WORKS = (
+    "Agent Desk remembers facts about you and your work, such as who owns a "
+    "renewal or when a deadline moved, and learns new ones as you work. "
+    "Every fact is listed below with where it came from. You are in "
+    "control: edit or forget any item, forget everything, or switch "
+    "learning off. Memory never stores keys, passwords or the text of "
+    "emails. It is all kept on this computer, though a few facts are "
+    "shared with your AI when you use it."
 )
 
 
-def graph_island_html(mode: str) -> str:
-    """The mount point of the interactive memory graph (the SPA build's
-    memory-graph island) with its stylesheet and module script. Without
-    JavaScript the section keeps a plain pointer to the static graph."""
+def _how_memory_works() -> str:
+    """The block that leads the page: what memory remembers, how it learns
+    and who controls it, in plain words (ticket #283)."""
     return (
-        f'<section id="memory-graph-root" data-endpoint="/api/memory/graph"'
-        f' data-mode="{html.escape(mode, quote=True)}" aria-label="Memory graph">'
-        '<p class="empty">The interactive graph needs JavaScript. '
-        '<a href="/memory/graph">Open the static graph</a>.</p></section>'
-        '<link rel="stylesheet" href="/static/spa/assets/memory-graph.css">'
-        '<script type="module" src="/static/spa/assets/memory-graph.js"></script>\n'
+        '<section id="how-memory-works" class="card memory-explain" '
+        'aria-labelledby="how-memory-works-h">\n'
+        '<h2 id="how-memory-works-h">How memory works</h2>\n'
+        f"<p>{html.escape(HOW_MEMORY_WORKS)}</p>\n"
+        "</section>"
     )
+
+
+def _forget_section(facts: list[Fact], confirming: bool) -> str:
+    """The "Forget everything" control (ticket #283): one form posting to
+    its own route. With facts present it asks first: the second submit
+    carries the confirm field. An empty bank says so and offers nothing
+    to forget."""
+    if not facts:
+        return "<p class='empty' id='forget-everything'>Memory is empty. No facts yet.</p>"
+    # Double-quoted attributes: the readiness checks read these hooks
+    # literally (the form's action, the confirm field).
+    if confirming:
+        return (
+            '<section id="forget-everything" class="ml-maint" '
+            'aria-labelledby="forget-everything-h">\n'
+            '<form method="post" action="/memory/forget-all" class="ml-maint-row">\n'
+            '<input type="hidden" name="confirm" value="yes">\n'
+            "<div class='ml-maint-copy'>"
+            "<b id='forget-everything-h'>Forget every fact?</b>"
+            f"<p>This removes {count_noun(len(facts), 'fact')} and everything "
+            "the desk made from them. It cannot be undone.</p></div>\n"
+            "<div class='ml-maint-act'>"
+            "<a class='btn btn-secondary' href='/memory' autofocus>Keep my facts</a>"
+            "<button class='btn btn-danger' type='submit'>Forget everything</button>"
+            "</div></form></section>"
+        )
+    return (
+        '<section id="forget-everything" class="ml-maint" '
+        'aria-labelledby="forget-everything-h">\n'
+        "<div class='ml-maint-row'><div class='ml-maint-copy'>"
+        "<b id='forget-everything-h'>Forget everything</b>"
+        "<p>Removes every fact memory has learned. You will be asked first, "
+        "and your settings are kept.</p></div>\n"
+        "<div class='ml-maint-act'>"
+        '<form method="post" action="/memory/forget-all">'
+        "<button class='btn btn-danger' type='submit'>Forget everything</button>"
+        "</form></div></div></section>"
+    )
+
+
+# The stylesheet of the server-rendered pieces that share the island's
+# tile language (the Maintenance disclosure and the Forget control).
+LOOP_STYLES_HTML = (
+    '<link rel="stylesheet" href="/static/spa/assets/memory-loop.css">\n'
+)
 
 
 def loop_island_html(fallback_html: str) -> str:
     """The Memory page island (the SPA build's memory-loop entry): the
     whole capture, review, knowledge and removal page. The server forms
     inside the root are the no-JavaScript page; React replaces them on
-    mount. The graph stylesheet rides along because the page embeds it."""
+    mount. Everything the page must keep with or without scripting (the
+    explanation, the Forget control, the Maintenance disclosure) is
+    rendered by the server outside the root."""
     return (
         '<div id="memory-loop-root" data-endpoint="/api/memory/loop">'
         f"{fallback_html}</div>"
         '<link rel="stylesheet" href="/static/spa/assets/memory-graph.css">'
-        '<link rel="stylesheet" href="/static/spa/assets/memory-loop.css">'
+        f"{LOOP_STYLES_HTML.strip()}"
         '<script type="module" src="/static/spa/assets/memory-loop.js"></script>\n'
     )
 
@@ -100,74 +159,21 @@ def _locked_banner(cause: str) -> str:
     )
 
 
-def _embeddings_section(state: dict | None) -> str:
-    """The semantic half's surface (ticket #95): the live counts and
-    the backfill action, styled like the sweep and encrypt forms. The
-    counts are data, not a promise: the button refuses in plain
-    language when the probe has not passed or the toggle is off."""
-    if state is None:
-        return ""
-    return (
-        "<h2 id='embeddings'>Embeddings</h2>"
-        f"<p class='empty mono' id='embeddings-counts'>"
-        f"{state['embedded']} embedded, {state['remaining']} remaining</p>"
-        "<form method='post' action='/memory/embeddings/backfill' class='cardform'>"
-        "<label class='empty' for='backfill-embeddings'>Backfill embeddings: "
-        "the facts above without a vector embed oldest-first, one committed "
-        "row at a time, so a failed run leaves the earlier rows done.</label>"
-        "<button class='btn btn-secondary' type='submit' id='backfill-embeddings'>"
-        "Backfill embeddings</button>"
-        "</form>"
-    )
-
-
-def _encrypt_section(state: dict | None) -> str:
-    """The encryption surfaces: the plain bank's pointer to the action,
-    the sealed bank's note, or the dry-run form with its counts."""
-    if state is None:
-        return ""
-    if state.get("already"):
-        return (
-            "<p class='empty' id='memory-encrypted'>Memory is already "
-            "encrypted at rest: facts, sources, entities and observations "
-            "are stored as AES-256-GCM ciphertext under the key file "
-            "<span class='mono'>memory.key</span>, and this page "
-            "decrypts them for you as you read.</p>"
-        )
-    if state.get("counts") is not None:
-        counts = state["counts"]
-        summary = (
-            f"{count_noun(counts['facts'], 'fact')}, "
-            f"{count_noun(counts['sources'], 'source')}, "
-            f"{count_noun(counts['entities'], 'entity')} and "
-            f"{count_noun(counts['observations'], 'observation')} would be "
-            "sealed as AES-256-GCM ciphertext under a locally generated "
-            "key file (<span class='mono'>memory.key</span>). Duplicates "
-            "collapse and orphaned observations go first. This cannot "
-            "be undone without the key."
-        )
-        return (
-            "<h2>Encrypt memory at rest</h2>"
-            f"<p id='encrypt-counts'>{summary}</p>"
-            "<form method='post' action='/memory/encrypt' class='cardform'>"
-            "<label class='empty' for='encrypt-confirm'>Confirm: rewrite every stored text and blank the plaintext.</label>"
-            "<input id='encrypt-confirm' type='checkbox' name='confirm' value='on'>"
-            "<button class='btn btn-primary' type='submit'>Encrypt memory</button>"
-            "</form>"
-        )
-    return (
-        "<p id='encrypt-offer'>This memory bank is plaintext on disk. "
-        "<a href='/memory/encrypt'>Encrypt memory at rest</a>: one "
-        "action seals every text field under a locally generated key "
-        "file.</p>"
-    )
-
-
-def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
-    """The loop page's housekeeping, folded away by default: one row per
-    action, each saying in one line what it does for the user, with its
-    control on the right. Every form posts to the same routes as the
-    plain page, so it works without JavaScript."""
+def _maintenance_tile(
+    encrypt: dict | None,
+    embeddings: dict | None,
+    recall: list | None = None,
+    query: str = "",
+    sweep: list | None = None,
+) -> str:
+    """The page's housekeeping, folded away by default (ticket #283). One
+    disclosure holds every maintenance tool: the graph, the recall check,
+    search by meaning, encryption and the cleanup, each saying in one
+    line what it does for the user with its control on the right. A tool
+    the user just asked for (a recall answer, the sweep's or the
+    encryption's preview) shows its result inside the open disclosure in
+    place of its link. Every form posts to the same routes as before, so
+    each address keeps working and nothing needs JavaScript."""
     rows: list[str] = []
 
     def row(title: str, line: str, control: str, row_id: str = "") -> None:
@@ -184,15 +190,37 @@ def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
             f"<div class='ml-maint-act'>{control}</div></div>"
         )
 
+    def result(markup: str) -> None:
+        """Append one full-width block under the rows so far: what a tool answered."""
+        rows.append(f"<div class='ml-maint-result'>{markup}</div>")
+
+    row(
+        "See the graph",
+        "Every fact, where it came from and what it links to, as one picture.",
+        '<a class="btn btn-secondary" href="/memory/graph">Open</a>',
+    )
+    answer = ""
+    if recall:
+        answer = "<ol id='recall-preview'>" + "".join(
+            f"<li>{html.escape(fact.text)} "
+            f"<span class='empty mono'>score {score:.{_SCORE_PLACES}f}</span></li>"
+            for score, fact in recall
+        ) + "</ol>"
+    elif recall is not None:
+        answer = ("<p class='empty'>Nothing recalled: no fact shares a word "
+                  "with that question.</p>")
     row(
         "Check what the assistant would recall",
         "Type a question to see which saved facts the assistant would read when answering it.",
         "<form method='post' action='/memory/recall' class='ml-maint-form'>"
-        "<label class='sr-only' for='recall-query'>Question</label>"
+        "<label class='sr-only' for='recall-query'>Recall preview</label>"
         "<input id='recall-query' type='text' name='query' "
+        f"value='{html.escape(query, quote=True)}' "
         "placeholder='e.g. Who owns the Acme renewal?'>"
         "<button class='btn btn-secondary' type='submit'>Check</button></form>",
     )
+    if answer:
+        result(answer)
     if embeddings is not None:
         total = embeddings["embedded"] + embeddings["remaining"]
         ready = (
@@ -214,10 +242,30 @@ def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
     if encrypt is not None and encrypt.get("already"):
         row(
             "Encrypted on this computer",
-            "<span id='memory-encrypted'>Memory is encrypted at rest: the database "
-            "is unreadable without the key file <span class='mono'>memory.key</span> "
+            "<span id='memory-encrypted'>Memory is already encrypted at rest: the "
+            "database is unreadable without the key file <span class='mono'>memory.key</span> "
             "on this computer.</span>",
             "<span class='ml-maint-done'>On</span>",
+        )
+    elif encrypt is not None and encrypt.get("counts") is not None:
+        counts = encrypt["counts"]
+        summary = (
+            f"<span id='encrypt-counts'>{count_noun(counts['facts'], 'fact')}, "
+            f"{count_noun(counts['sources'], 'source')}, "
+            f"{count_noun(counts['entities'], 'entity')} and "
+            f"{count_noun(counts['observations'], 'observation')} would be "
+            "sealed as AES-256-GCM ciphertext under a locally generated "
+            "key file (<span class='mono'>memory.key</span>). Duplicates "
+            "collapse and orphaned observations go first. This cannot "
+            "be undone without the key.</span>"
+        )
+        row(
+            "Encrypt memory on this computer",
+            summary,
+            "<form method='post' action='/memory/encrypt' class='inlineform'>"
+            "<label for='encrypt-confirm'>Confirm</label> "
+            "<input id='encrypt-confirm' type='checkbox' name='confirm' value='on'> "
+            "<button class='btn btn-primary' type='submit'>Encrypt memory</button></form>",
         )
     elif encrypt is not None:
         row(
@@ -230,32 +278,79 @@ def _maintenance_tile(encrypt: dict | None, embeddings: dict | None) -> str:
         "Clear out junk facts",
         "Lists near-empty and duplicate facts so you can delete them; nothing goes "
         "until you tick and confirm.",
-        "<a class='btn btn-secondary' href='/memory/sweep'>Review</a>",
+        "" if sweep is not None else "<a class='btn btn-secondary' href='/memory/sweep'>Review</a>",
     )
+    if sweep is not None:
+        result(_sweep_markup(sweep))
     sealed = bool(encrypt and encrypt.get("already"))
     hint = "Encrypted" if sealed else "Not encrypted"
+    asked = recall is not None or sweep is not None or (
+        encrypt is not None and encrypt.get("counts") is not None
+    )
     return (
-        "<details class='ml-maint' id='memory-maintenance'>"
+        f"<details class='ml-maint' id='memory-maintenance'{' open' if asked else ''}>"
         "<summary><span class='ml-maint-title'>Maintenance</span>"
-        "<span class='ml-maint-sub'>Recall check, search by meaning, encryption, cleanup</span>"
+        "<span class='ml-maint-sub'>Graph, recall check, search by meaning, encryption, cleanup</span>"
         f"<span class='ml-maint-chip'>{hint}</span></summary>"
         f"<div class='ml-maint-body'>{''.join(rows)}</div></details>"
     )
 
 
-def _fact_rows(facts: list[Fact]) -> str:
-    """One row per fact: the text, its provenance, and its two actions."""
+def _sweep_markup(candidates: list[SweepCandidate]) -> str:
+    """The junk sweep's preview (ticket #92), shown inside the Maintenance
+    disclosure in place of its link: every candidate with its reason and
+    a checkbox, deleting only what is checked."""
+    if not candidates:
+        return (
+            "<p class='empty' id='sweep-empty'>No junk candidates: every "
+            "stored fact carries real content.</p>"
+        )
+    rows = "".join(
+        f'<li><input type="checkbox" id="sweep-{candidate.fact.id}"'
+        f' name="sweep_{candidate.fact.id}" value="on">'
+        f'<label for="sweep-{candidate.fact.id}">{html.escape(candidate.fact.text)}</label>'
+        f" <span class='empty mono'>{html.escape(candidate.reason)}</span></li>"
+        for candidate in candidates
+    )
+    return (
+        f"<p class='empty'>{count_noun(len(candidates), 'candidate')} the "
+        "assistant would drop (placeholders, its own knowledge gaps and "
+        "session narration). Check what to delete; citations, orphaned "
+        "observations and edge-less entities go with them.</p>"
+        '<form method="post" action="/memory/sweep">'
+        f"<ul id='sweep-candidates' class='ml-maint-checks'>{rows}</ul>"
+        "<button class='btn btn-secondary' type='submit'>Delete checked</button>"
+        "</form>"
+    )
+
+
+def _origin_line(fact: Fact, inbox, excerpts: dict) -> str:
+    """Where one fact came from and when it was saved, as a single plain
+    line (ticket #283): the same words the island shows, never the stored
+    bookkeeping."""
+    origin = origin_of(fact.source, _card_for(inbox, fact.source),
+                       excerpts.get(fact.source_id))
+    parts = [origin["label"]]
+    if origin["how"] and origin["how"] != "Saved":
+        parts.append(origin["how"].lower())
+    parts.append("saved " + datetime.fromtimestamp(fact.created_ts).strftime("%Y-%m-%d"))
+    return ", ".join(parts)
+
+
+def _fact_rows(facts: list[Fact], inbox=None, sources=()) -> str:
+    """One row per fact: the text, where it came from, and its two
+    actions, edit and forget. The list's own empty line stays with the
+    list; the page's "Memory is empty" sits beside the Forget control."""
     if not facts:
-        return "<p class='empty' id='memory-empty'>No facts yet. Add one below; it will ride in the assistant's context as a derived abstraction, at most five facts and 500 characters a turn.</p>"
+        return "<p class='empty' id='memory-empty'>No facts yet. Type one above, or let the desk learn as you work.</p>"
+    excerpts = {excerpt.id: excerpt for excerpt in sources}
     rows = []
     for fact in facts:
         fact_id = html.escape(str(fact.id))
-        created = datetime.fromtimestamp(fact.created_ts).strftime("%Y-%m-%d")
         rows.append(
             f"<div class='ask' id='fact-{fact_id}'>"
             f"<b>{html.escape(fact.text)}</b> "
-            f"<span class='empty mono'>source {html.escape(fact.source or 'unknown')},"
-            f" saved {created}</span>"
+            f"<span class='empty mono'>{html.escape(_origin_line(fact, inbox, excerpts))}</span>"
             f"<form method='post' action='/memory/{fact_id}/edit' class='cardform'>"
             f"<label class='empty' for='edit-{fact_id}'>Edit fact {fact_id}</label>"
             f"<input id='edit-{fact_id}' type='text' name='text' "
@@ -263,38 +358,11 @@ def _fact_rows(facts: list[Fact]) -> str:
             "<button class='btn btn-secondary' type='submit'>Save</button>"
             "</form>"
             f"<form method='post' action='/memory/{fact_id}/delete' class='cardform'>"
-            "<button class='btn btn-secondary' type='submit'>Delete</button>"
+            "<button class='btn btn-secondary' type='submit'>Forget</button>"
             "</form>"
             "</div>"
         )
     return "".join(rows)
-
-
-def _recall_section(recall: list[tuple[float, Fact]] | None, query: str) -> str:
-    """The recall preview: the ranked answers to one query, best first."""
-    form = (
-        "<form method='post' action='/memory/recall' class='cardform'>"
-        "<label class='empty' for='recall-query'>Recall preview</label>"
-        "<input id='recall-query' type='text' name='query' "
-        f"value='{html.escape(query, quote=True)}' "
-        "placeholder='What would the assistant ask about?'>"
-        "<button class='btn btn-secondary' type='submit'>Preview recall</button>"
-        "</form>"
-    )
-    if recall is None:
-        return form
-    if not recall:
-        return (
-            form
-            + "<p class='empty'>Nothing recalled: no fact shares a token with that query.</p>"
-        )
-    rows = "".join(
-        f"<li>{html.escape(fact.text)} <span class='empty mono'>"
-        f"score {score:.{_SCORE_PLACES}f}, source {html.escape(fact.source or 'unknown')}"
-        "</span></li>"
-        for score, fact in recall
-    )
-    return form + f"<ol id='recall-preview'>{rows}</ol>"
 
 
 def _entities_section(entities: list[EntitySummary]) -> str:
@@ -307,7 +375,6 @@ def _entities_section(entities: list[EntitySummary]) -> str:
             "<h2>Entities</h2>"
             "<p class='empty' id='entities-empty'>No entities yet: they "
             "appear when a retained fact names someone or something.</p>"
-            f"{GRAPH_LINK}"
         )
     rows = []
     for entity in entities:
@@ -340,38 +407,6 @@ def _entities_section(entities: list[EntitySummary]) -> str:
     return (
         "<h2>Entities</h2>"
         f"<ul id='entities-list'>{''.join(rows)}</ul>{merge_form}"
-        f"{GRAPH_LINK}"
-    )
-
-
-def _sweep_section(candidates: list[SweepCandidate]) -> str:
-    """The junk sweep preview (ticket #92): every candidate with its
-    reason and a checkbox, deleting only what is checked."""
-    if not candidates:
-        return (
-            "<h2 id='sweep'>Junk sweep</h2>"
-            "<p class='empty' id='sweep-empty'>No junk candidates: every "
-            "stored fact carries real content.</p>"
-        )
-    rows = []
-    for candidate in candidates:
-        fact_id = html.escape(str(candidate.fact.id))
-        rows.append(
-            f'<li><input type="checkbox" id="sweep-{fact_id}"'
-            f' name="sweep_{fact_id}" value="on">'
-            f'<label for="sweep-{fact_id}">{html.escape(candidate.fact.text)}</label>'
-            f' <span class="empty mono">{html.escape(candidate.reason)}</span></li>'
-        )
-    return (
-        '<h2 id="sweep">Junk sweep</h2>'
-        f"<p class='empty'>{count_noun(len(candidates), 'candidate')} the "
-        "assistant would drop (placeholders, its own knowledge gaps and "
-        "session narration). Check what to delete; citations, orphaned "
-        "observations and edge-less entities go with them.</p>"
-        '<form method="post" action="/memory/sweep" class="cardform">'
-        f"<ul id='sweep-candidates'>{''.join(rows)}</ul>"
-        '<button class="btn btn-secondary" type="submit">Delete checked</button>'
-        "</form>"
     )
 
 
@@ -440,65 +475,69 @@ def render_memory_page(
     notice: str | None = None,
     observations: list[Observation] | None = None,
     embeddings: dict | None = None,
-    graph_island: bool = False,
     loop_island: bool = False,
+    confirm_forget_all: bool = False,
+    inbox=None,
+    sources=(),
 ) -> str:
-    """The full memory document: list, add, edit, delete, recall preview,
-    the entities with their merge form, the optional junk-sweep preview,
-    the observations with their reflect form (ticket #93), the
-    embeddings counts with their backfill action (ticket #95), and the
-    encryption surfaces. Locked: the banner alone."""
+    """The full memory document. It opens with the explanation (ticket
+    #283), then the facts with where each came from and its own edit and
+    Forget, then the "Forget everything" control, which asks first when
+    `confirm_forget_all` is set, then the one Maintenance disclosure
+    (the graph, the recall check, search by meaning, encryption and the
+    cleanup), open when it carries an answer the user just asked for.
+    The plain page also carries the add form, the entities with their
+    merge form (ticket #92) and the observations with their reflect form
+    (ticket #93); with the build present the island replaces that part.
+    Locked: the banner alone."""
     if locked is not None:
         content = f"""<h1>Memory</h1>
 {_locked_banner(locked)}
 """
         return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)
     notice_row = f'<p id="memory-notice">{html.escape(notice)}</p>\n' if notice else ""
-    sweep_row = _sweep_section(sweep) if sweep is not None else ""
     entities_row = _entities_section(entities) if entities is not None else ""
     observations_row = (
         _observations_section(observations, facts)
         if observations is not None else ""
     )
-    embeddings_row = _embeddings_section(embeddings)
-    intro = """<p>Facts saved on this machine. The assistant recalls at most five of
-them, 500 characters in total, as derived abstractions it may read.
-Facts arrive here, from an inbox card you accept, or by capture from the
-Assistant and Research when it is on in the memory settings.</p>"""
+    tile = _maintenance_tile(encrypt, embeddings, recall=recall, query=query, sweep=sweep)
     add_form = """<h2>Add a fact</h2>
 <form method="post" action="/memory/add" class="cardform">
 <label class="empty" for="new-fact">Fact</label>
 <input id="new-fact" type="text" name="text" placeholder="The revenue total is 220.">
 <button class="btn btn-primary" type="submit">Save fact</button>
 </form>"""
+    forget = _forget_section(facts, confirm_forget_all)
     # The plain page (no query, no sweep, no notice) is the loop island
     # when the build carries it; a form result keeps the server page so
     # the answer it rendered stays on screen.
     if loop_island and recall is None and sweep is None and not notice:
-        fallback = f"""<h1>Memory</h1>
-{intro}
-{add_form}
+        fallback = f"""{add_form}
 <h2>Saved facts</h2>
-{_fact_rows(facts)}
+{_fact_rows(facts, inbox, sources)}
 {observations_row}
 {entities_row}"""
-        content = f"""{loop_island_html(fallback)}
-{_maintenance_tile(encrypt, embeddings)}
+        content = f"""<h1>Memory</h1>
+{_how_memory_works()}
+{loop_island_html(fallback)}
+{forget}
+{tile}
 """
         return page_shell(
             "Memory", "/memory", content, version, inbox_count=inbox_count, wide=True,
         )
-    island_row = graph_island_html("page") if graph_island else ""
+    # The disclosure and the Forget control speak the island's tile
+    # language, so a build carrying the island lends them its stylesheet.
+    styles = LOOP_STYLES_HTML if loop_island else ""
     content = f"""<h1>Memory</h1>
-{notice_row}{intro}
-{island_row}{_encrypt_section(encrypt)}
-{_recall_section(recall, query)}
-{add_form}
+{notice_row}{_how_memory_works()}
+{styles}{add_form}
 <h2>Saved facts</h2>
-{_fact_rows(facts)}
+{_fact_rows(facts, inbox, sources)}
 {observations_row}
 {entities_row}
-{embeddings_row}
-{sweep_row}
+{forget}
+{tile}
 """
     return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)

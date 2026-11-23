@@ -923,6 +923,11 @@ def workbook_excerpt(workbook: str, candidates: list[CandidateFact]) -> str:
 
 TARGET_TYPES = ("fact", "source", "entity", "observation")
 
+# The one removal target no route names: the whole bank. "Forget
+# everything" plans through plan_removal with it (ticket #283), so the
+# action deletes by the same statements as every other removal.
+TARGET_EVERYTHING = "everything"
+
 
 class UnknownTarget(Exception):
     """Nothing to remove at that address."""
@@ -1010,6 +1015,10 @@ class RemovalPlan:
 
 def _target_facts(memory, target_type: str, target_id: int) -> tuple[list[int], str, list[int], list[int]]:
     """(fact ids, label, named observation ids, named source ids)."""
+    if target_type == TARGET_EVERYTHING:
+        return ([fact.id for fact in memory.all()], "everything",
+                [obs.id for obs in memory.observations()],
+                [excerpt.id for excerpt in memory.sources()])
     if target_type == "fact":
         try:
             fact = memory.get(target_id)
@@ -1033,6 +1042,15 @@ def _target_facts(memory, target_type: str, target_id: int) -> tuple[list[int], 
             raise UnknownTarget(f"no observation {target_id}")
         return [], observations[target_id].text, [target_id], []
     raise UnknownTarget(f"cannot remove a {target_type!r}")
+
+
+def plan_forget_all(memory) -> RemovalPlan:
+    """The plan for forgetting the whole bank (ticket #283): every fact,
+    named outright together with every summary and every excerpt, so
+    plan_removal derives the rest (the names the facts were filed under)
+    as it does for any removal. Nothing is written here; the plan goes
+    through apply_removal like any other, with no excerpt kept back."""
+    return plan_removal(memory, TARGET_EVERYTHING, 0, keep_source_ids=())
 
 
 def plan_removal(memory, target_type: str, target_id: int,

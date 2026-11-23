@@ -196,14 +196,21 @@ def test_the_builder_reads_without_an_inbox(tmp_path):
     assert node["steps"][0]["step"] == "approve"
 
 
-def test_the_memory_page_mounts_the_island_when_it_is_built(booted, auth, monkeypatch):
+def test_the_graph_island_mounts_on_its_own_page_and_the_memory_page_links_it(booted, auth, monkeypatch):
     from agentdesk.server import memory_api as app_module
     monkeypatch.setattr(app_module, "memory_graph_island_built", lambda: True)
     monkeypatch.setattr(app_module, "memory_loop_island_built", lambda: False)
+    status, _h, body = booted.request("GET", "/memory/graph", auth)
+    graph = body.decode()
+    assert status == 200
+    assert 'id="memory-graph-root"' in graph
+    assert 'data-endpoint="/api/memory/graph"' in graph
+    assert "/static/spa/assets/memory-graph.js" in graph
+    # The graph is a maintenance tool (ticket #283): the Memory page no
+    # longer mounts it inline, it links the graph's own address from the
+    # Maintenance disclosure, with or without scripting.
     status, _h, body = booted.request("GET", "/memory", auth)
     page = body.decode()
     assert status == 200
-    assert 'id="memory-graph-root"' in page
-    assert 'data-endpoint="/api/memory/graph"' in page
-    assert "/static/spa/assets/memory-graph.js" in page
-    assert 'href="/memory/graph"' in page  # the no-script way in
+    assert 'id="memory-graph-root"' not in page
+    assert 'href="/memory/graph"' in page

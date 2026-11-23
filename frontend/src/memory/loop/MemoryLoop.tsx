@@ -2,17 +2,20 @@
 // the user works it. Capture proposes facts from the Assistant and
 // Research; the review queue decides what is saved; the stored
 // knowledge shows each fact with where it came from and what it
-// changed; the graph traces provenance; removal says what else changes
-// before anything is written, and can be undone for a short window.
+// changed; removal says what else changes before anything is written,
+// and can be undone for a short window.
+//
+// The page title, the explanation that leads the page, the Forget
+// everything control and the Maintenance disclosure are the server's,
+// rendered around this island (ticket #283). The graph is one of those
+// maintenance tools, on its own page at /memory/graph.
 //
 // Reads GET /api/memory/loop and writes only through the server's own
-// routes: /settings/toggle, /memory/add, the inbox card routes for
-// review, /api/memory/remove(/preview), /api/memory/undo and
-// /api/memory/facts/<id>/keep.
+// routes: /settings/toggle, /memory/add, /memory/<id>/edit, the inbox
+// card routes for review, /api/memory/remove(/preview),
+// /api/memory/undo and /api/memory/facts/<id>/keep.
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { getJson, postJson } from '../../api';
-import MemoryGraph from '../MemoryGraph';
-import type { GraphNode } from '../types';
 import {
   CHANNEL_HINT, channelList, count, LIST_CAP, methodLabel, observationWriter, removeLabel, removedSummary, stamp, TARGET_NOUN,
 } from './copy';
@@ -39,8 +42,6 @@ export interface MemoryLoopProps {
   // Background captures land between page actions; the page re-reads
   // while it is visible. Tests pass 0 to turn the poll off.
   pollMs?: number;
-  // Tests pin the graph's width; the page measures its own box.
-  graphWidth?: number;
 }
 
 /**
@@ -52,21 +53,18 @@ export interface MemoryLoopProps {
  */
 async function errorOf(res: { status: number; data: unknown }, fallback: string): Promise<string> {
   if (res.status === 401) return 'Your session ended. Open Agent Desk from its shortcut to get a fresh link.';
-  const error = (res.data as { error?: string; cause?: string }).error ?? (res.data as { cause?: string }).cause;
+  const error = (res.data as { error?: string; cause?: string }).error ?? (res.data as { cause: string }).cause;
   return error ? `${fallback} ${error}` : fallback;
 }
 
 /**
- * The Memory page: capture, review, stored knowledge, the graph, and removal.
+ * The Memory page: capture, review, stored knowledge, and removal.
  *
  * Reads the loop endpoint on mount and, while the tab is visible, every pollMs;
- * 0 turns the poll off. Writes go through the server's own routes, and
- * graphWidth pins the width of the embedded graph.
+ * 0 turns the poll off. Writes go through the server's own routes.
  */
-export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 8000, graphWidth }: MemoryLoopProps) {
+export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 8000 }: MemoryLoopProps) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
-  const [graphKey, setGraphKey] = useState(0);
-  const [focusId, setFocusId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [plan, setPlan] = useState<RemovalPlan | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
@@ -74,7 +72,7 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
   const [tab, setTab] = useState<Tab>('facts');
   const [filter, setFilter] = useState('');
 
-  const refresh = useCallback(async (graph = false) => {
+  const refresh = useCallback(async () => {
     try {
       const res = await getJson(endpoint);
       if (res.ok) setLoad({ state: 'ready', data: res.data as LoopState });
@@ -82,7 +80,6 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
     } catch {
       setLoad({ state: 'failed', message: 'The page could not reach its own server.' });
     }
-    if (graph) setGraphKey((key) => key + 1);
   }, [endpoint]);
 
   useEffect(() => {
@@ -127,8 +124,7 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
       windowS: load.state === 'ready' ? load.data.undoWindowS : 30, summary: removedSummary(answer.removed),
     });
     setRemovedCount((n) => n + (answer.removed.facts.length || 1));
-    setFocusId(null);
-    await refresh(true);
+    await refresh();
   }, [act, plan, refresh, load]);
 
   const runUndo = useCallback(async () => {
@@ -139,23 +135,11 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
       setRemovedCount(0);
       setNotice('Removal undone. Everything it touched is back.');
     }
-    await refresh(true);
+    await refresh();
   }, [act, undo, refresh]);
-
-  const graphRemove = useCallback((node: GraphNode) => {
-    const [kind, raw] = node.id.split(':');
-    const id = Number(raw);
-    if (!Number.isInteger(id)) return;
-    if (kind === 'fact' || kind === 'entity' || kind === 'source' || kind === 'observation') void askRemoval(kind, id);
-  }, [askRemoval]);
 
   const closePlan = useCallback(() => setPlan(null), []);
   const dropUndo = useCallback(() => setUndo(null), []);
-
-  const showInGraph = useCallback((nodeId: string) => {
-    setFocusId(nodeId);
-    document.getElementById('ml-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
 
   if (load.state === 'loading') {
     return <div className="ml"><p className="ml-quiet" role="status">Reading memory…</p></div>;
@@ -163,7 +147,6 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
   if (load.state === 'failed') {
     return (
       <div className="ml">
-        <header className="ml-head"><h1>Memory</h1></header>
         <p className="ml-alert" role="alert">{load.message}</p>
       </div>
     );
@@ -181,10 +164,10 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
         </p>
       )}
       <div className="ml-grid">
-        <Review data={data} act={act} onChanged={() => refresh(true)} />
+        <Review data={data} act={act} onChanged={() => refresh()} />
         <div className="ml-side">
           <CaptureSettings data={data} act={act} onChanged={() => refresh()} />
-          <AddFact act={act} onChanged={() => refresh(true)} />
+          <AddFact act={act} onChanged={() => refresh()} />
         </div>
         <Knowledge
           data={data}
@@ -193,9 +176,16 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
           filter={filter}
           onFilter={setFilter}
           onRemove={askRemoval}
-          onShow={showInGraph}
           onKeep={async (id) => {
-            if (await act(`/api/memory/facts/${id}/keep`, {}, 'That fact could not be kept.')) await refresh(true);
+            if (await act(`/api/memory/facts/${id}/keep`, {}, 'That fact could not be kept.')) await refresh();
+          }}
+          onEdit={async (id, text) => {
+            const data = await act(`/memory/${id}/edit`, { text }, 'The edit was not saved.');
+            if (data && (data as { mergedIntoExisting?: boolean }).mergedIntoExisting) {
+              setNotice('That edit matched a fact already saved with the same words, so the two were merged into one.');
+            }
+            if (data) await refresh();
+            return data !== null;
           }}
           onReflect={async () => {
             const res = await act('/memory/reflect', {}, 'Observations could not be derived.');
@@ -204,16 +194,6 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
             await refresh();
           }}
         />
-        <section className="ml-tile ml-span-12" id="ml-graph" aria-labelledby="ml-graph-h">
-          <div className="ml-tile-head">
-            <h2 className="ml-tag" id="ml-graph-h">Provenance graph</h2>
-            <a className="ml-tile-link" href="/memory/graph">Open full page</a>
-          </div>
-          <p className="ml-tile-sub">Select any point to see where it came from and what it links to.</p>
-          <div id="memory-graph-root">
-            <MemoryGraph chrome={false} reloadKey={graphKey} focusId={focusId} onRemove={graphRemove} initialWidth={graphWidth} />
-          </div>
-        </section>
       </div>
       {plan && <RemoveDialog plan={plan} onCancel={closePlan} onConfirm={confirmRemoval} />}
       {undo && <UndoBar undo={undo} onUndo={runUndo} onExpire={dropUndo} />}
@@ -223,7 +203,11 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
 
 type Act = (url: string, body: unknown, failure: string) => Promise<unknown | null>;
 
-/** The page title with the standing counts and one line of capture state. */
+/**
+ * The page's state line. The page title is the server's, rendered above
+ * the explanation that leads the page (ticket #283), so the island opens
+ * with how much is remembered and one line of capture state.
+ */
 function Header({ data }: { data: LoopState }) {
   const on = data.capture.channels.filter((c) => c.on).map((c) => c.label);
   const capture = !data.capture.enabled || on.length === 0
@@ -231,12 +215,9 @@ function Header({ data }: { data: LoopState }) {
     : `Capturing from ${channelList(on)}. ${data.capture.autoApprove ? 'New facts are saved automatically.' : 'New facts wait for your review.'}`;
   return (
     <header className="ml-head">
-      <div>
-        <h1>Memory</h1>
-        <p className="ml-sub">
-          {count(data.counts.standing, 'fact')} the assistant can recall, across {count(data.counts.entities, 'entity', 'entities')}. {capture}
-        </p>
-      </div>
+      <p className="ml-sub">
+        {count(data.counts.standing, 'fact')} the assistant can recall, across {count(data.counts.entities, 'entity', 'entities')}. {capture}
+      </p>
     </header>
   );
 }
@@ -556,16 +537,16 @@ function matches(text: string, filter: string): boolean {
  * the page is mounted. The observation tab also offers a reflect run, enabled
  * only while the extractor is a working endpoint.
  */
-function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKeep, onReflect }: {
+function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onKeep, onReflect, onEdit }: {
   data: LoopState;
   tab: Tab;
   onTab: (tab: Tab) => void;
   filter: string;
   onFilter: (value: string) => void;
   onRemove: (type: TargetType, id: number) => void;
-  onShow: (nodeId: string) => void;
   onKeep: (id: number) => void;
   onReflect: () => void;
+  onEdit: (id: number, text: string) => Promise<boolean>;
 }) {
   const sizes: Record<Tab, number> = {
     facts: data.facts.length,
@@ -574,8 +555,8 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
     observations: data.observations.length,
   };
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  // Each list stops at LIST_CAP rows so the graph stays near; "Show all"
-  // opens that tab's list until the page reloads.
+  // Each list stops at LIST_CAP rows; "Show all" opens that tab's list
+  // until the page reloads.
   const [opened, setOpened] = useState<Partial<Record<Tab, boolean>>>({});
   const cap = <T,>(rows: T[]): T[] => (opened[tab] ? rows : rows.slice(0, LIST_CAP));
   let matched = 0;
@@ -602,8 +583,8 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
     body = rows.length === 0 ? <Empty filter={filter} noun="facts" /> : (
       <ul className="ml-rows">
         {cap(rows).map((fact) => (
-          <FactItem key={fact.id} fact={fact} factsById={factsById} onRemove={onRemove} onShow={onShow}
-            onKeep={onKeep} onEntity={(name) => onFilter(name)} />
+          <FactItem key={fact.id} fact={fact} factsById={factsById} onRemove={onRemove}
+            onKeep={onKeep} onEntity={(name) => onFilter(name)} onEdit={onEdit} />
         ))}
       </ul>
     );
@@ -611,13 +592,13 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
     const rows = data.entities.filter((e) => matches(`${e.name} ${e.aliases.join(' ')} ${e.type}`, filter));
     matched = rows.length;
     body = rows.length === 0 ? <Empty filter={filter} noun="entities" /> : (
-      <ul className="ml-rows">{cap(rows).map((entity) => <EntityItem key={entity.id} entity={entity} onRemove={onRemove} onShow={onShow} />)}</ul>
+      <ul className="ml-rows">{cap(rows).map((entity) => <EntityItem key={entity.id} entity={entity} onRemove={onRemove} />)}</ul>
     );
   } else if (tab === 'sources') {
     const rows = data.sources.filter((s) => matches(`${s.text} ${s.channelLabel}`, filter));
     matched = rows.length;
     body = rows.length === 0 ? <Empty filter={filter} noun="excerpts" /> : (
-      <ul className="ml-rows">{cap(rows).map((source) => <SourceItem key={source.id} source={source} onRemove={onRemove} onShow={onShow} />)}</ul>
+      <ul className="ml-rows">{cap(rows).map((source) => <SourceItem key={source.id} source={source} onRemove={onRemove} />)}</ul>
     );
   } else {
     const rows = data.observations.filter((o) => matches(`${o.entityName ?? ''} ${o.text}`, filter));
@@ -635,7 +616,7 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onShow, onKee
         </div>
         {rows.length === 0 ? <Empty filter={filter} noun="observations" /> : (
           <ul className="ml-rows">
-            {cap(rows).map((obs) => <ObservationItem key={obs.id} obs={obs} factsById={factsById} onRemove={onRemove} onShow={onShow} />)}
+            {cap(rows).map((obs) => <ObservationItem key={obs.id} obs={obs} factsById={factsById} onRemove={onRemove} />)}
           </ul>
         )}
       </>
@@ -680,11 +661,13 @@ function Empty({ filter, noun }: { filter: string; noun: string }) {
   return <p className="ml-quiet ml-pad">{filter ? `No ${noun} match “${filter}”.` : `No ${noun} yet.`}</p>;
 }
 
-/** A row's two actions: show it in the graph, and remove it. */
-function RowActions({ onShow, onRemove, removeText }: { onShow?: () => void; onRemove: () => void; removeText: string }) {
+/** A row's actions: its removal, and for a fact the edit beside it. */
+function RowActions({ onRemove, removeText, onEdit }: {
+  onRemove: () => void; removeText: string; onEdit?: () => void;
+}) {
   return (
     <div className="ml-row-actions">
-      {onShow && <button type="button" className="ml-text-btn" onClick={onShow}>Show in graph</button>}
+      {onEdit && <button type="button" className="ml-btn" onClick={onEdit}>Edit</button>}
       <button type="button" className="ml-btn ml-btn-remove" onClick={onRemove}>{removeText}</button>
     </div>
   );
@@ -694,21 +677,41 @@ function RowActions({ onShow, onRemove, removeText }: { onShow?: () => void; onR
  * One fact row: its text, where it came from, and what replaced it.
  *
  * A replaced fact stays visible and marked, with "Keep both" to put it back in
- * recall, so nothing leaves the list without a trace.
+ * recall, so nothing leaves the list without a trace. Edit rewrites the text
+ * through the edit route; Forget is this fact's own removal.
  */
-function FactItem({ fact, factsById, onRemove, onShow, onKeep, onEntity }: {
+function FactItem({ fact, factsById, onRemove, onKeep, onEntity, onEdit }: {
   fact: FactRow;
   factsById: Map<number, FactRow>;
   onRemove: (type: TargetType, id: number) => void;
-  onShow: (nodeId: string) => void;
   onKeep: (id: number) => void;
   onEntity: (name: string) => void;
+  onEdit: (id: number, text: string) => Promise<boolean>;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(fact.text);
+  const [saving, setSaving] = useState(false);
   const newer = fact.replacedBy !== null ? factsById.get(fact.replacedBy) : undefined;
+  /** Save the edited text; the page re-reads, so the row shows what was stored. */
+  const save = async () => {
+    setSaving(true);
+    const saved = await onEdit(fact.id, text.trim());
+    setSaving(false);
+    if (saved) setEditing(false);
+  };
+  /** Put the edit away and forget what was typed. */
+  const cancel = () => { setEditing(false); setText(fact.text); };
   return (
     <li className={`ml-row${fact.replacedBy !== null ? ' is-replaced' : ''}`} id={`ml-fact-${fact.id}`}>
       <div className="ml-row-main">
-        <p className="ml-row-text">{fact.text}</p>
+        {editing ? (
+          <div className="ml-edit">
+            <label className="ml-sr" htmlFor={`ml-fact-${fact.id}-edit`}>Edit fact</label>
+            <textarea id={`ml-fact-${fact.id}-edit`} rows={2} value={text} autoComplete="off" onChange={(e) => setText(e.target.value)} />
+          </div>
+        ) : (
+          <p className="ml-row-text">{fact.text}</p>
+        )}
         <p className="ml-row-meta">
           <span>{fact.origin.label}</span>
           {fact.origin.how && <span>{fact.origin.how}</span>}
@@ -733,14 +736,22 @@ function FactItem({ fact, factsById, onRemove, onShow, onKeep, onEntity }: {
           <p className="ml-note">Replaces {count(fact.replaces.length, 'older fact')}, which recall now skips.</p>
         )}
       </div>
-      <RowActions onShow={() => onShow(`fact:${fact.id}`)} onRemove={() => onRemove('fact', fact.id)} removeText="Remove…" />
+      {editing ? (
+        <div className="ml-row-actions">
+          <button type="button" className="ml-btn" disabled={saving} onClick={cancel}>Cancel</button>
+          <button type="button" className="ml-btn ml-btn-primary" disabled={saving || !text.trim()} onClick={save}>Save</button>
+        </div>
+      ) : (
+        <RowActions onRemove={() => onRemove('fact', fact.id)}
+          removeText="Forget…" onEdit={() => setEditing(true)} />
+      )}
     </li>
   );
 }
 
 /** One entity row: its name, type, aliases and how many facts mention it. */
-function EntityItem({ entity, onRemove, onShow }: {
-  entity: EntityRow; onRemove: (type: TargetType, id: number) => void; onShow: (nodeId: string) => void;
+function EntityItem({ entity, onRemove }: {
+  entity: EntityRow; onRemove: (type: TargetType, id: number) => void;
 }) {
   return (
     <li className="ml-row">
@@ -752,14 +763,14 @@ function EntityItem({ entity, onRemove, onShow }: {
           {entity.aliases.length > 0 && <span>also {entity.aliases.join(', ')}</span>}
         </p>
       </div>
-      <RowActions onShow={() => onShow(`entity:${entity.id}`)} onRemove={() => onRemove('entity', entity.id)} removeText="Forget…" />
+      <RowActions onRemove={() => onRemove('entity', entity.id)} removeText="Forget…" />
     </li>
   );
 }
 
 /** One retained excerpt, quoted, with how many facts were taken from it. */
-function SourceItem({ source, onRemove, onShow }: {
-  source: SourceRow; onRemove: (type: TargetType, id: number) => void; onShow: (nodeId: string) => void;
+function SourceItem({ source, onRemove }: {
+  source: SourceRow; onRemove: (type: TargetType, id: number) => void;
 }) {
   return (
     <li className="ml-row">
@@ -771,7 +782,7 @@ function SourceItem({ source, onRemove, onShow }: {
           <span>{count(source.factIds.length, 'fact')} taken from it</span>
         </p>
       </div>
-      <RowActions onShow={() => onShow(`source:${source.id}`)} onRemove={() => onRemove('source', source.id)} removeText="Remove…" />
+      <RowActions onRemove={() => onRemove('source', source.id)} removeText="Remove…" />
     </li>
   );
 }
@@ -782,8 +793,8 @@ function SourceItem({ source, onRemove, onShow }: {
  * An observation that lost a cited fact is flagged with the moment it happened
  * and asks to be checked rather than being hidden.
  */
-function ObservationItem({ obs, factsById, onRemove, onShow }: {
-  obs: ObservationRow; factsById: Map<number, FactRow>; onRemove: (type: TargetType, id: number) => void; onShow: (nodeId: string) => void;
+function ObservationItem({ obs, factsById, onRemove }: {
+  obs: ObservationRow; factsById: Map<number, FactRow>; onRemove: (type: TargetType, id: number) => void;
 }) {
   return (
     <li className={`ml-row${obs.staleTs ? ' is-flagged' : ''}`}>
@@ -800,7 +811,7 @@ function ObservationItem({ obs, factsById, onRemove, onShow }: {
           <p className="ml-flag">A fact it cited was removed at {stamp(obs.staleTs)}. Check it still holds, or remove it.</p>
         )}
       </div>
-      <RowActions onShow={() => onShow(`observation:${obs.id}`)} onRemove={() => onRemove('observation', obs.id)} removeText="Remove…" />
+      <RowActions onRemove={() => onRemove('observation', obs.id)} removeText="Remove…" />
     </li>
   );
 }

@@ -234,6 +234,7 @@ POST_ROUTES: tuple[Route, ...] = (
     Route("POST", "/inbox/dismissed/", "_inbox_restore", prefix=True, arg="rest",
           suffix="/restore"),
     Route("POST", "/memory/add", "_memory_add"),
+    Route("POST", "/memory/forget-all", "_memory_forget_all"),
     Route("POST", "/memory/", "_memory_edit_rest", prefix=True, arg="rest",
           suffix="/edit"),
     Route("POST", "/memory/", "_memory_delete_rest", prefix=True, arg="rest",
