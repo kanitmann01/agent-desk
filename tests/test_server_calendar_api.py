@@ -189,9 +189,9 @@ def test_walkthrough_offers_the_source_controls_and_the_settings_link(env, auth)
     assert "data-calendar-reset" in page
     assert 'id="calendar-note" hidden' in page
     assert 'accept=".json' in page  # the file input filters JSON
+    # Settings offers the same walk from its Your tools section (spec 022).
     settings_page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert 'href="/walkthrough/calendar"' in settings_page
-    assert "calendar source page" in settings_page
+    assert "href='/walkthrough/calendar'>Set up</a>" in settings_page
 
 
 def test_path_set_round_trip_and_reset(env, auth, tmp_path):

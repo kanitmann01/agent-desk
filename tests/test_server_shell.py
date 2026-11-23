@@ -97,12 +97,16 @@ def test_settings_has_one_display_heading_and_h2_sections(booted):
     h1s = re.findall(r"<h1[^>]*>(.*?)</h1>", page, flags=re.S)
     assert len(h1s) == 1, h1s
     assert "Settings" in h1s[0]
-    # The sections read below it as cards (h2), and the sub-sections
-    # inside a card are h3; no inline spacing attributes either way.
-    for section in ("Endpoint", "Sources", "Record", "Activity log", "Skills"):
-        assert re.search(rf"<h2[^>]*>[^<]*{section}", page), section
-    for section in ("Calendar source", "Review"):
-        assert re.search(rf"<h3[^>]*>[^<]*{section}", page), section
+    # The cards read below it (h2) and the sub-sections inside a card are
+    # h3; no inline spacing attributes either way. The six groups of spec
+    # 022 are labels, not a third heading level.
+    for card in ("Your AI", "Workbook, calendar and mail", "Memory", "Record",
+                 "Activity log", "Skills", "Presentation timeout"):
+        assert re.search(rf"<h2[^>]*>[^<]*{card}", page), card
+    for sub in ("Review",):
+        assert re.search(rf"<h3[^>]*>[^<]*{sub}", page), sub
+    assert page.count("class='settings-section-title'") == 5
+    assert "<h2 class='settings-section-title'" not in page
     assert '<h2 style=' not in page and "<h1 style=" not in page
 
 

@@ -584,13 +584,17 @@ def test_the_settings_page_renders_the_jobs_section_with_seven_pickers(
         assert f"value='{job}'" in page
     for label in JOB_LABELS.values():
         assert label in page
-    assert "Not bound" in page
-    assert "Serves through <b>Work gateway</b>" in page
+    # The page never says job, binding or bound (spec 022): a place either
+    # answers through a chosen AI or like everything else.
+    assert "Same as everything else" in page
+    assert "Answers through <b>Work gateway</b>" in page
     assert "value='assistant-model'" in page
-    assert "Unbound:" in page  # the six unbound jobs say so plainly
+    assert page.count("Answers like everything else.") == 6  # the six without a choice
+    for banned in ("Not bound", "Unbound", "BOUND", " is bound", "unbinding"):
+        assert banned not in page, banned
     # The model label is short and the cached-lists-or-typed fact is the
-    # card intro's, stated once (spec 019 #259). Counted inside the Jobs
-    # card, because the connection form carries a Model field of its own.
+    # disclosure's, stated once (spec 019 #259). Counted inside the card,
+    # because the connection form carries a Model field of its own.
     jobs_start = page.index("id='jobs'")
     jobs_card = page[jobs_start:page.index("</section>", jobs_start)]
     assert jobs_card.count(">Model</label>") == 7

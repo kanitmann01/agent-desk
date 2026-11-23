@@ -199,12 +199,14 @@ def test_unknown_fields_answer_400_naming_the_accepted_fields(env, auth):
     assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
 
 
-def test_create_refuses_a_blank_label_an_unknown_preset_and_a_bad_base(env, auth):
+def test_create_refuses_an_unknown_preset_a_bad_base_and_bad_headers(env, auth):
+    """The form asks for a provider, a key and a model, so a name is
+    optional on a create (spec 022; see the next test). What is still
+    refused is anything that would save an AI the desk could not call."""
     for body, fragment in (
-        ({"provider": "openai", "apiKey": SECRET}, "label"),
         ({"label": "x", "provider": "madeup", "apiKey": SECRET}, "preset"),
         ({"label": "x", "provider": "custom", "baseUrl": "llm.corp.example/v1"}, "http"),
-        ({"label": "x", "provider": "custom"}, "base URL"),
+        ({"label": "x", "provider": "custom"}, "address"),
         ({"label": "x", "provider": "openai", "apiKey": "k",
           "headers": {"Bad": 5}}, "headers"),
     ):
@@ -212,6 +214,37 @@ def test_create_refuses_a_blank_label_an_unknown_preset_and_a_bad_base(env, auth
         assert status == 400, body
         assert fragment in json.loads(returned)["error"], body
     assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
+
+
+def test_a_create_with_no_name_takes_the_providers_own_name(env, auth):
+    """Spec 022: three fields add an AI. A name typed by nobody is the
+    provider's own name, numbered once that name is taken, because names
+    are how two keys for one provider are told apart. An edit still needs
+    the name its row already has."""
+    first = json.loads(env.post_json(
+        "/api/connections", {"provider": "openai", "apiKey": SECRET}, auth)[2])
+    second = json.loads(env.post_json(
+        "/api/connections", {"provider": "openai", "apiKey": SECRET}, auth)[2])
+    assert first["label"] == "OpenAI"
+    assert second["label"] == "OpenAI 2"
+    status, _h, body = env.post_json(
+        f"/api/connections/{first['id']}/update",
+        {"label": "", "provider": "openai", "apiKey": ""}, auth)
+    assert status == 400
+    assert "name" in json.loads(body)["error"]
+    # The add form on the page asks for exactly those three, in that order,
+    # and keeps the rest behind "More options".
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    form = page[page.index("id='connection-form'"):page.index("</form>", page.index("id='connection-form'"))]
+    fields = ("conn-provider", "conn-key", "conn-model", "conn-base", "conn-label")
+    outer, inside = form.split("<details", 1)
+    # Outside the disclosure: exactly the three, in order.
+    assert [name for name in fields if f"id='{name}'" in outer] == list(fields[:3])
+    assert outer.index("id='conn-provider'") < outer.index("id='conn-key'") < outer.index("id='conn-model'")
+    # The address and the name wait behind it, and so does the default star.
+    assert "id='conn-base'" in inside and "id='conn-label'" in inside
+    assert "name='isDefault'" in inside
+    assert "More options" in inside
 
 
 def test_a_duplicate_label_is_refused_with_409(env, auth):

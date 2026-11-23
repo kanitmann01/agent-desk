@@ -36,14 +36,17 @@ JOBS = (
     "research-web",
 )
 
+# What each place is called where a person reads it (spec 022: plain
+# words, no internal vocabulary). The first is the fallback every place
+# without a choice of its own reads.
 JOB_LABELS = {
-    "default": "Default (wizard, meeting breakdowns)",
-    "assistant": "Assistant (research bar, chat, paused fills)",
-    "agents": "Agents (skills, agent runs)",
-    "presentations": "Presentations (plans and fills)",
-    "memory": "Memory (extract, retain, reflect, observe, embeddings)",
-    "insights": "Insights (readings, plugin suggestions)",
-    "research-web": "Web research (presentation research)",
+    "default": "Everything else (plugin builder, meeting breakdowns)",
+    "assistant": "Assistant",
+    "agents": "Agents",
+    "presentations": "Presentations",
+    "memory": "Memory",
+    "insights": "Insights (what the desk writes on cards)",
+    "research-web": "Web research",
 }
 
 DEFAULT_JOB = "default"

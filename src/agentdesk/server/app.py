@@ -3380,6 +3380,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             update=update_payload(server),
             curator_last_run=(server.skills.curator_state_value("last_run_at")
                               if server.skills is not None else None),
+            ai=_ai_summary(server),
+            excel_status=(server.excel.status() if server.excel is not None else None),
+            calendar_status=(server.calendar.status() if server.calendar is not None
+                             else None),
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3540,15 +3544,19 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_json(503, {"error": "the connections store is not available"})
             return
         body = self._read_json_body() or {}
-        values, error = _connection_input(body, CONNECTION_CREATE_FIELDS)
+        values, error = _connection_input(body, CONNECTION_CREATE_FIELDS,
+                                          allow_empty_label=True)
         if error:
             self._connections_refusal(error)
             return
         preset = values["provider"]
         base = values["baseUrl"] or preset.base_url
         if not base:
-            self._connections_refusal("a custom connection needs a base URL")
+            self._connections_refusal("This AI needs its address. Open More options"
+                                      " and fill in Address.")
             return
+        # The form makes a name optional: an empty one takes the provider's.
+        label = values["label"] or _default_connection_label(server.keys, preset)
         if not values["apiKey"] and not preset.key_optional:
             where = f" Get a key at {preset.console_url}." if preset.console_url else ""
             self._connections_refusal(
@@ -3561,7 +3569,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             (c for c in server.keys.all() if c.is_default), None)
         try:
             connection = server.keys.add(
-                label=values["label"], provider=preset.id, base_url=base,
+                label=label, provider=preset.id, base_url=base,
                 masked_key=mask_key(values["apiKey"]) if values["apiKey"] else "",
                 headers=values["headers"], is_default=values["isDefault"],
                 model=values["model"] or preset.default_model)
@@ -7655,6 +7663,28 @@ def _server_resolution(server, job: str) -> Resolution | None:
         return None
 
 
+def _ai_summary(server) -> dict:
+    """What Settings says about the AI: whether one answers, and which.
+
+    The same resolution hub every model call uses answers for the assistant
+    (spec 022: one truth for "is the AI connected"), with the startup
+    client as the last leg exactly as the dashboard's source table reads
+    it, so the two can never disagree. On the environment leg there is no
+    saved connection to name.
+    """
+    resolution = _server_resolution(server, "assistant")
+    if resolution is None:
+        if not getattr(server, "llm_endpoint", None):
+            return {"connected": False, "label": "", "model": ""}
+        return {"connected": True, "label": "The AI set on this computer", "model": ""}
+    connection = resolution.connection
+    return {
+        "connected": True,
+        "label": connection.label if connection is not None else "The AI set on this computer",
+        "model": resolution.model,
+    }
+
+
 def _connection_client(server, connection: Connection, api_key: str,
                        model: str):
     """One connection's serving client: its base URL, its key, its gateway
@@ -7819,7 +7849,24 @@ def _check_after_save(server, connection: Connection, api_key: str) -> Connectio
         return connection
 
 
-def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | None, str | None]:
+def _default_connection_label(store, preset) -> str:
+    """The name a connection gets when the person typed none (spec 022).
+
+    The form asks for a provider, a key and a model; a name is optional.
+    It is the provider's own name, with a number once that name is taken,
+    because names are how two keys for one provider are told apart.
+    """
+    taken = {connection.label for connection in store.all()}
+    label = preset.name
+    count = 2
+    while label in taken:
+        label = f"{preset.name} {count}"
+        count += 1
+    return label
+
+
+def _connection_input(body: dict, accepted: tuple[str, ...],
+                      allow_empty_label: bool = False) -> tuple[dict | None, str | None]:
     """Validate one connection POST body into field values, or name the refusal.
 
     The provider resolves to its preset object, a typed base URL is checked with
@@ -7827,14 +7874,16 @@ def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | Non
     form "Name: Value" lines. baseUrl comes back empty when blank: the create
     path fills the preset default, the update path keeps the stored value. The
     model comes back trimmed, or None when the request does not mention it.
+    A name is required on an update (the row already has one) and optional
+    on a create, where an empty one is filled from the provider.
     """
     unknown = sorted(name for name in body if name not in accepted)
     if unknown:
         return None, ("unknown connection field(s): " + ", ".join(unknown)
                       + "; accepted fields are " + ", ".join(accepted))
     label = str(body.get("label", "") or "").strip()
-    if not label:
-        return None, "a label is required"
+    if not label and not allow_empty_label:
+        return None, "a name is required"
     preset = preset_for(str(body.get("provider", "") or "").strip())
     if preset is None:
         return None, ("unknown provider preset: " + str(body.get("provider", ""))
