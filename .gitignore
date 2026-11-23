@@ -18,3 +18,7 @@ frontend/node_modules/
 
 # Local brand-leak hashes. Never commit the tokens themselves.
 tools/brand_leak.local.txt
+
+# Autoresearch session state (the experiment ledger is not code)
+.auto/
+autoresearch-dashboard.html
