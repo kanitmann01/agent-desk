@@ -37,6 +37,7 @@ KINDS = (
     ("agentloop.", "Agent"),
     ("recommend.", "Agent"),
     ("update.", "Update"),
+    ("skill.", "Skills"),
 )
 
 

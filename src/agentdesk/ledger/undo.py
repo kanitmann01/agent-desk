@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 from agentdesk.inbox.core import UnknownCard
 from agentdesk.ledger.store import Entry, Ledger, LedgerError
 from agentdesk.memory.core import UnknownFact
+from agentdesk.repetition.cluster import pattern_hash
+from agentdesk.repetition.skills import SkillError
 
 if TYPE_CHECKING:
     from agentdesk.server.app import AgentDeskServer
@@ -336,4 +338,100 @@ def _undo_memory_fact(server: "AgentDeskServer", entry: Entry,
                            ensure_ascii=False).encode("utf-8")
     )
     memory.remove_facts([fact_id])
+    return current
+
+
+# -- skills ----------------------------------------------------------------
+
+
+def _skill_blob(skill: dict) -> bytes:
+    """One skill's undoable state as the capture both skill kinds share."""
+    return json.dumps({
+        "id": skill["id"],
+        "name": skill["name"],
+        "description": skill["description"],
+        "prompt": skill["prompt"],
+        "active": bool(skill["active"]),
+        "created_by": skill.get("created_by", "user"),
+    }, sort_keys=True, ensure_ascii=False).encode("utf-8")
+
+
+def _skill_for_undo(server: "AgentDeskServer", data: dict):
+    """The skill a capture names, or the refusal when it is not there."""
+    skills = getattr(server, "skills", None)
+    skill_id = data.get("id")
+    if skills is None or not isinstance(skill_id, int):
+        raise LedgerError("The skills store is not available, so the skill cannot be undone.")
+    skill = skills.get(skill_id)
+    if skill is None:
+        raise LedgerError("That skill is no longer in the store, so it cannot be undone.")
+    return skills, skill
+
+
+@register("skill-version")
+def _undo_skill_version(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """Restore the prompt and the active flag a skill change replaced.
+
+    The reverse runs through the store's own version-writing calls, so the
+    undo is a new version row, never a rewrite: deactivate for a change
+    that activated, activate for one that deactivated, and refine for a
+    prompt change (the before blob holds the earlier prompt).
+    """
+    data = _payload(entry, before)
+    skills, skill = _skill_for_undo(server, data)
+    current = _capture_current(server, _skill_blob(skill))
+    target_active = bool(data.get("active", True))
+    try:
+        if target_active and not skill["active"]:
+            skills.activate(
+                name=data.get("name") or skill["name"],
+                description=data.get("description") or skill["description"],
+                prompt=data.get("prompt") or skill["prompt"],
+                created_by=data.get("created_by", "user"),
+            )
+        elif not target_active and skill["active"]:
+            skills.deactivate(skill["id"])
+            # A deactivating undo is a declined pattern, the run surface's
+            # own rule: cool the pattern down or the next consolidation
+            # run re-creates the identical skill at once.
+            consolidator = getattr(server, "consolidator", None)
+            if consolidator is not None:
+                consolidator.dismiss_cooldown(pattern_hash(skill["prompt"]))
+        skill_now = skills.get(skill["id"])
+        target_prompt = data.get("prompt")
+        if (skill_now is not None and isinstance(target_prompt, str)
+                and target_prompt and skill_now["prompt"] != target_prompt):
+            skills.refine(skill["id"], target_prompt,
+                          note="restored the earlier prompt (undo)")
+    except SkillError as exc:
+        raise LedgerError(f"The skill refused the undo: {exc}") from None
+    return current
+
+
+@register("skill-state")
+def _undo_skill_state(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """Put one skill back on the state and active flag a curator change
+    replaced.
+
+    The pair is restored together, never just the state word: a capture
+    that says stale and running must come back running (stale keeps the
+    flag it finds, so re-deriving it from the post-change row would leave
+    an archived-then-undone skill off the dashboard), and one that says a
+    state with active=0 (a deactivated skill the curator marked stale)
+    must not be resurrected by set_state's active=1 rule.
+    """
+    data = _payload(entry, before)
+    skills, skill = _skill_for_undo(server, data)
+    state = data.get("state")
+    if not isinstance(state, str) or not isinstance(data.get("active"), bool):
+        raise LedgerError("That change's earlier skill state was not captured, so it cannot be undone.")
+    current = _capture_current(
+        server,
+        json.dumps({"id": skill["id"], "state": skill["state"],
+                    "active": bool(skill["active"])}, sort_keys=True).encode("utf-8"),
+    )
+    try:
+        skills.set_state(skill["id"], state, active=data["active"])
+    except SkillError as exc:
+        raise LedgerError(f"The skill refused the undo: {exc}") from None
     return current

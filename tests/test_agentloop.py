@@ -198,10 +198,11 @@ def test_release_never_deletes_a_successors_claim(tmp_path):
 
 
 def test_the_built_in_steps_are_registered():
-    # Deskcheck is registered by the loop module; the app appends the
-    # ticket steps in import order (08, 09, then rank and update).
+    # The loop registers the desk check; app.py appends the ticket steps.
+    # Ticket 10's skills and curator steps go after rank, as spec §6.2 says.
     assert [step.name for step in STEPS] == [
-        "deskcheck", "learn-topics", "profile-review", "rank", "update"]
+        "deskcheck", "learn-topics", "profile-review", "rank", "skills",
+        "curator", "update"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------

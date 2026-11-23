@@ -474,3 +474,35 @@ def _run_deskcheck(ctx: LoopContext) -> dict:
 # (ticket 02) and their fixes (ticket 03). Later tickets append below.
 register_step(Step(name="deskcheck", enabled=_deskcheck_enabled,
                    run=_run_deskcheck))
+
+
+def _skills_enabled(settings: Any) -> bool:
+    """The skills step runs whenever the loop itself runs: consolidate is
+    gated by its own create_directly switch, and the feedback drain by
+    skills_auto_refine and the endpoint switch, both read at pass time."""
+    return True
+
+
+def _run_skills(ctx: LoopContext) -> dict:
+    """Consolidate the asks, then drain the skill feedback queue."""
+    from agentdesk.server.app import skills_step_run
+
+    return skills_step_run(ctx)
+
+
+def _curator_enabled(settings: Any) -> bool:
+    """The curator step runs only with the skills_curator switch on."""
+    return settings is not None and bool(settings.get("skills_curator"))
+
+
+def _run_curator(ctx: LoopContext) -> dict:
+    """The weekly curation pass, on its own interval."""
+    from agentdesk.server.app import curator_step_run
+
+    return curator_step_run(ctx)
+
+
+# Ticket 10's skills step (consolidation plus refine) and curator step (the
+# weekly lifecycle pass) are registered from server/app.py after the rank
+# step and before the update step. Registering them here would run them
+# before every step app.py appends, because this module is imported first.
