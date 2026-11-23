@@ -276,6 +276,35 @@ def test_a_single_enabled_connection_serves_every_job_without_any_binding(
     assert connection["isDefault"] is False
 
 
+def test_a_single_connection_with_a_model_sends_that_model_on_every_job(
+        env, auth, stub, monkeypatch):
+    """Spec 022: a connection remembers its model and every call uses it.
+    With no model of its own (the test above) a connection keeps sending
+    the environment's gpt-4o-mini; with one, nothing asks for gpt-4o-mini."""
+    monkeypatch.delenv("AGENTDESK_LLM_MODEL", raising=False)
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "Mock AI", "provider": "custom",
+        "baseUrl": stub.base_url + "/v1", "apiKey": KEY_A,
+        "model": "mock-chat"}, auth)
+    assert status == 201, body
+    env.server.settings.set("memory_capture", False)  # keep the count exact
+    stub.chat_reply = FACTS_REPLY
+
+    status, _h, body = env.post_json(
+        "/assistant/ask", {"question": "what changed this week?"}, auth)
+    assert json.loads(body)["status"] == "ok"
+    status, _h, body = env.post_json(
+        "/memory/retain",
+        {"excerpt": "Rita owns the Q3 report and it is due Friday."}, auth)
+    assert json.loads(body)["status"] == "ok"
+
+    chats = stub.chat_requests()
+    assert len(chats) == 2  # the assistant turn and one memory call
+    for chat in chats:
+        assert chat["auth"] == f"Bearer {KEY_A}"
+        assert json.loads(chat["body"])["model"] == "mock-chat"
+
+
 def test_the_environment_serves_when_nothing_is_saved_and_its_key_rides_the_header(
         stub, keychain, monkeypatch):
     monkeypatch.setenv("AGENTDESK_LLM_BASE", stub.base_url + "/v1")
@@ -560,6 +589,9 @@ def test_the_settings_page_renders_the_jobs_section_with_seven_pickers(
     assert "value='assistant-model'" in page
     assert "Unbound:" in page  # the six unbound jobs say so plainly
     # The model label is short and the cached-lists-or-typed fact is the
-    # card intro's, stated once (spec 019 #259).
-    assert page.count(">Model</label>") == 7
+    # card intro's, stated once (spec 019 #259). Counted inside the Jobs
+    # card, because the connection form carries a Model field of its own.
+    jobs_start = page.index("id='jobs'")
+    jobs_card = page[jobs_start:page.index("</section>", jobs_start)]
+    assert jobs_card.count(">Model</label>") == 7
     assert page.count("picked from the cached lists or typed") == 1

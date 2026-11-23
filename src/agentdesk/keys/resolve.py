@@ -5,7 +5,11 @@ The order is the spec's, one answer per model call: the job's own
 binding, the default binding, the single enabled connection, the
 environment, and only then an explicit error that says no AI key is
 saved. Saved connections win over the environment, which is the desk's
-documented precedence. The function is pure by construction: it reads
+documented precedence. The model follows the same order on every leg
+(spec 022): the job's own model if one is set, then the serving
+connection's model, then the environment's. A connection saved before it
+could carry a model has none, so it keeps sending the environment's,
+exactly as before. The function is pure by construction: it reads
 the rows it is handed and the environment triple it is given (defaulting
 to the adapter's own), and it never touches the keychain, so an
 environment-supplied key stays in memory and a connection's key is the
@@ -97,21 +101,22 @@ def resolve_job(job: str, *, connections: list[Connection],
 
     binding = _binding_for(bindings, job)
     if binding is not None and binding.connection_id in by_id:
-        return Resolution(job, "job", by_id[binding.connection_id],
-                          by_id[binding.connection_id].base_url, "",
-                          binding.model_id or env_model)
+        connection = by_id[binding.connection_id]
+        return Resolution(job, "job", connection, connection.base_url, "",
+                          binding.model_id or connection.model or env_model)
 
     if job != DEFAULT_JOB:
         fallback = _binding_for(bindings, DEFAULT_JOB)
         if fallback is not None and fallback.connection_id in by_id:
             connection = by_id[fallback.connection_id]
             return Resolution(job, "default", connection, connection.base_url,
-                              "", fallback.model_id or env_model)
+                              "", fallback.model_id or connection.model
+                              or env_model)
 
     enabled = [connection for connection in connections if connection.enabled]
     if len(enabled) == 1:
         return Resolution(job, "single", enabled[0], enabled[0].base_url, "",
-                          env_model)
+                          enabled[0].model or env_model)
 
     if env_base:
         return Resolution(job, "env", None, env_base, env_key, env_model)

@@ -15,13 +15,21 @@ __all__ = ["Preset", "PRESETS", "preset_for"]
 @dataclass(frozen=True)
 class Preset:
     """One provider: its default base URL, its key console, whether a
-    key is optional (the local servers) and whether it is local."""
+    key is optional (the local servers), whether it is local, and the
+    model a new connection on it starts with.
+
+    default_model is one id verified on the provider's own documentation
+    (spec 022), never a guess: a provider without a verified id records
+    the empty string, and its form then asks for the model instead of
+    sending a name the provider rejects.
+    """
 
     id: str
     name: str
     base_url: str
     console_url: str
     key_optional: bool = False
+    default_model: str = ""
 
     @property
     def local(self) -> bool:
@@ -30,30 +38,42 @@ class Preset:
 
 
 PRESETS: tuple[Preset, ...] = (
+    # Each default_model is an id read on the provider's own documentation
+    # on 2026-11-23. A provider whose page names no default (the local
+    # servers, OpenCode Go, Custom) records none, and its form then takes
+    # the model from the save-time listing or from the person.
     Preset("openai", "OpenAI",
            "https://api.openai.com/v1",
-           "https://platform.openai.com/api-keys"),
+           "https://platform.openai.com/api-keys",
+           default_model="gpt-6-luna"),
     Preset("anthropic-compat", "Anthropic (compatibility)",
            "https://api.anthropic.com/v1/",
-           "https://console.anthropic.com/settings/keys"),
+           "https://console.anthropic.com/settings/keys",
+           default_model="claude-haiku-5-5"),
     Preset("openrouter", "OpenRouter",
            "https://openrouter.ai/api/v1",
-           "https://openrouter.ai/settings/keys"),
+           "https://openrouter.ai/settings/keys",
+           default_model="openai/gpt-5.2"),
     Preset("groq", "Groq",
            "https://api.groq.com/openai/v1",
-           "https://console.groq.com/keys"),
+           "https://console.groq.com/keys",
+           default_model="llama-3.3-70b-versatile"),
     Preset("together", "Together",
            "https://api.together.ai/v1",
-           "https://api.together.ai/settings/api-keys"),
+           "https://api.together.ai/settings/api-keys",
+           default_model="MiniMaxAI/MiniMax-M3.1-Flash"),
     Preset("gemini", "Google Gemini",
            "https://generativelanguage.googleapis.com/v1beta/openai/",
-           "https://aistudio.google.com/app/apikey"),
+           "https://aistudio.google.com/app/apikey",
+           default_model="gemini-3.5-flash-lite"),
     Preset("deepseek", "DeepSeek",
            "https://api.deepseek.com/v1",
-           "https://platform.deepseek.com/api_keys"),
+           "https://platform.deepseek.com/api_keys",
+           default_model="deepseek-flash"),
     Preset("mistral", "Mistral",
            "https://api.mistral.ai/v1",
-           "https://console.mistral.ai/api-keys"),
+           "https://console.mistral.ai/api-keys",
+           default_model="mistral-small-4-0-26-03"),
     Preset("opencode", "OpenCode Go",
            "https://opencode.ai/inference/go/v1",
            "https://opencode.ai/v2/docs/console/go/"),

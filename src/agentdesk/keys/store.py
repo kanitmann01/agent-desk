@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS connections (
   label TEXT NOT NULL UNIQUE,
   provider TEXT NOT NULL,
   base_url TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
   keychain_ref TEXT NOT NULL DEFAULT '',
   masked_key TEXT NOT NULL DEFAULT '',
   headers TEXT NOT NULL DEFAULT '{}',
@@ -46,7 +47,7 @@ CREATE TABLE IF NOT EXISTS job_bindings (
 """
 
 _COLUMNS = (
-    "id, label, provider, base_url, keychain_ref, masked_key, headers,"
+    "id, label, provider, base_url, model, keychain_ref, masked_key, headers,"
     " is_default, enabled, status, last_checked_at, last_error,"
     " last_used_at, models, models_fetched_at, created_at, updated_at"
 )
@@ -79,6 +80,7 @@ class Connection:
     label: str
     provider: str
     base_url: str
+    model: str = ""
     keychain_ref: str = ""
     masked_key: str = ""
     headers: dict = field(default_factory=dict)
@@ -110,8 +112,20 @@ def mask_key(secret: str) -> str:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Create the connections table and commit; safe on every open."""
+    """Create the connections table and commit; safe on every open.
+
+    A store saved before spec 022 has no model column, and CREATE TABLE IF
+    NOT EXISTS leaves an existing table alone, so the column is added by
+    one guarded ALTER: table_info is read first and the ALTER runs only
+    when the column is missing. That is what lets a keys file from an
+    earlier build open and upgrade on boot, its rows unchanged (the new
+    column's empty default is the "no model chosen" state).
+    """
     conn.executescript(SCHEMA)
+    present = {row[1] for row in conn.execute("PRAGMA table_info(connections)")}
+    if "model" not in present:
+        conn.execute(
+            "ALTER TABLE connections ADD COLUMN model TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -153,10 +167,13 @@ class KeysStore:
         is_default: bool = False,
         connection_id: str | None = None,
         enabled: bool = True,
+        model: str = "",
     ) -> Connection:
         """Insert one connection and return it as the store now holds it.
 
-        The id is generated unless handed in, and the keychain reference is always
+        model is the model every call on this connection asks for; empty
+        means none was chosen (spec 022). The id is generated unless handed
+        in, and the keychain reference is always
         key/<id>, so the keychain entry is derivable from the row alone. A label
         another connection already has is refused (ValueError): labels are how a
         user tells two keys for the same provider apart, so duplicates cannot
@@ -172,10 +189,10 @@ class KeysStore:
             with self.conn:
                 self.conn.execute(
                     "INSERT INTO connections (id, label, provider, base_url,"
-                    " keychain_ref, masked_key, headers, is_default, enabled,"
-                    " created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (connection_id, label, provider, base_url,
+                    " model, keychain_ref, masked_key, headers, is_default,"
+                    " enabled, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (connection_id, label, provider, base_url, model,
                      f"key/{connection_id}", masked_key,
                      json.dumps(headers or {}, ensure_ascii=False),
                      1 if is_default else 0, 1 if enabled else 0, now, now),
@@ -218,17 +235,20 @@ class KeysStore:
         base_url: str | None = None,
         masked_key: str | None = None,
         headers: dict | None = None,
+        model: str | None = None,
     ) -> Connection:
         """Change only the named fields; everything else keeps its value.
 
         updated_at moves to the clock's now; created_at never does. An
         unknown id raises before anything is written, and a label another
-        connection owns is refused like a duplicate insert.
+        connection owns is refused like a duplicate insert. model follows
+        the same rule as every field here: None leaves it, a string
+        replaces it (an empty one is the "none chosen" state).
         """
         self.get(connection_id)  # unknown ids raise before any write
         stored = {name: value for name, value in (
             ("label", label), ("provider", provider), ("base_url", base_url),
-            ("masked_key", masked_key),
+            ("masked_key", masked_key), ("model", model),
             ("headers", json.dumps(headers, ensure_ascii=False)
              if headers is not None else None),
         ) if value is not None}
@@ -417,9 +437,10 @@ def _as_connection(row: tuple) -> Connection:
     """One stored row as a Connection; positions are fixed by _COLUMNS."""
     return Connection(
         id=row[0], label=row[1], provider=row[2], base_url=row[3],
-        keychain_ref=row[4], masked_key=row[5], headers=json.loads(row[6]),
-        is_default=bool(row[7]), enabled=bool(row[8]), status=row[9],
-        last_checked_at=row[10], last_error=row[11], last_used_at=row[12],
-        models=json.loads(row[13]), models_fetched_at=row[14],
-        created_at=row[15], updated_at=row[16],
+        model=row[4],
+        keychain_ref=row[5], masked_key=row[6], headers=json.loads(row[7]),
+        is_default=bool(row[8]), enabled=bool(row[9]), status=row[10],
+        last_checked_at=row[11], last_error=row[12], last_used_at=row[13],
+        models=json.loads(row[14]), models_fetched_at=row[15],
+        created_at=row[16], updated_at=row[17],
     )

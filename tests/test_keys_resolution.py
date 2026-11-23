@@ -55,7 +55,8 @@ def test_the_jobs_catalog_is_the_spec_seven_with_labels():
 
 
 def test_leg_1_the_jobs_own_binding_wins_over_everything(tmp_path):
-    personal = _connection(tmp_path, "Personal", base_url="https://a.example/v1")
+    personal = _connection(tmp_path, "Personal", base_url="https://a.example/v1",
+                           model="personal-model")
     work = _connection(tmp_path, "Work", provider="openai",
                        base_url="https://b.example/v1")
     bindings = [
@@ -67,15 +68,26 @@ def test_leg_1_the_jobs_own_binding_wins_over_everything(tmp_path):
     assert resolved.connection is personal
     assert resolved.source == "job"
     assert resolved.base_url == "https://a.example/v1"
-    assert resolved.model == "assistant-model"
+    assert resolved.model == "assistant-model"  # the job's own, over the connection's
     assert resolved.api_key == ""  # the key never resolves here; the hub fetches it
 
 
-def test_leg_1_a_blank_binding_model_falls_back_to_the_env_model(tmp_path):
-    conn = _connection(tmp_path)
+def test_leg_1_a_blank_binding_model_takes_the_connections_model(tmp_path):
+    chosen = _connection(tmp_path, "Chosen", model="mock-chat")
     resolved = resolve_job(
-        "memory", connections=[conn],
-        bindings=[JobBinding("memory", conn.id, "")], env=ENV)
+        "memory", connections=[chosen],
+        bindings=[JobBinding("memory", chosen.id, "")], env=ENV)
+    assert resolved.model == "mock-chat"
+
+
+def test_leg_1_with_no_model_anywhere_on_the_connection_the_env_model_serves(
+        tmp_path):
+    """A connection saved before it could carry a model has none, and it
+    keeps working exactly as before: the environment's model is sent."""
+    bare = _connection(tmp_path)
+    resolved = resolve_job(
+        "memory", connections=[bare],
+        bindings=[JobBinding("memory", bare.id, "")], env=ENV)
     assert resolved.model == "env-model"
 
 
@@ -101,6 +113,19 @@ def test_leg_2_the_default_job_itself_never_rides_leg_2(tmp_path):
     assert resolved.source == "job"
 
 
+def test_leg_2_a_blank_default_binding_model_takes_the_starred_connections_model(
+        tmp_path):
+    starred = _connection(tmp_path, "Starred", model="mock-chat")
+    other = _connection(tmp_path, "Other", base_url="https://other.example/v1")
+    bindings = [JobBinding("default", starred.id, "")]
+    for job in ("presentations", "insights", "research-web"):
+        resolved = resolve_job(job, connections=[other, starred],
+                               bindings=bindings, env=ENV)
+        assert resolved.connection is starred
+        assert resolved.source == "default"
+        assert resolved.model == "mock-chat"
+
+
 def test_leg_3_a_single_enabled_connection_serves_every_job(tmp_path):
     only = _connection(tmp_path, "Only")
     for job in JOBS:
@@ -108,7 +133,15 @@ def test_leg_3_a_single_enabled_connection_serves_every_job(tmp_path):
         assert resolved.connection is only
         assert resolved.source == "single"
         assert resolved.base_url == "https://a.example/v1"
-        assert resolved.model == "env-model"
+        assert resolved.model == "env-model"  # it carries no model of its own
+
+
+def test_leg_3_a_single_connection_with_a_model_sends_that_model(tmp_path):
+    only = _connection(tmp_path, "Only", model="mock-chat")
+    for job in JOBS:
+        resolved = resolve_job(job, connections=[only], bindings=[], env=ENV)
+        assert resolved.source == "single"
+        assert resolved.model == "mock-chat"
 
 
 def test_leg_3_never_fires_with_two_connections_or_a_disabled_one(tmp_path):

@@ -659,9 +659,11 @@ def render_connection_delete_warning(connection: dict, jobs: list[str],
 def _connection_rows(connections: list[dict]) -> str:
     """The saved-connections table: label, preset, masked key, base URL,
     status badge with its inline cause, default star, Test, edit and
-    delete. A raw key never reaches this markup; the masked hint is the
-    only key-shaped thing on the page, and the badge state renders from
-    the row alone, so the page works with no script at all."""
+    delete. Each row names the model the connection sends, or "default"
+    when it has none (spec 022). A raw key never reaches this markup; the
+    masked hint is the only key-shaped thing on the page, and the badge
+    state renders from the row alone, so the page works with no script at
+    all."""
     rows = []
     for c in connections:
         preset = preset_for(c.get("provider", ""))
@@ -671,6 +673,7 @@ def _connection_rows(connections: list[dict]) -> str:
         masked = html.escape(str(c.get("maskedKey", "") or ""))
         key_cell = f"<span class='mono'>{masked}</span>" if masked else \
             "<span class='empty'>no key</span>"
+        model = html.escape(str(c.get("model") or "default"))
         base = html.escape(str(c.get("baseUrl", "")))
         connection_id = html.escape(str(c.get("id", "")), quote=True)
         status = html.escape(str(c.get("status") or "unknown"))
@@ -691,7 +694,8 @@ def _connection_rows(connections: list[dict]) -> str:
         )
         rows.append(
             "<tr>"
-            f"<td><b>{label}</b>{star}</td>"
+            f"<td><b>{label}</b>{star}"
+            f"<br><span class='empty'>Model: {model}</span></td>"
             f"<td>{html.escape(preset_name)}</td>"
             f"<td>{key_cell}</td>"
             f"<td class='mono conn-url'>{base}</td>"
@@ -726,7 +730,9 @@ def _provider_select(selected: str) -> str:
     without script the server fills the same default when the field
     arrives empty. The saved provider's option carries selected on the
     edit form, the first preset on the create form, exactly where the
-    checked radio used to sit (spec 019 #263)."""
+    checked radio used to sit (spec 019 #263). Each option also carries
+    the preset's default model as data, so the script can fill the model
+    field on the same choice."""
     groups: dict[str, list[str]] = {
         "Hosted providers": [],
         "Local servers, no key needed": [],
@@ -744,7 +750,8 @@ def _provider_select(selected: str) -> str:
             group = "Hosted providers"
         groups[group].append(
             f"<option value='{preset.id}'{chosen}"
-            f" data-base='{html.escape(preset.base_url, quote=True)}'>"
+            f" data-base='{html.escape(preset.base_url, quote=True)}'"
+            f" data-model='{html.escape(preset.default_model, quote=True)}'>"
             f"{html.escape(label)}</option>")
     options = "".join(
         f"<optgroup label='{html.escape(group)}'>{''.join(items)}</optgroup>"
@@ -799,6 +806,37 @@ deeper check completes exactly one token with it)</label>
 completion is the only way to verify the key.</p>
 <button class='btn btn-secondary' type='submit'>Deeper check (one-token completion)</button>
 </form>"""
+
+
+def _model_field(value: str, models: list) -> str:
+    """The connection form's Model field: the model every call on this
+    connection sends (spec 022).
+
+    A select over the models the save-time check listed when there are
+    any, the saved model selected and "default" (no model) always offered;
+    a text field otherwise, able to carry any name. A model the listing
+    does not include stays as its own option, so saving another change
+    never swaps it. An empty value reads "default", the word the saved
+    rows use. On a new connection the field starts empty and the script
+    fills the selected preset's default; without script the server saves
+    that default when the field arrives empty.
+    """
+    label = "<label class='empty' for='conn-model'>Model</label>"
+    if not models:
+        return (
+            label
+            + "<input id='conn-model' type='text' name='model'"
+            f" value='{html.escape(value, quote=True)}'"
+            " placeholder='default' autocomplete='off'>"
+        )
+    unlisted = [value] if value and value not in models else []
+    options = [f"<option value=''{'' if value else ' selected'}>default</option>"]
+    for model in unlisted + list(models):
+        name = html.escape(str(model))
+        chosen = " selected" if str(model) == value else ""
+        options.append(
+            f"<option value='{html.escape(str(model), quote=True)}'{chosen}>{name}</option>")
+    return label + "<select id='conn-model' name='model'>" + "".join(options) + "</select>"
 
 
 def _connections_section(
@@ -856,6 +894,8 @@ def _connections_section(
                 " value='1'> Remove the stored key</label>"
             )
             cancel = " <a class='btn btn-secondary' href='/settings'>Cancel</a>"
+            model_value = str(editing.get("model") or "")
+            model_options = list(editing.get("models") or [])
         else:
             heading = "Add a connection"
             action = "/api/connections"
@@ -867,6 +907,8 @@ def _connections_section(
             default_checked = ""
             clear_row = ""
             cancel = ""
+            model_value = ""
+            model_options = []
         form = f"""<h3>{heading}</h3>
 <form method='post' action='{action}' class='cardform' id='connection-form'>
 {_provider_select(selected)}
@@ -877,6 +919,7 @@ def _connections_section(
 <label class='empty' for='conn-key'>API key</label>
 <input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
 <label class='empty' for='conn-key-show'><input type='checkbox' id='conn-key-show' data-key-reveal> Show the key while typing</label>
+{_model_field(model_value, model_options)}
 <label class='empty' for='conn-headers'>Extra headers (corporate gateways, one Name: Value per line)</label>
 <textarea id='conn-headers' name='headers' rows='2' placeholder='X-Gateway: corp'>{headers_text}</textarea>
 <label class='empty'><input type='checkbox' name='isDefault' value='1'{default_checked}> Make this the default connection</label>
@@ -885,7 +928,8 @@ def _connections_section(
 </form>
 <p class='empty'>Saving with the key field empty keeps the stored key;
 Remove the stored key is the only action that deletes it. Leave the base
-URL empty to use the preset's own address.</p>
+URL empty to use the preset's own address. Every call uses the model
+saved here; leave it empty for the default.</p>
 {_health_forms(editing)}
 {_console_links()}"""
         stamp = f"{len(connections)} SAVED" if connections else "NONE YET"
