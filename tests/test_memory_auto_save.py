@@ -1,10 +1,10 @@
-"""Memory auto-save by default, and the folder-age migration (ticket 08).
+"""Memory auto-save by default, and the folder-age rule (ticket 08).
 
 A data folder born on this build saves captured facts without a review
-card, one ledger entry per fact, each undoable from the Activity page.
-A folder that predates this default keeps "ask me first": the boot
-stores the explicit False before any store reads the setting, and a
-user's explicit choice always survives.
+card, one ledger entry per fact, each undoable from the Activity page,
+and keeps doing so after a restart (spec 022). A folder that predates this
+default keeps "ask me first": the boot stores the explicit False before
+any store reads the setting, and a user's explicit choice always survives.
 """
 
 import json
@@ -75,16 +75,23 @@ def test_auto_approve_migration_by_folder_age(tmp_path, monkeypatch):
     finally:
         booted.close()
 
-    # A fresh folder reads the new default True and stores no row at
-    # all, so the setting stays a default the user can still change.
+    # A fresh folder reads True and stores the explicit True at the boot
+    # that creates it (spec 022): by its next start the folder holds a
+    # database, and without the row that start would mistake it for an old
+    # folder and switch learning off. The switch stays the user's to change.
     fresh = tmp_path / "fresh"
     monkeypatch.setenv("AGENTDESK_DATA", str(fresh))
     booted = _default_stores(fresh)
     try:
         assert booted.server.settings.get("memory_auto_approve") is True
-        assert sqlite3.connect(fresh / "settings.sqlite3").execute(
-            "SELECT COUNT(*) FROM settings WHERE key = 'memory_auto_approve'"
-        ).fetchone()[0] == 0
+    finally:
+        booted.close()
+    assert sqlite3.connect(fresh / "settings.sqlite3").execute(
+        "SELECT value FROM settings WHERE key = 'memory_auto_approve'"
+    ).fetchone() == ("1",)
+    booted = _default_stores(fresh)
+    try:
+        assert booted.server.settings.get("memory_auto_approve") is True
     finally:
         booted.close()
 

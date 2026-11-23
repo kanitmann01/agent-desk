@@ -171,6 +171,11 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .doc .card:hover{box-shadow:var(--shadow-card-hover)}
 .doc .card p{margin:0}
 .doc .card h3{font-size:16px;font-weight:700;letter-spacing:-.01em}
+/* The Memory page's explanation (ticket #283): the card voice, its
+   heading in the card-title voice, held to the reading column's width
+   on the wide island page. */
+.doc .card h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.memory-explain{max-width:720px}
 .doc .card .cardrow{margin-top:0}
 /* The widget cards' internal rhythm: the 12px gap is the single spacer.
    The audit measured 20px between a gate's heading and text and 28px

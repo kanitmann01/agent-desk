@@ -241,11 +241,14 @@ class MemoryApiMixin:
         encrypt: dict | None = None,
         sweep: list | None = None,
         notice: str | None = None,
+        confirm_forget_all: bool = False,
     ) -> None:
         """The memory page; with a recall preview when a query came in,
         the encryption state alongside the facts, the entities with
         their merge form (ticket #92), the junk-sweep preview when
-        asked, and the locked banner alone when the store is locked."""
+        asked, the locked banner alone when the store is locked, and the
+        "Forget everything" question (ticket #283) in place of its
+        control when `confirm_forget_all` is set."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             self._send_json(503, {"error": "the memory store is not available"})
@@ -264,10 +267,63 @@ class MemoryApiMixin:
                 notice=notice, observations=memory.observations(),
                 embeddings=memory.embedding_counts(),
                 inbox_count=self._inbox_waiting_count(),
-                graph_island=memory_graph_island_built(),
                 loop_island=memory_loop_island_built(),
+                confirm_forget_all=confirm_forget_all,
+                inbox=self.server.inbox,  # type: ignore[attr-defined]
+                sources=memory.sources(),
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _memory_forget_all(self) -> None:
+        """Forget everything (ticket #283): one form, two submits.
+
+        A first post, while the bank holds a fact, renders the page with
+        the question in place of the control and writes nothing; the
+        question's own form carries the confirm field, so the second
+        submit is the action. An empty bank has nothing to forget and
+        simply lands back on the page."""
+        memory = self._memory_available()
+        if memory is None:
+            return
+        body = self._read_json_body() or {}
+        if not memory.all():
+            self._respond_form_or_json("/memory", {"status": "ok", "forgot": 0})
+            return
+        if body.get("confirm") != "yes":
+            self._send_memory_page(confirm_forget_all=True)
+            return
+        # The excerpts go with the facts, so the review cards still
+        # waiting on them are rejected first, exactly as removing one
+        # excerpt rejects its cards.
+        self._reject_cards_waiting_on({excerpt.id for excerpt in memory.sources()})
+        result = memory_loop.apply_removal(memory, memory_loop.plan_forget_all(memory))
+        self._schedule_observation_pass()
+        self._after_memory_change()
+        self._audit(
+            "memory.forget_all",
+            target=memory_loop.counted(len(result.fact_ids), "fact"),
+            detail=(f"{len(result.entities_removed)} names, "
+                    f"{len(result.observations_removed)} summaries and "
+                    f"{len(result.sources_removed)} excerpts forgotten"),
+        )
+        self._respond_form_or_json("/memory", {
+            "status": "ok",
+            "forgot": len(result.fact_ids),
+        })
+
+    def _reject_cards_waiting_on(self, source_ids) -> None:
+        """Reject the review cards still waiting on one of these excerpts.
+
+        An excerpt is about to go. Its cards are rejected first, the way
+        the user would reject them, so nothing is left waiting on an
+        excerpt that no longer exists."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            return
+        for card in inbox.waiting(include_snoozed=True):
+            meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
+            if isinstance(meta, dict) and meta.get("source_id") in source_ids:
+                inbox.dismiss(card.id)
 
     def _memory_add(self) -> None:
         """The page's typed-fact path. (The Assistant and Research create
@@ -785,10 +841,7 @@ class MemoryApiMixin:
         kind, target_id = target
         if kind == "source" and not preview and server.inbox is not None:
             # Removing an excerpt also rejects the cards still waiting on it.
-            for card in server.inbox.waiting(include_snoozed=True):
-                meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
-                if isinstance(meta, dict) and meta.get("source_id") == target_id:
-                    server.inbox.dismiss(card.id)
+            self._reject_cards_waiting_on({target_id})
         keep = self._pending_source_ids()
         # The preview asks the endpoint for the observations' new text (so
         # the dialog shows what they will read); the removal reuses it.

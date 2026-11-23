@@ -13,10 +13,10 @@
 #memory-loop-root a:focus-visible,#memory-loop-root button:focus-visible,#memory-loop-root input:focus-visible,
 #memory-loop-root textarea:focus-visible,#memory-loop-root summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 
-/* Header */
-#memory-loop-root .ml-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:4px}
-#memory-loop-root .ml-head h1,#memory-loop-root .ml-dialog-title{text-wrap:balance}
-#memory-loop-root .ml-head h1{font-family:var(--font-display);font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.025em;color:var(--heading);margin:0}
+/* Header: the state line alone; the page title is the server's, above
+   the explanation that leads the page (ticket #283). */
+#memory-loop-root .ml-head{margin-bottom:4px}
+#memory-loop-root .ml-dialog-title{text-wrap:balance}
 #memory-loop-root .ml-sub{color:var(--ink-2);font-size:14px;line-height:1.5;margin:6px 0 0;max-width:72ch}
 
 /* Labels and chips */
@@ -137,14 +137,8 @@
 #memory-loop-root .ml-row-text{font-size:14.5px;line-height:1.45;color:var(--ink-1);margin:0;max-width:80ch;overflow-wrap:anywhere}
 #memory-loop-root .ml-row.is-replaced .ml-row-text{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--ink-4)}
 #memory-loop-root .ml-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;font-size:12.5px;color:var(--ink-3);margin:6px 0 0}
-#memory-loop-root .ml-row-actions{display:flex;align-items:center;gap:12px;flex:none}
-#memory-loop-root .ml-row-actions .ml-text-btn{margin:0}
+#memory-loop-root .ml-row-actions{display:flex;align-items:center;gap:8px;flex:none}
 #memory-loop-root .ml-flag{font-size:12.5px;line-height:1.5;color:var(--ink-1);margin:8px 0 0;padding:6px 10px;border-left:2px solid var(--accent);background:var(--surface-2);border-radius:0 var(--r-inner) var(--r-inner) 0;max-width:80ch}
-
-/* The graph sits inside its tile: undo the stand-alone island's breakout. */
-#memory-loop-root #memory-graph-root{position:static;left:auto;transform:none;width:auto;margin-top:10px}
-#memory-loop-root #memory-graph-root .mg{margin:0}
-#memory-loop-root #memory-graph-root .mg-canvas,#memory-loop-root #memory-graph-root .mg-detail,#memory-loop-root #memory-graph-root .mg-empty{background:var(--bg)}
 
 /* Removal: the plan, then the undo bar. */
 #memory-loop-root .ml-scrim{position:fixed;inset:0;overscroll-behavior:contain;z-index:50;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--bg) 72%,transparent)}
@@ -182,7 +176,6 @@
   #memory-loop-root .ml-filter input{width:100%}
 }
 @media (max-width:560px){
-  #memory-loop-root .ml-head h1{font-size:26px}
   #memory-loop-root .ml-figure{font-size:32px}
   #memory-loop-root .ml-btn,#memory-loop-root .ml-segment button,#memory-loop-root .ml-tabs [role="tab"]{min-height:44px}
   #memory-loop-root .ml-switch-row{min-height:44px}
@@ -207,8 +200,9 @@
 #memory-loop-root .ml-rewrite-new{margin:4px 0 0;padding-left:10px;border-left:2px solid var(--accent);font-size:13px;line-height:1.5;color:var(--ink-1)}
 #memory-loop-root .ml-rewrite-new .ml-chip-quiet{margin-left:8px;vertical-align:1px}
 
-/* Maintenance: a server-rendered tile below the island, folded away.
-   One row per action: what it does for the user, then its control. */
+/* Maintenance: a server-rendered tile outside the island, folded away.
+   One row per action: what it does for the user, then its control. The
+   same tile language carries the Forget everything control above it. */
 .ml-maint{font-family:var(--font-ui);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-card);margin:0 0 32px;overflow:hidden}
 .ml-maint>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;min-height:24px;transition:background var(--dur) ease}
 .ml-maint>summary::-webkit-details-marker{display:none}
@@ -233,6 +227,20 @@
 .ml-maint-form input:focus-visible,.ml-maint-act a:focus-visible,.ml-maint-act button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .ml-maint-act .btn{min-height:32px;font-size:13px;white-space:nowrap}
 .ml-maint-done{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+/* A tool's answer, shown full width under its row when the user asked
+   for it (ticket #283): the recall check's list, the sweep's candidates
+   and the encryption's counts and confirm. */
+.ml-maint-result{padding:12px 16px;border-top:1px solid var(--hairline);font-size:13px;line-height:1.5;color:var(--ink-2)}
+.ml-maint-result p{margin:0;max-width:68ch}
+.ml-maint-result ol,.ml-maint-result ul{margin:10px 0 0;padding-left:18px}
+.ml-maint-result li + li{margin-top:6px}
+.ml-maint-result form{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-top:10px}
+.ml-maint-checks{list-style:none;padding-left:0!important}
+.ml-maint-checks li{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--hairline)}
+.ml-maint-checks input{flex:none}
+.ml-maint-checks label{cursor:pointer;color:var(--ink-1)}
+.ml-maint .inlineform{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.ml-maint .inlineform label{cursor:pointer}
 .ml-maint .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:760px){
   .ml-maint-sub{display:none}

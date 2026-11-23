@@ -113,9 +113,9 @@ afterEach(() => {
 describe('MemoryLoop', () => {
   it('reads the loop and lays it out as capture, store, process and remove', async () => {
     serve(state());
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Memory' })).toBeTruthy();
-    const flow = screen.getByRole('list', { name: 'How memory is built' });
+    render(<MemoryLoop pollMs={0} />);
+    // The page title is the server page's, above the island (ticket #283).
+    const flow = await screen.findByRole('list', { name: 'How memory is built' });
     const steps = within(flow).getAllByRole('listitem');
     expect(steps.map((s) => s.querySelector('.ml-tag')?.textContent)).toEqual(['Capture', 'Store', 'Process', 'Remove']);
     expect(within(steps[0]).getByText('Rules')).toBeTruthy();
@@ -126,7 +126,7 @@ describe('MemoryLoop', () => {
   it('approves, rejects and edits a candidate through the inbox card routes', async () => {
     const { calls } = serve(state());
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const review = await screen.findByRole('region', { name: 'Review' });
     expect(within(review).getByText('Acme moved the renewal to March 3.', { selector: '.ml-cand-text' })).toBeTruthy();
 
@@ -148,7 +148,7 @@ describe('MemoryLoop', () => {
 
   it('shows the excerpt a candidate came from', async () => {
     serve(state());
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const review = await screen.findByRole('region', { name: 'Review' });
     expect(within(review).getByText('From what was said')).toBeTruthy();
     expect(within(review).getByText('Acme', { selector: '.ml-entity' })).toBeTruthy();
@@ -157,7 +157,7 @@ describe('MemoryLoop', () => {
   it('turns capture switches and the review mode through /settings/toggle', async () => {
     const { calls } = serve(state());
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const research = await screen.findByRole('switch', { name: /Research/ });
     expect(research.getAttribute('aria-checked')).toBe('true');
     await user.click(research);
@@ -172,7 +172,7 @@ describe('MemoryLoop', () => {
   it('greys the channel switches when capture is off', async () => {
     const off = state({ capture: { ...state().capture, enabled: false } });
     serve(off);
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const assistant = await screen.findByRole('switch', { name: /^Assistant/ });
     expect((assistant as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Capture is off/)).toBeTruthy();
@@ -181,7 +181,7 @@ describe('MemoryLoop', () => {
   it('switches tabs with the arrow keys and filters rows', async () => {
     serve(state());
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const facts = await screen.findByRole('tab', { name: /Facts/ });
     expect(facts.getAttribute('aria-selected')).toBe('true');
     const panel = screen.getByRole('tabpanel');
@@ -211,10 +211,10 @@ describe('MemoryLoop', () => {
       '/api/memory/undo': { ok: true },
     });
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const panel = await screen.findByRole('tabpanel');
     const row = within(panel).getByText('Acme renews in February.').closest('li') as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'Remove…' }));
+    await user.click(within(row).getByRole('button', { name: 'Forget…' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Acme renews in February.' });
     expect(within(dialog).getByText('Observations removed')).toBeTruthy();
@@ -238,9 +238,9 @@ describe('MemoryLoop', () => {
   it('closes the removal preview on Escape without writing', async () => {
     const { calls } = serve(state(), { '/api/memory/remove/preview': { plan } });
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     await screen.findByRole('tabpanel');
-    await user.click(screen.getAllByRole('button', { name: 'Remove…' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Forget…' })[0]);
     await screen.findByRole('dialog');
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -252,7 +252,7 @@ describe('MemoryLoop', () => {
     replaced.facts[0] = { ...replaced.facts[0], replacedBy: 2 };
     const { calls } = serve(replaced);
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     await user.click(await screen.findByRole('button', { name: 'Keep both' }));
     await waitFor(() => expect(calls.map((c) => c.url)).toContain('/api/memory/facts/1/keep'));
   });
@@ -260,7 +260,7 @@ describe('MemoryLoop', () => {
   it('adds a typed fact, and says what to do when the box is empty', async () => {
     const { calls } = serve(state());
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const save = await screen.findByRole('button', { name: 'Save fact' });
     await user.click(save);
     expect(screen.getByText('Type the fact first, in one sentence.')).toBeTruthy();
@@ -273,9 +273,9 @@ describe('MemoryLoop', () => {
   it('keeps Tab inside the removal preview', async () => {
     serve(state(), { '/api/memory/remove/preview': { plan } });
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     await screen.findByRole('tabpanel');
-    await user.click(screen.getAllByRole('button', { name: 'Remove…' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Forget…' })[0]);
     const dialog = await screen.findByRole('dialog');
     const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
     const confirm = within(dialog).getByRole('button', { name: 'Remove 1 fact' });
@@ -287,8 +287,77 @@ describe('MemoryLoop', () => {
 
   it('says what went wrong when the state cannot be read', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) }) as Response));
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     expect((await screen.findByRole('alert')).textContent).toMatch(/session ended/);
+  });
+});
+
+// Ticket #283: the server page leads with the explanation and the page
+// title, so the island starts with its own state line, and each stored
+// fact keeps where it came from beside a Forget of its own.
+describe('MemoryLoop, what the page promises about each fact', () => {
+  it('lists each fact with where it came from and a Forget of its own', async () => {
+    serve(state());
+    render(<MemoryLoop pollMs={0} />);
+    const panel = await screen.findByRole('tabpanel');
+    const typed = within(panel).getByText('Acme renews in February.').closest('li') as HTMLElement;
+    expect(within(typed).getByText('Typed on this page')).toBeTruthy();
+    expect(within(typed).getByRole('button', { name: 'Forget…' })).toBeTruthy();
+    const learned = within(panel).getByText('Acme has 40 seats.').closest('li') as HTMLElement;
+    expect(within(learned).getByText('Assistant')).toBeTruthy();
+    expect(within(learned).getByText('You approved')).toBeTruthy();
+    expect(within(learned).getByRole('button', { name: 'Forget…' })).toBeTruthy();
+  });
+
+  it('edits a stored fact through the edit route', async () => {
+    const { calls } = serve(state());
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} />);
+    await screen.findByRole('tabpanel');
+    const row = screen.getByText('Acme renews in February.').closest('li') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    const box = within(row).getByLabelText('Edit fact') as HTMLTextAreaElement;
+    expect(box.value).toBe('Acme renews in February.');
+    await user.clear(box);
+    await user.type(box, 'Acme renews in March.');
+    await user.click(within(row).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(calls).toEqual([{ url: '/memory/1/edit', body: { text: 'Acme renews in March.' } }]));
+  });
+
+  it('cancels an edit without writing', async () => {
+    const { calls } = serve(state());
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} />);
+    await screen.findByRole('tabpanel');
+    const row = screen.getByText('Acme renews in February.').closest('li') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    await user.type(within(row).getByLabelText('Edit fact'), ' Or so they say.');
+    await user.click(within(row).getByRole('button', { name: 'Cancel' }));
+    expect(calls).toEqual([]);
+    expect(within(row).getByText('Acme renews in February.')).toBeTruthy();
+  });
+
+  it('leaves the page title to the server page above it', async () => {
+    serve(state());
+    render(<MemoryLoop pollMs={0} />);
+    await screen.findByRole('list', { name: 'How memory is built' });
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.getByText(/facts the assistant can recall/)).toBeTruthy();
+  });
+
+  it('draws no graph: it is a maintenance tool, behind the disclosure the server renders', async () => {
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      const payload: unknown = url === '/api/memory/loop' ? state() : {};
+      return { ok: true, status: 200, json: async () => payload } as Response;
+    }));
+    render(<MemoryLoop pollMs={0} />);
+    await screen.findByRole('tabpanel');
+    expect(screen.queryByRole('region', { name: 'Provenance graph' })).toBeNull();
+    expect(screen.queryByText('Show in graph')).toBeNull();
+    expect(seen).toEqual(['/api/memory/loop']);
   });
 });
 
@@ -301,9 +370,9 @@ describe('MemoryLoop, the new pieces', () => {
     };
     serve(state(), { '/api/memory/remove/preview': { plan: rewrite } });
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     await screen.findByRole('tabpanel');
-    await user.click(screen.getAllByRole('button', { name: 'Remove…' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Forget…' })[0]);
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Observation rewritten')).toBeTruthy();
     const old = within(dialog).getByText('Acme renews in February and has 40 seats.');
@@ -317,7 +386,7 @@ describe('MemoryLoop, the new pieces', () => {
     const facts = Array.from({ length: 11 }, (_, i) => ({ ...base.facts[0], id: 100 + i, text: `Fact number ${i + 1}.` }));
     serve(state({ facts, counts: { ...base.counts, facts: 11, standing: 11 } }));
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     const panel = await screen.findByRole('tabpanel');
     expect(within(panel).getAllByRole('listitem')).toHaveLength(8);
     expect(within(panel).getByText('8 of 11')).toBeTruthy();
@@ -335,7 +404,7 @@ describe('MemoryLoop, the new pieces', () => {
       },
     }));
     const user = userEvent.setup();
-    render(<MemoryLoop pollMs={0} graphWidth={900} />);
+    render(<MemoryLoop pollMs={0} />);
     expect(await screen.findByText('Rows that change in the watched workbook')).toBeTruthy();
     await user.click(screen.getByRole('switch', { name: /Workbook tracker/ }));
     await waitFor(() => expect(calls.at(-1)).toEqual({ url: '/settings/toggle', body: { key: 'memory_capture_workbook' } }));

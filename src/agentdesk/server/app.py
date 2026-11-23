@@ -6539,12 +6539,12 @@ def create_server(
     if resolved != "127.0.0.1":
         raise ValueError(f"refusing to bind non-loopback host: {host!r}")
     # Spec 016 section 6.5, checked before any store opens: whether this
-    # data folder predates the auto-approve default. Opening the inbox or
-    # memory database would create the very file this check looks for,
-    # so it must run first; the migration itself writes only once the
-    # settings store is open.
+    # data folder was already used before this boot. Opening the inbox or
+    # memory database would create the very file this check looks for, so
+    # it must run first; the write itself happens once the settings store
+    # is open.
     folder_data_dir = default_data_dir()
-    pre_existing_folder = (
+    folder_was_used = (
         (folder_data_dir / "inbox.sqlite3").exists()
         or (folder_data_dir / "memory.sqlite3").exists()
     )
@@ -6555,11 +6555,11 @@ def create_server(
     # client to them, so saved endpoints apply without a restart.
     if settings_store is None:
         settings_store = _default_settings_store()
-        # The folder-age migration (spec 016 section 6.5) writes only the
-        # settings store this boot opened itself: an injected store belongs
-        # to its caller, who decides what its keys hold.
-        if pre_existing_folder and settings_store is not None:
-            _store_memory_auto_approve_false(settings_store)
+        # The "learn automatically" row is written only to the settings
+        # store this boot opened itself: an injected store belongs to its
+        # caller, who decides what its keys hold.
+        if settings_store is not None:
+            _store_memory_auto_approve_default(settings_store, folder_was_used)
     if calendar is None:
         calendar = _default_calendar_bridge(settings_store)
     if audit_conn is None:
@@ -6725,18 +6725,24 @@ def create_server(
 _LEARN_TOPICS_WINDOW = 500
 
 
-def _store_memory_auto_approve_false(settings_store: SettingsStore) -> None:
-    """Store the explicit False a pre-existing desk keeps (spec 016 6.5).
+def _store_memory_auto_approve_default(
+    settings_store: SettingsStore, folder_was_used: bool) -> None:
+    """Store the "learn automatically" value a folder does not have yet.
 
-    The default flipped to True for folders born on this build; only a
-    missing row is written here, so a value the user set survives. The
+    A folder an earlier build already used keeps "ask me first" (spec 016
+    section 6.5): it stores the explicit False. A folder born on this build
+    stores the explicit True at the boot that creates it (spec 022): without
+    that row its second start looked like an old folder, because by then the
+    folder holds a database, and the desk switched learning off by itself.
+    Only a missing row is ever written, so a value the user set survives. The
     read runs once at boot, before request threads exist, so the bare
-    statement on the shared connection is safe."""
+    statement on the shared connection is safe.
+    """
     row = settings_store.conn.execute(
         "SELECT value FROM settings WHERE key = 'memory_auto_approve'"
     ).fetchone()
     if row is None:
-        settings_store.set("memory_auto_approve", False)
+        settings_store.set("memory_auto_approve", not folder_was_used)
 
 
 def _entity_names(memory) -> dict[str, str]:

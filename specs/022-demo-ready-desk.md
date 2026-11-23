@@ -215,9 +215,14 @@ posting to `/memory/forget-all`, with a confirmation that says it cannot
 be undone. The action removes every fact and everything derived from
 facts through the removal machinery the page already uses, is recorded in
 the audit log as `memory.forget_all`, and leaves the encryption key and
-the settings alone. Learning's default for a new folder stays on; the
-one-time migration that wrote "off" on older folders is left alone, and
-the founder's folder is switched on by hand during demo setup.
+the settings alone. The page offers the form only once there is a fact
+to forget. Learning is on for a new folder and stays on across restarts
+(corrected 2026-11-23): the boot that creates a folder now stores the
+explicit "on" value, because the older rule that wrote "off" for any
+folder that already existed took a new folder's second start for an old
+folder and switched learning off by itself. A folder from an earlier
+build keeps "off", and the founder's folder, which already holds that
+row, is switched on by hand during demo setup.
 Maintenance tools (the graph, the sweep, encryption) stay behind one
 disclosure.
 
@@ -275,7 +280,7 @@ functions, CSS literals or component internals.
 | R06 | Settings never says "NONE BOUND" | the string is absent from `/settings` |
 | R07 | Assistant without an AI says what to do | `/assistant` links to `/settings#ai` with the words "Add your AI key", and has neither "unbound" nor "AGENTDESK_" |
 | R08 | Asking without an AI is honest | `POST /assistant/ask` is not a 5xx and the page shown says "Add your AI key" |
-| R09 | Memory explains itself and can be emptied | `/memory` has `id="how-memory-works"` with 200+ characters of text and a form posting to `/memory/forget-all` |
+| R09 | Memory explains itself | `/memory` has `id="how-memory-works"` with 200+ characters of text (reworded 2026-11-23: the form moved to R20, because the page offers it only once a fact exists) |
 | R10 | Learning is on by default | in `/settings`, the switch `button[data-setting="memory_auto_approve"]` reads "On" for a fresh folder |
 | R11 | The rail is short and whole | every rail link on `/inbox` is 200, there are at most 8, and none is to Peers, Activity or Capabilities |
 | R12 | IT-only surfaces are not offered | in `/settings`, the computer check's link appears only after `id="settings-advanced"`, and no rail page links to `/peers`, `/marketplace/admin`, `/marketplace/trust`, `/marketplace/publishers` or `/marketplace/studio` |
@@ -286,7 +291,7 @@ functions, CSS literals or component internals.
 | R17 | The assistant answers | the page shows the mock's reply |
 | R18 | The AI survives a restart | a second boot over the same folder still reports connected and still answers |
 | R19 | Learning happens by itself | after one turn stating a durable fact, `/memory` lists it with the assistant as origin |
-| R20 | Forget everything works | after the post, `/memory` shows zero facts and a later answer no longer carries it |
+| R20 | Forget everything works | the Memory page offers a form posting to `/memory/forget-all`; after the post, `/memory` shows zero facts and a later answer no longer carries it |
 | R21 | Forgetting is recorded | the audit export gains a `memory.forget_all` row |
 | R22 | A real workbook completes its step | registering a workbook from outside the sample folder makes the `workbook` step done |
 | R23 | All three steps complete | after a real calendar file is connected, every step is done |

@@ -93,14 +93,16 @@ def test_empty_memory_page_names_the_object_and_offers_add_and_recall(env, auth)
     assert "No facts yet" in page
 
 
-def test_add_lists_and_the_page_shows_the_fact_with_its_source(env, auth):
+def test_add_lists_and_the_page_shows_the_fact_with_its_origin(env, auth):
     _add_fact(env, auth, "revenue is 220")
     status, _h, body = env.request("GET", "/memory", auth)
     page = body.decode("utf-8")
     assert status == 200
     assert "revenue is 220" in page
-    # The rendered source row, not a substring the page's own copy has.
-    assert "source page" in page
+    # The rendered origin row, in plain words (ticket #283): not a
+    # substring the page's own copy has, and never the stored bookkeeping.
+    assert "Typed on this page, saved" in page
+    assert "source page" not in page
 
 
 def test_add_with_a_form_post_redirects_back_to_the_page(env, auth):
@@ -403,8 +405,11 @@ def test_recall_renders_a_ranked_preview_best_first(env, auth):
     status, _h, raw = env.request("POST", "/memory/recall", headers, body)
     assert status == 200
     page = raw.decode("utf-8")
-    best_at = page.find("revenue is 220")
-    lesser_at = page.find("revenue is checked every monday")
+    # The preview sits inside the Maintenance disclosure, below the saved
+    # facts (ticket #283), so the rank is read in the preview itself.
+    preview = page.split("id='recall-preview'", 1)[1].split("</ol>", 1)[0]
+    best_at = preview.find("revenue is 220")
+    lesser_at = preview.find("revenue is checked every monday")
     assert 0 < best_at < lesser_at, "the stronger overlap must rank first"
     assert "Recall preview" in page
 

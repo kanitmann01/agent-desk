@@ -33,8 +33,7 @@ Fresh desk (nothing configured yet)
   R07  Assistant without an AI links to Settings with "Add your AI key",
        and names no job and no environment variable
   R08  asking without an AI is not a server error and says the same
-  R09  Memory: an explanation block of 200+ characters and a form that
-       posts to /memory/forget-all
+  R09  Memory: an explanation block of 200+ characters, in plain words
   R10  learning is switched on for a fresh folder
   R11  the rail: every link answers 200, at most eight, none to Peers,
        Activity or Capabilities
@@ -54,8 +53,8 @@ Adding the AI (the form a browser posts)
 Memory
   R19  after one turn that states a durable fact, Memory lists it and
        recall carries it
-  R20  after Forget everything, Memory is empty and recall no longer
-       carries it
+  R20  Memory offers "Forget everything" once a fact exists; after it,
+       Memory is empty and recall no longer carries the fact
   R21  the audit export records memory.forget_all
 
 Real sources (files copied outside the sample folder)
@@ -523,11 +522,12 @@ def _fresh_desk(desk: Desk, report: Report) -> None:
 
     memory_html = desk.get("/memory")[2].decode("utf-8")
     explanation = len(element_text(memory_html, "how-memory-works"))
-    forget_form = 'action="/memory/forget-all"' in memory_html
-    report.run(9, "memory explains itself and can be emptied", lambda: (
-        explanation >= 200 and forget_form,
-        f"explanation has {explanation} characters (needed: 200); "
-        f"forget-all form {'present' if forget_form else 'absent'}"))
+    # Reworded on 2026-11-23, never removed: the page offers "Forget
+    # everything" only once there is a fact to forget (no control that can
+    # do nothing), so the form is checked by R20, after a fact exists.
+    report.run(9, "memory explains itself", lambda: (
+        explanation >= 200,
+        f"explanation has {explanation} characters (needed: 200)"))
     report.run(10, "learning is on by default", lambda: (
         switch_state(settings_html, "memory_auto_approve").lower() == "on",
         f"the Learn automatically switch reads {switch_state(settings_html, 'memory_auto_approve')!r}"))
@@ -663,9 +663,10 @@ def _learns(desk: Desk, report: Report) -> None:
 
 
 def _forgets(desk: Desk, report: Report) -> None:
-    """R20 and R21: forget everything, then find nothing left."""
+    """R20 and R21: the page offers the form; forget everything; nothing is left."""
     def nothing_left():
-        """The two posts a person makes, then an empty Memory and recall."""
+        """The form is offered, the two posts a person makes, then an empty Memory."""
+        offered = 'action="/memory/forget-all"' in desk.get("/memory")[2].decode("utf-8")
         first = desk.post_form("/memory/forget-all", {})
         if first[0] == 200:
             second = desk.post_form("/memory/forget-all", {"confirm": "yes"})
@@ -673,9 +674,10 @@ def _forgets(desk: Desk, report: Report) -> None:
             second = first
         memory = page_text(desk.get("/memory")[2].decode("utf-8"))
         _status, _headers, body = desk.post_json("/memory/recall", {"query": "Acme renewal"})
-        return ((second[0] in (200, 303) and REMEMBERED not in memory
+        return ((offered and second[0] in (200, 303) and REMEMBERED not in memory
                  and REMEMBERED not in body.decode("utf-8")
                  and re.search(r"\b0 facts\b", memory) is not None),
+                f"forget-all form {'offered' if offered else 'absent'}; "
                 f"posts answered {first[0]} then {second[0]}; the fact is "
                 f"{'still' if REMEMBERED in memory else 'no longer'} on the Memory page")
     report.run(20, "forget everything works", nothing_left)
