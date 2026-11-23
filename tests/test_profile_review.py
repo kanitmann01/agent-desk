@@ -398,8 +398,8 @@ def test_stated_preferences_untouched_by_a_run(tmp_path, monkeypatch):
 
 def test_the_step_is_registered_after_learn_topics():
     assert [step.name for step in STEPS] == [
-        "deskcheck", "skills", "curator", "learn-topics", "profile-review",
-        "rank", "update"]
+        "deskcheck", "learn-topics", "profile-review", "rank", "skills",
+        "curator", "update"]
     reviewer = next(step for step in STEPS if step.name == "profile-review")
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
     settings.set("llm_base", "http://127.0.0.1:9/v1")
