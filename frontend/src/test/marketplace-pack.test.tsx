@@ -83,7 +83,7 @@ describe('pack install', () => {
       .toBeInTheDocument();
     expect(screen.getByText(/Every plugin installs on its own/)).toBeInTheDocument();
     expect(screen.getByText('No packs are published.')).toBeInTheDocument();
-    expect(screen.getByText(/The plugins this desk ships are on Discover/)).toBeInTheDocument();
+    expect(screen.getByText(/The plugins this desk ships are on Find plugins/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Browse plugins' })).toHaveAttribute('href', '/marketplace');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /install/i })).not.toBeInTheDocument();

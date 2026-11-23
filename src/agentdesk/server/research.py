@@ -80,12 +80,28 @@ def render_research_disabled(now: datetime) -> Widget:
     )
 
 
+NO_AI_NOTICE = (
+    "Add your AI key to ask questions. The assistant, your calendar "
+    "breakdowns and memory all use it. Add a key once: it is kept in "
+    "this computer's keychain."
+)
+
+
 def render_assistant_page(
-    turns: list, version: str, inbox_count: int = 0, retain_error: str = ""
+    turns: list, version: str, inbox_count: int = 0, retain_error: str = "",
+    ai_connected: bool = True,
 ) -> str:
     """The assistant page: the thread so far, one input, one button,
     and the save-to-memory action (ticket #91). `retain_error` is the
-    plain-language cause a failed retain shows on its re-render."""
+    plain-language cause a failed retain shows on its re-render. With no
+    AI connection (`ai_connected` False) the page leads with the one
+    sentence and the one button that fix it (spec 022)."""
+    # No scripting is needed for the one action that matters here.
+    ai_notice = "" if ai_connected else (
+        '<div class="answer" role="status"><p>'
+        f"<strong>{html.escape(NO_AI_NOTICE)}</strong></p>"
+        '<a class="btn btn-primary" href="/settings#ai">Add your AI key</a></div>'
+    )
     if turns:
         blocks = []
         for turn in turns:
@@ -118,8 +134,9 @@ def render_assistant_page(
             "until you accept a card in the inbox.</p>"
         )
     content = f"""<h1>Assistant</h1>
-<p>One thread with your dashboard's context attached. Requests go to the
-company endpoint; every call is logged.</p>
+<p>One conversation about your numbers and your day, with your dashboard
+as context. Every call is logged.</p>
+{ai_notice}
 <div class="thread" aria-label="Conversation">
 {thread}
 </div>

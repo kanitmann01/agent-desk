@@ -49,6 +49,20 @@ _NOT_NAMES = {
     "yesterday", "q1", "q2", "q3", "q4", "the", "and", "but", "so",
 }
 
+# The model ids /models lists. A caller that saves a connection against
+# this mock picks from these, so a readiness check can prove the model it
+# chose is the model each request carried.
+MODELS = ("mock-chat", "mock-vision")
+
+# The model name of every chat request this process has answered, in
+# order. A test or tool that runs the mock in-process reads it to assert
+# what the desk really sent.
+SEEN_MODELS: list[str] = []
+
+# The line a user types to hand the desk one fact by hand: what a careful
+# extraction model would pick out of an assistant turn.
+_REMEMBER_MARKER = "Remember this:"
+
 
 def _known_facts(prompt: str) -> list[str]:
     """The '- ' fact lines under the known-facts header, in order.
@@ -97,7 +111,12 @@ def _extraction_reply(prompt: str) -> str:
             feedback = line.split(_FEEDBACK_MARKER, 1)[1].strip()
             break
     if not feedback:
-        return json.dumps({"facts": []})
+        # An assistant turn: a "Remember this: ..." line becomes the one
+        # fact a careful extraction model would keep, and nothing else does.
+        handed = re.search(r"Remember this:\s*(.+)", prompt)
+        if handed is None:
+            return json.dumps({"facts": []})
+        feedback = handed.group(1).strip()
     fact = {"text": feedback, "kind": "world", "entities": _names_in(feedback)}
     return json.dumps({"facts": [fact]})
 
@@ -241,6 +260,7 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
+        SEEN_MODELS.append(str(body.get("model") or ""))
         messages = body.get("messages") or []
         prompt = ""
         if messages and isinstance(messages[0], dict):
@@ -252,8 +272,19 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
         })
 
     def do_GET(self) -> None:  # noqa: N802 - the stdlib's spelling
-        """A plain refusal, so a browser visit cannot look like an API call."""
-        self._send_json(404, {"error": "the mock speaks only to POST /chat/completions"})
+        """The model list a connection's save-time check reads, else a refusal.
+
+        /models answers the OpenAI list shape so the key form can offer a
+        model to pick; any other path is a plain refusal, so a browser
+        visit cannot look like an API call.
+        """
+        if self.path.rstrip("/") in ("/v1/models", "/models"):
+            self._send_json(200, {"object": "list", "data": [
+                {"id": model, "object": "model", "owned_by": "mock"}
+                for model in MODELS
+            ]})
+            return
+        self._send_json(404, {"error": "the mock speaks to POST /chat/completions and GET /models"})
 
     def _send_json(self, status: int, payload: dict) -> None:
         """One JSON answer with the right length header."""

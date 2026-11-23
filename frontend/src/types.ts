@@ -267,8 +267,30 @@ export interface UpdateSummary {
   lastResult: string;
 }
 
+/** One step of the Get started strip: what to connect, and whether it is. */
+export interface SetupStep {
+  id: 'ai' | 'workbook' | 'calendar';
+  title: string;
+  reason: string;
+  /** The page a link opens. */
+  href: string;
+  /** The form a one-click button posts to, or null when the step is only a link. */
+  action: string | null;
+  /** True only when something real is connected; the sample set never counts. */
+  done: boolean;
+}
+
+/** The three steps between a fresh desk and the morning loop. */
+export interface SetupData {
+  steps: SetupStep[];
+  /** True while the desk is showing the labelled sample set. */
+  sample: boolean;
+}
+
 export interface DashboardData {
   sample?: boolean;
+  /** Absent only on a server older than spec 022. */
+  setup?: SetupData;
   version: string;
   flags: {
     excelEnabled: boolean;

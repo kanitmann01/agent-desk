@@ -176,8 +176,9 @@ describe('entering and leaving customize', () => {
     expect(screen.queryByRole('button', { name: `Hide ${RESEARCH}` })).toBeNull();
     expect(screen.queryByRole('button', { name: `Drag to reorder ${RESEARCH}` })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Done customizing' })).toBeNull();
-    // The hero's normal actions are back.
-    expect(screen.getByRole('button', { name: 'Add plugin' })).toBeInTheDocument();
+    // The hero's normal actions are back. The plugin wizard moved to the
+    // Plugins page (spec 022); Customize stays.
+    expect(screen.queryByRole('button', { name: 'Add plugin' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument();
   });
 });

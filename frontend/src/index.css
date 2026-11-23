@@ -250,6 +250,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 }
 .hero-live .dot{background:var(--live)}
 .hero-actions{display:flex;flex-direction:row;align-items:center;gap:8px;padding-bottom:4px}
+.finish-setup{align-self:center;padding:4px 0}
 
 /* The research command bar: a white well on the paper, an inset
    hairline ring, and the surface's one solid-green send control. */
@@ -647,6 +648,39 @@ table.rows td.neg{color:var(--text-2)}
 .decision-why{font-size:12.5px;color:var(--muted);line-height:1.4}
 .cell-decisions{flex:0 0 auto!important}
 
+/* Get started (spec 022): three steps across, each one click. The strip
+   holds no primary; the question bar keeps the surface's one action. The
+   stepper is the tracker sheet's, so a person meets one stepper twice. */
+.cell-get-started{grid-column:1/-1}
+.cell-get-started .cell-title{font-size:18px}
+.cell-get-started:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cell-get-started:focus:not(:focus-visible){outline:none}
+.gs-dismiss{margin-left:12px;color:var(--muted);font-weight:500;text-decoration:none}
+.gs-dismiss:hover{color:var(--text);text-decoration:underline}
+.gs-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 24px;list-style:none;margin:0;padding:0}
+.gs-step{
+  display:grid;grid-template-columns:22px minmax(0,1fr);
+  grid-template-areas:"mark head" "mark why";
+  align-items:center;gap:4px 12px;padding:12px 0 0;border-top:1px solid var(--rule);
+}
+.gs-mark{
+  grid-area:mark;display:inline-grid;place-items:center;width:22px;height:22px;
+  border:1px solid var(--rule-strong);border-radius:var(--r-inner);
+  font-family:var(--font-mono);font-size:12px;color:var(--text-2);
+  transition:background var(--dur) ease,border-color var(--dur) ease,color var(--dur) ease;
+}
+.gs-step[aria-current="step"] .gs-mark{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.gs-step.is-done .gs-mark{color:var(--accent-text);border-color:var(--accent)}
+.gs-head{grid-area:head;display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;min-width:0}
+.gs-title{font-weight:600;color:var(--heading);font-size:14px}
+.gs-why{grid-area:why;font-size:12.5px;color:var(--muted);line-height:1.4}
+.gs-action{flex:none}
+.gs-state{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.gs-foot{
+  display:flex;flex-wrap:wrap;align-items:center;gap:0 8px;margin:0;
+  padding-top:12px;border-top:1px solid var(--rule);font-size:13px;color:var(--muted);
+}
+
 /* Digest: a timeline. Time, source, what. */
 .digest{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .digest li{display:grid;grid-template-columns:44px 40px minmax(0,1fr);gap:4px 10px;align-items:baseline;padding:10px 0;border-top:1px solid var(--rule)}
@@ -856,6 +890,7 @@ table.rows td.neg{color:var(--text-2)}
   .brief{grid-template-columns:minmax(0,1fr)}
   .brief-col{display:contents}
   .brief > *,.brief-col > .cell{grid-column:1 / -1!important}
+  .gs-steps{grid-template-columns:1fr}
   .brief .cell{order:7}
   .brief .cell-hero{order:1}
   .brief .cell-decisions{order:2}

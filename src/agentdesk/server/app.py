@@ -223,6 +223,7 @@ from agentdesk.server.core import (
     SRC_RESEARCH,
     STATUS_CONNECTED,
     STATUS_NOT_CONNECTED,
+    STATUS_SAMPLE,
     Freshness,
     SourceStatus,
     _active_version_dir,
@@ -1009,44 +1010,61 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
 
     Health must not repeat what a constructor once guessed: excel is
     connected when a workbook is registered, calendar when the bridge has
-    produced a non-empty state, endpoint when the corporate base URL is
-    set. Both /health and the dashboard's source line read this table.
+    produced a non-empty state, the AI when the resolution hub can serve a
+    call. Both /health and the dashboard's source line read this table.
+
+    A source wired to the labelled sample set is reported as "sample", never
+    as connected (spec 022): the sample switch keeps the cards alive while
+    nothing real is attached, and the source line must not call that live.
     """
 
-    def state(connected: bool) -> str:
-        """The status word for one source, connected or not.
+    def state(connected: bool, sample: bool = False) -> str:
+        """The status word for one source: not connected, sample or connected.
 
         Both /health and the dashboard read the same words from this function.
         """
-        return STATUS_CONNECTED if connected else STATUS_NOT_CONNECTED
+        if not connected:
+            return STATUS_NOT_CONNECTED
+        return STATUS_SAMPLE if sample else STATUS_CONNECTED
 
     excel = server.excel
     excel_path = excel.registered_path if excel is not None else None
+    workbook_sample = excel_path is not None and demo_data.under_sample_folder(excel_path, None)
     calendar = server.calendar
-    calendar_state = calendar.status().get("state") if calendar is not None else None
+    calendar_status = calendar.status() if calendar is not None else {}
+    calendar_state = calendar_status.get("state")
     calendar_ok = calendar_state not in (None, STATE_EMPTY)
-    # An endpoint saved in the settings page counts the same as one from
-    # the environment: either is a real configuration.
-    settings_base = server.settings.get("llm_base") if server.settings is not None else ""
-    endpoint_ok = bool(settings_base) or bool(server.llm_endpoint)
+    calendar_path = calendar_status.get("path")
+    calendar_sample = calendar_ok and bool(calendar_path) and demo_data.under_sample_folder(
+        calendar_path, None)
+    # The AI is connected when the per-job resolution hub can serve a
+    # call: a saved connection, or the legacy rows and environment behind
+    # it. The startup client stays as the last leg so this is never less
+    # true than before (a boot may inject one directly). Nothing else may
+    # decide this (spec 022): the desk used to read the pre-018 rows alone
+    # and tell a user with a saved key that the endpoint was not set.
+    endpoint_ok = (_server_resolution(server, "assistant") is not None
+                   or bool(server.llm_endpoint))
     workbook = ""
     if excel_path:
         workbook = str(excel_path).replace("\\", "/").rsplit("/", 1)[-1]
     return [
         SourceStatus(
             SRC_EXCEL,
-            state(excel_path is not None),
-            f"Watches {workbook}." if excel_path else "No workbook connected yet.",
+            state(excel_path is not None, workbook_sample),
+            f"Sample data, not your file: {workbook}." if workbook_sample
+            else f"Watches {workbook}." if excel_path else "No workbook connected yet.",
         ),
         SourceStatus(
             SRC_CALENDAR,
-            state(calendar_ok),
-            "Reading the OneDrive calendar sync." if calendar_ok else "No calendar data yet.",
+            state(calendar_ok, calendar_sample),
+            "Sample calendar, not your calendar." if calendar_sample
+            else "Reading the OneDrive calendar sync." if calendar_ok else "No calendar data yet.",
         ),
         SourceStatus(
             SRC_RESEARCH,
             state(endpoint_ok),
-            "Company endpoint configured." if endpoint_ok else "No company endpoint configured.",
+            "AI connected." if endpoint_ok else "No AI key saved yet.",
         ),
     ]
 
@@ -2366,6 +2384,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             skills=list(state.skills),
             connected_sources=state.sources_connected,
             banner=(state.update or {}).get("banner") or "",
+            sample=state.sample,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2403,8 +2422,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         turns = []
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             turns = threadlog.turns(self.server.audit_conn)  # type: ignore[attr-defined]
-        page = render_assistant_page(turns, agentdesk.__version__,
-                                     inbox_count=self._inbox_waiting_count())
+        page = render_assistant_page(
+            turns, agentdesk.__version__, inbox_count=self._inbox_waiting_count(),
+            ai_connected=_server_resolution(self.server, "assistant") is not None)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _send_agents_page(self) -> None:
@@ -3508,6 +3528,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         the row is deleted, and the default star the refused row's insert
         had already taken from the previous default is given back, so the
         user's starred connection keeps its star.
+
+        The model is the one every call on this connection sends (spec
+        022). A save that arrives without one takes the preset's default
+        model, as a blank base URL takes the preset's address: the form
+        starts with that model, and a browser without script that switched
+        provider still saves a model that provider accepts.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.keys is None:
@@ -3537,7 +3563,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             connection = server.keys.add(
                 label=values["label"], provider=preset.id, base_url=base,
                 masked_key=mask_key(values["apiKey"]) if values["apiKey"] else "",
-                headers=values["headers"], is_default=values["isDefault"])
+                headers=values["headers"], is_default=values["isDefault"],
+                model=values["model"] or preset.default_model)
         except ValueError as exc:
             self._connections_refusal(str(exc), status=409)
             return
@@ -3573,6 +3600,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         answer (a notice for JSON, the connections notice for a form
         post): the row says no key, so the user must hear that the
         keychain still holds the secret.
+
+        The model is saved as the request gives it (spec 022): a name
+        replaces the saved one and a blank one means none chosen. A JSON
+        request that does not mention it leaves the saved model alone; a
+        form always posts the field, so there a blank is the user clearing it.
         """
         server = self.server  # type: ignore[attr-defined]
         if server.keys is None:
@@ -3601,12 +3633,17 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if api_key and not server.keychain.store(existing.id, api_key):
             self._connections_refusal("the keychain refused the key; nothing changed")
             return
+        model = values["model"]
+        if model is None and self._is_form_submit():
+            # The form always posts its model field, so one missing from a
+            # form post was blank: the user clearing it is saved as cleared.
+            model = ""
         try:
             connection = server.keys.update(
                 existing.id, label=values["label"], provider=preset.id,
                 base_url=base,
                 masked_key=mask_key(api_key) if api_key else existing.masked_key,
-                headers=values["headers"])
+                headers=values["headers"], model=model)
         except ValueError as exc:
             if api_key:
                 if previous_secret is None:
@@ -7690,7 +7727,7 @@ def _job_llm_parts(server, job: str) -> tuple:
 # unknown field name is a 400 naming the typos and the accepted names,
 # never a silent ok with dropped values) and the no-keychain notice.
 CONNECTION_CREATE_FIELDS = (
-    "label", "provider", "baseUrl", "apiKey", "headers", "isDefault",
+    "label", "provider", "baseUrl", "apiKey", "headers", "isDefault", "model",
 )
 CONNECTION_UPDATE_FIELDS = CONNECTION_CREATE_FIELDS + ("keyClear",)
 # The job-binding write's whitelist, the same pattern one surface over.
@@ -7709,6 +7746,7 @@ def _connection_payload(connection) -> dict:
         "label": connection.label,
         "provider": connection.provider,
         "baseUrl": connection.base_url,
+        "model": connection.model,
         "maskedKey": connection.masked_key,
         "headers": connection.headers,
         "isDefault": connection.is_default,
@@ -7781,7 +7819,8 @@ def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | Non
     The provider resolves to its preset object, a typed base URL is checked with
     the adapter's own base_url_problem, and headers arrive as a JSON dict or
     form "Name: Value" lines. baseUrl comes back empty when blank: the create
-    path fills the preset default, the update path keeps the stored value.
+    path fills the preset default, the update path keeps the stored value. The
+    model comes back trimmed, or None when the request does not mention it.
     """
     unknown = sorted(name for name in body if name not in accepted)
     if unknown:
@@ -7809,6 +7848,9 @@ def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | Non
         "apiKey": str(body.get("apiKey", "") or "").strip(),
         "headers": headers,
         "isDefault": _flag(body, "isDefault"),
+        # None when the request does not mention the model at all, which
+        # the update path reads as "leave it" (the create path fills it).
+        "model": (str(body["model"] or "").strip() if "model" in body else None),
     }, None
 
 

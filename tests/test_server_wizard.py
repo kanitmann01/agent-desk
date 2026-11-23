@@ -400,8 +400,8 @@ def test_the_full_no_js_walk_ends_on_an_approved_page(tmp_path, monkeypatch):
     )
     try:
         auth = booted.exchange()
-        # The dashboard button: an empty start asks for the words, on a
-        # page, not a document.
+        # The Plugins page's button: an empty start asks for the words, on
+        # a page, not a document.
         status, headers, body = post_form(booted, "/wizard/start", {}, auth)
         assert status == 200
         assert "text/html" in headers["Content-Type"]
@@ -581,12 +581,15 @@ def test_escalate_endpoint_exports_the_feature_request(env, auth):
     assert inbox["waiting"] >= 1
 
 
-def test_add_plugin_button_opens_the_describe_page(env, auth):
+def test_the_describe_door_opens_the_describe_page(env, auth):
+    # The wizard's door is the "Describe a plugin in plain English" button
+    # on the Plugins page (spec 022): a plain form post with no fields. The
+    # home screen no longer carries it.
     page = env.request("GET", "/", auth)[2].decode("utf-8")
-    assert "/wizard/start" in page
+    assert "/wizard/start" not in page
     assert 'disabled title="The plugin wizard' not in page
-    # The empty start (the dashboard button) lands on the describe screen:
-    # a textarea whose answer creates the session.
+    # The empty start lands on the describe screen: a textarea whose
+    # answer creates the session.
     status, _h, body = env.post_json("/wizard/start", {"description": ""}, auth)
     assert status == 200
     page = body.decode("utf-8")

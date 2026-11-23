@@ -22,6 +22,13 @@ const BASE: DashboardData = {
   plugins: { cards: [] },
 };
 
+/** The source table of a desk whose AI key is saved: the hub can serve a call. */
+const AI_SAVED: DashboardData['sources'] = {
+  connected: 1,
+  total: 3,
+  items: [{ id: 'research-endpoint', status: 'connected', detail: 'AI connected.' }],
+};
+
 const HALVORSEN: Recommendation = {
   cardId: 'card-1',
   title: 'Halvorsen Freight: December 15 (in 25 days)',
@@ -58,12 +65,22 @@ describe('the Decisions cell', () => {
     expect(screen.queryByText('Connect a workbook')).not.toBeInTheDocument();
   });
 
-  it('falls back to the setup decisions when there are none', () => {
+  it('holds the first question until the AI key is saved, and leaves the steps to the strip', () => {
     show(BASE);
-    expect(screen.getByText('Connect a workbook')).toBeInTheDocument();
-    expect(screen.getByText('Connect your calendar')).toBeInTheDocument();
+    // The AI key is the one thing every model call needs (spec 022): the
+    // first question waits for it instead of inviting an error. The setup
+    // steps themselves live in the Get started strip, so this cell does
+    // not repeat them.
+    expect(screen.queryByText('Ask your first question')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add your AI key')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connect a workbook')).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing needs a decision.')).toBeInTheDocument();
+  });
+
+  it('offers the first question once the AI key is saved', () => {
+    show({ ...BASE, sources: AI_SAVED });
+    expect(screen.queryByText('Add your AI key')).not.toBeInTheDocument();
     expect(screen.getByText('Ask your first question')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing needs a decision.')).not.toBeInTheDocument();
   });
 
   it('links the overflow line to the inbox', () => {
@@ -119,6 +136,7 @@ describe('the Decisions cell', () => {
   it('shows the empty state once the desk is set up', () => {
     show({
       ...BASE,
+      sources: AI_SAVED,
       sales: {
         enabled: true,
         mode: 'live',

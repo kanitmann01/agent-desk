@@ -8,6 +8,7 @@ reference and the masked hint only, and the tests say so in bytes.
 
 import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,44 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
 from agentdesk.keys.store import KeysStore, UnknownConnection, mask_key
+
+# The connections table exactly as the builds before spec 022 wrote it,
+# without the model column: the shape of a keys.sqlite3 such a build left.
+TABLE_BEFORE_THE_MODEL = """
+CREATE TABLE connections (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL UNIQUE,
+  provider TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  keychain_ref TEXT NOT NULL DEFAULT '',
+  masked_key TEXT NOT NULL DEFAULT '',
+  headers TEXT NOT NULL DEFAULT '{}',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'unknown',
+  last_checked_at REAL,
+  last_error TEXT NOT NULL DEFAULT '',
+  last_used_at REAL,
+  models TEXT NOT NULL DEFAULT '[]',
+  models_fetched_at REAL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+"""
+
+
+def _saved_before_the_model_column(tmp_path: Path) -> None:
+    """A keys file as an earlier build left it: one connection, no model column."""
+    with closing(sqlite3.connect(tmp_path / "keys.sqlite3")) as old:
+        old.executescript(TABLE_BEFORE_THE_MODEL)
+        old.execute(
+            "INSERT INTO connections (id, label, provider, base_url,"
+            " masked_key, created_at, updated_at)"
+            " VALUES ('saved-earlier', 'OpenAI personal', 'openai',"
+            " 'https://api.openai.com/v1', 'sk-...9999', 1.0, 1.0)")
+        old.commit()
+        names = {row[1] for row in old.execute("PRAGMA table_info(connections)")}
+    assert "model" not in names  # the file under test really lacks the column
 
 
 class FrozenClock:
@@ -71,6 +110,53 @@ def test_add_and_get_round_trip_every_field(tmp_path):
     assert read.last_error == ""
     assert read.created_at == 1_000.0
     assert read.updated_at == 1_000.0
+
+
+def test_a_connection_remembers_its_model(tmp_path):
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    saved = store.add(label="Work gateway", provider="custom",
+                      base_url="https://llm.corp.example/v1",
+                      model="mock-chat")
+    assert saved.model == "mock-chat"
+    assert store.get(saved.id).model == "mock-chat"
+    assert [c.model for c in store.all()] == ["mock-chat"]
+
+
+def test_update_changes_only_the_model_it_is_given(tmp_path):
+    clock = FrozenClock()
+    store = KeysStore(_open(tmp_path), clock)
+    conn = store.add(label="One", provider="custom",
+                     base_url="https://llm.corp.example/v1", model="mock-chat")
+    clock.now += 5
+    assert store.update(conn.id, model="mock-chat-v2").model == "mock-chat-v2"
+    assert store.get(conn.id).updated_at == 1_005.0
+    # A change that does not name the model leaves it alone.
+    assert store.update(conn.id, label="Renamed").model == "mock-chat-v2"
+    # An empty model is the "none chosen" state, stored as such.
+    assert store.update(conn.id, model="").model == ""
+    with pytest.raises(UnknownConnection):
+        store.update("no-such-id", model="mock-chat")
+
+
+def test_a_store_saved_before_the_model_column_opens_and_upgrades(tmp_path):
+    _saved_before_the_model_column(tmp_path)
+    conn = _open(tmp_path)
+    with closing(conn):
+        store = KeysStore(conn, lambda: 0.0)  # what every boot does
+        earlier = store.get("saved-earlier")
+        assert earlier.label == "OpenAI personal"
+        assert earlier.masked_key == "sk-...9999"
+        assert earlier.model == ""  # nothing saved earlier changes
+        saved = store.add(label="New", provider="custom",
+                          base_url="https://llm.corp.example/v1",
+                          model="mock-chat")
+        assert saved.model == "mock-chat"
+    # The next boot opens the same file again and everything is still there.
+    conn = _open(tmp_path)
+    with closing(conn):
+        again = KeysStore(conn, lambda: 0.0)
+        assert {c.label: c.model for c in again.all()} == {
+            "OpenAI personal": "", "New": "mock-chat"}
 
 
 def test_labels_are_unique(tmp_path):
