@@ -11,8 +11,9 @@ matters, to a direct read of the throwaway SQLite files.
 The branch was later rebased onto main after #198 and #199, and the review
 fixes (future annotations, the shared strict scan, a blank-line cleanup)
 plus the step-order fix touched no rendered HTML, CSS or desktop state. The
-full gate at the final code head `ef69ef6` passed 7/7 (3080 passed,
-1 skipped).
+undo-return fix restores the inverse entry the Activity page already renders
+for other kinds; it does not change the skills section markup. The full gate
+at the final code head `c032209` passed 7/7 (3080 passed, 1 skipped).
 
 ## Walkthrough 1: creation, label, pin
 
