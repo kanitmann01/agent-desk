@@ -260,10 +260,13 @@ def test_the_curator_step_records_ledger_entries_and_the_audit_row(tmp_path):
 
         # The undo restores the skill's earlier state.
         auth = booted.exchange()
-        status, _h, _b = booted.post_json("/api/ledger/undo", {"id": entry.id}, auth)
+        status, _h, body = booted.post_json("/api/ledger/undo", {"id": entry.id}, auth)
         assert status == 200
         assert skills.get(1)["state"] == "active"
         assert skills.get(1)["active"] is True
+        # The inverse entry is returned, so the Activity page can offer a redo.
+        inverse = server.ledger.get(json.loads(body)["entry"])
+        assert inverse is not None and inverse.undoes == entry.id
 
         # The switch off means the step is not enabled at all, and the
         # interval the run reset means the next pass is a week away.
