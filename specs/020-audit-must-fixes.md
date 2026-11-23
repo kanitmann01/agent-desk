@@ -1,7 +1,7 @@
 # Spec 020: Audit must-fixes before the simplification
 
-Status: ready-for-agent (2026-11-23). Filed as wayfinder ticket #277 on
-map #272. When this file and the ticket disagree, the ticket is the live
+Status: ready-for-agent (2026-11-23). Filed as wayfinder ticket `kanitmann01/agent-desk#277`
+on map #272 in that repo. When this file and the ticket disagree, the ticket is the live
 copy.
 
 ## Problem Statement
