@@ -8,6 +8,11 @@ Server: `python -m agentdesk.server --port 8805 --no-browser`. Every claim
 below is tied to same-instant DOM text read at capture, and, where state
 matters, to a direct read of the throwaway SQLite files.
 
+The branch was later rebased onto main after #198 and #199, and the review
+fixes (future annotations, the shared strict scan, a blank-line cleanup)
+touched no rendered HTML, CSS or desktop state. The full gate at the final
+code head `b53a01f` passed 7/7 (3079 passed, 2 skipped).
+
 ## Walkthrough 1: creation, label, pin
 
 - `settings-skills-made-by-desk.png`: after five similar assistant asks

@@ -1,13 +1,15 @@
-agent-desk local CI  (data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-ci-8_lbven_)
-checkout: D:\20-projects\Personal Agents\agent-desk\.worktrees\016-10
+agent-desk local CI  (data dir: C:\Users\mannk\AppData\Local\Temp\agentdesk-ci-fnwn8ay7)
+checkout: D:\20-projects\Personal Agents\.worktrees\merge-016-10
+code head: b53a01f (the evidence commit that follows changes only this directory)
 ------------------------------------------------------------------------
-PASS  py-grammar          2.4s  400 files parse under 3.10
-PASS  pytest            622.3s  2936 passed, 1 skipped, 13 warnings in 618.80s (0:10:18)
-PASS  frontend-check      3.3s  tsc --noEmit clean
-PASS  frontend-tests      9.0s  [2m      Tests [22m [1m[32m325 passed[39m[22m[90m (325)[39m
+node_modules missing: npm ci (deterministic, from the lockfile)
+PASS  py-grammar          0.7s  421 files parse under 3.10
+PASS  pytest            641.5s  3079 passed, 2 skipped, 13 warnings in 639.12s (0:10:39)
+PASS  frontend-check      2.8s  tsc --noEmit clean
+PASS  frontend-tests      8.5s  Tests  326 passed (326)
 PASS  licenses            0.3s  sbom, license gate and notices all clean
-PASS  registry-ci         0.3s  REGISTRY-CI PASS
+PASS  registry-ci         0.2s  REGISTRY-CI PASS
 PASS  brand-leak          0.1s  BRAND-LEAK PASS (1 pack(s), 0 hash(es))
 ------------------------------------------------------------------------
-7/7 gates passed in 638s
+7/7 gates passed in 657s
 CI PASS
