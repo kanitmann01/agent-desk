@@ -51,7 +51,7 @@ describe('marketplace keyboard access', () => {
   it('puts a skip link first and marks the active tab and rail entry', async () => {
     stubCatalog();
     render(<MarketplaceApp />);
-    await screen.findByRole('heading', { level: 1, name: 'Discover plugins' });
+    await screen.findByRole('heading', { level: 1, name: 'Find plugins' });
 
     const skip = screen.getByRole('link', { name: 'Skip to main content' });
     expect(skip).toHaveAttribute('href', '#marketplace-main');
@@ -59,9 +59,9 @@ describe('marketplace keyboard access', () => {
     skip.focus();
     expect(skip).toHaveFocus();
 
-    expect(screen.getByRole('link', { name: 'Discover' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Find plugins' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Installed' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('link', { name: 'Marketplace' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Plugins' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('traps Tab in the consent sheet, closes on Escape and restores focus', async () => {

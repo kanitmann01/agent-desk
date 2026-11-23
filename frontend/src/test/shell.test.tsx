@@ -2,7 +2,7 @@
 // research command bar and the centered app states, on the warm-paper
 // system. Rendering-level checks: the effects wrappers are gone, the
 // honest copy and the keyboard behaviors stay.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -10,7 +10,7 @@ import CommandBar from '../components/CommandBar';
 import Dashboard from '../dashboard/Dashboard';
 import Rail from '../dashboard/Rail';
 import { dateLineFor, greetingFor } from '../fmt';
-import type { DashboardData } from '../types';
+import type { DashboardData, SetupData } from '../types';
 
 const DATA: DashboardData = {
   version: '0.0.0-test',
@@ -30,6 +30,16 @@ const DATA: DashboardData = {
     ],
   },
   plugins: { cards: [] },
+};
+
+/** A fresh desk's setup object, as the server reports it (spec 022). */
+const COLD_SETUP: SetupData = {
+  sample: false,
+  steps: [
+    { id: 'ai', title: 'Add your AI key', reason: 'The assistant uses it.', href: '/settings#ai', action: null, done: false },
+    { id: 'workbook', title: 'Open your sales workbook', reason: 'Your pipeline figure comes from it.', href: '/settings#tools', action: '/sources/excel-watch/pick', done: false },
+    { id: 'calendar', title: 'Connect your calendar', reason: 'Your digest comes from it.', href: '/walkthrough/calendar', action: null, done: false },
+  ],
 };
 
 afterEach(() => {
@@ -61,9 +71,9 @@ describe('the rail', () => {
     expect(nav).toHaveTextContent('Assistant');
     expect(nav).toHaveTextContent('Agents');
     expect(nav).toHaveTextContent('Settings');
-    // The marketplace replaced the legacy Plugins tab: it is one SPA
-    // surface with a deep-linkable route, not a server page.
-    expect(screen.getByText('Marketplace').closest('a')).toHaveAttribute(
+    // The marketplace is the Plugins page (spec 022): one SPA surface
+    // with a deep-linkable route, not a server page.
+    expect(screen.getByRole('link', { name: 'Plugins' })).toHaveAttribute(
       'href',
       '/marketplace',
     );
@@ -176,11 +186,15 @@ describe('the hero band', () => {
     const cold = {
       ...DATA,
       sources: { connected: 0, total: 3, items: [] },
+      setup: COLD_SETUP,
     };
     render(<Dashboard data={cold} onRefetch={async () => {}} onExpired={() => {}} />);
     expect(screen.getByRole('region', { name: 'Needs a decision' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', '/walkthrough/calendar');
+    // The setup steps live in the Get started strip (spec 022): the
+    // workbook through the server's picker, the calendar through its walk.
+    const strip = screen.getByRole('region', { name: 'Three steps and your desk is ready' });
+    expect(within(strip).getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(within(strip).getByRole('link', { name: 'Connect' })).toHaveAttribute('href', '/walkthrough/calendar');
     expect(screen.queryByText(/Not connected yet/)).toBeNull();
   });
 

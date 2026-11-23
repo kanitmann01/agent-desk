@@ -299,7 +299,7 @@ export function StudioPage() {
   return (
     <div className="mkt-page">
       <header className="mkt-page-head">
-        <span className="mkt-eyebrow">Marketplace</span>
+        <span className="mkt-eyebrow">Plugins</span>
         <h1>Plugin Studio</h1>
         <p className="mkt-lede">
           Build a declarative plugin manifest, run the real validator, then install it on this desk

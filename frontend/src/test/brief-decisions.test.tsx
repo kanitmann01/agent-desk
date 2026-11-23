@@ -65,17 +65,16 @@ describe('the Decisions cell', () => {
     expect(screen.queryByText('Connect a workbook')).not.toBeInTheDocument();
   });
 
-  it('leads with the AI key when none is saved, and holds the question until it is', () => {
+  it('holds the first question until the AI key is saved, and leaves the steps to the strip', () => {
     show(BASE);
-    // The AI key is the one thing every model call needs (spec 022): it is
-    // the first row, one click from the key form, and the first question
-    // waits for it instead of inviting an error.
-    expect(screen.getByRole('link', { name: 'Add' })).toHaveAttribute('href', '/settings#ai');
-    expect(screen.getByText('Add your AI key')).toBeInTheDocument();
-    expect(screen.getByText('Connect a workbook')).toBeInTheDocument();
-    expect(screen.getByText('Connect your calendar')).toBeInTheDocument();
+    // The AI key is the one thing every model call needs (spec 022): the
+    // first question waits for it instead of inviting an error. The setup
+    // steps themselves live in the Get started strip, so this cell does
+    // not repeat them.
     expect(screen.queryByText('Ask your first question')).not.toBeInTheDocument();
-    expect(screen.queryByText('Nothing needs a decision.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add your AI key')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connect a workbook')).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing needs a decision.')).toBeInTheDocument();
   });
 
   it('offers the first question once the AI key is saved', () => {

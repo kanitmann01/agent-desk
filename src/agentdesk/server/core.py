@@ -31,9 +31,12 @@ SRC_RESEARCH = "research-endpoint"
 SOURCE_IDS = (SRC_EXCEL, SRC_CALENDAR, SRC_RESEARCH)
 
 # Health statuses, computed live at request time (see app.live_sources):
-# a source is connected when its real watch says so, never by default.
+# a source is connected when its real watch says so, never by default. A
+# source wired to the labelled sample set is "sample": it keeps the cards
+# alive, and it is never counted as live.
 STATUS_CONNECTED = "connected"
 STATUS_NOT_CONNECTED = "not_connected"
+STATUS_SAMPLE = "sample"
 
 # Widget freshness states (the contract the shell renders on every card).
 FRESH = "fresh"          # green dot, data is current

@@ -146,7 +146,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
 
   const heading = category
     ? `${categoryLabel(category)} plugins`
-    : onSearch ? 'Search results' : 'Discover plugins';
+    : onSearch ? 'Search results' : 'Find plugins';
   const lede = category
     ? `Plugins in the ${categoryLabel(category).toLowerCase()} category, with publisher and risk on every card.`
     : onSearch
@@ -162,6 +162,14 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
             ? lede
             : 'Install work plugins that read only what they declare.'}
         </p>
+        {!category && !onSearch ? (
+          /* The plugin wizard is a server-rendered walk (plain English in,
+             Class D plugin out): a plain form post, as the home header
+             offered it before spec 022 moved it here. */
+          <form method="post" action="/wizard/start" className="mkt-describe">
+            <Button tone="secondary" type="submit">Describe a plugin in plain English</Button>
+          </form>
+        ) : null}
       </header>
 
       <div className="mkt-toolbar">
