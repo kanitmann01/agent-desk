@@ -576,7 +576,7 @@ def sample_calendar_path(data_dir: Path | None = None) -> Path:
     return sample_folder(Path(data_dir) if data_dir is not None else _default_data_dir()) / SAMPLE_CALENDAR_NAME
 
 
-def _under_sample_folder(path: str, data_dir: Path | None) -> bool:
+def under_sample_folder(path: str, data_dir: Path | None) -> bool:
     """Whether a registered path lives inside this desk's sample folder."""
     folder = sample_folder(Path(data_dir) if data_dir is not None else _default_data_dir()).resolve()
     try:
@@ -630,14 +630,14 @@ def unwire_sample_sources(server, data_dir: Path | None = None) -> dict | None:
     if excel is not None:
         path = excel.registered_path
         before["excel"] = path
-        if path is not None and _under_sample_folder(path, data_dir):
+        if path is not None and under_sample_folder(path, data_dir):
             excel.clear_registered_path()
             changed = True
     calendar = getattr(server, "calendar", None)
     if calendar is not None:
         path = calendar.explicit_path()
         before["calendar"] = path
-        if path is not None and _under_sample_folder(path, data_dir):
+        if path is not None and under_sample_folder(path, data_dir):
             calendar.clear_explicit_path()
             changed = True
     return before if changed else None

@@ -1009,8 +1009,8 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
 
     Health must not repeat what a constructor once guessed: excel is
     connected when a workbook is registered, calendar when the bridge has
-    produced a non-empty state, endpoint when the corporate base URL is
-    set. Both /health and the dashboard's source line read this table.
+    produced a non-empty state, the AI when the resolution hub can serve a
+    call. Both /health and the dashboard's source line read this table.
     """
 
     def state(connected: bool) -> str:
@@ -1025,10 +1025,14 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
     calendar = server.calendar
     calendar_state = calendar.status().get("state") if calendar is not None else None
     calendar_ok = calendar_state not in (None, STATE_EMPTY)
-    # An endpoint saved in the settings page counts the same as one from
-    # the environment: either is a real configuration.
-    settings_base = server.settings.get("llm_base") if server.settings is not None else ""
-    endpoint_ok = bool(settings_base) or bool(server.llm_endpoint)
+    # The AI is connected when the per-job resolution hub can serve a
+    # call: a saved connection, or the legacy rows and environment behind
+    # it. The startup client stays as the last leg so this is never less
+    # true than before (a boot may inject one directly). Nothing else may
+    # decide this (spec 022): the desk used to read the pre-018 rows alone
+    # and tell a user with a saved key that the endpoint was not set.
+    endpoint_ok = (_server_resolution(server, "assistant") is not None
+                   or bool(server.llm_endpoint))
     workbook = ""
     if excel_path:
         workbook = str(excel_path).replace("\\", "/").rsplit("/", 1)[-1]
@@ -1046,7 +1050,7 @@ def live_sources(server: AgentDeskServer) -> list[SourceStatus]:
         SourceStatus(
             SRC_RESEARCH,
             state(endpoint_ok),
-            "Company endpoint configured." if endpoint_ok else "No company endpoint configured.",
+            "AI connected." if endpoint_ok else "No AI key saved yet.",
         ),
     ]
 
@@ -2403,8 +2407,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         turns = []
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             turns = threadlog.turns(self.server.audit_conn)  # type: ignore[attr-defined]
-        page = render_assistant_page(turns, agentdesk.__version__,
-                                     inbox_count=self._inbox_waiting_count())
+        page = render_assistant_page(
+            turns, agentdesk.__version__, inbox_count=self._inbox_waiting_count(),
+            ai_connected=_server_resolution(self.server, "assistant") is not None)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _send_agents_page(self) -> None:

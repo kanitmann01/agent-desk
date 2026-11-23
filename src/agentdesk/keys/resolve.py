@@ -3,8 +3,8 @@ connection serves a job.
 
 The order is the spec's, one answer per model call: the job's own
 binding, the default binding, the single enabled connection, the
-environment, and only then an explicit "job unbound" error naming the
-job. Saved connections win over the environment, which is the desk's
+environment, and only then an explicit error that says no AI key is
+saved. Saved connections win over the environment, which is the desk's
 documented precedence. The function is pure by construction: it reads
 the rows it is handed and the environment triple it is given (defaulting
 to the adapter's own), and it never touches the keychain, so an
@@ -45,20 +45,22 @@ JOB_LABELS = {
 DEFAULT_JOB = "default"
 
 
+NO_AI_KEY = "No AI key is saved yet. Add one under Settings, Your AI."
+
+
 class JobUnbound(Exception):
     """No connection or environment serves the named job.
 
-    Carries the job's key; the message is the one sentence every surface
-    shows, naming the job and the three ways to bind it.
+    Carries the job's key for the surfaces that need it; the message is
+    the one plain sentence every surface shows. It names no job, no
+    binding and no environment variable, because the person reading it
+    cannot act on any of those.
     """
 
     def __init__(self, job: str) -> None:
         """Keep the job and its sentence together."""
         self.job = job
-        super().__init__(
-            f"the {job} job is unbound: bind it to a connection on the"
-            " Settings page, star a default connection, or set"
-            " AGENTDESK_LLM_BASE")
+        super().__init__(NO_AI_KEY)
 
 
 @dataclass(frozen=True)

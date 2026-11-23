@@ -21,6 +21,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from agentdesk.keys.resolve import (
+    NO_AI_KEY,
     JOBS,
     JOB_LABELS,
     JobUnbound,
@@ -148,14 +149,18 @@ def test_saved_connections_win_over_the_environment(tmp_path):
         assert resolved.api_key == ""
 
 
-def test_leg_5_nothing_anywhere_is_the_named_unbound_error():
+def test_leg_5_nothing_anywhere_is_one_plain_sentence():
+    # The error still carries the job for the surfaces that need it. The
+    # sentence names the fix and never a job, a binding or an environment
+    # variable: the person reading it cannot act on any of those (spec 022).
     for job in JOBS:
         with pytest.raises(JobUnbound) as raised:
             resolve_job(job, connections=[], bindings=[],
                         env=("", "", DEFAULT_MODEL))
         assert raised.value.job == job
-        assert job in str(raised.value)
-        assert "unbound" in str(raised.value)
+        assert str(raised.value) == NO_AI_KEY
+        assert "unbound" not in str(raised.value)
+        assert "AGENTDESK_" not in str(raised.value)
 
 
 def test_an_env_base_alone_rescues_every_job_from_unbound():
