@@ -24,7 +24,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.keys import health
-from agentdesk.keys.presets import PRESETS
+from agentdesk.keys.presets import PRESETS, preset_for
 from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
 from agentdesk.keys.store import KeysStore
 
@@ -536,7 +536,8 @@ def test_form_posts_really_work_without_javascript(env, auth, keychain):
         "baseUrl": "", "apiKey": SECRET, "headers": "",
     }, auth)
     assert status == 303
-    assert headers["Location"] == "/settings"
+    # The redirect anchors to the card so the saved row is in view.
+    assert headers["Location"] == "/settings#connections"
     created = json.loads(env.request("GET", "/api/connections", auth)[2])["connections"][0]
 
     # Edit with an empty key field keeps the stored key.
@@ -601,11 +602,15 @@ def test_the_activity_page_shows_the_key_lifecycle(env, auth):
 # -- the preset catalog ---------------------------------------------------------
 
 
-def test_the_catalog_ships_the_twelve_verified_presets():
+def test_the_catalog_ships_the_thirteen_verified_presets():
     assert [p.id for p in PRESETS] == [
         "openai", "anthropic-compat", "openrouter", "groq", "together",
-        "gemini", "deepseek", "mistral", "ollama", "lmstudio", "vllm", "custom",
+        "gemini", "deepseek", "mistral", "opencode", "ollama", "lmstudio",
+        "vllm", "custom",
     ]
+    opencode = preset_for("opencode")
+    assert opencode.base_url == "https://opencode.ai/inference/go/v1"
+    assert opencode.console_url.startswith("https://opencode.ai/")
     hosted = [p for p in PRESETS if not p.key_optional and p.id != "custom"]
     assert all(p.base_url.startswith("https://") for p in hosted)
     assert all(p.console_url.startswith("https://") for p in hosted)
@@ -613,3 +618,41 @@ def test_the_catalog_ships_the_twelve_verified_presets():
     assert {p.id for p in local} == {"ollama", "lmstudio", "vllm"}
     assert all(p.base_url.startswith("http://localhost:") for p in local)
     assert all(p.console_url == "" for p in local)
+
+
+def test_a_refused_save_lands_on_the_connections_card(env, auth):
+    """A refused save must land AT the card carrying its notice, the same
+    anchored-redirect contract the desk-check and updates sections use:
+    without the anchor the long settings page hides the failure and the
+    save merely feels silent (the bug report's shape)."""
+    status, headers, _b = env.post_json("/api/connections", {
+        "label": "No key", "provider": "openai", "baseUrl": "",
+        "apiKey": "",
+    }, auth)
+    assert status == 400
+    # The form flow specifically.
+    form = {"label": "No key", "provider": "openai"}
+    data = urlencode(form).encode()
+    merged = {"Content-Type": "application/x-www-form-urlencoded",
+              "Content-Length": str(len(data)), **auth}
+    status, headers, _b = env.request(
+        "POST", "/api/connections", merged, data)
+    assert status == 303
+    assert headers["Location"].endswith("#connections")
+    assert "connections_error" in unquote(headers["Location"])
+
+
+def test_a_successful_save_lands_on_the_connections_card(env, auth):
+    """The success redirect anchors to the card too, so the saved row is
+    in view the moment the page returns."""
+    form = {"label": "Anchored", "provider": "opencode",
+            "baseUrl": "", "apiKey": "oc_sk_anchor_test"}
+    data = urlencode(form).encode()
+    merged = {"Content-Type": "application/x-www-form-urlencoded",
+              "Content-Length": str(len(data)), **auth}
+    status, headers, _b = env.request(
+        "POST", "/api/connections", merged, data)
+    assert status == 303
+    assert headers["Location"].endswith("/settings#connections")
+    cid = env.server.keys.all()[0].id
+    env.post_json(f"/api/connections/{cid}/delete", {}, auth)

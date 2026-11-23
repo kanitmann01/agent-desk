@@ -3413,7 +3413,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         is never a dead JSON end for a browser form.
         """
         if self._is_form_submit():
-            self._send_redirect("/settings?connections_error=" + quote(message))
+            self._send_redirect("/settings?connections_error="
+                                + quote(message) + "#connections")
             return
         self._send_json(status, {"error": message})
 
@@ -3477,7 +3478,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._audit("keys.create", target=connection.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect("/settings#connections")
             return
         self._send_json(201, _connection_payload(connection))
 
@@ -3555,8 +3556,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._audit("keys.update", target=existing.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
-            self._send_redirect("/settings?connections_error=" + quote(clear_notice)
-                                if clear_notice else "/settings")
+            self._send_redirect(
+                "/settings?connections_error=" + quote(clear_notice) + "#connections"
+                if clear_notice else "/settings#connections")
             return
         payload = _connection_payload(connection)
         if clear_notice:
@@ -3619,7 +3621,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             detail += "; the keychain entry stayed (it comes back on restart)"
         self._audit("keys.delete", target=connection.id, detail=detail)
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect("/settings#connections")
             return
         self._send_json(200, {"ok": True, "id": connection.id})
 
@@ -3653,7 +3655,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     status="error" if result.outcome == health.OUTCOME_ERROR else "ok",
                     detail=f"{connection.label}: {result.cause or result.outcome}")
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect("/settings#connections")
             return
         self._send_json(200, _connection_payload(connection))
 
@@ -3693,7 +3695,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     detail=f"{connection.label}: deeper check"
                            f" ({result.cause or result.outcome})")
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect("/settings#connections")
             return
         self._send_json(200, _connection_payload(connection))
 
@@ -3784,7 +3786,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                         else f"the {job} job was already unbound"),
             )
             if self._is_form_submit():
-                self._send_redirect("/settings")
+                self._send_redirect("/settings#connections")
                 return
             self._send_json(200, {"job": job, "connectionId": "", "model": model})
             return
@@ -3800,7 +3802,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                    + (f" (model {model})" if model else ""),
         )
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect("/settings#connections")
             return
         self._send_json(200, _binding_payload(binding))
 
