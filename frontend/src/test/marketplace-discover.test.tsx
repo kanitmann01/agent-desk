@@ -50,7 +50,7 @@ describe('the marketplace catalog surface', () => {
     ]));
     render(<MarketplaceApp />);
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Discover plugins' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Find plugins' })).toBeInTheDocument();
     expect(screen.getByText('AR Aging')).toBeInTheDocument();
     expect(screen.getByText('2 of 2 plugins')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /AR Aging, version 1\.2\.0, agent-desk/ });

@@ -13,6 +13,7 @@ import Button from '../components/Button';
 import { postJson } from '../api';
 import TrackerCard from './TrackerCard';
 import PluginCardView from './PluginCardView';
+import SetupStrip from './SetupStrip';
 import { pluginKind, kindTag } from './pluginKind';
 import { useWorkbookConnect } from './useWorkbookConnect';
 import {
@@ -48,6 +49,10 @@ interface BriefProps {
   data: DashboardData;
   onRefetch: () => Promise<void>;
   onExpired: () => void;
+  /** True when the Get started strip was hidden for this sitting. */
+  setupDismissed?: boolean;
+  /** Hide the Get started strip for this sitting. */
+  onDismissSetup?: () => void;
 }
 
 /** True when this plugin card is the workbook tracker, including its ~variant. */
@@ -86,18 +91,20 @@ function lowerSpans(count: number): number[] {
 }
 
 /**
-  * The dashboard's bento brief: the pipeline hero, the moves table, decisions, the
-  * digest, then the plugin cells.
+ * The dashboard's bento brief: the Get started strip while a step is open,
+ * then the pipeline hero, the moves table, decisions, the digest and the
+ * plugin cells.
  *
   * A cell with no real source shows the sample world while the Sample data switch is
   * on. onRefetch reloads the dashboard once a source answers; onExpired hands a 401
   * back to the caller.
  */
-export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
+export default function Brief({ data, onRefetch, onExpired, setupDismissed = false, onDismissSetup }: BriefProps) {
   const [movesOpen, setMovesOpen] = useState(false);
   const [now] = useState(() => new Date());
+  // The workbook connect walk lives here because the strip's workbook step
+  // and nothing else on this surface uses it.
   const workbook = useWorkbookConnect(onExpired, onRefetch);
-  const { note, busy, manualOpen, pathInput, setPathInput, pick, connect, onPathKey } = workbook;
 
   const sample = Boolean(data.sample);
   const sales = data.sales;
@@ -124,15 +131,20 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     .filter((card) => layoutOrder.has(card.id))
     .sort((a, b) => (layoutOrder.get(a.id) ?? 0) - (layoutOrder.get(b.id) ?? 0));
   const trackers = pluginCards.filter(isTracker);
-  const salesNeedsConnect = trackers.length === 0 && sales.mode !== 'disabled'
-    && (sales.mode === 'unconfigured' || status === null || !status.configured);
-  const calendarNeedsConnect = data.commitments.mode !== 'live'
-    || data.commitments.status?.state === 'empty'
-    || data.commitments.status == null;
+  /** The status word of one dashboard source, or an empty string. */
+  const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
   // research.enabled is the same payload decision the server-rendered
   // card follows; a disabled source is asked to be turned on, not asked.
   const researchEnabled = data.research.enabled;
   const researchNeedsAsk = researchEnabled && data.research.lastAnsweredTs == null;
+  // The AI is the one thing every model call needs, so the first question
+  // waits for it. The step itself lives in the Get started strip.
+  const aiConnected = sourceStatus('research-endpoint') === 'connected';
+  // The Get started strip leads with the setup steps the server reports;
+  // it goes away once every step is done, or for this sitting.
+  const setupSteps = data.setup?.steps ?? [];
+  const setupOpen = setupSteps.some((step) => !step.done);
+  const showSetup = setupOpen && !setupDismissed;
 
   /** Focus the command bar so the user can ask a first research question. */
   function askFirst() {
@@ -140,30 +152,15 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   }
 
   // ---- decisions ------------------------------------------------------
-  // Setup decisions keep the desk usable before anything has been saved;
-  // a waiting recommendation takes the cell over once the desk has one.
+  // The Get started strip owns the setup steps; this cell holds what needs
+  // a yes or no, and a waiting recommendation takes it over once the desk
+  // has one.
   const setupDecisions: Array<{ key: string; title: string; why: string; sample?: boolean; action: ReactNode }> = [];
-  if (salesNeedsConnect) {
-    setupDecisions.push({
-      key: 'workbook',
-      title: 'Connect a workbook',
-      why: 'The pipeline figure and the moves come from it.',
-      action: <Button tone="secondary" className="btn-sm" onClick={() => void pick()} disabled={busy}>Connect</Button>,
-    });
-  }
-  if (calendarNeedsConnect) {
-    setupDecisions.push({
-      key: 'calendar',
-      title: 'Connect your calendar',
-      why: 'The digest reads today’s meetings from it.',
-      action: <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Connect</Button>,
-    });
-  }
-  if (researchNeedsAsk) {
+  if (researchNeedsAsk && aiConnected) {
     setupDecisions.push({
       key: 'question',
       title: 'Ask your first question',
-      why: 'Answers come from your company endpoint and are logged.',
+      why: 'Answers come from your AI and are logged.',
       action: <Button tone="secondary" className="btn-sm" onClick={askFirst}>Ask</Button>,
     });
   }
@@ -171,7 +168,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     setupDecisions.push({
       key: 'research-off',
       title: 'Turn research back on',
-      why: 'Answers come from your company endpoint, and it is off in settings.',
+      why: 'Answers come from your AI, and it is turned off in settings.',
       action: <Button tone="secondary" className="btn-sm" href="/settings">Open settings</Button>,
     });
   }
@@ -220,28 +217,31 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
 
   // ---- desk health ----------------------------------------------------
   const commitments = data.commitments.status;
+  // A source wired to the sample set is reported as "sample" by the
+  // server: it is showing something, and it is not live.
+  const workbookSample = sourceStatus('excel-watch') === 'sample';
+  const calendarSource = sourceStatus('calendar-bridge');
   /**
-   * A source's status word from the dashboard payload, or "" when no source
-   * carries that id.
+   * Desk health: one row per source, live only when the source truly is.
    */
-  const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
   const healthRows: HealthRow[] = [
     {
       name: 'Workbook',
-      live: configured && status?.state !== 'unreadable' && status?.state !== 'locked',
-      status: !configured ? 'off' : status?.state === 'healthy' || status?.state === 'first' ? 'live' : (status?.state ?? 'off').replace('_', ' '),
+      live: configured && !workbookSample && status?.state !== 'unreadable' && status?.state !== 'locked',
+      status: workbookSample && configured ? 'sample'
+        : !configured ? 'off' : status?.state === 'healthy' || status?.state === 'first' ? 'live' : (status?.state ?? 'off').replace('_', ' '),
       lastRun: fromEpoch(status?.last_ok_ts ?? null),
       items: configured ? (status?.rowsSeen ?? 0).toLocaleString('en-US') : '-',
     },
     {
       name: 'Calendar',
-      live: sourceStatus('calendar-bridge') === 'connected',
-      status: sourceStatus('calendar-bridge') === 'connected' ? 'live' : 'off',
+      live: calendarSource === 'connected',
+      status: calendarSource === 'connected' ? 'live' : calendarSource === 'sample' ? 'sample' : 'off',
       lastRun: fromIso(commitments?.generatedAt ?? null),
       items: event ? '1' : '-',
     },
     {
-      name: 'Research',
+      name: 'AI',
       live: researchEnabled && sourceStatus('research-endpoint') === 'connected',
       status: researchEnabled && sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
       lastRun: fromEpoch(data.research.lastAnsweredTs),
@@ -383,6 +383,15 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       {data.update?.banner ? (
         <div className="alert" role="status">{data.update.banner}</div>
       ) : null}
+      {showSetup && data.setup ? (
+        <SetupStrip
+          setup={data.setup}
+          onDismiss={() => onDismissSetup?.()}
+          onRefetch={onRefetch}
+          onExpired={onExpired}
+          workbook={workbook}
+        />
+      ) : null}
       <div className="brief-col brief-main">
         <article className="cell cell-hero" aria-labelledby="cell-brief">
           <CellHead id="cell-brief" tag="PIPELINE" sample={salesIsSample} meta={configured && status?.path ? <span className="mono">{status.path.split(/[\\/]/).pop()}</span> : undefined} />
@@ -516,26 +525,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
             ) : (
               <p className="empty">{decisionsEmpty}</p>
             )}
-            {note ? <p className="alert" role="status">{note}</p> : null}
             {dismissError ? <p className="alert" role="alert">{dismissError}</p> : null}
-            {manualOpen ? (
-              <div className="well">
-                <input
-                  className="well-input"
-                  type="text"
-                  name="workbook-path"
-                  autoComplete="off"
-                  aria-label="Workbook path"
-                  placeholder="Full path to the workbook…"
-                  value={pathInput}
-                  onChange={(e) => setPathInput(e.target.value)}
-                  onKeyDown={onPathKey}
-                />
-                <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void connect(pathInput.trim())}>
-                  Connect
-                </button>
-              </div>
-            ) : null}
           </section>
         ) : null}
         <article className={digestItems.length > 0 ? 'cell cell-digest' : 'cell cell-digest is-empty'} aria-labelledby="cell-digest">
@@ -543,7 +533,12 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
           {digestItems.length > 0 ? <DigestList items={digestItems} /> : (
             <div className="digest-empty">
               <p>Nothing on the calendar yet.</p>
-              <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Set up</Button>
+              {/* The Get started strip asks for the calendar one row above;
+                  the cell keeps its own way in only while the strip is out
+                  of the way. */}
+              {!showSetup ? (
+                <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Set up</Button>
+              ) : null}
             </div>
           )}
         </article>

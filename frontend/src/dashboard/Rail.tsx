@@ -39,7 +39,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   const badge = inboxWaiting > 0 ? <span className="count">{inboxWaiting}</span> : null;
   const [collapsed, setCollapsed] = useState(storedCollapsed);
   const [menuOpen, setMenuOpen] = useState(false);
-  const sectionName = active.startsWith('/marketplace') ? 'Marketplace'
+  const sectionName = active.startsWith('/marketplace') ? 'Plugins'
     : active === '/inbox' ? 'Inbox'
     : active === '/assistant' ? 'Assistant'
     : active === '/agents' ? 'Agents'
@@ -101,7 +101,9 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
       <a href="/agents" aria-label="Agents"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Agents</span></a>
       <a href="/memory" aria-label="Memory"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Memory</span></a>
       <a href="/mail" aria-label="Mail"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Mail</span></a>
-      <a href="/marketplace" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Marketplace"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Marketplace</span></a>
+      {/* The marketplace is the Plugins page (spec 022): a person looks for
+          their plugins, not a shop. The address is unchanged. */}
+      <a href="/marketplace" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Plugins"><span className="rail-mark" aria-hidden="true">P</span><span className="rail-label">Plugins</span></a>
       {/* Activity, Capabilities and Peers live under Settings now: the
           rail carries the daily surfaces, not every route. */}
 

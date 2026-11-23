@@ -96,8 +96,8 @@ export function parseRoute(input: string): MarketRoute {
  */
 export function routeTitle(route: MarketRoute): string {
   switch (route.name) {
-    case 'discover': return 'Marketplace';
-    case 'search': return 'Marketplace search';
+    case 'discover': return 'Plugins';
+    case 'search': return 'Plugins search';
     case 'category': return `${route.params.category} plugins`;
     case 'plugin': return 'Plugin details';
     case 'manage': return 'Manage plugin';
@@ -108,7 +108,7 @@ export function routeTitle(route: MarketRoute): string {
     case 'studio': return 'Plugin Studio';
     case 'admin': return 'Marketplace admin';
     case 'trust': return 'Trust center';
-    default: return 'Marketplace page not found';
+    default: return 'Plugins page not found';
   }
 }
 

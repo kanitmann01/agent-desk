@@ -26,7 +26,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
-from agentdesk.keys.resolve import JOBS, JOB_LABELS
+from agentdesk.keys.resolve import JOBS, JOB_LABELS, NO_AI_KEY
 from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
 from agentdesk.llm import chat_client
 
@@ -331,7 +331,7 @@ def test_the_environment_serves_when_nothing_is_saved_and_its_key_rides_the_head
         booted.close()
 
 
-def test_with_nothing_saved_anywhere_a_model_call_names_the_unbound_job(
+def test_with_nothing_saved_anywhere_a_model_call_says_no_ai_key_is_saved(
         keychain, monkeypatch):
     for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
@@ -339,19 +339,18 @@ def test_with_nothing_saved_anywhere_a_model_call_names_the_unbound_job(
         keychain=KeychainSecrets(keychain), connection_check=_instant_check)
     try:
         auth = booted.exchange()
-        status, _h, body = booted.post_json(
-            "/assistant/ask", {"question": "hello"}, auth)
-        payload = json.loads(body)
-        assert payload["status"] == "degraded"
-        assert "the assistant job is unbound" in payload["cause"]
-        assert "AGENTDESK_LLM_BASE" in payload["cause"]
-
-        status, _h, body = booted.post_json(
-            "/memory/retain",
-            {"excerpt": "Rita owns the Q3 report and it is due Friday."}, auth)
-        payload = json.loads(body)
-        assert payload["status"] == "degraded"
-        assert "the memory job is unbound" in payload["cause"]
+        # The same one sentence answers every surface (spec 022): it names
+        # the fix and never a job, a binding or an environment variable.
+        for path, payload_body in (
+                ("/assistant/ask", {"question": "hello"}),
+                ("/memory/retain",
+                 {"excerpt": "Rita owns the Q3 report and it is due Friday."})):
+            status, _h, body = booted.post_json(path, payload_body, auth)
+            payload = json.loads(body)
+            assert payload["status"] == "degraded"
+            assert payload["cause"] == NO_AI_KEY
+            assert "unbound" not in payload["cause"]
+            assert "AGENTDESK_" not in payload["cause"]
     finally:
         booted.close()
 

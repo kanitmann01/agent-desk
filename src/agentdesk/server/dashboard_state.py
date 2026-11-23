@@ -18,9 +18,56 @@ from dataclasses import dataclass
 
 import agentdesk
 from agentdesk.assistant import audit as audit_store
+from agentdesk.calendar.watcher import STATE_EMPTY
 from agentdesk.layout import resolved_layout
 from agentdesk.plugins.cards import card_to_api
-from agentdesk.server.core import SOURCE_IDS, STATUS_CONNECTED, SourceStatus
+from agentdesk.server import demo_data
+from agentdesk.server.core import SOURCE_IDS, SRC_RESEARCH, STATUS_CONNECTED, SourceStatus
+
+# The three steps between a fresh desk and the morning loop, in the order
+# a person takes them: id, title, reason, the page a link opens, and the
+# form a one-click button posts to (None when the step is only a link).
+AI_SETTINGS = "/settings#ai"
+WORKBOOK_PICK = "/sources/excel-watch/pick"
+CALENDAR_WALKTHROUGH = "/walkthrough/calendar"
+SETUP_STEPS = (
+    ("ai", "Add your AI key",
+     "The assistant, your calendar breakdowns and memory all use it.",
+     AI_SETTINGS, None),
+    ("workbook", "Open your sales workbook",
+     "Your pipeline figure and the moves come from it.",
+     "/settings#tools", WORKBOOK_PICK),
+    ("calendar", "Connect your calendar",
+     "Today's commitment and your digest come from it.",
+     CALENDAR_WALKTHROUGH, None),
+)
+
+
+def setup_payload(ai_connected: bool, sample: bool, excel, calendar) -> dict:
+    """The Get started strip's data: three steps, each done or not.
+
+    A step is done only by something real. The labelled sample set keeps
+    every tile alive while nothing is connected, so a workbook or calendar
+    inside the sample folder leaves its step open: the desk must never look
+    finished while it is still showing sample data.
+    """
+    workbook = getattr(excel, "registered_path", None)
+    workbook_done = bool(workbook) and not demo_data.under_sample_folder(workbook, None)
+    status = calendar.status() if calendar is not None else {}
+    calendar_path = status.get("path")
+    calendar_done = (
+        status.get("state") not in (None, STATE_EMPTY)
+        and not (calendar_path and demo_data.under_sample_folder(calendar_path, None))
+    )
+    done = {"ai": bool(ai_connected), "workbook": workbook_done, "calendar": calendar_done}
+    return {
+        "steps": [
+            {"id": step_id, "title": title, "reason": reason,
+             "href": href, "action": action, "done": done[step_id]}
+            for step_id, title, reason, href, action in SETUP_STEPS
+        ],
+        "sample": bool(sample),
+    }
 
 
 @dataclass(frozen=True)
@@ -80,6 +127,7 @@ class DashboardState:
     agent_loop: dict
     recommendations: tuple[dict, ...]
     update: dict
+    setup: dict
     now: dt.datetime
 
     def payload(self) -> dict:
@@ -87,8 +135,8 @@ class DashboardState:
 
         The key set is part of the API contract: version, sample, flags,
         sources, sales, commitments, research, inbox, deskCheck, skills,
-        layout, plugins and recommendations, each with the nested shape
-        the SPA reads.
+        layout, plugins, recommendations, update and setup, each with the
+        nested shape the SPA reads.
         """
         return {
             "version": self.version,
@@ -138,6 +186,7 @@ class DashboardState:
                     for card in self.plugin_cards
                 ]
             },
+            "setup": dict(self.setup),
         }
 
 
@@ -216,6 +265,13 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     with_insight(server, plugin_cards)
 
     sources = live_sources(server)
+    # The AI is connected when the dashboard's own source table says so:
+    # the same truth the Desk health tile prints, read once.
+    sample = bool(settings.get("sample_data")) if settings is not None else False
+    setup = setup_payload(
+        ai_connected=any(source.id == SRC_RESEARCH and source.status == STATUS_CONNECTED
+                         for source in sources),
+        sample=sample, excel=excel, calendar=calendar)
     layout_entries = resolved_layout(server.layout, enabled_plugin_ids(server))
     custom_titles = {entry["key"]: entry["title"] for entry in layout_entries if entry["title"]}
     inbox_waiting = len(server.inbox.waiting()) if server.inbox is not None else 0
@@ -267,7 +323,7 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
 
     return DashboardState(
         version=agentdesk.__version__,
-        sample=bool(settings.get("sample_data")) if settings is not None else False,
+        sample=sample,
         flags={
             "excelEnabled": excel_enabled,
             "calendarEnabled": calendar_enabled,
@@ -287,5 +343,6 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
         agent_loop=agent_loop,
         recommendations=recommendations,
         update=update_state,
+        setup=setup,
         now=instant,
     )

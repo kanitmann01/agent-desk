@@ -59,6 +59,16 @@ const DEFAULT_CARD_TITLES: Record<string, string> = {
 
 const SAVE_UNREACHABLE = 'The dashboard could not reach its own server; the layout was not saved.';
 const SAVE_REFUSED = 'The layout was not saved; the dashboard re-read the saved layout.';
+const SETUP_DISMISSED_KEY = 'agentdesk.setupDismissed';
+
+/** True when the Get started strip was hidden earlier in this sitting. */
+function storedSetupDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(SETUP_DISMISSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The composed dashboard: rail, hero, research bar, bento grid and footer, in the
@@ -85,6 +95,12 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const [customizeNote, setCustomizeNote] = useState('');
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  // The Get started strip: "Not now" hides it for this sitting only (the
+  // key lives in session storage), so the desk asks again tomorrow until
+  // the three steps are done.
+  const [setupDismissed, setSetupDismissed] = useState(storedSetupDismissed);
+  // True once Finish setup is clicked, until the strip is back and focused.
+  const focusSetup = useRef(false);
   // Where focus should land after an action removes or moves the
   // focused control (the Restore button of a just-hidden card, the grab
   // handle of a restored or renamed card).
@@ -97,6 +113,42 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   const sourceLine = connected > 0
     ? `Live: ${connected} of ${data.sources.total} sources connected.`
     : '';
+  // The setup steps are the server's (spec 022): the strip renders while
+  // one is open, and the AI is connected when the source table says so.
+  const setupSteps = data.setup?.steps ?? [];
+  const setupOpen = setupSteps.filter((step) => !step.done).length;
+  const aiConnected = data.sources.items.some(
+    (item) => item.id === 'research-endpoint' && item.status === 'connected',
+  );
+
+  /** Hide the Get started strip for this sitting. */
+  function dismissSetup() {
+    setSetupDismissed(true);
+    try {
+      sessionStorage.setItem(SETUP_DISMISSED_KEY, '1');
+    } catch {
+      // Storage unavailable (private mode): hidden until the page reloads.
+    }
+  }
+
+  /** Bring the Get started strip back and move focus onto it. */
+  function showSetup() {
+    focusSetup.current = true;
+    setSetupDismissed(false);
+    try {
+      sessionStorage.removeItem(SETUP_DISMISSED_KEY);
+    } catch {
+      // Storage unavailable: the state above still shows the strip.
+    }
+  }
+
+  useEffect(() => {
+    if (!focusSetup.current || setupDismissed) return;
+    const strip = document.getElementById('get-started');
+    if (strip === null) return; // not on screen yet: stay armed
+    focusSetup.current = false;
+    strip.focus();
+  }, [setupDismissed, data]);
 
   // The layout the payload carries: visible cards only, in render
   // order, custom titles riding along.
@@ -499,11 +551,20 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
               <Button tone="primary" onClick={leaveCustomize}>Done customizing</Button>
             ) : (
               <>
-                {/* The wizard is a server-rendered surface: a plain form
-                    post, exactly like the rendered dashboard's button. */}
-                <form method="post" action="/wizard/start" className="addplugin-form">
-                  <Button tone="primary" type="submit">Add plugin</Button>
-                </form>
+                {/* The plugin wizard lives on the Plugins page (spec 022);
+                    Customize stays because it is the only place the
+                    commitment check-off, source re-test and skill-run
+                    controls exist. */}
+                {setupDismissed && setupOpen > 0 ? (
+                  <button
+                    type="button"
+                    className="text-btn finish-setup"
+                    aria-label={`Finish setup, ${setupOpen} ${setupOpen === 1 ? 'step' : 'steps'} left`}
+                    onClick={showSetup}
+                  >
+                    Finish setup
+                  </button>
+                ) : null}
                 <Button tone="secondary" onClick={() => void enterCustomize()}>Customize</Button>
               </>
             )}
@@ -521,13 +582,19 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             <p className="cust-note" role="status">{customizeNote}</p>
           </section>
         ) : null}
-        <CommandBar busy={researchBusy} disabled={!data.research.enabled} onAsk={ask} />
+        <CommandBar busy={researchBusy} disabled={!data.research.enabled} needsAi={!aiConnected} onAsk={ask} />
         {!customizing && statusText ? (
           <p className="research-status command-status" role="status">{statusText}</p>
         ) : null}
         {!customizing ? (
           <>
-            <Brief data={data} onRefetch={onRefetch} onExpired={onExpired} />
+            <Brief
+              data={data}
+              onRefetch={onRefetch}
+              onExpired={onExpired}
+              setupDismissed={setupDismissed}
+              onDismissSetup={dismissSetup}
+            />
             {answer ? (
               <section className="brief-answer" aria-label="Research answer">
                 <h2>Research</h2>

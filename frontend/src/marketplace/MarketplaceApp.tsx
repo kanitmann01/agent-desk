@@ -21,19 +21,19 @@ function Tab({ to, current, children }: { to: string; current: boolean; children
 }
 
 /**
- * Render the section tabs, lighting the one that owns the current route.
+ * Render the two section tabs, lighting the one that owns the current route.
  *
- * Search and category results belong to Discover, and the manage view belongs
- * to Installed, so those routes keep their parent tab marked.
+ * Search and category results belong to Find plugins, and the manage view
+ * belongs to Installed, so those routes keep their parent tab marked.
+ * Publishers, Studio, Admin and the Trust center keep their addresses and
+ * lose their links (spec 022): a person managing plugins needs two places.
  */
 function Tabs({ route }: { route: MarketRoute }) {
-  const discover = ['discover', 'search', 'category'].includes(route.name);
+  const find = ['discover', 'search', 'category'].includes(route.name);
   return (
-    <nav className="mkt-tabs" aria-label="Marketplace sections">
-      <Tab to="/marketplace" current={discover}>Discover</Tab>
+    <nav className="mkt-tabs" aria-label="Plugins sections">
+      <Tab to="/marketplace" current={find}>Find plugins</Tab>
       <Tab to="/marketplace/installed" current={route.name === 'installed' || route.name === 'manage'}>Installed</Tab>
-      <Tab to="/marketplace/publishers" current={route.name === 'publishers' || route.name === 'publisher'}>Publishers</Tab>
-      <Tab to="/marketplace/studio" current={route.name === 'studio'}>Studio</Tab>
     </nav>
   );
 }
@@ -44,10 +44,10 @@ function NotFound({ path }: { path: string }) {
     <div className="mkt-page">
       <header className="mkt-page-head">
         <span className="mkt-eyebrow">404</span>
-        <h1>Marketplace page not found</h1>
-        <p className="mkt-lede">There is no marketplace surface at {path}.</p>
+        <h1>Plugins page not found</h1>
+        <p className="mkt-lede">There is no plugins page at {path}.</p>
       </header>
-      <p><MarketLink className="btn btn-secondary" to="/marketplace">Go to Discover</MarketLink></p>
+      <p><MarketLink className="btn btn-secondary" to="/marketplace">Find plugins</MarketLink></p>
     </div>
   );
 }
@@ -111,10 +111,6 @@ export default function MarketplaceApp() {
           <div className="mkt-sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
           <Tabs route={route} />
           <Page route={route} />
-          <nav className="mkt-tabs mkt-footer-nav" aria-label="Marketplace administration">
-            <Tab to="/marketplace/admin" current={route.name === 'admin'}>Admin</Tab>
-            <Tab to="/marketplace/trust" current={route.name === 'trust'}>Trust center</Tab>
-          </nav>
         </main>
       </div>
     </MarketplaceNavProvider>

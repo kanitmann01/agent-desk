@@ -75,6 +75,39 @@ def test_sample_on_wires_pipeline_and_moves(env):
     assert "source-on-not-connected" not in ids
 
 
+def test_sample_wiring_is_reported_as_sample_and_never_counted_live(env):
+    """A sample source is showing something, and it is not live (spec 022).
+
+    The home screen used to say "Live: 2 of 3 sources connected" while
+    every card wore its SAMPLE DATA tag. The source table now answers
+    "sample" for a wired sample file, so the live count, Desk health and
+    the setup steps all agree that nothing real is attached.
+    """
+    import json
+
+    auth = env.exchange()
+    _toggle(env, auth)
+    payload = json.loads(env.request("GET", "/api/dashboard", auth)[2])
+    rows = {item["id"]: item for item in payload["sources"]["items"]}
+    assert rows["excel-watch"]["status"] == "sample"
+    assert "not your file" in rows["excel-watch"]["detail"]
+    assert rows["calendar-bridge"]["status"] == "sample"
+    assert payload["sources"]["connected"] == 0
+    assert [step["done"] for step in payload["setup"]["steps"]] == [False, False, False]
+    health = json.loads(env.request("GET", "/health", auth)[2])
+    assert [row["status"] for row in health["sources"]] == ["sample", "sample", "not_connected"]
+
+    # A real workbook takes the wiring back: it is live, and it is counted.
+    real_workbook = env.data_dir / "real-workbook.xlsx"
+    real_workbook.write_bytes(b"real workbook")
+    env.server.excel.register(str(real_workbook))
+    payload = json.loads(env.request("GET", "/api/dashboard", auth)[2])
+    rows = {item["id"]: item for item in payload["sources"]["items"]}
+    assert rows["excel-watch"]["status"] == "connected"
+    assert payload["sources"]["connected"] == 1
+    assert payload["setup"]["steps"][1]["done"] is True
+
+
 def test_sample_off_detaches_only_the_sample_wiring(env):
     """Turning the switch off clears the sample wiring, not a real source."""
     auth = env.exchange()

@@ -114,11 +114,15 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
     # The whole contract: nothing missing, nothing extra.
     assert sorted(payload) == [
         "agentLoop", "commitments", "deskCheck", "flags", "inbox", "layout",
-        "plugins", "recommendations", "research", "sales", "sample", "skills",
-        "sources",
-        "update",
-        "version",
+        "plugins", "recommendations", "research", "sales", "sample", "setup",
+        "skills", "sources", "update", "version",
     ]
+    # Setup (spec 022): three steps in the order a person takes them, none
+    # done on a first run, and the sample flag mirroring the payload's.
+    assert [step["id"] for step in payload["setup"]["steps"]] == [
+        "ai", "workbook", "calendar"]
+    assert [step["done"] for step in payload["setup"]["steps"]] == [False, False, False]
+    assert payload["setup"]["sample"] is False
     assert payload["version"]
     assert payload["flags"] == {
         "excelEnabled": True, "calendarEnabled": True, "endpointEnabled": True,

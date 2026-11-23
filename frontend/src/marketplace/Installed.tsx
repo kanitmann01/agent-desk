@@ -273,7 +273,7 @@ export function InstalledPage() {
   return (
     <div className="mkt-page">
       <header className="mkt-page-head">
-        <span className="mkt-eyebrow">Marketplace</span>
+        <span className="mkt-eyebrow">Plugins</span>
         <h1>Installed plugins</h1>
         <p className="mkt-lede">
           Each plugin runs with only the scopes you approved. Pinned versions and digests are shown before an update.

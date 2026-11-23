@@ -51,6 +51,8 @@
 
 .mkt-page { display: flex; flex-direction: column; gap: 22px; }
 .mkt-page-head { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+/* The plugin wizard's door (spec 022): a plain form post to the server-rendered walk. */
+.mkt-describe { margin-top: 8px; }
 .mkt-eyebrow {
   font-family: var(--font-mono);
   font-size: 12px;

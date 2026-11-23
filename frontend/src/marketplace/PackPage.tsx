@@ -75,12 +75,12 @@ export function PackPage({ id }: { id: string }) {
       <div className="mkt-page">
         <nav className="mkt-crumbs" aria-label="Breadcrumb">
           <ol>
-            <li><MarketLink to="/marketplace">Marketplace</MarketLink></li>
+            <li><MarketLink to="/marketplace">Plugins</MarketLink></li>
             <li aria-current="page">Packs</li>
           </ol>
         </nav>
         <header className="mkt-page-head">
-          <span className="mkt-eyebrow">Marketplace</span>
+          <span className="mkt-eyebrow">Plugins</span>
           <h1>Packs are no longer offered</h1>
           <p className="mkt-lede">
             Every plugin installs on its own, with its own permission sheet.
@@ -92,7 +92,7 @@ export function PackPage({ id }: { id: string }) {
         >
           <span>No packs are published.</span>
           <span className="w-note mkt-empty-line">
-            The plugins this desk ships are on Discover.
+            The plugins this desk ships are on Find plugins.
           </span>
         </EmptyState>
       </div>
@@ -104,7 +104,7 @@ export function PackPage({ id }: { id: string }) {
       <div className="mkt-page">
         <h1>Pack not found</h1>
         <p>No pack has the id “{id}”.</p>
-        <MarketLink className="btn btn-secondary" to="/marketplace">Back to Discover</MarketLink>
+        <MarketLink className="btn btn-secondary" to="/marketplace">Back to plugins</MarketLink>
       </div>
     );
   }
@@ -146,7 +146,7 @@ export function PackPage({ id }: { id: string }) {
     <div className="mkt-page">
       <nav className="mkt-crumbs" aria-label="Breadcrumb">
         <ol>
-          <li><MarketLink to="/marketplace">Marketplace</MarketLink></li>
+          <li><MarketLink to="/marketplace">Plugins</MarketLink></li>
           <li aria-current="page">{pack.name}</li>
         </ol>
       </nav>
