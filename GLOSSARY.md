@@ -73,3 +73,11 @@ _Avoid_: knowledge point, entity line, observation (for a single fact)
 The desk saving facts by itself from how the user works. On screen it is
 "Learn automatically".
 _Avoid on screen_: capture, auto-approve, retain, extraction, reflect
+
+## Connecting (spec 023)
+
+**Connect step**:
+The agent layer's step that relates what a plugin's card shows to the
+people and companies the desk already holds. On screen it appears as
+"Also in your desk". It is never a plugin's job, and nothing on screen is
+named Hermes.

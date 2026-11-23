@@ -336,8 +336,9 @@ is marked ready. Evidence: the readiness output and screenshots at
   tests).
 - Deleting the hidden modules and their tests (a follow-up pull request
   after the demo, per the cut list).
-- Hermes as a runtime, and any new enterprise connector (a later spec; see
-  Further Notes).
+- Hermes in any form (not a plugin, not a connection, not an entry point,
+  not a runtime) and any new enterprise connector. The founder's direction
+  of 2026-11-23 and the work that follows it are spec 023.
 - Changing how memory extracts facts (the extraction prompts), embeddings,
   or encryption.
 - A guided full-screen onboarding, product tours, tooltips.
@@ -357,6 +358,26 @@ after the demo; no Hermes runtime before the demo. The map's earlier
 "Decisions so far" entries that keep Studio and the presentation plugin
 were written by an earlier agent without a closed ticket; this spec hides
 Studio from navigation and leaves presentations untouched.
+
+**Direction from the founder (2026-11-23).** "I want the underlying system
+of agents to work like hermes and grok bot, making automatic connections
+between what already exists and what the plugins bring. Plugins are just
+data aggregators and connectors." Nothing in this spec adds a Hermes
+plugin, connection or entry point, and the "Hermes (local)" connection
+this session was about to propose is withdrawn. The decision is recorded
+on #276; the first slice is spec 023.
+
+**What the implementation corrected (2026-11-23).** Three decisions above
+were changed while building, each because the product showed otherwise:
+
+- Learning switched itself off at a desk's second start (see Memory).
+- A source wired to the sample set is reported as "sample", never as
+  "connected", so the source line, Desk health and the setup steps agree
+  that nothing real is attached while sample data is on.
+- The Settings readiness checks read attributes regardless of quote style
+  (the page quotes them with single quotes). R09 and R20 were reworded:
+  the Memory page offers "Forget everything" only once a fact exists, so
+  the form is checked by R20. No check was removed.
 
 **What the advisor review changed.** It removed first-run sample loading,
 the Customize cut and the peers switch; added the key-store migration and

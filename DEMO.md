@@ -1,246 +1,191 @@
-# DEMO.md: the executive walkthrough script
+# DEMO.md: one manager's morning
 
-The presenter's script for a 12 minute demo of Agent Desk on one corporate
-Windows laptop. Every click below exists in the shipped product; the whole
-path is proven headless by `python tools/demo_walkthrough.py` (20 steps, run
-it once before the demo to warm up). Nothing leaves the machine except
-derived abstractions sent to a corporate LLM endpoint, and this demo never
-needs one: the wizard runs its deterministic path with no endpoint
-configured.
+The script for an 8 minute demo of Agent Desk on one Windows laptop. It is
+one person's story, not a tour of the product: a desk that asks for three
+things once, then reads my pipeline, knows my day, answers questions about
+my own work, and remembers what I tell it.
 
-## Before the demo (5 minutes of prep)
+It is written for the build of spec 022 (branch `spec022/demo-ready`). On
+`main` the home screen has no Get started strip and Settings is still one
+long page, so check the branch before you rehearse.
 
-1. Fresh data folder so the story starts empty. In cmd:
-   `set AGENTDESK_DATA=%TEMP%\demo-desk-a` before starting Desk A below
-   (or move `%USERPROFILE%\.agent-desk` aside). Nothing else to clean.
-2. A registry folder the demo can publish into without touching the
-   checkout: `xcopy /E /I registry %TEMP%\demo-registry`. You will paste
-   this path into Settings during beat 5.
-3. Optional, for the peers beat: a second terminal window ready for
-   Desk B (beat 8 has the two lines it needs).
+Every click below exists in the product and was walked on 2026-11-23. The
+whole first-ten-minutes path is proven without a browser by
+`python tools/demo_readiness.py`, which boots the real app on a fresh folder
+and prints one PASS line per check (`METRIC ready=23`).
 
-## The URL flow (how it starts)
+## The story in one sentence
 
-Double-click `tools/agent-desk.cmd`. It finds Python, starts the dashboard
-windowless, prints `Agent Desk is running: http://127.0.0.1:8765/auth/<one-time-token>`
-and opens the browser at that link itself. The link is the session: it
-becomes the cookie, there is no sign-in screen. If the browser did not
-open, copy the printed link; if port 8765 was taken, the printed link
-already names the port that actually opened.
+SAY: "This is Agent Desk. I tell it three things once. After that it reads
+my pipeline, knows my day, answers questions about my own work, and
+remembers what I teach it. Nothing leaves this machine except the question
+I type, and that goes to the AI I choose with my own key."
 
-SAY: one double-click, no admin rights, no terminal. The server binds
-127.0.0.1 only and every request carries the session that one-time link
-minted.
+## The day before (10 minutes, do not skip)
 
-## The rail (the whole product in one sentence)
+1. **Get the build.** This file ships with branch `spec022/demo-ready`.
+   Double-click `tools\agent-desk.cmd` in the checkout that holds that
+   branch (tonight: `.worktrees\022-demo-ready`; after the pull request is
+   merged: your usual checkout). It prints
+   `Agent Desk is running: http://127.0.0.1:8765/auth/<one-time-token>` and
+   opens the browser itself. The link is the session: there is no sign-in.
+2. **Clean the memory.** Rail: Memory. Read "How memory works" once so the
+   words are yours tomorrow. Click **Forget everything**, confirm. The page
+   should say 0 facts.
+3. **Switch learning on.** Rail: Settings, tab **Memory**. Three switches:
+   **Learn automatically**, **Learn from Assistant conversations**, **Learn
+   from Research questions**. All three read On.
+4. **Add your key once.** Settings, tab **Your AI**. Pick your provider,
+   paste the key, the model is already filled in, click **Save**. The line
+   at the top changes from "No AI key is saved yet" to "<name> answers
+   everything with <model>". Have this key in a text file for tomorrow's
+   live run.
+5. **Have ready** your sales workbook (`.xlsx`) and your calendar as a JSON
+   export, in folders you can find with a file dialog in front of a room.
+6. **Rehearse once, end to end**, with the timer. Then reset for tomorrow:
+   Memory: Forget everything; Settings: Your tools: Workbook: leave it (it
+   can stay), or start tomorrow from a fresh data folder (step 1 of
+   "Fresh start" below) if you want the strip to read 0 of 3 again.
+7. **Do not click "Not now" on the Get started strip** during the
+   rehearsal. It hides the strip for that browser sitting. If you did, the
+   header shows **Finish setup**: one click brings it back.
 
-The left rail is the tour: `/` the dashboard, `/inbox` what the agent
-initiates, `/assistant` research and the assistant, `/activity` every
-decision with its audit row, `/memory` facts she keeps (recall only),
-`/mail` the metadata-only mail digest (off by default), `/capabilities`
-the environment gates and sources, `/plugins` the plugin lifecycle and
-the registry, `/peers` peer sharing, `/settings` every switch including
-the endpoint. Click through them once, fast; every page answers.
+### Fresh start (only if you want to open on an empty desk)
 
-## Beat 1: the honest empty dashboard (1 minute)
+Stop the app. In a command window:
+`set AGENTDESK_DATA=%TEMP%\demo-desk-1`, then start `tools\agent-desk.cmd`
+from that same window. The desk is brand new and empty; your real folder is
+not touched. Do the three steps live, as beats 2 to 4 below.
 
-CLICKS: land on `/`. The dashboard shows the built-in cards in their
-designed empty states: the sales card offers `Connect a workbook`, the
-commitments card says no calendar data yet, the research panel says no
-company endpoint is configured. Freshness dots everywhere, no spinners.
+## The morning (8 minutes)
 
-SAY: every card tells the truth about why it is empty. Amber is a
-designed state with a cause, never a fake green.
+### Beat 0: it starts (20 seconds)
 
-IF IT FAILS: an empty card with a cause is the shipped state; read the
-cause line out loud, that is the product working.
+Double-click `tools\agent-desk.cmd`.
 
-## Beat 2: sample data on (30 seconds)
+SAY: one double-click, no admin rights, no terminal. It binds to this
+machine only.
 
-CLICKS: go to `/inbox`. The empty state offers the button
-`Show me what this looks like with sample data`. Click it. Four cards
-appear, each wearing a `Sample` tag and a `Sample data:` origin line.
-The switch also lives in `/settings` as `Sample data` (turn it off there
-later; removal takes exactly what was seeded).
+### Beat 1: the desk asks for three things (1 minute)
 
-SAY: labelled sample content, one switch, and turning it off removes
-exactly what it added. None of it can be mistaken for live data.
+CLICKS: land on the dashboard. Above the tiles: **GET STARTED**, three
+steps in order: 1 Add your AI key, 2 Open your sales workbook, 3 Connect
+your calendar. "0 of 3 done". In the question bar: **Connect your AI**.
 
-IF IT FAILS: the Settings switch at `/settings` does the same thing;
-the inbox button is a shortcut, not the only path.
+CLICKS: the strip's line "Nothing is connected yet." Click **Try it with
+sample data**. Every tile fills, each tagged **SAMPLE DATA**. The strip
+still says 0 of 3 done.
 
-## Beat 3: inbox actions, every one reversible (2 minutes)
+SAY: it does not hand me fifty switches. It asks for three things, in
+order, and each is one click. This is sample data: it is labelled on every
+card, and it never counts as set up. The checklist is still at zero.
 
-CLICKS, in order on `/inbox`:
+### Beat 2: the AI key, once (1 minute)
 
-1. On `Overnight sales update, ready to walk through`: `Accept`.
-2. On the brief card: edit the `Draft` box, `Save draft` (the draft
-   updates, the card stays waiting).
-3. On `Feature request exported to the owner queue`: pick `One hour` in
-   the Snooze select, `Snooze`; then type into `What should the agent
-   clarify?` and `Ask for more info` (the snooze ends early, the
-   instruction rides the card).
-4. On the brief: `Dismiss`; it drops to the `Dismissed` shelf at the
-   bottom; click `Restore` there. The shelf says recoverable for 30 days.
-5. Open `/activity`: every action above has its row (approved, edited,
-   snoozed, more-info, denied, restored, sample on).
+CLICKS: step 1, **Add**. Settings opens on **Your AI**: provider, key,
+model, Save. Pick the provider, paste the key, **Save**.
 
-SAY: the agent initiates, the human decides, and every decision is in
-the activity log. Dismissal is recovery, not deletion.
+CLICKS: rail, Dashboard. The strip says 1 of 3 done, step 1 is ticked, and
+the question bar's button is now **Research**.
 
-IF IT FAILS: `/activity` and `/audit/export.csv` are the same truth from
-two angles; open either and read the rows.
+SAY: that used to be the thing people could not find. Now it is the first
+thing on the first screen, three fields. It is stored in this computer's
+keychain, so tomorrow I will not do this again.
 
-## Beat 4: create a plugin from English, then give it its data (2.5 minutes)
+### Beat 3: my pipeline (1 minute)
 
-CLICKS: back on `/`, click `Add plugin` in the header. The describe
-screen opens (`Describe a plugin`). Type:
-`Watch this workbook and show me the 24-hour change` and submit. The
-questions screen appears; with no endpoint configured it says so and
-asks the standard questions (radio buttons, defaults pre-selected).
-Click `Ask` on each. The preview screen shows the widget on sample
-rows plus the consolidated summary: what it does, what it reads (for a
-workbook ask: `a workbook you pick in setup`, nothing is guessed),
-what it can never do (no code, no shell, no network), how to remove
-it. Click `Add widget`. The `Added` screen shows what was installed
-(id, version, the Pilot badge) and offers `Set up its data`. Click it:
-on the plugin's manage view, `Set up a new instance`, name it, `Open a
-workbook`, pick `sample-sales.xlsx` from the sample folder, click the
-`Amount` header, switch the assignment to `Row label` and click
-`Deal`, select row 1 (or Select all), `Continue`, `Confirm`. The card
-on `/` turns fresh: row 1's amount, the workbook's name, and the pilot
-badge it earned at install.
+CLICKS: step 2, **Open**. The file dialog opens. Pick the sales workbook.
 
-SAY: plain English in, a validated declarative plugin out. One approval,
-and it installs in pilot mode, already asking for the one thing no
-wizard can know: where your data lives. No endpoint was needed for
-this.
+The Pipeline tile fills with your rows, no sample tag. 2 of 3 done.
 
-IF IT FAILS: the preview names what it would read (`a workbook you
-pick in setup` for a workbook ask); if the words cannot be built
-safely the wizard says so and exports the request to the inbox instead
-of guessing. That dead-end is the honest path. Until a workbook is
-picked and confirmed, the plugin's card says `Set up` instead of
-showing numbers; Beat 7's excel-report card carries the registry
-plugin's story once a workbook is connected.
+SAY: it copies the workbook before it reads it. Nothing is written back.
 
-## Beat 5: publish it to the registry (1 minute)
+### Beat 4: my day (1 minute 30 seconds)
 
-CLICKS: the `Added` screen shows the pilot badge and a
-`Publish to the registry` button. First point the app at the prep
-folder: `/settings`, section `Plugin registry`, paste
-`%TEMP%\demo-registry` into `Registry checkout folder`, `Save path`,
-then `Open the plugins page`. Now click `Publish` on the wizard plugin
-(the Plugins page lists it with lifecycle actions). The
-`From the registry` section lists it beside the shipped plugins, and
-the origin line under it names the folder and `(from setting)`.
+CLICKS: step 3, **Connect**. The calendar page opens. **Pick a file** and
+choose your calendar JSON, or **Upload** it. Back on the dashboard
+(rail: Dashboard) the Digest shows today's meetings. 3 of 3 done, and the
+strip is gone.
 
-SAY: publishing copies the validated tree into the registry as a
-digest-pinned local release, append-only, and the same CI validator
-checks it. No git tag, no network.
+SAY: the checklist leaves when it is finished. From here the desk is mine.
 
-IF IT FAILS: publish refuses by name when there is no registry
-(`publish:no-registry`) or on a duplicate version; the refusal names
-the fix (save a registry path in Settings).
+### Beat 5: the morning loop (2 minutes)
 
-## Beat 6: install a shipped plugin, amber with its cause (1 minute)
+CLICKS: rail, Assistant. Type: "Please remember this: the Acme renewal is
+due December 15." Send. Rail, Memory: the fact is there, with the
+Assistant named as where it came from.
 
-CLICKS: still on `/plugins`, find `excel-report` under
-`From the registry`, click `Install`. It installs in pilot mode. Its
-card on `/` renders amber: `no file matches ${workspace}/reports/*.xlsx`.
+CLICKS: rail, Dashboard. **Decisions** (right column) now holds a card for
+that deadline, quoting the fact and the day it was saved. If the calendar
+has a meeting with Acme, a second card offers to prepare for it.
 
-SAY: installs are pinned and verified (digest plus the shared
-validator), and a plugin whose truth is not available yet says so in
-amber with the precise cause. The shipped card plugins are
-`excel-report` (this card) and `competitor-watch` (the Page watch
-card); `competitor-watch` reads an outside page through a network
-allowlist, so this demo leaves it out. The presentation starter is a
-template, not a dashboard card.
+CLICKS: the question bar. Type a question about your own work, for example
+"What is coming due in my pipeline?" Press Enter.
 
-IF IT FAILS: amber with a cause is the designed state; read the cause.
+SAY: I did not open a memory page to teach it. It learned from the
+conversation, it shows me what it holds and where each thing came from,
+and it used it by itself in Decisions.
 
-## Beat 7: connect the workbook, real numbers (1 minute)
+### Beat 6: it forgets when I say (40 seconds)
 
-CLICKS: open `%TEMP%\demo-desk-a\sample` in Explorer (the sample seeding
-made `sample-sales.xlsx`; any .xlsx works). Copy it into
-`%TEMP%\demo-desk-a\workspace\reports\`. Back on `/plugins`, click
-`Re-test` on excel-report. The card turns fresh with bound numbers
-(rows seen, the workbook name). Optionally, on `/`, click
-`Connect a workbook` on the sales card and pick the same file: the
-built-in sales widget goes live too.
+CLICKS: Memory, **Forget everything**, confirm. The page says 0 facts.
 
-SAY: the host executes the plugin's declared data source through the
-built-in pipeline and binds real values into its card. The moment the
-truth exists, the card shows it.
+SAY: it is my memory, not its own. One click and a confirmation, and it
+is recorded in the activity trail.
 
-IF IT FAILS: a locked or unreadable workbook stays amber with the
-cause; that honesty is the feature. Re-test is always one click.
+### Beat 7: where the rest lives (30 seconds)
 
-## Beat 8: two desks, peer to peer (2 minutes)
+CLICKS: rail, **Plugins**: two tabs, Find plugins and Installed, and
+**Describe a plugin in plain English**. Rail, Settings: six tabs; the last
+one, Advanced, starts with "The defaults are right for most people."
 
-CLICKS, Desk B first: in the second terminal (cmd):
-`set AGENTDESK_DATA=%TEMP%\demo-desk-b` then
-`python -m agentdesk.server`. It prints its own one-time link (its own
-port) and opens a second browser window: that is Desk B.
+SAY: everything else is still there, under one more click. Plugins only
+bring data in. The desk is what connects it.
 
-1. On Desk A `/plugins`: click `Share with peers` on the wizard plugin.
-2. On Desk A `/peers`: click `Generate a fresh code`; read the code.
-3. On Desk B `/peers`: type Desk A's address `127.0.0.1:8765` and the
-   code, click `Pair`. Both desks now pin each other's identity.
-4. Desk B's paired list shows the shared plugin, version 0.1.0, not
-   installed here; click `Install`. The card renders on Desk B's
-   dashboard with the same digest verification a registry install runs.
+## If something fails
 
-SAY: nothing centralized: a single-use pairing code, a token-gated
-read-only endpoint, digest-verified installs. When the publisher's
-version bumps, this page shows update-available and one click updates
-(the walkthrough script proves that bump end to end; the desk on the
-LAN is discovered but the server stays loopback-only, and it says so).
+- **The key is refused.** The card says why, next to the row. Fix the key
+  and Save again, or carry on without an AI: beats 1, 3, 4 and 7 need none.
+  Skip beat 2 and the question in beat 5; show the Memory page instead.
+- **The workbook dialog does not open.** Settings, Your tools, Workbook,
+  **Open a workbook**. If it still fails, say so and carry on with sample
+  data: the rest of the story is the same.
+- **The calendar file is refused.** The page says what it needs (a JSON
+  export). Carry on with the sample calendar and say that it is sample.
+- **The fact is not in Memory after a few seconds.** The model decides what
+  is durable. On the Memory page add the sentence by hand (the page's own
+  add box). SAY: the step is the same, this time typed.
+- **"Session required" in the browser.** The app was restarted. A restart
+  ends the browser session; double-click `tools\agent-desk.cmd` again and
+  it opens a fresh link. SAY, and mean it: a restart keeps the key, the
+  workbook and the calendar. Nothing from the day before is lost.
+- **Nothing on the screen works.** In a command window:
+  `python tools\demo_readiness.py`. It prints one line per check and ends
+  with `METRIC ready=23` on a clean folder. Read the first FAIL out loud if
+  there is one: that is the thing to fix, named.
 
-IF IT FAILS: a peer that cannot be reached stays listed with its cause
-(`could not be reached`); wrong pairing codes are refused by name and
-are single-use.
+## Appendix: where the rest lives (for questions only)
 
-## Beat 9: customize the dashboard (1 minute)
-
-CLICKS: on `/`, click `Customize` in the header. Drag a card's handle
-onto another (or use `Move up` / `Move down`), click `Rename` on one and
-`Save title`, click `Hide` on the sales card; it drops into the
-`Hidden cards` strip with a `Restore` button. Click `Restore`, then
-`Done customizing`. Every change saved itself; there is no save button.
-
-SAY: the dashboard is personal: order, titles, visibility, per desk,
-and hiding is always recoverable.
-
-IF IT FAILS: customize needs the layout endpoint; if it cannot reach
-the server the panel says so and changes nothing.
-
-## Beat 10: endpoint honesty in Settings (1 minute)
-
-CLICKS: `/settings`, section `Connections` (endpoints and their keys
-live here since spec 018; the old Endpoint form retired, and its card
-keeps only the presentation timeout). Save a connection with a base URL
-without a scheme (`llm.corp.example/v1`): the refusal names the rule
-(it must start with http:// or https://) and saves nothing. Now save a
-local (Ollama) connection pointed at the corporate SSO front-door URL
-and press its `Test` button: the badge turns to `error` with the
-precise cause (it answered with a web page, not an API), and `Delete`
-removes it. (The edit form's own `Test connection` button makes the
-same free model-list request with the saved key.) A real
-OpenAI-compatible endpoint saves with its key in the machine's
-keychain, only a masked hint ever shown.
-
-SAY: configuration fails loudly and specifically. No silent saves, no
-false greens, the key never rendered back after saving.
-
-IF IT FAILS: every refusal is a named cause on the page; that is the
-shipped behaviour, read it out.
-
-## Close (30 seconds)
-
-CLICKS: open `/what-this-touches` (the one-page statement generated
-from the audit vocabulary) and mention `/audit/export.csv`.
-
-SAY: everything ran on this machine, every outbound call is in the
-audit log, and the whole demo path is a scripted regression:
-`python tools/demo_walkthrough.py` runs it headless in a few seconds.
+- Inbox, what the desk initiates: `/inbox`. Assistant: `/assistant`.
+  Memory: `/memory`.
+  Activity trail, every decision with its audit row: `/activity` (also
+  Settings, tab Activity).
+- Mail digest, headers only, off by default: `/mail`, switched on in
+  Settings, Your tools, Mail.
+- Plugins: the rail's **Plugins** (the old `/plugins` address redirects
+  there). **Describe a plugin in plain English** is on Find plugins (the
+  old "Add plugin" and "Add widget" buttons). Install from the registry is one click on a card, digest
+  pinned. Publish to the registry is the Publish action on an installed
+  plugin. Studio, Publishers, Admin and the Trust center keep their
+  addresses (`/marketplace/studio` and so on) and are not linked.
+- Dashboard layout, re-test a source, run a saved ask: **Customize** in
+  the dashboard header.
+- Settings: `/settings`, six tabs. The readiness walk that proves the
+  first ten minutes is `tools/demo_readiness.py`.
+- Two desks sharing plugins: `/peers`. Pair with **Generate a fresh code**.
+- Computer check for IT: `/capabilities`, linked from Settings, Advanced,
+  Record as "Computer check (for IT)". Test connection for a saved AI:
+  **Test** on its row in Settings, Your AI.
+- The older twenty-step platform tour, kept for reference:
+  `docs/demo/platform-tour-2026-11.md`, proven by
+  `python tools/demo_walkthrough.py`.

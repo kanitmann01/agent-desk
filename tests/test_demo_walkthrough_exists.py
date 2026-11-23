@@ -34,12 +34,25 @@ def test_the_walkthrough_script_parses_and_names_its_steps():
     assert "WALKTHROUGH FAILED" in source and "WALKTHROUGH PASS" in source
 
 
-def test_demo_md_exists_and_covers_the_rail_and_the_story():
-    text = DEMO.read_text(encoding="utf-8")
+def test_demo_md_is_one_morning_and_still_names_where_the_rest_lives():
+    """DEMO.md is one person's morning (spec 022), not a tour, so a person
+    following it can answer "where did X go" from its appendix: every rail
+    page is named, and each step of the older tour that still exists is
+    pointed at, not described again."""
+    # Line wraps are not meaning: compare with every run of space as one.
+    text = " ".join(DEMO.read_text(encoding="utf-8").split())
     for page in RAIL_PAGES:
         assert page in text, f"DEMO.md does not mention {page}"
-    for needle in ("Add plugin", "Add widget", "Publish to the registry",
-                   "From the registry", "Re-test", "Generate a fresh code",
-                   "Pair", "Customize", "Test connection",
-                   "tools/agent-desk.cmd", "demo_walkthrough.py"):
+    for needle in ("Add plugin", "Describe a plugin in plain English",
+                   "Publish to the registry", "from the registry",
+                   "re-test", "Generate a fresh code", "Pair", "Customize",
+                   "Test connection", "agent-desk.cmd", "demo_walkthrough.py",
+                   "demo_readiness.py"):
         assert needle in text, f"DEMO.md lost its {needle!r} step"
+    # The story itself: three steps, the morning loop, the fallbacks.
+    for beat in ("Add your AI key", "Open your sales workbook",
+                 "Connect your calendar", "Try it with sample data",
+                 "Forget everything", "Learn automatically",
+                 "If something fails", "The day before"):
+        assert beat in text, f"DEMO.md lost its {beat!r} beat"
+
