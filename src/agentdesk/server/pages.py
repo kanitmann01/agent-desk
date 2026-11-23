@@ -570,8 +570,11 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
 
 // Connections (spec 018): the key field reveals only while the box is
 // checked (the full value is visible exactly once, in the form), and
-// picking a provider fills its default base URL, editable afterwards.
-// Both are enhancements; the form itself posts without any script.
+// picking a provider fills its default base URL and its default model,
+// both editable afterwards. On a new connection the model field starts
+// with the selected provider's default (spec 022). All are enhancements:
+// a new connection saves without any script just as well, because the
+// server fills both defaults when they arrive empty.
 (function () {
   var reveal = document.querySelector('[data-key-reveal]');
   var key = document.getElementById('conn-key');
@@ -584,6 +587,33 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
     var chosen = provider.selectedOptions[0];
     if (chosen && chosen.dataset.base) base.value = chosen.dataset.base;
   });
+  var model = document.getElementById('conn-model');
+  if (model && provider) {
+    var fillModel = function () {
+      var chosen = provider.selectedOptions[0];
+      if (!chosen) return;
+      if (model.tagName === 'SELECT') {
+        // A listed model belongs to the provider it was listed for, so a
+        // text field takes the list's place. The id moves with it, so the
+        // label keeps naming the field.
+        var field = document.createElement('input');
+        field.type = 'text';
+        field.id = 'conn-model';
+        field.name = 'model';
+        field.placeholder = 'default';
+        field.autocomplete = 'off';
+        model.parentNode.replaceChild(field, model);
+        model = field;
+      }
+      model.value = chosen.dataset.model || '';
+    };
+    provider.addEventListener('change', fillModel);
+    // Only the add form starts with the default; a saved connection
+    // shows the model it already has.
+    if (provider.form && provider.form.getAttribute('action') === '/api/connections') {
+      fillModel();
+    }
+  }
 })();
 
 // Skills: one click re-runs the saved ask; undo is on the settings page.

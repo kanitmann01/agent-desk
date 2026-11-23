@@ -135,6 +135,32 @@ def test_create_stores_the_key_in_the_keychain_and_answers_the_mask(env, auth, k
     assert keychain.secrets == {("agent-desk", f"key/{payload['id']}"): SECRET}
 
 
+def test_create_stores_the_model_and_the_listing_returns_it(env, auth):
+    """Spec 022: a connection remembers its model. Every model call then
+    sends it, so one connection no longer answers gpt-4o-mini to every
+    provider."""
+    status, _h, body = _create(env, auth, model="mock-chat")
+    assert status == 201
+    assert json.loads(body)["model"] == "mock-chat"
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert [c["model"] for c in listing["connections"]] == ["mock-chat"]
+
+
+def test_a_save_that_arrives_with_no_model_takes_the_preset_default(env, auth):
+    """The form starts with the preset's default model. A save that arrives
+    without one (a browser without script, after switching provider) takes
+    that provider's default on the server, the way the base URL field
+    works, so no provider is saved with a name it does not serve. A preset
+    with no verified model records none rather than a guess."""
+    assert json.loads(_create(env, auth)[2])["model"] == "gpt-6-luna"
+    # A preset whose page names no default saves none: the field asks.
+    status, _h, body = env.post_json("/api/connections", {
+        "label": "OpenCode Go", "provider": "opencode",
+        "apiKey": SECRET, "model": ""}, auth)
+    assert status == 201
+    assert json.loads(body)["model"] == ""
+
+
 def test_the_secret_is_never_echoed_after_create(env, auth):
     _create(env, auth)
     listing = json.loads(env.request("GET", "/api/connections", auth)[2])
@@ -166,7 +192,8 @@ def test_unknown_fields_answer_400_naming_the_accepted_fields(env, auth):
     assert status == 400
     for typo in ("labell", "key"):
         assert typo in payload["error"]
-    for accepted in ("label", "provider", "baseUrl", "apiKey", "headers", "isDefault"):
+    for accepted in ("label", "provider", "baseUrl", "apiKey", "headers",
+                     "isDefault", "model"):
         assert accepted in payload["error"]
     # Refusing beats a silent ok with dropped values: nothing was saved.
     assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []
@@ -229,6 +256,47 @@ def test_update_with_an_empty_key_keeps_the_stored_key(env, auth, keychain):
     assert payload["label"] == "OpenAI work"
     assert payload["maskedKey"] == "sk-...9999"  # the hint survived the edit
     assert keychain.secrets == {("agent-desk", f"key/{created['id']}"): SECRET}
+
+
+def test_update_changes_the_model_and_one_it_does_not_mention_keeps_it(
+        env, auth):
+    created = json.loads(_create(env, auth, model="mock-chat")[2])
+    path = f"/api/connections/{created['id']}/update"
+    edit = {"label": "OpenAI personal", "provider": "openai", "apiKey": ""}
+
+    status, _h, body = env.post_json(path, {**edit, "model": "mock-chat-v2"}, auth)
+    assert status == 200
+    assert json.loads(body)["model"] == "mock-chat-v2"
+
+    # A request that does not mention the model leaves it alone: a client
+    # written before the field existed must not reset the connection.
+    status, _h, body = env.post_json(path, edit, auth)
+    assert status == 200
+    assert json.loads(body)["model"] == "mock-chat-v2"
+
+    # A blank model is the "none chosen" state, sent as such.
+    status, _h, body = env.post_json(path, {**edit, "model": " "}, auth)
+    assert status == 200
+    assert json.loads(body)["model"] == ""
+
+
+def test_the_edit_form_saves_the_model_it_shows(env, auth):
+    """A browser always posts the form's model field, so a blank one is the
+    user clearing it, and it is saved as cleared (spec 022: "Model: default")."""
+    created = json.loads(_create(env, auth, model="mock-chat")[2])
+    path = f"/api/connections/{created['id']}/update"
+    edit = {"label": "OpenAI personal", "provider": "openai", "apiKey": ""}
+
+    status, headers, _b = _post_form(env, path, {**edit, "model": "mock-chat-v2"}, auth)
+    assert status == 303
+    assert headers["Location"] == "/settings#connections"
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert [c["model"] for c in listing["connections"]] == ["mock-chat-v2"]
+
+    status, _h, _b = _post_form(env, path, {**edit, "model": ""}, auth)
+    assert status == 303
+    listing = json.loads(env.request("GET", "/api/connections", auth)[2])
+    assert [c["model"] for c in listing["connections"]] == [""]
 
 
 def test_the_clear_action_removes_the_stored_key(env, auth, keychain):
@@ -431,15 +499,19 @@ def test_settings_page_carries_the_provider_select_and_console_deep_links(env, a
         if preset.local:
             label += " (this machine, no key needed)"
         chosen = " selected" if preset.id == PRESETS[0].id else ""
+        # Each option carries its preset's address and default model as
+        # data, for the script that fills both fields on a choice.
         expected = (f"<option value='{preset.id}'{chosen}"
-                    f" data-base='{preset.base_url}'>{label}</option>")
+                    f" data-base='{preset.base_url}'"
+                    f" data-model='{preset.default_model}'>{label}</option>")
         assert expected in page, preset.id
     # The create form opens on the first preset, where the checked radio
     # used to sit, and Custom is the last option of all.
     for preset in PRESETS[:-1]:
         assert page.index(f"<option value='{preset.id}'") < custom, preset.id
     assert ("<option value='openai' selected"
-            " data-base='https://api.openai.com/v1'>OpenAI</option>") in page
+            " data-base='https://api.openai.com/v1'"
+            " data-model='gpt-6-luna'>OpenAI</option>") in page
     # The console deep-links answer "where do I get a key" inline, folded
     # into a native disclosure (spec 019 #259): the summary names the
     # block, the anchors stay plain links with their hrefs, and the open
@@ -456,6 +528,63 @@ def test_settings_page_carries_the_provider_select_and_console_deep_links(env, a
     assert "name='label'" in page and "name='provider'" in page
     assert "name='apiKey'" in page
     assert "type='password'" in page
+
+
+def _connection_form(page: str) -> str:
+    """The connection form's own markup, apart from the rest of the page."""
+    start = page.index("id='connection-form'")
+    return page[start:page.index("</form>", start)]
+
+
+def test_the_create_form_offers_the_model_field_as_text(env, auth):
+    """Nothing has listed a new connection's models yet, so the Model field
+    is a text field; the script fills the selected preset's default into it
+    (checked in a real browser, not here)."""
+    form = _connection_form(
+        env.request("GET", "/settings", auth)[2].decode("utf-8"))
+    assert "<label class='empty' for='conn-model'>Model</label>" in form
+    assert "<input id='conn-model' type='text' name='model'" in form
+    assert "<select id='conn-model'" not in form
+
+
+def test_the_edit_form_lists_the_models_the_save_check_found(env, auth):
+    """A list once the save-time check filled one, the saved model selected,
+    with a way back to the default (spec 022)."""
+    created = json.loads(_create(env, auth, model="hermetic-model")[2])
+    form = _connection_form(env.request(
+        "GET", f"/settings?connection={created['id']}", auth)[2].decode("utf-8"))
+    assert "<label class='empty' for='conn-model'>Model</label>" in form
+    assert "<select id='conn-model' name='model'>" in form
+    assert "<option value=''>default</option>" in form
+    assert "<option value='hermetic-model' selected>hermetic-model</option>" in form
+    assert "<input id='conn-model'" not in form
+
+    # A model the listing does not carry stays selectable as it is, so
+    # editing the label never swaps it for the first listed model.
+    env.server.keys.update(created["id"], model="typed-by-hand")
+    form = _connection_form(env.request(
+        "GET", f"/settings?connection={created['id']}", auth)[2].decode("utf-8"))
+    assert "<option value='typed-by-hand' selected>typed-by-hand</option>" in form
+
+    # An endpoint that listed nothing leaves a text field carrying the model.
+    env.server.keys.set_models(created["id"], [])
+    form = _connection_form(env.request(
+        "GET", f"/settings?connection={created['id']}", auth)[2].decode("utf-8"))
+    assert ("<input id='conn-model' type='text' name='model'"
+            " value='typed-by-hand'") in form
+    assert "<select id='conn-model'" not in form
+
+
+def test_each_saved_row_shows_its_model_or_default(env, auth):
+    _create(env, auth, model="mock-chat")
+    env.post_json("/api/connections", {
+        "label": "Local ollama", "provider": "ollama",
+        "baseUrl": "http://localhost:11434/v1", "model": ""}, auth)
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    rows = {row.split("</b>")[0]: row for row in page.split("<tr>")[1:]}
+    assert "Model: mock-chat" in rows["<td><b>OpenAI personal"]
+    # A connection with no model says so in plain words (spec 022).
+    assert "Model: default" in rows["<td><b>Local ollama"]
 
 
 def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth):
@@ -521,8 +650,9 @@ def test_edit_form_is_prefilled_and_posts_to_the_update_route(env, auth):
     assert "OpenAI personal" in text
     # The provider select mirrors the saved provider (spec 019 #263):
     # groq carries selected and it is the only option that does.
-    assert ("<option value='groq' selected"
-            " data-base='https://api.groq.com/openai/v1'>Groq</option>") in text
+    assert (f"<option value='groq' selected"
+            f" data-base='https://api.groq.com/openai/v1'"
+            f" data-model='{preset_for('groq').default_model}'>Groq</option>") in text
     assert text.count(" selected data-base=") == 1
     # The empty-key-keeps rule and the separate clear action are both stated.
     assert "keeps the stored key" in text
@@ -618,6 +748,29 @@ def test_the_catalog_ships_the_thirteen_verified_presets():
     assert {p.id for p in local} == {"ollama", "lmstudio", "vllm"}
     assert all(p.base_url.startswith("http://localhost:") for p in local)
     assert all(p.console_url == "" for p in local)
+
+
+def test_every_preset_records_one_default_model():
+    """Spec 022: the model a new connection's form starts with. Only an id
+    verified on the provider's own documentation on 2026-11-23 is recorded;
+    a preset whose page names no default (the local servers, OpenCode Go,
+    Custom) stays empty and the field then asks, rather than guessing."""
+    defaults = {p.id: p.default_model for p in PRESETS}
+    assert defaults == {
+        "openai": "gpt-6-luna",
+        "anthropic-compat": "claude-haiku-5-5",
+        "openrouter": "openai/gpt-5.2",
+        "groq": "llama-3.3-70b-versatile",
+        "together": "MiniMaxAI/MiniMax-M3.1-Flash",
+        "gemini": "gemini-3.5-flash-lite",
+        "deepseek": "deepseek-flash",
+        "mistral": "mistral-small-4-0-26-03",
+        "opencode": "",
+        "ollama": "",
+        "lmstudio": "",
+        "vllm": "",
+        "custom": "",
+    }
 
 
 def test_a_refused_save_lands_on_the_connections_card(env, auth):
