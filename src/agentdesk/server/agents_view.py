@@ -134,7 +134,23 @@ def _presentation_card(packs, endpoint_ready: bool, sentence: str,
         '</fieldset>'
         f"{research_html}"
         f'<button class="btn btn-primary" type="submit"{disabled}>Run Presentation</button>'
-        "</form></article>"
+        "</form>"
+        '<details class="deck-tools"><summary>Deck tools (for agents and scripts)</summary>'
+        '<p class="empty">These run without a model endpoint. Create, inspect and render '
+        "return a file and a download address; outline returns text.</p>"
+        "<ul>"
+        "<li><code>presentation_outline</code> turns a one-line brief into slide text.</li>"
+        "<li><code>presentation_create</code> writes a valid .pptx from that outline.</li>"
+        "<li><code>presentation_inspect</code> reads a deck back as text and package checks.</li>"
+        "<li><code>presentation_render</code> makes a PDF and slide images when PowerPoint "
+        "or LibreOffice is installed.</li>"
+        "</ul>"
+        '<p class="empty">HTTP: <code>POST /api/presentation/tools</code> with '
+        '<code>{"tool": "presentation_create", "brief": "the Q3 review"}</code>. '
+        "Live schemas at <code>GET /api/presentation/tools</code>.</p>"
+        '<p class="empty">CLI: <code>python -m agentdesk.presentations.cli create '
+        '--brief "the Q3 review" --out deck.pptx</code></p>'
+        "</details></article>"
     )
 
 

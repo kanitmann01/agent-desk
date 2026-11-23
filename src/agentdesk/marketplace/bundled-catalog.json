@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-21T16:28:25.448519+00:00",
+  "generatedAt": "2026-11-23T10:08:12.861785+00:00",
   "plugins": [
     {
       "category": "research",
@@ -40,7 +40,7 @@
     {
       "category": "communication",
       "changelog": "",
-      "digest": "a9e23bb5e97c2998e5292dccc965ebf2977a43d2f75e18c5630ab676039cb361",
+      "digest": "4004f29ed87dc64b1935c7429b1c6d68d92154880d5ae03339918cfc1ebe5876",
       "id": "presentation-starter",
       "latest": "0.1.0",
       "minHost": "",
