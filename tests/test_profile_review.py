@@ -397,24 +397,27 @@ def test_stated_preferences_untouched_by_a_run(tmp_path, monkeypatch):
 
 
 def test_the_step_is_registered_after_learn_topics():
+    # Ticket 10 inserts the skills and curator steps between rank and the
+    # update share (spec 016 section 6.2).
     assert [step.name for step in STEPS] == [
-        "deskcheck", "learn-topics", "profile-review", "rank", "update"]
+        "deskcheck", "learn-topics", "profile-review", "rank",
+        "skills", "curator", "update"]
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
     settings.set("llm_base", "http://127.0.0.1:9/v1")
-    assert STEPS[2].enabled(settings) is True
+    assert [s for s in STEPS if s.name == "profile-review"][0].enabled(settings) is True
     settings.set("learn_profile", False)
-    assert STEPS[2].enabled(settings) is False
+    assert [s for s in STEPS if s.name == "profile-review"][0].enabled(settings) is False
     settings.set("learn_profile", True)
     settings.set("endpoint_enabled", False)
-    assert STEPS[2].enabled(settings) is False
+    assert [s for s in STEPS if s.name == "profile-review"][0].enabled(settings) is False
     settings.set("endpoint_enabled", True)
     # The base-URL leg moved to the client gate (the connections hub
     # serves it): an empty llm_base row no longer hides the step, and
     # the client answers configured instead (the evidence run's defect
     # 7.2, with its regression below).
     settings.set("llm_base", "")
-    assert STEPS[2].enabled(settings) is True
-    assert STEPS[2].enabled(None) is False
+    assert [s for s in STEPS if s.name == "profile-review"][0].enabled(settings) is True
+    assert [s for s in STEPS if s.name == "profile-review"][0].enabled(None) is False
 
 
 def test_the_client_serves_a_fresh_install_through_the_startup_endpoint():

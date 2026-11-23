@@ -240,14 +240,18 @@ def test_activity_rows_carry_ids():
 
 
 def test_the_step_is_registered_after_the_desk_check():
+    # Ticket 10 inserts the skills and curator steps between rank and the
+    # update share (spec 016 section 6.2), after the steps 08 and 09 own.
     assert [step.name for step in STEPS] == [
-        "deskcheck", "learn-topics", "profile-review", "rank", "update"]
-    assert STEPS[1].enabled(SettingsStore(
+        "deskcheck", "learn-topics", "profile-review", "rank",
+        "skills", "curator", "update"]
+    learn = [s for s in STEPS if s.name == "learn-topics"][0]
+    assert learn.enabled(SettingsStore(
         sqlite3.connect(":memory:", check_same_thread=False))) is True
-    assert STEPS[1].enabled(None) is False
+    assert learn.enabled(None) is False
     settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False))
     settings.set("learn_topics", False)
-    assert STEPS[1].enabled(settings) is False
+    assert learn.enabled(settings) is False
 
 
 # -- the surfaces: routes and the settings section --------------------------
