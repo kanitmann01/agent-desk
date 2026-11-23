@@ -12,6 +12,7 @@ prompt that states the learned lines after the stated ones.
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,6 +25,7 @@ from agentdesk.insight import context as insight_context
 from agentdesk.insight import digest
 from agentdesk.insight.preferences import MAX_TOPICS, MAX_TOPIC_CHARS
 from agentdesk.memory import profile
+from agentdesk.recommend import rank
 
 NOW = 1763650000.0
 
@@ -212,6 +214,14 @@ def test_learned_lines_are_the_entry_texts(store):
     store.add_entry("Prefers short summaries.", {"activity": [2]}, "review")
     assert profile.learned_lines(store.document()) == [
         "Owns the Kestrel Foods account.", "Prefers short summaries."]
+
+
+def test_the_rank_step_reads_the_store_document(store):
+    # The store has no learned_lines method; the reader is the module
+    # function over document(), and this pins the step to that shape.
+    store.add_entry("Prefers morning calls.", {"activity": [1]}, "review")
+    server = SimpleNamespace(learned_profile=store)
+    assert rank._learned_lines(server) == ["Prefers morning calls."]
 
 
 # -- the digest: merged topics, learned lines after the stated ones --------

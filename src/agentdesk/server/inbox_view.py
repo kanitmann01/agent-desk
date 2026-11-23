@@ -45,10 +45,22 @@ def card_html(card: Card, now_ts: float) -> str:
             age += ", window passed"
     expired_class = " amber" if expired else ""
     body_html = f"<p>{html.escape(card.body)}</p>" if card.body else ""
-    action = (
-        f"<button class='btn btn-primary' data-accept='{html.escape(card.id)}'>"
-        f"{html.escape(card.action_label or 'Accept')}</button>"
-    )
+    recommendation = (card.meta or {}).get("recommendation")
+    recommendation = recommendation if isinstance(recommendation, dict) else {}
+    href = recommendation.get("href")
+    label = card.action_label or recommendation.get("actionLabel") or "Open"
+    if isinstance(href, str) and href.startswith("/"):
+        # The label promises a page ("Prep in Assistant"), so the action
+        # must open it. Accepting would consume the card and land nowhere.
+        action = (
+            f"<a class='btn btn-primary' href='{html.escape(href)}'>"
+            f"{html.escape(label)}</a>"
+        )
+    else:
+        action = (
+            f"<button class='btn btn-primary' data-accept='{html.escape(card.id)}'>"
+            f"{html.escape(label)}</button>"
+        )
     card_id = html.escape(card.id)
     # The no-JS actions: edit the draft, snooze, ask for more info. Plain
     # forms, the wizard's style; each POSTs urlencoded and lands back on

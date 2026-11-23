@@ -104,7 +104,10 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const status = sales.status;
   const configured = sales.mode === 'live' && Boolean(status?.configured);
   const salesIsSample = configured && SAMPLE_FILE.test(status?.path ?? '');
-  const delta = status?.delta ?? null;
+  // A stale read keeps its last good delta on the wire; showing it as the
+  // current pipeline move presents old numbers as today's. The card
+  // already says it is stale, so drop the delta until the next good read.
+  const delta = status?.state === 'stale' ? null : (status?.delta ?? null);
   const movers = delta ? moversFromDelta(delta) : [];
   const net = delta ? netPipeline(delta) : 0;
   const stages = netByStage(movers);
@@ -173,10 +176,20 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     });
   }
   const recommendations = recommendationRows(data);
+  const [dismissError, setDismissError] = useState<string | null>(null);
   /** Dismiss one recommendation, then refresh the dashboard it was on. */
   async function dismissRecommendation(cardId: string) {
-    const res = await postJson(`/inbox/cards/${cardId}/dismiss`);
-    if (res.ok) await onRefetch();
+    try {
+      const res = await postJson(`/inbox/cards/${cardId}/dismiss`);
+      if (!res.ok) {
+        setDismissError('Could not dismiss that decision. Try again.');
+        return;
+      }
+      setDismissError(null);
+      await onRefetch();
+    } catch {
+      setDismissError('Could not reach the desk. Check the connection and try again.');
+    }
   }
   const recommendationDecisions: typeof setupDecisions = recommendations.rows.map((row) => ({
     key: `rec-${row.key}`,
@@ -193,7 +206,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   const decisions = recommendationDecisions.length > 0 ? recommendationDecisions : setupDecisions;
   const decisionsEmpty = decisions.length === 0 ? decisionsEmptyText(data.agentLoop) : null;
   const decisionsMeta = recommendationDecisions.length > 0
-    ? (recommendations.more > 0 ? <span className="mono">{recommendations.more} more in inbox</span> : undefined)
+    ? (recommendations.more > 0 ? <a className="mono" href="/inbox">{recommendations.more} more in inbox</a> : undefined)
     : (decisions.length > 0 ? <span className="mono">{decisions.length} open</span> : undefined);
   const connected = data.sources.connected;
   const total = data.sources.total;
@@ -496,7 +509,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
                       <span className="decision-title">{d.title}{d.sample ? <span className="sample-tag">SAMPLE DATA</span> : null}</span>
                       <span className="decision-why">{d.why}</span>
                     </div>
-                    {d.action}
+                    <span className="decision-actions">{d.action}</span>
                   </li>
                 ))}
               </ul>
@@ -504,6 +517,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
               <p className="empty">{decisionsEmpty}</p>
             )}
             {note ? <p className="alert" role="status">{note}</p> : null}
+            {dismissError ? <p className="alert" role="alert">{dismissError}</p> : null}
             {manualOpen ? (
               <div className="well">
                 <input

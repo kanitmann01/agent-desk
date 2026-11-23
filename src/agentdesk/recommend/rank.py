@@ -20,6 +20,7 @@ from typing import Callable
 
 from agentdesk.assistant import audit as audit_store
 from agentdesk.llm import LlmUnavailable, effective_llm_config, settings_chat
+from agentdesk.memory.profile import learned_lines as profile_learned_lines
 from agentdesk.safety import first_threat_message
 
 PROMPT = """You rank decisions for a small business desk. Score each candidate from 0 to 10 for urgency and relevance to the user right now. Return only a JSON array of objects with "id", "score" (an integer from 0 to 10), and "why" (at most 140 characters, plain words, no emoji, no threats). Do not add prose, code fences or markdown.
@@ -142,7 +143,7 @@ def apply_scores(inbox, ledger, scored, threshold: int, tomorrow_8am: float) -> 
 
 
 def run_rank(server, ctx, chat: Callable[[str], str] | None = None) -> dict:
-    """One ranking pass over every waiting recommendation, snoozed included."""
+    """One ranking pass over the visible waiting recommendations."""
     inbox = getattr(server, "inbox", None)
     settings = getattr(server, "settings", None)
     memory = getattr(server, "memory", None)
@@ -150,12 +151,15 @@ def run_rank(server, ctx, chat: Callable[[str], str] | None = None) -> dict:
         return {"skipped": "The desk has no recommendations to rank."}
     cards = [
         card
-        for card in inbox.waiting(include_snoozed=True)
+        for card in inbox.waiting()
         if (card.meta or {}).get("recommendation")
     ]
-    if not cards:
-        return {"ranked": 0}
     payload = build_input(cards, memory, _learned_lines(server), ctx.now)
+    if not cards:
+        # Remember the empty pass, so the card that wakes from a snooze
+        # changes the payload instead of being skipped as unchanged.
+        ctx.remember_input(STEP_NAME, payload)
+        return {"ranked": 0}
     if ctx.input_unchanged(STEP_NAME, payload):
         return {"skipped": "unchanged"}
     prompt = render_prompt(payload)
@@ -180,8 +184,14 @@ def run_rank(server, ctx, chat: Callable[[str], str] | None = None) -> dict:
         _audit(server, base, model, prompt, "error", cause)
         return {"skipped": cause}
 
-    _audit(server, base, model, prompt, "ok", "")
     scored = parse_reply(reply, {card.id for card in cards})
+    if not scored:
+        # A reply with no usable score changed nothing. Remembering the
+        # input here would latch every later pass as unchanged.
+        cause = "The endpoint reply had no usable scores."
+        _audit(server, base, model, prompt, "error", cause)
+        return {"skipped": cause}
+    _audit(server, base, model, prompt, "ok", "")
     counts = apply_scores(
         inbox,
         getattr(server, "ledger", None),
@@ -200,10 +210,15 @@ def rank_step(ctx) -> dict:
 
 
 def _learned_lines(server) -> list[str]:
-    """The learned profile lines, when a later ticket has installed them."""
+    """The learned profile entry texts from the store's document."""
     profile = getattr(server, "learned_profile", None)
-    lines = getattr(profile, "learned_lines", None)
-    return list(lines or [])
+    document = getattr(profile, "document", None)
+    if document is None:
+        return []
+    try:
+        return list(profile_learned_lines(document()))
+    except (OSError, ValueError, TypeError):
+        return []
 
 
 def _audit(server, base: str, model: str, prompt: str, status: str, detail: str) -> None:
