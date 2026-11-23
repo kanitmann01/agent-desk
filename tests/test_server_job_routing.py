@@ -478,7 +478,8 @@ def test_a_no_js_delete_post_gets_the_warning_page_and_the_confirmed_post_delete
         env, auth, f"/api/connections/{connection['id']}/delete",
         {"confirm": "1"})
     assert status == 303
-    assert headers["Location"] == "/settings"
+    # The redirect anchors to the connections card.
+    assert headers["Location"] == "/settings#connections"
     assert keychain.secrets == {}
     assert json.loads(env.request("GET", "/api/bindings", auth)[2])["bindings"] == []
 
