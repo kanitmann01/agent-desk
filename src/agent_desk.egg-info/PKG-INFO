@@ -7,4 +7,5 @@ Requires-Python: >=3.10
 License-File: LICENSE
 License-File: LICENSE-SDK
 Requires-Dist: cryptography>=44
+Requires-Dist: keyring>=25
 Dynamic: license-file

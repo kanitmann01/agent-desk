@@ -304,6 +304,19 @@ def test_uses_azure_api_key_rejects_non_azure_and_empty():
     assert not uses_azure_api_key("not-a-url")
 
 
+def test_auth_headers_name_the_client_and_session_only_opencode():
+    """OpenCode answers 403 to urllib's user agent and 400 when chat
+    omits x-opencode-session. Other providers stay on bearer alone."""
+    go = auth_headers("https://opencode.ai/inference/go/v1", "oc_sk_x")
+    assert go["User-Agent"] == "agentdesk/0.1"
+    assert go["Authorization"] == "Bearer oc_sk_x"
+    assert go["x-opencode-session"].startswith("ses_")
+
+    other = auth_headers("https://api.openai.com/v1", "sk")
+    assert other["User-Agent"] == "agentdesk/0.1"
+    assert "x-opencode-session" not in other
+
+
 def test_auth_headers_send_api_key_for_azure_and_bearer_otherwise():
     azure = auth_headers("https://x.openai.azure.com/openai/v1", "secret")
     assert azure["Content-Type"] == "application/json"

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS connections (
   last_used_at REAL,
   models TEXT NOT NULL DEFAULT '[]',
   models_fetched_at REAL,
+  model TEXT NOT NULL DEFAULT '',
   created_at REAL NOT NULL,
   updated_at REAL NOT NULL
 );
@@ -48,7 +49,7 @@ CREATE TABLE IF NOT EXISTS job_bindings (
 _COLUMNS = (
     "id, label, provider, base_url, keychain_ref, masked_key, headers,"
     " is_default, enabled, status, last_checked_at, last_error,"
-    " last_used_at, models, models_fetched_at, created_at, updated_at"
+    " last_used_at, models, models_fetched_at, model, created_at, updated_at"
 )
 
 
@@ -90,6 +91,7 @@ class Connection:
     last_used_at: float | None = None
     models: list = field(default_factory=list)
     models_fetched_at: float | None = None
+    model: str = ""
     created_at: float = 0.0
     updated_at: float = 0.0
 
@@ -110,8 +112,17 @@ def mask_key(secret: str) -> str:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Create the connections table and commit; safe on every open."""
+    """Create the connections table and commit; safe on every open.
+
+    ``model`` is the id saved with the key. Stores opened before that
+    column existed gain it empty; a second open finds it already there.
+    """
     conn.executescript(SCHEMA)
+    try:
+        conn.execute(
+            "ALTER TABLE connections ADD COLUMN model TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
 
@@ -153,6 +164,7 @@ class KeysStore:
         is_default: bool = False,
         connection_id: str | None = None,
         enabled: bool = True,
+        model: str = "",
     ) -> Connection:
         """Insert one connection and return it as the store now holds it.
 
@@ -173,12 +185,13 @@ class KeysStore:
                 self.conn.execute(
                     "INSERT INTO connections (id, label, provider, base_url,"
                     " keychain_ref, masked_key, headers, is_default, enabled,"
-                    " created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " model, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (connection_id, label, provider, base_url,
                      f"key/{connection_id}", masked_key,
                      json.dumps(headers or {}, ensure_ascii=False),
-                     1 if is_default else 0, 1 if enabled else 0, now, now),
+                     1 if is_default else 0, 1 if enabled else 0,
+                     model, now, now),
                 )
                 if is_default:
                     self.conn.execute(
@@ -218,6 +231,7 @@ class KeysStore:
         base_url: str | None = None,
         masked_key: str | None = None,
         headers: dict | None = None,
+        model: str | None = None,
     ) -> Connection:
         """Change only the named fields; everything else keeps its value.
 
@@ -231,6 +245,7 @@ class KeysStore:
             ("masked_key", masked_key),
             ("headers", json.dumps(headers, ensure_ascii=False)
              if headers is not None else None),
+            ("model", model),
         ) if value is not None}
         if not stored:
             return self.get(connection_id)
@@ -421,5 +436,5 @@ def _as_connection(row: tuple) -> Connection:
         is_default=bool(row[7]), enabled=bool(row[8]), status=row[9],
         last_checked_at=row[10], last_error=row[11], last_used_at=row[12],
         models=json.loads(row[13]), models_fetched_at=row[14],
-        created_at=row[15], updated_at=row[16],
+        model=row[15], created_at=row[16], updated_at=row[17],
     )

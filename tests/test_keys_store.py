@@ -69,8 +69,20 @@ def test_add_and_get_round_trip_every_field(tmp_path):
     assert read.enabled is True
     assert read.status == "unknown"
     assert read.last_error == ""
+    assert read.model == ""
     assert read.created_at == 1_000.0
     assert read.updated_at == 1_000.0
+
+
+def test_the_model_is_saved_with_the_connection(tmp_path):
+    store = KeysStore(_open(tmp_path), lambda: 0.0)
+    conn = store.add(label="Go", provider="opencode",
+                     base_url="https://opencode.ai/inference/go/v1",
+                     masked_key="oc_...ZSnh", model="kimi-k3")
+    assert store.get(conn.id).model == "kimi-k3"
+    assert store.update(conn.id, model="glm-5.3").model == "glm-5.3"
+    assert store.update(conn.id, label="Go renamed").model == "glm-5.3"
+    assert store.update(conn.id, model="").model == ""
 
 
 def test_labels_are_unique(tmp_path):

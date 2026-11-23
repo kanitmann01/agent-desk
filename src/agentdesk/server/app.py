@@ -3457,7 +3457,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             connection = server.keys.add(
                 label=values["label"], provider=preset.id, base_url=base,
                 masked_key=mask_key(values["apiKey"]) if values["apiKey"] else "",
-                headers=values["headers"], is_default=values["isDefault"])
+                headers=values["headers"], is_default=values["isDefault"],
+                model=values["model"] or "")
         except ValueError as exc:
             self._connections_refusal(str(exc), status=409)
             return
@@ -3526,7 +3527,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 existing.id, label=values["label"], provider=preset.id,
                 base_url=base,
                 masked_key=mask_key(api_key) if api_key else existing.masked_key,
-                headers=values["headers"])
+                headers=values["headers"], model=values["model"])
         except ValueError as exc:
             if api_key:
                 if previous_secret is None:
@@ -7610,7 +7611,7 @@ def _job_llm_parts(server, job: str) -> tuple:
 # unknown field name is a 400 naming the typos and the accepted names,
 # never a silent ok with dropped values) and the no-keychain notice.
 CONNECTION_CREATE_FIELDS = (
-    "label", "provider", "baseUrl", "apiKey", "headers", "isDefault",
+    "label", "provider", "baseUrl", "apiKey", "headers", "isDefault", "model",
 )
 CONNECTION_UPDATE_FIELDS = CONNECTION_CREATE_FIELDS + ("keyClear",)
 # The job-binding write's whitelist, the same pattern one surface over.
@@ -7639,6 +7640,7 @@ def _connection_payload(connection) -> dict:
         "lastUsedAt": connection.last_used_at,
         "models": connection.models,
         "modelsFetchedAt": connection.models_fetched_at,
+        "model": connection.model,
         "createdAt": connection.created_at,
         "updatedAt": connection.updated_at,
     }
@@ -7729,6 +7731,7 @@ def _connection_input(body: dict, accepted: tuple[str, ...]) -> tuple[dict | Non
         "apiKey": str(body.get("apiKey", "") or "").strip(),
         "headers": headers,
         "isDefault": _flag(body, "isDefault"),
+        "model": None if "model" not in body else str(body.get("model") or "").strip(),
     }, None
 
 

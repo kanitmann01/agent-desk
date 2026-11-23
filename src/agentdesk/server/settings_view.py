@@ -571,11 +571,12 @@ def _jobs_section(bindings: list[dict] | None,
             model = str(binding.get("model") or "") if binding else ""
             choices = _job_choices(connections, selected)
             if selected and selected in by_id:
+                shown = model or str(by_id[selected].get("model") or "")
                 current = (
                     f"<span class='empty'>Serves through"
                     f" <b>{html.escape(str(by_id[selected].get('label', '')))}</b>"
-                    + (f", model <span class='mono'>{html.escape(model)}</span>"
-                       if model else "")
+                    + (f", model <span class='mono'>{html.escape(shown)}</span>"
+                       if shown else "")
                     + ".</span>")
             elif binding:
                 current = "<span class='empty'>Bound to a connection that is gone.</span>"
@@ -608,8 +609,8 @@ def _jobs_section(bindings: list[dict] | None,
 <p>Assign the desk's jobs to connections: the assistant on a personal
 key, presentations on a work key, web research on a third. Every model
 call asks one resolution hub: the job's binding here, then the default
-binding, then the single enabled connection, then the environment. Each
-model field is picked from the cached lists or typed.</p>
+binding, then the single enabled connection, then the environment. A
+blank model here uses the model saved on that connection.</p>
 {body}
 </section>"""
 
@@ -668,6 +669,11 @@ def _connection_rows(connections: list[dict]) -> str:
         preset_name = preset.name if preset else str(c.get("provider", ""))
         label = html.escape(str(c.get("label", "")))
         star = " <span aria-label='default connection'>&#9733;</span>" if c.get("isDefault") else ""
+        saved_model = str(c.get("model") or "")
+        model_line = (
+            f"<br><span class='mono'>{html.escape(saved_model)}</span>"
+            if saved_model else ""
+        )
         masked = html.escape(str(c.get("maskedKey", "") or ""))
         key_cell = f"<span class='mono'>{masked}</span>" if masked else \
             "<span class='empty'>no key</span>"
@@ -691,7 +697,7 @@ def _connection_rows(connections: list[dict]) -> str:
         )
         rows.append(
             "<tr>"
-            f"<td><b>{label}</b>{star}</td>"
+            f"<td><b>{label}</b>{star}{model_line}</td>"
             f"<td>{html.escape(preset_name)}</td>"
             f"<td>{key_cell}</td>"
             f"<td class='mono conn-url'>{base}</td>"
@@ -850,6 +856,10 @@ def _connections_section(
             headers_text = html.escape("\n".join(
                 f"{name}: {value}"
                 for name, value in (editing.get("headers") or {}).items()))
+            model_value = html.escape(str(editing.get("model") or ""), quote=True)
+            model_options = "".join(
+                f"<option value='{html.escape(str(item), quote=True)}'></option>"
+                for item in (editing.get("models") or []))
             default_checked = " checked" if editing.get("isDefault") else ""
             clear_row = (
                 "<label class='empty'><input type='checkbox' name='keyClear'"
@@ -864,6 +874,8 @@ def _connections_section(
             selected = PRESETS[0].id
             key_placeholder = "not required for local presets"
             headers_text = ""
+            model_value = ""
+            model_options = ""
             default_checked = ""
             clear_row = ""
             cancel = ""
@@ -877,6 +889,10 @@ def _connections_section(
 <label class='empty' for='conn-key'>API key</label>
 <input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
 <label class='empty' for='conn-key-show'><input type='checkbox' id='conn-key-show' data-key-reveal> Show the key while typing</label>
+<label class='empty' for='conn-model'>Model</label>
+<input id='conn-model' type='text' name='model' list='conn-models' value='{model_value}' placeholder='for example kimi-k3' autocomplete='off'>
+<datalist id='conn-models'>{model_options}</datalist>
+<p class='empty'>Saved with this key. A job uses it unless that job names its own model.</p>
 <label class='empty' for='conn-headers'>Extra headers (corporate gateways, one Name: Value per line)</label>
 <textarea id='conn-headers' name='headers' rows='2' placeholder='X-Gateway: corp'>{headers_text}</textarea>
 <label class='empty'><input type='checkbox' name='isDefault' value='1'{default_checked}> Make this the default connection</label>

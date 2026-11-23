@@ -131,8 +131,19 @@ def test_create_stores_the_key_in_the_keychain_and_answers_the_mask(env, auth, k
     # The preset default filled the blank base URL.
     assert payload["baseUrl"] == "https://api.openai.com/v1"
     assert payload["maskedKey"] == "sk-...9999"
+    assert payload["model"] == ""
     # The secret itself went to the keychain alone, under the spec's shape.
     assert keychain.secrets == {("agent-desk", f"key/{payload['id']}"): SECRET}
+
+
+def test_create_saves_the_model_with_the_key(env, auth):
+    status, _h, body = _create(env, auth, model="kimi-k3")
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["model"] == "kimi-k3"
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "kimi-k3" in page
+    assert "name='model'" in page
 
 
 def test_the_secret_is_never_echoed_after_create(env, auth):
@@ -166,7 +177,8 @@ def test_unknown_fields_answer_400_naming_the_accepted_fields(env, auth):
     assert status == 400
     for typo in ("labell", "key"):
         assert typo in payload["error"]
-    for accepted in ("label", "provider", "baseUrl", "apiKey", "headers", "isDefault"):
+    for accepted in ("label", "provider", "baseUrl", "apiKey", "headers",
+                     "isDefault", "model"):
         assert accepted in payload["error"]
     # Refusing beats a silent ok with dropped values: nothing was saved.
     assert json.loads(env.request("GET", "/api/connections", auth)[2])["connections"] == []

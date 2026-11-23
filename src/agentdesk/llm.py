@@ -21,10 +21,17 @@ import socket
 import ssl
 import urllib.error
 import urllib.request
+import uuid
 from urllib.parse import urlsplit
 
 REQUEST_TIMEOUT_S = 10
 DEFAULT_MODEL = "gpt-4o-mini"
+# Cloudflare in front of OpenCode answers 403 (error 1010) to the urllib
+# default user agent, which the desk would report as a rejected key.
+USER_AGENT = "agentdesk/0.1"
+# One id for this process. OpenCode chat refuses a request that omits
+# x-opencode-session; a stable value is what their routing cache wants.
+_OPENCODE_SESSION = "ses_" + uuid.uuid4().hex
 
 # The pinned cause vocabulary. Every surface (settings test, research
 # bar, assistant, wizard) shows one of these strings as-is, so the words
@@ -155,13 +162,28 @@ def uses_azure_api_key(base_url: str) -> bool:
     return False
 
 
+def _opencode_host(base_url: str) -> bool:
+    """True for opencode.ai, the host that requires a client identity."""
+    try:
+        host = (urlsplit(base_url or "").hostname or "").lower()
+    except ValueError:
+        return False
+    return host == "opencode.ai" or host.endswith(".opencode.ai")
+
+
 def auth_headers(base_url: str, api_key: str) -> dict[str, str]:
-    """Request headers for one chat call: Azure api-key or Bearer."""
-    headers = {"Content-Type": "application/json"}
+    """Request headers for one chat call: Azure api-key or Bearer.
+
+    Every call names this client. OpenCode Go also needs a session id
+    on chat; other hosts never see that header.
+    """
+    headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
     if uses_azure_api_key(base_url):
         headers["api-key"] = api_key
     else:
         headers["Authorization"] = f"Bearer {api_key}"
+    if _opencode_host(base_url):
+        headers["x-opencode-session"] = _OPENCODE_SESSION
     return headers
 
 

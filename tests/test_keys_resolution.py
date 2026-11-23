@@ -70,6 +70,25 @@ def test_leg_1_the_jobs_own_binding_wins_over_everything(tmp_path):
     assert resolved.api_key == ""  # the key never resolves here; the hub fetches it
 
 
+def test_a_blank_binding_uses_the_model_saved_on_the_connection(tmp_path):
+    conn = _connection(tmp_path, model="kimi-k3")
+    resolved = resolve_job(
+        "agents", connections=[conn],
+        bindings=[JobBinding("agents", conn.id, "")], env=ENV)
+    assert resolved.model == "kimi-k3"
+    own = resolve_job(
+        "agents", connections=[conn],
+        bindings=[JobBinding("agents", conn.id, "other-model")], env=ENV)
+    assert own.model == "other-model"
+
+
+def test_a_single_connection_serves_the_model_saved_with_its_key(tmp_path):
+    only = _connection(tmp_path, "Only", model="kimi-k3")
+    resolved = resolve_job("agents", connections=[only], bindings=[], env=ENV)
+    assert resolved.source == "single"
+    assert resolved.model == "kimi-k3"
+
+
 def test_leg_1_a_blank_binding_model_falls_back_to_the_env_model(tmp_path):
     conn = _connection(tmp_path)
     resolved = resolve_job(
