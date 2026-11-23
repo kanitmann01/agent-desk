@@ -124,6 +124,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
     .filter((card) => layoutOrder.has(card.id))
     .sort((a, b) => (layoutOrder.get(a.id) ?? 0) - (layoutOrder.get(b.id) ?? 0));
   const trackers = pluginCards.filter(isTracker);
+  /** The status word of one dashboard source, or an empty string. */
+  const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
   const salesNeedsConnect = trackers.length === 0 && sales.mode !== 'disabled'
     && (sales.mode === 'unconfigured' || status === null || !status.configured);
   const calendarNeedsConnect = data.commitments.mode !== 'live'
@@ -133,6 +135,9 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   // card follows; a disabled source is asked to be turned on, not asked.
   const researchEnabled = data.research.enabled;
   const researchNeedsAsk = researchEnabled && data.research.lastAnsweredTs == null;
+  // The AI is the one thing every model call needs, so it is the first
+  // step a fresh desk offers and the reason the question bar waits.
+  const aiConnected = sourceStatus('research-endpoint') === 'connected';
 
   /** Focus the command bar so the user can ask a first research question. */
   function askFirst() {
@@ -143,6 +148,14 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   // Setup decisions keep the desk usable before anything has been saved;
   // a waiting recommendation takes the cell over once the desk has one.
   const setupDecisions: Array<{ key: string; title: string; why: string; sample?: boolean; action: ReactNode }> = [];
+  if (!aiConnected) {
+    setupDecisions.push({
+      key: 'ai',
+      title: 'Add your AI key',
+      why: 'The assistant, your calendar breakdowns and memory all use it.',
+      action: <Button tone="secondary" className="btn-sm" href="/settings#ai">Add</Button>,
+    });
+  }
   if (salesNeedsConnect) {
     setupDecisions.push({
       key: 'workbook',
@@ -159,11 +172,11 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       action: <Button tone="secondary" className="btn-sm" href={WALKTHROUGH}>Connect</Button>,
     });
   }
-  if (researchNeedsAsk) {
+  if (researchNeedsAsk && aiConnected) {
     setupDecisions.push({
       key: 'question',
       title: 'Ask your first question',
-      why: 'Answers come from your company endpoint and are logged.',
+      why: 'Answers come from your AI and are logged.',
       action: <Button tone="secondary" className="btn-sm" onClick={askFirst}>Ask</Button>,
     });
   }
@@ -221,10 +234,8 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
   // ---- desk health ----------------------------------------------------
   const commitments = data.commitments.status;
   /**
-   * A source's status word from the dashboard payload, or "" when no source
-   * carries that id.
+   * Desk health: one row per source, live only when the source truly is.
    */
-  const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
   const healthRows: HealthRow[] = [
     {
       name: 'Workbook',
@@ -241,7 +252,7 @@ export default function Brief({ data, onRefetch, onExpired }: BriefProps) {
       items: event ? '1' : '-',
     },
     {
-      name: 'Research',
+      name: 'AI',
       live: researchEnabled && sourceStatus('research-endpoint') === 'connected',
       status: researchEnabled && sourceStatus('research-endpoint') === 'connected' ? 'live' : 'off',
       lastRun: fromEpoch(data.research.lastAnsweredTs),

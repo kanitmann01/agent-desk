@@ -340,9 +340,9 @@ def test_the_endpoint_card_is_not_green_when_nothing_is_configured(env, auth):
     _status, _h, body = env.request("GET", "/capabilities", auth)
     page = body.decode("utf-8")
     assert "Not connected." in page
-    assert "No company endpoint configured." in page
+    assert "No AI key saved yet." in page
     # Never a false green: the connected wording is absent entirely.
-    assert "Company endpoint configured." not in page
+    assert "AI connected." not in page
 
 
 def test_the_endpoint_card_names_the_error_state_of_a_failing_call(env, auth):
@@ -369,7 +369,7 @@ def test_a_configured_endpoint_reads_connected():
         _status, _h, body = booted.request("GET", "/capabilities", auth)
         page = body.decode("utf-8")
         assert "Connected." in page
-        assert "Company endpoint configured." in page
+        assert "AI connected." in page
     finally:
         booted.close()
 
@@ -469,7 +469,7 @@ def test_the_first_snapshot_state_renders_watching():
     sources = [
         SourceStatus(SRC_EXCEL, STATUS_CONNECTED, "Watches Q4-sales.xlsx."),
         SourceStatus(SRC_CALENDAR, STATUS_NOT_CONNECTED, "No calendar data yet."),
-        SourceStatus(SRC_RESEARCH, STATUS_NOT_CONNECTED, "No company endpoint configured."),
+        SourceStatus(SRC_RESEARCH, STATUS_NOT_CONNECTED, "No AI key saved yet."),
     ]
     page = capabilities_view.render_capabilities_page(
         {}, sources, {"state": excel_core.STATE_FIRST_SNAPSHOT, "cause": ""},

@@ -22,6 +22,13 @@ const BASE: DashboardData = {
   plugins: { cards: [] },
 };
 
+/** The source table of a desk whose AI key is saved: the hub can serve a call. */
+const AI_SAVED: DashboardData['sources'] = {
+  connected: 1,
+  total: 3,
+  items: [{ id: 'research-endpoint', status: 'connected', detail: 'AI connected.' }],
+};
+
 const HALVORSEN: Recommendation = {
   cardId: 'card-1',
   title: 'Halvorsen Freight: December 15 (in 25 days)',
@@ -58,12 +65,23 @@ describe('the Decisions cell', () => {
     expect(screen.queryByText('Connect a workbook')).not.toBeInTheDocument();
   });
 
-  it('falls back to the setup decisions when there are none', () => {
+  it('leads with the AI key when none is saved, and holds the question until it is', () => {
     show(BASE);
+    // The AI key is the one thing every model call needs (spec 022): it is
+    // the first row, one click from the key form, and the first question
+    // waits for it instead of inviting an error.
+    expect(screen.getByRole('link', { name: 'Add' })).toHaveAttribute('href', '/settings#ai');
+    expect(screen.getByText('Add your AI key')).toBeInTheDocument();
     expect(screen.getByText('Connect a workbook')).toBeInTheDocument();
     expect(screen.getByText('Connect your calendar')).toBeInTheDocument();
-    expect(screen.getByText('Ask your first question')).toBeInTheDocument();
+    expect(screen.queryByText('Ask your first question')).not.toBeInTheDocument();
     expect(screen.queryByText('Nothing needs a decision.')).not.toBeInTheDocument();
+  });
+
+  it('offers the first question once the AI key is saved', () => {
+    show({ ...BASE, sources: AI_SAVED });
+    expect(screen.queryByText('Add your AI key')).not.toBeInTheDocument();
+    expect(screen.getByText('Ask your first question')).toBeInTheDocument();
   });
 
   it('links the overflow line to the inbox', () => {
@@ -119,6 +137,7 @@ describe('the Decisions cell', () => {
   it('shows the empty state once the desk is set up', () => {
     show({
       ...BASE,
+      sources: AI_SAVED,
       sales: {
         enabled: true,
         mode: 'live',
