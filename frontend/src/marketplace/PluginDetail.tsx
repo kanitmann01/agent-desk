@@ -357,7 +357,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
           <p>{missing ? `No plugin in the catalog has the id “${id}”.` : load.message}</p>
           <div className="mkt-actions">
             {!missing && <Button tone="secondary" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>}
-            <MarketLink to="/marketplace" className="btn btn-secondary">Back to Discover</MarketLink>
+            <MarketLink to="/marketplace" className="btn btn-secondary">Back to plugins</MarketLink>
           </div>
         </div>
       </div>

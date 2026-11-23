@@ -33,10 +33,14 @@ const linkedHrefs = [...new Set([...hrefsOf(rail), ...hrefsOf(dashboard)])].filt
   href.startsWith('/'),
 );
 
-// The plain-form action the dashboard posts to a server surface.
-const formActions = [...dashboard.matchAll(/action=["']([^"']+)["']/g)]
-  .map((m) => m[1])
-  .filter((action) => action.startsWith('/'));
+// Every plain-form action the SPA posts to a server surface. Today the
+// only one is the plugin wizard's door on the Plugins page (spec 022
+// moved it out of the home header), so the scan walks every source file:
+// a form behind a component the dashboard no longer holds is still a form.
+const formActions = [...new Set(
+  walkSources(resolve(frontend, 'src')).flatMap((file) =>
+    [...readFileSync(file, 'utf8').matchAll(/action=["']([^"']+)["']/g)].map((m) => m[1])),
+)].filter((action) => action.startsWith('/'));
 
 // The API targets the SPA calls: walk every source file (the test tree
 // itself excluded, as the tokens walk does) and collect the string
@@ -102,7 +106,7 @@ describe('the dev proxy covers every server page the SPA links to', () => {
     expect(linkedHrefs).toContain('/marketplace');
   });
 
-  it('collects the dashboard form actions to check', () => {
+  it('collects the form actions to check', () => {
     expect(formActions.length).toBeGreaterThan(0);
     expect(formActions).toContain('/wizard/start');
   });

@@ -829,7 +829,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         "/agents": "Agents",
         "/memory": "Memory",
         "/settings": "Settings",
-        "/marketplace": "Marketplace",
+        "/marketplace": "Plugins",
     }.get(active, "Agent Desk")
     phone = (
         '<div class="phone-bar">'
@@ -854,7 +854,9 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         # server can render. Their routes still answer for deep links.
         f'{entry("/memory", "Memory")}'
         f'{entry("/mail", "Mail")}'
-        f'{entry("/marketplace", "Marketplace")}'
+        # The marketplace is the Plugins page (spec 022); the address is
+        # unchanged so every saved link still opens it.
+        f'{entry("/marketplace", "Plugins")}'
         f'{entry("/settings", "Settings")}'
         f'{toggle}'
         '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
@@ -1003,13 +1005,13 @@ def render_decisions_widget(recommendations: list[dict], now, setup: list[dict] 
     )
 
 
-def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0, banner: str = "") -> str:
+def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, date_line: str, inbox_count: int = 0, skills: Iterable[dict] | None = None, connected_sources: int = 0, banner: str = "", sample: bool = False) -> str:
     """The full dashboard document: rail, greeting, skills, widgets, footer.
 
     The one source line is only ever the truth: nothing connected gets a
     gentle pointer to each card's connect step, anything connected gets a
-    live count. No card carries invented values, so there is no sample
-    state to confess in a banner.
+    live count, and the labelled sample set is named as sample and never
+    counted among the live sources. No card carries invented values.
     """
     cards = "".join(_widget_html(w) for w in widgets)
     strip = ""
@@ -1022,6 +1024,8 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
         strip = f"<div class='skills-strip' aria-label='Your skills'>{buttons}</div>"
     if connected_sources > 0:
         dot_class, source_line = "dot", f"Live: {connected_sources} of {len(SOURCE_IDS)} sources connected."
+    elif sample:
+        dot_class, source_line = "dot sample", "Sample data is on: nothing here is from your own files yet."
     else:
         dot_class, source_line = "dot sample", "Not connected yet: each card below has its own one-step connect."
     banner_html = (
@@ -1037,7 +1041,6 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     <h1>{html.escape(greeting)}</h1>
     <p class="sub"><span class="{dot_class}" aria-hidden="true"></span>{html.escape(date_line)} {html.escape(source_line)}</p>
   </div>
-  <form method="post" action="/wizard/start" class="addplugin-form"><button class="btn btn-primary" type="submit">Add plugin</button></form>
 </div>
 {banner_html}
 {strip}

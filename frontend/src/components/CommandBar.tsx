@@ -14,6 +14,9 @@ interface CommandBarProps {
   // True when research is off in settings: the surface states the pause
   // instead of accepting a question that cannot run.
   disabled?: boolean;
+  // True when no AI key is saved: the send control becomes the link to add
+  // one, and a question is kept, not sent.
+  needsAi?: boolean;
   // True when the question was answered and the field should clear.
   onAsk: (question: string) => Promise<boolean>;
 }
@@ -30,9 +33,11 @@ const ICON_SEND = (
  *
  * Enter asks and Shift+Enter inserts a newline; `onAsk` resolves true when
  * the question was answered, which is what clears the field. A paused
- * research source disables the bar instead of accepting a question.
+ * research source disables the bar instead of accepting a question. With no
+ * AI key saved (`needsAi`) the control is the link that adds one (spec 022):
+ * nothing is sent until the desk can answer.
  */
-export default function CommandBar({ busy, disabled = false, onAsk }: CommandBarProps) {
+export default function CommandBar({ busy, disabled = false, needsAi = false, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
   const fieldRef = useRef<HTMLTextAreaElement>(null);
 
@@ -51,7 +56,7 @@ export default function CommandBar({ busy, disabled = false, onAsk }: CommandBar
    */
   async function ask() {
     const trimmed = question.trim();
-    if (!trimmed || busy || disabled) return;
+    if (!trimmed || busy || disabled || needsAi) return;
     const answered = await onAsk(trimmed);
     if (answered) setQuestion('');
   }
@@ -82,12 +87,18 @@ export default function CommandBar({ busy, disabled = false, onAsk }: CommandBar
           onKeyDown={onInputKey}
         />
         <span className="cmd-hint" aria-hidden="true">
-          {disabled ? 'Research is turned off in settings.' : <><kbd>Enter</kbd> to ask</>}
+          {disabled
+            ? 'Research is turned off in settings.'
+            : needsAi ? 'Add your AI key to ask.' : <><kbd>Enter</kbd> to ask</>}
         </span>
         <span className="cmd-magnet">
-          <button className="cmd-send" type="button" aria-label="Research" onClick={() => void ask()} disabled={busy || disabled}>
-            <span className="cmd-send-label">Research</span> {ICON_SEND}
-          </button>
+          {needsAi ? (
+            <a className="cmd-send" href="/settings#ai">Connect your AI</a>
+          ) : (
+            <button className="cmd-send" type="button" aria-label="Research" onClick={() => void ask()} disabled={busy || disabled}>
+              <span className="cmd-send-label">Research</span> {ICON_SEND}
+            </button>
+          )}
         </span>
       </div>
     </section>
