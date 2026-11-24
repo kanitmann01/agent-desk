@@ -64,6 +64,10 @@ function DashboardApp() {
   // The view report is a POST, so it must fire once per mount, after the
   // first successful load, and never make rendering wait for it.
   const reportedView = useRef(false);
+  // One increasing number per read. A response that comes back after a
+  // newer read was started is stale: it belongs to a payload the screen
+  // has already moved past, so it is dropped instead of overwriting it.
+  const latestRead = useRef(0);
 
   // Focus the failure heading as it mounts (it stays out of the tab
   // order) so Try again is the following keypress. A callback ref runs
@@ -73,19 +77,27 @@ function DashboardApp() {
   }, []);
 
   const refetch = useCallback(async () => {
-    const res = await getJson('/api/dashboard');
-    if (res.status === 401) {
-      setExpired(true);
-      return;
-    }
-    if (!res.ok) {
-      setLoadFailed(true);
-      return;
-    }
-    setData(res.data as DashboardData);
-    if (!reportedView.current) {
-      reportedView.current = true;
-      void postJson('/api/dashboard/view').catch(() => {});
+    const read = ++latestRead.current;
+    try {
+      const res = await getJson('/api/dashboard');
+      if (read !== latestRead.current) return;
+      if (res.status === 401) {
+        setExpired(true);
+        return;
+      }
+      if (!res.ok) {
+        setLoadFailed(true);
+        return;
+      }
+      setData(res.data as DashboardData);
+      if (!reportedView.current) {
+        reportedView.current = true;
+        void postJson('/api/dashboard/view').catch(() => {});
+      }
+    } catch {
+      // A tick that cannot reach the server (offline, a dropped
+      // connection) is not a user action: the last good screen stays up
+      // and the console stays quiet. The next tick tries again.
     }
   }, []);
 

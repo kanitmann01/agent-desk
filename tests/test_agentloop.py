@@ -97,6 +97,28 @@ def _wait_until(predicate, timeout: float = 5.0, step: float = 0.02) -> bool:
     return False
 
 
+def _expected_full_pass_steps(settings) -> list[str]:
+    """The step names one full pass should run, derived as the loop does.
+
+    The server module is imported for its registration side effect, so the
+    registry holds every ticket step even when this file runs on its own. A
+    full pass (only=None) runs every step whose gate allows it, in registry
+    order; a gate that raises still yields a row, a failed one, exactly as
+    _run_steps records it, so it counts as expected too.
+    """
+    import agentdesk.server.app  # noqa: F401 - registers the ticket steps
+
+    names = []
+    for step in STEPS:
+        try:
+            enabled = step.enabled(settings)
+        except Exception:  # noqa: BLE001 - the loop records the failure row
+            enabled = True
+        if enabled:
+            names.append(step.name)
+    return names
+
+
 # ---- schedule.interval_due ----------------------------------------------
 
 
@@ -357,7 +379,12 @@ def test_startup_deskcheck_heals(tmp_path, monkeypatch):
         # The startup pass is a full pass (spec 023): the interval counts
         # from it, so the next pass is a full interval after this one.
         assert server.ledger.latch_value("loop:last_run_at") is not None
-        assert "deskcheck" in [row["name"] for row in loop.status()["lastSteps"]]
+        # It also ran every step a fresh desk's switches allow, in registry
+        # order, not the old desk-check-only startup pass. The expected set
+        # is derived from the registry and the gates, as the loop derives it.
+        expected = _expected_full_pass_steps(server.settings)
+        assert [row["name"] for row in loop.status()["lastSteps"]] == expected
+        assert len(expected) > 1
     finally:
         loop.stop()
 
@@ -393,7 +420,11 @@ def test_the_first_pass_comes_now(tmp_path):
         # full interval after it, not after boot.
         assert status["lastRunTs"] == pytest.approx(NOW, abs=5)
         assert status["nextRunTs"] == pytest.approx(NOW + 3600, abs=5)
-        assert "deskcheck" in [row["name"] for row in status["lastSteps"]]
+        # The first pass is a full pass (spec 023), not just the desk
+        # check: every registered step whose gate allows it ran, in order.
+        expected = _expected_full_pass_steps(server.settings)
+        assert [row["name"] for row in status["lastSteps"]] == expected
+        assert len(expected) > 1
     finally:
         loop.stop()
 
