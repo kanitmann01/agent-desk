@@ -104,6 +104,40 @@ def test_a_saved_key_makes_the_dashboard_report_the_ai_connected():
         booted.close()
 
 
+def test_a_cleared_key_never_counts_as_the_ai_being_connected():
+    """A connection whose stored key was removed cannot serve a call, so
+    the desk must not claim it can: the dashboard's AI source, the setup
+    step and Settings all read the same resolution hub, and asking the
+    assistant says what to do instead of failing on an empty key."""
+    booted = _desk()
+    try:
+        auth = booted.exchange()
+        _save_key(booted, auth)
+        created = json.loads(
+            booted.request("GET", "/api/connections", auth)[2])["connections"][0]
+        # Remove the stored key the way the Settings form's action does.
+        status, _h, _b = booted.post_json(
+            f"/api/connections/{created['id']}/update", {
+                "label": "My AI", "provider": "custom",
+                "baseUrl": "http://127.0.0.1:9/v1", "keyClear": "1",
+            }, auth)
+        assert status == 200
+        payload = _dashboard(booted, auth)
+        assert _source(payload, "research-endpoint")["status"] == "not_connected"
+        assert _source(payload, "research-endpoint")["detail"] == "No AI key saved yet."
+        assert [step["done"] for step in payload["setup"]["steps"]] == [False, False, False]
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "No AI key is saved yet. Add one above first." in page
+        status, _h, body = booted.post_json(
+            "/assistant/ask", {"question": "Hello?"}, auth)
+        assert status == 200
+        result = json.loads(body)
+        assert result["status"] == "degraded"
+        assert "No AI key is saved yet" in result["cause"]
+    finally:
+        booted.close()
+
+
 def test_a_fresh_desk_says_no_ai_key_is_saved():
     booted = _desk()
     try:
