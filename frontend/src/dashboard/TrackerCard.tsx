@@ -54,6 +54,7 @@ export default function TrackerCard({ card, onRefetch, onExpired }: TrackerCardP
   // wizard-built tracker chose its own face, so its elements are not the
   // classic five and it keeps drawing them as before.
   const wizardFace = live && card.payload?.face === 'ui-schema';
+  /** True for an element that only says again what the tile itself draws. */
   const restatesTile = (element: PluginElement): boolean =>
     (element.kind === 'metric' && element.label === 'Value')
     || (element.kind === 'delta' && element.label === 'Change')

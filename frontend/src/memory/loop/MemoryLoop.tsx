@@ -640,6 +640,7 @@ function CaptureSettings({ data, actOutcome, onChanged }: { data: LoopState; act
     setResult('Setting saved.');
     onChanged();
   };
+  /** Save automatic capture on or off; a second choice waits for the first. */
   const chooseAuto = (auto: boolean) => {
     if (pendingKey) return;
     setPendingAuto(auto ? 'auto' : 'ask');
@@ -798,6 +799,7 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onKeep, onRef
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [reflectResult, setReflectResult] = useState<string | null>(null);
   const reflectPhase = useWaitPhase(reflectActive);
+  /** Run one reflection on the AI; the result or its cause is said in place. */
   const askAi = async () => {
     if (reflectActive) return;
     setReflectActive(true);

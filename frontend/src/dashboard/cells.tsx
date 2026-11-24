@@ -338,6 +338,7 @@ export function HealthMatrix({ sources, plugins = [] }: {
   sources: HealthRow[];
   plugins?: HealthRow[];
 }) {
+  /** One source as a row: its name, live square and status word, last run, items. */
   const row = (item: HealthRow) => (
     <tr key={item.name}>
       <th scope="row" title={item.name}>{item.name}</th>
