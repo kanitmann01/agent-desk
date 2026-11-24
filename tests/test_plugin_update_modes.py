@@ -10,6 +10,7 @@ modes make. A file read is a file read.
 """
 
 import json
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -61,8 +62,17 @@ def workspace(tmp_path):
 
 
 def _write_value(workspace: Path, value: int) -> None:
-    (workspace / "data" / "sales.json").write_text(
-        json.dumps({"value": value}), encoding="utf-8")
+    """Write the watched file one clock tick after any earlier write.
+
+    Windows stamps a write with the system clock's tick, about one
+    millisecond, so two writes inside one tick share a modification time
+    and the tile rightly reads that as no change. A real save never lands
+    that close to the one before it, so the helper steps the time forward.
+    """
+    path = workspace / "data" / "sales.json"
+    path.write_text(json.dumps({"value": value}), encoding="utf-8")
+    written = path.stat()
+    os.utime(path, ns=(written.st_atime_ns, written.st_mtime_ns + 1_000_000))
 
 
 def _attached(workspace: Path, tmp_path: Path, events: list) -> PluginWidgetRunner:
