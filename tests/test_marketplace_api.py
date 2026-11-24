@@ -178,7 +178,7 @@ def test_every_marketplace_post_route_requires_session(booted):
     for path in ("/install", "/update", "/consent", "/rollback", "/uninstall",
                  "/enable", "/disable", "/retest", "/purge-data", "/report",
                  "/publish", "/deprecate", "/yank", "/quarantine",
-                 "/packs/install", "/validate"):
+                 "/packs/install", "/validate", "/manual-value"):
         status, _headers, _body = booted.post_json(
             "/api/marketplace" + path, {"id": "sample"},
             headers=booted.host_header())

@@ -315,7 +315,12 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
-  if (card.payload?.setup || card.payload?.tracker || card.id === 'excel-report' || card.id.startsWith('excel-report~')) {
+  // The wizard asks what a tile should show, so a workbook tile may carry a
+  // face other than the classic one. It draws those elements like any other
+  // card; the classic tracker card is what a tile without a chosen face gets.
+  if (card.payload?.setup
+      || (card.payload?.tracker && card.payload?.face !== 'ui-schema')
+      || card.id === 'excel-report' || card.id.startsWith('excel-report~')) {
     return <TrackerCard card={card} onRefetch={onRefetch} onExpired={onExpired} />;
   }
   if (card.freshness === 'setup') {
@@ -336,7 +341,6 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
   const elements = fresh ? (card.payload?.elements ?? []) : [];
   const insight = fresh ? card.payload?.insight : undefined;
   const blocks = insight?.blocks ?? [];
-
   /**
    * Ask the server to run the plugin again, then refresh the card.
    *
@@ -399,9 +403,70 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
           {block.text}
         </p>
       ))}
+      {card.manualMetric ? (
+        <ManualValueForm pluginId={card.manualMetric} onRefetch={onRefetch} onExpired={onExpired} />
+      ) : null}
       {insight?.press ? (
         <PressOffer press={insight.press} onRefetch={onRefetch} onExpired={onExpired} />
       ) : null}
     </WidgetCard>
+  );
+}
+
+/**
+ * The small form a hand-kept number tile carries.
+ *
+ * A number nobody can set is a broken tile, so the tile itself asks for one.
+ * Saving writes the plugin's own data file through the marketplace route and
+ * then refreshes, which is what makes the value appear without a re-test.
+ */
+function ManualValueForm({ pluginId, onRefetch, onExpired }: {
+  pluginId: string;
+  onRefetch: () => Promise<void>;
+  onExpired: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [unit, setUnit] = useState('');
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+
+  async function save() {
+    if (!value.trim()) return;
+    setBusy(true);
+    let res;
+    try {
+      res = await postJson('/api/marketplace/manual-value', {
+        id: pluginId, value, unit, target,
+      });
+    } catch {
+      setBusy(false);
+      setNote('The desk could not reach its server; the value was not saved.');
+      return;
+    }
+    setBusy(false);
+    if (res.status === 401) { onExpired(); return; }
+    if (!res.ok) {
+      const body = res.data as { message?: string } | null;
+      setNote(body?.message || 'The value was not saved.');
+      return;
+    }
+    setValue('');
+    setNote('Saved.');
+    await onRefetch();
+  }
+
+  return (
+    <form className="manual-value" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <label className="w-note" htmlFor={`manual-${pluginId}`}>Set the value</label>
+      <input id={`manual-${pluginId}`} type="number" inputMode="decimal" value={value}
+             onChange={(event) => setValue(event.target.value)} required />
+      <input type="text" value={unit} placeholder="Unit" aria-label="Unit"
+             onChange={(event) => setUnit(event.target.value)} />
+      <input type="number" inputMode="decimal" value={target} placeholder="Target"
+             aria-label="Target" onChange={(event) => setTarget(event.target.value)} />
+      <Button tone="secondary" type="submit" disabled={busy}>Save</Button>
+      {note ? <p className="w-note" role="status">{note}</p> : null}
+    </form>
   );
 }

@@ -52,8 +52,7 @@
 .mkt-page { display: flex; flex-direction: column; gap: 22px; }
 .mkt-page-head { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
 /* The plugin wizard's door (spec 022): a plain form post to the server-rendered walk. */
-.mkt-describe { margin-top: 8px; }
-.mkt-eyebrow {
+.mkt-describe { margin-top: 8px; }.mkt-eyebrow {
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
@@ -296,6 +295,33 @@
 .mkt-skel-title { height: 16px; width: 55%; }
 .mkt-skel-short { width: 35%; }
 @keyframes mkt-pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+/* The describe fill: one row per choice, a skeleton while it runs and the
+   chosen label with its reason when it lands. Reuses .mkt-skel's animation,
+   so reduced motion turns both off together. */
+.mkt-describe-input {
+  font: inherit;
+  padding: 8px 10px;
+  min-width: 280px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink);
+  margin-right: 8px;
+}
+.mkt-fill { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
+.mkt-fill-row { display: flex; flex-direction: column; gap: 4px; }
+.mkt-fill-prompt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.mkt-fill-skel { width: 60%; height: 14px; }
+.mkt-fill-label { font-weight: 600; }
+.mkt-fill-why { margin: 0; font-size: 13px; color: var(--muted); }
+.mkt-fill-note { margin: 0 0 12px; }
+.mkt-fill-actions { display: flex; gap: 8px; }
 
 .mkt-error-panel {
   display: flex; flex-direction: column; gap: 10px; align-items: flex-start;

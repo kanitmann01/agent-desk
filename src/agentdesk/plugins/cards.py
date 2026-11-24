@@ -9,6 +9,7 @@ API's camelCase shape.
 """
 from __future__ import annotations
 
+from agentdesk.plugins.render import render_elements
 from agentdesk.plugins.vocabulary import DELTA, METRIC, SPARKLINE, TEXT
 
 
@@ -100,7 +101,8 @@ def setup_card(plugin_id: str, instance_id: str, *, title: str, version: str,
 
 
 def tracker_card(plugin_id: str, instance_id: str, *, title: str,
-                 version: str, pilot: bool, reading: dict) -> dict:
+                 version: str, pilot: bool, reading: dict,
+                 manifest: dict | None = None) -> dict:
     """Build a confirmed instance's live card from its tracker reading.
 
     The card is always keyed "<plugin>~<instance>" (a confirmed main keeps
@@ -108,12 +110,64 @@ def tracker_card(plugin_id: str, instance_id: str, *, title: str,
     carries the elements, the fresh status and the full tracker record. The
     base card is assembled first, so the identity refusal answers before the
     reading is even reduced.
+
+    When the plugin's ui-schema asks for a face other than the classic one
+    (the manager chose a big number, a bar, a table or a trend when they built
+    it), the face is rendered from that schema and the reading's own bindings.
+    The classic face stays the default, so every plugin built before the
+    wizard asked the question renders exactly as it always did.
     """
     card = _card(plugin_id, instance_id,
                  card_id=f"{plugin_id}~{instance_id}", title=title,
                  version=version, pilot=pilot, freshness="fresh")
-    card["payload"] = _tracker_payload(title, reading)
+    payload = _tracker_payload(title, reading)
+    face = _rendered_face(manifest, reading)
+    if face is not None:
+        payload["elements"] = face
+        # The classic face is what TrackerCard draws; without it the SPA
+        # draws the elements this manifest asked for.
+        payload.pop("tracker", None)
+        payload["face"] = "ui-schema"
+    card["payload"] = payload
     return card
+
+
+def _rendered_face(manifest: dict | None, reading: dict) -> list | None:
+    """The elements a tracker plugin's own ui-schema asks for, or None.
+
+    None means "draw the classic face": a manifest the caller did not supply,
+    a schema with no elements, or one whose elements are the classic three
+    (value, change, workbook). The bindings are the reading's own, mapped to
+    the names the schema vocabulary expects.
+    """
+    if not isinstance(manifest, dict):
+        return None
+    elements = manifest.get("_ui_elements")
+    if not isinstance(elements, list) or not elements:
+        return None
+    asked = [element.get("type") for element in elements if isinstance(element, dict)]
+    if asked in (["metric", "delta", "text"], ["text", "metric"]):
+        return None
+    bindings = _tracker_bindings(reading)
+    rendered = render_elements({"elements": elements}, bindings)
+    return rendered or None
+
+
+def _tracker_bindings(reading: dict) -> dict:
+    """The reading's values under the names a ui-schema element binds to."""
+    points = reading.get("points") or []
+    table = reading.get("table") or {}
+    rows = table.get("rows") or []
+    return {
+        "value": _format_number(reading["value"]),
+        "delta": reading["delta"],
+        "direction": reading["direction"],
+        "points": points,
+        "rows": rows,
+        "table": rows,
+        "file": reading["file"],
+        "target": (reading.get("goal") or {}).get("value"),
+    }
 
 
 def _tracker_payload(title: str, reading: dict) -> dict:
@@ -196,12 +250,18 @@ def widget_card(plugin_id: str, instance_id: str, *, title: str, version: str,
     and when it was checked); ``payload`` is the bound ui-schema render
     model or None when nothing bound.
     """
-    return _card(plugin_id, instance_id, card_id=plugin_id, title=title,
+    card = _card(plugin_id, instance_id, card_id=plugin_id, title=title,
                  version=version, pilot=pilot, state=state,
                  freshness=data.get("status", "attention"),
                  cause=data.get("cause", ""),
                  checked_at=data.get("checked_at", ""),
                  payload=payload, manifest=manifest)
+    # A hand-kept number can only be supplied by the manager, so its tile
+    # carries the form that supplies it.
+    source = (((manifest or {}).get("contributes") or {}).get("widgets") or [{}])[0]
+    if isinstance(source, dict) and (source.get("dataSource") or {}).get("type") == "manual-metric":
+        card["manualMetric"] = plugin_id
+    return card
 
 
 def card_to_api(card: dict, title: str | None = None) -> dict:
@@ -226,4 +286,5 @@ def card_to_api(card: dict, title: str | None = None) -> dict:
         "pluginId": card.get("pluginId", ""),
         "instanceId": card.get("instanceId", ""),
         "payload": card.get("payload"),
+        "manualMetric": card.get("manualMetric", ""),
     }

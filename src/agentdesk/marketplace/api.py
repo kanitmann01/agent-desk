@@ -1135,6 +1135,7 @@ class _API:
             "/enable": self.post_enable,
             "/disable": self.post_disable,
             "/retest": self.post_retest,
+            "/manual-value": self.post_manual_value,
             "/purge-data": self.post_purge_data,
             "/report": self.post_report,
             "/share": lambda body: self._set_shared(body, True),
@@ -1674,6 +1675,58 @@ class _API:
         """Delete an installed plugin's stored data after the confirmation token."""
         self._lifecycle(body, "purge_data")
 
+    def post_manual_value(self, body: dict) -> None:
+        """Save the value a manager keeps for a hand-kept number tile.
+
+        The write lands in the plugin's own data directory, as the JSON object
+        the manual-metric reader already reads: a numeric value plus an
+        optional unit, target and update time. Nothing else is accepted, so a
+        caller cannot point the tile at a different file.
+        """
+        plugin_id = self._required_id(body)
+        plugins = self.plugins
+        if plugins is None:
+            raise MarketplaceError(503, "marketplace:unavailable",
+                                   "the plugin runtime is not configured")
+        try:
+            installed = plugins.record(plugin_id)
+        except PluginError:
+            installed = None
+        if not installed or not installed.get("versions"):
+            raise MarketplaceError(404, "plugin:unknown",
+                                   f"plugin {plugin_id} is not installed",
+                                   {"id": plugin_id})
+        raw_value = body.get("value")
+        try:
+            value = float(raw_value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise MarketplaceError(400, "manual-value:bad",
+                                   "a value is required and must be a number")
+        if value != value or value in (float("inf"), float("-inf")):
+            raise MarketplaceError(400, "manual-value:bad",
+                                   "the value must be a finite number")
+        document = {"value": int(value) if value.is_integer() else value,
+                    "updatedAt": datetime.now().isoformat(timespec="seconds")}
+        unit = body.get("unit")
+        if isinstance(unit, str) and unit.strip():
+            document["unit"] = unit.strip()[:24]
+        target = _finite(body.get("target"))
+        if target is not None:
+            document["target"] = int(target) if target.is_integer() else target
+        history = _manual_history(installed, document["value"])
+        if history:
+            document["history"] = history
+        data_dir = Path(str(installed.get("data_dir") or ""))
+        data_dir.mkdir(parents=True, exist_ok=True)
+        target_path = data_dir / "manual.json"
+        target_path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        # The tile's own mode decides what it shows next; a re-test here would
+        # defeat a "when it changes" tile's stored reading, so the refresh is
+        # the change hook's job.
+        self.audit("manual-value", plugin_id, "ok")
+        self.send(200, {"ok": True, "saved": document})
+
+
     def _set_shared(self, body: dict, shared: bool) -> None:
         """Share an installed plugin with paired desks (peer plane)."""
         plugin_id = self._required_id(body)
@@ -2124,3 +2177,33 @@ def handle_post(handler) -> bool:
         return False
     _run(handler, "POST")
     return True
+
+
+def _finite(value) -> float | None:
+    """A finite number from a request field, or None when it is not one."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def _manual_history(installed: dict, value) -> list:
+    """The previous values plus this one, for the tile's own trend.
+
+    The reader draws a sparkline from ``history``, so a hand-kept number
+    gathers its series the same way an aggregate does. A missing or corrupt
+    existing file simply starts the series here.
+    """
+    data_dir = Path(str(installed.get("data_dir") or ""))
+    previous: list = []
+    try:
+        existing = json.loads((data_dir / "manual.json").read_text(encoding="utf-8"))
+        if isinstance(existing, dict) and isinstance(existing.get("history"), list):
+            previous = [entry for entry in existing["history"]
+                        if isinstance(entry, dict)][-29:]
+    except (OSError, ValueError):
+        previous = []
+    previous.append({"at": datetime.now().isoformat(timespec="seconds"),
+                     "value": value})
+    return previous

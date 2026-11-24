@@ -815,6 +815,9 @@ class PluginRuntime:
         version = "" if not entry else str(entry.get("active_version") or "")
         pilot = bool(entry and entry.get("pilot_views_left", 0) > 0)
         plugin_name = str(entry.get("name") or plugin_id) if entry else plugin_id
+        # The manifest carries which face the manager asked for, so a tile
+        # built as a big number or a bar renders that and not the classic one.
+        manifest = self._active_manifest(entry) if entry else {}
         if not instances:
             return [setup_card(plugin_id, "main", title=plugin_name,
                                version=version, pilot=pilot, step="source")]
@@ -839,8 +842,39 @@ class PluginRuntime:
                 continue
             cards.append(tracker_card(plugin_id, instance_id, title=title,
                                       version=version, pilot=pilot,
-                                      reading=reading))
+                                      reading=reading, manifest=manifest))
         return cards
+
+    def _active_manifest(self, entry: dict) -> dict:
+        """The active version's manifest with its parsed ui-schema elements.
+
+        The elements ride under a private key so a card can render the face the
+        manager chose without the runtime handing every caller a second file.
+        An unreadable manifest or schema is an empty dict: the card then draws
+        the classic face rather than failing.
+        """
+        try:
+            version_dir = self._active_version_dir(entry)
+        except Exception:  # noqa: BLE001 - a bad entry means no face, not a crash
+            return {}
+        try:
+            manifest = json.loads((version_dir / "manifest.json").read_text(
+                encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        try:
+            widget = ((manifest.get("contributes") or {}).get("widgets") or [None])[0]
+            render = (widget or {}).get("render") or {}
+            schema_file = render.get("file")
+            if isinstance(schema_file, str):
+                schema = json.loads((version_dir / schema_file).read_text(
+                    encoding="utf-8"))
+                elements = schema.get("elements")
+                if isinstance(elements, list):
+                    manifest["_ui_elements"] = elements
+        except (OSError, ValueError):
+            pass
+        return manifest
 
     def _materialize_alias(self, manifest: dict) -> None:
         """Create the instance an alias plugin points at on its target.

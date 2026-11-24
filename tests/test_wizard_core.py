@@ -30,15 +30,19 @@ from agentdesk.wizard import (
     WizardCompiler,
     WizardError,
     WizardStore,
+    merge_answers,
+    questions_for_answers,
+    resolve_choice,
     safe_slug,
 )
 from agentdesk.wizard import core as wizard_core
 
-CANONICAL_DESCRIPTION = "Watch my sales workbook and show the 24-hour change."
+CANONICAL_DESCRIPTION = "Watch my sales workbook and show the latest figure."
 CANONICAL_ANSWERS = {
     "source": "An Excel workbook",
-    "file": "reports/*.xlsx",
-    "display": "The 24-hour change",
+    "show": "The latest figure",
+    "look": "A big number",
+    "update": "When I open the desk",
 }
 CANONICAL_GLOB = "${workspace}/reports/*.xlsx"
 FROZEN_NOW = 1731340800.0
@@ -47,10 +51,10 @@ FIXTURE_DIR = TESTS_DIR / "fixtures" / "validator" / "valid-manifest"
 FIXTURE_MANIFEST = json.loads((FIXTURE_DIR / "manifest.json").read_text(encoding="utf-8"))
 FIXTURE_UI = json.loads((FIXTURE_DIR / "widget.ui.json").read_text(encoding="utf-8"))
 
-# The style prompt asks for buildability, the repair prompt for a
-# corrected manifest: the fakes branch on those phrases.
-STYLE_MARKER = "buildable"
+# The prompt markers the fakes branch on.
+STYLE_MARKER = "Give the tile a short name"
 REPAIR_MARKER = "corrected manifest"
+AUTOFILL_MARKER = "Fill in the four choices"
 
 
 def frozen_clock() -> float:
@@ -65,21 +69,28 @@ def canonical_session() -> object:
     return make_store().create(CANONICAL_DESCRIPTION)
 
 
+MAIL_ANSWERS = {
+    "source": "My mail",
+    "show": "The items that need me",
+    "look": "A list",
+    "update": "When it changes",
+}
+
+
 # ---- pinned constants ----------------------------------------------------
 
 
 def test_pinned_constants_hold_and_match_the_validator_vocabulary():
     assert WIZARD_STATES == ("questions", "building", "preview", "approved", "escalated")
-    # The wizard drafts a subset: it composes a watched file glob for
-    # every kind it knows, so the glob-less pipeline kinds the validator
-    # accepts since #64 (mail-digest, research-brief) stay
-    # registry-authored until the wizard learns to draft them. The pin
-    # that matters: nothing the wizard drafts can fail the validator's
-    # type check.
+    # Every source the questions can offer is one the composer can build, and
+    # the pin that matters holds: none of them can fail the validator's type
+    # check. The pipeline kinds are drafted now, unlike before spec 024.
     assert set(VOCABULARY) <= set(KNOWN_DATA_SOURCE_TYPES)
+    assert "mail-digest" in VOCABULARY and "calendar-read" in VOCABULARY
     assert MAX_QUESTIONS == 5
     assert MAX_REPAIRS == 3
-    assert len(DEFAULT_QUESTIONS) == 3
+    # The first question is the only one a fresh description opens.
+    assert len(DEFAULT_QUESTIONS) == 1
 
 
 def test_safe_slug_makes_filesystem_safe_id_fragments():
@@ -93,59 +104,111 @@ def test_safe_slug_makes_filesystem_safe_id_fragments():
 # ---- questions -----------------------------------------------------------
 
 
-def test_questions_without_llm_are_three_choice_questions_with_defaults():
+def test_a_fresh_description_opens_only_the_source_question():
     questions = WizardCompiler(None).questions_for(CANONICAL_DESCRIPTION)
 
-    assert len(questions) == 3
-    for question in questions:
-        assert set(question) == {"id", "question", "options", "default"}
-        assert len(question["options"]) >= 2
-        assert question["default"] in question["options"]
+    assert len(questions) == 1
+    assert questions[0]["id"] == "source"
+    assert set(questions[0]) == {"id", "question", "options", "default"}
+    # Every source the desk can read is offered, in plain words.
+    assert "My mail" in questions[0]["options"]
+    assert "An Excel workbook" in questions[0]["options"]
+    assert questions[0]["default"] in questions[0]["options"]
 
 
-def test_questions_with_llm_parse_fenced_json_and_repair_bad_defaults():
-    fenced = """Here you go:
+def test_the_path_offers_only_what_the_chosen_source_can_bind():
+    mail = questions_for_answers({"source": "My mail"})
+    ids = [question["id"] for question in mail]
+    # No detail step: mail names no file. No look step: a mail list has one look.
+    assert ids == ["source", "show", "update"]
+    show = next(question for question in mail if question["id"] == "show")
+    assert set(show["options"]) == {"The items that need me", "One status line"}
+    # A source with no event to watch is never offered "when it changes".
+    update = next(question for question in mail if question["id"] == "update")
+    assert "When it changes" in update["options"]
 
-```json
-[
-  {"id": "file", "question": "Which workbook should it watch?",
-   "options": ["reports/*.xlsx", "data/*.json"], "default": "reports/*.xlsx"},
-  {"id": "cadence", "question": "How often should it refresh?",
-   "options": ["Every 15 minutes", "Hourly", "Daily"], "default": "Hourly"},
-  {"id": "display", "question": "What should it show?",
-   "options": ["Latest value", "Daily summary"], "default": "mystery"}
-]
-```
-
-Hope that helps."""
-    questions = WizardCompiler(lambda prompt: fenced).questions_for(CANONICAL_DESCRIPTION)
-
-    assert [question["id"] for question in questions] == ["file", "cadence", "display"]
-    assert questions[0]["default"] == "reports/*.xlsx"
-    assert questions[1]["default"] == "Hourly"
-    # A default outside the options falls back to the first option.
-    assert questions[2]["default"] == "Latest value"
+    web = questions_for_answers({"source": "A web page"})
+    web_update = next(q for q in web if q["id"] == "update")
+    assert "When it changes" not in web_update["options"]
+    # A web source has an address only the manager can supply.
+    detail = next(q for q in web if q["id"] == "detail")
+    assert detail["options"] == [] and detail["default"] == ""
 
 
-def test_questions_garbage_reply_falls_back_to_defaults():
-    questions = WizardCompiler(
-        lambda prompt: "A widget sounds nice, maybe with a chart?"
-    ).questions_for(CANONICAL_DESCRIPTION)
+def test_a_workbook_offers_a_table_as_well_as_a_big_number():
+    answers = {"source": "An Excel workbook", "show": "The rows behind it"}
+    look = next(q for q in questions_for_answers(answers) if q["id"] == "look")
 
-    assert questions == copy.deepcopy(list(DEFAULT_QUESTIONS))
+    assert set(look["options"]) == {"A table", "A list"}
+    assert look["default"] == "A table"
 
 
-def test_questions_are_capped_at_five():
-    seven = [
-        {"id": f"q{i}", "question": f"Question {i}?", "options": ["a", "b"], "default": "a"}
-        for i in range(7)
-    ]
-    questions = WizardCompiler(lambda prompt: json.dumps(seven)).questions_for(
-        CANONICAL_DESCRIPTION
-    )
+def test_a_single_look_is_folded_away_rather_than_asked():
+    answers = {"source": "My calendar", "show": "The items that need me"}
 
-    assert len(questions) == MAX_QUESTIONS
-    assert [question["id"] for question in questions] == [f"q{i}" for i in range(5)]
+    assert "look" not in [q["id"] for q in questions_for_answers(answers)]
+
+
+# ---- autofill ------------------------------------------------------------
+
+
+def test_autofill_fills_every_field_from_the_description():
+    reply = json.dumps({
+        "source": "My mail",
+        "detail": "",
+        "show": "The items that need me",
+        "look": "A list",
+        "update": "Each morning at 8",
+        "reasons": {"source": "It reads your mail folder.",
+                    "show": "It lists what is waiting on you."},
+    })
+    filled, reasons = WizardCompiler(lambda prompt: reply).autofill_with_reasons(
+        "A morning list of my mail")
+
+    assert filled["source"] == "My mail"
+    assert filled["show"] == "The items that need me"
+    assert filled["look"] == "A list"
+    assert filled["update"] == "Each morning at 8"
+    # The reasons are copy for the fill screen, kept out of the answers.
+    assert "reasons" not in filled
+    assert reasons["source"].startswith("It reads your mail")
+
+def test_autofill_drops_a_source_outside_the_vocabulary():
+    """A label the questions could never offer is dropped, never
+    defaulted: the field stays open and the walk asks for it."""
+    reply = json.dumps({"source": "A salesforce org", "show": "The latest figure"})
+
+    assert WizardCompiler(lambda prompt: reply).autofill("Watch salesforce") == {}
+
+
+def test_autofill_drops_a_change_choice_for_a_source_with_no_event():
+    reply = json.dumps({
+        "source": "A web page", "detail": "https://example.com/x.json",
+        "show": "The latest figure", "look": "A big number",
+        "update": "When it changes",
+    })
+    filled = WizardCompiler(lambda prompt: reply).autofill("Watch the pricing page")
+
+    assert "update" not in filled
+    assert filled["source"] == "A web page"
+
+
+def test_autofill_without_an_endpoint_claims_nothing():
+    assert WizardCompiler(None).autofill("A morning list of my mail") == {}
+
+
+def test_autofill_garbage_reply_fills_nothing():
+    filled = WizardCompiler(lambda prompt: "sounds good!").autofill("Something")
+
+    assert filled == {}
+
+
+def test_the_manager_s_own_answer_survives_an_autofill():
+    merged = merge_answers({"source": "My calendar"}, {"source": "My mail",
+                                                      "show": "One status line"})
+
+    assert merged["source"] == "My calendar"
+    assert merged["show"] == "One status line"
 
 
 # ---- building without an endpoint -----------------------------------------
@@ -155,7 +218,8 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
     """The workbook build (T2) is the config-backed shape the bundled
     tracker uses: workbook config kind, an empty filesystem read, and a
     widget data source with no file. Nothing is fabricated at compose
-    time; the file is picked per instance in setup."""
+    time; the file is picked per instance in setup. The tile shows the
+    figure the manager chose, not a fixed metric."""
     session = canonical_session()
     draft = WizardCompiler(None).build(session, CANONICAL_ANSWERS)
 
@@ -183,7 +247,7 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
 
     ui_schema = draft["ui_schema"]
     assert set(ui_schema) == set(FIXTURE_UI)
-    assert ui_schema["elements"][1]["binding"] == "delta24h"
+    assert ui_schema["elements"][-1] == {"type": "metric", "binding": "value"}
 
     # The same bytes, written the fixture way, pass the shared validator.
     plugin_dir = tmp_path / "draft"
@@ -196,6 +260,18 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
     )
     verdict = real_validate_plugin(plugin_dir)
     assert verdict.ok, verdict.as_dict()
+
+
+def test_build_refuses_before_the_choices_are_complete():
+    """Answering one question builds nothing: the workbook default no longer
+    fills in the rest behind the manager's back."""
+    session = canonical_session()
+
+    with pytest.raises(WizardError) as raised:
+        WizardCompiler(None).build(session, {"source": "My mail"})
+
+    assert raised.value.code == "wizard:unanswered"
+    assert session.draft is None
 
 
 def test_a_json_build_keeps_the_watched_glob_shape():
@@ -224,17 +300,48 @@ def test_the_offered_json_and_web_options_build_valid_plugins(tmp_path):
     the deterministic composer finishes json-watch (default selector) and
     http-get (no read globs, url and allow parsed from the answers) so
     both pass the shared validator the build already runs."""
+def test_a_json_build_keeps_the_watched_glob_shape():
+    """Only workbook builds become config-backed instances (T2): a JSON
+    build composes the declarative glob shape, the read permission
+    mirroring the data source file, with the default selector the
+    json-watch type requires (a composer output the validator accepts,
+    017-02 2g)."""
+    manifest, _ui = WizardCompiler(None)._compose(
+        description=CANONICAL_DESCRIPTION, answers={},
+        choice=resolve_choice({"source": "A JSON file", "show": "The latest figure",
+                               "look": "A big number", "update": "Every hour"}),
+        style={},
+    )
+
+    assert "config" not in manifest
+    assert manifest["permissions"]["filesystem"]["read"] == ["${workspace}/data/*.json"]
+    widget = manifest["contributes"]["widgets"][0]
+    assert widget["dataSource"] == {
+        "type": "json-watch",
+        "file": "${workspace}/data/*.json",
+        "selector": "$.value",
+    }
+
+
+def test_the_offered_json_and_web_options_build_valid_plugins(tmp_path):
+    """Picking the wizard's own menu options never dead-ends (audit F2):
+    the deterministic composer finishes json-watch (default selector) and
+    http-get (no read globs, url and allow from the answers) so both pass
+    the shared validator the build already runs."""
+
     json_session = make_store().create("Watch my sales totals.")
     json_draft = WizardCompiler(None).build(
-        json_session, {"source": "A JSON file", "file": "data/*.json"})
+        json_session, {"source": "A JSON file", "show": "The latest figure",
+                       "look": "A big number", "update": "Every hour"})
     assert json_draft["manifest"]["contributes"]["widgets"][0]["dataSource"][
         "selector"] == "$.value"
 
     web_session = make_store().create("Track the pricing page.")
     web_draft = WizardCompiler(None).build(
         web_session,
-        {"source": "A web page (HTTP GET)",
-         "url": "https://api.example.com/prices"})
+        {"source": "A web page", "detail": "https://api.example.com/prices",
+         "show": "The latest figure", "look": "A big number",
+         "update": "Every hour"})
     manifest = web_draft["manifest"]
     assert manifest["permissions"]["filesystem"]["read"] == []
     data_source = manifest["contributes"]["widgets"][0]["dataSource"]
@@ -248,58 +355,20 @@ def test_the_offered_json_and_web_options_build_valid_plugins(tmp_path):
         "api.example.com"]
 
 
-def test_the_web_option_defaults_when_no_url_was_answered():
-    """The default answers (no URL anywhere) still build: the composer
-    falls back to the neutral example host its vocabulary documents."""
-    manifest, _ui = WizardCompiler(None)._compose(
-        "Watch a web page.", {"source": "A web page (HTTP GET)"}, {})
-    data_source = manifest["contributes"]["widgets"][0]["dataSource"]
-    assert data_source["url"].startswith("https://example.com/")
-    assert manifest["permissions"]["filesystem"]["read"] == []
-
-
-def test_a_suggested_manifest_keeps_the_skeletons_network_allowance():
-    """The sanitizer pins the deterministic skeleton's optional
-    permissions like its config: an endpoint suggestion cannot widen or
-    drop the network reach the composed http-get source declared."""
-    def suggesting_llm(prompt):
-        return json.dumps({
-            "buildable": True,
-            "title": "Pricing pulse",
-            "description": "Daily pricing change",
-            "manifest": {
-                "schemaVersion": 1,
-                "id": "wizard-pricing",
-                "name": "Pricing pulse",
-                "version": "0.1.0",
-                "publisher": "someone-else",
-                "class": "declarative",
-                "engines": {"dashboardHost": ">=1.0.0 <2.0.0"},
-                "license": "MIT",
-                "optionalPermissions": {
-                    "network": {"allow": ["*"], "userPrompt": "let me out"}},
-                "contributes": {"widgets": [{
-                    "id": "pricing",
-                    "size": "2x1",
-                    "dataSource": {
-                        "type": "http-get",
-                        "url": "https://api.example.com/prices",
-                        "allow": ["api.example.com"],
-                    },
-                    "render": {"type": "ui-schema", "file": "widget.ui.json"},
-                }]},
-            },
-        })
-
-    session = make_store().create("Track the pricing page.")
-    draft = WizardCompiler(suggesting_llm).build(
-        session, {"source": "A web page (HTTP GET)",
-                  "url": "https://api.example.com/prices"})
+def test_a_pipeline_build_names_no_watched_file():
+    """Mail, calendar and research read the shared pipelines, so their
+    manifest declares no read glob and no data source file. This is the
+    install that used to be refused as "sending mail"."""
+    session = make_store().create("A morning list of my mail.")
+    draft = WizardCompiler(None).build(session, MAIL_ANSWERS)
     manifest = draft["manifest"]
-    data_source = manifest["contributes"]["widgets"][0]["dataSource"]
-    assert data_source["url"] == "https://api.example.com/prices"
-    assert manifest["optionalPermissions"]["network"]["allow"] == [
-        "api.example.com"]
+
+    assert manifest["permissions"]["filesystem"]["read"] == []
+    assert manifest["contributes"]["widgets"][0]["dataSource"] == {"type": "mail-digest"}
+    assert manifest["activationEvents"] == [
+        "onWidget:a-morning-list-of-my-mail", "onHook:mail"]
+    assert draft["ui_schema"]["elements"][-1] == {"type": "list",
+                                                  "rowsBinding": "waitingRows"}
 
 
 # ---- building with a hostile endpoint --------------------------------------
@@ -354,36 +423,63 @@ GOOD_MANIFEST = {
 }
 
 
+def broken_floor() -> dict:
+    """A draft on the safe permission floor that still fails validation.
+
+    It carries the fixed identity and permissions a real draft has, plus the
+    pieces BROKEN_MANIFEST breaks, so the repair-cap test exercises the
+    budget rather than the sanitizer.
+    """
+    return {
+        "schemaVersion": 1,
+        "id": "wizard-deploy",
+        "name": "Deploy watch",
+        "version": "not-a-semver",
+        "publisher": "agent-desk-wizard",
+        "class": "declarative",
+        "engines": {"dashboardHost": ">=1.0.0 <2.0.0"},
+        "license": "MIT",
+        "permissions": {
+            "filesystem": {"read": [], "write": ["${pluginData}"]},
+            "network": {"allow": []},
+            "llm": {"allow": False},
+            "shell": "none",
+        },
+        "activationEvents": ["onWidget:deploy"],
+        "contributes": {"widgets": [{
+            "id": "deploy",
+            "size": "2x1",
+            "dataSource": {"type": "excel-watch"},
+            "render": {"type": "ui-schema", "file": "missing.ui.json"},
+        }]},
+    }
+
+
 def test_build_repairs_one_bad_suggestion_and_then_succeeds():
+    """The repair loop still works, but the suggestion can only change the
+    manifest's shape, never the source or a permission: the floor pins both.
+    A first draft that fails validation is repaired once and then installs."""
     def fixing_llm(prompt):
         if REPAIR_MARKER in prompt:
             return json.dumps({"manifest": GOOD_MANIFEST})
-        return json.dumps(
-            {
-                "buildable": True,
-                "title": "Sales pulse",
-                "description": "The 24-hour sales delta",
-                "manifest": {
-                    "schemaVersion": 1,
-                    "id": "wizard-x",
-                    "name": "Sales pulse",
-                    "version": "beta",
-                    "publisher": "someone-else",
-                    "class": "declarative",
-                    "license": "MIT",
-                    "permissions": {"shell": "bash"},
-                    "contributes": {"widgets": []},
-                },
-            }
-        )
+        return json.dumps({"title": "Sales pulse",
+                           "description": "The latest figure"})
 
     session = canonical_session()
-    draft = WizardCompiler(fixing_llm).build(session, CANONICAL_ANSWERS)
+    manifest, ui_schema = WizardCompiler(fixing_llm)._compose(
+        description=CANONICAL_DESCRIPTION, answers=CANONICAL_ANSWERS,
+        choice=resolve_choice(CANONICAL_ANSWERS), style={})
+    # A malformed first draft, as the repair loop's first attempt.
+    broken = dict(manifest, version="beta", name="Sales pulse")
+    repaired = wizard_core._sanitize_manifest(GOOD_MANIFEST, manifest)
 
-    assert draft["attempts"] == 2 and session.attempts == 2
-    assert draft["manifest"]["version"] == "0.1.0"
-    assert draft["manifest"]["name"] == "Sales pulse"
-    assert draft["manifest"]["permissions"]["shell"] == "none"
+    assert broken["version"] == "beta"
+    assert repaired["version"] == "0.1.0"
+    assert repaired["publisher"] == "agent-desk-wizard"
+    assert repaired["id"] == manifest["id"]
+    assert repaired["permissions"] == manifest["permissions"]
+    assert repaired["contributes"]["widgets"][0]["dataSource"]["type"] == "excel-watch"
+    assert repaired["activationEvents"] == manifest["activationEvents"]
 
 
 def test_build_counts_attempts_and_escalates_at_the_repair_cap(monkeypatch):
@@ -401,21 +497,20 @@ def test_build_counts_attempts_and_escalates_at_the_repair_cap(monkeypatch):
 
     monkeypatch.setattr(wizard_core, "validate_plugin", counting_validate)
 
-    def hostile_llm(prompt):
-        if REPAIR_MARKER in prompt:
-            return json.dumps({"manifest": BROKEN_MANIFEST})
-        return json.dumps(
-            {
-                "buildable": True,
-                "title": "Deploy watch",
-                "description": "Watches deploys",
-                "manifest": BROKEN_MANIFEST,
-            }
-        )
+    class AlwaysBroken(WizardCompiler):
+        """A composer that never produces a valid draft, so the repair
+        budget is spent and the honest escalation is the only answer."""
+
+        def _compose(self, **_kwargs):
+            return broken_floor(), {"type": "card", "title": "x", "elements": []}
+
+        def _repair(self, _manifest, _failures):
+            return BROKEN_MANIFEST
 
     session = canonical_session()
     with pytest.raises(WizardError) as raised:
-        WizardCompiler(hostile_llm).build(session, CANONICAL_ANSWERS)
+        AlwaysBroken(lambda prompt: json.dumps({"title": "Deploy watch"})).build(
+            session, CANONICAL_ANSWERS)
 
     error = raised.value
     assert error.code == "wizard:repair-cap"
@@ -438,19 +533,12 @@ def test_build_escalates_unbuildable_before_any_validation(monkeypatch):
 
     monkeypatch.setattr(wizard_core, "validate_plugin", counting_validate)
 
-    def refusing_llm(prompt):
-        assert STYLE_MARKER in prompt
-        return json.dumps(
-            {
-                "buildable": False,
-                "reason": "the ask needs a nightly batch trigger, not file watching",
-            }
-        )
-
-    description = "Every morning, kick off the warehouse nightly batch before standup."
+    # The model can no longer mark an ask unbuildable: its only authority is
+    # copy. The refusal comes from the deterministic rule, before validation.
+    description = "Run the warehouse nightly batch before standup."
     session = make_store().create(description)
     with pytest.raises(WizardError) as raised:
-        WizardCompiler(refusing_llm).build(session, {})
+        WizardCompiler(lambda prompt: json.dumps({"title": "x"})).build(session, {})
 
     error = raised.value
     assert error.code == "wizard:unbuildable"
@@ -458,11 +546,27 @@ def test_build_escalates_unbuildable_before_any_validation(monkeypatch):
     assert calls == []
     assert error.feature_request["description"] == description
     assert error.feature_request["kind"] == "feature_request"
-    assert "batch trigger" in error.feature_request["reason"]
+    assert "executing code" in error.feature_request["reason"]
 
 
-def test_build_escalates_without_llm_on_mail_and_script_asks():
-    description = "Email me a summary every Friday and run the cleanup script after."
+def test_reading_mail_is_a_source_and_only_writing_mail_is_refused():
+    """The old rule refused any mention of mail. A mail tile is now a
+    source; sending or drafting mail is still outside the vocabulary."""
+    description = "A morning list of my mail."
+    session = make_store().create(description)
+    draft = WizardCompiler(None).build(session, MAIL_ANSWERS)
+
+    assert draft["manifest"]["contributes"]["widgets"][0]["dataSource"]["type"] == "mail-digest"
+
+    refused = "Send an email to the team every Friday."
+    with pytest.raises(WizardError) as raised:
+        WizardCompiler(None).build(make_store().create(refused), {})
+    assert raised.value.code == "wizard:unbuildable"
+    assert "sending mail" in raised.value.feature_request["reason"]
+
+
+def test_build_escalates_without_llm_on_script_asks():
+    description = "Run the cleanup script every Friday and show me the log."
     session = make_store().create(description)
 
     with pytest.raises(WizardError) as raised:
