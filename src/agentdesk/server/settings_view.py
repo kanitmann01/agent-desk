@@ -1100,8 +1100,8 @@ folder stays the history source.</p>
 <button class="btn btn-secondary" type="submit">Fetch now</button>
 </form>
 <p class='empty'>Coverage: only the alerts the OS notification store still keeps.
-On Windows that is about 20 per app; it is a live signal, not mailbox
-history. The manual .eml folder is the history source.</p>"""
+Windows keeps about 20 per app and macOS keeps a short history; it is a
+live signal, not mailbox history. The manual .eml folder is the history source.</p>"""
 
 
 def render_settings_page(

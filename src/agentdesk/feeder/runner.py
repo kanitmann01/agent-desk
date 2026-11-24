@@ -22,7 +22,7 @@ from agentdesk.feeder.writer import write_mail, write_status
 
 LOG = logging.getLogger("agentdesk.feeder")
 
-DEFAULT_WINDOW_DAYS = 14  # the settings choice's default, mail_feeder_days
+DEFAULT_WINDOW_DAYS = 14  # the collection window; the OS alert stores keep far less
 DEFAULT_LIMIT = 100       # the export helper's cap, enough for one window
 
 # The lastResult vocabulary the Settings card renders. "busy" means
