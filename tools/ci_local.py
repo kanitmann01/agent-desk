@@ -14,7 +14,9 @@ Gates, in the workflow's order (a superset where local runs are free):
 1.  py-grammar       every src/tests/tools/scripts file parses under the
                      3.10 grammar (the declared floor; this stood in for
                      the 3.10 legs of the hosted matrix)
-2.  pytest           the full suite over a fresh temp data dir
+2.  pytest           the full suite over a fresh temp data dir, in
+                     parallel when pytest-xdist is installed (serial,
+                     the original invocation, when it is not)
 3.  frontend-install npm ci ONLY when node_modules is missing
                      (deterministic install from the lockfile)
 4.  frontend-check   tsc --noEmit (the workflow's typecheck gate)
@@ -94,15 +96,45 @@ def _grammar_gate(env: dict) -> tuple[bool, str]:
     return True, f"{count} files parse under 3.10"
 
 
+def _xdist_available() -> bool:
+    """True when pytest-xdist is importable for this interpreter."""
+    try:
+        import xdist  # noqa: F401 - importability is the whole check
+    except ImportError:
+        return False
+    return True
+
+
+def _pytest_args(parallel: bool) -> list[str]:
+    """The pytest invocation, parallel when xdist is installed.
+
+    xdist gets one worker per logical core, capped at eight. The cap is
+    measured, not guessed: on this 20-core Windows host, full runs at 12
+    and 20 workers intermittently failed with WinError 10048 (ephemeral
+    loopback ports exhausted by the suite's HTTP traffic), while eight
+    workers stayed green across repeated runs at roughly 95 seconds.
+    Without xdist the command is exactly the serial invocation this gate
+    has always used.
+    """
+    args = [PYTHON, "-m", "pytest", "tests", "-q", "--no-header"]
+    if parallel:
+        workers = min(os.cpu_count() or 1, 8)
+        args += ["-n", str(workers)]
+    return args
+
+
 def _pytest_gate(env: dict) -> tuple[bool, str]:
     """The full suite over the pinned fresh data dir."""
+    parallel = _xdist_available()
     proc = subprocess.run(
-        [PYTHON, "-m", "pytest", "tests", "-q", "--no-header"],
+        _pytest_args(parallel),
         cwd=ROOT, env=env, capture_output=True, text=True,
     )
     tail = (proc.stdout or "").strip().splitlines()
     summary = tail[-1] if tail else "(no output)"
-    return proc.returncode == 0, summary
+    workers = _pytest_args(True)[-1]
+    mode = f"parallel -n {workers}" if parallel else "serial (xdist not installed)"
+    return proc.returncode == 0, f"{mode}: {summary}"
 
 
 def _frontend_check(env: dict) -> tuple[bool, str]:

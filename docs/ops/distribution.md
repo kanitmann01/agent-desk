@@ -47,6 +47,17 @@ The build refuses to run without `build/sbom.cdx.json`, `LICENSE`,
 non-empty `dist/agent-desk` that has no prior `manifest.json` unless
 `--force` is passed.
 
+### Local development and the gate
+
+Developer tools are an optional extra: `python -m pip install -e ".[dev]"`
+installs pytest and pytest-xdist, and neither is a runtime dependency or
+enters the SBOM. `python tools/ci_local.py` runs the full suite as one of its
+gates; when xdist is importable it runs pytest in parallel with the worker
+count capped at eight (higher counts exhausted the Windows ephemeral port
+range under the suite's loopback traffic), and without xdist it keeps the
+original serial invocation, so the verdict and the reported counts are the
+same either way.
+
 ### What the Nuitka profile does
 
 - `--standalone` produces a **one-folder** bundle. `--onefile` is deliberately
