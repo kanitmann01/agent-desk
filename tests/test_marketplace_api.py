@@ -469,7 +469,7 @@ def test_network_allowlist_blocks_then_allows(booted):
 
 # -- updates, consent, rollback ----------------------------------------
 
-def test_widening_update_needs_consent_and_narrowing_does_not(booted):
+def test_widening_and_value_drop_updates_need_consent(booted):
     root = workspace(booted) / "fixtures"
     v1 = make_plugin(root, "upd", version="1.0.0", folder_name="upd-v1")
     write_org_catalog(booted, [catalog_entry(v1, "upd", version="1.0.0")])

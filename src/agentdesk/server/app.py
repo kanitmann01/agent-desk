@@ -2791,12 +2791,19 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         timeout = timeout_seconds(artifact.get("timeout") or 30)
         llm = self._effective_llm("assistant")[0]
-        delivered, cause = run_fill(
-            pack, artifact.get("variant"), recipe_doc, artifact.get("plan") or [],
-            sources, brief, str(artifact.get("title") or ""),
-            llm, timeout, self._presentation_dir(),
-            runner=getattr(server, "presentation_runner", None),
-        )
+        try:
+            delivered, cause = run_fill(
+                pack, artifact.get("variant"), recipe_doc, artifact.get("plan") or [],
+                sources, brief, str(artifact.get("title") or ""),
+                llm, timeout, self._presentation_dir(),
+                runner=getattr(server, "presentation_runner", None),
+            )
+        except (OSError, ValueError, LlmUnavailable) as exc:
+            # The fresh run's ladder catches its whole pipeline, folder
+            # creation included; the resume must answer the same way, or a
+            # write failure here degrades into the generic 500 instead of
+            # an honest run row.
+            delivered, cause = None, fill_cause(exc)
         if delivered is None:
             server.agents.update_outcome(run_id, "degraded", None, cause)
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
@@ -4153,10 +4160,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                                   "No skill lives at this address.")
             return
         server = self.server  # type: ignore[attr-defined]
-        skills = self._require_store(server.skills, "the skills store")
+        skills = self._require_store(server.skills, "skills store")
         if skills is None:
             return
-        if self._require_store(server.ledger, "the ledger") is None:
+        if self._require_store(server.ledger, "ledger") is None:
             return
         skill = skills.get(skill_id)  # type: ignore[attr-defined]
         if skill is None:
@@ -7235,7 +7242,7 @@ def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]
         conn = sqlite3.connect(data_dir / "repetition.sqlite3", check_same_thread=False)
         # One connection, one lock (the agentdesk.locking rule): both
         # stores sit on this connection, so its lock is the connection's.
-        lock = threading.RLock()
+        lock = store_lock()
         return (ActivityLog(conn, time.time, lock=lock),
                 SkillStore(conn, time.time, lock=lock))
     except (OSError, sqlite3.Error):

@@ -360,6 +360,30 @@ class _API:
         document = signed_policy.read_json(Path(folder) / "manifest.json", {})
         return document if isinstance(document, dict) else {}
 
+    def _pending_display_split(self, record: dict, pending, pending_scopes: list) -> tuple:
+        """The display truth of a held update: what it adds and what it drops.
+
+        The runtime's added_scopes keep every leaf value, so a permission
+        value drop (true to false) sits in the same list as a real
+        widening; the consent surfaces must not call a drop a widening.
+        The split reads the granted leaves off the active and staged
+        manifests, so an add is a scope the staged version grants and the
+        active one does not, and a drop is the reverse. Folders that
+        cannot be read fall back to today's shape: everything counts as
+        widening, nothing as dropped."""
+        active_dir = next((entry.get("dir") for entry in record.get("versions") or []
+                           if isinstance(entry, dict)
+                           and entry.get("version") == record.get("active_version")
+                           and isinstance(entry.get("dir"), str) and entry.get("dir")),
+                          None)
+        pending_dir = (pending or {}).get("dir")
+        if not (isinstance(active_dir, str) and active_dir
+                and isinstance(pending_dir, str) and pending_dir):
+            return pending_scopes, []
+        old = set(self._manifest_scopes(Path(active_dir)))
+        new = set(self._manifest_scopes(Path(pending_dir)))
+        return sorted(new - old), sorted(old - new)
+
     def _installed_summary(self, record: dict) -> dict:
         """The installed-plugin DTO the Installed surface renders.
 
@@ -371,6 +395,8 @@ class _API:
         if not isinstance(data_source, dict):
             data_source = {}
         pending_scopes = list((pending or {}).get("added_scopes") or [])
+        widening, dropping = self._pending_display_split(record, pending,
+                                                         pending_scopes)
         peer_store = getattr(self.server, "peer_store", None)
         if peer_store is not None:
             try:
@@ -395,7 +421,8 @@ class _API:
             "update": ({
                 "version": pending.get("version", ""),
                 "digest": pending.get("sha256", ""),
-                "widening": pending_scopes,
+                "widening": widening,
+                "dropping": dropping,
                 "scopes": pending_scopes,
             } if isinstance(pending, dict) else None),
             "pendingConsent": isinstance(pending, dict),
@@ -1034,8 +1061,9 @@ class _API:
     def _manifest_scopes(self, plugin_dir: Path) -> list:
         """Sorted 'path: value' scopes granted by a plugin folder's manifest.
 
-        An unreadable or absent manifest grants nothing, which is the safe answer
-        for a widening check."""
+        Display only: the consent decision reads the runtime's
+        pending_diff, never this list. An unreadable or absent manifest
+        grants nothing."""
         try:
             manifest = json.loads(
                 (Path(plugin_dir) / "manifest.json").read_text(encoding="utf-8"))

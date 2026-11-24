@@ -473,3 +473,53 @@ def test_the_golden_emission_matrix_pins_all_three_emitters(case, tmp_path):
     ]
     assert cards == projections
     assert runtime.record_dashboard_view() == spent
+
+
+def test_layout_keys_read_the_newest_manifest_and_cards_the_active_one(runtime, tmp_path):
+    # Every golden-matrix case has active == newest, so the two emitters'
+    # manifest sources could be swapped without a failure. A rollback
+    # drives them apart: the newest recorded manifest (1.1.0) lost the
+    # instance capability, the active one (0.1.0) keeps it.
+    import shutil
+
+    from agentdesk.plugins.config import InstanceStore
+    from plugins_fixtures import ZIP_DATE
+
+    registry = Path(__file__).resolve().parents[1] / "registry" / "plugins"
+    runtime.install(registry / "excel-report", source="dir")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    store = InstanceStore(runtime.data_dir, workspace)
+    store.create("excel-report", "main", "Main")
+    store.create("excel-report", "pipeline", "Pipeline")
+
+    v2_dir = tmp_path / "excel-v2"
+    shutil.copytree(registry / "excel-report", v2_dir)
+    manifest = json.loads((v2_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest["version"] = "1.1.0"
+    manifest.pop("config")
+    (v2_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    v2 = tmp_path / "excel-v2.zip"
+    with zipfile.ZipFile(v2, "w") as archive:
+        for path in sorted(v2_dir.rglob("*")):
+            if not path.is_file() or path.name == "manifest.json":
+                continue
+            info = zipfile.ZipInfo(
+                path.relative_to(v2_dir).as_posix(), date_time=ZIP_DATE)
+            archive.writestr(info, path.read_bytes())
+        info = zipfile.ZipInfo("manifest.json", date_time=ZIP_DATE)
+        archive.writestr(info, json.dumps(manifest, indent=2) + "\n")
+
+    out = runtime.update("excel-report", v2)
+    assert out["applied"] is True
+    runtime.rollback("excel-report")
+    record = runtime.record("excel-report")
+    assert record["active_version"] == "0.1.0"
+    assert record["versions"][-1]["version"] == "1.1.0"
+
+    assert runtime.layout_keys() == ["excel-report"]
+    cards = [(card["id"], card["instanceId"]) for card in runtime.widget_cards()]
+    assert cards == [("excel-report", "main"),
+                     ("excel-report~pipeline", "pipeline")]
+    assert runtime.record_dashboard_view() == 1

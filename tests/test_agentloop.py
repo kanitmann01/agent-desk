@@ -537,3 +537,15 @@ def test_a_manual_pass_never_starts_after_stop(tmp_path):
     assert loop.run_now() is True
     assert _wait_until(lambda: loop.status()["running"] is False)
     assert ran == []
+
+
+def test_ordered_steps_sorts_on_the_declared_order():
+    # The wave's central claim, pinned: the pass runs in declared order
+    # even when the list hands the steps over backwards, so registration
+    # and argument order decide nothing.
+    def run(ctx):
+        return {}
+
+    late = Step(name="late", order=300, enabled=lambda settings: True, run=run)
+    early = Step(name="early", order=100, enabled=lambda settings: True, run=run)
+    assert [step.name for step in ordered_steps([late, early])] == ["early", "late"]

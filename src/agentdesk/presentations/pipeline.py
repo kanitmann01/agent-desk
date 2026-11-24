@@ -300,6 +300,8 @@ def run_fill(pack, variant: str, recipe: dict, planned: list[dict],
             return (reply or "").strip() or text
 
         shell_path = pack.shell_path(variant)
+        if shell_path is None:
+            raise ValueError("no shell for variant")
         folder = Path(deck_dir) / secrets.token_hex(8)
         delivered = deliver_deck(
             shell_path.read_bytes(), recipe, outline, sources, folder,

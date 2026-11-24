@@ -469,3 +469,32 @@ def test_a_write_failure_does_not_blame_the_endpoint():
     finally:
         deliver.write_deck = original
         booted.close()
+
+
+def test_the_fill_cause_reads_the_step_off_the_exception():
+    from agentdesk.llm import LlmUnavailable
+    from agentdesk.presentations.pipeline import fill_cause
+
+    assert fill_cause(LlmUnavailable("the endpoint is not answering")) == \
+        "the endpoint is not answering"
+    assert fill_cause(ValueError("malformed plan")) == \
+        "The presentation plan could not be read, so no deck was written."
+    assert fill_cause(ValueError("malformed fill")) == \
+        "The presentation could not be filled, so no deck was written."
+    assert fill_cause(OSError("disk full")) == "The deck could not be written."
+
+
+def test_a_missing_shell_variant_degrades_instead_of_raising(tmp_path):
+    # run_fill sits under both callers' None guards, but its own contract
+    # is "a written deck or a cause": a bad variant is a cause, never an
+    # AttributeError past the ladder.
+    from agentdesk.presentations.pipeline import run_fill
+
+    def llm(prompt, timeout=30):
+        return json.dumps({"title": "Noted", "bullets": ["No figure."], "citations": []})
+
+    pack = SimpleNamespace(shell_path=lambda variant: None)
+    delivered, cause = run_fill(pack, "no-such-variant", {}, [], [], "brief",
+                               "Title", llm, 30.0, tmp_path)
+    assert delivered is None
+    assert cause == "The deck could not be written."
