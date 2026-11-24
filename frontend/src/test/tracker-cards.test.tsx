@@ -5,6 +5,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TrackerCard from '../dashboard/TrackerCard';
+import PluginCardView from '../dashboard/PluginCardView';
 import type { PluginCard, PluginElement } from '../types';
 
 const NOOP_REFETCH = async () => {};
@@ -164,5 +165,124 @@ describe('the workbook card draws the reading', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
     expect(screen.queryByText(/^Used/)).toBeNull();
+  });
+});
+
+const CLASSIC_TRACKER = {
+  name: 'Q4 bookings',
+  value: '9270950',
+  unit: 'USD',
+  delta: '+18850',
+  direction: 'up',
+  points: [1, 2, 3, 4],
+  file: 'reports/q4-bookings.xlsx',
+  goal: { value: '5000000', unit: 'USD' },
+  paceNote: '6 weeks left in the quarter',
+};
+
+const CLASSIC_CARD: PluginCard = {
+  id: 'excel-report~q4',
+  title: 'Q4 bookings',
+  version: '0.1.0',
+  pilot: false,
+  state: 'enabled',
+  freshness: 'fresh',
+  cause: '',
+  pluginId: 'excel-report',
+  instanceId: 'q4',
+  payload: {
+    tracker: CLASSIC_TRACKER,
+    elements: [
+      { kind: 'metric', label: 'Value', value: '9270950' },
+      { kind: 'delta', label: 'Change', value: '+18850', direction: 'up' },
+      { kind: 'text', label: 'Workbook', text: 'reports/q4-bookings.xlsx' },
+      { kind: 'text', label: 'Pace', text: '6 weeks left in the quarter' },
+      { kind: 'sparkline', label: 'History', points: [1, 2, 3, 4] },
+      { kind: 'text', label: 'Trend', text: 'Amount rose from 1 to 9 over 4 readings.' },
+      { kind: 'text', label: 'Split', text: 'West carries most of the quarter.' },
+    ],
+    insight: {
+      status: 'ok',
+      source: 'local',
+      note: '',
+      blocks: [{ kind: 'receipts', text: "Used the defaults; read only this card's rows." }],
+      press: null,
+    },
+  },
+};
+
+describe('the tracker tile owns its face', () => {
+  it('draws the value once and skips the elements that restate the tile', () => {
+    render(<TrackerCard card={CLASSIC_CARD} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+
+    expect(document.querySelectorAll('.figure')).toHaveLength(1);
+    expect(document.querySelector('.figure')).toHaveTextContent('9,270,950');
+    expect(screen.queryByText('Value')).toBeNull();
+    expect(screen.queryByText('Change')).toBeNull();
+    expect(screen.queryByText('Workbook')).toBeNull();
+    expect(screen.queryByText('Pace')).toBeNull();
+    // The History sparkline was one of the restating elements; only the
+    // tile's own trend chart remains.
+    expect(screen.queryByLabelText('History')).toBeNull();
+    expect(document.querySelectorAll('.spark svg')).toHaveLength(1);
+    // The change is grouped for display, not the raw wire string.
+    expect(screen.getByText('+18,850')).toBeInTheDocument();
+    expect(screen.queryByText('+18850')).toBeNull();
+    expect(screen.getByText(/of 5,000,000 USD/)).toBeInTheDocument();
+    // The chip is a scroll well, so it is focusable and titled.
+    const chip = document.querySelector('.delta-chip');
+    expect(chip).toHaveAttribute('title', 'Change: +18,850');
+    expect(chip).toHaveAttribute('tabindex', '0');
+  });
+
+  it('draws the reading once, as one separate block with a native disclosure', () => {
+    render(<TrackerCard card={CLASSIC_CARD} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+
+    expect(screen.getByText('What this reading says')).toBeInTheDocument();
+    expect(screen.getAllByText('Amount rose from 1 to 9 over 4 readings.')).toHaveLength(1);
+    expect(screen.getAllByText('West carries most of the quarter.')).toHaveLength(1);
+    expect(screen.getByText('More of this reading')).toBeInTheDocument();
+    const details = document.querySelector('details.tracker-reading-more');
+    expect(details).not.toBeNull();
+    expect(details?.textContent).toContain("Used the defaults; read only this card's rows.");
+  });
+
+  it('leaves an excel-report wizard face untouched in the tracker card', () => {
+    const card: PluginCard = {
+      ...CLASSIC_CARD,
+      id: 'excel-report~wiz',
+      payload: {
+        ...CLASSIC_CARD.payload!,
+        face: 'ui-schema',
+        elements: [{ kind: 'metric', label: 'Value', value: '42' }],
+      },
+    };
+    render(<TrackerCard card={card} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+
+    // The chosen face's own Value element is not the classic restating
+    // metric, so it is drawn rather than filtered.
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.getByText('Value')).toBeInTheDocument();
+  });
+
+  it('still draws a wizard tracker face through the generic elements', () => {
+    const card: PluginCard = {
+      id: 'kpi-scorecard~wiz',
+      title: 'Wizard tracker',
+      version: '1.0.0',
+      pilot: false,
+      state: 'enabled',
+      freshness: 'fresh',
+      cause: '',
+      payload: {
+        face: 'ui-schema',
+        tracker: CLASSIC_TRACKER,
+        elements: [{ kind: 'metric', label: 'Value', value: '42' }],
+      },
+    };
+    render(<PluginCardView card={card} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.getByText('Value')).toBeInTheDocument();
   });
 });

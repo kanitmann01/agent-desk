@@ -423,7 +423,7 @@ describe('the normal view follows the layout', () => {
     // order (the lower row's direct children, the health cell excluded).
     const cells = briefCellTexts();
     expect(cells.some((text) => text.includes('Invoice tracker'))).toBe(false);
-    const pluginCells = Array.from(document.querySelectorAll('.brief > .cell-digest, .brief > .cell-watch'));
+    const pluginCells = Array.from(document.querySelectorAll('.brief > .cell-digest, .brief > .cell-watch, .brief > .cell-plugin'));
     expect(pluginCells.map((cell) => cell.textContent)).toEqual([
       expect.stringContaining('Notes digester'),
       expect.stringContaining('Competitor watch'),

@@ -80,15 +80,15 @@ interface Lower {
   key: string;
   kind: string;
   node: ReactNode;
+  // A cell whose content needs the whole row (the health matrix, a tracker
+  // figure) takes 12 columns; the rest pair up.
+  wide?: boolean;
 }
 
-/** Grid spans for the lower row: three across, one left over full width, two split. */
+/** Grid spans for the paired cells: pairs of 6, an odd last card full width. */
 function lowerSpans(count: number): number[] {
-  const spans = Array.from({ length: count }, () => 4);
-  const rest = count % 3;
-  if (rest === 1) spans[count - 1] = 12;
-  if (rest === 2) { spans[count - 1] = 6; spans[count - 2] = 6; }
-  return spans;
+  return Array.from({ length: count }, (_, index) =>
+    (count % 2 === 1 && index === count - 1 ? 12 : 6));
 }
 
 /**
@@ -240,9 +240,10 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
   const workbookSample = sourceStatus('excel-watch') === 'sample';
   const calendarSource = sourceStatus('calendar-bridge');
   /**
-   * Desk health: one row per source, live only when the source truly is.
+   * Desk health: the three desk sources, then the plugin rows as their own
+   * group. The source counter counts exactly the rows above it.
    */
-  const healthRows: HealthRow[] = [
+  const sourceRows: HealthRow[] = [
     {
       name: 'Workbook',
       live: configured && !workbookSample && status?.state !== 'unreadable' && status?.state !== 'locked',
@@ -265,14 +266,16 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
       lastRun: fromEpoch(data.research.lastAnsweredTs),
       items: '-',
     },
-    ...pluginCards.map((card) => ({
-      name: card.title,
-      live: card.freshness === 'fresh',
-      status: card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
-      lastRun: fromIso(card.checkedAt || null),
-      items: card.payload?.setup ? '-' : String(card.payload?.elements?.length ?? 0),
-    })),
   ];
+  const pluginRows: HealthRow[] = pluginCards.map((card) => ({
+    name: card.title,
+    live: card.freshness === 'fresh',
+    status: card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
+    // A card that never ran has no checkedAt: say never, not the clock.
+    lastRun: card.checkedAt ? fromIso(card.checkedAt) : 'never',
+    items: card.payload?.setup ? '-' : String(card.payload?.elements?.length ?? 0),
+  }));
+  const sourceLive = sourceRows.filter((row) => row.live).length;
 
   const LIST = new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' });
   /** The names as an English conjunction list, e.g. "A, B, and C". */
@@ -283,15 +286,15 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
   lower.push({
     key: 'health',
     kind: 'health',
+    wide: true,
     node: (
       <>
-        <CellHead tag="DESK HEALTH" meta={<span className="mono">{connected}/{total} live</span>} />
-        <HealthMatrix rows={healthRows} />
+        <CellHead tag="DESK HEALTH" meta={<span className="mono">{sourceLive} of {sourceRows.length} sources live</span>} />
+        <HealthMatrix sources={sourceRows} plugins={pluginRows} />
         <p className="cell-foot health-foot">
           {(() => {
-            const feeds = healthRows.slice(0, 3);
-            const off = feeds.filter((row) => !row.live);
-            const reading = healthRows.slice(3).filter((row) => row.live);
+            const off = sourceRows.filter((row) => !row.live);
+            const reading = pluginRows.filter((row) => row.live);
             if (off.length === 0) return 'Every source answered on its last run.';
             const base = `${listJoin(off.map((row) => row.name))} ${off.length === 1 ? 'is' : 'are'} not live yet.`;
             return reading.length > 0
@@ -327,6 +330,7 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
       lower.push({
         key: card.id,
         kind: 'tracker',
+        wide: true,
         node: (
           <>
             <CellHead tag="TRACKER" sample={Boolean(card.payload?.tracker?.sample)} />
@@ -395,7 +399,11 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
       ),
     });
   }
-  const spans = lowerSpans(lower.length);
+  // The health row and every tracker take the full width; the rest pair up.
+  const narrow = lower.filter((cell) => !cell.wide);
+  const narrowSpans = lowerSpans(narrow.length);
+  let narrowIndex = 0;
+  const spans = lower.map((cell) => (cell.wide ? 12 : narrowSpans[narrowIndex++]));
 
   // ---- render -----------------------------------------------------------
   const shown = movesOpen ? movers : movers.slice(0, MOVER_CAP);
@@ -429,9 +437,18 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
                 <p className="brief-label">{delta ? 'Net pipeline, last 24 hours' : 'Rows in the workbook'}</p>
                 {delta ? (
                   <dl className="hero-stats">
-                    <div><dt>Changed</dt><dd>{changedCount}</dd></div>
-                    <div><dt>Added</dt><dd>{addedCount}</dd></div>
-                    <div><dt>Removed</dt><dd>{removedCount}</dd></div>
+                    {[
+                      { label: 'Changed', count: changedCount },
+                      { label: 'Added', count: addedCount },
+                      { label: 'Removed', count: removedCount },
+                    ].map((stat) => (
+                      <div key={stat.label}>
+                        <dt>{stat.label}</dt>
+                        <dd title={`${stat.label}: ${stat.count.toLocaleString('en-US')}`}>
+                          {stat.count.toLocaleString('en-US')}
+                        </dd>
+                      </div>
+                    ))}
                   </dl>
                 ) : (
                   <p className="brief-quiet">First snapshot. The 24-hour change starts at the next read.</p>

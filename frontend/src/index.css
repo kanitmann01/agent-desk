@@ -380,7 +380,6 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 /* The hero KPI. The value is the only 28px mono object on the page; its
    command comes from that, not from size. Green when healthy;
    terracotta speaks through the delta chips and the table rows. */
-.kpi{display:flex;flex-direction:column;gap:6px;padding:6px 0 2px}
 .kpi .label{font-size:12px;font-weight:600;color:var(--muted)}
 .kpi .sub{font-size:12px;color:var(--muted)}
 .kpi-split{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -394,7 +393,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .sales-hero{display:grid;grid-template-columns:minmax(0,236px) minmax(0,1fr);gap:8px 28px;align-items:start}
 .sales-delta{min-width:0;padding-top:4px}
 table.rows{width:100%;border-collapse:collapse;font-size:13px}
-table.rows td{padding:8px 8px 8px 0;border-bottom:1px solid var(--rule);overflow-wrap:anywhere}
+table.rows td{padding:8px 8px 8px 0;border-bottom:1px solid var(--rule);overflow-wrap:break-word}
 table.rows tr:last-child td{border-bottom:none}
 table.rows td.neg{color:var(--text-2)}
 .delta{
@@ -421,10 +420,10 @@ table.rows td.neg{color:var(--text-2)}
 .w-list-primary{font-size:12px;line-height:1.35;color:var(--text-2);overflow-wrap:anywhere}
 .w-list-secondary{grid-column:1;font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
 .w-list-meta{grid-column:2;grid-row:1;font-size:11px;color:var(--muted);white-space:nowrap}
-.w-table-block{display:flex;flex-direction:column;gap:4px;min-width:0}
+.w-table-block{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%;overflow-x:auto}
 .w-table{width:100%;border-collapse:collapse;font-size:11.5px}
 .w-table th{text-align:left;font-weight:600;color:var(--muted);padding:2px 6px 3px 0;border-bottom:1px solid var(--rule)}
-.w-table td{padding:3px 6px 3px 0;border-bottom:1px solid var(--rule);color:var(--text-2);overflow-wrap:anywhere}
+.w-table td{padding:3px 6px 3px 0;border-bottom:1px solid var(--rule);color:var(--text-2);overflow-wrap:break-word}
 .w-table tr:last-child td{border-bottom:0}
 .w-progress{height:5px;background:var(--rule);border-radius:var(--r-pill);overflow:hidden}
 .w-progress span{display:block;height:100%;background:var(--accent)}
@@ -432,7 +431,8 @@ table.rows td.neg{color:var(--text-2)}
 .w-status.w-tone-attention{color:var(--amber,#d9a441)}
 .w-status.w-tone-alarm{color:var(--alarm,#e06c5b)}
 .w-timeline,.w-checklist{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
-.w-timeline li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:1px 8px}
+.w-timeline li{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:1px 8px}
+.w-timeline .w-list-meta{grid-column:1;grid-row:1;white-space:nowrap}
 .w-timeline .w-list-secondary{grid-column:2}
 .w-checklist li{display:flex;gap:7px;align-items:baseline;font-size:12px;color:var(--text-2)}
 .w-checklist li.is-done{color:var(--muted)}
@@ -559,14 +559,12 @@ table.rows td.neg{color:var(--text-2)}
 .brief-col > .cell:last-child{flex:1 1 auto}
 .brief-main{grid-column:span 8}
 .brief-side{grid-column:span 4}
-.brief .span-4{grid-column:span 4}
 .brief .span-6{grid-column:span 6}
 .brief .span-12{grid-column:span 12}
 /* The health matrix is the desk's one data table: four columns and a
    header cannot share a quarter of the brief without squeezing, so it
-   takes the full row. The plugin cells below it sit two across, which
-   leaves no empty quarter beside a lone pair. */
-.brief .span-4{grid-column:span 6}
+   takes the full row. Its span is computed with the plugin cells in
+   Brief.tsx; this rule keeps it full if a future caller assigns another. */
 .brief .cell-health{grid-column:1/-1}
 .cell{
   position:relative;display:flex;flex-direction:column;align-items:stretch;gap:12px;min-width:0;
@@ -599,26 +597,25 @@ table.rows td.neg{color:var(--text-2)}
 /* The hero: one figure, its parts, and the stage chart. The radial
    light is a theme token; only Unkey sets it. */
 .cell-hero{background-image:var(--hero-light),var(--cell-texture);padding-bottom:20px}
-.hero-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px 32px;align-items:end}
-.hero-figure{display:flex;flex-direction:column;gap:8px;min-width:0}
+.hero-grid{display:flex;flex-wrap:wrap;gap:24px 32px;align-items:flex-end}
+.hero-figure{display:flex;flex-direction:column;gap:8px;min-width:0;flex:0 0 auto;max-width:100%}
 .kpi{display:flex;flex-direction:column;gap:6px;padding:4px 0 0}
 .kpi .value{
   font-family:var(--font-mono);font-size:56px;font-weight:500;line-height:1;letter-spacing:-.03em;
   color:var(--accent-text);font-variant-numeric:tabular-nums;white-space:nowrap;
-  max-width:100%;overflow-x:auto;
 }
 :root[data-theme="momentuum"] .kpi .value,:root[data-theme="coforge"] .kpi .value{color:var(--heading)}
 .kpi .value.down,.kpi .value.flat{color:var(--heading)}
 .kpi .value.ghost{color:var(--faint)}
 .brief-label{font-size:15px;font-weight:600;margin:0;color:var(--heading)}
 .brief-quiet{margin:0;color:var(--text-2);font-size:14px;max-width:36ch}
-.hero-stats{display:flex;gap:0;margin:6px 0 0;border-top:1px solid var(--rule)}
-.hero-stats div{flex:1;padding:10px 0 0;display:flex;flex-direction:column;gap:2px}
+.hero-stats{display:flex;flex-wrap:wrap;gap:0;margin:6px 0 0;border-top:1px solid var(--rule)}
+.hero-stats div{flex:1 1 80px;min-width:0;padding:10px 0 0;display:flex;flex-direction:column;gap:2px}
 .hero-stats div + div{border-left:1px solid var(--rule);padding-left:14px}
 .hero-stats dt{font-size:12px;color:var(--muted)}
 .hero-stats dd{margin:0;font-family:var(--font-mono);font-size:20px;color:var(--heading);font-variant-numeric:tabular-nums;white-space:nowrap}
 
-.stage-chart{margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.stage-chart{margin:0;display:flex;flex-direction:column;gap:8px;min-width:0;flex:1 1 280px}
 .chart-cap{margin:0;font-size:12px;color:var(--muted)}
 .stage-plot{position:relative;height:168px;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:12px;padding:20px 2px}
 .stage-zero{position:absolute;left:0;right:0;top:calc(20px + (100% - 40px) * var(--z));border-top:1px solid var(--rule-strong)}
@@ -631,6 +628,7 @@ table.rows td.neg{color:var(--text-2)}
 .stage-val.down{color:var(--muted)}
 .stage-axis{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:12px;border-top:1px solid var(--rule);padding:8px 2px 0}
 .stage-axis span{display:flex;flex-direction:column;align-items:center;text-align:center;font-size:12px;color:var(--text-2);line-height:1.3;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stage-axis .stage-name{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stage-axis small{font-family:var(--font-mono);font-size:11px;color:var(--muted);display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Dotted wireframes: what a cell will draw once it has data. */
@@ -753,8 +751,13 @@ table.rows td.neg{color:var(--text-2)}
 .matrix tbody th{font-weight:500;color:var(--heading);overflow:hidden;text-overflow:ellipsis}
 .matrix tbody tr:last-child th,.matrix tbody tr:last-child td{border-bottom:none}
 .matrix td{color:var(--text-2)}
-.matrix td.num{white-space:nowrap}
-.matrix .num{text-align:right;padding-right:0;padding-left:14px}
+.matrix td:nth-child(2){overflow-wrap:break-word}
+.matrix td.num{white-space:nowrap;overflow-x:auto}
+.matrix .num{text-align:right;padding-right:0;padding-left:12px}
+/* One group label per block of rows, with its own count. */
+.matrix-group th{padding:12px 0 4px;border-bottom:1px solid var(--rule);font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--muted)}
+.matrix-group-line{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+.matrix-group-count{font-family:var(--font-mono);font-size:11px;font-weight:400}
 .sq{display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:1px;background:var(--faint);vertical-align:0}
 .sq.on{background:var(--accent)}
 
@@ -762,9 +765,16 @@ table.rows td.neg{color:var(--text-2)}
 .tracker,.tracker-card{display:flex;flex-direction:column;gap:10px;min-width:0;flex:1}
 .tracker-title{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
 .tracker-title h3{margin:0;font-family:var(--font-heading);font-weight:var(--heading-weight);font-size:15px;color:var(--heading);flex:1 1 120px;min-width:0}
-.tracker-figure{display:flex;align-items:baseline;gap:8px;max-width:100%;overflow-x:auto}
+.tracker-figure{display:flex;align-items:baseline;gap:8px;max-width:100%}
 .figure{font-family:var(--font-mono);font-size:36px;font-weight:500;letter-spacing:-.02em;line-height:1.05;color:var(--heading);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
 .figure-unit{font-family:var(--font-mono);font-size:13px;color:var(--muted);white-space:nowrap;flex:none}
+/* The reading under the tile: one heading, one visible line, the rest in
+   the native disclosure, then the press. */
+.tracker-reading{display:flex;flex-direction:column;gap:8px;min-width:0;padding-top:12px;border-top:1px solid var(--rule)}
+.tracker-reading-title{margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.tracker-reading-more summary{cursor:pointer;padding:2px 0;font-size:12.5px;font-weight:600;color:var(--text)}
+.tracker-reading-more summary:hover{color:var(--accent-text)}
+.tracker-reading-more[open] summary{margin-bottom:8px}
 .tracker-delta{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);min-width:0}
 .delta-chip{font-family:var(--font-mono);font-size:12.5px;color:var(--text-2);border:1px solid var(--rule);border-radius:var(--r-inner);padding:1px 6px;white-space:nowrap;flex:none;max-width:100%;overflow-x:auto}
 .delta-chip.up{color:var(--accent-text);background:var(--accent-tint);border-color:transparent}
@@ -1011,6 +1021,8 @@ table.rows td.neg{color:var(--text-2)}
 .cust-hint{font-size:12.5px;color:var(--text-2)}
 .cust-note{font-size:12px;color:var(--muted)}
 .cust-cell{grid-column:span 6;display:flex;flex-direction:column;gap:8px}
+/* A tracker's figure prints in full, so its customize tile takes the row. */
+.cust-cell:has(.tracker-card){grid-column:1/-1}
 .cust-cell.drag-src .card{opacity:.7}
 .cust-cell.drag-over .card{background:var(--accent-tint)}
 .cust-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 4px}
@@ -1046,6 +1058,15 @@ table.rows td.neg{color:var(--text-2)}
 }
 @media (max-width:980px){
   .cust-cell{grid-column:auto}
+}
+/* At a very narrow width (a phone, or a desk at high zoom) the status
+   word breaks inside its cell and the numeric columns keep a little more
+   of the table; the numbers themselves stay in their small scroller. */
+@media (max-width:560px){
+  .matrix thead th:nth-child(1){width:26%}
+  .matrix thead th:nth-child(2){width:28%}
+  .matrix thead th:nth-child(3){width:22%}
+  .matrix thead th:nth-child(4){width:24%}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}

@@ -1,10 +1,10 @@
 // The Decisions cell (spec 016 §9.1): waiting recommendations take the
 // cell over, setup rows hold it before anything is saved, and a desk that
 // is set up says so plainly instead of inventing a row.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import Brief from '../dashboard/Brief';
-import type { DashboardData, Recommendation } from '../types';
+import type { DashboardData, PluginCard, Recommendation } from '../types';
 
 const NOOP_REFETCH = async () => {};
 const NOOP_EXPIRED = () => {};
@@ -172,5 +172,161 @@ describe('the desk action line (spec 023)', () => {
     view(1_700_000_000);
     expect(screen.queryByText('The desk checked your sources.')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+/** A delta whose every row changed: the first carries the piped figure. */
+function changedRows(count: number) {
+  const names = Array.from({ length: count }, (_, index) => `Deal ${index}`);
+  return {
+    added: names.map((name, index) => [name, '', '', index === 0 ? 1234567 : 500, '']),
+    removed: names.map((name, index) => [name, '', '', index === 0 ? 0 : 500, '']),
+    unchanged: 0,
+  };
+}
+
+const LOWER_TRACKER: PluginCard = {
+  id: 'excel-report~q4',
+  title: 'Q4 bookings',
+  version: '0.1.0',
+  pilot: false,
+  state: 'enabled',
+  freshness: 'fresh',
+  cause: '',
+  checkedAt: '2026-11-24T15:05:00',
+  pluginId: 'excel-report',
+  instanceId: 'q4',
+  payload: {
+    tracker: {
+      name: 'Q4 bookings',
+      value: '9270950',
+      unit: 'USD',
+      delta: '+18850',
+      direction: 'up',
+      points: [1, 2, 3],
+      file: 'q4.xlsx',
+    },
+    elements: [],
+  },
+};
+
+function pluginCard(id: string, title: string, freshness = 'fresh'): PluginCard {
+  return {
+    id,
+    title,
+    version: '1.0.0',
+    pilot: false,
+    state: 'enabled',
+    freshness,
+    cause: '',
+    ...(freshness === 'fresh' ? { checkedAt: '2026-11-24T15:05:00' } : {}),
+    payload: { elements: [] },
+  };
+}
+
+const RICH: DashboardData = {
+  ...BASE,
+  sources: { connected: 1, total: 3, items: [] },
+  sales: {
+    enabled: true,
+    mode: 'live',
+    status: {
+      configured: true,
+      state: 'healthy',
+      path: 'C:\books\sales.xlsx',
+      last_ok_ts: 1_700_000_000,
+      delta: changedRows(1234),
+    },
+  },
+  commitments: { enabled: true, mode: 'live', status: { state: 'clear' } },
+  research: { enabled: true, lastAnsweredTs: null },
+  layout: {
+    cards: [
+      { key: 'sales', title: null },
+      { key: 'commitments', title: null },
+      { key: 'research', title: null },
+      { key: 'excel-report~q4', title: null },
+      { key: 'competitor-watch', title: null },
+      { key: 'p3', title: null },
+      { key: 'p4', title: null },
+    ],
+  },
+  plugins: {
+    cards: [
+      LOWER_TRACKER,
+      pluginCard('competitor-watch', 'Competitor Watch', 'attention'),
+      pluginCard('p3', 'Notes digester'),
+      pluginCard('p4', 'Invoice digester'),
+    ],
+  },
+};
+
+describe('the brief groups its numbers and its health rows', () => {
+  it('prints a grouped headline, grouped header counts and titled stats', () => {
+    show(RICH);
+    expect(document.querySelector('.kpi .value')).toHaveTextContent('+1,234,567');
+    const stats = Array.from(document.querySelectorAll('.hero-stats dd'));
+    expect(stats.map((dd) => dd.textContent)).toEqual(['1,234', '0', '0']);
+    expect(stats.map((dd) => dd.getAttribute('title'))).toEqual([
+      'Changed: 1,234',
+      'Added: 0',
+      'Removed: 0',
+    ]);
+  });
+
+  it('counts the three desk sources and labels the plugin rows separately', () => {
+    show(RICH);
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).getByText('1 of 3 sources live')).toBeInTheDocument();
+    expect(within(health).getByText('Plugins that feed a tile')).toBeInTheDocument();
+    expect(within(health).getByText('3 of 4 live')).toBeInTheDocument();
+    // A plugin that never ran says never, not the clock.
+    expect(within(health).getAllByText('never')).toHaveLength(1);
+  });
+
+  it('uses one tag name per kind and a plain PLUGIN for an unknown one', () => {
+    show(RICH);
+    expect(document.querySelector('.cell-tracker h2.tag')).toHaveTextContent('TRACKER');
+    expect(document.querySelector('.cell-watch h2.tag')).toHaveTextContent('PAGE WATCH');
+    expect(document.querySelector('.cell-plugin h2.tag')).toHaveTextContent('PLUGIN');
+  });
+
+  it('gives the health row and the tracker the full row, and pairs the rest', () => {
+    show(RICH);
+    const health = document.querySelector('.brief > .cell-health');
+    const tracker = document.querySelector('.brief > .cell-tracker');
+    expect(health).toHaveClass('span-12');
+    expect(tracker).toHaveClass('span-12');
+    const cells = Array.from(document.querySelectorAll('.brief > .cell-watch, .brief > .cell-plugin'));
+    expect(cells).toHaveLength(3);
+    expect(cells[0]).toHaveClass('span-6');
+    expect(cells[1]).toHaveClass('span-6');
+    // An odd last card takes the full row instead of half a row alone.
+    expect(cells[2]).toHaveClass('span-12');
+  });
+
+  it('renders a digest with an unreadable calendar start without a time', () => {
+    const broken: DashboardData = {
+      ...RICH,
+      commitments: {
+        enabled: true,
+        mode: 'live',
+        status: {
+          state: 'healthy',
+          keyEvent: {
+            id: 'evt-broken',
+            subject: 'Broken meeting',
+            start: 'not-a-date',
+            end: 'not-a-date',
+            location: 'Room Beaufort',
+            attendees: 2,
+          },
+          generatedAt: '2026-11-24T15:05:00',
+        },
+      },
+    };
+    expect(() => show(broken)).not.toThrow();
+    expect(screen.getByText('Broken meeting')).toBeInTheDocument();
+    expect(document.querySelector('.digest-time')?.textContent).toBe('');
   });
 });

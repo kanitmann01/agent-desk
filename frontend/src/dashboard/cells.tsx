@@ -7,7 +7,7 @@
 import type { ReactNode } from 'react';
 import type { TrackerView } from '../types';
 import type { StageNet } from './briefModel';
-import { formatCompact, formatSigned } from './briefModel';
+import { formatCompact, formatGrouped, formatSigned } from './briefModel';
 import type { DigestItem, WatchView } from './sampleDesk';
 
 const TIME = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -86,7 +86,7 @@ export function StageChart({ stages }: { stages: StageNet[] }) {
       <div className="stage-axis" aria-hidden="true">
         {ordered.map((s) => (
           <span key={s.stage} title={s.stage}>
-            {s.stage}
+            <span className="stage-name">{s.stage}</span>
             <small title={`${s.deals} ${s.deals === 1 ? 'deal' : 'deals'}`}>
               {s.deals} {s.deals === 1 ? 'deal' : 'deals'}
             </small>
@@ -196,10 +196,13 @@ export function SeriesChart({ points, kind, label }: { points: number[]; kind: s
 
 /** The tracker pattern: name, big figure, signed delta, trend, pace. */
 export function TrackerFigure({ view, action }: { view: TrackerView; action?: ReactNode }) {
+  // The wire carries the raw value; the tile groups it for display only.
   const goal = view.goal ? parseFigure(view.goal.value) : null;
   const now = parseFigure(view.value);
   const pace = goal && now != null ? Math.max(0, Math.min(1, now / goal)) : null;
   const deltaClass = view.direction === 'down' ? 'delta-chip down' : view.direction === 'up' ? 'delta-chip up' : 'delta-chip';
+  const valueText = formatGrouped(view.value);
+  const deltaText = view.delta === 'First reading' ? 'First reading' : formatGrouped(view.delta);
   return (
     <div className="tracker">
       <div className="tracker-title">
@@ -207,11 +210,11 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
         {action}
       </div>
       <div className="tracker-figure">
-        <span className="figure">{view.value}</span>
+        <span className="figure">{valueText}</span>
         {view.unit ? <span className="figure-unit">{view.unit}</span> : null}
       </div>
       <p className="tracker-delta">
-        <span className={deltaClass}>{view.delta === 'First reading' ? 'First reading' : view.delta}</span>
+        <span className={deltaClass} title={`Change: ${deltaText}`} tabIndex={0}>{deltaText}</span>
         {view.delta === 'First reading' ? null : <span>{view.deltaLabel || 'since the last reading'}</span>}
       </p>
       {view.points.length >= 2 ? (
@@ -236,7 +239,7 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
             <span style={{ width: `${pace * 100}%` }} />
           </div>
           <p className="pace-note">
-            <span className="mono">{Math.round(pace * 100)}%</span> of {view.goal.value}{view.goal.unit ? ` ${view.goal.unit}` : ''}
+            <span className="mono">{Math.round(pace * 100)}%</span> of {formatGrouped(view.goal.value)}{view.goal.unit ? ` ${view.goal.unit}` : ''}
             {view.paceNote ? <span className="pace-extra">{view.paceNote}</span> : null}
           </p>
         </div>
@@ -258,16 +261,23 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
 export function DigestList({ items }: { items: DigestItem[] }) {
   return (
     <ol className="digest">
-      {items.map((item, index) => (
-        <li key={index}>
-          <time className="digest-time" dateTime={item.at.toISOString()}>{clock(item.at)}</time>
-          <span className="digest-src">{item.source}</span>
-          <span className="digest-text">
-            <span className="digest-title" title={item.title}>{item.title}</span>
-            <span className="digest-detail" title={item.detail || undefined}>{item.detail}</span>
-          </span>
-        </li>
-      ))}
+      {items.map((item, index) => {
+        // A malformed calendar start renders the item without a time
+        // instead of taking the page down with an invalid Date.
+        const timed = Number.isFinite(item.at.getTime());
+        return (
+          <li key={index}>
+            {timed
+              ? <time className="digest-time" dateTime={item.at.toISOString()}>{clock(item.at)}</time>
+              : <span className="digest-time" aria-hidden="true" />}
+            <span className="digest-src">{item.source}</span>
+            <span className="digest-text">
+              <span className="digest-title" title={item.title}>{item.title}</span>
+              <span className="digest-detail" title={item.detail || undefined}>{item.detail}</span>
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -324,7 +334,22 @@ export interface HealthRow {
  * Every cell arrives as display text: the table formats nothing, so a value
  * shows exactly as given.
  */
-export function HealthMatrix({ rows }: { rows: HealthRow[] }) {
+export function HealthMatrix({ sources, plugins = [] }: {
+  sources: HealthRow[];
+  plugins?: HealthRow[];
+}) {
+  const row = (item: HealthRow) => (
+    <tr key={item.name}>
+      <th scope="row" title={item.name}>{item.name}</th>
+      <td>
+        <span className={item.live ? 'sq on' : 'sq'} aria-hidden="true" />
+        {item.status}
+      </td>
+      <td className="num mono">{item.lastRun}</td>
+      <td className="num mono">{item.items}</td>
+    </tr>
+  );
+  const pluginLive = plugins.filter((item) => item.live).length;
   return (
     <table className="matrix">
       <thead>
@@ -335,19 +360,20 @@ export function HealthMatrix({ rows }: { rows: HealthRow[] }) {
           <th scope="col" className="num">Items</th>
         </tr>
       </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.name}>
-            <th scope="row" title={row.name}>{row.name}</th>
-            <td>
-              <span className={row.live ? 'sq on' : 'sq'} aria-hidden="true" />
-              {row.status}
-            </td>
-            <td className="num mono">{row.lastRun}</td>
-            <td className="num mono">{row.items}</td>
+      <tbody>{sources.map(row)}</tbody>
+      {plugins.length > 0 ? (
+        <tbody>
+          <tr className="matrix-group">
+            <th scope="colgroup" colSpan={4}>
+              <span className="matrix-group-line">
+                <span>Plugins that feed a tile</span>
+                <span className="matrix-group-count mono">{pluginLive} of {plugins.length} live</span>
+              </span>
+            </th>
           </tr>
-        ))}
-      </tbody>
+          {plugins.map(row)}
+        </tbody>
+      ) : null}
     </table>
   );
 }

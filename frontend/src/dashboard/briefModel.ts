@@ -247,6 +247,21 @@ export function formatAmount(value: number | null): string {
   return Math.round(value).toLocaleString('en-US');
 }
 
+/**
+ * One raw numeric string grouped for display, keeping its sign and decimals.
+ *
+ * The wire carries the raw value (the workbook binding and the server's
+ * number parser both depend on it), so grouping happens only here. A string
+ * that is not a plain number (a sentence, or a value already grouped) comes
+ * back untouched.
+ */
+export function formatGrouped(value: string): string {
+  const match = /^([+-]?)(\d+)(\.\d+)?$/.exec(value.trim());
+  if (!match) return value;
+  const [, sign, whole, fraction = ''] = match;
+  return `${sign}${BigInt(whole).toLocaleString('en-US')}${fraction}`;
+}
+
 export interface StageNet {
   stage: string;
   net: number;

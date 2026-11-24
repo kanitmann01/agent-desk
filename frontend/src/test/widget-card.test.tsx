@@ -28,8 +28,8 @@ describe('the widget card header contract', () => {
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Sales, last 24h');
     expect(screen.getByText('updated 3 min ago')).toBeInTheDocument();
     // No menu items declared: the dots are not rendered, so no dead
-    // control ships.
-    expect(screen.queryByRole('button', { name: 'Widget options' })).toBeNull();
+    // control ships. The regex matches the real accessible name shape.
+    expect(screen.queryByRole('button', { name: /^Widget options/ })).toBeNull();
     expect(screen.getByText('body copy')).toBeInTheDocument();
     expect(screen.getByText('foot text')).toBeInTheDocument();
     // The card body is the article itself: no glass wrapper between.
@@ -247,6 +247,18 @@ describe('the stamp', () => {
 
   it('reads stale with the amber dot', () => {
     render(<Stamp fresh={false} text="stale 2h ago" />);
+    expect(document.querySelector('.stamp .dot.amber')).not.toBeNull();
+  });
+
+  it('titles and focuses the stamp so a clipped status stays reachable', () => {
+    render(<Stamp fresh={false} text="Re-test available" />);
+    const stamp = document.querySelector('.stamp');
+    expect(stamp).toHaveAttribute('title', 'Re-test available');
+    expect(stamp).toHaveAttribute('tabindex', '0');
+  });
+
+  it('copes with an empty time', () => {
+    render(<Stamp fresh={false} text="" />);
     expect(document.querySelector('.stamp .dot.amber')).not.toBeNull();
   });
 });
