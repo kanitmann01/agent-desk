@@ -8,13 +8,14 @@ step, one re-entrant lock serializing every statement, an injectable
 clock supplying every timestamp.
 """
 
-import functools
 import json
 import sqlite3
 import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+
+from agentdesk.locking import serialized as _serialized
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS connections (
@@ -113,17 +114,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     """Create the connections table and commit; safe on every open."""
     conn.executescript(SCHEMA)
     conn.commit()
-
-
-def _serialized(method):
-    """Every read and write holds the store's one lock (the inbox store's
-    precedent: the connection is shared by the server's request threads)."""
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        """Run one store method with the store's re-entrant lock held."""
-        with self._lock:
-            return method(self, *args, **kwargs)
-    return wrapper
 
 
 class KeysStore:

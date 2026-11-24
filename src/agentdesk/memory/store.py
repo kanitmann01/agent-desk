@@ -47,7 +47,6 @@ normalized duplicate matches, riding the text_idx blind index on a
 sealed bank with a decrypt-verify second.
 """
 
-import functools
 import json
 import math
 import os
@@ -58,6 +57,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from agentdesk.locking import serialized as _locked
 from agentdesk.memory.core import (
     EditResult,
     EntitySummary,
@@ -509,28 +509,6 @@ def ensure_key_file(path) -> bytes:
 def read_key_file(path) -> bytes:
     """Read and validate the key file; ValueError when it is not 32 bytes."""
     return load_key(Path(path).read_bytes())
-
-
-def _locked(method):
-    """One lock around every write, the settings.py rule: the store's
-    connection is shared across the server's request threads with
-    check_same_thread=False, so mutating methods serialize on one RLock.
-    Without it two threads can interleave commits on the connection's
-    single transaction and half-apply each other's writes (a double-
-    clicked Encrypt button is the worst case: both conversions would run
-    over the same rows and the second blanking pass can seal an emptied
-    plaintext over the only ciphertext). Reads stay unlocked: SQLite
-    serializes them safely against one writer."""
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        """Run the method with the store's write lock held.
-
-        An RLock because a locked method may call another one; reads skip it,
-        since SQLite serializes them against a single writer.
-        """
-        with self._lock:
-            return method(self, *args, **kwargs)
-    return wrapper
 
 
 @dataclass(frozen=True)

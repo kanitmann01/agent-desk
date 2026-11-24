@@ -8,11 +8,12 @@ the settings page, because a log kept about you belongs to you.
 from __future__ import annotations
 
 import contextlib
-import functools
 import sqlite3
 import threading
 import time
 from collections.abc import Callable
+
+from agentdesk.locking import serialized as _serialized, store_lock
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS activity (
@@ -30,20 +31,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _serialized(method):
-    """Every read and write holds the store's one lock, the inbox store's
-    pattern. The connection is shared (check_same_thread=False) by the
-    server's request threads and the agent loop's skills step; Python's
-    sqlite3 connection keeps one implicit transaction, so interleaved use
-    can commit another thread's half-done write."""
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        """Run one store method with the store's re-entrant lock held."""
-        with self._lock:
-            return method(self, *args, **kwargs)
-    return wrapper
-
-
 class ActivityLog:
     """Asked-for text, thread-safe: every method serializes on one lock
     (see _serialized). Stores sharing a connection with the skills store
@@ -58,7 +45,7 @@ class ActivityLog:
         """
         self.conn = conn
         self.clock = clock
-        self._lock = lock if lock is not None else threading.RLock()
+        self._lock = store_lock(lock)
         with self._lock:
             ensure_schema(conn)
 

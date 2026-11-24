@@ -7231,6 +7231,8 @@ def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(data_dir / "repetition.sqlite3", check_same_thread=False)
+        # One connection, one lock (the agentdesk.locking rule): both
+        # stores sit on this connection, so its lock is the connection's.
         lock = threading.RLock()
         return (ActivityLog(conn, time.time, lock=lock),
                 SkillStore(conn, time.time, lock=lock))
