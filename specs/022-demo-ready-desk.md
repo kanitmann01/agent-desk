@@ -336,9 +336,11 @@ is marked ready. Evidence: the readiness output and screenshots at
   tests).
 - Deleting the hidden modules and their tests (a follow-up pull request
   after the demo, per the cut list).
-- Hermes in any form (not a plugin, not a connection, not an entry point,
-  not a runtime) and any new enterprise connector. The founder's direction
-  of 2026-11-23 and the work that follows it are spec 023.
+- Hermes as an explicit plugin, connection or entry point, and any new
+  enterprise connector. That the agent system underneath is to be Hermes,
+  or Hermes-like and autonomous, is the founder's direction of 2026-11-23;
+  it is not part of this spec and is not yet planned (see the correction
+  at the top of spec 023).
 - Changing how memory extracts facts (the extraction prompts), embeddings,
   or encryption.
 - A guided full-screen onboarding, product tours, tooltips.
@@ -366,6 +368,13 @@ data aggregators and connectors." Nothing in this spec adds a Hermes
 plugin, connection or entry point, and the "Hermes (local)" connection
 this session was about to propose is withdrawn. The decision is recorded
 on #276; the first slice is spec 023.
+
+Later the same day the founder corrected one reading: "But i want the
+underlying system to be hermes (or hermes like) i just said don't make it
+into an explicit plugin. The feeling should be autonomous like it's with
+hermes." So "Hermes is never a runtime" was never the founder's decision;
+only an explicit plugin (and a separate assistant entry point) is ruled
+out. The engine question is open and is recorded at the top of spec 023.
 
 **What the implementation corrected (2026-11-23).** Three decisions above
 were changed while building, each because the product showed otherwise:

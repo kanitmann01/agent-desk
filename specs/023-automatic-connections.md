@@ -1,7 +1,41 @@
 # Spec 023: The desk connects what a plugin brings to what it already holds
 
-Status: proposed on 2026-11-23 (first slice). Direction: the founder, on
-2026-11-23 (decision recorded on #276). Parent spec: 022.
+Status: proposed on 2026-11-23 as a first slice, and narrower than the
+founder's direction. Read the correction below before building anything.
+Parent spec: 022.
+
+## Correction from the founder (2026-11-23, later the same day)
+
+The founder's words: "But i want the underlying system to be hermes (or
+hermes like) i just said don't make it into an explicit plugin. The feeling
+should be autonomous like it's with hermes."
+
+Read together with the first message, the direction is this: the agent
+system underneath the desk is to be Hermes, or Hermes-like, and it is to
+feel autonomous. The only thing ruled out is Hermes as an explicit plugin
+(and, from the first message, as a separate assistant entry point).
+Plugins stay data aggregators and connectors.
+
+This spec was written narrower than that. What follows describes one
+deterministic line on a plugin card, with no model call and no new loop
+step, because the session read the first message as "Hermes stays a source
+of patterns, never a runtime". That reading was the session's, not the
+founder's. So:
+
+- Treat what follows as, at most, a first visible slice of the connecting
+  behaviour, not as the scope.
+- The scope is the autonomous engine. The repository has already reasoned
+  about it. `docs/research.md` A8.8 chose "Hermes Agent as the invisible
+  engine" behind a thin adapter when autonomy is in scope. A9.2 (binding,
+  2026-11-11) set the Hermes runtime aside for deployment reasons and kept
+  "Hermes remains an optional future backend behind" the adapter
+  vocabulary. `specs/001-agent-desk-v1.md` keeps "a future engine swap
+  possible without touching the product". In the code today there is no
+  adapter boundary: fifteen modules carry ported Hermes patterns behind a
+  fixed-step loop.
+- Whether the engine is the real Hermes Agent or the desk's own core made
+  to behave like it is the founder's decision. It is open.
+- Re-plan before building ticket #287.
 
 ## Problem Statement
 
@@ -123,8 +157,9 @@ otherwise: the card it sits on already wears its SAMPLE DATA tag.
 ## Further Notes
 
 The second-opinion review of 2026-11-23 confirmed the plugin card as the
-right surface (it renders on both the SPA and the no-script page, and the
-receipt machinery already prints an honest "Used:" line), set the
-refusals above from existing precedent, and warned that the connection
-must be a block and never an element. It would change its mind only if the
-founder's demo script names the Decisions cell for this behaviour.
+right surface for this slice (it renders on both the SPA and the no-script
+page, and the receipt machinery already prints an honest "Used:" line),
+set the refusals above from existing precedent, and warned that the
+connection must be a block and never an element. It was asked about one
+line on a card, not about an autonomous engine, so it says nothing about
+the scope the founder means (see the correction at the top).
