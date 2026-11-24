@@ -230,7 +230,7 @@ def test_the_built_in_steps_are_registered():
     # §6.2 says.
     assert [step.name for step in STEPS] == [
         "deskcheck", "recommend", "rank", "learn-topics", "profile-review",
-        "skills", "curator", "update"]
+        "skills", "curator", "update", "engine"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------

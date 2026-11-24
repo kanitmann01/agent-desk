@@ -263,12 +263,23 @@ class AgentLoop:
                 context = LoopContext(server=self.server, ledger=ledger,
                                       settings=settings, now=self._now_dt())
                 outcome = step.run(context)
-                results.append({
+                # A step may return its own verdict: an engine turn that
+                # failed answers ok False, and the pass must not record it
+                # as a success. A dict without ok is a success, as before.
+                ok = bool(outcome.get("ok", True)) if isinstance(outcome, dict) else True
+                row = {
                     "name": step.name,
-                    "ok": True,
+                    "ok": ok,
                     "ms": round((time.monotonic() - started) * 1000),
                     "note": _note_text(outcome),
-                })
+                }
+                if isinstance(outcome, dict):
+                    # A step's own counts stay readable to the status API
+                    # and the readiness walk without being folded into the
+                    # note prose: the engine step's backend, action count,
+                    # refusal count and verdict live here.
+                    row["detail"] = dict(outcome)
+                results.append(row)
             except Exception as exc:  # noqa: BLE001 - one step never stops the pass
                 LOG.exception("agent loop step %s failed", step.name)
                 results.append(self._failed_row(step.name, started, exc))
@@ -353,6 +364,16 @@ class AgentLoop:
             ledger.latch(LATCH_LAST_RUN, store)
         if due:
             self.run_pass()
+
+    def is_running(self) -> bool:
+        """Whether a pass holds the run slot right now.
+
+        The public answer the fallback backend reads before it would
+        call run_pass(): a pass that is already running must never be
+        started again, and its ledger entries must never be re-executed.
+        """
+        with self._state_lock:
+            return self._running
 
     def stop(self, timeout: float = 2) -> None:
         """Ask both loop threads to stop and join them, bounded by the

@@ -61,6 +61,18 @@ Memory
 Real sources (files copied outside the sample folder)
   R22  a real workbook completes the workbook step
   R23  a real calendar completes the calendar step, so every step is done
+
+The desk acting by itself (spec 023, tickets 023-3; the numbers 24 and
+25 are reserved for the sibling slices, never reassigned)
+  R26  a fresh desk acts by itself within 120 seconds of first boot
+  R27  the dashboard payload carries what changed (the agent loop's
+       stamp), and it advances when the desk acts
+  R28  the names the desk says are names the desk holds (the engine's
+       reading, and a real connect line on a card when the build has
+       the connect step)
+  R29  the pass pays the ledger toll: every action has a ledger entry
+       with an undo kind, Undo works on one, and the engine step row
+       says which backend ran and what it did
 """
 
 from __future__ import annotations
@@ -81,6 +93,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -89,6 +102,8 @@ ROOT = Path(__file__).resolve().parents[1]
 for _path in (str(ROOT / "src"),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
+
+from agentdesk.engine import DEFAULT_TURN_TIMEOUT_S
 
 MOCK_KEY = "sk-ready-0001"
 MOCK_MODEL = "mock-chat"
@@ -106,7 +121,11 @@ IT_ONLY_HREFS = (
     "/marketplace/publishers", "/marketplace/studio",
 )
 RAIL_BANNED_HREFS = ("/peers", "/activity", "/capabilities")
-CHECK_COUNT = 23
+# R24 and R25 belong to the sibling slices (spec 023, tickets 023-1 and
+# 023-2); a new check is a new number, so the walk's numbers jump there
+# on purpose.
+CHECK_COUNT = 27
+CHECK_NUMBERS = tuple(range(1, 24)) + (26, 27, 28, 29)
 # Every AGENTDESK_* variable the product reads: pinned empty so the walk
 # sees a machine with nothing configured.
 PINNED_EMPTY = (
@@ -193,6 +212,10 @@ class Desk:
             keychain=KeychainSecrets(backend=FileKeychain(keychain_file)))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
+        # The launcher's serve() starts the background polls (the
+        # supervised loop included) once bound; the walk mirrors that,
+        # so the desk can act by itself the way a real start does.
+        server_app.start_background_polls(self.server)
         self.base = f"http://127.0.0.1:{self.server.port}"
         self._jar = http.cookiejar.CookieJar()
         self.follow = urllib.request.build_opener(
@@ -251,6 +274,20 @@ class Desk:
             self.base + path, data=body, method="POST",
             headers={"Content-Type": content_type})
         return self._open(self.follow, request)
+
+    def post_engine_tool(self, tool: str, args: dict):
+        """POST one tool call to the desk's own engine route with its token.
+
+        The boot-minted token rides the Authorization header, exactly as
+        the engine's own calls do; redirects are not followed so a
+        refusal is read as a refusal.
+        """
+        data = json.dumps({"tool": tool, "args": args}).encode("utf-8")
+        request = urllib.request.Request(
+            self.base + "/api/engine/tools", data=data, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer " + self.server.engine_token})
+        return self._open(self.direct, request)
 
     def close(self) -> None:
         """Stop the server, its watchers, its stores and its thread.
@@ -417,11 +454,14 @@ class Report:
 
     def check(self, number: int, name: str, ok: bool, detail: str = "") -> None:
         """Print and count one check; a false `ok` is a FAIL with the detail."""
+        line = (f"PASS R{number:02d} {name}" if ok
+                else f"FAIL R{number:02d} {name}: {detail}")
         if ok:
             self.passed += 1
-            print(f"PASS R{number:02d} {name}", flush=True)
-        else:
-            print(f"FAIL R{number:02d} {name}: {detail}", flush=True)
+        # One write, not print's several: the mock endpoint logs from its
+        # own request threads, and a whole line cannot interleave with it.
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
 
     def run(self, number: int, name: str, probe) -> None:
         """Decide one check from `probe`, which returns (ok, detail).
@@ -740,13 +780,485 @@ def _free_udp_port() -> int:
         return probe.getsockname()[1]
 
 
+# How long a pass may take after Run now. The engine turn's own ceiling
+# is DEFAULT_TURN_TIMEOUT_S, and the pass runs its other steps around
+# it, so the wait is that ceiling plus a margin: a real side-car turn
+# cannot fail the check spuriously.
+READY_PASS_WAIT_S = DEFAULT_TURN_TIMEOUT_S + 30.0
+
+# The engine step's absent-side-car sentence, pinned here independently:
+# R29 accepts this exact fallback and nothing vaguer.
+FALLBACK_NOTE = ("The side-car is not installed; the pass's fixed steps "
+                 "are the fallback.")
+
+
+def _loop_status(desk: Desk) -> dict:
+    """The agent loop's status payload, with lastSteps, or an empty dict."""
+    payload = desk.get_json("/api/agent-loop")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _engine_step_row(payload: dict) -> dict | None:
+    """The engine step row in one status payload, or None when absent."""
+    for row in payload.get("lastSteps") or []:
+        if isinstance(row, dict) and row.get("name") == "engine":
+            return row
+    return None
+
+
+def _audit_tail(desk: Desk) -> list[dict]:
+    """The newest audit rows, detail included, or nothing readable."""
+    payload = desk.get_json("/audit/tail")
+    rows = payload.get("entries") if isinstance(payload, dict) else None
+    return [row for row in rows or [] if isinstance(row, dict)]
+
+
+def _wait_for_loop_idle(desk: Desk, seconds: float = 60.0) -> bool:
+    """Wait until no pass is running, so a seed never writes beside one.
+
+    The dashboard's stamp advances at the end of a pass's steps, a
+    moment before the run slot is released; a memory write landing in
+    that window races the pass's own reads. R28 and R29 seed facts, so
+    they first wait for the slot to be idle.
+    """
+    return _wait_until(lambda: _loop_status(desk).get("running") is False,
+                       seconds=seconds)
+
+
+def _sidecar_installed() -> bool:
+    """Whether this walk's desk can run the real side-car right now."""
+    from agentdesk.engine import available
+
+    try:
+        return bool(available())
+    except Exception:  # noqa: BLE001 - an unreadable install is absent
+        return False
+
+
+def _connect_step_present() -> bool:
+    """Whether this build carries the connect step that writes the line.
+
+    The connect line belongs to the sibling slice (spec 023, ticket
+    023-1). In a build composed with it, R28 requires a real card line;
+    in a build without it no card can carry one, and the requirement
+    would fail on a fact of composition rather than a regression, so
+    the invariant-only half runs. A build that keeps the module but
+    loses the line still fails: the producer is present, the card is
+    not.
+    """
+    try:
+        from agentdesk.insight import insight_connect  # noqa: F401
+    except Exception:  # noqa: BLE001 - the sibling slice is not in this build
+        return False
+    return True
+
+
+# -- the desk acting by itself (spec 023, R26 to R29) -----------------------
+
+
+def _loop_stamp(desk: Desk) -> dict:
+    """The dashboard's agent loop stamp, or an empty dict."""
+    stamp = desk.get_json("/api/dashboard").get("agentLoop")
+    return stamp if isinstance(stamp, dict) else {}
+
+
+def _collect_first_boot_activity(desk: Desk) -> tuple[bool, str]:
+    """R26's evidence: what the desk did by itself, within 120 seconds.
+
+    The supervised loop's startup desk check is the desk's own first
+    act; the walk waits for its stamp on the dashboard and its row in
+    the audit export, both things a person can look at.
+    """
+    deadline = time.monotonic() + 120.0
+    stamp: dict = {}
+    while time.monotonic() < deadline:
+        stamp = _loop_stamp(desk)
+        if isinstance(stamp.get("lastRunTs"), (int, float)):
+            break
+        time.sleep(0.5)
+    if not isinstance(stamp.get("lastRunTs"), (int, float)):
+        return False, "no agent loop stamp appeared on the dashboard in 120 seconds"
+    export = desk.get("/audit/export.csv")[2].decode("utf-8")
+    if "agentloop.pass" not in export:
+        return False, ("the dashboard carries the stamp but the audit export "
+                       "has no agentloop.pass row")
+    return True, f"the desk ran its first pass by itself (stamp {stamp.get('lastRunTs')})"
+
+
+def _run_now(desk: Desk, seconds: float = 30.0) -> tuple[bool, int]:
+    """Click Run now until the loop accepts it, waiting out a running pass.
+
+    The answer is the final status: 200 means a pass was started, any
+    other status is a refusal the caller reports.
+    """
+    deadline = time.monotonic() + seconds
+    status = 0
+    while time.monotonic() < deadline:
+        status, _headers, _body = desk.post_json("/api/agent-loop/run", {})
+        if status == 200:
+            return True, status
+        if status != 409:
+            return False, status
+        time.sleep(0.25)
+    return False, status
+
+
+def _stamp_advanced(desk: Desk, before) -> bool:
+    """Whether the dashboard's stamp now carries a run newer than before."""
+    value = _loop_stamp(desk).get("lastRunTs")
+    if not isinstance(value, (int, float)):
+        return False
+    if isinstance(before, (int, float)):
+        return value != before
+    return True
+
+
+def _stamp_carries_what_changed(desk: Desk) -> tuple[bool, str]:
+    """R27: the payload carries the loop's stamp, and it advances when the desk acts.
+
+    The poll hook's HTTP contract: a screen that re-fetches can see the
+    desk's own activity change in the payload it already reads. The
+    stamp need not exist before the click: the first full pass after a
+    restart writes it, so the check waits for None to become a number
+    or for a number to advance.
+    """
+    before = _loop_stamp(desk).get("lastRunTs")
+    accepted, status = _run_now(desk)
+    if not accepted:
+        return False, f"Run now answered {status}; stamp stayed {before!r}"
+    advanced = _wait_until(lambda: _stamp_advanced(desk, before),
+                           seconds=READY_PASS_WAIT_S)
+    after = _loop_stamp(desk).get("lastRunTs")
+    return bool(advanced), f"Run now answered 200; stamp {before!r} -> {after!r}"
+
+
+def _connect_lines_name_held(desk: Desk, held: set[str],
+                             connect_present: bool | None = None) -> tuple[bool, str]:
+    """Whether a real connect line exists and names only held names.
+
+    The invariant behind R28: a card may say "Also in your desk" only
+    about a name the desk holds. When this build carries the connect
+    step, at least one card must actually carry the line, so a
+    regression that removes it fails; when the step is absent from the
+    build, no card can carry it and the walk says so rather than
+    claiming a connection it never checked. A card that names an unheld
+    name fails in either case.
+    """
+    present = _connect_step_present() if connect_present is None else connect_present
+    cards = ((desk.get_json("/api/dashboard").get("plugins") or {})
+             .get("cards") or [])
+    held_lower = {name.lower() for name in held}
+    lines_seen = 0
+    for card in cards:
+        payload = card.get("payload") if isinstance(card, dict) else None
+        insight = payload.get("insight") if isinstance(payload, dict) else None
+        if not isinstance(insight, dict):
+            continue
+        blocks = insight.get("blocks") or []
+        lines = [str(insight.get("note") or "")]
+        lines += [str(block.get("text") or "") for block in blocks
+                  if isinstance(block, dict)]
+        for line in lines:
+            if not line.startswith("Also in your desk:"):
+                continue
+            lines_seen += 1
+            for clause in line.split(":", 1)[1].split(";"):
+                name = clause.split(",")[0].strip().rstrip(".").lower()
+                if name and name not in held_lower:
+                    return False, f"a card names {name!r}, which the desk does not hold"
+    if lines_seen:
+        return True, (f"{len(cards)} card(s), {lines_seen} connect line(s), "
+                      "every name held")
+    if present:
+        return False, (f"{len(cards)} card(s), none carries an 'Also in your "
+                       "desk' line although the connect step is in this build")
+    return True, ("the connect step is not in this build, so no card can carry "
+                  "the line; no card claims an unheld name")
+
+
+def _auto_approve_on(desk: Desk) -> tuple[bool, str]:
+    """Turn automatic saving on through the page's own switch, unless it is on."""
+    def auto_approve() -> bool:
+        """Whether the desk currently saves learned facts automatically."""
+        capture = desk.get_json("/api/memory/loop").get("capture") or {}
+        return bool(capture.get("autoApprove"))
+
+    if auto_approve():
+        return True, "already on"
+    status, _headers, _body = desk.post_json(
+        "/settings/toggle", {"key": "memory_auto_approve"})
+    now = auto_approve()
+    return (status == 200 and now,
+            f"toggle answered {status}; autoApprove {now!r}")
+
+
+def _engine_held_names(desk: Desk) -> tuple[int, list[str]]:
+    """The desk_names tool's memory names and the status it answered."""
+    status, _headers, body = desk.post_engine_tool("desk_names", {})
+    if status != 200:
+        return status, []
+    names = json.loads(body.decode("utf-8")).get("names") or {}
+    return status, [str(row.get("name") or "") for row in names.get("memory") or []]
+
+
+def _names_are_held(desk: Desk) -> tuple[bool, str]:
+    """R28: the engine's reading carries exactly the names the desk holds.
+
+    The seed is an organisation the desk's own entity miner types as
+    org, because the engine's reading is the dashboard's org and person
+    names. The reading is polled, so a store that finishes its write a
+    moment after the response is not read as a missing name.
+    """
+    approve_ok, approve_detail = _auto_approve_on(desk)
+    if not approve_ok:
+        return False, f"automatic saving could not be turned on: {approve_detail}"
+    if not _wait_for_loop_idle(desk):
+        return False, "the agent loop was still running when R28 tried to seed a name"
+    seeded = desk.post_json("/memory/add", {
+        "text": "The Halvorsen Freight Group renewal is settled for this quarter."})
+    if seeded[0] not in (200, 201):
+        return False, f"saving the named fact answered {seeded[0]}: {seeded[2][:120]!r}"
+
+    def name_held() -> bool:
+        """Whether the desk_names tool now reads the seeded organisation."""
+        status, held = _engine_held_names(desk)
+        return status == 200 and "Halvorsen Freight Group" in held
+
+    appeared = _wait_until(name_held, seconds=15.0)
+    status, held = _engine_held_names(desk)
+    if status != 200:
+        return False, f"the desk_names tool answered {status}"
+    if not appeared:
+        return False, (f"the desk's own reading misses the saved name after "
+                       f"15 seconds: {held!r}")
+    if "Quiebro Nova" in held:
+        return False, "the desk's reading names something it does not hold"
+    lines_ok, lines_detail = _connect_lines_name_held(desk, set(held))
+    if not lines_ok and _connect_step_present() and "none carries" in lines_detail:
+        # The connect step is in this build but the current names do not
+        # appear in any workbook row. Boot the sample desk for this one
+        # check, so a real card carries the line; the switch goes back
+        # off in the finally, and R29 seeds its own fact afterwards.
+        lines_ok, lines_detail = _with_sample_connect_line(desk, set(held))
+    return lines_ok, f"the reading holds {held}; {lines_detail}"
+
+
+def _with_sample_connect_line(desk: Desk, held: set[str]) -> tuple[bool, str]:
+    """Boot the sample desk, open its workbook, check the line, switch it off.
+
+    The sample workbook's rows carry the names the sample memory holds,
+    but no card exists until the Workbook tracker is installed and its
+    sample instance is opened, so this does what a person does: install
+    the tracker, upload the sample workbook through its own setup route,
+    and confirm the tracker. The memory names are re-read after the
+    sample facts land, because the line rightly names the sample
+    entities the desk now holds. Nothing is left on: the switch returns
+    off even when the check fails.
+    """
+    if not _wait_for_loop_idle(desk):
+        return False, "the agent loop was still running when the sample desk was asked"
+    desk.post_json("/settings/toggle", {"key": "sample_data"})
+    try:
+        ready, why = _open_sample_tracker(desk)
+        if not ready:
+            return False, "with the sample desk booted once: " + why
+        status, current = _engine_held_names(desk)
+        if status != 200:
+            return False, (f"with the sample desk booted once: the desk_names "
+                           f"tool answered {status}")
+        names = set(current) | set(held)
+        _wait_until(lambda: _connect_lines_name_held(desk, names)[0], seconds=15.0)
+        ok, detail = _connect_lines_name_held(desk, names)
+    finally:
+        desk.post_json("/settings/toggle", {"key": "sample_data"})
+    return ok, "with the sample desk booted once: " + detail
+
+
+def _open_sample_tracker(desk: Desk) -> tuple[bool, str]:
+    """Install the Workbook tracker and open the sample workbook in it.
+
+    The install is the runtime's own (the registry entry is a verified
+    directory); the setup steps are the browser's: upload the sample
+    copy through the plugin's upload route, then confirm the tracker's
+    columns. A failure names the step rather than raising into the walk.
+    """
+    from agentdesk.server import demo_data
+
+    plugins = getattr(desk.server, "plugins", None)
+    if plugins is None:
+        return False, "the plugin runtime is not available"
+    try:
+        plugins.install(ROOT / "registry" / "plugins" / "excel-report",
+                        source="dir")
+    except Exception as exc:  # noqa: BLE001 - the check reports the cause
+        return False, f"installing the Workbook tracker failed: {exc}"
+    sample = demo_data.sample_workbook_path()
+    if not sample.is_file():
+        return False, f"the sample workbook is not at {sample}"
+    status, _headers, body = desk.post_body(
+        f"/api/plugins/excel-report/instances/main/upload/"
+        f"{urllib.parse.quote(sample.name)}",
+        sample.read_bytes(), "application/octet-stream")
+    if status != 200:
+        return False, (f"uploading the sample workbook answered {status}: "
+                       f"{body[:120]!r}")
+    status, _headers, body = desk.post_json(
+        "/api/plugins/excel-report/instances/main/confirm",
+        {"tracking": {"labelColumn": "Deal", "valueColumn": "Amount",
+                      "aggregate": "sum"}})
+    if status != 200:
+        return False, f"confirming the sample tracker answered {status}: {body[:120]!r}"
+    return True, "the sample workbook is open in the Workbook tracker"
+
+
+def _fact_listed(desk: Desk, fact: str) -> bool:
+    """Whether the Memory page or recall shows this exact saved fact."""
+    if fact in page_text(desk.get("/memory")[2].decode("utf-8")):
+        return True
+    status, _headers, body = desk.post_json(
+        "/memory/recall", {"query": "Acme renewal"})
+    return status == 200 and fact in body.decode("utf-8")
+
+
+def _pass_toll_half(desk: Desk, window: list[dict]) -> tuple[bool, str]:
+    """The pass-toll half: every entry in the window is undoable, and Undo works.
+
+    Reads and writes alike must carry an undo kind; undoing the newest
+    through Activity must mark it undone. This half is true whether the
+    pass acted through the engine or through its fixed steps.
+    """
+    if not window:
+        return False, "no ledger entry exists in the pass window"
+    held_back = [row["id"] for row in window if not row.get("undoable")]
+    if held_back:
+        return False, f"{len(held_back)} entry(ies) in the pass window lack an undo kind"
+    target = window[0]
+    undo = desk.post_json("/api/ledger/undo", {"id": target["id"]})
+    if undo[0] != 200:
+        return False, f"undoing {target['action']} answered {undo[0]}: {undo[2][:120]!r}"
+    after = {row["id"]: row for row in
+             desk.get_json("/api/ledger?limit=50").get("entries") or []}
+    undone = after.get(target["id"]) or {}
+    if not undone.get("undoneBy"):
+        return False, f"the undone entry {target['id']} does not say who undid it"
+    return True, (f"the pass's {len(window)} entry(ies) all carry an undo kind; "
+                  f"undo of {target['action']} worked")
+
+
+def _engine_half(desk: Desk, status_payload: dict, window: list[dict],
+                 *, installed: bool | None = None) -> tuple[bool, str]:
+    """The engine half: the pass has an engine row, and it says what ran.
+
+    The row must exist and be ok in every case. With the side-car
+    installed the turn must have proposed actions and refused none, and
+    the pass must carry either an engine-sourced ledger entry or an
+    engine.pass audit row that says actions > 0. Without it, the row
+    must be the honest fallback note and no action may be counted; the
+    fixed pass's own entries are the fallback, so this half does not
+    require any.
+    """
+    installed_now = _sidecar_installed() if installed is None else installed
+    row = _engine_step_row(status_payload)
+    if row is None:
+        return False, "the pass's lastSteps carries no engine step row"
+    if row.get("ok") is not True:
+        return False, f"the engine step row is not ok: {row.get('note')!r}"
+    detail = row.get("detail") if isinstance(row.get("detail"), dict) else {}
+    backend = str(detail.get("backend") or "")
+    actions = detail.get("actions")
+    refused = detail.get("refused")
+    note = str(detail.get("note") or row.get("note") or "")
+    if not installed_now:
+        if backend != "fallback":
+            return False, f"the side-car is absent but the engine row says {backend!r}"
+        if actions not in (0, None):
+            return False, f"the side-car is absent but the engine row claims {actions} action(s)"
+        if FALLBACK_NOTE not in note:
+            return False, f"the side-car is absent but the note is not the fallback: {note!r}"
+        return True, "no side-car is installed; the engine step names the fallback"
+    if backend != "sidecar":
+        return False, f"the side-car is installed but the engine row says {backend!r}"
+    if not isinstance(actions, int) or actions <= 0:
+        return False, "the engine turn proposed no action"
+    if refused not in (0, None):
+        return False, f"the engine turn refused {refused} action(s)"
+    acted = detail.get("acted")
+    if not isinstance(acted, int) or acted <= 0:
+        return False, "the engine turn executed no action"
+    engine_entry = any(
+        str(row.get("subject") or "").startswith("recommendation/engine:")
+        for row in window)
+    audit_ok = any(
+        entry.get("action") == "engine.pass"
+        and entry.get("status") == "ok"
+        and f"{actions} action(s)" in str(entry.get("detail") or "")
+        for entry in _audit_tail(desk))
+    if not engine_entry and not audit_ok:
+        return False, "no engine-sourced ledger entry and no engine.pass with actions"
+    return True, (f"the engine turn proposed {actions}, executed {acted}, "
+                  "refused none, and left its entry")
+
+
+def _pass_pays_the_toll(desk: Desk) -> tuple[bool, str]:
+    """R29: the pass pays the ledger toll, and the engine step says what ran.
+
+    The walk saves a dated fact first; the save path runs the same
+    recommendation builder the pass's recommend step runs, so the card's
+    entry can land during the save. Then Run now, wait on
+    READY_PASS_WAIT_S (a real engine turn may take its own ceiling),
+    read the pass's rows, and check both halves: every entry in the
+    window is undoable and Undo works, and the engine step row exists,
+    is ok, and matches what this desk can actually run.
+    """
+    due = datetime.now().date() + timedelta(days=10)
+    fact = f"The Acme renewal is due {due.strftime('%B')} {due.day}"
+    if not _wait_for_loop_idle(desk):
+        return False, "the agent loop was still running when R29 tried to seed its fact"
+    started = time.time()
+    saved = desk.post_json("/memory/add", {"text": fact})
+    if saved[0] not in (200, 201):
+        return False, f"saving the dated fact answered {saved[0]}: {saved[2][:120]!r}"
+    listed = _wait_until(lambda: _fact_listed(desk, fact), seconds=15.0)
+    if not listed:
+        return False, "the seeded dated fact never appeared in memory"
+    before = _loop_stamp(desk).get("lastRunTs")
+    accepted, status = _run_now(desk)
+    if not accepted:
+        return False, f"Run now answered {status} after the seeded fact was saved"
+    pass_started = time.time()
+    finished = _wait_until(lambda: _stamp_advanced(desk, before),
+                           seconds=READY_PASS_WAIT_S)
+    entries = desk.get_json("/api/ledger?limit=50").get("entries") or []
+    window = [row for row in entries if row.get("ts", 0) >= started]
+    if not finished or not window:
+        why = "did not finish" if not finished else "recorded no ledger entry"
+        return False, f"the seed and pass {why} in their window ({len(entries)} recent entries)"
+    toll_ok, toll_detail = _pass_toll_half(desk, window)
+    engine_ok, engine_detail = _engine_half(
+        desk, _loop_status(desk),
+        [row for row in window if row.get("ts", 0) >= pass_started])
+    return engine_ok and toll_ok, f"{engine_detail}; {toll_detail}"
+
+
+def _the_desk_acting(desk: Desk, report: Report, first_boot: tuple[bool, str]) -> None:
+    """R26 to R29: what the desk does by itself, all of it visible and undoable."""
+    report.run(26, "a fresh desk acts by itself", lambda: first_boot)
+    report.run(27, "the dashboard carries what changed",
+               lambda: _stamp_carries_what_changed(desk))
+    report.run(28, "names the desk says are held", lambda: _names_are_held(desk))
+    report.run(29, "the pass pays the ledger toll",
+               lambda: _pass_pays_the_toll(desk))
+
+
 def walk() -> Report:
-    """Boot everything the walk needs, run R01 to R23, and tear it all down.
+    """Boot everything the walk needs, run R01 to R23 and R26 to R29, and tear it down.
 
     The environment is pinned for the walk and restored after it: the data
     folder variable the server resolves, and every other AGENTDESK_*
     variable the product reads. The mock and both servers are stopped in
     the finally block, so a failed check never leaks a thread or a port.
+    R26's evidence is collected on the first boot (a fresh desk's own
+    first act) and its verdict prints with the others, in order.
     """
     mock = _load_mock()
     mock_server = ThreadingHTTPServer(("127.0.0.1", 0), mock.MockEndpointHandler)
@@ -767,6 +1279,7 @@ def walk() -> Report:
             desk.login()
             _fresh_desk(desk, report)
             _add_the_ai(desk, mock, mock_port, report)
+            first_boot = _collect_first_boot_activity(desk)
         finally:
             desk.close()
         desk = Desk(data_dir, keychain, _free_udp_port())
@@ -776,6 +1289,7 @@ def walk() -> Report:
             _learns(desk, report)
             _forgets(desk, report)
             _real_sources(desk, folder, data_dir, report)
+            _the_desk_acting(desk, report, first_boot)
         finally:
             desk.close()
     finally:

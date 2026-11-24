@@ -89,6 +89,21 @@ def candidate_json(card, excerpts: dict, facts_by_id: dict) -> dict:
         for pair in meta.get("entities") or []
         if isinstance(pair, (list, tuple)) and len(pair) == 2
     ]
+    if excerpt is not None:
+        excerpt_view = {
+            "id": excerpt.id, "text": bounded_text(excerpt.text, EXCERPT_CHARS),
+            "speaker": excerpt.speaker, "createdTs": excerpt.created_ts,
+        }
+    elif isinstance(meta.get("source_excerpt"), str) and meta["source_excerpt"].strip():
+        # A staged proposal keeps its excerpt as text until approval, when
+        # the source row is created; the review card still shows it.
+        excerpt_view = {
+            "id": None,
+            "text": bounded_text(meta["source_excerpt"].strip(), EXCERPT_CHARS),
+            "speaker": "The desk", "createdTs": card.created_ts,
+        }
+    else:
+        excerpt_view = None
     return {
         "cardId": card.id, "type": "fact", "text": card.draft, "title": card.title,
         "createdTs": card.created_ts, "kind": meta.get("kind", "world"),
@@ -96,11 +111,7 @@ def candidate_json(card, excerpts: dict, facts_by_id: dict) -> dict:
         "channelLabel": CHANNEL_LABELS.get(channel, "Save to memory"),
         "method": str(meta.get("method") or "model"),
         "entities": entities,
-        "excerpt": (
-            {"id": excerpt.id, "text": bounded_text(excerpt.text, EXCERPT_CHARS),
-             "speaker": excerpt.speaker, "createdTs": excerpt.created_ts}
-            if excerpt is not None else None
-        ),
+        "excerpt": excerpt_view,
     }
 
 
