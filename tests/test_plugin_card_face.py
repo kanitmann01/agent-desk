@@ -108,6 +108,33 @@ def test_the_runtime_reads_the_chosen_face_from_the_manifest(tmp_path):
         {"type": "metric", "binding": "value", "label": "Deals"}]
 
 
+def test_the_flagship_tracker_keeps_its_chart(tmp_path):
+    """excel-report's schema is metric, delta, text, text: a fourth note makes
+    it look like a chosen face by its elements alone. Guessing from shapes
+    would take its column/area chart away, so the marker is the install
+    source, not the schema."""
+    from agentdesk.plugins.cards import _rendered_face
+    from agentdesk.plugins.runtime import PluginRuntime
+
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "data",
+        workspace_dir=tmp_path / "workspace",
+        now=NOW,
+    )
+    root = Path(__file__).resolve().parents[1] / "registry" / "plugins"
+    plugin = runtime.install(root / "excel-report", source="dir")
+    entry = runtime.record(plugin["id"])
+    manifest = runtime._active_manifest(entry)
+    reading = {"value": 10, "delta": "+2", "direction": "up",
+               "points": [1, 2, 3], "file": "sales.xlsx",
+               "table": {"rows": []}, "chart": "column"}
+
+    # It has its own elements, but no chosen face: the classic card draws it.
+    assert manifest.get("_ui_elements")
+    assert _rendered_face(manifest, reading) is None
+
+
 def test_a_classic_face_keeps_the_tracker_card(tmp_path):
     """An element list that is the classic value/change/workbook face renders
     the classic card, so a tile built before the question is unchanged."""
@@ -132,7 +159,7 @@ def test_a_chosen_face_renders_its_element_from_the_reading(tmp_path):
                "table": {"rows": [{"primary": "North", "secondary": "10",
                                    "meta": ""}]}}
 
-    face = _rendered_face({"_ui_elements": [
+    face = _rendered_face({"_chosen_face": True, "_ui_elements": [
         {"type": "table", "columns": ["Item", "Value", "Note"],
          "rowsBinding": "rows"}]}, reading)
 
@@ -147,7 +174,7 @@ def test_a_progress_face_uses_the_reading_s_target(tmp_path):
                "file": "sales.xlsx", "table": {"rows": []},
                "goal": {"value": 20}}
 
-    face = _rendered_face({"_ui_elements": [
+    face = _rendered_face({"_chosen_face": True, "_ui_elements": [
         {"type": "progress", "binding": "value", "targetBinding": "target"}]},
         reading)
 

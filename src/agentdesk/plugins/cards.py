@@ -134,18 +134,20 @@ def tracker_card(plugin_id: str, instance_id: str, *, title: str,
 def _rendered_face(manifest: dict | None, reading: dict) -> list | None:
     """The elements a tracker plugin's own ui-schema asks for, or None.
 
-    None means "draw the classic face": a manifest the caller did not supply,
-    a schema with no elements, or one whose elements are the classic three
-    (value, change, workbook). The bindings are the reading's own, mapped to
-    the names the schema vocabulary expects.
+    None means "draw the classic tracker face", which is what every plugin
+    built before the wizard asked the question must keep: their ui-schema is
+    the classic card's own schema, and excel-report's even carries a fourth
+    text element, so guessing from element shapes would quietly take the
+    chart away from the flagship tracker. The marker is positive instead: the
+    runtime sets ``_chosen_face`` only for a wizard-built plugin, whose tile
+    was composed from the manager's own choice.
     """
     if not isinstance(manifest, dict):
         return None
     elements = manifest.get("_ui_elements")
     if not isinstance(elements, list) or not elements:
         return None
-    asked = [element.get("type") for element in elements if isinstance(element, dict)]
-    if asked in (["metric", "delta", "text"], ["text", "metric"]):
+    if not manifest.get("_chosen_face"):
         return None
     bindings = _tracker_bindings(reading)
     rendered = render_elements({"elements": elements}, bindings)

@@ -874,6 +874,12 @@ class PluginRuntime:
                     manifest["_ui_elements"] = elements
         except (OSError, ValueError):
             pass
+        # A wizard-built plugin's tile was composed from the manager's own
+        # choice of face, so it draws that. Everything else keeps the classic
+        # tracker card, charts included: excel-report's schema is not
+        # distinguishable from a chosen face by its elements alone.
+        if str(entry.get("source") or "") == "wizard":
+            manifest["_chosen_face"] = True
         return manifest
 
     def _materialize_alias(self, manifest: dict) -> None:
