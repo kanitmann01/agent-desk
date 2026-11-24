@@ -121,6 +121,7 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
+from agentdesk.presentations.artifact import deck_artifact
 from agentdesk.presentations.packs import load_packs
 from agentdesk.presentations.tools import (
     ToolError,
@@ -2644,22 +2645,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         fit_notes = delivered["fit"]
         rendered = delivered["rendered"]
         prefix = delivered["folder"]
-        artifact = {
-            "kind": "presentation",
-            "templateId": pack.id,
-            "templateVersion": pack.version,
-            "digest": pack.digest,
-            "variant": variant,
-            "recipe": recipe,
-            "phase": "written",
-            "file": f"{prefix}/deck.pptx",
-            "sources": receipt_lines(sources),
-            "renderer": rendered["renderer"],
-            "previewNote": rendered["note"],
-            "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
-            "images": [f"{prefix}/{image}" for image in rendered["images"]],
-            "fit": fit_notes,
-        }
+        artifact = deck_artifact(
+            pack, variant, recipe, phase="written", folder=prefix, rendered=rendered,
+            sources=receipt_lines(sources), fit=fit_notes,
+        )
         facts = [
             {"id": row["id"], "text": row["text"]}
             for row in sources if row["kind"] == "memory"
@@ -2707,18 +2696,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                         detail=f"status degraded; research unconfigured")
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
-        base = {
-            "kind": "presentation",
-            "templateId": pack.id,
-            "templateVersion": pack.version,
-            "digest": pack.digest,
-            "variant": variant,
-            "recipe": recipe,
-            "plan": planned,
-            "title": deck_title,
-            "deskSources": sources,
-            "timeout": timeout,
-        }
+        base = deck_artifact(
+            pack, variant, recipe, plan=planned, title=deck_title,
+            deskSources=sources, timeout=timeout,
+        )
         try:
             if fetch is not None:
                 rows = list(fetch(brief, titles))[:RESULT_LIMIT]
@@ -2826,19 +2807,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         rendered = delivered["rendered"]
         prefix = delivered["folder"]
-        updated = {
-            **{key: artifact[key] for key in artifact if key not in ("plan", "webSources")},
-            "phase": "written",
-            "file": f"{prefix}/deck.pptx",
-            "sources": receipt_lines(sources),
-            "research": True,
-            "kept": [source.get("id") for source in chosen],
-            "fit": delivered["fit"],
-            "renderer": rendered["renderer"],
-            "previewNote": rendered["note"],
-            "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
-            "images": [f"{prefix}/{image}" for image in rendered["images"]],
-        }
+        # The paused card's research fields ride along; its plan and the
+        # unkept web sources do not.
+        carried = {key: artifact[key] for key in ("title", "deskSources", "timeout")
+                   if key in artifact}
+        updated = deck_artifact(
+            pack, artifact.get("variant"), recipe_name,
+            phase="written", folder=prefix, rendered=rendered,
+            **carried, sources=receipt_lines(sources), research=True,
+            kept=[source.get("id") for source in chosen], fit=delivered["fit"],
+        )
         server.agents.update_outcome(run_id, "ok", updated, "")
         kept = ", ".join(str(source.get("id")) for source in chosen) or "none"
         self._audit(
