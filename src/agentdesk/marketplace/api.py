@@ -1495,10 +1495,10 @@ class _API:
     def post_update(self, body: dict) -> None:
         """Update an installed plugin to the catalog's current release.
 
-        The staged tree must match the catalog pin. A widened scope set is held for
-        the user's consent; a narrowing or equal set is accepted at once, because
-        fewer permissions never need a new approval. The response names the added
-        and removed scopes."""
+        The staged tree must match the catalog pin. The runtime's own diff decides
+        consent: an update it holds (its scope diff adds any leaf value) stays
+        pending until the user accepts; a narrowing or equal set applies at once.
+        The response names the added and removed scopes for display."""
         plugin_id = self._required_id(body)
         runtime = self._runtime()
         try:
@@ -1545,18 +1545,13 @@ class _API:
         if result.get("applied"):
             to_version = str(result.get("version") or entry.get("version") or "")
             pending = False
-        elif not added:
-            # The runtime holds any permission value change for re-consent; a
-            # narrowing only removes scopes, so the marketplace can accept it
-            # immediately instead of asking the user to approve less access.
-            try:
-                approved = runtime.consent(plugin_id)
-            except PluginError as exc:
-                raise MarketplaceError(exc.status, exc.code, str(exc),
-                                       {"id": plugin_id}) from exc
-            to_version = str(approved.get("version") or entry.get("version") or "")
-            pending = False
         else:
+            # The runtime's diff is the only consent decision input: it holds
+            # an update exactly when its own scope diff keeps leaf values and
+            # adds some, so a not-applied update always waits for the user.
+            # The marketplace never consents on the user's behalf; a
+            # True->False permission drop reads as a narrowing here but as a
+            # held value change to the runtime.
             diff = runtime.pending_diff(plugin_id)
             to_version = str(diff.get("version") or entry.get("version") or "")
             pending = True

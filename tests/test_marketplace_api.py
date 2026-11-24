@@ -491,15 +491,45 @@ def test_widening_update_needs_consent_and_narrowing_does_not(booted):
     assert status == 200
     assert body["version"] == "1.1.0"
 
+    # A True->False value drop is a narrowing to the display lists but a
+    # held value change to the runtime, so the user, not the marketplace,
+    # accepts it (fail-closed: the runtime's diff is the only decision
+    # input).
     v3 = make_plugin(root, "upd", version="1.2.0", folder_name="upd-v3",
                      llm_allow=False)
     write_org_catalog(booted, [catalog_entry(v3, "upd", version="1.2.0")])
     status, body = post_json(booted, "/api/marketplace/update", {"id": "upd"})
     assert status == 200
+    assert body["pendingConsent"] is True
+    assert body["addedScopes"] == []
+    assert body["removedScopes"]
+    status, body = post_json(
+        booted, "/api/marketplace/consent", {"id": "upd", "decision": "accept"})
+    assert status == 200
+    assert body["version"] == "1.2.0"
+    assert installed_plugins(booted)["upd"]["version"] == "1.2.0"
+
+
+def test_pure_narrowing_update_applies_without_consent(booted):
+    """Removing an entire optional scope key, with no value changes, is a
+    narrowing to the runtime too: its diff adds nothing, so the update
+    applies at once."""
+    root = workspace(booted) / "fixtures"
+    v1 = make_plugin(root, "narrow", version="1.0.0", folder_name="narrow-v1",
+                     network=("api.example.com",))
+    write_org_catalog(booted, [catalog_entry(v1, "narrow", version="1.0.0")])
+    status, _body = post_json(booted, "/api/marketplace/install", {"id": "narrow"})
+    assert status == 200
+
+    v2 = make_plugin(root, "narrow", version="1.1.0", folder_name="narrow-v2")
+    write_org_catalog(booted, [catalog_entry(v2, "narrow", version="1.1.0")])
+    status, body = post_json(booted, "/api/marketplace/update", {"id": "narrow"})
+    assert status == 200
     assert body["pendingConsent"] is False
     assert body["addedScopes"] == []
-    assert body["to"] == "1.2.0"
     assert body["removedScopes"]
+    assert body["to"] == "1.1.0"
+    assert installed_plugins(booted)["narrow"]["version"] == "1.1.0"
 
 
 def test_widening_an_optional_network_scope_also_needs_consent(booted):
