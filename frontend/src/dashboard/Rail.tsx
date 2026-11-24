@@ -92,27 +92,28 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
       <div className="brand">
         <span className="brand-name">Agent Desk</span>
       </div>
-      <a href="/" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
-      <a href="/inbox" aria-label={inboxName}><span className="rail-mark" aria-hidden="true">I</span><span className="rail-label">Inbox</span>{badge}</a>
-      <a href="/assistant" aria-label="Assistant"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Assistant</span></a>
+      <a href="/" title="Dashboard" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
+      <a href="/inbox" title={inboxName} aria-label={inboxName}><span className="rail-mark" aria-hidden="true">I</span><span className="rail-label">Inbox</span>{badge}</a>
+      <a href="/assistant" title="Assistant" aria-label="Assistant"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Assistant</span></a>
       {/* Agents beside Assistant: both are host surfaces over the one
           endpoint, one per question, one per task. A server page like
           Assistant, so the SPA rail never marks it current. */}
-      <a href="/agents" aria-label="Agents"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Agents</span></a>
-      <a href="/memory" aria-label="Memory"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Memory</span></a>
-      <a href="/mail" aria-label="Mail"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Mail</span></a>
+      <a href="/agents" title="Agents" aria-label="Agents"><span className="rail-mark" aria-hidden="true">A</span><span className="rail-label">Agents</span></a>
+      <a href="/memory" title="Memory" aria-label="Memory"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Memory</span></a>
+      <a href="/mail" title="Mail" aria-label="Mail"><span className="rail-mark" aria-hidden="true">M</span><span className="rail-label">Mail</span></a>
       {/* The marketplace is the Plugins page (spec 022): a person looks for
           their plugins, not a shop. The address is unchanged. */}
-      <a href="/marketplace" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Plugins"><span className="rail-mark" aria-hidden="true">P</span><span className="rail-label">Plugins</span></a>
+      <a href="/marketplace" title="Plugins" aria-current={active.startsWith('/marketplace') ? 'page' : undefined} aria-label="Plugins"><span className="rail-mark" aria-hidden="true">P</span><span className="rail-label">Plugins</span></a>
       {/* Activity, Capabilities and Peers live under Settings now: the
           rail carries the daily surfaces, not every route. */}
 
-      <a href="/settings" aria-label="Settings"><span className="rail-mark" aria-hidden="true">S</span><span className="rail-label">Settings</span></a>
+      <a href="/settings" title="Settings" aria-label="Settings"><span className="rail-mark" aria-hidden="true">S</span><span className="rail-label">Settings</span></a>
       <button
         type="button"
         className="rail-toggle"
         aria-expanded={!collapsed}
         aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+        title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
         onClick={toggle}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"

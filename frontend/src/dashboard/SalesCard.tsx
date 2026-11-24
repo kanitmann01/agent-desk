@@ -14,6 +14,8 @@ import {
 import type { DeltaPayload, SalesStatus } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import Button from '../components/Button';
+import { PhaseLine } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
 import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import { useWorkbookConnect } from './useWorkbookConnect';
 
@@ -64,9 +66,15 @@ function DeltaRows({ delta }: { delta: DeltaPayload }) {
  */
 export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesCardProps) {
   const workbook = useWorkbookConnect(onExpired, onRefetch);
-  const { note, setNote, busy, manualOpen, pathInput, setPathInput, pick, connect, onPathKey } = workbook;
+  const { note, setNote, busy, busyKind, manualOpen, pathInput, setPathInput, pick, connect, onPathKey } = workbook;
   const [retestBusy, setRetestBusy] = useState(false);
   const heading = title ?? 'Sales, last 24 hours';
+  // Nothing shows under 100 ms; the control that started the work carries
+  // its own continuous verb, and the card names the phase in one line.
+  const pickShown = useBusy(busy && busyKind === 'pick');
+  const connectShown = useBusy(busy && busyKind === 'connect');
+  const retestShown = useBusy(retestBusy);
+  const connectPhase = busyKind === 'pick' ? 'Opening the file dialog' : 'Connecting the workbook';
 
   /** Connect the typed path, or say that the field is empty. */
   function manual() {
@@ -81,17 +89,24 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
   /** Re-test the workbook read and reload the dashboard. */
   async function retest() {
     setRetestBusy(true);
+    setNote('');
     let res;
     try {
       res = await postJson('/sources/excel-watch/retest');
     } catch {
       setRetestBusy(false);
-      setNote('The dashboard could not reach its own server; the re-test did not run.');
+      setNote('The dashboard could not reach its own server; the re-test did not run. Try again.');
       return;
     }
-    setRetestBusy(false);
-    if (res.status === 401) { onExpired(); return; }
+    if (res.status === 401) { setRetestBusy(false); onExpired(); return; }
+    if (!res.ok) {
+      setRetestBusy(false);
+      setNote('The re-test did not run; try again in a moment.');
+      return;
+    }
+    // The phase line holds until the fresh payload lands.
     await onRefetch();
+    setRetestBusy(false);
   }
 
   const status = sales.status;
@@ -127,40 +142,55 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
         sparse
         stamp={{ fresh: false, text: 'Not connected' }}
         menuItems={[
-          { label: 'Connect a workbook', onSelect: () => void pick() },
+          { label: 'Connect a workbook', onSelect: () => void pick(), disabled: busy },
           { label: 'Open settings', href: '/settings' },
         ]}
         foot="Read-only: the file is copied before parsing, never opened in place."
       >
-        <EmptyState
-          icon={ICON_SHEET}
-          action={(
-            <Button tone="primary" onClick={() => void pick()} disabled={busy}>
-              Connect a workbook
-            </Button>
+        {busy ? <PhaseLine active text={connectPhase} phaseKey={busyKind ?? ''} /> : null}
+        <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+          <EmptyState
+            icon={ICON_SHEET}
+            action={(
+              <Button
+                tone="primary"
+                onClick={() => void pick()}
+                disabled={busy}
+                pending={pickShown}
+                pendingLabel="Opening..."
+              >
+                Connect a workbook
+              </Button>
+            )}
+          >
+            No workbook is connected yet, so there is nothing to show here. Once
+            one is connected, this card reports what changed in the file over the
+            last 24 hours.
+          </EmptyState>
+          {note ? <div className="alert" role="status">{note}</div> : null}
+          {manualOpen && (
+            <div className="well">
+              <input
+                className="well-input"
+                type="text"
+                placeholder="Full path to the .xlsx or .xlsm workbook"
+                aria-label="Workbook path"
+                value={pathInput}
+                onChange={(e) => setPathInput(e.target.value)}
+                onKeyDown={onPathKey}
+              />
+              <Button
+                tone="primary"
+                onClick={manual}
+                disabled={busy}
+                pending={connectShown}
+                pendingLabel="Connecting..."
+              >
+                Connect
+              </Button>
+            </div>
           )}
-        >
-          No workbook is connected yet, so there is nothing to show here. Once
-          one is connected, this card reports what changed in the file over the
-          last 24 hours.
-        </EmptyState>
-        {note ? <div className="alert" role="status">{note}</div> : null}
-        {manualOpen && (
-          <div className="well">
-            <input
-              className="well-input"
-              type="text"
-              placeholder="Full path to the .xlsx or .xlsm workbook"
-              aria-label="Workbook path"
-              value={pathInput}
-              onChange={(e) => setPathInput(e.target.value)}
-              onKeyDown={onPathKey}
-            />
-            <button className="btn btn-primary" type="button" onClick={manual} disabled={busy}>
-              Connect
-            </button>
-          </div>
-        )}
+        </div>
       </WidgetCard>
     );
   }
@@ -215,7 +245,15 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
           This data is old, so it is shown as stale rather than current.
           Re-test to refresh it now.
         </span></div>
-        <Button className="btn-start" onClick={retest} disabled={retestBusy}>Re-test now</Button>
+        <Button
+          className="btn-start"
+          onClick={retest}
+          disabled={retestBusy}
+          pending={retestShown}
+          pendingLabel="Re-testing..."
+        >
+          Re-test now
+        </Button>
         {note ? <div className="alert" role="status">{note}</div> : null}
       </>
     );
@@ -223,7 +261,15 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
     body = (
       <>
         <div className="alert" role="status"><span>{status.cause}</span></div>
-        <Button className="btn-start" onClick={retest} disabled={retestBusy}>Re-test now</Button>
+        <Button
+          className="btn-start"
+          onClick={retest}
+          disabled={retestBusy}
+          pending={retestShown}
+          pendingLabel="Re-testing..."
+        >
+          Re-test now
+        </Button>
         {note ? <div className="alert" role="status">{note}</div> : null}
       </>
     );
@@ -243,7 +289,10 @@ export default function SalesCard({ sales, title, onRefetch, onExpired }: SalesC
       ]}
       foot={`Watches ${fileNameOf(status.path)}, hourly, read-only. The file is copied before parsing, never opened in place.`}
     >
-      {body}
+      {retestBusy ? <PhaseLine active text="Re-testing the workbook" /> : null}
+      <div className={retestBusy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={retestBusy ? 'true' : undefined}>
+        {body}
+      </div>
     </WidgetCard>
   );
 }

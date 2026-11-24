@@ -5,6 +5,7 @@
 // motion are gone.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ICON_SEARCH } from './EmptyState';
+import { useBusy } from './useBusy';
 
 // Five rows of the 14px field before it scrolls.
 const MAX_FIELD_HEIGHT = 152;
@@ -40,6 +41,11 @@ const ICON_SEND = (
 export default function CommandBar({ busy, disabled = false, needsAi = false, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  // The 100 ms gate: a fast model call never flashes a busy label. The
+  // send control is disabled from the first millisecond, so a second
+  // press cannot start a second ask.
+  const pending = useBusy(busy);
+  const sendLabel = pending ? 'Asking your AI...' : 'Research';
 
   // One-row by default, growing with the question up to five rows.
   useEffect(() => {
@@ -82,7 +88,7 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
           aria-label="Research question"
           autoComplete="off"
           value={question}
-          disabled={busy || disabled}
+          disabled={disabled}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={onInputKey}
         />
@@ -95,8 +101,30 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
           {needsAi ? (
             <a className="cmd-send" href="/settings#ai">Connect your AI</a>
           ) : (
-            <button className="cmd-send" type="button" aria-label="Research" onClick={() => void ask()} disabled={busy || disabled}>
-              <span className="cmd-send-label">Research</span> {ICON_SEND}
+            <button
+              className="cmd-send"
+              type="button"
+              aria-label={sendLabel}
+              aria-busy={pending ? 'true' : undefined}
+              onClick={() => void ask()}
+              disabled={busy || disabled}
+            >
+              {pending ? <span className="btn-busy-dot" aria-hidden="true" /> : null}
+              <span className="btn-labels cmd-send-label">
+                <span
+                  className={pending ? 'btn-label btn-label-hidden' : 'btn-label'}
+                  aria-hidden={pending ? 'true' : undefined}
+                >
+                  Research
+                </span>
+                <span
+                  className={pending ? 'btn-label' : 'btn-label btn-label-hidden'}
+                  aria-hidden={pending ? undefined : 'true'}
+                >
+                  Asking your AI...
+                </span>
+              </span>
+              {ICON_SEND}
             </button>
           )}
         </span>

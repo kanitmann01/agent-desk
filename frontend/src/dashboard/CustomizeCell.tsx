@@ -4,7 +4,12 @@
 // (no nested overflow menu to open): a labelled grab handle for HTML5
 // drag-and-drop, Move up/Move down for the keyboard path, Rename, and
 // Hide. Reordering is instant; the wrapper adds no motion of its own.
+// Every control that saves the layout shows its wait on itself (spec
+// 027): disabled from the first millisecond, aria-busy and the
+// continuous verb once the save has lasted 100 ms.
 import { useRef, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+
+export type CustomizePending = 'move-up' | 'move-down' | 'move' | 'hide' | 'restore' | 'rename' | null;
 
 const ICON_GRIP = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -16,6 +21,52 @@ const ICON_GRIP = (
     <circle cx="15" cy="19" r="1.7" />
   </svg>
 );
+
+interface ControlProps {
+  idle: string;
+  pendingLabel: string;
+  pending: boolean;
+  disabled?: boolean;
+  // The card name behind a bare verb; omitted when the visible label is
+  // already the whole name.
+  ariaLabel?: string;
+  pendingAriaLabel?: string;
+  onActivate?: () => void;
+}
+
+/** One customize control: the shared pending contract on the flat chip. */
+function Control({
+  idle, pendingLabel, pending, disabled = false, ariaLabel, pendingAriaLabel, onActivate,
+}: ControlProps) {
+  if (pending) {
+    return (
+      <button
+        type="button"
+        className="cust-btn"
+        disabled
+        aria-busy="true"
+        aria-label={pendingAriaLabel}
+      >
+        <span className="btn-busy-dot" aria-hidden="true" />
+        <span className="btn-labels">
+          <span className="btn-label btn-label-hidden" aria-hidden="true">{idle}</span>
+          <span className="btn-label">{pendingLabel}</span>
+        </span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="cust-btn"
+      disabled={disabled}
+      aria-label={ariaLabel}
+      onClick={onActivate}
+    >
+      {idle}
+    </button>
+  );
+}
 
 export interface CustomizeCellProps {
   cardKey: string;
@@ -29,6 +80,12 @@ export interface CustomizeCellProps {
   renaming: boolean;
   dragging: boolean;
   dragOver: boolean;
+  // A layout save is in flight somewhere in the panel.
+  busy?: boolean;
+  // This card's control that started the save, if any.
+  pending?: CustomizePending;
+  // The typed title to restore when a rename save failed.
+  renameValue?: string | null;
   onRenaming: (key: string | null) => void;
   onMove: (key: string, direction: -1 | 1) => void;
   onRename: (key: string, title: string) => void;
@@ -43,12 +100,13 @@ export interface CustomizeCellProps {
 /**
   * One card's customize bar, a drag handle, Move up and down, Rename and Hide, around
   * the card itself.
- *
+  *
   * Renaming swaps the buttons for a title editor; the drag handlers only report keys,
   * so the order lives in the dashboard.
  */
 export default function CustomizeCell({
   cardKey, name, first, last, renaming, dragging, dragOver,
+  busy = false, pending = null, renameValue = null,
   onRenaming, onMove, onRename, onHide, onDragCard, onDragOverCard, onDropCard, onDragEnd,
   children,
 }: CustomizeCellProps) {
@@ -104,10 +162,12 @@ export default function CustomizeCell({
         <button
           type="button"
           className="cust-grip"
-          draggable
+          draggable={!busy}
           data-grip-key={cardKey}
           aria-label={`Drag to reorder ${name}`}
+          aria-disabled={busy ? 'true' : undefined}
           onDragStart={(event) => {
+            if (busy) return;
             event.dataTransfer.effectAllowed = 'move';
             event.dataTransfer.setData('text/plain', cardKey);
             onDragCard(cardKey);
@@ -127,54 +187,61 @@ export default function CustomizeCell({
               // arrives unfocused and keyboard users tab blind.
               autoFocus
               aria-label={`Title for ${name}`}
-              defaultValue={name}
+              defaultValue={renameValue ?? name}
+              disabled={busy}
               onKeyDown={onRenameKey}
             />
-            <button type="button" className="cust-btn" onClick={submitRename}>
-              Save title
-            </button>
-            <button type="button" className="cust-btn" onClick={closeRename}>
+            <Control
+              idle="Save title"
+              pendingLabel="Saving..."
+              pending={pending === 'rename'}
+              disabled={busy}
+              onActivate={submitRename}
+            />
+            <button type="button" className="cust-btn" onClick={closeRename} disabled={busy}>
               Cancel
             </button>
           </>
         ) : (
           <>
-            <button
-              type="button"
-              className="cust-btn"
-              aria-label={`Move ${name} up`}
-              disabled={first}
-              onClick={() => onMove(cardKey, -1)}
-            >
-              Move up
-            </button>
-            <button
-              type="button"
-              className="cust-btn"
-              aria-label={`Move ${name} down`}
-              disabled={last}
-              onClick={() => onMove(cardKey, 1)}
-            >
-              Move down
-            </button>
+            <Control
+              idle="Move up"
+              pendingLabel="Moving up..."
+              pending={pending === 'move-up' || pending === 'move'}
+              disabled={busy || first}
+              ariaLabel={`Move ${name} up`}
+              pendingAriaLabel={`Moving ${name} up...`}
+              onActivate={() => onMove(cardKey, -1)}
+            />
+            <Control
+              idle="Move down"
+              pendingLabel="Moving down..."
+              pending={pending === 'move-down'}
+              disabled={busy || last}
+              ariaLabel={`Move ${name} down`}
+              pendingAriaLabel={`Moving ${name} down...`}
+              onActivate={() => onMove(cardKey, 1)}
+            />
             <button
               type="button"
               className="cust-btn"
               aria-label={`Rename ${name}`}
               onClick={() => onRenaming(cardKey)}
+              disabled={busy}
             >
               Rename
             </button>
           </>
         )}
-        <button
-          type="button"
-          className="cust-btn"
-          aria-label={`Hide ${name}`}
-          onClick={() => onHide(cardKey)}
-        >
-          Hide
-        </button>
+        <Control
+          idle="Hide"
+          pendingLabel="Hiding..."
+          pending={pending === 'hide'}
+          disabled={busy}
+          ariaLabel={`Hide ${name}`}
+          pendingAriaLabel={`Hiding ${name}...`}
+          onActivate={() => onHide(cardKey)}
+        />
       </div>
       {children}
     </div>

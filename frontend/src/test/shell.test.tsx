@@ -278,7 +278,7 @@ describe('the research command bar', () => {
 });
 
 describe('the centered app states', () => {
-  it('holds a quiet loading line while the payload arrives', async () => {
+  it('holds the bento skeleton and a quiet loading line while the payload arrives', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),
@@ -287,6 +287,12 @@ describe('the centered app states', () => {
     const status = await screen.findByRole('status');
     expect(status).toHaveTextContent('Reading the dashboard…');
     expect(status).toHaveAttribute('aria-busy', 'true');
+    // The shell and the brief's geometry, not a centered text card.
+    const main = document.getElementById('dashboard-main');
+    expect(main).toHaveAttribute('aria-busy', 'true');
+    expect(document.querySelector('.brief')).not.toBeNull();
+    expect(document.querySelector('.cell-hero')).not.toBeNull();
+    expect(document.querySelector('.center-card')).toBeNull();
   });
 
   it('shows the session-expired view on a 401', async () => {

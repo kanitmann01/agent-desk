@@ -1,11 +1,12 @@
 // The skills strip: the user's saved asks as a slim bento cell. Each
 // row runs its skill with one click (or Enter on the focused button);
 // the result lands in the research answer area, as on the
-// server-rendered page. While a skill runs, further clicks are
-// ignored.
+// server-rendered page. While one runs, its row says so on itself and
+// every row refuses a second press.
 import type { ReactNode } from 'react';
 import type { DashboardData } from '../types';
 import WidgetCard from '../components/WidgetCard';
+import { useBusy } from '../components/useBusy';
 
 const ICON_RUN = (
   <svg className="skill-go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -14,8 +15,13 @@ const ICON_RUN = (
   </svg>
 );
 
-/** One saved ask, as a row that runs it; clicks are ignored while a skill runs. */
-function SkillRow({ skill, busy, onRun }: { skill: DashboardData['skills'][number]; busy: boolean; onRun: (id: number) => void }): ReactNode {
+/** One saved ask, as a row that runs it; the running row shows the wait. */
+function SkillRow({ skill, busy, pending, onRun }: {
+  skill: DashboardData['skills'][number];
+  busy: boolean;
+  pending: boolean;
+  onRun: (id: number) => void;
+}): ReactNode {
   return (
     <li>
       <button
@@ -24,13 +30,20 @@ function SkillRow({ skill, busy, onRun }: { skill: DashboardData['skills'][numbe
         onClick={() => {
           if (!busy) onRun(skill.id);
         }}
-        aria-label={`Run ${skill.name}`}
+        aria-label={pending ? `Running ${skill.name}...` : `Run ${skill.name}`}
+        aria-busy={pending ? 'true' : undefined}
+        disabled={busy}
       >
         <span className="skill-text">
           <span className="skill-name" title={skill.name}>{skill.name}</span>
           {skill.description ? <span className="skill-desc">{skill.description}</span> : null}
         </span>
-        {ICON_RUN}
+        {pending ? (
+          <span className="skill-busy">
+            <span className="btn-busy-dot" aria-hidden="true" />
+            Running...
+          </span>
+        ) : ICON_RUN}
       </button>
     </li>
   );
@@ -41,6 +54,8 @@ interface SkillsCardProps {
   // The layout's custom title, when the user renamed the card.
   title?: string;
   busy: boolean;
+  // The skill that started the run, so only its row carries the busy mark.
+  busyId?: number | null;
   onRun: (id: number) => void;
 }
 
@@ -48,9 +63,12 @@ interface SkillsCardProps {
  * The saved asks as a slim card whose rows run their skill into the research answer
  * area.
  *
- * busy holds off further runs while one is in flight.
+ * busy holds off further runs while one is in flight; busyId names the row
+ * that shows its own wait.
  */
-export default function SkillsCard({ skills, title, busy, onRun }: SkillsCardProps) {
+export default function SkillsCard({ skills, title, busy, busyId = null, onRun }: SkillsCardProps) {
+  // Nothing shows under 100 ms; the row that started the run carries it.
+  const pendingShown = useBusy(busy);
   return (
     <WidgetCard
       title={title ?? 'Your skills'}
@@ -61,7 +79,13 @@ export default function SkillsCard({ skills, title, busy, onRun }: SkillsCardPro
     >
       <ul className="skills-list">
         {skills.map((skill) => (
-          <SkillRow key={skill.id} skill={skill} busy={busy} onRun={onRun} />
+          <SkillRow
+            key={skill.id}
+            skill={skill}
+            busy={busy}
+            pending={pendingShown && busyId === skill.id}
+            onRun={onRun}
+          />
         ))}
       </ul>
     </WidgetCard>

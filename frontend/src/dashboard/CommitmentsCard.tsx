@@ -9,6 +9,8 @@ import { commitmentsStamp, hhmmFromIso } from '../fmt';
 import type { CommitmentsStatus, KeyEvent } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import Button from '../components/Button';
+import { PhaseLine } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
 import EmptyState, { ICON_CALENDAR } from '../components/EmptyState';
 
 const WALKTHROUGH_PATH = '/walkthrough/calendar';
@@ -99,21 +101,29 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
   const [flips, setFlips] = useState<Record<string, boolean>>({});
   const [pendingNote, setPendingNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const retestShown = useBusy(busy);
 
   /** Re-test the calendar bridge and reload the dashboard. */
   async function retest() {
     setBusy(true);
+    setPendingNote('');
     let res;
     try {
       res = await postJson('/sources/calendar-bridge/retest');
     } catch {
       setBusy(false);
-      setPendingNote('The dashboard could not reach its own server; nothing changed.');
+      setPendingNote('The dashboard could not reach its own server; nothing changed. Try again.');
       return;
     }
-    setBusy(false);
-    if (res.status === 401) { onExpired(); return; }
+    if (res.status === 401) { setBusy(false); onExpired(); return; }
+    if (!res.ok) {
+      setBusy(false);
+      setPendingNote('The re-test did not run; try again in a moment.');
+      return;
+    }
+    // The dim and the phase line hold until the fresh payload lands.
     await onRefetch();
+    setBusy(false);
   }
 
   /**
@@ -207,27 +217,30 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
         ]}
         foot={`From your calendar via the OneDrive sync. Nothing leaves the machine but the meeting's name.${first ? ` Connected ${first}.` : ''}`}
       >
-        <KeyEventBlock event={status.keyEvent} />
-        <div>
-          <div className="subhead subhead-tight">Agent's breakdown</div>
-          {(breakdown.subtasks ?? []).map((text, idx) => (
-            <CheckLine
-              key={`${eventId}-${idx}`}
-              eventId={eventId}
-              idx={idx}
-              text={text}
-              checked={isChecked(idx)}
-              onToggle={() => toggleCheck(eventId, idx, !isChecked(idx))}
-            />
+        {busy ? <PhaseLine active text="Re-testing the calendar" /> : null}
+        <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+          <KeyEventBlock event={status.keyEvent} />
+          <div>
+            <div className="subhead subhead-tight">Agent's breakdown</div>
+            {(breakdown.subtasks ?? []).map((text, idx) => (
+              <CheckLine
+                key={`${eventId}-${idx}`}
+                eventId={eventId}
+                idx={idx}
+                text={text}
+                checked={isChecked(idx)}
+                onToggle={() => toggleCheck(eventId, idx, !isChecked(idx))}
+              />
+            ))}
+          </div>
+          {(breakdown.followups ?? []).map((followup, idx) => (
+            <span className="follow" key={`f${idx}`}>
+              {followup.text}
+              {followup.deadline ? `, by ${followup.deadline}` : ''}
+            </span>
           ))}
+          {pendingNote ? <div className="alert" role="alert">{pendingNote}</div> : null}
         </div>
-        {(breakdown.followups ?? []).map((followup, idx) => (
-          <span className="follow" key={`f${idx}`}>
-            {followup.text}
-            {followup.deadline ? `, by ${followup.deadline}` : ''}
-          </span>
-        ))}
-        {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
       </WidgetCard>
     );
   }
@@ -246,10 +259,13 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
         ]}
         foot="From your calendar via the OneDrive sync."
       >
-        <EmptyState icon={ICON_CALENDAR}>
-          Your calendar is clear for the rest of today. Nothing needs
-          preparing.
-        </EmptyState>
+        {busy ? <PhaseLine active text="Re-testing the calendar" /> : null}
+        <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+          <EmptyState icon={ICON_CALENDAR}>
+            Your calendar is clear for the rest of today. Nothing needs
+            preparing.
+          </EmptyState>
+        </div>
       </WidgetCard>
     );
   }
@@ -297,10 +313,21 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
         ]}
         foot="Stale data is labeled, never shown as current."
       >
-        <div className="alert" role="status"><span>{status.cause}</span></div>
-        <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
-        <Button className="btn-start" href={WALKTHROUGH_PATH}>Open the walkthrough</Button>
-        {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
+        {busy ? <PhaseLine active text="Re-testing the calendar" /> : null}
+        <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+          <div className="alert" role="status"><span>{status.cause}</span></div>
+          <Button
+            className="btn-start"
+            onClick={retest}
+            disabled={busy}
+            pending={retestShown}
+            pendingLabel="Re-testing..."
+          >
+            Re-test now
+          </Button>
+          <Button className="btn-start" href={WALKTHROUGH_PATH}>Open the walkthrough</Button>
+          {pendingNote ? <div className="alert" role="alert">{pendingNote}</div> : null}
+        </div>
       </WidgetCard>
     );
   }
@@ -320,9 +347,20 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
       ]}
       foot="The file is there but not readable as calendar data."
     >
-      <div className="alert" role="status"><span>{status.cause}</span></div>
-      <Button className="btn-start" onClick={retest} disabled={busy}>Re-test now</Button>
-      {pendingNote ? <div className="alert" role="status">{pendingNote}</div> : null}
+      {busy ? <PhaseLine active text="Re-testing the calendar" /> : null}
+      <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+        <div className="alert" role="status"><span>{status.cause}</span></div>
+        <Button
+          className="btn-start"
+          onClick={retest}
+          disabled={busy}
+          pending={retestShown}
+          pendingLabel="Re-testing..."
+        >
+          Re-test now
+        </Button>
+        {pendingNote ? <div className="alert" role="alert">{pendingNote}</div> : null}
+      </div>
     </WidgetCard>
   );
 }
