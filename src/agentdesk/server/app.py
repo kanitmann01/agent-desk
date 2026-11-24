@@ -9,11 +9,13 @@ session validation before handshake.
 """
 
 import html
+import http.client
 import json
 import secrets
 import logging
 import os
 import re
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -107,8 +109,10 @@ from agentdesk.ledger import Ledger, LedgerError, may_act
 from agentdesk.ledger import undo as ledger_undo
 from agentdesk.engine import (
     ConnectionSpec,
+    MAX_ACTIONS_PER_TURN,
     TurnResult,
     available as engine_available,
+    redact as engine_redact,
     run_turn as engine_run_turn,
     tool_by_name as engine_tool_by_name,
 )
@@ -1719,7 +1723,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 "message": ("This surface is the desk engine's: send this "
                             "boot's token as an Authorization: Bearer header.")})
             return
-        if not secrets.compare_digest(token, expected):
+        # A token that is not ASCII cannot equal a token this boot minted;
+        # encode first so compare_digest answers False instead of raising.
+        try:
+            matches = secrets.compare_digest(token.encode("utf-8"),
+                                             expected.encode("utf-8"))
+        except (TypeError, UnicodeEncodeError):
+            matches = False
+        if not matches:
             self._send_json(403, {
                 "error": "engine:token-unknown",
                 "message": "That token is not this boot's engine token."})
@@ -1729,16 +1740,25 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _engine_tool_run(self) -> None:
         """Dispatch one token-valid tool call through the desk's vocabulary.
 
-        A name the vocabulary does not carry is a 400, never a guess;
-        every write runs its `may_act` gate and lands its ledger entry
-        with an undo kind, or nothing changes and the refusal names why.
+        A name the vocabulary does not carry is a 400, never a guess; a
+        body that is not the expected object is the same refusal. Every
+        handler answers (status, payload) and the audit row is written
+        after it with the outcome status, so a refused or failed call is
+        as visible as an accepted one. Every write runs its `may_act`
+        gate and lands its ledger entry with an undo kind, or nothing
+        changes and the refusal names why.
         """
         body = self._read_json_body()
         if not isinstance(body, dict):
+            self._audit("engine.tool", target="(body)", status="error",
+                        detail="malformed body: expected an object")
             self._send_json(400, {"error": 'expected {"tool": "<name>", "args": {...}}'})
             return
-        spec = engine_tool_by_name(body.get("tool"))
+        name = body.get("tool")
+        spec = engine_tool_by_name(name)
         if spec is None:
+            self._audit("engine.tool", target=str(name)[:80], status="error",
+                        detail="unknown tool")
             self._send_json(400, {
                 "error": "engine:tool-unknown",
                 "message": "That tool is not one the desk's engine may call."})
@@ -1752,102 +1772,126 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             "propose_fact": self._engine_tool_propose_fact,
             "desk_probes": self._engine_tool_desk_probes,
         }
+        try:
+            status, payload = handlers[spec.name](args)
+        except Exception:  # noqa: BLE001 - one failed call is a 500, not a dead route
+            LOG.exception("engine tool %s failed", spec.name)
+            status, payload = 500, {
+                "error": "The desk could not answer that tool call."}
         self._audit("engine.tool", target=spec.name,
-                    detail="read-only" if spec.read_only else "write")
-        handlers[spec.name](args)
-
-    def _engine_tool_desk_names(self, args: dict) -> None:
+                    status="ok" if 200 <= status < 300 else "error",
+                    detail=("read-only" if spec.read_only else "write")
+                    + ("" if 200 <= status < 300 else
+                       "; " + str(payload.get("error") or "")[:160]))
+        self._send_json(status, payload)
+    def _engine_tool_desk_names(self, args: dict) -> tuple[int, dict]:
         """The dashboard's names, read-only: what the desk holds right now."""
-        self._send_json(200, {"tool": "desk_names",
-                              "names": engine_names_payload(self.server)})  # type: ignore[attr-defined]
+        return 200, {"tool": "desk_names",
+                     "names": engine_names_payload(self.server)}  # type: ignore[attr-defined]
 
-    def _engine_tool_desk_probes(self, args: dict) -> None:
+    def _engine_tool_desk_probes(self, args: dict) -> tuple[int, dict]:
         """One read-only run of the desk check's probes, as JSON."""
-        self._send_json(200, {"tool": "desk_probes",
-                              "probes": desk_check_api_payload(self.server)})  # type: ignore[attr-defined]
+        return 200, {"tool": "desk_probes",
+                     "probes": desk_check_api_payload(self.server)}  # type: ignore[attr-defined]
 
-    def _engine_tool_add_card(self, args: dict) -> None:
+    def _engine_tool_add_card(self, args: dict) -> tuple[int, dict]:
         """Add one suggestion card through the existing recommendation builder.
 
         The builder records the ledger entry with the card-added undo
-        kind; without autonomy the desk refuses before anything
-        changes.
+        kind. The ledger and the inbox are required before anything is
+        added: a suggestion that cannot be recorded or shown is not a
+        write this route makes. Without autonomy the desk refuses before
+        anything changes.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.recommender is None:
-            self._send_json(503, {"error": "the recommendation builder is not available"})
-            return
-        if not self._engine_write_allowed("engine.card", "cards"):
-            return
+        if server.recommender is None or server.inbox is None:
+            return 503, {"error": "the recommendation builder is not available"}
+        if server.ledger is None:
+            return 409, {"error": ("The ledger is not available, so no "
+                                   "suggestion was added.")}
+        refusal = self._engine_write_refusal("engine.card", "cards")
+        if refusal is not None:
+            return refusal
         title = str(args.get("title") or "").strip()
         body = str(args.get("body") or "").strip()
         if not title or not body:
-            self._send_json(400, {"error": "the add_card call needs a title and a body"})
-            return
-        made = server.recommender.add_engine_card(
-            title=title, body=body, why=str(args.get("why") or "").strip())
+            return 400, {"error": "the add_card call needs a title and a body"}
+        try:
+            made = server.recommender.add_engine_card(
+                title=title, body=body, why=str(args.get("why") or "").strip())
+        except Exception:  # noqa: BLE001 - the builder rolled its card back
+            LOG.exception("engine add_card could not record its entry")
+            return 500, {"error": ("The desk could not record that suggestion, "
+                                   "so nothing was added.")}
         if made is None:
-            self._send_json(409, {
-                "error": "That suggestion is already waiting or was already made."})
-            return
+            return 409, {
+                "error": ("The desk is not adding suggestions right now, or that "
+                          "one is already waiting or was already made.")}
         card, entry = made
-        self._send_json(201, {"tool": "add_card", "cardId": card.id,
-                              "entryId": entry.id})
+        return 201, {"tool": "add_card", "cardId": card.id,
+                     "entryId": entry.id}
 
-    def _engine_tool_propose_fact(self, args: dict) -> None:
+    def _engine_tool_propose_fact(self, args: dict) -> tuple[int, dict]:
         """Propose one memory fact through capture's normal review path.
 
         Review mode stages the same memory draft card a capture makes
-        (the entry's undo dismisses it); automatic mode stores the fact
-        through the one write every fact takes, with the auto-saved
-        entry's fact undo. A fact the desk already holds, a capture
-        switch that is off, or autonomy that is off is a refusal with
-        nothing written.
+        (the entry's undo dismisses it; the excerpt is created on
+        approval, so a rejected or undone proposal leaves nothing
+        behind); automatic mode stores the fact through the one write
+        every fact takes, with the auto-saved entry's fact undo. The
+        ledger is required before anything is written. A fact the desk
+        already holds, a capture switch that is off, or autonomy that is
+        off is a refusal with nothing written.
         """
         server = self.server  # type: ignore[attr-defined]
         memory = server.memory
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
-            return
+            return 503, {"error": "the memory store is not available"}
+        if server.ledger is None:
+            return 409, {"error": ("The ledger is not available, so no fact was "
+                                   "proposed.")}
         if memory.locked_cause is not None:
-            self._send_json(423, {"status": "locked", "error": memory.locked_cause})
-            return
+            return 423, {"status": "locked", "error": memory.locked_cause}
         settings = memory_loop.capture_settings(server.settings)
         if not settings.enabled:
-            self._send_json(409, {
-                "error": "Memory capture is off in settings, so nothing was proposed."})
-            return
-        if not self._engine_write_allowed("engine.memory", "memory proposals"):
-            return
+            return 409, {
+                "error": "Memory capture is off in settings, so nothing was proposed."}
+        refusal = self._engine_write_refusal("engine.memory", "memory proposals")
+        if refusal is not None:
+            return refusal
+        if not settings.auto_approve and server.inbox is None:
+            return 503, {"error": "the inbox is not available"}
         text = str(args.get("text") or "").strip()
         if not text:
-            self._send_json(400, {"error": "the propose_fact call needs the fact text"})
-            return
+            return 400, {"error": "the propose_fact call needs the fact text"}
         if self._fact_already_held(text):
-            self._send_json(409, {
-                "error": "The desk already holds that fact, so nothing was proposed."})
-            return
-        if settings.auto_approve:
-            entry_id = self._engine_fact_store(memory, text)
-        else:
-            entry_id = self._engine_fact_stage(memory, text)
+            return 409, {
+                "error": "The desk already holds that fact, so nothing was proposed."}
+        try:
+            if settings.auto_approve:
+                entry_id = self._engine_fact_store(memory, text)
+            else:
+                entry_id = self._engine_fact_stage(memory, text)
+        except Exception:  # noqa: BLE001 - each helper rolled its write back
+            LOG.exception("engine propose_fact could not record its entry")
+            return 500, {"error": ("The desk could not record that fact, so "
+                                   "nothing was proposed.")}
         self._audit("memory.capture", target="engine", detail="1 proposal")
-        self._send_json(201, {"tool": "propose_fact", "entryId": entry_id})
+        return 201, {"tool": "propose_fact", "entryId": entry_id}
 
-    def _engine_write_allowed(self, action: str, noun: str) -> bool:
+    def _engine_write_refusal(self, action: str, noun: str) -> tuple[int, dict] | None:
         """The write gate: may_act as today, with a plain refusal otherwise.
 
         The engine's writes ride the same autonomy rule as every other
         thing the desk does by itself; the refusal names what stayed
-        untouched.
+        untouched. None means the write may run.
         """
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None or not may_act(settings, action):
-            self._send_json(409, {
+            return 409, {
                 "error": (f"Autonomy is off in settings, so the desk's engine "
-                          f"cannot make {noun}.")})
-            return False
-        return True
+                          f"cannot make {noun}.")}
+        return None
 
     def _fact_already_held(self, text: str) -> bool:
         """Whether this exact fact is stored, waiting or was already rejected.
@@ -1874,15 +1918,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
         The write is store_fact, the one write every fact takes, with
         the engine channel named in the source; the ledger entry is the
-        auto-saved shape whose undo deletes exactly this fact.
+        auto-saved shape whose undo deletes exactly this fact. A record
+        that fails removes the fact before the refusal answers: a write
+        without its ledger entry is not a write this desk keeps.
         """
         server = self.server  # type: ignore[attr-defined]
         outcome = memory_loop.store_fact(
             memory, text, source=f"{memory_loop.AUTO_SOURCE_PREFIX}engine",
             entities=memory_loop.names_in(text))
-        entry_id = ""
         ledger = getattr(server, "ledger", None)
-        if ledger is not None:
+        try:
             entry = ledger.record(
                 actor="agent-desk",
                 action="memory.auto-saved",
@@ -1892,9 +1937,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 before=json.dumps({"id": int(outcome.fact.id)}).encode("utf-8"),
                 detail={"factId": int(outcome.fact.id), "channel": "engine"},
             )
-            entry_id = entry.id
+        except Exception:
+            memory.remove_facts([outcome.fact.id])
+            raise
         self._schedule_observation_pass()
-        return entry_id
+        return entry.id
 
     def _engine_fact_stage(self, memory, text: str) -> str:
         """Stage the proposed fact as the review card capture makes.
@@ -1902,11 +1949,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         The card is the memory draft kind the approval flow already
         writes, with the desk named as where it came from; the ledger
         entry's card-added undo dismisses the card, so the proposal
-        itself is undoable while it waits.
+        itself is undoable while it waits. The source excerpt is carried
+        as text on the card and created when the fact is approved, so a
+        rejected or undone proposal leaves no excerpt behind. A record
+        that fails removes the card before the refusal answers.
         """
         server = self.server  # type: ignore[attr-defined]
-        source_id = memory.add_source(
-            f"The desk proposed: {text}", speaker="The desk", context="engine")
         names = memory_loop.names_in(text)
         card = server.inbox.add(
             kind=KIND_MEMORY_DRAFT,
@@ -1922,14 +1970,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 "kind": "world",
                 "occurrence_ts": None,
                 "entities": [[name, entity_type] for name, entity_type in names],
-                "source_id": source_id,
+                "source_excerpt": f"The desk proposed: {text}",
                 "channel": "engine",
                 "method": "desk",
             }},
         )
-        entry_id = ""
         ledger = getattr(server, "ledger", None)
-        if ledger is not None:
+        try:
             entry = ledger.record(
                 actor="agent-desk",
                 action="memory.proposed",
@@ -1940,8 +1987,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                                   ensure_ascii=False).encode("utf-8"),
                 detail={"cardId": card.id, "channel": "engine"},
             )
-            entry_id = entry.id
-        return entry_id
+        except Exception:
+            server.inbox.delete(card.id)
+            raise
+        return entry.id
 
     def _send_update_api(self) -> None:
         """Serve the update state, whether the share is set, and the banner."""
@@ -5063,6 +5112,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         source_id = memory_fact.get("source_id")
         if not isinstance(source_id, int) or isinstance(source_id, bool):
             source_id = None
+        if source_id is None:
+            # A staged proposal carries its excerpt as text and creates the
+            # source here, on approval: a rejected or undone proposal must
+            # leave no excerpt behind.
+            excerpt = memory_fact.get("source_excerpt")
+            if isinstance(excerpt, str) and excerpt.strip():
+                source_id = memory.add_source(
+                    excerpt.strip(), speaker="The desk", context="engine")
         entities = []
         for pair in memory_fact.get("entities") or []:
             if (
@@ -8407,15 +8464,22 @@ register_step(Step(name="update", enabled=_update_enabled, run=_run_update_step)
 
 ENGINE_LOOPBACK_TIMEOUT_S = 30
 
+# The context block's ceiling: the prompt rides argv (the CLI has no
+# stdin prompt mode), so the desk's names payload is cut with a visible
+# marker rather than allowed to grow without bound.
+ENGINE_CONTEXT_MAX_CHARS = 12000
+ENGINE_CONTEXT_CUT_MARKER = " [the context was cut at this length]"
+
 
 def _engine_enabled(settings) -> bool:
-    """The engine step runs only when the side-car is installed.
+    """The engine step always runs; the side-car's absence is its own answer.
 
-    An injected runner (a test's fake) does not enable the step by
-    itself; the tests that drive the engine pass pin the side-car's
-    presence explicitly, the same fact a real install is.
+    A present side-car acts; an absent one returns the honest fallback
+    note and executes nothing, because the pass's fixed steps are the
+    fallback. Keeping the row in every pass is what lets R29 say which
+    of the two happened instead of counting a seed's own entry.
     """
-    return engine_available()
+    return True
 
 
 def _run_engine(ctx) -> dict:
@@ -8511,8 +8575,17 @@ def engine_names_payload(server) -> dict:
 
 
 def engine_context_text(server) -> str:
-    """The engine turn's context block: the names payload as compact JSON."""
-    return json.dumps(engine_names_payload(server), ensure_ascii=False)
+    """The engine turn's context block: the names payload as compact JSON.
+
+    Bounded before it can reach argv: a desk holding thousands of names
+    must not build a command line near the OS limit. The cut is marked
+    so the engine knows the context is partial rather than empty.
+    """
+    text = json.dumps(engine_names_payload(server), ensure_ascii=False)
+    if len(text) > ENGINE_CONTEXT_MAX_CHARS:
+        keep = ENGINE_CONTEXT_MAX_CHARS - len(ENGINE_CONTEXT_CUT_MARKER)
+        return text[:keep] + ENGINE_CONTEXT_CUT_MARKER
+    return text
 
 
 def _engine_tools_post(server, payload: dict) -> tuple[int, dict]:
@@ -8548,14 +8621,30 @@ def execute_engine_actions(server, actions) -> tuple[int, int]:
 
     Every action, reads included, goes over the loopback route, so the
     route is the one path the engine's hands take and its audit trail
-    records each call. A refused call names its reason in the server
-    log; nothing is ever executed around the route.
+    records each call. The turn's cap is applied here again: calls past
+    it are refused, never executed. A call whose transport fails (a
+    timeout, a closed connection, a malformed HTTP answer) is counted as
+    refused and the next action still runs, so one dead socket cannot
+    end the rest of the turn. A refused call names its reason in the
+    server log; nothing is ever executed around the route.
     """
     acted = refused = 0
-    for action in actions:
-        status, body = _engine_tools_post(server, {
-            "tool": action.tool, "args": dict(action.args), "why": action.why,
-        })
+    for index, action in enumerate(actions):
+        if index >= MAX_ACTIONS_PER_TURN:
+            refused += 1
+            LOG.warning("engine tool call %s refused: past the turn's limit of %s",
+                        action.tool, MAX_ACTIONS_PER_TURN)
+            continue
+        try:
+            status, body = _engine_tools_post(server, {
+                "tool": action.tool, "args": dict(action.args), "why": action.why,
+            })
+        except (urllib.error.URLError, socket.timeout, TimeoutError,
+                http.client.HTTPException, OSError) as exc:
+            refused += 1
+            LOG.warning("engine tool call %s could not reach the desk: %s",
+                        action.tool, exc)
+            continue
         if 200 <= status < 300:
             acted += 1
         else:
@@ -8569,27 +8658,50 @@ def engine_step_run(ctx) -> dict:
     """One engine turn for a pass: run it through the boundary, act on it.
 
     An injected runner (the tests' fake) takes the turn; otherwise the
-    boundary runs the side-car when it is installed and the fixed loop
-    when it is not. The pass's answer names the backend, how many
-    actions the turn proposed, and how many the desk executed or
-    refused.
+    boundary runs the side-car when it is installed. The fixed loop is
+    never run from inside a pass: its own guard refuses that, and
+    re-posting its ledger entries would execute the pass twice. When the
+    side-car is absent the step says so and executes nothing, because
+    the fixed steps in this same pass are the fallback. The answer
+    carries the backend, the counts, the note and the turn's verdict;
+    the loop records a failed row when the verdict is False, and the
+    audit row is written in a finally so a transport failure still
+    leaves a trace.
     """
     server = ctx.server
     runner = getattr(server, "engine", None)
-    loop = getattr(server, "agent_loop", None)
+    if runner is None and not engine_available():
+        return {"backend": "fallback", "ok": True, "actions": 0, "acted": 0,
+                "refused": 0,
+                "note": ("The side-car is not installed; the pass's fixed "
+                         "steps are the fallback.")}
+    connection = _engine_connection(server)
     context_text = engine_context_text(server)
     if runner is not None:
-        result = runner.run_turn(context_text, connection=_engine_connection(server))
+        try:
+            result = runner.run_turn(context_text, connection=connection)
+        except Exception:  # noqa: BLE001 - an injected runner never stops the pass
+            LOG.exception("the engine runner could not run its turn")
+            result = TurnResult(
+                backend="sidecar", ok=False,
+                note="The engine turn could not run, so the pass did not act.")
     else:
-        result = engine_run_turn(context_text, connection=_engine_connection(server),
-                                 loop=loop)
-    acted, refused = execute_engine_actions(server, result.actions)
-    audit_conn = getattr(server, "audit_conn", None)
-    if audit_conn is not None:
-        audit_store.record(
-            audit_conn, "engine.pass", target=result.backend,
-            detail=(f"{len(result.actions)} action(s), {acted} acted, "
-                    f"{refused} refused"
-                    + (f"; {result.note}" if result.note else "")))
+        result = engine_run_turn(context_text, connection=connection, loop=None)
+    key = getattr(connection, "api_key", "") or ""
+    note = engine_redact(result.note, key)
+    boundary_refusals = len(result.refusals)
+    acted = refused = 0
+    try:
+        acted, refused = execute_engine_actions(server, result.actions)
+    finally:
+        refused += boundary_refusals
+        audit_conn = getattr(server, "audit_conn", None)
+        if audit_conn is not None:
+            audit_store.record(
+                audit_conn, "engine.pass", target=result.backend,
+                status="ok" if result.ok else "error",
+                detail=(f"{len(result.actions)} action(s), {acted} acted, "
+                        f"{refused} refused"
+                        + (f"; {note}" if note else "")))
     return {"backend": result.backend, "actions": len(result.actions),
-            "acted": acted, "refused": refused}
+            "acted": acted, "refused": refused, "note": note, "ok": result.ok}

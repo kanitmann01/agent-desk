@@ -127,10 +127,17 @@ class TurnResult:
 
     `events` holds the parsed stream the backend saw (a side-car's JSON
     events; the fixed-loop fallback runs no event stream and answers an
-    empty tuple). `note` carries the one-line human summary.
+    empty tuple). `note` carries the one-line human summary. `ok` is the
+    turn's own verdict: a side-car error, a missing connection, an empty
+    stream, a timeout or the output cap answers False, and the pass
+    records the engine step as a failure. `refusals` names every call
+    the boundary refused, so a prompt-injection attempt is visible in
+    the pass instead of hidden in prose.
     """
 
     backend: str
     actions: tuple[Action, ...] = ()
     events: tuple[dict, ...] = ()
     note: str = ""
+    ok: bool = True
+    refusals: tuple[str, ...] = ()

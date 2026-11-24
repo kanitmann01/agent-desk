@@ -11,11 +11,14 @@ latch makes Not now permanent even if the card row is later removed.
 
 import hashlib
 import json
+import logging
 import time
 from datetime import datetime
 
 from agentdesk.inbox.core import KIND_SUGGESTION
 from agentdesk.recommend.rules import Candidate, deadline_candidates, meeting_candidates
+
+LOG = logging.getLogger(__name__)
 
 # Hermes cron/suggestions.py MAX_PENDING: the desk never stacks more than
 # this many waiting suggestions; the soonest deadline earns the slot.
@@ -94,13 +97,23 @@ class RecommendationBuilder:
         The card takes the same shape, cap, latch and ledger entry every
         recommendation does (rule "engine", no cites, so the withdrawal
         check never retracts it on a guess), and its entry carries the
-        card-added undo kind, so Undo dismisses it. None when a card for
-        the same content is already waiting or was latched: the desk
-        never stacks the same suggestion.
+        card-added undo kind, so Undo dismisses it. None when
+        recommendations are off, when the waiting cap is already full,
+        or when a card for the same content is already waiting or was
+        latched: the desk never floods or stacks the same suggestion.
+        A record that fails removes the card and the latch it wrote, so
+        a suggestion without its ledger entry leaves nothing behind.
         """
+        if self._ledger is None or self._inbox is None:
+            return None
+        if not self._settings.get("recommendations"):
+            return None
+        live = self._live()
+        if len(live) >= MAX_PENDING:
+            return None
         key = "engine:" + hashlib.sha256(
             f"{title}\n{body}".encode("utf-8")).hexdigest()[:16]
-        taken = {self._key(card) for card in self._live()}
+        taken = {self._key(card) for card in live}
         if key in taken or self._ledger.latched(LATCH_PREFIX + key):
             return None
         candidate = Candidate(
@@ -117,13 +130,27 @@ class RecommendationBuilder:
             meta=self._meta(candidate),
         )
         self._ledger.latch(LATCH_PREFIX + key)
-        entry = self._record(
-            "recommend.added",
-            card,
-            candidate,
-            "The desk suggested this while working on its own.",
-            undo_kind="card-added",
-        )
+        try:
+            entry = self._record(
+                "recommend.added",
+                card,
+                candidate,
+                "The desk suggested this while working on its own.",
+                undo_kind="card-added",
+            )
+        except Exception:
+            # The card and its latch are this call's only writes; a record
+            # that failed cannot leave them standing.
+            try:
+                self._inbox.delete(card.id)
+            except Exception:  # noqa: BLE001 - the original failure is the news
+                LOG.exception("engine card %s could not be removed after a failed record",
+                              card.id)
+            try:
+                self._ledger.unlatch(LATCH_PREFIX + key)
+            except Exception:  # noqa: BLE001 - the original failure is the news
+                LOG.exception("the engine card latch %s could not be cleared", key)
+            raise
         return card, entry
 
     def _add_candidates(self, live: list) -> int:

@@ -14,9 +14,12 @@ path, and the desk behaves exactly as before without it.
 The tag is pinned (v0.23.3, the grammar's verification point). The
 engine ships no wheel, so the venv installs editable from a clone at
 the tag: clone shallow, create the venv with the running interpreter,
-pip install -e, then print the CLI path the desk resolves. Re-running
-is safe: an existing venv is left alone unless --force asks for a
-rebuild.
+pip install -e, then print the CLI path the desk resolves. The
+installer verifies the clone's HEAD against the tag's commit and
+writes an install marker (the tag and commit) beside the venv, which
+`available()` and the smoke read: a checkout at another commit is
+refused rather than run. Re-running is safe: an existing venv is left
+alone unless --force asks for a rebuild.
 
 Stdlib only, loopback nothing: the clone reaches the network once, on
 purpose, and every other byte stays under the side-car folder.
@@ -52,6 +55,29 @@ def venv_python(venv: Path) -> Path:
     return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def _git(clone: Path, *args: str) -> str:
+    """One git answer inside the clone, or '' when git cannot answer."""
+    proc = subprocess.run(
+        ["git", "-C", str(clone), *args],
+        capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def _verify_checkout(clone: Path, tag: str) -> str:
+    """The clone's HEAD when it matches the tag's commit, '' otherwise.
+
+    A checkout at another commit is not the pinned grammar the desk was
+    verified against; it is refused rather than run. The tag must be
+    resolvable in the clone (a failed fetch or a foreign checkout leaves
+    it unresolvable), which is why the message names both.
+    """
+    head = _git(clone, "rev-parse", "HEAD")
+    tagged = _git(clone, "rev-parse", f"{tag}^{{commit}}")
+    if not head or not tagged or head != tagged:
+        return ""
+    return head
+
+
 def main() -> int:
     """Create the side-car home, venv and pinned clone; print the CLI path."""
     parser = argparse.ArgumentParser(
@@ -64,7 +90,7 @@ def main() -> int:
                         help="remove an existing venv and clone first")
     args = parser.parse_args()
 
-    from agentdesk.engine import cli_path, home_for, venv_path
+    from agentdesk.engine import cli_path, home_for, venv_path, write_marker
 
     home = home_for(args.data_dir)
     venv = venv_path(home)
@@ -82,6 +108,13 @@ def main() -> int:
             ["git", "clone", "--depth", "1", "--branch", args.tag, UPSTREAM,
              str(clone)],
             check=True)
+    commit = _verify_checkout(clone, args.tag)
+    if not commit:
+        print(f"the checkout at {clone} is not {args.tag}: "
+              f"HEAD is {_git(clone, 'rev-parse', 'HEAD') or 'unreadable'} and the tag's "
+              f"commit is {_git(clone, 'rev-parse', args.tag + '^{commit}') or 'unreadable'}. "
+              "Re-run with --force to rebuild it.", flush=True)
+        return 1
     print("installing (editable) into the venv", flush=True)
     subprocess.run(
         [str(venv_python(venv)), "-m", "pip", "install", "-e", str(clone)],
@@ -91,7 +124,10 @@ def main() -> int:
         print(f"the install finished but no CLI is at {cli}; check the clone",
               flush=True)
         return 1
+    write_marker(home, tag=args.tag, commit=commit)
     print(f"the side-car is installed: {cli}", flush=True)
+    print(f"install marker: {home / 'install.json'} ({args.tag} {commit[:12]})",
+          flush=True)
     print("the desk picks it up on its next engine turn; nothing to restart.",
           flush=True)
     return 0

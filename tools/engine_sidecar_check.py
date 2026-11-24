@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -51,6 +52,29 @@ def _load_mock():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _git(clone: Path, *args: str) -> str:
+    """One git answer inside a checkout, or '' when git cannot answer."""
+    proc = subprocess.run(["git", "-C", str(clone), *args],
+                          capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def _checkout(home: Path, tag: str) -> tuple[Path, str, str] | None:
+    """The pinned clone under this home, its HEAD and the tag's commit.
+
+    The installer clones into `src`; a spike or a hand-built home may
+    keep its checkout as `hermes-src`. A home with neither has no
+    checkout to verify, which the marker (when present) still covers.
+    """
+    for name in ("src", "hermes-src"):
+        clone = home / name
+        if (clone / ".git").exists():
+            return (clone,
+                    _git(clone, "rev-parse", "HEAD"),
+                    _git(clone, "rev-parse", f"{tag}^{{commit}}"))
+    return None
 
 
 def _pin_env(folder: Path) -> dict[str, str | None]:
@@ -160,6 +184,8 @@ def main() -> int:
         available,
         cli_path,
         home_for,
+        pinned_tag,
+        read_marker,
         run_turn,
     )
 
@@ -170,10 +196,31 @@ def main() -> int:
         home = home_for(default_data_dir())
     if not available(home):
         cli = cli_path(home)
-        print(f"FAIL no side-car is installed (looked for {cli}).", flush=True)
+        print(f"FAIL no side-car is installed at the pinned tag (looked for {cli}).",
+              flush=True)
         print("Install it once with:", flush=True)
         print("  python tools/install_engine_sidecar.py", flush=True)
         return 1
+    marker = read_marker(home)
+    if marker is None:
+        print("install marker: none (a hand-built or pre-marker venv; the CLI "
+              "file is the only check)", flush=True)
+    else:
+        tag = str(marker.get("tag") or "")
+        commit = str(marker.get("commit") or "")
+        if tag != pinned_tag() or len(commit) < 8:
+            print(f"FAIL the install marker at {home} names tag {tag!r} commit "
+                  f"{commit!r}, not {pinned_tag()}", flush=True)
+            return 1
+        print(f"install marker: {tag} {commit[:12]}", flush=True)
+    checkout = _checkout(home, pinned_tag())
+    if checkout is not None:
+        clone, head, tagged = checkout
+        if not head or not tagged or head != tagged:
+            print(f"FAIL the checkout at {clone} is at {head[:12] or 'unreadable'}, "
+                  f"not {pinned_tag()} ({tagged[:12] or 'unreadable'})", flush=True)
+            return 1
+        print(f"checkout: {clone.name} at {pinned_tag()} ({head[:12]})", flush=True)
 
     mock = _load_mock()
     mock_server = ThreadingHTTPServer(("127.0.0.1", 0), mock.MockEndpointHandler)

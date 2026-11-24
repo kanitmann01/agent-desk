@@ -519,8 +519,11 @@ def _locked(method):
     single transaction and half-apply each other's writes (a double-
     clicked Encrypt button is the worst case: both conversions would run
     over the same rows and the second blanking pass can seal an emptied
-    plaintext over the only ciphertext). Reads stay unlocked: SQLite
-    serializes them safely against one writer."""
+    plaintext over the only ciphertext). The joined and grouped reads the
+    recommendation refresh and the engine context take (`all`,
+    `entities`, `fact_entity_ids`, `superseded_map`) serialize too: a
+    cursor mid-fetch must not interleave with a commit, or SQLite hands
+    back malformed rows. The plain single-row reads stay unlocked."""
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         """Run the method with the store's write lock held.
@@ -1329,6 +1332,7 @@ class MemoryStore:
             for row_id, text, speaker, context, created_ts in rows
         ]
 
+    @_locked
     def fact_entity_ids(self) -> dict[int, list[int]]:
         """Which entities each fact mentions (the edges table), the
         memory graph's mention links: fact id to entity ids, in the
@@ -1381,6 +1385,7 @@ class MemoryStore:
 
     # -- hygiene actions (ticket #92) ---------------------------------------
 
+    @_locked
     def entities(self) -> list[EntitySummary]:
         """Every entity with its names, type and fact count, canonical
         name then id order. Sealed banks load through decryption, so
@@ -1795,6 +1800,7 @@ class MemoryStore:
             raise UnknownFact(f"no fact {fact_id}")
         return self._fact_from_row(row)
 
+    @_locked
     def all(self) -> list[Fact]:
         """Every fact in creation order (the recall tie-break order)."""
         self._guard()
@@ -1997,6 +2003,7 @@ class MemoryStore:
 
     # -- the memory loop: supersede, stale flags, removal and undo ---------
 
+    @_locked
     def superseded_map(self) -> dict[int, int]:
         """Replaced fact id to the newer fact id that replaced it."""
         self._guard()
