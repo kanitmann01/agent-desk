@@ -192,6 +192,43 @@
   #memory-loop-root .ml-undo span:first-child{flex:1}
 }
 
+/* Feedback: waits say what they are doing without moving the layout. */
+#memory-loop-root .mem-btn-labels{display:grid;min-width:0}
+#memory-loop-root .mem-btn-label{grid-area:1/1;min-width:0;white-space:nowrap}
+#memory-loop-root .mem-btn-label-hidden{visibility:hidden}
+#memory-loop-root .mem-busy-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none;animation:mem-busy-pulse .9s ease-in-out infinite}
+#memory-loop-root .ml-btn.mem-pending:disabled{cursor:progress;opacity:.55}
+#memory-loop-root .ml-btn-primary.mem-pending:disabled{opacity:1}
+@keyframes mem-busy-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+#memory-loop-root .mem-skeleton-line{display:block;height:12px;border:1px dashed var(--hairline);border-radius:var(--r-inner)}
+#memory-loop-root .mem-skeleton-title{width:58%}
+#memory-loop-root .mem-skeleton-short{width:36%}
+#memory-loop-root .mem-skeleton-block{height:34px}
+#memory-loop-root .mem-skeleton-row{height:14px}
+#memory-loop-root .ml-skeleton .ml-step-link{display:flex;flex-direction:column;gap:8px;padding:14px 16px 16px}
+#memory-loop-root .ml-skeleton .ml-tile{display:flex;flex-direction:column;gap:10px;min-height:120px}
+#memory-loop-root .ml-skeleton .ml-row{display:flex;gap:16px}
+#memory-loop-root .ml-skeleton .ml-row-main{flex:1;display:flex;flex-direction:column;gap:8px}
+#memory-loop-root .ml-feedback-placeholder{display:flex;gap:16px;list-style:none;padding:14px 0;border-top:1px solid var(--hairline)}
+#memory-loop-root .ml-feedback-placeholder .ml-row-main{flex:1;display:flex;flex-direction:column;gap:8px}
+#memory-loop-root .ml-feedback-phase{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-3)}
+#memory-loop-root .ml-feedback-error{font-size:12.5px;line-height:1.5;color:var(--ink-1);margin:8px 0 0;padding-left:8px;border-left:2px solid var(--accent)}
+#memory-loop-root .ml-feedback-result{font-size:12.5px;line-height:1.5;color:var(--ink-2);margin:8px 0 0}
+#memory-loop-root .ml-switch-wait{flex:1 1 100%}
+#memory-loop-root .ml-row-actions{flex-direction:column;align-items:flex-end}
+#memory-loop-root .ml-row-buttons{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#memory-loop-root .ml-row-actions .ml-feedback-error{max-width:36ch;text-align:right}
+#memory-loop-root .ml-feedback-error .ml-text-btn,#memory-loop-root .ml-feedback-result .ml-text-btn{margin-left:6px}
+#memory-loop-root .ml-is-refreshing .ml-flow,
+#memory-loop-root .ml-is-refreshing .ml-grid{opacity:.55;transition:opacity var(--dur) ease}
+#memory-loop-root .ml-refresh-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--ink-2)}
+#memory-loop-root .ml-refresh-line .ml-text-btn{margin-left:0}
+@media (prefers-reduced-motion:reduce){
+  #memory-loop-root .mem-busy-dot{animation:none}
+  #memory-loop-root .ml-is-refreshing .ml-flow,
+  #memory-loop-root .ml-is-refreshing .ml-grid{transition:none}
+}
+
 /* Stored knowledge: the cap's footer, the observation's entity line, and
    the removal dialog's before/after text. */
 #memory-loop-root .ml-more{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 0;border-top:1px solid var(--hairline);margin-top:2px}
