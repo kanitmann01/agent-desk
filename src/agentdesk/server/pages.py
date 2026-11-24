@@ -74,7 +74,19 @@ STYLES = """
   --font-mono:"Geist Mono","Consolas",monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* Text fits its box (spec 026). Prose breaks rather than overflows: a
+   word only breaks when it would by itself leave the box it is in. The
+   one-line helper and the two deliberate scrollers are below; a value a
+   person compares, a stamp, a button label and the code in a pre keep
+   their own line instead. */
+body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+.nowrap{white-space:nowrap}
+/* An identifier that must stay whole, on a line that scrolls when the
+   identifier is longer than the card (the calendar file name). */
+.id-scroll{display:inline-block;max-width:100%;overflow-x:auto;vertical-align:bottom}
+/* One table per wrapper: the table may be wider than the reading column,
+   so it scrolls inside its own box; the page never scrolls sideways. */
+.table-scroll{max-width:100%;overflow-x:auto}
 /* The static memory graph (/memory/graph without JavaScript). */
 .graph-static{overflow-x:auto;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);padding:8px}
 .graph-edge{stroke:var(--ink-4)}
@@ -97,17 +109,21 @@ a:hover{text-decoration:underline}
 svg{display:block;flex:none}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .app{display:grid;grid-template-columns:200px 1fr;min-height:calc(100vh - 32px);margin:16px;background:var(--bg);border:1px solid var(--hairline);border-radius:var(--r-card);box-shadow:none}
-.rail{border-right:1px solid var(--hairline);background:transparent;padding:20px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100%}
-.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
+.rail{border-right:1px solid var(--hairline);background:transparent;padding:20px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100%;min-width:0}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px;min-width:0}
 .brand .mark{display:none}
-.brand b,.brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em}
+.brand b,.brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em;min-width:0}
 .rail-mark{display:none;font-family:var(--font-mono);font-weight:600}
 .phone-bar{display:none}
-.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
+.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease;min-width:0}
+/* A rail entry's name is an identifier a person matches exactly, so it
+   keeps one line and scrolls inside its own entry rather than breaking;
+   the waiting count stays beside it. */
+.rail .rail-label{min-width:0;max-width:100%;overflow-x:auto;white-space:nowrap}
 .rail a:hover{background:var(--surface-2);color:var(--ink-1);text-decoration:none}
 .rail a[aria-current="page"]{background:var(--surface-2);color:var(--heading);box-shadow:inset 2px 0 0 var(--accent);border-radius:0 var(--r-control) var(--r-control) 0}
 .rail .nav-off{opacity:.45}
-.rail .count{margin-left:8px;font-family:var(--font-mono);font-size:14px;font-weight:500;background:transparent;color:var(--ink-1);border-radius:0;padding:0}
+.rail .count{margin-left:8px;flex:none;white-space:nowrap;font-family:var(--font-mono);font-size:14px;font-weight:500;background:transparent;color:var(--ink-1);border-radius:0;padding:0}
 .origin-line{font-size:12px;font-weight:700;color:var(--primary);letter-spacing:.06em}
 .origin-why{color:var(--ink-2);font-size:13px;border-top:1px solid var(--hairline);padding-top:8px}
 .widget h3{font-size:16px;font-weight:800;letter-spacing:-.01em}
@@ -186,19 +202,33 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .doc .widget p{margin:0}
 .doc .widget .cardform{margin:0}
 .reg-origin{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--ink-3);margin:4px 0 0}
-.crumbs{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:12px}
+.crumbs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:12px}
+.crumbs a,.crumbs span{min-width:0;overflow-wrap:anywhere}
 .crumbs a{color:var(--ink-3);font-weight:600}
 .crumbs a:hover{color:var(--primary)}
 .crumbs .crumb-sep{color:var(--ink-4)}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .field input{font:inherit;font-size:14px;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
 .field input:focus{outline:2px solid var(--primary);outline-offset:1px}
-.setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--surface);border-radius:var(--r-control);box-shadow:var(--shadow-card);padding:10px 14px;font-weight:600;font-size:14px}
-.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
-.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;min-width:0;background:var(--surface);border-radius:var(--r-control);box-shadow:var(--shadow-card);padding:10px 14px;font-weight:600;font-size:14px}
+/* The label (or state, or folder path) takes the row's text column; the
+   control keeps its natural size and drops below it before the text is
+   squeezed. */
+.setting-row > span{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
+.setting-row > .btn,.setting-row > form{flex:none;max-width:100%}
+.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline);min-width:0}
+/* The avatar is a 30px mark: its initials stay on one line and scroll
+   inside the circle only if they somehow outgrow it, so the mark never
+   widens and never rides over the name beside it. A flex row lets the
+   text shrink to the mark; a centered grid item would keep its
+   max-content width and spill. */
+.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;min-width:0;max-width:100%;overflow-x:auto;white-space:nowrap;font-weight:800;font-size:12px}
+.rail .user > div{min-width:0}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px}
-.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;transition:background var(--dur) ease,color var(--dur) ease}
+/* The toggle's word stays on one line and scrolls inside the control if
+   it cannot fit, so a button label never breaks across lines. */
+.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;min-width:0;max-width:100%;overflow-x:auto;white-space:nowrap;transition:background var(--dur) ease,color var(--dur) ease}
 .rail-toggle:hover{background:var(--surface-2);color:var(--ink-1)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
    drops its text; the column narrows to the mark width. Scoped to the
@@ -218,14 +248,14 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .rail-collapsed .rail .user{justify-content:center;padding:10px 0}
 .rail-collapsed .rail .user > div{display:none}
 }
-main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
-.topbar h1{font-family:var(--font-display);font-size:40px;font-weight:560;letter-spacing:-.03em}
+main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 auto}
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.topbar h1{font-family:var(--font-display);font-size:40px;font-weight:560;letter-spacing:-.03em;min-width:0;overflow-wrap:anywhere}
 .topbar .sub{color:var(--ink-2);margin-top:2px;display:flex;align-items:center;gap:8px}
 .dot{width:7px;height:7px;border-radius:999px;background:var(--good);display:inline-block}
 .dot.amber{background:var(--attention-ink)}
 .dot.sample{background:var(--ink-4)}
-.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;white-space:nowrap;max-width:100%;overflow-x:auto;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
 .btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:none;border:1px solid var(--accent)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
@@ -237,21 +267,31 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
 .widget:hover{box-shadow:var(--shadow-card-hover)}
 .col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
-.w-head{display:flex;align-items:center;gap:12px}
-.w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
-.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em;flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
+/* The thread name in a mail card is the header's text beside its stamp,
+   so it takes the title's flexible column. The inbox kind label keeps
+   its one line inside its own scroller instead of widening the header. */
+.w-head .origin-line{flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
+.origin-line.nowrap{overflow-x:auto}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none;white-space:nowrap;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-head .badge-pilot,.w-head .icon-btn{flex:none;max-width:100%}
 .w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:12px;font-size:12px;line-height:1.5;color:var(--ink-3)}
 .kpi{display:flex;gap:24px;align-items:flex-start}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
-.kpi .value{font-family:var(--font-mono);font-size:64px;font-weight:500;letter-spacing:-.03em;color:var(--good);margin-top:2px;overflow-wrap:anywhere}
+.kpi .value{font-family:var(--font-mono);font-size:64px;font-weight:500;letter-spacing:-.03em;color:var(--good);margin-top:2px;white-space:nowrap}
 .kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
 .spark{margin-left:auto;text-align:right}
 .spark figcaption{font-size:12px;color:var(--ink-4);margin-top:4px}
 table.rows{width:100%;border-collapse:collapse;font-size:13px}
-table.rows th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline)}
-table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline)}
+table.rows th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+/* A cell breaks only a word that cannot fit its column. The floor stays
+   the word's own width (unlike anywhere, which lets the auto layout
+   crush a column to one character and break every word in it); a table
+   whose words still cannot fit scrolls inside .table-scroll. */
+table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
 table.rows tr:last-child td{border-bottom:none}
-table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 table.rows td.neg{color:var(--bad)}
 .delta{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:12px;font-weight:600}
 .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
@@ -266,9 +306,10 @@ table.rows td.neg{color:var(--bad)}
 .check[aria-checked="true"] .box{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
 .check[aria-checked="true"] span:not(.box){text-decoration:line-through;color:var(--ink-3)}
 .follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
-.well{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
-.well .q{flex:1;color:var(--ink-3)}
-.well-input{flex:1;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
+.well{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
+.well .q{flex:1 1 220px;min-width:0;color:var(--ink-3)}
+.well-input{flex:1 1 220px;min-width:0;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
+.well > .btn{flex:none;max-width:100%}
 .well-input:focus{outline:2px solid var(--primary);outline-offset:1px}
 .grow{flex:1}
 .thread{display:flex;flex-direction:column;gap:12px;margin:14px 0}
@@ -289,12 +330,12 @@ table.rows td.neg{color:var(--bad)}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
 .decisions{list-style:none;margin:0;padding:0}
-.decisions li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--hairline)}
+.decisions li{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--hairline)}
 .decisions li:first-child{border-top:none;padding-top:0}
-.decision-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.decision-text{display:flex;flex:1 1 220px;flex-direction:column;gap:2px;min-width:0}
 .decision-title{font-weight:600;color:var(--ink-1);font-size:14px}
 .decision-why{font-size:12.5px;color:var(--ink-3);line-height:1.4}
-.decision-actions{display:flex;align-items:center;gap:8px;flex:none}
+.decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto}
 .decision-actions form{margin:0}
 .btn-sm{min-height:28px;padding:4px 10px;font-size:12.5px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
@@ -303,14 +344,16 @@ table.rows td.neg{color:var(--bad)}
 .doc > h2{font-size:16px;font-weight:700;margin:24px 0 0;letter-spacing:-.01em}
 .doc p{color:var(--ink-2);font-size:14px;margin:8px 0}
 .doc ol{margin:12px 0;padding-left:20px;color:var(--ink-2);font-size:14px;display:flex;flex-direction:column;gap:8px}
-.doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
+/* A long line in a pre scrolls inside the block instead of breaking a
+   path or a JSON token across lines. */
+.doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre;overflow-wrap:normal;color:var(--ink-1)}
 .doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .doc a.btn{text-decoration:none}
 .page-foot{margin-top:48px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
 .page-foot a:hover{text-decoration:underline}
 .touches td{vertical-align:top;font-size:13px}
-.touch-badge{display:inline-flex;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.touch-badge{display:inline-flex;max-width:100%;white-space:nowrap;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
 .touch-badge.on{background:var(--primary-soft);color:var(--primary);border-color:transparent}
 .error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
 .error-card h1{font-size:20px;font-weight:800}
@@ -404,10 +447,10 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
    and needs no rules of its own. */
 .inlineform{display:inline-block;margin:0 0 0 6px}
 /* A row scans one line tall (spec 019): the base URL wraps anywhere so
-   a mono URL cannot dictate the column widths, and the three actions
-   hold one line per row. */
+   a mono URL cannot dictate the column widths. The three actions wrap
+   together inside their cell when the table is narrow, so the buttons
+   are never squeezed and the page never scrolls sideways. */
 .conn-url{overflow-wrap:anywhere}
-.conn-actions{white-space:nowrap}
 /* The health badge (spec 018): one pill per state, colored like the
    delta arrows (good, bad) with unknown in the quiet ink; the inline
    cause under it is plain text, not part of the pill. The failure
