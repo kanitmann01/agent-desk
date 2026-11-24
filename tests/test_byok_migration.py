@@ -211,12 +211,18 @@ def test_deleting_the_migrated_connections_keeps_the_keys_and_the_next_boot_rest
     booted = _boot(tmp_path / "data", keychain)
     try:
         auth = booted.exchange()
-        # The first post names the jobs and the recovery instead of deleting.
+        # The first post names what it answers and the recovery instead
+        # of deleting; the whole sentence is pinned verbatim.
         status, _h, body = _delete(booted, auth, "migrated-endpoint")
         assert status == 409
         payload = json.loads(body)
         assert payload["boundJobs"] == ["default"]
-        assert "keychain" in payload["error"] and "next start" in payload["error"]
+        assert payload["error"] == (
+            "Migrated endpoint answers Everything else (plugin builder,"
+            " meeting breakdowns). It came from an older version of the"
+            " app: deleting it removes the connection, but its key stays in"
+            " this computer's keychain and the connection comes back the"
+            " next time the app starts, so nothing needs retyping")
         status, _h, _b = _delete(booted, auth, "migrated-endpoint", confirm=True)
         assert status == 200
         status, _h, _b = _delete(booted, auth, "migrated-research", confirm=True)
@@ -267,27 +273,26 @@ def test_the_no_js_delete_confirmation_for_a_migrated_connection_names_the_resta
              "Content-Length": str(len(data))}, data)
         assert status == 200
         page = body.decode("utf-8")
-        assert "came from the upgrade migration" in page
-        assert "key stays in this machine's keychain" in page
-        assert "puts the connection back" in page
+        assert "came from an older version of the app" in page
+        assert "key stays in this computer's keychain" in page
+        assert "comes back" in page
         # The whole migrated consequence paragraph, pinned verbatim
         # (spec 019 #258): every fragment join keeps its space, so a
         # dropped join space anywhere in the paragraph fails the pin.
         assert (
-            "<p><b>Migrated endpoint</b> came from the upgrade migration"
-            " (the legacy endpoint rows). Deleting it removes the"
-            " connection and those bindings, but the key stays in this"
-            " machine's keychain, and on the next start the migration step"
-            " sees the legacy rows and puts the connection back with its"
-            " key and its jobs: nothing needs retyping. The jobs you left"
-            " bound to your own connections stay exactly as they"
-            " are.</p>"
+            "<p><b>Migrated endpoint</b> came from an older version of the"
+            " app. Deleting it removes the connection, but its key stays"
+            " in this computer's keychain, and the next time the app"
+            " starts it comes back with its key: nothing needs retyping."
+            " What your other saved AIs answer stays exactly as it"
+            " is.</p>"
         ) in page
-        for run_on in ("thosebindings", "ownconnections", "jobs:nothing",
-                       "andputs"):
+        for run_on in ("app.Deleting", "thiscomputer's", "comesback",
+                       "retyping.What"):
             assert run_on not in page, run_on
         assert "action='/api/connections/migrated-endpoint/delete'" in page
         assert "name='confirm'" in page
+        assert "Delete Migrated endpoint anyway</button>" in page
         # The warning answered, nothing landed yet.
         assert "Migrated endpoint" in _listing(booted, auth)
     finally:

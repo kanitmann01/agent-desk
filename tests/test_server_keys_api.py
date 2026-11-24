@@ -315,7 +315,8 @@ def test_update_changes_the_model_and_one_it_does_not_mention_keeps_it(
 
 def test_the_edit_form_saves_the_model_it_shows(env, auth):
     """A browser always posts the form's model field, so a blank one is the
-    user clearing it, and it is saved as cleared (spec 022: "Model: default")."""
+    user clearing it, and it is saved as cleared (spec 022: a cleared row
+    then shows "Model: (default)")."""
     created = json.loads(_create(env, auth, model="mock-chat")[2])
     path = f"/api/connections/{created['id']}/update"
     edit = {"label": "OpenAI personal", "provider": "openai", "apiKey": ""}
@@ -617,7 +618,7 @@ def test_each_saved_row_shows_its_model_or_default(env, auth):
     rows = {row.split("</b>")[0]: row for row in page.split("<tr>")[1:]}
     assert "Model: mock-chat" in rows["<td><b>OpenAI personal"]
     # A connection with no model says so in plain words (spec 022).
-    assert "Model: default" in rows["<td><b>Local ollama"]
+    assert "Model: (default)" in rows["<td><b>Local ollama"]
 
 
 def test_settings_page_lists_connections_with_masked_hints_and_actions(env, auth):

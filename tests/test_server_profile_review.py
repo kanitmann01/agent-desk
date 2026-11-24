@@ -172,8 +172,11 @@ def test_a_hub_connection_serves_the_review_through_its_own_endpoint(env):
     stub = OpsEndpoint(_grounded_reply(env))
     try:
         env.server.settings.set("llm_base", "")
+        # The row records its key the way every real save does: the
+        # masked hint is what tells the hub the row can serve.
         connection = env.server.keys.add(
-            "Hub only", "custom", stub.base_url, is_default=True)
+            "Hub only", "custom", stub.base_url, masked_key="sk-...3456",
+            is_default=True)
         assert env.server.keychain.store(connection.id, "sk-hub-only-123456")
         env.server.keys.bind("memory", connection.id, "hub-model")
         outcome = server_app.review_profile(

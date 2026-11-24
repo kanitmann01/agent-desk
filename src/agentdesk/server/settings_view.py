@@ -591,43 +591,49 @@ Leave "Same as everything else" to use the AI that serves the rest.</p>
 </section>"""
 
 
+def joined_job_labels(jobs: list[str]) -> str:
+    """Join the plain names of what an AI answers: one reads alone, two
+    read "A and B", three or more read "A, B and C" (spec 022's plain
+    words, the same join on the warning page and in the JSON answer)."""
+    names = [JOB_LABELS[job] for job in jobs]
+    if len(names) < 2:
+        return names[0] if names else ""
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def render_connection_delete_warning(connection: dict, jobs: list[str],
                                      version: str,
                                      migrated: bool = False) -> str:
-    """The no-JS confirmation page a bound connection's first delete post
-    answers with: the jobs named before anything lands, one form that
-    posts the same delete with confirm, and one link back.
+    """The no-JS confirmation page a serving connection's first delete
+    post answers with: what it answers named before anything lands, one
+    form that posts the same delete with confirm, and one link back.
 
     A migrated connection (spec 018 #234) gets the honest variant: its
     keychain entry survives and the connection returns on the next
     start, because the delete is the recovery path."""
     connection_id = html.escape(str(connection.get("id", "")), quote=True)
     label = html.escape(str(connection.get("label", "")))
-    named = ", ".join(html.escape(job) for job in jobs)
+    named = html.escape(joined_job_labels(jobs))
     if migrated:
         consequence = (
-            f"<p><b>{label}</b> came from the upgrade migration (the legacy"
-            " endpoint rows). Deleting it removes the connection and those"
-            " bindings, but the key stays in this machine's keychain, and"
-            " on the next start the migration step sees the legacy rows and"
-            " puts the connection back with its key and its jobs: nothing"
-            " needs retyping. The jobs you left bound to your own"
-            " connections stay exactly as they are.</p>"
+            f"<p><b>{label}</b> came from an older version of the app."
+            " Deleting it removes the connection, but its key stays in this"
+            " computer's keychain, and the next time the app starts it comes"
+            " back with its key: nothing needs retyping. What your other"
+            " saved AIs answer stays exactly as it is.</p>"
         )
     else:
         consequence = (
-            f"<p><b>{label}</b> is bound to the <b>{named}</b> job{'s' if len(jobs) != 1 else ''}."
-            " Deleting it removes the connection, its keychain entry and those"
-            " bindings; the jobs fall back to the default binding, the single"
-            " remaining connection, or the environment, and a job with none of"
-            " those answers with a named unbound error instead of a silent"
-            " one.</p>"
+            f"<p><b>{label}</b> answers <b>{named}</b>."
+            " Deleting it removes the connection and its key from this"
+            " computer. Those stop answering until you save another"
+            " key.</p>"
         )
-    content = f"""<h1>Delete a connection that serves jobs</h1>
+    content = f"""<h1>Delete an AI that is in use</h1>
 {consequence}
 <form method='post' action='/api/connections/{connection_id}/delete' class='cardform'>
 <input type='hidden' name='confirm' value='1'>
-<button class='btn btn-danger' type='submit'>Delete {label} and unbind {named}</button>
+<button class='btn btn-danger' type='submit'>Delete {label} anyway</button>
 </form>
 <p><a class='btn btn-secondary' href='/settings'>Keep it</a></p>"""
     return page_shell("Connections", "/settings", content, version)
@@ -636,7 +642,7 @@ def render_connection_delete_warning(connection: dict, jobs: list[str],
 def _connection_rows(connections: list[dict]) -> str:
     """The saved-connections table: label, preset, masked key, base URL,
     status badge with its inline cause, default star, Test, edit and
-    delete. Each row names the model the connection sends, or "default"
+    delete. Each row names the model the connection sends, or "(default)"
     when it has none (spec 022). A raw key never reaches this markup; the
     masked hint is the only key-shaped thing on the page, and the badge
     state renders from the row alone, so the page works with no script at
@@ -650,7 +656,7 @@ def _connection_rows(connections: list[dict]) -> str:
         masked = html.escape(str(c.get("maskedKey", "") or ""))
         key_cell = f"<span class='mono'>{masked}</span>" if masked else \
             "<span class='empty'>no key</span>"
-        model = html.escape(str(c.get("model") or "default"))
+        model = html.escape(str(c.get("model") or "(default)"))
         base = html.escape(str(c.get("baseUrl", "")))
         connection_id = html.escape(str(c.get("id", "")), quote=True)
         status = html.escape(str(c.get("status") or "unknown"))

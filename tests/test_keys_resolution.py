@@ -35,11 +35,12 @@ ENV = ("https://env.example/v1", "env-key", "env-model")
 
 def _connection(tmp_path, label="One", provider="openai",
                 base_url="https://a.example/v1", **kwargs):
-    """One saved connection in a scratch store, so the dataclass is the
-    store's own, never a hand-built lookalike."""
+    """One saved, keyed connection in a scratch store, so the dataclass
+    is the store's own, never a hand-built lookalike."""
     store = KeysStore(
         __import__("sqlite3").connect(":memory:", check_same_thread=False),
         lambda: 0.0)
+    kwargs.setdefault("masked_key", "sk-...9999")
     return store.add(label=label, provider=provider, base_url=base_url, **kwargs)
 
 
@@ -154,12 +155,59 @@ def test_leg_3_never_fires_with_two_connections_or_a_disabled_one(tmp_path):
     store = KeysStore(sqlite3.connect(":memory:", check_same_thread=False),
                       lambda: 0.0)
     disabled = store.add(label="Off", provider="openai",
-                         base_url="https://a.example/v1")
+                         base_url="https://a.example/v1",
+                         masked_key="sk-...9999")
     store.conn.execute("UPDATE connections SET enabled = 0 WHERE id = ?",
                        (disabled.id,))
     disabled = store.get(disabled.id)
     assert resolve_job("assistant", connections=[disabled], bindings=[],
                        env=ENV).source == "env"
+
+
+# -- a row without a usable key never serves -----------------------------------
+
+
+def test_a_connection_whose_key_was_cleared_never_serves_any_leg(tmp_path):
+    """The row's masked hint is the hub's record that a key exists, so a
+    cleared key reads as not serving on every leg: the binding steps
+    aside, the single row never fires, and the environment answers (or
+    the plain no-key sentence when it cannot), instead of a call going
+    out with an empty key while the desk claims an AI is connected."""
+    cleared = _connection(tmp_path, "Cleared", masked_key="")
+    bindings = [JobBinding("assistant", cleared.id, "")]
+    assert resolve_job("assistant", connections=[cleared], bindings=bindings,
+                       env=ENV).source == "env"
+    assert resolve_job("assistant", connections=[cleared], bindings=[],
+                       env=ENV).source == "env"
+    with pytest.raises(JobUnbound):
+        resolve_job("assistant", connections=[cleared], bindings=bindings,
+                    env=("", "", DEFAULT_MODEL))
+
+
+def test_a_cleared_key_falls_through_to_the_default_binding(tmp_path):
+    """A job pinned to the cleared row falls to the next leg, exactly as
+    a binding whose connection is gone does, so the starred connection
+    keeps answering instead of the cleared one failing every call."""
+    cleared = _connection(tmp_path, "Cleared", masked_key="")
+    starred = _connection(tmp_path, "Starred", base_url="https://star.example/v1")
+    resolved = resolve_job(
+        "assistant", connections=[cleared, starred],
+        bindings=[JobBinding("assistant", cleared.id, ""),
+                  JobBinding("default", starred.id, "default-model")],
+        env=ENV)
+    assert resolved.connection is starred
+    assert resolved.source == "default"
+    assert resolved.model == "default-model"
+
+
+def test_a_local_preset_serves_with_no_key(tmp_path):
+    """The local presets need no secret, so a row without a masked hint
+    on one of them serves as any keyed row does."""
+    only = _connection(tmp_path, "Only", provider="ollama", masked_key="")
+    for job in JOBS:
+        resolved = resolve_job(job, connections=[only], bindings=[], env=ENV)
+        assert resolved.connection is only
+        assert resolved.source == "single"
 
 
 def test_leg_4_the_environment_serves_when_nothing_is_saved(tmp_path):

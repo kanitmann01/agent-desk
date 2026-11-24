@@ -4,9 +4,13 @@ connection serves a job.
 The order is the spec's, one answer per model call: the job's own
 binding, the default binding, the single enabled connection, the
 environment, and only then an explicit error that says no AI key is
-saved. Saved connections win over the environment, which is the desk's
-documented precedence. The model follows the same order on every leg
-(spec 022): the job's own model if one is set, then the serving
+saved. A row that cannot serve a call never wins a leg: the hub steps
+over a disabled row and over one whose key was cleared (the row's masked
+hint is empty and its provider is not one of the local, key-free
+presets), so the lower legs answer instead of a call going out with an
+empty key. Saved connections win over the environment, which is the
+desk's documented precedence. The model follows the same order on every
+leg (spec 022): the job's own model if one is set, then the serving
 connection's model, then the environment's. A connection saved before it
 could carry a model has none, so it keeps sending the environment's,
 exactly as before. The function is pure by construction: it reads
@@ -20,6 +24,7 @@ other way.
 
 from dataclasses import dataclass
 
+from agentdesk.keys.presets import preset_for
 from agentdesk.keys.store import Connection, JobBinding
 from agentdesk.llm import env_config
 
@@ -94,8 +99,9 @@ def resolve_job(job: str, *, connections: list[Connection],
     collections when the keys store is absent); env is the
     settings-over-environment triple the adapter resolves (its default,
     the adapter's env_config, keeps the two from ever disagreeing). A
-    binding whose connection is missing falls through to the next leg
-    rather than pinning the job to a row the store no longer has.
+    binding whose connection is missing, or whose row cannot serve a
+    call, falls through to the next leg rather than pinning the job to a
+    row that would send an empty key.
     """
     if env is None:
         env = env_config()
@@ -103,28 +109,45 @@ def resolve_job(job: str, *, connections: list[Connection],
     by_id = {connection.id: connection for connection in connections}
 
     binding = _binding_for(bindings, job)
-    if binding is not None and binding.connection_id in by_id:
+    if binding is not None and _can_serve(by_id.get(binding.connection_id)):
         connection = by_id[binding.connection_id]
         return Resolution(job, "job", connection, connection.base_url, "",
                           binding.model_id or connection.model or env_model)
 
     if job != DEFAULT_JOB:
         fallback = _binding_for(bindings, DEFAULT_JOB)
-        if fallback is not None and fallback.connection_id in by_id:
+        if fallback is not None and _can_serve(by_id.get(fallback.connection_id)):
             connection = by_id[fallback.connection_id]
             return Resolution(job, "default", connection, connection.base_url,
                               "", fallback.model_id or connection.model
                               or env_model)
 
-    enabled = [connection for connection in connections if connection.enabled]
-    if len(enabled) == 1:
-        return Resolution(job, "single", enabled[0], enabled[0].base_url, "",
-                          enabled[0].model or env_model)
+    serving = [connection for connection in connections if _can_serve(connection)]
+    if len(serving) == 1:
+        return Resolution(job, "single", serving[0], serving[0].base_url, "",
+                          serving[0].model or env_model)
 
     if env_base:
         return Resolution(job, "env", None, env_base, env_key, env_model)
 
     raise JobUnbound(job)
+
+
+def _can_serve(connection: Connection | None) -> bool:
+    """Whether one saved row can answer a call, read from the row alone.
+
+    A disabled row never serves (the migration's keychain-less rows step
+    aside this way), and neither does one whose key was cleared: the
+    masked hint is the row's own record that a key exists, and the local
+    presets are the only providers that serve without one. The keychain
+    itself stays the caller's to read, so the hub stays pure.
+    """
+    if connection is None or not connection.enabled:
+        return False
+    if connection.masked_key:
+        return True
+    preset = preset_for(connection.provider)
+    return preset is not None and preset.key_optional
 
 
 def _binding_for(bindings: list[JobBinding], job: str) -> JobBinding | None:
