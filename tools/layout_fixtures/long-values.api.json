@@ -1,0 +1,1380 @@
+{
+ "/api/dashboard": {
+  "version": "0.1.0",
+  "sample": true,
+  "flags": {
+   "excelEnabled": true,
+   "calendarEnabled": true,
+   "endpointEnabled": true
+  },
+  "sources": {
+   "connected": 1,
+   "total": 3,
+   "items": [
+    {
+     "id": "excel-watch",
+     "status": "sample",
+     "detail": "Sample data, not your file: the FY2026 consolidated pipeline workbook with 1,234,567 rows from the regional sales organization. Source 1."
+    },
+    {
+     "id": "calendar-bridge",
+     "status": "sample",
+     "detail": "Sample data, not your file: the FY2026 consolidated pipeline workbook with 1,234,567 rows from the regional sales organization. Source 2."
+    },
+    {
+     "id": "research-endpoint",
+     "status": "connected",
+     "detail": "Sample data, not your file: the FY2026 consolidated pipeline workbook with 1,234,567 rows from the regional sales organization. Source 3."
+    }
+   ]
+  },
+  "sales": {
+   "enabled": true,
+   "mode": "live",
+   "status": {
+    "configured": true,
+    "path": "C:\\Users\\a.manager\\OneDrive - Northwind Holdings\\Quarterly Forecasts\\FY2026 Consolidated Pipeline and Commitments.xlsx",
+    "state": "first",
+    "cause": "Sample data, not your file: the FY2026 consolidated pipeline workbook with 1,234,567 rows from the regional sales organization.",
+    "delta": {
+     "value": 1234567.89,
+     "label": "+1,234,567.89"
+    },
+    "rowsSeen": 1234567,
+    "examples": [
+     [
+      "Deal",
+      "Region",
+      "Stage",
+      "Amount"
+     ],
+     [
+      "Halvorsen Freight renewal and expansion for the northern region",
+      "AMER",
+      "Enterprise Prospect Qualification and Discovery Review",
+      987654321.12
+     ],
+     [
+      "Halvorsen Freight renewal and expansion for the northern region",
+      "EMEA",
+      "Negotiation and Mutual Action Plan Approval Stage",
+      987654321.12
+     ]
+    ],
+    "grid": {
+     "columns": [
+      "Deal",
+      "Region",
+      "Stage",
+      "Amount",
+      "Close date",
+      "Owner"
+     ],
+     "rows": [
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "AMER",
+       "Enterprise Prospect Qualification and Discovery Review",
+       987654321.12,
+       "2026-01-15",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "EMEA",
+       "Negotiation and Mutual Action Plan Approval Stage",
+       987654321.12,
+       "2026-01-18",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "APAC",
+       "Technical Validation and Security Questionnaire Stage",
+       987654321.12,
+       "2026-01-21",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "AMER",
+       "Closed Won and Contract Execution and Handover Stage",
+       987654321.12,
+       "2026-01-24",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "EMEA",
+       "Enterprise Prospect Qualification and Discovery Review",
+       987654321.12,
+       "2026-01-27",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "APAC",
+       "Negotiation and Mutual Action Plan Approval Stage",
+       987654321.12,
+       "2026-01-30",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "AMER",
+       "Technical Validation and Security Questionnaire Stage",
+       987654321.12,
+       "2026-02-02",
+       "Alexandra Montgomery-Richardson"
+      ],
+      [
+       "Halvorsen Freight renewal and expansion for the northern region",
+       "EMEA",
+       "Closed Won and Contract Execution and Handover Stage",
+       987654321.12,
+       "2026-02-05",
+       "Alexandra Montgomery-Richardson"
+      ]
+     ]
+    },
+    "last_ok_ts": 1795553920.5818563,
+    "reference_ts": null
+   }
+  },
+  "commitments": {
+   "enabled": true,
+   "mode": "live",
+   "status": {
+    "configured": true,
+    "state": "healthy",
+    "cause": "",
+    "path": "C:\\Users\\mannk\\AppData\\Local\\Temp\\agentdesk-layout-full-mzpohbew\\data\\sample\\sample-calendar.json",
+    "keyEvent": {
+     "id": "sample-evt-long",
+     "subject": "Quarterly pipeline review with the regional sales leadership team and the customer success organization",
+     "start": "2026-11-24T17:58:00-05:00",
+     "end": "2026-11-24T19:58:00-05:00",
+     "location": "Beaufort Conference Room, Northwind Holdings headquarters, floor 14",
+     "attendees": 128
+    },
+    "breakdown": {
+     "subtasks": [
+      "Review the agenda so you walk in knowing the one decision the customer needs",
+      "Note the three open commercial questions and who owns each follow-up",
+      "Decide what you will offer to own afterwards, with a date and a named owner"
+     ],
+     "fallback": true
+    },
+    "checks": {},
+    "firstDetected": "2026-11-24T15:58:40.610780-05:00",
+    "generatedAt": "2026-11-24T15:58:40.528907-05:00"
+   }
+  },
+  "research": {
+   "enabled": true,
+   "lastAnsweredTs": null
+  },
+  "inbox": {
+   "waiting": 1234
+  },
+  "deskCheck": {
+   "attention": 0,
+   "top": null
+  },
+  "agentLoop": {
+   "lastRunTs": null,
+   "nextRunTs": null,
+   "enabled": false
+  },
+  "recommendations": [
+   {
+    "cardId": "card-3D9nV86gE61q",
+    "title": "Review the Halvorsen Freight renewal notes, confirm the three open questions, and decide who owns the follow-up call",
+    "why": "The meeting starts soon and the desk holds six related notes, two open commitments, and a workbook row that moved this week.",
+    "whySource": "rule",
+    "score": null,
+    "due": "2026-12-15",
+    "href": "/assistant",
+    "actionLabel": "Prep in Assistant",
+    "sample": true,
+    "cites": [
+     3,
+     2,
+     1
+    ]
+   },
+   {
+    "cardId": "card-BqnOzCafKjdo",
+    "title": "Review the Halvorsen Freight renewal notes, confirm the three open questions, and decide who owns the follow-up call",
+    "why": "The meeting starts soon and the desk holds six related notes, two open commitments, and a workbook row that moved this week.",
+    "whySource": "rule",
+    "score": null,
+    "due": "2026-12-15",
+    "href": "/agents",
+    "actionLabel": "Open Agents",
+    "sample": true,
+    "cites": [
+     1
+    ]
+   }
+  ],
+  "update": {
+   "current": "0.1.0",
+   "previous": null,
+   "pending": null,
+   "lastResult": "none",
+   "lastCause": "",
+   "lastCheckTs": 0,
+   "available": null,
+   "banner": null,
+   "autoUpdate": false,
+   "channelSet": false
+  },
+  "skills": [],
+  "layout": {
+   "cards": [
+    {
+     "key": "sales",
+     "title": null
+    },
+    {
+     "key": "commitments",
+     "title": null
+    },
+    {
+     "key": "research",
+     "title": null
+    },
+    {
+     "key": "skills",
+     "title": null
+    },
+    {
+     "key": "competitor-watch",
+     "title": null
+    },
+    {
+     "key": "excel-report~main",
+     "title": null
+    },
+    {
+     "key": "presentation-starter",
+     "title": null
+    }
+   ]
+  },
+  "plugins": {
+   "cards": [
+    {
+     "id": "competitor-watch",
+     "title": "Regional Pipeline Operations Console with Quarterly Forecast",
+     "version": "0.1.0",
+     "pilot": true,
+     "state": "enabled",
+     "freshness": "attention",
+     "cause": "The host has no HTTP transport available for this plugin, so the regional console cannot read its remote feed.",
+     "checkedAt": "2026-11-24T15:58:40",
+     "pluginId": "competitor-watch",
+     "instanceId": "main",
+     "payload": {
+      "elements": [],
+      "status": "attention",
+      "cause": "The host has no HTTP transport available for this plugin.",
+      "checked_at": "2026-11-24T15:58:40",
+      "source": {
+       "type": "http-get",
+       "value": null,
+       "asOf": "",
+       "source": "",
+       "state": "blank",
+       "reason": "no-transport",
+       "human": "The host has no HTTP transport available for this plugin.",
+       "files": []
+      }
+     }
+    },
+    {
+     "id": "excel-report~main",
+     "title": "Enterprise Revenue Tracker for the Global Sales Organization",
+     "version": "0.1.0",
+     "pilot": true,
+     "state": "enabled",
+     "freshness": "fresh",
+     "cause": "",
+     "checkedAt": "",
+     "pluginId": "excel-report",
+     "instanceId": "main",
+     "payload": {
+      "elements": [
+       {
+        "kind": "metric",
+        "label": "Net pipeline value across every region and stage",
+        "value": "987,654,321.12"
+       },
+       {
+        "kind": "delta",
+        "label": "Change",
+        "value": "First consolidated reading",
+        "direction": "flat"
+       },
+       {
+        "kind": "text",
+        "label": "Consolidated workbook file path",
+        "text": "C:\\Users\\a.manager\\OneDrive - Northwind Holdings\\Quarterly Forecasts\\FY2026 Consolidated Pipeline and Commitments.xlsx"
+       },
+       {
+        "kind": "text",
+        "label": "Consolidated workbook file path",
+        "text": "C:\\Users\\a.manager\\OneDrive - Northwind Holdings\\Quarterly Forecasts\\FY2026 Consolidated Pipeline and Commitments.xlsx"
+       },
+       {
+        "kind": "text",
+        "label": "Consolidated workbook file path",
+        "text": "C:\\Users\\a.manager\\OneDrive - Northwind Holdings\\Quarterly Forecasts\\FY2026 Consolidated Pipeline and Commitments.xlsx"
+       },
+       {
+        "kind": "text",
+        "label": "Consolidated workbook file path",
+        "text": "C:\\Users\\a.manager\\OneDrive - Northwind Holdings\\Quarterly Forecasts\\FY2026 Consolidated Pipeline and Commitments.xlsx"
+       }
+      ],
+      "status": "fresh",
+      "tracker": {
+       "name": "Enterprise Revenue Tracker for the Global Sales Organization",
+       "value": "987,654,321.12",
+       "unit": "USD",
+       "delta": "First reading in the consolidated workbook",
+       "direction": "flat",
+       "points": [
+        9270950.0
+       ],
+       "chart": "line",
+       "axis": "reading",
+       "labels": [],
+       "deltaLabel": "Compared with the previous consolidated reading",
+       "seriesNote": "Net pipeline value across every region and every open stage",
+       "file": "C:\\Users\\a.manager\\OneDrive - Northwind Holdings\\Quarterly Forecasts\\FY2026 Consolidated Pipeline and Commitments.xlsx",
+       "rowsSeen": 1234567,
+       "labelColumn": "Deal",
+       "valueColumn": "Amount",
+       "table": {
+        "headers": [
+         "Deal",
+         "Region",
+         "Stage",
+         "Amount",
+         "Close date",
+         "Owner"
+        ],
+        "rows": [
+         [
+          "Halvorsen Freight renewal",
+          "AMER",
+          "Prospect",
+          "19920",
+          "2026-01-15",
+          "Avery Kim"
+         ],
+         [
+          "Brightwater Clinics expansion",
+          "EMEA",
+          "Qualify",
+          "27840",
+          "2026-01-18",
+          "Jordan Lee"
+         ],
+         [
+          "Kestrel Foods pilot",
+          "APAC",
+          "Propose",
+          "35760",
+          "2026-01-21",
+          "Riley Chen"
+         ],
+         [
+          "Marlow & Finch support retainer",
+          "AMER",
+          "Negotiate",
+          "43680",
+          "2026-01-24",
+          "Sam Ortiz"
+         ],
+         [
+          "Northgate Utilities platform add-on",
+          "EMEA",
+          "Closed Won",
+          "51600",
+          "2026-01-27",
+          "Avery Kim"
+         ],
+         [
+          "Pellam Logistics renewal",
+          "APAC",
+          "Prospect",
+          "59510",
+          "2026-01-30",
+          "Jordan Lee"
+         ],
+         [
+          "Ridgeway Dental expansion",
+          "AMER",
+          "Qualify",
+          "67430",
+          "2026-02-02",
+          "Riley Chen"
+         ],
+         [
+          "Sato Instruments pilot",
+          "EMEA",
+          "Propose",
+          "75350",
+          "2026-02-05",
+          "Sam Ortiz"
+         ],
+         [
+          "Tamsin Hotels support retainer",
+          "APAC",
+          "Negotiate",
+          "83270",
+          "2026-02-08",
+          "Avery Kim"
+         ],
+         [
+          "Ubeda Textiles platform add-on",
+          "AMER",
+          "Closed Won",
+          "91190",
+          "2026-02-11",
+          "Jordan Lee"
+         ],
+         [
+          "Corran Mining renewal",
+          "EMEA",
+          "Prospect",
+          "99110",
+          "2026-02-14",
+          "Riley Chen"
+         ],
+         [
+          "Lindqvist Retail expansion",
+          "APAC",
+          "Qualify",
+          "107030",
+          "2026-02-17",
+          "Sam Ortiz"
+         ],
+         [
+          "Oakhurst Schools pilot",
+          "AMER",
+          "Propose",
+          "114950",
+          "2026-02-20",
+          "Avery Kim"
+         ],
+         [
+          "Fenwick Insurance support retainer",
+          "EMEA",
+          "Negotiate",
+          "122870",
+          "2026-02-23",
+          "Jordan Lee"
+         ],
+         [
+          "Delgado Farms platform add-on",
+          "APAC",
+          "Closed Won",
+          "130780",
+          "2026-02-26",
+          "Riley Chen"
+         ],
+         [
+          "Wexford Transit renewal",
+          "AMER",
+          "Prospect",
+          "138700",
+          "2026-03-01",
+          "Sam Ortiz"
+         ],
+         [
+          "Ashby Pharma expansion",
+          "EMEA",
+          "Qualify",
+          "146620",
+          "2026-03-04",
+          "Avery Kim"
+         ],
+         [
+          "Quayle Media pilot",
+          "APAC",
+          "Propose",
+          "154540",
+          "2026-03-07",
+          "Jordan Lee"
+         ],
+         [
+          "Iverson Steel support retainer",
+          "AMER",
+          "Negotiate",
+          "162460",
+          "2026-03-10",
+          "Riley Chen"
+         ],
+         [
+          "Galen Health platform add-on",
+          "EMEA",
+          "Closed Won",
+          "170380",
+          "2026-03-13",
+          "Sam Ortiz"
+         ],
+         [
+          "Halvorsen Freight expansion",
+          "APAC",
+          "Prospect",
+          "178300",
+          "2026-03-16",
+          "Avery Kim"
+         ],
+         [
+          "Brightwater Clinics pilot",
+          "AMER",
+          "Qualify",
+          "18220",
+          "2026-03-19",
+          "Jordan Lee"
+         ],
+         [
+          "Kestrel Foods support retainer",
+          "EMEA",
+          "Propose",
+          "26140",
+          "2026-03-22",
+          "Riley Chen"
+         ],
+         [
+          "Marlow & Finch platform add-on",
+          "APAC",
+          "Negotiate",
+          "34060",
+          "2026-03-25",
+          "Sam Ortiz"
+         ],
+         [
+          "Northgate Utilities renewal",
+          "AMER",
+          "Closed Won",
+          "41980",
+          "2026-03-28",
+          "Avery Kim"
+         ],
+         [
+          "Pellam Logistics expansion",
+          "EMEA",
+          "Prospect",
+          "49890",
+          "2026-03-31",
+          "Jordan Lee"
+         ],
+         [
+          "Ridgeway Dental pilot",
+          "APAC",
+          "Qualify",
+          "57810",
+          "2026-04-03",
+          "Riley Chen"
+         ],
+         [
+          "Sato Instruments support retainer",
+          "AMER",
+          "Propose",
+          "65730",
+          "2026-04-06",
+          "Sam Ortiz"
+         ],
+         [
+          "Tamsin Hotels platform add-on",
+          "EMEA",
+          "Negotiate",
+          "73650",
+          "2026-04-09",
+          "Avery Kim"
+         ],
+         [
+          "Ubeda Textiles renewal",
+          "APAC",
+          "Closed Won",
+          "81570",
+          "2026-04-12",
+          "Jordan Lee"
+         ],
+         [
+          "Corran Mining expansion",
+          "AMER",
+          "Prospect",
+          "89490",
+          "2026-04-15",
+          "Riley Chen"
+         ],
+         [
+          "Lindqvist Retail pilot",
+          "EMEA",
+          "Qualify",
+          "97410",
+          "2026-04-18",
+          "Sam Ortiz"
+         ],
+         [
+          "Oakhurst Schools support retainer",
+          "APAC",
+          "Propose",
+          "105330",
+          "2026-04-21",
+          "Avery Kim"
+         ],
+         [
+          "Fenwick Insurance platform add-on",
+          "AMER",
+          "Negotiate",
+          "113250",
+          "2026-04-24",
+          "Jordan Lee"
+         ],
+         [
+          "Delgado Farms renewal",
+          "EMEA",
+          "Closed Won",
+          "121160",
+          "2026-04-27",
+          "Riley Chen"
+         ],
+         [
+          "Wexford Transit expansion",
+          "APAC",
+          "Prospect",
+          "129080",
+          "2026-04-30",
+          "Sam Ortiz"
+         ],
+         [
+          "Ashby Pharma pilot",
+          "AMER",
+          "Qualify",
+          "137000",
+          "2026-05-03",
+          "Avery Kim"
+         ],
+         [
+          "Quayle Media support retainer",
+          "EMEA",
+          "Propose",
+          "144920",
+          "2026-05-06",
+          "Jordan Lee"
+         ],
+         [
+          "Iverson Steel platform add-on",
+          "APAC",
+          "Negotiate",
+          "152840",
+          "2026-05-09",
+          "Riley Chen"
+         ],
+         [
+          "Galen Health renewal",
+          "AMER",
+          "Closed Won",
+          "160760",
+          "2026-05-12",
+          "Sam Ortiz"
+         ],
+         [
+          "Halvorsen Freight pilot",
+          "EMEA",
+          "Prospect",
+          "168680",
+          "2026-05-15",
+          "Avery Kim"
+         ],
+         [
+          "Brightwater Clinics support retainer",
+          "APAC",
+          "Qualify",
+          "176600",
+          "2026-05-18",
+          "Jordan Lee"
+         ],
+         [
+          "Kestrel Foods platform add-on",
+          "AMER",
+          "Propose",
+          "16520",
+          "2026-05-21",
+          "Riley Chen"
+         ],
+         [
+          "Marlow & Finch renewal",
+          "EMEA",
+          "Negotiate",
+          "24440",
+          "2026-05-24",
+          "Sam Ortiz"
+         ],
+         [
+          "Northgate Utilities expansion",
+          "APAC",
+          "Closed Won",
+          "32360",
+          "2026-05-27",
+          "Avery Kim"
+         ],
+         [
+          "Pellam Logistics pilot",
+          "AMER",
+          "Prospect",
+          "40270",
+          "2026-05-30",
+          "Jordan Lee"
+         ],
+         [
+          "Ridgeway Dental support retainer",
+          "EMEA",
+          "Qualify",
+          "48190",
+          "2026-06-02",
+          "Riley Chen"
+         ],
+         [
+          "Sato Instruments platform add-on",
+          "APAC",
+          "Propose",
+          "56110",
+          "2026-06-05",
+          "Sam Ortiz"
+         ],
+         [
+          "Tamsin Hotels renewal",
+          "AMER",
+          "Negotiate",
+          "64030",
+          "2026-06-08",
+          "Avery Kim"
+         ],
+         [
+          "Ubeda Textiles expansion",
+          "EMEA",
+          "Closed Won",
+          "71950",
+          "2026-06-11",
+          "Jordan Lee"
+         ],
+         [
+          "Corran Mining pilot",
+          "APAC",
+          "Prospect",
+          "79870",
+          "2026-06-14",
+          "Riley Chen"
+         ],
+         [
+          "Lindqvist Retail support retainer",
+          "AMER",
+          "Qualify",
+          "87790",
+          "2026-06-17",
+          "Sam Ortiz"
+         ],
+         [
+          "Oakhurst Schools platform add-on",
+          "EMEA",
+          "Propose",
+          "95710",
+          "2026-06-20",
+          "Avery Kim"
+         ],
+         [
+          "Fenwick Insurance renewal",
+          "APAC",
+          "Negotiate",
+          "103630",
+          "2026-06-23",
+          "Jordan Lee"
+         ],
+         [
+          "Delgado Farms expansion",
+          "AMER",
+          "Closed Won",
+          "111540",
+          "2026-06-26",
+          "Riley Chen"
+         ],
+         [
+          "Wexford Transit pilot",
+          "EMEA",
+          "Prospect",
+          "119460",
+          "2026-06-29",
+          "Sam Ortiz"
+         ],
+         [
+          "Ashby Pharma support retainer",
+          "APAC",
+          "Qualify",
+          "127380",
+          "2026-07-02",
+          "Avery Kim"
+         ],
+         [
+          "Quayle Media platform add-on",
+          "AMER",
+          "Propose",
+          "135300",
+          "2026-07-05",
+          "Jordan Lee"
+         ],
+         [
+          "Iverson Steel renewal",
+          "EMEA",
+          "Negotiate",
+          "143220",
+          "2026-07-08",
+          "Riley Chen"
+         ],
+         [
+          "Galen Health expansion",
+          "APAC",
+          "Closed Won",
+          "151140",
+          "2026-07-11",
+          "Sam Ortiz"
+         ]
+        ]
+       },
+       "readAt": 1795553920.9411213,
+       "sample": false,
+       "paceNote": "",
+       "goal": {
+        "value": "1000000000",
+        "unit": "USD"
+       }
+      },
+      "insight": {
+       "status": "ok",
+       "source": "local",
+       "preferences": [],
+       "note": "Also in your desk: Halvorsen Freight, six durable facts; Kestrel Foods, four commitments; and the northern region pipeline workbook with 1,234,567 rows.",
+       "blocks": [
+        {
+         "kind": "receipts",
+         "text": "Used the defaults; read this card's 1,234,567 rows, six memory notes, and the consolidated calendar."
+        },
+        {
+         "kind": "note",
+         "text": "Used the defaults; read this card's 1,234,567 rows, six memory notes, and the consolidated calendar."
+        }
+       ],
+       "press": {
+        "label": "Explain the consolidated pipeline range",
+        "route": "/api/insight/draft",
+        "kind": "explain-range",
+        "text": "Amount rose from 19,920 to 987,654,321.12 between 2026-01-15 and 2026-07-11 across every region and every stage."
+       }
+      }
+     }
+    },
+    {
+     "id": "presentation-starter",
+     "title": "Regional Pipeline Operations Console with Quarterly Forecast",
+     "version": "0.1.0",
+     "pilot": true,
+     "state": "enabled",
+     "freshness": "attention",
+     "cause": "The host has no HTTP transport available for this plugin, so the regional console cannot read its remote feed.",
+     "checkedAt": "2026-11-24T15:58:40",
+     "pluginId": "presentation-starter",
+     "instanceId": "main",
+     "payload": null
+    }
+   ]
+  },
+  "setup": {
+   "steps": [
+    {
+     "id": "ai",
+     "title": "Add your AI key",
+     "reason": "The assistant, the calendar breakdowns, the memory loop and every plugin console use this connection.",
+     "href": "/settings#ai",
+     "action": null,
+     "done": true
+    },
+    {
+     "id": "workbook",
+     "title": "Open the consolidated regional sales workbook",
+     "reason": "The pipeline figure, the moves table, the tracker card and every stage breakdown come from this workbook.",
+     "href": "/settings#tools",
+     "action": "/sources/excel-watch/pick",
+     "done": false
+    },
+    {
+     "id": "calendar",
+     "title": "Connect your calendar",
+     "reason": "Today's commitment, the digest and the calendar breakdown come from this calendar sync.",
+     "href": "/walkthrough/calendar",
+     "action": null,
+     "done": false
+    }
+   ],
+   "sample": true,
+   "sampleOffer": true
+  }
+ },
+ "/api/marketplace/catalog": {
+  "entries": [
+   {
+    "id": "competitor-watch",
+    "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+    "version": "0.1.0",
+    "publisher": "Northwind Holdings Enterprise Plugin Publishing and Governance Team",
+    "publisherVerified": true,
+    "category": "research",
+    "tags": [
+     "regional-pipeline-operations",
+     "consolidated-forecasts",
+     "governance"
+    ],
+    "summary": "A regional pipeline operations console that reads the consolidated workbook, tracks every stage, and reports the change since the last read",
+    "icon": "plugin",
+    "riskTier": "T2",
+    "source": "bundled",
+    "eligible": false,
+    "ineligibleReasons": [
+     {
+      "code": "policy:risk-ceiling",
+      "message": "risk tier T2 exceeds the policy ceiling T1"
+     }
+    ],
+    "deprecated": null,
+    "yanked": false,
+    "sampleAvailable": false
+   },
+   {
+    "id": "excel-report",
+    "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+    "version": "0.1.0",
+    "publisher": "Northwind Holdings Enterprise Plugin Publishing and Governance Team",
+    "publisherVerified": true,
+    "category": "reference",
+    "tags": [
+     "regional-pipeline-operations",
+     "consolidated-forecasts",
+     "governance"
+    ],
+    "summary": "A regional pipeline operations console that reads the consolidated workbook, tracks every stage, and reports the change since the last read",
+    "icon": "plugin",
+    "riskTier": "T1",
+    "source": "bundled",
+    "eligible": true,
+    "ineligibleReasons": [],
+    "deprecated": null,
+    "yanked": false,
+    "sampleAvailable": false
+   },
+   {
+    "id": "presentation-starter",
+    "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+    "version": "0.1.0",
+    "publisher": "Northwind Holdings Enterprise Plugin Publishing and Governance Team",
+    "publisherVerified": true,
+    "category": "communication",
+    "tags": [
+     "regional-pipeline-operations",
+     "consolidated-forecasts",
+     "governance"
+    ],
+    "summary": "A regional pipeline operations console that reads the consolidated workbook, tracks every stage, and reports the change since the last read",
+    "icon": "plugin",
+    "riskTier": "T1",
+    "source": "bundled",
+    "eligible": true,
+    "ineligibleReasons": [],
+    "deprecated": null,
+    "yanked": false,
+    "sampleAvailable": false
+   }
+  ],
+  "total": 3,
+  "sources": [
+   {
+    "source": "bundled",
+    "count": 3
+   }
+  ],
+  "policy": {
+   "mode": "curated",
+   "source": "built-in",
+   "signatureStatus": "unsigned"
+  }
+ },
+ "/api/marketplace/plugin/competitor-watch": {
+  "plugin": {
+   "id": "competitor-watch",
+   "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+   "version": "0.1.0",
+   "publisher": "Northwind Holdings Enterprise Plugin Publishing and Governance Team",
+   "publisherVerified": true,
+   "category": "research",
+   "tags": [
+    "competitor",
+    "pricing",
+    "change"
+   ],
+   "summary": "A regional pipeline operations console that reads the consolidated workbook, tracks every stage, and reports the change since the last read",
+   "icon": "plugin",
+   "riskTier": "T2",
+   "source": "bundled",
+   "eligible": false,
+   "ineligibleReasons": [
+    {
+     "code": "policy:risk-ceiling",
+     "message": "risk tier T2 exceeds the policy ceiling T1"
+    }
+   ],
+   "deprecated": null,
+   "yanked": false,
+   "sampleAvailable": false,
+   "description": "Fetches one consolidated sales workbook a day, hashes every sheet, and reports whether the pipeline changed, with the changed rows, the stage names, the close dates, and the fetch time.",
+   "highlights": [
+    "Every regional pipeline stage in one console",
+    "Change flag plus the rows that moved since the last read",
+    "Long publisher and summary strings for the catalog card"
+   ],
+   "license": "",
+   "homepage": "",
+   "requires": {},
+   "minHost": "",
+   "digest": "1f4cc1e76744f0976b41d37c584e125b27ca7382ced0c6e52e421cb72d2c1b18",
+   "signature": {
+    "status": "bundled",
+    "keyId": "",
+    "fingerprint": "",
+    "signedAt": ""
+   },
+   "provenance": {
+    "builder": "",
+    "sourceCommit": ""
+   },
+   "capabilities": {
+    "sources": [],
+    "permissions": [],
+    "elementKinds": [],
+    "filesystem": [],
+    "network": []
+   },
+   "changelog": {
+    "version": "0.1.0",
+    "text": "",
+    "date": ""
+   },
+   "publishedAt": "",
+   "validation": {
+    "checkedAt": "",
+    "ok": null,
+    "failures": []
+   }
+  },
+  "installed": {
+   "id": "competitor-watch",
+   "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+   "version": "0.1.0",
+   "pinned": {
+    "version": "0.1.0",
+    "sha256": "1f4cc1e76744f0976b41d37c584e125b27ca7382ced0c6e52e421cb72d2c1b18"
+   },
+   "status": {
+    "status": "attention",
+    "cause": "The host has no HTTP transport available for this plugin.",
+    "checked_at": "2026-11-24T15:58:40"
+   },
+   "pilot": {
+    "views": 4,
+    "remaining": 4
+   },
+   "update": null,
+   "pendingConsent": false,
+   "shared": false,
+   "enabled": true,
+   "dataDirSize": 0
+  },
+  "versions": [
+   {
+    "version": "0.1.0",
+    "digest": "1f4cc1e76744f0976b41d37c584e125b27ca7382ced0c6e52e421cb72d2c1b18",
+    "yanked": false
+   }
+  ],
+  "alternatives": [],
+  "sample": {
+   "elements": [
+    {
+     "kind": "delta",
+     "state": "ok",
+     "value": "true",
+     "label": "Pricing page",
+     "direction": "flat",
+     "window": "24h"
+    },
+    {
+     "kind": "list",
+     "title": "What changed",
+     "state": "ok",
+     "rows": [
+      {
+       "primary": "Starter plan",
+       "secondary": "$29 per seat per month",
+       "meta": "was $25"
+      },
+      {
+       "primary": "Team plan",
+       "secondary": "$79 per seat per month",
+       "meta": "was $69"
+      },
+      {
+       "primary": "Annual discount",
+       "secondary": "15 percent",
+       "meta": "was 20 percent"
+      }
+     ]
+    },
+    {
+     "kind": "text",
+     "state": "ok",
+     "text": "2026-11-15T08:55:00",
+     "label": "Fetched"
+    }
+   ],
+   "status": "fresh",
+   "cause": "",
+   "checked_at": "2026-11-15T09:00:00"
+  }
+ },
+ "/api/marketplace/plugin/excel-report": {
+  "plugin": {
+   "id": "excel-report",
+   "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+   "version": "0.1.0",
+   "publisher": "Northwind Holdings Enterprise Plugin Publishing and Governance Team",
+   "publisherVerified": true,
+   "category": "reference",
+   "tags": [
+    "excel",
+    "tracker",
+    "workbook"
+   ],
+   "summary": "A regional pipeline operations console that reads the consolidated workbook, tracks every stage, and reports the change since the last read",
+   "icon": "plugin",
+   "riskTier": "T1",
+   "source": "bundled",
+   "eligible": true,
+   "ineligibleReasons": [],
+   "deprecated": null,
+   "yanked": false,
+   "sampleAvailable": false,
+   "description": "Fetches one consolidated sales workbook a day, hashes every sheet, and reports whether the pipeline changed, with the changed rows, the stage names, the close dates, and the fetch time.",
+   "highlights": [
+    "Every regional pipeline stage in one console",
+    "Change flag plus the rows that moved since the last read",
+    "Long publisher and summary strings for the catalog card"
+   ],
+   "license": "",
+   "homepage": "",
+   "requires": {},
+   "minHost": "",
+   "digest": "97486020f1ce1e551db4765982159a2118054de994625889d013cb0c51af7770",
+   "signature": {
+    "status": "bundled",
+    "keyId": "",
+    "fingerprint": "",
+    "signedAt": ""
+   },
+   "provenance": {
+    "builder": "",
+    "sourceCommit": ""
+   },
+   "capabilities": {
+    "sources": [],
+    "permissions": [],
+    "elementKinds": [],
+    "filesystem": [],
+    "network": []
+   },
+   "changelog": {
+    "version": "0.1.0",
+    "text": "",
+    "date": ""
+   },
+   "publishedAt": "",
+   "validation": {
+    "checkedAt": "",
+    "ok": null,
+    "failures": []
+   }
+  },
+  "installed": {
+   "id": "excel-report",
+   "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+   "version": "0.1.0",
+   "pinned": {
+    "version": "0.1.0",
+    "sha256": "97486020f1ce1e551db4765982159a2118054de994625889d013cb0c51af7770"
+   },
+   "status": {
+    "status": "setup",
+    "cause": "",
+    "checked_at": "2026-11-24T15:58:40"
+   },
+   "pilot": {
+    "views": 4,
+    "remaining": 4
+   },
+   "update": null,
+   "pendingConsent": false,
+   "shared": false,
+   "enabled": true,
+   "dataDirSize": 30784
+  },
+  "versions": [
+   {
+    "version": "0.1.0",
+    "digest": "97486020f1ce1e551db4765982159a2118054de994625889d013cb0c51af7770",
+    "yanked": false
+   }
+  ],
+  "alternatives": [],
+  "sample": {
+   "elements": [
+    {
+     "kind": "metric",
+     "state": "ok",
+     "value": "15",
+     "label": "Value"
+    },
+    {
+     "kind": "delta",
+     "state": "ok",
+     "value": "First reading.",
+     "label": "Change",
+     "direction": "flat",
+     "window": ""
+    },
+    {
+     "kind": "text",
+     "state": "ok",
+     "text": "workbook.xlsx",
+     "label": "Workbook"
+    },
+    {
+     "kind": "text",
+     "state": "ok",
+     "text": "",
+     "label": "Pace"
+    }
+   ],
+   "status": "fresh",
+   "cause": "",
+   "checked_at": "2026-11-16T09:00:00"
+  }
+ },
+ "/api/marketplace/plugin/presentation-starter": {
+  "plugin": {
+   "id": "presentation-starter",
+   "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+   "version": "0.1.0",
+   "publisher": "Northwind Holdings Enterprise Plugin Publishing and Governance Team",
+   "publisherVerified": true,
+   "category": "communication",
+   "tags": [
+    "presentation",
+    "template"
+   ],
+   "summary": "A regional pipeline operations console that reads the consolidated workbook, tracks every stage, and reports the change since the last read",
+   "icon": "plugin",
+   "riskTier": "T1",
+   "source": "bundled",
+   "eligible": true,
+   "ineligibleReasons": [],
+   "deprecated": null,
+   "yanked": false,
+   "sampleAvailable": false,
+   "description": "Fetches one consolidated sales workbook a day, hashes every sheet, and reports whether the pipeline changed, with the changed rows, the stage names, the close dates, and the fetch time.",
+   "highlights": [
+    "Every regional pipeline stage in one console",
+    "Change flag plus the rows that moved since the last read",
+    "Long publisher and summary strings for the catalog card"
+   ],
+   "license": "",
+   "homepage": "",
+   "requires": {},
+   "minHost": "",
+   "digest": "4004f29ed87dc64b1935c7429b1c6d68d92154880d5ae03339918cfc1ebe5876",
+   "signature": {
+    "status": "bundled",
+    "keyId": "",
+    "fingerprint": "",
+    "signedAt": ""
+   },
+   "provenance": {
+    "builder": "",
+    "sourceCommit": ""
+   },
+   "capabilities": {
+    "sources": [],
+    "permissions": [],
+    "elementKinds": [],
+    "filesystem": [],
+    "network": []
+   },
+   "changelog": {
+    "version": "0.1.0",
+    "text": "",
+    "date": ""
+   },
+   "publishedAt": "",
+   "validation": {
+    "checkedAt": "",
+    "ok": null,
+    "failures": []
+   }
+  },
+  "installed": {
+   "id": "presentation-starter",
+   "name": "Regional Pipeline Operations Console with Quarterly Forecast",
+   "version": "0.1.0",
+   "pinned": {
+    "version": "0.1.0",
+    "sha256": "4004f29ed87dc64b1935c7429b1c6d68d92154880d5ae03339918cfc1ebe5876"
+   },
+   "status": {
+    "status": "attention",
+    "cause": "plugin contributes no widget",
+    "checked_at": "2026-11-24T15:58:40"
+   },
+   "pilot": {
+    "views": 4,
+    "remaining": 4
+   },
+   "update": null,
+   "pendingConsent": false,
+   "shared": false,
+   "enabled": true,
+   "dataDirSize": 0
+  },
+  "versions": [
+   {
+    "version": "0.1.0",
+    "digest": "4004f29ed87dc64b1935c7429b1c6d68d92154880d5ae03339918cfc1ebe5876",
+    "yanked": false
+   }
+  ],
+  "alternatives": [],
+  "sample": null
+ }
+}

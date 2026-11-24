@@ -51,13 +51,99 @@ import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = Path("D:/20-projects/Personal Agents/.scratch/ui-text-overflow/layout-audit")
+DEFAULT_OUT = ROOT / "build" / "layout-audit"
+FIXED_TIME = "2026-11-24T12:00:00Z"
+FIXED_EPOCH = 1795521600.0
+LONG_VALUES_FIXTURE = ROOT / "tools" / "layout_fixtures" / "long-values.api.json"
+PENDING_SELECTOR = 'button,[role="button"],input[type="submit"],input[type="button"]'
+PENDING_ENUM_JS = r"""
+(arg) => {
+  function visible(el) {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.01) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 1 && r.height >= 1;
+  }
+  function path(el) {
+    const parts = [el.tagName.toLowerCase()];
+    const cls = Array.from(el.classList || []).slice(0, 3);
+    if (cls.length) parts[0] += '.' + cls.join('.');
+    return parts.join('.');
+  }
+  const ordinals = {};
+  return Array.from(document.querySelectorAll(arg.selector)).filter(visible).map(function(el, index) {
+    const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    const key = path(el) + '|' + text;
+    const ordinal = ordinals[key] || 0;
+    ordinals[key] = ordinal + 1;
+    return {index:index, ordinal:ordinal, tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
+            path:path(el), text:text,
+            disabled:!!el.disabled, ariaBusy:el.getAttribute('aria-busy') || '',
+            type:el.getAttribute('type') || '',
+            in_form:!!el.form, form_method:el.form ? String(el.form.method || 'get').toLowerCase() : ''};
+  });
+}
+"""
+PENDING_STATE_JS = r"""
+(arg) => {
+  function visible(el) {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.01) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 1 && r.height >= 1;
+  }
+  function path(el) {
+    const parts = [el.tagName.toLowerCase()];
+    const cls = Array.from(el.classList || []).slice(0, 3);
+    if (cls.length) parts[0] += '.' + cls.join('.');
+    return parts.join('.');
+  }
+  const found = [];
+  for (const candidate of document.querySelectorAll(arg.selector)) {
+    if (!visible(candidate)) continue;
+    const text = (candidate.innerText || candidate.value || candidate.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (path(candidate) === arg.path && text === arg.text) found.push(candidate);
+  }
+  const el = found[arg.ordinal] || found[0] || null;
+  const info = el ? {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
+                     path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+                     disabled:!!el.disabled, ariaBusy:el.getAttribute('aria-busy') || ''} : null;
+  const indicators = [];
+  const seen = new Set();
+  for (const selector of ['[aria-busy="true"]','[role="progressbar"]',
+                          '[class*="skel"],[class*="skeleton"],[class*="busy"]']) {
+    for (const node of document.querySelectorAll(selector)) {
+      if (!visible(node) || seen.has(node)) continue;
+      seen.add(node);
+      indicators.push({path:path(node), text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
+    }
+  }
+  const permanentWire = new Set(['wire','wire-chart','wire-copy','wire-rows','wire-lines',
+                                 'wire-wide','moves-wire','setup-open-wire','wire-state']);
+  for (const node of document.querySelectorAll('[class*="wire"]')) {
+    const classes = String(node.className || '').split(/\s+/);
+    const dynamic = classes.some(function(name) {
+      return name.indexOf('wire') >= 0 && !permanentWire.has(name);
+    });
+    if (!dynamic || !visible(node) || seen.has(node)) continue;
+    seen.add(node);
+    indicators.push({path:path(node), text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
+  }
+  return {control:info,
+          labelChanged: !!(info && arg.before && info.text !== arg.before),
+          ariaBusy: !!(info && info.ariaBusy === 'true'),
+          indicators:indicators.slice(0, 8),
+          url:location.pathname + location.search};
+}
+"""
+
 VIEWPORT_HEIGHT = 800
 BASE_WIDTHS = (1024, 1280)
 THEME_WIDTHS = (1024, 1280)
 EXTREME_WIDTHS = (800, 1920)
-BASE_CONDITIONS = ("fresh", "data", "plugins", "full")
-ALL_CONDITIONS = ("fresh", "data", "plugins", "full", "legacy-dashboard")
+BASE_CONDITIONS = ("fresh", "data", "plugins", "full", "long-values", "busy")
+ALL_CONDITIONS = ("fresh", "data", "plugins", "full", "long-values", "busy",
+                  "legacy-dashboard")
 THEMES = ("unkey", "coforge", "momentuum")
 STRESS_CONDITIONS = ("fresh", "full")
 STRESS_WIDTHS = (1024, 1280)
@@ -86,8 +172,8 @@ try:
     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
 except ImportError:  # pragma: no cover - the documented environment has it
-    print(PLAYWRIGHT_HELP)
-    raise SystemExit(2)
+    sync_playwright = None
+    PlaywrightTimeoutError = Exception
 
 # The browser probe. One string, run through page.evaluate, returning plain
 # JSON. It is deliberately dependency free: no npm, no helper library.
@@ -346,19 +432,49 @@ PROBE_JS = r"""
     while (walker.nextNode()) out.push(walker.currentNode);
     return out;
   }
+  function stressSkip(value) {
+    const core = String(value || '').trim();
+    if (!core || core.length <= 3) return true;
+    if (/^\d+(?:[.,]\d+)*(?:\s*(?:%|px|k|m|b|usd|eur|hours?|days?))?$/i.test(core)) return true;
+    if (/^\d{1,2}[:.]\d{2}(?:[:.]\d{2})?$/.test(core)) return true;
+    if (/^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?/.test(core)) return true;
+    if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(core)) return true;
+    if (/^[0-9a-fA-F]{12,}$/.test(core)) return true;
+    if (/^[A-Za-z0-9+/=_-]{16,}$/.test(core)) return true;
+    return false;
+  }
+  function stressValue(value) {
+    const raw = String(value == null ? '' : value);
+    const lead = (raw.match(/^\s*/) || [''])[0];
+    const trail = (raw.match(/\s*$/) || [''])[0];
+    const core = raw.trim();
+    if (!core || stressSkip(core)) return raw;
+    return lead + [core, core, core].join(' ') + trail;
+  }
   function tripleText() {
-    const root = document.body || document.documentElement;
-    const nodes = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: function(node) {
-        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-        const p = node.parentElement;
-        if (!p || SKIP_TEXT_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
+    const nodes = textNodeList();
+    for (const node of nodes) {
+      const p = node.parentElement;
+      if (!p || p.tagName === 'OPTION' || p.tagName === 'TEXTAREA') continue;
+      node.nodeValue = stressValue(node.nodeValue);
+    }
+    for (const el of document.querySelectorAll('option,textarea')) {
+      if (!textVisible(el)) continue;
+      if (el.tagName === 'TEXTAREA') {
+        el.textContent = stressValue(el.textContent || '');
+      } else {
+        el.textContent = stressValue(el.textContent || '');
       }
-    });
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    for (const node of nodes) { node.nodeValue = node.nodeValue.trim().repeat(3); }
+    }
+    for (const el of document.querySelectorAll('[placeholder],[title],[aria-label],[alt]')) {
+      if (!textVisible(el)) continue;
+      for (const name of ['placeholder', 'title', 'aria-label', 'alt']) {
+        const value = el.getAttribute(name);
+        if (value == null) continue;
+        const next = stressValue(value);
+        if (next !== value) el.setAttribute(name, next);
+      }
+    }
     window.__AGENTDESK_LAYOUT_TRIPLED__ = true;
   }
 
@@ -381,7 +497,9 @@ PROBE_JS = r"""
       if (!(r.right > VW + 1 || r.left < -1)) continue;
       const s = styleOf(el);
       if (!s) continue;
-      if ((s.position === 'fixed' || s.position === 'absolute') && over <= 1) continue;
+      const inPopover = !!el.closest('[role="menu"],[role="dialog"],.w-menu,.mkt-sheet,.setup-sheet');
+      if ((s.position === 'fixed' || s.position === 'absolute') && over <= 1 &&
+          !inPopover) continue;
       let depth = 0;
       let a = el;
       while (a) { depth++; a = a.parentElement; }
@@ -408,9 +526,12 @@ PROBE_JS = r"""
 
   function spillSeverity(el) {
     const t = el.tagName;
-    if (t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'TD' || t === 'TH') return 'high';
-    if (t === 'A' && GENERIC_HIGH_CLASS.test(classString(el))) return 'high';
-    if (GENERIC_HIGH_CLASS.test(classString(el))) return 'high';
+    if (t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' ||
+        t === 'TD' || t === 'TH') return 'high';
+    if (el.getAttribute && el.getAttribute('role') === 'button') return 'high';
+    const c = classString(el);
+    if (t === 'A' && /(^|\s)(btn|button)(\s|$)/.test(c)) return 'high';
+    if (/(^|\s)(chip|badge|pill|tab|status)(\s|$)/.test(c)) return 'high';
     return 'medium';
   }
 
@@ -449,17 +570,32 @@ PROBE_JS = r"""
                   right:el.scrollWidth - el.clientWidth, left:0, mode:'scroll'});
       }
     }
-    const byContainer = new Map();
+    const kept = [];
     for (const c of raw) {
-      const prev = byContainer.get(c.container);
-      if (!prev || c.over > prev.over) byContainer.set(c.container, c);
+      let existing = null;
+      for (const item of kept) {
+        if (item.container === c.container && item.offender === c.offender) {
+          existing = item;
+          break;
+        }
+      }
+      if (existing === null) {
+        kept.push(c);
+      } else if (c.over > existing.over) {
+        existing.over = c.over;
+        existing.right = c.right;
+        existing.left = c.left;
+        existing.mode = c.mode;
+      }
     }
-    const kept = Array.from(byContainer.values());
-    const containers = kept.map(function(c) { return c.container; });
     for (const c of kept) {
       let hasDeeper = false;
-      for (const other of containers) {
-        if (other !== c.container && c.container.contains(other)) { hasDeeper = true; break; }
+      for (const other of kept) {
+        if (other !== c && c.container.contains(other.container) &&
+            c.offender.contains(other.offender)) {
+          hasDeeper = true;
+          break;
+        }
       }
       if (hasDeeper) continue;
       add('content-spill', spillSeverity(c.container), c.container, textOf(c.container), {
@@ -505,7 +641,7 @@ PROBE_JS = r"""
           if ((ox === 'hidden' || ox === 'clip' || ox === 'auto' || ox === 'scroll') &&
               (outR > 1 || outL > 1)) hit = 'x';
           else if ((oy === 'hidden' || oy === 'clip') &&
-                   a.scrollHeight <= a.clientHeight + 1 && (outB > 1 || outT > 1)) hit = 'y';
+                   (outB > 1 || outT > 1)) hit = 'y';
           if (hit) {
             clip = a;
             axis = hit;
@@ -518,7 +654,7 @@ PROBE_JS = r"""
         hops++;
       }
       if (!clip) continue;
-      if (fitterScroller(p, true)) continue;
+      if (fitterScroller(clip, true)) continue;
       let affordance = false;
       let b = p;
       let steps = 0;
@@ -526,7 +662,8 @@ PROBE_JS = r"""
         const s = styleOf(b);
         if (s) {
           if ((s.textOverflow || '').indexOf('ellipsis') >= 0 &&
-              (s.overflowX === 'hidden' || s.overflowX === 'clip')) affordance = true;
+              (s.overflowX === 'hidden' || s.overflowX === 'clip') &&
+              s.whiteSpace === 'nowrap') affordance = true;
           if (s.webkitLineClamp && s.webkitLineClamp !== 'none') affordance = true;
           if (s.lineClamp && s.lineClamp !== 'none') affordance = true;
         }
@@ -573,9 +710,8 @@ PROBE_JS = r"""
       if (!(over > 1)) continue;
       const text = textOf(el, 400);
       if (!text) continue;
-      const focusable = el.closest('a,button,select,input,textarea,[tabindex],[contenteditable="true"],[role="button"],[role="link"]');
       const reachable = el.hasAttribute('title') || el.hasAttribute('aria-label') ||
-                        !!el.closest('[title]') || !!focusable;
+                        !!el.closest('[title]') || !!el.closest('summary');
       if (reachable) continue;
       const key = pathOf(el) + '|' + text.slice(0, 60);
       if (seen.has(key)) continue;
@@ -648,7 +784,8 @@ PROBE_JS = r"""
       const primary = areaA <= areaB ? hit.a : hit.b;
       const other = primary === hit.a ? hit.b : hit.a;
       const both = unionRects([primary.union, other.union]);
-      add('text-overlap', 'high', primary.el, primary.text, {
+      const severity = (hit.ix >= 8 && hit.iy >= 8) ? 'high' : 'medium';
+      add('text-overlap', severity, primary.el, primary.text, {
         overlapWidth: r2(hit.ix), overlapHeight: r2(hit.iy),
         otherSelector: pathOf(other.el), otherText: other.text.slice(0, 80)
       }, {
@@ -703,6 +840,41 @@ PROBE_JS = r"""
         });
       }
     }
+    const controlSeen = new Set();
+    for (let i = 0; i < controls.length; i++) {
+      for (let j = i + 1; j < controls.length; j++) {
+        const a = controls[i];
+        const b = controls[j];
+        if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const left = Math.max(a.rect.left, b.rect.left);
+        const top = Math.max(a.rect.top, b.rect.top);
+        const right = Math.min(a.rect.right, b.rect.right);
+        const bottom = Math.min(a.rect.bottom, b.rect.bottom);
+        const ix = right - left;
+        const iy = bottom - top;
+        if (!(ix > 2 && iy > 4)) continue;
+        const box = {left:left, top:top, right:right, bottom:bottom};
+        if (!sameLayer(a.el, b.el) || coveredByThird(a.el, b.el, box)) continue;
+        const areaA = a.rect.width * a.rect.height;
+        const areaB = b.rect.width * b.rect.height;
+        const primary = areaA <= areaB ? a : b;
+        const other = primary === a ? b : a;
+        const key = pathOf(primary.el) + '|' + pathOf(other.el);
+        if (controlSeen.has(key)) continue;
+        controlSeen.add(key);
+        const union = unionRects([primary.rect, other.rect]);
+        const severity = (ix >= 8 && iy >= 8) ? 'high' : 'medium';
+        add('control-overlap', severity, primary.el, textOf(primary.el), {
+          overlapWidth: r2(ix), overlapHeight: r2(iy),
+          controlTag: tagOf(primary.el), controlSelector: pathOf(other.el)
+        }, {
+          controlClasses: classString(primary.el),
+          otherSelector: pathOf(other.el),
+          otherClasses: classString(other.el),
+          rect: {x:r2(union.x), y:r2(union.y), w:r2(union.w), h:r2(union.h)}
+        });
+      }
+    }
   }
 
   function blockOf(node) {
@@ -711,9 +883,8 @@ PROBE_JS = r"""
     while (a && a !== document.body && hops < 40) {
       const s = styleOf(a);
       if (s) {
-        if (s.whiteSpace === 'normal' && s.display.indexOf('inline') !== 0 &&
-            s.display !== 'contents' && s.display !== 'none' &&
-            s.display !== 'table-row') return a;
+        if (s.whiteSpace === 'normal' && s.display !== 'inline' &&
+            s.display !== 'contents' && s.display !== 'none') return a;
       }
       a = a.parentElement;
       hops++;
@@ -722,6 +893,7 @@ PROBE_JS = r"""
   }
 
   function detectSqueezed(nodes) {
+    const squeezed = new Set();
     const byBlock = new Map();
     for (const node of nodes) {
       const block = blockOf(node);
@@ -750,13 +922,16 @@ PROBE_JS = r"""
       }
       if (chars < 6 || tops.size < 3 || !allRects.length) continue;
       const union = unionRects(allRects);
-      add('squeezed-text', 'high', el, textOf(el), {
+      const severity = cw < 40 ? 'high' : 'medium';
+      squeezed.add(el);
+      add('squeezed-text', severity, el, textOf(el), {
         width: r2(cw), lines: tops.size, chars: chars,
         fontSize: r2(parseFloat(s.fontSize) || 0)
       }, {
         rect: {x:r2(union.x), y:r2(union.y), w:r2(union.w), h:r2(union.h)}
       });
     }
+    return squeezed;
   }
 
   function wrappingBlockOf(node) {
@@ -785,7 +960,7 @@ PROBE_JS = r"""
     return 'medium';
   }
 
-  function detectBrokenWords(nodes) {
+  function detectBrokenWords(nodes, squeezedBlocks) {
     const byBlock = new Map();
     for (const node of nodes) {
       const block = wrappingBlockOf(node);
@@ -799,6 +974,7 @@ PROBE_JS = r"""
       const el = entry[0];
       const textNodes = entry[1];
       if (!textVisible(el)) continue;
+      if (squeezedBlocks && squeezedBlocks.has(el)) continue;
       const s = styleOf(el);
       if (!s) continue;
       const cw = contentWidth(el);
@@ -808,8 +984,11 @@ PROBE_JS = r"""
         let match;
         while ((match = re.exec(text))) {
           const word = match[0];
-          if (word.length < 2) continue;
-          if (/[-\/_.:]/.test(word)) continue;
+          const core = word.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+          if (core.length < 2) continue;
+          if (/[-\/_.:]/.test(core)) continue;
+          if (/^[0-9a-fA-F]{12,}$/.test(core)) continue;
+          if (/^(?=.*[0-9])(?=.*[A-Za-z])[A-Za-z0-9+/=_-]{16,}$/.test(core)) continue;
           const range = document.createRange();
           range.setStart(node, match.index);
           range.setEnd(node, match.index + word.length);
@@ -874,8 +1053,8 @@ PROBE_JS = r"""
   const items = buildTextItems(nodes);
   detectOverlap(items);
   detectControls(items);
-  detectSqueezed(nodes);
-  detectBrokenWords(nodes);
+  const squeezedBlocks = detectSqueezed(nodes);
+  detectBrokenWords(nodes, squeezedBlocks);
   detectTiny(nodes);
 
   return {
@@ -891,6 +1070,176 @@ PROBE_JS = r"""
 })()
 """
 
+
+SELFTEST_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
+.selftest-squeezed { width: 30px; white-space: normal; }
+.selftest-clip { width: 80px; overflow: hidden; white-space: nowrap; }
+.selftest-ellipsis { width: 80px; overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; }
+.selftest-ellipsis-title { width: 80px; overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; }
+.selftest-overlap-a { position: absolute; left: 200px; top: 300px; }
+.selftest-overlap-b { position: absolute; left: 210px; top: 302px; }
+.selftest-control { position: absolute; left: 400px; top: 300px; width: 90px;
+  height: 32px; }
+.selftest-over-text { position: absolute; left: 410px; top: 304px; }
+.selftest-card { width: 200px; border: 1px solid #111; padding: 10px; }
+.selftest-spill { width: 300px; height: 20px; background: #eee; }
+.selftest-broken { width: 150px; white-space: normal; overflow-wrap: anywhere;
+  font-family: monospace; }
+.selftest-tiny { font-size: 9px; }
+.selftest-clean-scroller { width: 200px; overflow-x: auto; white-space: nowrap; }
+.selftest-clean-scroller div { width: 500px; }
+.selftest-clean-pill { display: inline-block; padding: 2px 8px;
+  border-radius: 8px; background: #eee; white-space: nowrap; }
+.selftest-cc-a { position: absolute; left: 650px; top: 300px; width: 80px;
+  height: 30px; }
+.selftest-cc-b { position: absolute; left: 700px; top: 305px; width: 80px;
+  height: 30px; }
+</style></head><body>
+<div class="selftest-squeezed">Alpha Beta Gamma Delta</div>
+<div class="selftest-clip">This line is clipped with no ellipsis at all</div>
+<div class="selftest-ellipsis">This line is ellipsized with no title</div>
+<div class="selftest-ellipsis-title" title="the full value">This line is ellipsized with a title</div>
+<div class="selftest-overlap-a">Overlapping alpha text</div>
+<div class="selftest-overlap-b">Overlapping beta text</div>
+<button class="selftest-control">Action</button>
+<div class="selftest-over-text">Text over the control</div>
+<div class="selftest-card"><div class="selftest-spill">Spilling child content</div></div>
+<div class="selftest-broken selftest-stamp">Supercalifragilisticexpialidocious</div>
+<div class="selftest-tiny">Tiny type text</div>
+<div class="selftest-clean-scroller"><div>long scrollable content that is deliberately scrollable</div></div>
+<span class="selftest-clean-pill">Clean pill</span>
+<button class="selftest-cc-a">First</button>
+<button class="selftest-cc-b">Second</button>
+</body></html>
+"""
+
+SELFTEST_OFFSCREEN_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
+.selftest-popover { position: absolute; left: calc(100vw - 30px); top: 100px;
+  width: 200px; height: 40px; background: #eee; }
+</style></head><body>
+<div class="selftest-popover w-menu">Open popover past the viewport edge</div>
+</body></html>
+"""
+
+
+class _SelftestHandler:
+    """Serve the two static selftest pages on loopback only."""
+
+    html = {"/": SELFTEST_HTML, "/offscreen": SELFTEST_OFFSCREEN_HTML}
+
+
+def _selftest_server():
+    """Start the static selftest pages and return the server and base URL."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        """Answer the two fixture addresses and nothing else."""
+
+        def do_GET(self):  # noqa: N802 - the stdlib's spelling
+            """Serve one fixture page, or a 404."""
+            body = _SelftestHandler.html.get(self.path)
+            if body is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            data = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, fmt, *args):  # noqa: A003 - the stdlib's hook
+            """Stay quiet; the selftest prints its own verdict."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def _selftest_hits(findings: list[dict], token: str) -> list[dict]:
+    """Findings whose recorded paths mention one fixture class."""
+    return [finding for finding in findings
+            if any(token in str(finding.get(key, "")) for key in
+                   ("selector", "container", "otherSelector", "offender",
+                    "metrics"))]
+
+
+def _selftest() -> int:
+    """Run the planted-defect fixture and report every detector match."""
+    server, thread, base = _selftest_server()
+    failures: list[str] = []
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(viewport={"width": 1024, "height": 800},
+                                          device_scale_factor=1,
+                                          reduced_motion="reduce")
+            page = context.new_page()
+            page.goto(base + "/", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            page.evaluate("() => { window.__AGENTDESK_LAYOUT_STRESS__ = false; }")
+            findings = page.evaluate(PROBE_JS).get("findings", [])
+            expectations = (
+                ("squeezed-text", "selftest-squeezed", 1),
+                ("text-clip", "selftest-clip", 1),
+                ("ellipsis-no-affordance", "selftest-ellipsis", 1),
+                ("ellipsis-no-affordance", "selftest-ellipsis-title", 0),
+                ("text-overlap", "selftest-overlap-a", 1),
+                ("control-collision", "selftest-over-text", 1),
+                ("content-spill", "selftest-card", 1),
+                ("broken-word", "selftest-broken", 1),
+                ("tiny-type", "selftest-tiny", 1),
+                ("content-spill", "selftest-clean-scroller", 0),
+                ("text-clip", "selftest-clean-scroller", 0),
+                ("text-overlap", "selftest-clean-pill", 0),
+                ("squeezed-text", "selftest-clean-pill", 0),
+            )
+            for kind, token, expected in expectations:
+                hits = [finding for finding in _selftest_hits(findings, token)
+                        if finding.get("kind") == kind]
+                if len(hits) != expected:
+                    failures.append(f"{token} {kind}: expected {expected}, "
+                                    f"found {len(hits)}")
+            control_hits = _selftest_hits(findings, "selftest-cc-a")
+            control_hits = [finding for finding in control_hits
+                            if finding.get("kind") == "control-overlap"]
+            if len(control_hits) != 1:
+                failures.append(f"selftest-cc-a control-overlap: expected 1, "
+                                f"found {len(control_hits)}")
+            page.goto(base + "/offscreen", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            offscreen = page.evaluate(PROBE_JS).get("findings", [])
+            popover_hits = [finding for finding in _selftest_hits(offscreen, "w-menu")
+                            if finding.get("kind") == "offscreen-content"]
+            if len(popover_hits) != 1:
+                failures.append(f"w-menu offscreen-content: expected 1, "
+                                f"found {len(popover_hits)}")
+            browser.close()
+    finally:
+        try:
+            server.shutdown()
+            server.server_close()
+        except Exception:
+            pass
+        try:
+            thread.join(timeout=3)
+        except Exception:
+            pass
+    if failures:
+        print("SELFTEST FAIL")
+        for failure in failures:
+            print("  " + failure)
+        return 1
+    print("SELFTEST PASS 14 detector expectations")
+    return 0
 
 class AuditError(Exception):
     """One step of the audit could not run at all."""
@@ -1075,13 +1424,31 @@ def build_combos(args) -> list[dict]:
     themes (fresh and full only), extremes (fresh and full only), plus the
     overlay states and the legacy dashboard. A combo says which view to
     visit and whether the text-tripling stress pass runs after the normal
-    measurement.
+    measurement. Unsupported values and filters that match nothing are hard
+    errors: an empty plan must never look like a complete run.
     """
     conditions = _parse_list(args.conditions)
-    widths = [int(value) for value in _parse_list(args.widths)]
+    for condition in conditions:
+        if condition not in ALL_CONDITIONS:
+            raise AuditError(f"unsupported condition {condition!r}; "
+                             f"choose from {', '.join(ALL_CONDITIONS)}")
+    try:
+        widths = [int(value) for value in _parse_list(args.widths)]
+    except ValueError as exc:
+        raise AuditError(f"--widths must be integers: {args.widths!r}") from exc
+    for width in widths:
+        if width not in (800, 1024, 1280, 1920):
+            raise AuditError(f"unsupported width {width}; choose from 800, 1024, 1280, 1920")
     themes = _parse_list(args.themes)
-    views = [view for view in build_views() if _route_matches(view, _parse_list(args.routes))]
-    overlay_filters = _parse_list(args.routes)
+    for theme in themes:
+        if theme not in THEMES:
+            raise AuditError(f"unsupported theme {theme!r}; choose from {', '.join(THEMES)}")
+    filters = _parse_list(args.routes)
+    views = [view for view in build_views() if _route_matches(view, filters)]
+    overlay_filters = filters
+    if filters and not views and not any(
+            _route_matches(overlay, overlay_filters) for overlay in build_overlays()):
+        raise AuditError(f"no route or overlay matches --routes {args.routes!r}")
     combos: list[dict] = []
 
     def add(condition: str, width: int, theme: str, view: dict, stress: bool) -> None:
@@ -1141,6 +1508,10 @@ def build_combos(args) -> list[dict]:
                 {"path": overlay["route"], "kind": "overlay",
                  "state": overlay["state"], "opener": overlay["opener"],
                  "overlay_key": overlay["key"]}, False)
+    if not combos:
+        raise AuditError(
+            "the selected filters produce no combinations: check --conditions, "
+            "--widths, --themes and --routes")
     return combos
 
 
@@ -1236,33 +1607,61 @@ def _pin_environment(data_dir: Path, condition: str, mock_port: int | None) -> N
     """
     for name in PINNED_EMPTY:
         os.environ[name] = ""
+    templates_dir = data_dir.parent / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
     os.environ["AGENTDESK_DATA"] = str(data_dir)
+    os.environ["AGENTDESK_TEMPLATES"] = str(templates_dir)
     os.environ["AGENTDESK_CALENDAR_FILE"] = ""
-    if condition in ("data", "full") and mock_port:
+    if condition in ("data", "full", "long-values", "busy") and mock_port:
         os.environ["AGENTDESK_LLM_BASE"] = f"http://127.0.0.1:{mock_port}/v1"
         os.environ["AGENTDESK_LLM_KEY"] = "sk-local"
         os.environ["AGENTDESK_LLM_MODEL"] = "mock-chat"
-    if condition == "full":
+    if condition in ("full", "long-values", "busy"):
         os.environ["AGENTDESK_MARKETPLACE_ADMIN"] = "1"
 
 
-def _start_mock():
+def _start_mock(delay_ms: int = 0):
     """Start the loopback mock chat endpoint on an ephemeral port."""
     from http.server import ThreadingHTTPServer
 
     module = _load_mock_module()
+    module.DELAY_MS = max(0, int(delay_ms))
     server = ThreadingHTTPServer(("127.0.0.1", 0), module.MockEndpointHandler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, port
 
 
+def _pin_store_clocks(server) -> None:
+    """Give every store that exposes a clock the same fixed instant.
+
+    The sample seed builds its calendar and mail fixtures from the inbox
+    store's clock, and the mail and memory pages age their rows from theirs.
+    Pinning the attribute is the seam those stores already expose; the
+    browser gets the same instant through Playwright's clock.
+    """
+    clock = lambda: FIXED_EPOCH
+    for name in ("inbox", "mail_store", "settings", "activity_log", "memory",
+                 "agents", "ledger", "keys"):
+        store = getattr(server, name, None)
+        if store is not None and hasattr(store, "clock"):
+            try:
+                store.clock = clock
+            except Exception:
+                pass
+
+
 def _boot_desk(condition: str, tmp_root: Path) -> dict:
     """Boot the real app over a fresh data folder and a file-backed keychain.
 
     Mirrors tools/demo_readiness.Desk: ephemeral port, announce on a free
-    UDP port, daemon thread, background polls started the way the launcher
-    starts them. No real keychain, no real data folder.
+    UDP port, one daemon request thread, no real keychain and no real data
+    folder. Background writers are deliberately not started: the agent
+    loop, the excel, calendar and mail timers, plugin widget polls and the
+    minute refresh tick can change page content while a run measures it.
+    agent_loop_minutes is set to 0 as a second guard in case anything starts
+    the loop later. A failure after the server bound stops it before the
+    exception leaves this function.
     """
     data_dir = tmp_root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -1270,17 +1669,32 @@ def _boot_desk(condition: str, tmp_root: Path) -> dict:
     from agentdesk.keys.secrets import KeychainSecrets
     from agentdesk.server import app as server_app
 
-    server = server_app.create_server(
-        port=0, announce_port=_free_udp_port(),
-        keychain=KeychainSecrets(backend=FileKeychain(keychain)))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    server_app.start_background_polls(server)
-    if condition == "legacy-dashboard":
-        server_app.SPA_DIR = tmp_root / "missing-spa-build"
-    base = f"http://127.0.0.1:{server.port}"
-    return {"server": server, "thread": thread, "base": base,
-            "token": server.sessions.bootstrap_token()}
+    server = None
+    thread = None
+    try:
+        server = server_app.create_server(
+            port=0, announce_port=_free_udp_port(),
+            keychain=KeychainSecrets(backend=FileKeychain(keychain)))
+        if getattr(server, "settings", None) is not None:
+            server.settings.set("agent_loop_minutes", 0)
+        _pin_store_clocks(server)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        if condition == "legacy-dashboard":
+            server_app.SPA_DIR = tmp_root / "missing-spa-build"
+        return {"server": server, "thread": thread,
+                "base": f"http://127.0.0.1:{server.port}",
+                "token": server.sessions.bootstrap_token()}
+    except BaseException:
+        if server is not None:
+            try:
+                if thread is not None and thread.is_alive():
+                    server.shutdown()
+                server.server_close()
+                _close_stores(server)
+            except Exception:
+                pass
+        raise
 
 
 def _close_stores(server) -> None:
@@ -1299,20 +1713,42 @@ def _close_stores(server) -> None:
                     pass
 
 
-def _stop_desk(desk: dict) -> None:
-    """Stop the server, its watchers, its stores and its thread, best effort."""
+def _stop_desk(desk: dict) -> list[str]:
+    """Stop the server, its watchers, its stores and its thread.
+
+    Returns the failures instead of hiding them. Every step is attempted
+    even when an earlier one fails, because a store left open blocks the
+    temporary folder removal on Windows.
+    """
     server = desk["server"]
+    errors: list[str] = []
+    for name in ("excel", "calendar", "mail", "plugins"):
+        watcher = getattr(server, name, None)
+        stop = getattr(watcher, "stop_polling", None) if watcher is not None else None
+        if callable(stop):
+            try:
+                stop()
+            except Exception as exc:  # noqa: BLE001 - report, keep stopping
+                errors.append(f"{name}.stop_polling: {type(exc).__name__}: {exc}")
     try:
-        for name in ("excel", "calendar"):
-            watcher = getattr(server, name, None)
-            if watcher is not None:
-                watcher.stop_polling()
         server.shutdown()
+    except Exception as exc:  # noqa: BLE001 - report, keep stopping
+        errors.append(f"server.shutdown: {type(exc).__name__}: {exc}")
+    try:
         server.server_close()
+    except Exception as exc:  # noqa: BLE001 - report, keep stopping
+        errors.append(f"server.server_close: {type(exc).__name__}: {exc}")
+    try:
         desk["thread"].join(timeout=5)
+        if desk["thread"].is_alive():
+            errors.append("server thread still alive after 5s")
+    except Exception as exc:  # noqa: BLE001 - report, keep stopping
+        errors.append(f"thread.join: {type(exc).__name__}: {exc}")
+    try:
         _close_stores(server)
-    except Exception:  # noqa: BLE001 - teardown noise is not a finding
-        pass
+    except Exception as exc:  # noqa: BLE001 - report, keep stopping
+        errors.append(f"close stores: {type(exc).__name__}: {exc}")
+    return errors
 
 
 def _post_json(context, url: str, payload: dict):
@@ -1320,6 +1756,107 @@ def _post_json(context, url: str, payload: dict):
     return context.request.post(
         url, data=json.dumps(payload),
         headers={"Content-Type": "application/json"})
+
+
+def _load_api_fixture(path: Path) -> dict:
+    """Read an API fixture map, rejecting anything that is not an object.
+
+    A top-level path key maps to the JSON body to fulfil for a matching GET;
+    a null body means "do not intercept this endpoint".
+    """
+    try:
+        document = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise AuditError(f"API fixture {path} is not readable JSON: {exc}") from exc
+    if not isinstance(document, dict):
+        raise AuditError(f"API fixture {path} must be a JSON object of path to body")
+    return document
+
+
+def _apply_slow_routes(context, delay_ms: int) -> None:
+    """Delay document and /api requests so first-load states can be seen."""
+    if delay_ms <= 0:
+        return
+
+    def handler(route):
+        """Sleep before letting a document or API request through."""
+        request = route.request
+        api = urllib.parse.urlsplit(request.url).path.startswith("/api/")
+        if request.resource_type == "document" or api:
+            time.sleep(delay_ms / 1000.0)
+        route.continue_()
+
+    context.route("**/*", handler)
+
+
+def _api_fixture_path(args, condition: str) -> Path | None:
+    """The fixture to apply for one condition, defaulted for long-values."""
+    value = getattr(args, "api_fixture", "")
+    if value:
+        return Path(value)
+    if condition == "long-values":
+        return LONG_VALUES_FIXTURE
+    return None
+
+
+def _apply_api_fixture(context, path: Path) -> None:
+    """Fulfil matching GET /api requests from the fixture map.
+
+    The match is by URL path only, so a search query still receives the
+    same long catalog. A null body falls through to the real server.
+    """
+    fixture = _load_api_fixture(path)
+
+    def handler(route, request):
+        """Answer one intercepted request, or let it reach the desk."""
+        if request.method != "GET":
+            route.fallback()
+            return
+        key = urllib.parse.urlsplit(request.url).path
+        if key not in fixture:
+            route.fallback()
+            return
+        body = fixture[key]
+        if body is None:
+            route.fallback()
+            return
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps(body))
+
+    context.route("**/api/**", handler)
+
+
+def _api_record_path(record_dir: Path, condition: str, view: dict,
+                     api_path: str) -> Path:
+    """The file one recorded API response is written to."""
+    route = view.get("path", "/").split("#")[0].lstrip("/") or "root"
+    state = view.get("state", "state")
+    return (record_dir / condition / f"{_slug(route)}__{_slug(state)}"
+            / f"{_slug(api_path.lstrip('/'))}.json")
+
+
+def _api_recorder(record_dir: Path | None, condition: str, view: dict):
+    """A response listener that saves GET /api JSON bodies, or None."""
+    if record_dir is None:
+        return None
+
+    def handler(response):
+        """Write one JSON API body; a read failure is skipped, not raised."""
+        try:
+            if response.request.method != "GET":
+                return
+            api_path = urllib.parse.urlsplit(response.url).path
+            if not api_path.startswith("/api/"):
+                return
+            body = response.body()
+            if not body:
+                return
+            data = json.loads(body)
+        except Exception:  # noqa: BLE001 - recording must never fail a page
+            return
+        _write_json(_api_record_path(record_dir, condition, view, api_path), data)
+
+    return handler
 
 
 def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
@@ -1331,25 +1868,30 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
     intended condition.
     """
     notes: list[str] = []
-    if condition in ("data", "full"):
+    if condition in ("data", "full", "long-values", "busy"):
         response = _post_json(context, f"{base}/settings/toggle", {"key": "sample_data"})
         if response.status != 200:
             raise AuditError(f"sample data toggle answered {response.status}")
         notes.append("sample data on")
-    if condition in ("plugins", "full"):
+    if condition in ("plugins", "full", "long-values", "busy"):
         for plugin_id in _plugin_ids():
             response = _post_json(context, f"{base}/api/registry/install", {"id": plugin_id})
             if response.status != 200:
                 raise AuditError(
                     f"installing {plugin_id} answered {response.status}: {response.text()[:200]}")
         notes.append(f"{len(_plugin_ids())} plugin(s) installed")
-    if condition == "full":
+    if condition in ("full", "long-values", "busy"):
         from agentdesk.server import demo_data
 
         sample = demo_data.sample_workbook_path()
         if not sample.is_file():
             raise AuditError(f"the sample workbook is not at {sample}")
-        upload_url = (f"{base}/api/plugins/excel-report/instances/main/upload/"
+        instance = "pipeline"
+        response = _post_json(context, f"{base}/api/plugins/excel-report/instances",
+                              {"name": "Pipeline"})
+        if response.status != 200:
+            raise AuditError(f"naming the tracker instance answered {response.status}")
+        upload_url = (f"{base}/api/plugins/excel-report/instances/{instance}/upload/"
                       f"{urllib.parse.quote(sample.name)}")
         response = context.request.post(
             upload_url, data=sample.read_bytes(),
@@ -1357,7 +1899,7 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
         if response.status != 200:
             raise AuditError(f"tracker upload answered {response.status}: {response.text()[:200]}")
         response = _post_json(
-            context, f"{base}/api/plugins/excel-report/instances/main/confirm",
+            context, f"{base}/api/plugins/excel-report/instances/{instance}/confirm",
             {"tracking": {"labelColumn": "Deal", "valueColumn": "Amount",
                           "aggregate": "sum"}})
         if response.status != 200:
@@ -1365,6 +1907,170 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
         notes.append("sample tracker open")
     return notes
 
+
+def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None,
+               notes: list[str]) -> list[str]:
+    """Seed the populated states on top of the full condition.
+
+    A saved connection fills the Settings table, the assistant turn fills
+    the thread, one agent run fills the history, the gates fill the
+    capability cache, three long facts fill the memory pages, and mail is
+    switched on over the sample .eml folder. The file-backed fake keychain
+    holds the connection key; the real keychain is never touched. A failed
+    step is reported in the returned notes instead of hiding the page state
+    behind an exception.
+    """
+    if mock_port is None:
+        notes.append("busy: no mock endpoint, connection and AI turns were skipped")
+        return notes
+    mock_base = f"http://127.0.0.1:{mock_port}/v1"
+    real = tmp_root / "real"
+    real.mkdir(parents=True, exist_ok=True)
+    sample_dir = tmp_root / "data" / "sample"
+    try:
+        shutil.copy(sample_dir / "sample-sales.xlsx", real / "pipeline.xlsx")
+        shutil.copy(sample_dir / "sample-calendar.json", real / "calendar.json")
+        response = context.request.post(
+            base + "/sources/excel-watch",
+            data=json.dumps({"path": str(real / "pipeline.xlsx")}),
+            headers={"Content-Type": "application/json"}, timeout=60000)
+        if response.status != 200:
+            notes.append(f"busy: workbook register answered {response.status}")
+        else:
+            notes.append("busy: real workbook connected")
+        response = context.request.post(
+            base + "/sources/calendar-bridge/upload",
+            data=(real / "calendar.json").read_bytes(),
+            headers={"Content-Type": "application/json"}, timeout=60000)
+        if response.status != 200:
+            notes.append(f"busy: calendar upload answered {response.status}")
+        else:
+            notes.append("busy: real calendar connected")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: real sources failed: {type(exc).__name__}: {exc}")
+    label = "Regional Enterprise Sales Operation Team"
+    model = "regional-forecast-model-enterprise-2026x"
+    connection = {
+        "provider": "custom",
+        "label": label,
+        "baseUrl": mock_base,
+        "apiKey": "sk-local",
+        "model": model,
+    }
+    try:
+        response = context.request.post(
+            base + "/api/connections", form=connection, max_redirects=0, timeout=60000)
+        if response.status not in (200, 201, 303):
+            notes.append(f"busy: connection save answered {response.status}")
+        else:
+            notes.append("busy: model connection saved")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: connection save failed: {type(exc).__name__}: {exc}")
+
+    question = ("Prepare the regional pipeline review: summarize the consolidated "
+                "forecast, the three largest open commitments, and the decisions "
+                "that need an owner before Friday.")
+    try:
+        response = context.request.post(
+            base + "/assistant/ask", form={"question": question[:300]},
+            max_redirects=0, timeout=120000)
+        if response.status not in (200, 303):
+            notes.append(f"busy: assistant turn answered {response.status}")
+        else:
+            notes.append("busy: assistant turn saved")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: assistant turn failed: {type(exc).__name__}: {exc}")
+
+    brief = ("Prepare a concise briefing for the regional sales leadership review that "
+             "covers the consolidated pipeline, the three largest open commitments, the "
+             "workbook movement since the last reading, and the decisions the desk should "
+             "surface before Friday so every owner leaves with a named next step and a date.")
+    try:
+        response = context.request.post(
+            base + "/agents/run",
+            data=json.dumps({"agent": "worksheet-brief", "brief": brief[:300]}),
+            headers={"Content-Type": "application/json"}, timeout=120000)
+        if response.status not in (200, 201):
+            notes.append(f"busy: agent run answered {response.status}: {response.text()[:120]}")
+        else:
+            notes.append("busy: agent run recorded")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: agent run failed: {type(exc).__name__}: {exc}")
+
+    try:
+        from agentdesk.capabilities import GATES
+
+        cached = 0
+        for key, _number, _title in GATES:
+            try:
+                response = context.request.post(
+                    base + f"/capabilities/{key}/retest",
+                    headers={"Content-Type": "application/json"}, timeout=120000)
+                if response.status in (200, 201):
+                    cached += 1
+                else:
+                    notes.append(f"busy: gate {key} answered {response.status}")
+            except Exception as exc:  # noqa: BLE001 - one gate cannot stop the rest
+                notes.append(f"busy: gate {key} failed: {type(exc).__name__}: {exc}")
+        notes.append(f"busy: {cached} capability gate(s) cached")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: capability gates failed: {type(exc).__name__}: {exc}")
+
+    facts = [
+        ("The northern region renewal for Halvorsen Freight is expected to close before "
+         "the end of the quarter, and the commercial team agreed to confirm the final "
+         "contract value with the customer success team."),
+        (r"C:\Users\a.manager\OneDrive - Northwind Holdings\Quarterly Forecasts"
+         r"\FY2026 Consolidated Pipeline and Commitments.xlsx"),
+        ("ENT" + "9" * 77),
+    ]
+    added = 0
+    for text in facts:
+        try:
+            response = context.request.post(
+                base + "/memory/add",
+                data=json.dumps({"text": text}),
+                headers={"Content-Type": "application/json"}, timeout=60000)
+            if response.status in (200, 201):
+                added += 1
+            else:
+                notes.append(f"busy: memory add answered {response.status}")
+        except Exception as exc:  # noqa: BLE001 - report the page state that follows
+            notes.append(f"busy: memory add failed: {type(exc).__name__}: {exc}")
+    notes.append(f"busy: {added} memory fact(s) added")
+
+    try:
+        response = _post_json(context, base + "/settings/toggle", {"key": "mail_enabled"})
+        if response.status != 200:
+            notes.append(f"busy: mail toggle answered {response.status}")
+        else:
+            mail_dir = tmp_root / "data" / "sample" / "sample-mail"
+            response = _post_json(context, base + "/settings/mail/folder",
+                                  {"folder": str(mail_dir)})
+            if response.status != 200:
+                notes.append(f"busy: mail folder answered {response.status}")
+            else:
+                notes.append("busy: mail watching the sample folder")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: mail seed failed: {type(exc).__name__}: {exc}")
+
+    for name in ("mail", "excel", "calendar"):
+        watcher = getattr(server, name, None)
+        stop = getattr(watcher, "stop_polling", None) if watcher is not None else None
+        if callable(stop):
+            try:
+                stop()
+            except Exception:
+                pass
+    try:
+        runner = getattr(getattr(server, "plugins", None), "runner", None)
+        for watch in (getattr(runner, "_watches", {}) or {}).values():
+            stop = getattr(watch, "stop_polling", None)
+            if callable(stop):
+                stop()
+    except Exception:
+        pass
+    return notes
 
 def _write_calendar_fixture(tmp_root: Path) -> Path:
     """Write a tiny valid calendar file for the walkthrough page hint."""
@@ -1438,6 +2144,13 @@ def _final_path(page) -> str:
     return urllib.parse.urlsplit(page.url).path or "/"
 
 
+def _final_target(page) -> str:
+    """The path and query of the browser's current address, hash excluded."""
+    parts = urllib.parse.urlsplit(page.url)
+    path = parts.path or "/"
+    return f"{path}?{parts.query}" if parts.query else path
+
+
 def _screenshot_file(run_dir: Path, combo: dict, view: dict) -> Path:
     """The mechanical full-page screenshot path for one combination."""
     route = view.get("path", "/").split("#")[0]
@@ -1448,53 +2161,91 @@ def _screenshot_file(run_dir: Path, combo: dict, view: dict) -> Path:
 
 
 def _group_identity(finding: dict) -> tuple[str, str]:
-    """The stable (id, key) used for root-cause grouping and crop names."""
-    key = f"{finding.get('kind', '')}|{finding.get('container', '')}|{finding.get('classes', '')}"
+    """The stable (id, key) used for root-cause grouping and crop names.
+
+    Normal and stress findings never share a group: a normal group's crop
+    must not be a tripled page.
+    """
+    layer = "stress" if finding.get("stress") else "normal"
+    key = (f"{finding.get('kind', '')}|{finding.get('container', '')}|"
+           f"{finding.get('classes', '')}|{layer}")
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
     return digest, key
 
 
 def _crop_file(run_dir: Path, finding: dict, condition: str, view_slug: str,
                index: int) -> Path:
-    """The crop path for one finding; the group id is the file name prefix."""
+    """The crop path for one finding; the group id is the file name prefix.
+
+    A stress crop carries the marker in its name so it can never be mistaken
+    for a normal-page crop.
+    """
     group_id, _key = _group_identity(finding)
-    return run_dir / "crops" / f"{group_id}__{condition}__{view_slug}__{index}.png"
+    marker = "stress_" if finding.get("stress") else ""
+    return (run_dir / "crops" /
+            f"{group_id}__{condition}__{view_slug}__{marker}{index}.png")
 
 
 def _capture_crop(page, finding: dict, path: Path) -> None:
     """Capture a 24 px-margin crop of the measured rectangle, or its edge.
 
-    The rectangle the probe recorded is used first: a short selector path
-    can match several sibling rows, and the first match would show the
-    wrong row. The page is scrolled only when the rectangle is outside the
-    viewport, then the scroll is restored. An element past the right edge
-    (lost content in the SPA) has no visible pixels, so the crop falls
-    back to that edge, which is the evidence a reader can see.
+    The element is located by the short selector and the match whose box is
+    nearest the measured rectangle, then scrolled into view with Playwright
+    so nested scrollers (a sheet body, a table wrapper) move too, not only
+    the window. All scroll positions are restored afterwards. An element
+    past the right edge (lost content in the SPA) has no visible pixels, so
+    the crop falls back to that edge, which is the evidence a reader sees.
     """
     saved = finding.get("rect") or {}
     if not saved:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     viewport = page.viewport_size or {"width": 1280, "height": VIEWPORT_HEIGHT}
-    old = page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
-    old_x = float(old.get("x", 0))
-    old_y = float(old.get("y", 0))
-    top = float(saved.get("y", 0))
-    height = float(saved.get("h", 1))
-    width = float(saved.get("w", 1))
-    left = float(saved.get("x", 0))
-    fully_visible = top >= 0 and top + height <= viewport["height"]
-    if not fully_visible:
-        target = max(0, old_y + top - 100)
-        page.evaluate("(y) => window.scrollTo(0, y)", target)
+    page.evaluate(
+        "() => { window.__layoutScroll = [];"
+        " for (const el of document.querySelectorAll('*')) {"
+        " if (el.scrollTop || el.scrollLeft) {"
+        " window.__layoutScroll.push([el, el.scrollTop, el.scrollLeft]); } } }")
+    box = None
+    selector = finding.get("selector") or ""
+    try:
+        locator = page.locator(selector)
+        count = locator.count()
+        if count:
+            boxes = locator.evaluate_all(
+                "(els) => els.map(function(el) {"
+                " const r = el.getBoundingClientRect();"
+                " return {x:r.x, y:r.y, w:r.width, h:r.height}; })")
+            best_index = 0
+            best_distance = None
+            for index, candidate in enumerate(boxes):
+                distance = (abs(candidate["x"] - float(saved.get("x", 0))) +
+                            abs(candidate["y"] - float(saved.get("y", 0))) +
+                            abs(candidate["w"] - float(saved.get("w", 0))) +
+                            abs(candidate["h"] - float(saved.get("h", 0))))
+                if best_distance is None or distance < best_distance:
+                    best_distance = distance
+                    best_index = index
+            target = locator.nth(best_index)
+            target.scroll_into_view_if_needed(timeout=2000)
+            box = target.bounding_box()
+    except Exception:  # noqa: BLE001 - the saved rectangle is the fallback
+        box = None
+    if box is None:
+        top = float(saved.get("y", 0))
+        old_scroll = float(page.evaluate("() => window.scrollY"))
+        page.evaluate("(y) => window.scrollTo(0, y)", max(0, old_scroll + top - 100))
         page.wait_for_timeout(80)
-        now = page.evaluate("() => window.scrollY")
-        top = top - (float(now) - old_y)
+        now = float(page.evaluate("() => window.scrollY"))
+        box = {"x": float(saved.get("x", 0)),
+               "y": top - (now - old_scroll),
+               "width": float(saved.get("w", 1)),
+               "height": float(saved.get("h", 1))}
     margin = 24
-    x = max(0, left - margin)
-    y = max(0, top - margin)
-    clip_w = min(viewport["width"] - x, max(32, width + margin * 2))
-    clip_h = min(viewport["height"] - y, max(32, height + margin * 2))
+    x = max(0, box["x"] - margin)
+    y = max(0, box["y"] - margin)
+    clip_w = min(viewport["width"] - x, max(32, box["width"] + margin * 2))
+    clip_h = min(viewport["height"] - y, max(32, box["height"] + margin * 2))
     if x > viewport["width"] - 32:
         x = max(0, viewport["width"] - 320)
         clip_w = min(320, viewport["width"] - x)
@@ -1508,8 +2259,288 @@ def _capture_crop(page, finding: dict, path: Path) -> None:
     except Exception:  # noqa: BLE001 - a crop is evidence, not a measurement
         pass
     finally:
-        if not fully_visible:
-            page.evaluate("(p) => window.scrollTo(p.x, p.y)", {"x": old_x, "y": old_y})
+        page.evaluate(
+            "() => { for (const entry of (window.__layoutScroll || [])) {"
+            " entry[0].scrollTop = entry[1]; entry[0].scrollLeft = entry[2]; }"
+            " window.scrollTo(0, 0); }")
+
+
+def _pending_controls(page) -> list[dict]:
+    """The visible buttons and submit controls on the current page."""
+    return page.evaluate(PENDING_ENUM_JS, {"selector": PENDING_SELECTOR})
+
+
+def _pending_click(page, control: dict) -> bool:
+    """Click the matching visible control by its recorded path and ordinal.
+
+    The index among all matching elements is not the index among visible
+    ones, so the match uses the path and text the enumeration recorded,
+    then the same ordinal when duplicates share both.
+    """
+    return bool(page.evaluate(
+        r"""(arg) => {
+          function visible(el) {
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.01) return false;
+            const r = el.getBoundingClientRect();
+            return r.width >= 1 && r.height >= 1;
+          }
+          function path(el) {
+            const parts = [el.tagName.toLowerCase()];
+            const cls = Array.from(el.classList || []).slice(0, 3);
+            if (cls.length) parts[0] += '.' + cls.join('.');
+            return parts.join('.');
+          }
+          const found = [];
+          for (const el of document.querySelectorAll(arg.selector)) {
+            if (!visible(el)) continue;
+            const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+            if (path(el) === arg.path && text === arg.text) found.push(el);
+          }
+          const el = found[arg.ordinal] || found[0];
+          if (!el) return false;
+          el.scrollIntoView({block: 'center', inline: 'center'});
+          el.click();
+          return true;
+        }""", {"selector": PENDING_SELECTOR, "path": control.get("path", ""),
+               "text": control.get("text", ""),
+               "ordinal": control.get("ordinal", 0)}))
+
+
+def _pending_indicators(page) -> list[dict]:
+    """The visible busy-looking elements on the current page."""
+    return page.evaluate(
+        r"""(selector) => {
+          function visible(el) {
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.01) return false;
+            const r = el.getBoundingClientRect();
+            return r.width >= 1 && r.height >= 1;
+          }
+          const out = [];
+          const seen = new Set();
+          for (const sel of ['[aria-busy="true"]','[role="progressbar"]',
+                             '[class*="skel"],[class*="skeleton"],[class*="busy"]']) {
+            for (const node of document.querySelectorAll(sel)) {
+              if (!visible(node) || seen.has(node)) continue;
+              seen.add(node);
+              out.push({path:node.tagName.toLowerCase() + '.' + String(node.className || '').split(/\\s+/).slice(0, 3).join('.'),
+                       text:(node.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 80)});
+            }
+          }
+          const permanentWire = new Set(['wire','wire-chart','wire-copy','wire-rows','wire-lines',
+                                         'wire-wide','moves-wire','setup-open-wire','wire-state']);
+          for (const node of document.querySelectorAll('[class*="wire"]')) {
+            const classes = String(node.className || '').split(/\s+/);
+            const dynamic = classes.some(function(name) {
+              return name.indexOf('wire') >= 0 && !permanentWire.has(name);
+            });
+            if (!dynamic || !visible(node) || seen.has(node)) continue;
+            seen.add(node);
+            out.push({path:node.tagName.toLowerCase() + '.' + String(node.className || '').split(/\s+/).slice(0, 3).join('.'),
+                      text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
+          }
+          return out.slice(0, 12);
+        }""", PENDING_SELECTOR)
+
+
+def _pending_screenshot(run_dir: Path, combo: dict, view: dict, index: int) -> Path:
+    """The screenshot path for one pending control."""
+    route = view.get("path", "/").split("#")[0].lstrip("/") or "root"
+    return (run_dir / "pending" / combo["condition"] / f"{combo['width']}x800"
+            / combo["theme"] / f"{_slug(route)}__{_slug(view.get('state', 'state'))}"
+            f"__{index:03d}.png")
+
+
+def _pending_verdict(control: dict, state: dict, started: list[dict],
+                     before_indicators: list[dict], file_dialog: bool) -> tuple[str, dict]:
+    """Name one control's pending state and the evidence behind it."""
+    if file_dialog:
+        return "native-dialog", {"reason": "file chooser opened"}
+    control_after = state.get("control") or {}
+    indicators_after = state.get("indicators") or []
+    before_keys = {(item.get("path"), item.get("text")) for item in before_indicators}
+    new_indicators = [item for item in indicators_after
+                      if (item.get("path"), item.get("text")) not in before_keys]
+    label_changed = bool(state.get("labelChanged"))
+    aria_busy = bool(state.get("ariaBusy"))
+    disabled = bool(control_after.get("disabled"))
+    evidence = {
+        "request_started": bool(started),
+        "requests": started[:4],
+        "disabled": disabled,
+        "aria_busy": aria_busy,
+        "label_changed": label_changed,
+        "busy_indicators": new_indicators[:4],
+    }
+    if not started:
+        return "instant", evidence
+    picker = any(
+        marker in str(request.get("url", ""))
+        for request in started
+        for marker in ("/pick", "/upload", "/choose", "/browse"))
+    if picker:
+        evidence["reason"] = "file-picker request held"
+        return "native-dialog", evidence
+    if aria_busy or label_changed or new_indicators:
+        return "meets", evidence
+    if disabled:
+        return "disabled-only", evidence
+    return "silent", evidence
+
+
+def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
+                       condition: str) -> list[dict]:
+    """Click every visible control on every selected page in a fresh page.
+
+    Non-GET requests are held and never completed, so no click can mutate
+    the desk. Each control gets its own page, with the same fixed clock and
+    route fixture as the measured run.
+    """
+    records: list[dict] = []
+    total = 0
+    for combo in combos:
+        view = combo["view"]
+        page = context.new_page()
+        try:
+            page.clock.install(time=FIXED_TIME)
+            page.clock.set_fixed_time(FIXED_TIME)
+        except Exception:
+            pass
+        try:
+            page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
+            _wait_for_view(page, view)
+            page.wait_for_timeout(300)
+            if view.get("kind") == "overlay":
+                reason = _open_overlay(page, combo)
+                if reason:
+                    print(f"[{condition}] pending {view.get('state')}: {reason}",
+                          flush=True)
+                    page.close()
+                    continue
+                page.wait_for_timeout(250)
+            controls = _pending_controls(page)
+        except Exception as exc:  # noqa: BLE001 - one page cannot stop the audit
+            print(f"[{condition}] pending {view.get('state')}: {type(exc).__name__}: {exc}",
+                  flush=True)
+            page.close()
+            continue
+        page.close()
+        for control in controls:
+            total += 1
+            index = control["index"]
+            record = {
+                "condition": condition, "width": combo["width"], "theme": combo["theme"],
+                "route": view["path"], "state": view.get("state", ""),
+                "control": control["text"] or control["path"],
+                "control_path": control["path"], "control_tag": control["tag"],
+                "verdict": "skipped", "evidence": {}, "screenshot": "",
+            }
+            if control.get("disabled"):
+                record["evidence"] = {"reason": "already disabled"}
+                records.append(record)
+                continue
+            if control.get("in_form") and control.get("form_method") == "post":
+                record["evidence"] = {"reason": "form submit navigates; not clicked"}
+                records.append(record)
+                print(f"[{condition}] pending {total} {view.get('state')} "
+                      f"{record.get('control', '')[:40]!r}: skipped form submit",
+                      flush=True)
+                continue
+            fresh = context.new_page()
+            fresh.set_default_timeout(4000)
+            started: list[dict] = []
+            held: list = []
+            file_dialog = [False]
+
+            def hold(route):
+                """Hold every non-GET request; let GETs through."""
+                if route.request.method == "GET":
+                    route.continue_()
+                else:
+                    started.append({"method": route.request.method,
+                                    "url": route.request.url})
+                    held.append(route)
+                    return
+
+            def on_dialog(dialog):
+                """Dismiss a JS alert or confirm so the page can continue."""
+                try:
+                    dialog.dismiss()
+                except Exception:
+                    pass
+
+            def on_filechooser(chooser):
+                """Record a native file picker and dismiss it."""
+                file_dialog[0] = True
+                try:
+                    chooser.set_files([])
+                except Exception:
+                    pass
+
+            try:
+                fresh.clock.install(time=FIXED_TIME)
+                fresh.clock.set_fixed_time(FIXED_TIME)
+            except Exception:
+                pass
+            try:
+                fresh.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
+                _wait_for_view(fresh, view)
+                fresh.wait_for_timeout(300)
+                if view.get("kind") == "overlay":
+                    reason = _open_overlay(fresh, combo)
+                    if reason:
+                        record["evidence"] = {"reason": reason}
+                        records.append(record)
+                        fresh.close()
+                        continue
+                    fresh.wait_for_timeout(250)
+                fresh.evaluate("() => window.scrollTo(0, 0)")
+                before_indicators = _pending_indicators(fresh)
+                fresh.on("dialog", on_dialog)
+                fresh.on("filechooser", on_filechooser)
+                fresh.route("**/*", hold)
+                if not _pending_click(fresh, control):
+                    raise RuntimeError("control not found on the fresh page")
+                fresh.wait_for_timeout(700)
+                state = fresh.evaluate(PENDING_STATE_JS, {
+                    "selector": PENDING_SELECTOR,
+                    "path": control.get("path", ""),
+                    "text": control.get("text", ""),
+                    "ordinal": control.get("ordinal", 0),
+                    "before": control.get("text") or "",
+                })
+                verdict, evidence = _pending_verdict(
+                    control, state, started, before_indicators, file_dialog[0])
+                record["verdict"] = verdict
+                record["evidence"] = evidence
+                if state.get("control"):
+                    record["control_after"] = state["control"]
+                path = _pending_screenshot(run_dir, combo, view, total)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    fresh.screenshot(path=str(path))
+                    record["screenshot"] = str(path)
+                except Exception:
+                    pass
+                records.append(record)
+            except Exception as exc:  # noqa: BLE001 - one control cannot stop the audit
+                record["verdict"] = "skipped"
+                record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:200]}
+                records.append(record)
+            finally:
+                for route in held:
+                    try:
+                        route.abort()
+                    except Exception:
+                        pass
+                try:
+                    fresh.close()
+                except Exception:
+                    pass
+            print(f"[{condition}] pending {total} {view.get('state')} "
+                  f"{record.get('control', '')[:40]!r}: {record.get('verdict')}", flush=True)
+    return records
 
 
 def _annotate(findings: list[dict], combo: dict, stress: bool) -> None:
@@ -1665,7 +2696,8 @@ def _open_overlay(page, combo: dict) -> str:
 
 
 def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
-                   calendar_fixture: Path, crop_counts: dict, base: str) -> dict:
+                   calendar_fixture: Path, crop_counts: dict, base: str,
+                   record_dir: Path | None = None) -> dict:
     """Visit, wait, assert and measure one combination.
 
     Returns the matrix entry plus the findings it produced. A page whose
@@ -1686,6 +2718,9 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
     use_fixture = bool(view.get("calendar_fixture"))
     if use_fixture:
         os.environ["AGENTDESK_CALENDAR_FILE"] = str(calendar_fixture)
+    record_handler = _api_recorder(record_dir, combo["condition"], view)
+    if record_handler is not None:
+        page.on("response", record_handler)
     try:
         _reset_runtime(runtime)
         response = page.goto(base + view["path"], wait_until="domcontentloaded",
@@ -1701,11 +2736,11 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
             _wait_for_view(page, view)
             _settle_page(page)
         entry["final_url"] = page.url
-        final_path = _final_path(page)
-        expected_path = view["path"].split("#")[0].split("?")[0] or "/"
-        if final_path != expected_path:
-            entry["status"] = "auth-failed" if final_path.startswith("/auth") else "wrong-page"
-            entry["note"] = f"final path {final_path}, expected {expected_path}"
+        final_target = _final_target(page)
+        expected_target = view["path"].split("#")[0]
+        if final_target != expected_target:
+            entry["status"] = "auth-failed" if _final_path(page).startswith("/auth") else "wrong-page"
+            entry["note"] = f"final address {final_target}, expected {expected_target}"
         elif entry["http"] and entry["http"] >= 400 and not view.get("expected_error"):
             if entry["http"] in (401, 403):
                 entry["status"] = "auth-failed"
@@ -1786,6 +2821,8 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
         entry["status"] = "error"
         entry["note"] = f"{type(exc).__name__}: {exc}".splitlines()[0][:300]
     finally:
+        if record_handler is not None:
+            page.remove_listener("response", record_handler)
         if use_fixture:
             os.environ["AGENTDESK_CALENDAR_FILE"] = ""
     entry["ms"] = int((time.monotonic() - started) * 1000)
@@ -1806,8 +2843,8 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
     mock_port = None
     desk = None
     try:
-        if condition in ("data", "full"):
-            mock, mock_port = _start_mock()
+        if condition in ("data", "full", "long-values", "busy"):
+            mock, mock_port = _start_mock(getattr(args, "mock_delay_ms", 0))
         _pin_environment(tmp_root / "data", condition, mock_port)
         if "src" not in sys.path:
             sys.path.insert(0, str(ROOT / "src"))
@@ -1823,6 +2860,11 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
             return 0
         all_findings: list[dict] = []
         matrix: list[dict] = []
+        pending_records: list[dict] = []
+        record_dir = None
+        if getattr(args, "record_api", ""):
+            record_dir = Path(args.record_api)
+            record_dir.mkdir(parents=True, exist_ok=True)
         print(f"[{condition}] {len(combos)} combination(s)", flush=True)
         stderr_path = run_dir / f"server-stderr.{condition}.log"
         stderr_handle = open(stderr_path, "w", encoding="utf-8")
@@ -1834,7 +2876,23 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                 context = browser.new_context(
                     viewport={"width": combos[0]["width"], "height": VIEWPORT_HEIGHT},
                     device_scale_factor=1, reduced_motion="reduce")
+                _apply_slow_routes(context, getattr(args, "slow_ms", 0))
+                if getattr(args, "pending_audit", False):
+                    context.add_init_script(
+                        "() => { try { localStorage.removeItem('agentdesk.railCollapsed'); } catch (e) {} }")
+                fixture = _api_fixture_path(args, condition)
+                if fixture is not None:
+                    if not Path(fixture).is_file():
+                        raise AuditError(f"API fixture is missing: {fixture}")
+                    _apply_api_fixture(context, Path(fixture))
+                    print(f"[{condition}] API fixture {fixture}", flush=True)
                 page = context.new_page()
+                try:
+                    page.clock.install(time=FIXED_TIME)
+                    page.clock.set_fixed_time(FIXED_TIME)
+                except Exception as exc:  # noqa: BLE001 - a clear failure beats silent drift
+                    raise AuditError(
+                        f"could not fix the browser clock at {FIXED_TIME}: {exc}") from exc
                 runtime = _runtime_events(page)
                 _attach_runtime(page, runtime)
                 current_width = combos[0]["width"]
@@ -1846,6 +2904,9 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                     if _final_path(page) != "/":
                         raise AuditError(f"auth landed on {_final_path(page)}, not /")
                     notes = _seed(context, base, condition, tmp_root)
+                    if condition == "busy":
+                        notes = _seed_busy(context, base, tmp_root, desk["server"],
+                                           mock_port, notes)
                     if notes:
                         print(f"[{condition}] seeded: {', '.join(notes)}", flush=True)
                     for combo in combos:
@@ -1859,7 +2920,8 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                                 combo["theme"])
                             current_theme = combo["theme"]
                         result = _measure_combo(page, combo, runtime, run_dir,
-                                                calendar_fixture, crop_counts, base)
+                                                calendar_fixture, crop_counts, base,
+                                                record_dir)
                         entry = result["entry"]
                         matrix.append(entry)
                         all_findings.extend(result["findings"])
@@ -1872,6 +2934,13 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                         if entry["status"] == "measured" and view_is_overlay(combo["view"]):
                             page.keyboard.press("Escape")
                             page.wait_for_timeout(100)
+                    if getattr(args, "pending_audit", False):
+                        print(f"[{condition}] pending audit over {len(combos)} page(s)",
+                              flush=True)
+                        pending_records = _run_pending_audit(
+                            context, base, combos, run_dir, condition)
+                        print(f"[{condition}] pending audit wrote {len(pending_records)} "
+                              f"control record(s)", flush=True)
                 finally:
                     page.close()
                     context.close()
@@ -1881,11 +2950,16 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
             stderr_handle.close()
         _write_json(run_dir / f"findings.{condition}.json", all_findings)
         _write_json(run_dir / f"matrix.{condition}.json", matrix)
+        if pending_records:
+            _write_json(run_dir / f"pending.{condition}.json", pending_records)
         skipped = [entry for entry in matrix if entry["status"] == "skipped"]
         _write_json(run_dir / f"skipped.{condition}.json", skipped)
         print(f"[{condition}] wrote {len(all_findings)} finding(s), "
               f"{len(matrix)} matrix row(s)", flush=True)
         return 0
+    except KeyboardInterrupt:
+        print(f"[{condition}] interrupted", flush=True)
+        return 130
     except Exception as exc:  # noqa: BLE001 - the parent reports the cause
         message = f"{type(exc).__name__}: {exc}"
         print(f"[{condition}] FAILED: {message}", flush=True)
@@ -1895,14 +2969,18 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
         return 1
     finally:
         if desk is not None:
-            _stop_desk(desk)
+            for error in _stop_desk(desk):
+                print(f"[{condition}] teardown: {error}", flush=True)
         if mock is not None:
             try:
                 mock.shutdown()
                 mock.server_close()
-            except Exception:  # noqa: BLE001 - teardown noise
-                pass
+            except Exception as exc:  # noqa: BLE001 - report teardown noise
+                print(f"[{condition}] mock teardown: {type(exc).__name__}: {exc}",
+                      flush=True)
         shutil.rmtree(tmp_root, ignore_errors=True)
+        if tmp_root.exists():
+            print(f"[{condition}] TEMP REMOVE FAILED {tmp_root}", flush=True)
 
 
 def view_is_overlay(view: dict) -> bool:
@@ -1923,6 +3001,16 @@ def _child_command(condition: str, run_dir: Path, args) -> list[str]:
     ]
     if args.routes:
         command.extend(["--routes", args.routes])
+    if getattr(args, "api_fixture", ""):
+        command.extend(["--api-fixture", args.api_fixture])
+    if getattr(args, "record_api", ""):
+        command.extend(["--record-api", args.record_api])
+    if getattr(args, "mock_delay_ms", 0):
+        command.extend(["--mock-delay-ms", str(args.mock_delay_ms)])
+    if getattr(args, "slow_ms", 0):
+        command.extend(["--slow-ms", str(args.slow_ms)])
+    if getattr(args, "pending_audit", False):
+        command.append("--pending-audit")
     if args.no_stress:
         command.append("--no-stress")
     return command
@@ -1934,22 +3022,34 @@ def _run_children(args, run_dir: Path, conditions: list[str]) -> list[dict]:
     results: list[dict] = []
     pending = list(conditions)
     running: list[tuple[str, subprocess.Popen]] = []
-    while pending or running:
-        while pending and len(running) < jobs:
-            condition = pending.pop(0)
-            command = _child_command(condition, run_dir, args)
-            process = subprocess.Popen(command)
-            running.append((condition, process))
-        still: list[tuple[str, subprocess.Popen]] = []
+    try:
+        while pending or running:
+            while pending and len(running) < jobs:
+                condition = pending.pop(0)
+                command = _child_command(condition, run_dir, args)
+                process = subprocess.Popen(command)
+                running.append((condition, process))
+            still: list[tuple[str, subprocess.Popen]] = []
+            for condition, process in running:
+                code = process.poll()
+                if code is None:
+                    still.append((condition, process))
+                else:
+                    results.append({"condition": condition, "exit": code})
+            running = still
+            if running:
+                time.sleep(0.5)
+    except BaseException:
         for condition, process in running:
-            code = process.poll()
-            if code is None:
-                still.append((condition, process))
-            else:
-                results.append({"condition": condition, "exit": code})
-        running = still
-        if running:
-            time.sleep(0.5)
+            if process.poll() is None:
+                process.terminate()
+        for condition, process in running:
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        raise
     return results
 
 
@@ -1991,10 +3091,13 @@ def _worst_metric(group: dict) -> str:
         elif kind == "squeezed-text":
             value = -float(metrics.get("width", 0) or 0) + float(metrics.get("lines", 0) or 0)
             label = f"{metrics.get('width')}px wide, {metrics.get('lines')} lines"
-        elif kind in ("text-overlap", "control-collision"):
+        elif kind in ("text-overlap", "control-collision", "control-overlap"):
             value = float(metrics.get("overlapWidth", 0) or 0) * float(
                 metrics.get("overlapHeight", 0) or 0)
             label = f"{metrics.get('overlapWidth')}x{metrics.get('overlapHeight')}px"
+        elif kind == "broken-word":
+            value = float(metrics.get("lineCount", 0) or 0)
+            label = f"{metrics.get('lineCount') or 0} lines for word {metrics.get('word') or ''!r}"
         elif kind == "offscreen-content":
             value = float(metrics.get("overBy", 0) or 0)
             label = f"scrollWidth {metrics.get('scrollWidth')} vs {metrics.get('clientWidth')}"
@@ -2117,17 +3220,70 @@ def _public_path(path: str, run_dir: Path) -> str:
         return str(path)
 
 
+def _pending_counts(records: list[dict]) -> dict[str, int]:
+    """The number of controls in each pending verdict."""
+    counts: dict[str, int] = {}
+    for record in records:
+        verdict = record.get("verdict", "unknown")
+        counts[verdict] = counts.get(verdict, 0) + 1
+    return counts
+
+
+def _pending_evidence(record: dict) -> str:
+    """One short evidence sentence for a pending audit row."""
+    evidence = record.get("evidence") or {}
+    parts = []
+    if evidence.get("request_started"):
+        parts.append(f"{len(evidence.get('requests') or [])} request(s)")
+    if evidence.get("disabled"):
+        parts.append("disabled")
+    if evidence.get("aria_busy"):
+        parts.append("aria-busy")
+    if evidence.get("label_changed"):
+        parts.append("label changed")
+    for item in (evidence.get("busy_indicators") or [])[:2]:
+        parts.append("indicator " + str(item.get("path", "")))
+    if evidence.get("reason"):
+        parts.append(str(evidence["reason"]))
+    return "; ".join(parts) or "no visible change"
+
+
+def _pending_fail(records: list[dict], threshold: str) -> bool:
+    """True when a pending verdict reaches the --fail-on threshold."""
+    if threshold == "none":
+        return False
+    wanted = {"any": 0, "low": 2, "medium": 1, "high": 0}.get(threshold, 3)
+    for record in records:
+        verdict = record.get("verdict")
+        if verdict == "silent":
+            rank = 0
+        elif verdict == "disabled-only":
+            rank = 1
+        else:
+            continue
+        if threshold == "any" or rank <= wanted:
+            return True
+    return False
+
+
 def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
                    groups: list[dict], args, elapsed: float,
-                   missing: list[dict]) -> None:
+                   missing: list[dict], child_failures: list[dict],
+                   pending: list[dict]) -> None:
     """Write summary.md: counts, coverage, then root causes in priority order."""
     lines: list[str] = []
     lines.append("# Layout audit summary")
     lines.append("")
     lines.append(f"Run folder: `{run_dir}`")
     lines.append(f"Elapsed: {elapsed:.1f}s")
-    lines.append(f"Command filters: conditions={args.conditions} widths={args.widths} "
-                 f"themes={args.themes} routes={args.routes or '(all)'} "
+    effective_conditions = sorted({str(entry.get("condition")) for entry in matrix})
+    effective_widths = sorted({int(entry.get("width")) for entry in matrix if entry.get("width")})
+    effective_themes = sorted({str(entry.get("theme")) for entry in matrix if entry.get("theme")})
+    effective_states = {(entry.get("route"), entry.get("state")) for entry in matrix}
+    lines.append(f"Command filters: conditions={','.join(effective_conditions)} "
+                 f"widths={','.join(str(width) for width in effective_widths)} "
+                 f"themes={','.join(effective_themes)} "
+                 f"states={len(effective_states)} "
                  f"stress={'off' if args.no_stress else 'on'}")
     lines.append("")
     measured = [entry for entry in matrix if entry["status"] == "measured"]
@@ -2173,9 +3329,13 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
         lines.append("")
     lines.append("### Coverage")
     lines.append("")
-    if not failed and not missing:
+    if not failed and not missing and not child_failures:
         lines.append("Every planned combination was measured.")
     else:
+        if child_failures:
+            lines.append(f"- Child processes that exited non-zero: {len(child_failures)}")
+            for result in child_failures:
+                lines.append(f"  - {result.get('condition')}: exit {result.get('exit')}")
         lines.append(f"- Missing matrix rows: {len(missing)}")
         for combo in missing:
             view = combo["view"]
@@ -2206,8 +3366,9 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
             combos.add((finding.get("route"), finding.get("state"),
                         finding.get("condition"), finding.get("width"),
                         finding.get("theme")))
-        lines.append(f"### {number}. [{group.get('severity')}] {group.get('kind')}: "
-                     f"`{group.get('selector')}`")
+        stress_tag = " [stress]" if stress_only_group else ""
+        lines.append(f"### {number}. [{group.get('severity')}]{stress_tag} "
+                     f"{group.get('kind')}: `{group.get('selector')}`")
         lines.append("")
         lines.append(f"- Group id: `{group['id']}`")
         lines.append(f"- Classes: `{group.get('classes') or '(none)'}`")
@@ -2228,6 +3389,25 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
         if crops:
             lines.append("- Crops: " + ", ".join(f"`{crop}`" for crop in crops))
         lines.append("")
+    lines.append("## Pending states")
+    lines.append("")
+    if not pending:
+        lines.append("No pending audit was requested.")
+    else:
+        counts = _pending_counts(pending)
+        lines.append("| verdict | controls |")
+        lines.append("| --- | ---: |")
+        for verdict in sorted(counts):
+            lines.append(f"| {verdict} | {counts[verdict]} |")
+        lines.append("")
+        lines.append("| page | control | verdict | evidence |")
+        lines.append("| --- | --- | --- | --- |")
+        for record in pending:
+            page = record.get("state") or record.get("route", "")
+            control = (record.get("control") or record.get("control_path") or "").replace("|", "/")
+            lines.append(f"| {page} | {control[:90]} | {record.get('verdict')} | "
+                         f"{_pending_evidence(record)[:160]} |")
+    lines.append("")
     lines.append("## Runtime findings")
     lines.append("")
     if not runtime:
@@ -2255,14 +3435,42 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
     (run_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _relative_path(value: str, run_dir: Path) -> str:
+    """The path relative to the run folder when it lives under it."""
+    try:
+        return Path(value).relative_to(run_dir).as_posix()
+    except (ValueError, OSError):
+        return value
+
+
+def _relative_records(records: list[dict], run_dir: Path) -> list[dict]:
+    """Copy records with their evidence paths made run-folder relative."""
+    out = []
+    for record in records:
+        copy = dict(record)
+        for key in ("crop", "screenshot"):
+            value = copy.get(key)
+            if isinstance(value, str) and value:
+                copy[key] = _relative_path(value, run_dir)
+        out.append(copy)
+    return out
+
+
 def _merge_outputs(args, run_dir: Path, conditions: list[str],
-                   elapsed: float) -> int:
-    """Merge child JSON, copy crops, write findings/matrix/summary, return code."""
+                   elapsed: float, child_results: list[dict]) -> int:
+    """Merge child JSON, copy crops, write findings/matrix/summary, return code.
+
+    A child that exits non-zero is incomplete coverage even when it wrote a
+    full matrix: its own failure is the evidence that something went wrong.
+    """
     findings: list[dict] = []
     matrix: list[dict] = []
+    child_failures: list[dict] = []
+    pending: list[dict] = []
     for condition in conditions:
         findings.extend(_read_json(run_dir / f"findings.{condition}.json", []))
         matrix.extend(_read_json(run_dir / f"matrix.{condition}.json", []))
+        pending.extend(_read_json(run_dir / f"pending.{condition}.json", []))
         fatal = _read_json(run_dir / f"fatal.{condition}.json", None)
         if fatal:
             print(f"[{condition}] fatal: {fatal.get('message', '')}", flush=True)
@@ -2304,16 +3512,22 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
     failed = [entry for entry in matrix
               if entry["status"] not in ("measured", "skipped")]
     skipped_entries = [entry for entry in matrix if entry["status"] == "skipped"]
-    _write_json(run_dir / "findings.json", findings)
-    _write_json(run_dir / "matrix.json", matrix)
-    _write_summary(run_dir, findings, matrix, groups, args, elapsed, missing)
+    for result in child_results:
+        if result.get("exit") not in (0, None):
+            child_failures.append(result)
+    _write_json(run_dir / "findings.json", _relative_records(findings, run_dir))
+    _write_json(run_dir / "matrix.json", _relative_records(matrix, run_dir))
+    if pending:
+        _write_json(run_dir / "pending.json", _relative_records(pending, run_dir))
+    _write_summary(run_dir, findings, matrix, groups, args, elapsed, missing,
+                   child_failures, pending)
     pages = len([entry for entry in matrix if entry["status"] == "measured"])
     print(f"OUT {run_dir}")
     print(f"METRIC findings={len(findings)} groups={len(groups)} "
           f"pages={pages} skipped={len(skipped_entries)}")
     if skipped_entries:
         print(f"SKIPPED {len(skipped_entries)} overlay state(s) listed in summary")
-    incomplete = len(missing) + len(failed)
+    incomplete = len(missing) + len(failed) + len(child_failures)
     coverage_code = 0
     if incomplete:
         reasons = []
@@ -2324,6 +3538,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
         for entry in failed[:8]:
             reasons.append(f"{entry['status']} {entry['condition']} {entry['width']} "
                            f"{entry['theme']} {entry['state']} ({entry.get('note', '')})")
+        for result in child_failures[:8]:
+            reasons.append(f"child {result.get('condition')} exit {result.get('exit')}")
         suffix = "" if args.allow_partial else "; exit 3"
         print(f"COVERAGE INCOMPLETE {incomplete} combination(s){suffix}: "
               + "; ".join(reasons))
@@ -2341,6 +3557,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
         rank = _severity_rank(finding.get("severity", "low"))
         if threshold == "any" or rank <= wanted:
             return 1
+    if pending and _pending_fail(pending, threshold):
+        return 1
     return 0
 
 
@@ -2377,9 +3595,26 @@ def main(argv: list[str] | None = None) -> int:
                         help="do not exit 3 when a planned combination is unmeasured")
     parser.add_argument("--jobs", type=int, default=1,
                         help="conditions to run in parallel (default 1)")
+    parser.add_argument("--record-api", default="",
+                        help="write GET /api JSON bodies under this directory")
+    parser.add_argument("--api-fixture", default="",
+                        help="fulfil matching GET /api requests from this JSON map")
+    parser.add_argument("--mock-delay-ms", type=int, default=0,
+                        help="sleep this long in the in-process mock model")
+    parser.add_argument("--slow-ms", type=int, default=0,
+                        help="delay every document and /api response this many ms")
+    parser.add_argument("--pending-audit", action="store_true",
+                        help="click every visible control and record its pending state")
+    parser.add_argument("--selftest", action="store_true",
+                        help="run the planted-defect fixture and check every detector")
     parser.add_argument("--child", action="store_true",
                         help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if sync_playwright is None:
+        print(PLAYWRIGHT_HELP)
+        return 2
+    if args.selftest:
+        return _selftest()
     if args.child:
         return _child_main(args)
     started = time.monotonic()
@@ -2392,6 +3627,15 @@ def main(argv: list[str] | None = None) -> int:
     if not conditions:
         print("no valid conditions selected")
         return 2
+    try:
+        for condition in conditions:
+            child_args = argparse.Namespace(**vars(args))
+            child_args.only_condition = condition
+            child_args.conditions = condition
+            build_combos(child_args)
+    except AuditError as exc:
+        print(f"invalid audit filters: {exc}")
+        return 2
     print(f"run {run_dir}", flush=True)
     print(f"conditions {','.join(conditions)} widths {args.widths} themes {args.themes}",
           flush=True)
@@ -2400,7 +3644,7 @@ def main(argv: list[str] | None = None) -> int:
         if result["exit"] != 0:
             print(f"[{result['condition']}] child exit {result['exit']}", flush=True)
     elapsed = time.monotonic() - started
-    return _merge_outputs(args, run_dir, conditions, elapsed)
+    return _merge_outputs(args, run_dir, conditions, elapsed, results)
 
 
 if __name__ == "__main__":
