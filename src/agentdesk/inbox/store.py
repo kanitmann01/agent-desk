@@ -245,6 +245,28 @@ class InboxStore:
         return self.get(card_id)
 
     @_serialized
+    def unrank(self, card_id: str, *, origin: str, meta: dict,
+               snoozed_until: float | None) -> Card:
+        """Put one card's ranking-carried columns back exactly as captured.
+
+        The undo of the rank step's re-rank or snooze restores the three
+        columns that step writes (origin, meta, snoozed_until) and leaves
+        the row's status and stamps as they stand, so a card the user
+        accepted meanwhile is not thrown back to waiting.
+        """
+        self.get(card_id)
+        if not isinstance(meta, dict):
+            raise ValueError("meta must be a dict")
+        if not origin.strip():
+            raise ValueError("a card without an origin line is not a card")
+        with self.conn:
+            self.conn.execute(
+                "UPDATE cards SET origin = ?, meta = ?, snoozed_until = ? WHERE id = ?",
+                (origin, json.dumps(meta, ensure_ascii=False), snoozed_until, card_id),
+            )
+        return self.get(card_id)
+
+    @_serialized
     def more_info(self, card_id: str, instruction: str) -> Card:
         """Attach the user's instruction and bring the card back to the
         visible waiting set (a running snooze ends early)."""

@@ -432,8 +432,9 @@ def _agent_section(settings_values: dict, agent_loop: dict | None) -> str:
                             f"{_agent_clock(next_ts)}</span>")
             cadence += ".</p>"
         else:
-            cadence = ("<p class='empty'>The agent hasn't run yet. It runs "
-                       "about an hour after the app opens, or now.</p>")
+            cadence = ("<p class='empty'>The agent hasn't run yet. The first "
+                       "pass runs a few seconds after the app opens, or "
+                       "now.</p>")
     steps = loop.get("lastSteps") or []
     steps_html = _agent_steps_table(steps) if steps else ""
     return f"""<section class='card settings-card' id='agent'>

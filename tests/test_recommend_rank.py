@@ -1,4 +1,5 @@
-"""Model ranking rejects bad replies and changes only what it may (spec 016 §6.3, §13)."""
+"""Model ranking rejects bad replies, changes only what it may, and pays
+the ledger toll (spec 016 §6.3, §13; spec 023 ticket 023-2)."""
 
 import datetime
 import json
@@ -17,6 +18,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 from agentdesk.assistant import audit as audit_store
 from agentdesk.inbox.core import KIND_SUGGESTION
 from agentdesk.inbox.store import InboxStore
+from agentdesk.ledger import Ledger
+from agentdesk.ledger.undo import undo
 from agentdesk.llm import LlmUnavailable
 from agentdesk.memory.core import Fact
 from agentdesk.recommend import rank
@@ -106,7 +109,7 @@ def _server(inbox, memory, settings, audit_conn=None):
         inbox=inbox,
         memory=memory,
         settings=settings,
-        ledger=None,
+        ledger=Ledger(":memory:"),
         audit_conn=audit_conn,
     )
 
@@ -148,14 +151,15 @@ def test_parse_reply_validation(reply, expected):
     assert rank.parse_reply(reply, {"a"}) == expected
 
 
-def test_threshold_shows_or_snoozes():
+def test_threshold_shows_or_snoozes_and_records_both():
     inbox = _inbox()
     high = _card(inbox, card_id="high")
     low = _card(inbox, card_id="low", title="Care plan check-in: December 16 (in 26 days)")
+    ledger = Ledger(":memory:")
     tomorrow = datetime.datetime(2026, 11, 21, 8, 0).astimezone().timestamp()
     counts = rank.apply_scores(
         inbox,
-        None,
+        ledger,
         [
             {"id": "high", "score": 9, "why": "Renewal closes in 25 days and it is your largest account."},
             {"id": "low", "score": 4, "why": "Nothing urgent this week."},
@@ -172,6 +176,92 @@ def test_threshold_shows_or_snoozes():
     assert hidden.snoozed_until == tomorrow
     assert hidden.origin == "You told the desk this deadline; it is 25 days away."
     assert [card.id for card in inbox.waiting()] == [high.id]
+
+    # The ledger toll (spec 023): one undoable entry per changed card,
+    # naming the decision and the score, never the model's words.
+    entries = ledger.entries()
+    assert [entry.action for entry in entries] == ["recommend.ranked", "recommend.ranked"]
+    assert all(entry.undo_kind == "card-ranked" for entry in entries)
+    assert all(entry.actor == "agent" for entry in entries)
+    assert all(entry.undoable for entry in entries)
+    joined = " ".join(entry.why for entry in entries) + " " + " ".join(
+        json.dumps(entry.detail) for entry in entries)
+    assert "Renewal closes in 25 days" not in joined
+    assert "Nothing urgent this week" not in joined
+    assert sorted(entry.detail["decision"] for entry in entries) == ["shown", "snoozed"]
+    assert all(entry.subject.startswith("recommendation/") for entry in entries)
+
+
+def test_no_ledger_refuses_the_change():
+    """Without a ledger the toll cannot be paid, so the cards stand."""
+    inbox = _inbox()
+    high = _card(inbox, card_id="high")
+    before = inbox.get(high.id)
+    counts = rank.apply_scores(
+        inbox, None,
+        [{"id": "high", "score": 9, "why": "Renewal closes in 25 days."}],
+        7, 0.0,
+    )
+    assert counts == {"shown": 0, "snoozed": 0, "refused": 1}
+    after = inbox.get(high.id)
+    assert after.origin == before.origin
+    assert after.meta == before.meta
+    assert after.snoozed_until is None
+
+
+def test_a_reranked_card_is_undoable():
+    inbox = _inbox()
+    card = _card(inbox)
+    rule_why = inbox.get(card.id).origin
+    ledger = Ledger(":memory:")
+    ctx = Ctx(MORNING.astimezone())
+    server = _server(inbox, Memory([_fact()]), _settings())
+    server.ledger = ledger
+    reply = json.dumps([{"id": "rec-1", "score": 9, "why": "Renewal is close."}])
+    assert rank.run_rank(server, ctx, chat=lambda prompt: reply) == {
+        "shown": 1, "snoozed": 0, "ranked": 1,
+    }
+    ranked = inbox.get(card.id)
+    assert ranked.origin == "Renewal is close."
+    entry = next(e for e in ledger.entries() if e.action == "recommend.ranked")
+
+    undo(server, ledger, entry.id)
+
+    restored = inbox.get(card.id)
+    assert restored.origin == rule_why
+    assert restored.meta["recommendation"]["score"] is None
+    assert restored.meta["recommendation"]["whySource"] == "rule"
+    assert restored.snoozed_until is None
+    # The undo is itself an undoable entry of the same kind.
+    inverse = ledger.entries()[0]
+    assert inverse.action == "ledger.undo"
+    assert inverse.undoes == entry.id
+    assert inverse.undo_kind == "card-ranked"
+
+
+def test_a_snoozed_card_is_undoable():
+    inbox = _inbox()
+    card = _card(inbox)
+    rule_why = inbox.get(card.id).origin
+    ledger = Ledger(":memory:")
+    ctx = Ctx(MORNING.astimezone())
+    server = _server(inbox, Memory([_fact()]), _settings())
+    server.ledger = ledger
+    tomorrow = datetime.datetime(2026, 11, 21, 8, 0).astimezone().timestamp()
+    rank.apply_scores(
+        inbox, ledger,
+        [{"id": card.id, "score": 4, "why": "Nothing urgent this week."}],
+        7, tomorrow,
+    )
+    assert inbox.get(card.id).snoozed_until == tomorrow
+    entry = next(e for e in ledger.entries() if e.action == "recommend.ranked")
+
+    undo(server, ledger, entry.id)
+
+    restored = inbox.get(card.id)
+    assert restored.origin == rule_why
+    assert restored.snoozed_until is None
+    assert [waited.id for waited in inbox.waiting()] == [card.id]
 
 
 def test_unchanged_input_skips_call():
