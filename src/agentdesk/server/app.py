@@ -126,6 +126,12 @@ from agentdesk.llm import (
 )
 from agentdesk.presentations.deliver import deliver_deck
 from agentdesk.presentations.packs import load_packs
+from agentdesk.presentations.tools import (
+    ToolError,
+    resolve_in_root,
+    run_tool,
+    tool_catalog,
+)
 from agentdesk.presentations.research import (
     FETCH_TIMEOUT_S,
     RESULT_LIMIT,
@@ -3010,6 +3016,80 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def _presentation_tool_urls(self, result: dict) -> dict:
+        """Give every file a download address the caller can open next."""
+        for key, url_key in (("file", "url"), ("pdf", "pdfUrl")):
+            value = result.get(key)
+            if isinstance(value, str) and value:
+                result[url_key] = "/presentations/files/" + quote(value)
+        images = result.get("images")
+        if isinstance(images, list) and images:
+            result["imageUrls"] = [
+                "/presentations/files/" + quote(str(image)) for image in images
+            ]
+        return result
+
+    def _send_presentation_tools(self) -> None:
+        """List the deck tools the shipped and installed packs declare."""
+        try:
+            tools = tool_catalog(self._presentation_packs())
+        except (OSError, ValueError) as exc:
+            LOG.warning("presentation tool catalog failed: %s", exc)
+            self._send_json(500, {"error": "The deck tools could not be listed."})
+            return
+        self._send_json(200, {"tools": tools})
+
+    def _presentation_tool_run(self) -> None:
+        """Run one declared deck tool. The plugin declares, the host executes."""
+        body = self._read_json_body()
+        if not isinstance(body, dict):
+            self._send_json(400, {"error": "Send a JSON object with a tool name."})
+            return
+        name = body.get("tool")
+        if not isinstance(name, str) or not name.strip():
+            self._send_json(400, {"error": "The tool field names the deck tool to run."})
+            return
+        payload = {key: value for key, value in body.items() if key != "tool"}
+        try:
+            result = run_tool(
+                name.strip(), payload, self._presentation_dir(),
+                packs=self._presentation_packs(),
+                runner=getattr(self.server, "presentation_runner", None),
+            )
+        except ToolError as exc:
+            self._send_json(exc.status, {"error": exc.message})
+            return
+        except (OSError, ValueError) as exc:
+            LOG.warning("presentation tool %s failed: %s", name, exc)
+            self._send_json(500, {"error": "The deck tool failed while writing its files."})
+            return
+        except Exception:  # noqa: BLE001 - a tool caller gets JSON, not a 500 page
+            LOG.exception("presentation tool %s failed", name)
+            self._send_json(500, {"error": "The deck tool failed."})
+            return
+        self._audit("presentation.tool", target=name.strip(),
+                    detail=f"{result.get('file') or result.get('bytes') or ''}")
+        self._send_json(200, self._presentation_tool_urls(result))
+
+    def _presentation_file(self, rest: str) -> None:
+        """A deck, PDF or preview the tool wrote, and nothing outside that root."""
+        raw = unquote((rest or "").strip("/"))
+        try:
+            path = resolve_in_root(self._presentation_dir(), raw,
+                                   suffixes=(".pptx", ".pdf", ".png"))
+        except ToolError as exc:
+            self._send_json(exc.status, {"error": exc.message})
+            return
+        suffix = path.suffix.lower()
+        content_type = {
+            ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".pdf": "application/pdf",
+            ".png": "image/png",
+        }[suffix]
+        headers = {"Content-Disposition": f'attachment; filename="{path.name}"'}
+        self._audit("presentation.file", target=raw, detail=suffix)
+        self._send_bytes(200, path.read_bytes(), content_type, headers)
 
     def _agents_download(self, rest: str) -> None:
         """The .pptx one run wrote, and nothing else.

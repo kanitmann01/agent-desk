@@ -13,7 +13,7 @@
   "tags": ["presentation", "template"],
   "icon": "generic",
   "summary": "A neutral presentation template with dark and light variants.",
-  "description": "The starter template is one shell in two variants and three recipes: a generic briefing, a quarterly review, and a competitor brief. It carries no logo and no company name. A pack you install on this machine is listed beside it.",
+  "description": "The starter template is one shell in two variants and three recipes: a generic briefing, a quarterly review, and a competitor brief. It carries no logo and no company name. It also declares four deck tools an agent can call without a model endpoint: outline, create, inspect, render.",
   "highlights": [
     "Dark and light are two variants of one template.",
     "Three recipes: briefing, quarterly review, competitor brief.",
@@ -45,7 +45,13 @@
       },
       "guidance": "guidance/SKILL.md",
       "fonts": {"body": "Arial"}
-    }]
+    }],
+    "tools": [
+      {"name": "presentation_outline", "description": "Turn a one-line brief into a deck outline using this template's recipes."},
+      {"name": "presentation_create", "description": "Write a valid .pptx from an outline, or from a brief, using this template."},
+      {"name": "presentation_inspect", "description": "Read a deck back as slide text, notes, and package problems."},
+      {"name": "presentation_render", "description": "Make a PDF and slide images when PowerPoint or LibreOffice is installed."}
+    ]
   },
   "sample": "sample.json",
   "minHost": ">=0.1.0"
