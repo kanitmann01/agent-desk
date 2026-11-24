@@ -23,8 +23,11 @@ import server_harness
 from agentdesk.inbox.store import InboxStore
 from agentdesk.plugins.runtime import PluginRuntime
 
-CANONICAL = "Watch this workbook and show me the 24-hour change"
+CANONICAL = "Watch this workbook and show me the latest figure"
 NOW = datetime(2026, 11, 11, 9, 0, 0).astimezone()
+# The prompt marker the autofill fake branches on, so the copy and the fill
+# can answer differently without depending on prompt ordering.
+AUTOFILL_MARKER = "Fill in the four choices"
 
 
 class FakeClock:
@@ -45,28 +48,49 @@ def make_runtime(tmp_path):
 
 
 def good_llm(prompt: str) -> str:
-    """A corporate endpoint that answers the wizard's JSON asks sanely."""
-    if "question" in prompt or "clarif" in prompt:
-        return json.dumps({"questions": [
-            {"id": "cadence", "question": "How often should it refresh?",
-             "options": ["hourly", "every 15 minutes"], "default": "hourly"},
-        ]})
+    """A corporate endpoint that answers the wizard's JSON asks sanely.
+
+    It fills a workbook tile and writes its copy; it never decides a source,
+    a permission, or an activation event.
+    """
+    if AUTOFILL_MARKER in prompt:
+        return json.dumps({
+            "source": "An Excel workbook",
+            "detail": "",
+            "show": "The latest figure",
+            "look": "A big number",
+            "update": "When I open the desk",
+            "reasons": {"source": "It reads the workbook you keep your numbers in."},
+        })
     return json.dumps({
         "title": "Sales, last 24 hours",
-        "description": "What changed in the watched workbook since yesterday.",
+        "description": "The latest figure in the watched workbook.",
     })
 
 
-def two_question_llm(prompt: str) -> str:
-    """The same sane endpoint, but asking two questions."""
-    if "question" in prompt or "clarif" in prompt:
-        return json.dumps({"questions": [
-            {"id": "cadence", "question": "How often should it refresh?",
-             "options": ["hourly", "every 15 minutes"], "default": "hourly"},
-            {"id": "source", "question": "Which file should it read?",
-             "options": ["orders.xlsx", "returns.xlsx"], "default": "orders.xlsx"},
-        ]})
+def two_field_llm(prompt: str) -> str:
+    """An endpoint that fills only the source, leaving the rest to the walk."""
+    if AUTOFILL_MARKER in prompt:
+        return json.dumps({"source": "An Excel workbook"})
     return good_llm(prompt)
+
+
+WORKBOOK_ANSWERS = {
+    "source": "An Excel workbook",
+    "show": "The latest figure",
+    "look": "A big number",
+    "update": "When I open the desk",
+}
+
+
+def answer_all(booted, session_id, headers):
+    """Answer the remaining questions on a session with one JSON post.
+
+    The questions are computed from the answers, so this drives the walk the
+    way a manager does: every open choice answered, in one call.
+    """
+    return booted.post_json(f"/wizard/{session_id}/answer",
+                            {"answers": WORKBOOK_ANSWERS}, headers)
 
 
 @pytest.fixture()
@@ -136,7 +160,7 @@ def test_describe_returns_capped_questions_with_defaults(env, auth):
 
 def test_build_validates_through_the_gate_before_preview(env, auth, tmp_path):
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    status, _h, _b = env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    status, _h, _b = answer_all(env, started["id"], auth)
     assert status == 303
     session = env.server.wizard_store.get(started["id"])
     assert session.draft is not None
@@ -156,11 +180,26 @@ def test_build_validates_through_the_gate_before_preview(env, auth, tmp_path):
         assert verdict.ok, verdict.failures
 
 
+def test_one_answer_does_not_build_anything(env, auth):
+    """Answering a single question re-renders the walk. The old behaviour
+    filled every other answer from defaults and installed a workbook."""
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+    status, _h, _b = env.post_json(f"/wizard/{started['id']}/answer",
+                                   {"answers": {"source": "My mail"}}, auth)
+
+    assert status == 303
+    session = env.server.wizard_store.get(started["id"])
+    assert session.state == "questions"
+    assert session.draft is None
+    assert [q["id"] for q in session.questions] == ["source", "show", "update"]
+    assert env.server.plugins.list_records() == []
+
+
 def test_preview_renders_without_installing(env, auth):
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    answer_all(env, started["id"], auth)
     page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-    assert "Atlas ERP" in page  # the fixture sample rows render
+    assert "Filled in from your description" in page
     assert env.server.plugins.list_records() == []
 
 
@@ -182,38 +221,61 @@ def test_describe_form_post_creates_the_session(env, auth):
 def test_answer_form_post_records_the_choice(env, auth):
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
     status, _h, _b = post_form(env, f"/wizard/{started['id']}/answer",
-                               {"question": "0", "answer": "every 15 minutes"}, auth)
+                               {"question": "0", "answer": "My calendar"}, auth)
     assert status == 303
     session = env.server.wizard_store.get(started["id"])
-    assert session.state == "preview"
-    assert session.answers["cadence"] == "every 15 minutes"
+    # One answer is not a finished walk: the source is recorded and the
+    # questions narrow to that source.
+    assert session.state == "questions"
+    assert session.answers["source"] == "My calendar"
+    assert session.answers["source"] != "An Excel workbook"
 
 
 def test_reanswering_keeps_the_earlier_custom_answers(env, auth):
-    """One form per question, answered one at a time: going back to the
-    second form must not throw away the first form's choice."""
-    env.server.llm = two_question_llm
+    """One form per question, answered one at a time: going back to a later
+    form must not throw away the first form's choice."""
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
     post_form(env, f"/wizard/{started['id']}/answer",
-              {"question": "0", "answer": "every 15 minutes"}, auth)
+              {"question": "0", "answer": "My mail"}, auth)
+    session = env.server.wizard_store.get(started["id"])
+    show_index = next(i for i, q in enumerate(session.questions) if q["id"] == "show")
     status, _h, _b = post_form(env, f"/wizard/{started['id']}/answer",
-                               {"question": "1", "answer": "returns.xlsx"}, auth)
+                               {"question": str(show_index),
+                                "answer": "One status line"}, auth)
     assert status == 303
     session = env.server.wizard_store.get(started["id"])
-    assert session.answers == {"cadence": "every 15 minutes",
-                               "source": "returns.xlsx"}
+    # The untouched update question keeps its default, as a checked radio:
+    # the page never shows an unanswered question as blank.
+    assert session.answers == {"source": "My mail", "show": "One status line",
+                               "update": "When I open the desk"}
 
 
-def test_form_answer_with_a_malformed_index_uses_the_defaults(env, auth):
+def test_form_answer_with_a_malformed_index_keeps_the_walk_open(tmp_path, monkeypatch):
     """A question field that is digits-shaped but not an int (a Unicode
-    superscript) is not a form answer: defaults apply, no 500."""
-    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    status, _h, _b = post_form(env, f"/wizard/{started['id']}/answer",
-                               {"question": "\u00b2", "answer": "hourly"}, auth)
-    assert status == 303
-    session = env.server.wizard_store.get(started["id"])
-    assert session.state == "preview"
-    assert session.answers == {"cadence": "hourly"}
+    superscript) is not a form answer: nothing is recorded and no 500."""
+    for name in ("AGENTDESK_LLM_BASE", "AGENTDESK_LLM_KEY", "AGENTDESK_LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    clock = FakeClock(NOW)
+    from agentdesk.wizard.core import WizardStore
+
+    booted = server_harness.Booted(
+        plugins=make_runtime(tmp_path),
+        wizard_store=WizardStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+        inbox_store=InboxStore(sqlite3.connect(":memory:", check_same_thread=False), clock),
+    )
+    try:
+        auth = booted.exchange()
+        started = json.loads(booted.post_json("/wizard/start",
+                                              {"description": CANONICAL}, auth)[2])
+        status, _h, _b = post_form(booted, f"/wizard/{started['id']}/answer",
+                                   {"question": "\u00b2", "answer": "My mail"}, auth)
+        assert status == 303
+        session = booted.server.wizard_store.get(started["id"])
+        assert session.state == "questions"
+        assert session.answers == {}
+        assert booted.server.plugins.list_records() == []
+    finally:
+        booted.close()
 
 
 def test_the_no_code_form_flow_installs_through_the_default_runtime(tmp_path, monkeypatch):
@@ -233,8 +295,8 @@ def test_the_no_code_form_flow_installs_through_the_default_runtime(tmp_path, mo
         _s, headers, _b = post_form(booted, "/wizard/new/answer",
                                     {"description": CANONICAL}, auth)
         sid = headers["Location"].rsplit("/", 1)[-1]
-        status, _h, _b = post_form(booted, f"/wizard/{sid}/answer",
-                                   {"question": "0", "answer": "hourly"}, auth)
+        status, _h, _b = booted.post_json(f"/wizard/{sid}/answer",
+                                          {"answers": WORKBOOK_ANSWERS}, auth)
         assert status == 303
         status, _h, _b = post_form(booted, f"/wizard/{sid}/approve", {}, auth)
         assert status == 303
@@ -247,7 +309,7 @@ def test_the_no_code_form_flow_installs_through_the_default_runtime(tmp_path, mo
 
 def test_approve_installs_in_pilot_mode_with_consolidated_summary(env, auth):
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    answer_all(env, started["id"], auth)
     status, _h, body = env.post_json(f"/wizard/{started['id']}/approve", {}, auth)
     payload = json.loads(body)
     assert status == 200
@@ -270,7 +332,7 @@ def test_approve_json_post_keeps_the_install_document(env, auth):
     status, pilot, summary, install. The form-post redirect changes
     nothing for a client that asked for JSON."""
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    answer_all(env, started["id"], auth)
     status, headers, body = env.post_json(f"/wizard/{started['id']}/approve", {}, auth)
     payload = json.loads(body)
     assert status == 200
@@ -292,7 +354,7 @@ def test_approve_form_post_redirects_to_the_approved_screen(env, auth):
     approved screen: what was installed, the pilot line, the summary,
     and no raw JSON anywhere."""
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    answer_all(env, started["id"], auth)
     status, headers, body = post_form(env, f"/wizard/{started['id']}/approve", {}, auth)
     assert status == 303
     assert headers["Location"] == f"/wizard/{started['id']}"
@@ -315,7 +377,7 @@ def test_second_approve_form_post_refuses_and_never_installs_twice(env, auth):
     shows the state the session is honestly in; the JSON client keeps
     the existing 409 refusal."""
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    answer_all(env, started["id"], auth)
     post_form(env, f"/wizard/{started['id']}/approve", {}, auth)
     status, headers, body = post_form(env, f"/wizard/{started['id']}/approve", {}, auth)
     assert status == 303
@@ -368,13 +430,13 @@ def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
         auth = booted.exchange()
         started = json.loads(booted.post_json("/wizard/start",
                                               {"description": CANONICAL}, auth)[2])
-        assert [q["id"] for q in started["questions"]] == [
-            q["id"] for q in DEFAULT_QUESTIONS
-        ]
-        # The questions screen says why they are the standard ones.
+        assert [q["id"] for q in started["questions"]] == ["source"]
+        # The walk invites an AI connection in place of the old error alert.
         page = booted.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-        assert "No AI is saved" in page
-        assert booted.post_json(f"/wizard/{started['id']}/answer", {}, auth)[0] == 303
+        assert "Add an AI connection" in page
+        assert "/settings#connections" in page
+        assert booted.post_json(f"/wizard/{started['id']}/answer",
+                                {"answers": WORKBOOK_ANSWERS}, auth)[0] == 303
         status, _h, body = booted.request("POST", f"/wizard/{started['id']}/approve",
                                           auth, b"")
         assert status == 200
@@ -412,11 +474,10 @@ def test_the_full_no_js_walk_ends_on_an_approved_page(tmp_path, monkeypatch):
         assert status == 303
         sid = headers["Location"].rsplit("/", 1)[-1]
         page = booted.request("GET", f"/wizard/{sid}", auth)[2].decode("utf-8")
-        assert "What should the widget watch?" in page  # the standard questions
-        # One answer form, then the preview with its approve form.
-        status, _h, _b = post_form(booted, f"/wizard/{sid}/answer",
-                                   {"question": "0", "answer": "An Excel workbook"},
-                                   auth)
+        assert "What should this tile watch?" in page  # the source question
+        # Answer the whole path, then the preview with its approve form.
+        status, _h, _b = booted.post_json(f"/wizard/{sid}/answer",
+                                          {"answers": WORKBOOK_ANSWERS}, auth)
         assert status == 303
         page = booted.request("GET", f"/wizard/{sid}", auth)[2].decode("utf-8")
         assert f'action="/wizard/{sid}/approve"' in page
@@ -458,7 +519,8 @@ def test_a_workbook_install_lands_in_setup_with_its_dashboard_card(tmp_path, mon
         auth = booted.exchange()
         started = json.loads(booted.post_json("/wizard/start",
                                               {"description": CANONICAL}, auth)[2])
-        assert booted.post_json(f"/wizard/{started['id']}/answer", {}, auth)[0] == 303
+        assert booted.post_json(f"/wizard/{started['id']}/answer",
+                                {"answers": WORKBOOK_ANSWERS}, auth)[0] == 303
         status, _h, _b = post_form(booted, f"/wizard/{started['id']}/approve", {}, auth)
         assert status == 303
         records = booted.server.plugins.list_records()
@@ -481,7 +543,33 @@ def test_a_workbook_install_lands_in_setup_with_its_dashboard_card(tmp_path, mon
 def test_wizard_with_an_endpoint_does_not_claim_it_is_missing(env, auth):
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
     page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-    assert "No AI is saved" not in page
+    assert "Add an AI connection" not in page
+
+
+def test_the_fill_is_reported_and_every_field_can_be_changed(env, auth):
+    """The one autofill state ticket 08 covers at the API level: the
+    description filled the fields in, the session says so, and the answers
+    it produced are the vocabulary's labels."""
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+
+    assert started["autofilled"] is True
+    assert started["answers"] == WORKBOOK_ANSWERS
+    # Nothing is left to ask, so the walk lands straight on the preview.
+    session = env.server.wizard_store.get(started["id"])
+    assert session.questions == [] or all(
+        question["id"] in session.answers for question in session.questions)
+    page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
+    assert "Filled in from your description" in page
+
+
+def test_a_partial_fill_leaves_the_rest_asking(env, auth):
+    """An endpoint that fills only one field leaves the others open: the
+    fill is never completed with a default behind the manager's back."""
+    env.server.llm = two_field_llm
+    started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
+
+    assert started["answers"] == {"source": "An Excel workbook"}
+    assert [q["id"] for q in started["questions"]] == ["source", "show", "update"]
 
 
 def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monkeypatch):
@@ -505,11 +593,10 @@ def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monke
         auth = booted.exchange()
         started = json.loads(booted.post_json("/wizard/start",
                                               {"description": CANONICAL}, auth)[2])
-        assert [q["id"] for q in started["questions"]] == [
-            q["id"] for q in DEFAULT_QUESTIONS
-        ]
+        assert [q["id"] for q in started["questions"]] == ["source"]
+        assert started["autofilled"] is False
         page = booted.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-        assert "No AI is saved" in page
+        assert "Add an AI connection" in page
     finally:
         booted.close()
 
@@ -529,15 +616,13 @@ def test_form_body_fields_refuses_undecodable_bytes():
 
 def test_unbuildable_escalates_and_preserves_the_words(env, auth):
     def hostile(prompt):
-        if "vocabulary" in prompt:
-            return json.dumps({"buildable": False,
-                               "reason": "this needs executable script logic"})
         return good_llm(prompt)
 
     env.server.llm = hostile
     words = "Run a script every morning that sends the report to my boss"
     started = json.loads(env.post_json("/wizard/start", {"description": words}, auth)[2])
-    status, _h, _b = env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    status, _h, _b = env.post_json(f"/wizard/{started['id']}/answer",
+                                   {"answers": WORKBOOK_ANSWERS}, auth)
     assert status == 303
     inbox = json.loads(env.request("GET", "/widgets/inbox", auth)[2])
     assert inbox["waiting"] >= 1  # the feature-request card
@@ -546,24 +631,32 @@ def test_unbuildable_escalates_and_preserves_the_words(env, auth):
     assert env.server.plugins.list_records() == []  # no partial install
 
 
-def test_repair_cap_is_capped_and_observable_then_escalates(env, auth):
-    def always_broken(prompt):
-        return json.dumps({
-            "title": "Broken",
-            "description": "broken",
-            "manifest": {
-                "schemaVersion": 1, "id": "broken-widget", "version": "not-semver",
-                "publisher": "wizard", "class": "declarative", "license": "MIT",
-                "permissions": {"filesystem": {"read": ["${workspace}/x.xlsx"]}},
-                "contributes": {"widgets": [{"id": "w", "size": "2x1",
-                                             "dataSource": {"type": "excel-watch"},
-                                             "render": {"type": "bogus-render"}}]},
-            },
-        })
+def test_repair_cap_is_capped_and_observable_then_escalates(env, auth, monkeypatch):
+    """The repair budget still bounds a draft that will not validate. The
+    composer is what makes it broken here, since a model can no longer
+    choose the manifest at all."""
+    from agentdesk import wizard as wizard_pkg
 
-    env.server.llm = always_broken
+    def always_broken_compose(self, **_kwargs):
+        return ({"schemaVersion": 1, "id": "wizard-broken", "name": "Broken",
+                 "version": "not-semver", "publisher": "agent-desk-wizard",
+                 "class": "declarative",
+                 "engines": {"dashboardHost": ">=1.0.0 <2.0.0"},
+                 "license": "MIT",
+                 "permissions": {"filesystem": {"read": [], "write": ["${pluginData}"]},
+                                 "network": {"allow": []}, "llm": {"allow": False},
+                                 "shell": "none"},
+                 "activationEvents": ["onWidget:broken"],
+                 "contributes": {"widgets": [{
+                     "id": "broken", "size": "2x1",
+                     "dataSource": {"type": "excel-watch"},
+                     "render": {"type": "bogus-render"}}]}},
+                {"type": "card", "title": "Broken", "elements": []})
+
+    monkeypatch.setattr(wizard_pkg.WizardCompiler, "_compose", always_broken_compose)
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
-    status, _h, _b = env.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+    status, _h, _b = env.post_json(f"/wizard/{started['id']}/answer",
+                                   {"answers": WORKBOOK_ANSWERS}, auth)
     assert status == 303
     session = env.server.wizard_store.get(started["id"])
     assert session.attempts <= 3  # capped

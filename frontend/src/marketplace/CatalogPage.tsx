@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import EmptyState, { ICON_SEARCH } from '../components/EmptyState';
 import Button from '../components/Button';
+import DescribePlugin from './DescribePlugin';
 import { getMarket, marketErrorText } from './client';
 import { useMarketplaceNav } from './context';
 import { MarketCatalog, SkeletonGrid, CATEGORIES, categoryLabel } from './MarketGrid';
@@ -164,11 +165,10 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
         </p>
         {!category && !onSearch ? (
           /* The plugin wizard is a server-rendered walk (plain English in,
-             Class D plugin out): a plain form post, as the home header
-             offered it before spec 022 moved it here. */
-          <form method="post" action="/wizard/start" className="mkt-describe">
-            <Button tone="secondary" type="submit">Describe a plugin in plain English</Button>
-          </form>
+             Class D plugin out). With an AI connection the description fills
+             the choices in first, inside a dialog; without one this is the
+             plain form post it always was. */
+          <DescribePlugin />
         ) : null}
       </header>
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timedelta
+from glob import glob
 from pathlib import Path
 
 from agentdesk.assistant.research_store import ResearchStore
@@ -40,6 +41,13 @@ from agentdesk.calendar.watcher import (
 from agentdesk.excel.watcher import Adapters, ExcelWatch
 from agentdesk.mail.brief import brief as mail_brief
 from agentdesk.mail.watcher import STATE_ERROR, STATE_UNCONFIGURED, MailWatch
+from agentdesk.plugins.refresh import (
+    MODE_CLOCK,
+    MODE_HOOK,
+    ReadingStore,
+    update_mode,
+    was_due_since,
+)
 from agentdesk.plugins.render import render_elements
 from agentdesk.plugins.sources import (
     SOURCE_TYPES,
@@ -71,7 +79,7 @@ from agentdesk.plugins.sources import (
 #                  sources, sourceRows, sourceTable
 BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
             "direction", "rowsSeen", "windowNote", "file",
-            "value", "target", "status", "tone",
+            "value", "target", "status", "tone", "points",
             "columns", "rows", "table", "bucketTable", "bucketRows",
             "nextEventTitle", "nextEventTime", "eventsToday",
             "todayRows", "upcoming", "weekPoints", "weekHours", "items",
@@ -260,6 +268,13 @@ class PluginWidgetRunner:
         self._interval_s = interval_s
         self._watches: dict[str, ExcelWatch] = {}
         self._manifests: dict[str, dict] = {}
+        # The last reading per plugin, and the clock the update modes read.
+        # A scheduled or change-driven tile is answered from here, so opening
+        # the desk cannot turn into a live read for it.
+        self.readings = ReadingStore()
+        self._clock = datetime.now
+        # The modification-time stamp each file plugin was last read at.
+        self._file_stamps: dict[str, str] = {}
         self._dirs: dict[str, Path] = {}
         self._data_dirs: dict[str, Path] = {}
         # Sources without a watch (everything except excel-watch) keep
@@ -362,6 +377,7 @@ class PluginWidgetRunner:
                 watch.conn.close()
             except Exception:  # noqa: BLE001 - closing must never raise
                 pass
+        self.readings.clear(plugin_id)
         self._pipelines.pop(plugin_id, None)
         self._sources.pop(plugin_id, None)
         self._manifests.pop(plugin_id, None)
@@ -398,7 +414,13 @@ class PluginWidgetRunner:
         return self._status_dict(self._read_pair(plugin_id)[0])
 
     def retest(self, plugin_id: str) -> dict:
-        """One poll right now; the amber card's button lands here."""
+        """Read the source once, now, and refresh the stored reading.
+
+        The card's own button lands here. A scheduled or change-driven tile
+        serves its stored reading, so a re-test that only read would be
+        invisible to the card: the fresh result is stored, which is the whole
+        point of asking for a re-test.
+        """
         watch = self._watches.get(plugin_id)
         if watch is not None:
             watch.retest()
@@ -409,6 +431,8 @@ class PluginWidgetRunner:
             # the poll skips the breakdown entirely (cache included).
             # The built-in card's own re-test keeps its breakdown.
             self.calendar.poll(breakdown=False)
+        if self.attached(plugin_id):
+            self._store_live(plugin_id)
         return self.status(plugin_id)
 
     def payload(self, plugin_id: str) -> dict | None:
@@ -432,15 +456,162 @@ class PluginWidgetRunner:
         status and its bound payload, computed from a single
         (status, bindings) pass (#75 review). Reading them separately
         would read and parse a pipeline twice per view, the mail folder
-        included."""
+        included.
+
+        A plugin whose tile updates on a clock or on a change serves its
+        stored reading instead, so opening the home screen never re-reads what
+        only its schedule or its own event is allowed to refresh. A "when I
+        open the desk" tile, and every plugin installed before the update
+        question existed, reads live as it always did. The first read of any
+        mode is taken here, so a new tile is never empty.
+        """
         if not self.attached(plugin_id):
             return {"status": self._attention("data source has not run"),
                     "payload": None}
+        mode, _ = update_mode(self._manifests.get(plugin_id) or {})
+        stored = self.readings.get(plugin_id)
+        if mode in (MODE_CLOCK, MODE_HOOK) and stored is not None:
+            return {"status": dict(stored.status),
+                    "payload": stored.payload,
+                    "asOf": stored.as_of,
+                    "cached": True}
+        card = self._read_card(plugin_id)
+        reading = self.readings.put(plugin_id, card["status"], card["payload"])
+        card["asOf"] = reading.as_of
+        return card
+
+    def _read_card(self, plugin_id: str) -> dict:
+        """Read the source now and reduce it to a card's status and payload."""
         result, bindings = self._read_pair(plugin_id)
         schema = self._schema_for(plugin_id)
         payload = (self._render(plugin_id, schema, result, bindings)
                    if schema else None)
         return {"status": self._status_dict(result), "payload": payload}
+
+    # ---- when a tile updates ---------------------------------------------
+
+    def refresh_due(self, now: datetime | None = None) -> list[str]:
+        """Refresh every scheduled plugin whose clock has come due.
+
+        Returns the ids refreshed, which is what the minute tick and its
+        tests both read. A scheduled plugin re-reads at most once per due
+        minute, however often the tick runs.
+        """
+        now = now or self._clock()
+        refreshed: list[str] = []
+        for plugin_id, manifest in list(self._manifests.items()):
+            mode, cron = update_mode(manifest)
+            if mode != MODE_CLOCK or not self.attached(plugin_id):
+                continue
+            stored = self.readings.get(plugin_id)
+            if stored is not None:
+                last = datetime.fromisoformat(stored.as_of)
+                if not was_due_since(cron, last, now):
+                    continue
+            self._store_live(plugin_id)
+            refreshed.append(plugin_id)
+        return refreshed
+
+    def refresh_on_event(self, topic: str) -> list[str]:
+        """Refresh the change-driven plugins whose watched topic just fired.
+
+        A topic is ``workbook``, ``file``, ``calendar``, ``mail``, ``research``
+        or ``manual``, derived from the source when the plugin was built. The
+        reading is compared with the stored one, so a poll that found nothing
+        new leaves the card and its as-of time exactly as they were.
+        """
+        refreshed: list[str] = []
+        for plugin_id, manifest in list(self._manifests.items()):
+            mode, declared = update_mode(manifest)
+            if mode != MODE_HOOK or declared != topic or not self.attached(plugin_id):
+                continue
+            card = self._read_card(plugin_id)
+            if self.readings.replace_if_changed(plugin_id, card["status"],
+                                                card["payload"]):
+                refreshed.append(plugin_id)
+        return refreshed
+
+    def _store_live(self, plugin_id: str) -> None:
+        """Read the source now and store the result, without comparing."""
+        card = self._read_card(plugin_id)
+        self.readings.put(plugin_id, card["status"], card["payload"])
+
+    def refresh_files_and_pipelines(self) -> list[str]:
+        """Refresh every change tile that is not the workbook.
+
+        File tiles refresh only when their file's modification time moved;
+        the piped sources (calendar, mail, research) are re-read and stored
+        only when the reading itself differs, since their poll loops have no
+        per-plugin hook to call.
+        """
+        return (self.refresh_on_event("file", "manual", stamp_first=True)
+                + self.refresh_on_event("calendar", "mail", "research"))
+
+    def refresh_on_event(self, *topics: str, stamp_first: bool = False) -> list[str]:
+        """Re-read the change tiles on these topics and store what changed.
+
+        The topics are the ones a plugin's source declared: ``file``,
+        ``manual``, ``calendar``, ``mail``, ``research``, or ``workbook``.
+        With ``stamp_first`` a file source is compared by modification time
+        before it is read at all, so a tick on an unchanged file costs a stat.
+        """
+        refreshed: list[str] = []
+        for plugin_id, manifest in list(self._manifests.items()):
+            mode, topic = update_mode(manifest)
+            if mode != MODE_HOOK or topic not in topics:
+                continue
+            if not self.attached(plugin_id):
+                continue
+            if stamp_first:
+                stamp = self._file_stamp(plugin_id)
+                if stamp is None or self._file_stamps.get(plugin_id) == stamp:
+                    continue
+                self._file_stamps[plugin_id] = stamp
+            card = self._read_card(plugin_id)
+            if self.readings.replace_if_changed(plugin_id, card["status"],
+                                                card["payload"]):
+                refreshed.append(plugin_id)
+        return refreshed
+
+    def _file_stamp(self, plugin_id: str) -> str | None:
+        """The modification-time signature of everything a file source reads.
+
+        None means the source names no readable file yet, so there is nothing
+        to compare and the tile is left to its own first read.
+        """
+        source = self._sources.get(plugin_id) or {}
+        if source.get("type") == "manual-metric":
+            declared = source.get("file")
+            if not (isinstance(declared, str)
+                    and declared.startswith("${pluginData}")):
+                declared = "${pluginData}/manual.json"
+        else:
+            declared = source.get("file")
+        if not isinstance(declared, str) or not declared:
+            return None
+        try:
+            path = self._resolve_declared(plugin_id, declared)
+        except Exception:  # noqa: BLE001 - an unreadable path is no stamp
+            return None
+        if path is None or not path.exists():
+            return None
+        try:
+            return f"{path}:{path.stat().st_mtime_ns}"
+        except OSError:
+            return None
+
+    def _resolve_declared(self, plugin_id: str, declared: str) -> Path | None:
+        """Resolve one declared path against the workspace and plugin data."""
+        text = declared.replace("${workspace}", str(self.workspace_dir))
+        text = text.replace("${pluginData}",
+                            str(self._data_dirs.get(plugin_id, self.workspace_dir)))
+        candidate = Path(text)
+        if not candidate.is_absolute():
+            candidate = Path(self.workspace_dir) / candidate
+        if any(char in str(candidate) for char in "*?"):
+            matches = sorted(glob(str(candidate)))
+            return Path(matches[0]) if matches else None
+        return candidate
 
     # ---- source reads ----
 

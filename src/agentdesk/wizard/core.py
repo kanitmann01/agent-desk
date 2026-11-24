@@ -4,16 +4,16 @@ A manager describes what she wants in plain English; this module turns
 that into a Class D declarative plugin draft. Three guardrails keep the
 engine honest:
 
-- Vocabulary confinement. A draft can only watch the four data sources
-  in VOCABULARY, and its permissions are fixed: a workbook ask reads
-  nothing at build time (the file is picked per instance in setup),
-  any other file kind reads the one chosen glob, a web ask reads no
-  files and declares its one URL host as an optional permission the
-  consent flow shows, and no draft gets shell, base network, or llm.
-  The endpoint (when configured) may
-  shape the human-readable copy and suggest structure inside the
-  vocabulary; the sanitizer strips everything else before the validator
-  ever sees it.
+- Vocabulary confinement. Every source, show, look, and update choice the
+  wizard offers comes from ``agentdesk.wizard.vocabulary``, and a draft can
+  only use those members. Permissions are fixed by the composer: a workbook
+  ask reads nothing at build time (the file is picked per instance in
+  setup), any other file kind reads the one chosen glob, a web ask reads no
+  files and declares its one URL host as an optional permission the consent
+  flow shows, and no draft gets shell, base network, or llm. The endpoint
+  (when configured) may name one plain-language label per field and write
+  the human-readable copy; the composer, not the endpoint, decides what the
+  manifest says.
 - One gate. Drafts are judged by the same ``validate_plugin`` every
   other plugin passes: the wizard never vouches for its own output.
 - Bounded effort, honest escalation. At most MAX_REPAIRS validator
@@ -45,10 +45,13 @@ from urllib.parse import urlsplit
 from agentdesk.validator.core import validate_plugin
 from agentdesk.validator.model import Verdict
 from agentdesk.validator.schema import ALLOWED_LICENSES, REQUIRED_KEY_TYPES
+from agentdesk.wizard import vocabulary as vocab
 
 # The pinned public contract.
 WIZARD_STATES = ("questions", "building", "preview", "approved", "escalated")
-VOCABULARY = ("excel-watch", "json-watch", "http-get", "calendar-read")
+# Every source the composer can build. It is the vocabulary table's own list,
+# so a source the questions offer is always one the composer can install.
+VOCABULARY = tuple(source for _, source in vocab.SOURCE_CHOICES)
 MAX_QUESTIONS = 5
 MAX_REPAIRS = 3
 
@@ -80,51 +83,28 @@ REASON_LIMIT = 300
 SLUG_LIMIT = 40
 DEFAULT_TITLE = "Wizard widget"
 
-DEFAULT_SCHEDULE = "*/15 * * * *"
-DEFAULT_SOURCE_TYPE = "excel-watch"
-
-# Answers are option labels, not ids, so matching is by phrase.
-SOURCE_ANSWER_ALIASES = (
-    ("excel-watch", ("excel", "workbook", "xlsx", "spreadsheet", "sheet")),
-    ("json-watch", ("json",)),
-    ("calendar-read", ("calendar", "appointment", "meeting")),
-    ("http-get", ("http", "web", "url", "endpoint", "page")),
-)
-SOURCE_TEXT_HINTS = (
-    ("excel-watch", ("excel", "workbook", "xlsx", "spreadsheet", "worksheet")),
-    ("json-watch", ("json",)),
-    ("calendar-read", ("calendar", "appointment", "ics")),
-    ("http-get", ("http", "url", "endpoint", "website", "web page", "api")),
-)
-DEFAULT_FILE_GLOBS = {
-    "excel-watch": "reports/*.xlsx",
-    "json-watch": "data/*.json",
-    "http-get": "cache/*.json",
-    "calendar-read": "calendar/*.ics",
-}
-CADENCE_CRON = (
-    (("every 5 minutes", "5 minutes"), "*/5 * * * *"),
-    (("every 15 minutes", "15 minutes", "quarter hour"), "*/15 * * * *"),
-    (("hourly", "every hour"), "0 * * * *"),
-    (("daily", "every day", "each morning", "every morning"), "0 8 * * *"),
-)
-DAY_WINDOW_PATTERN = re.compile(r"\b24[ -]?h(our)?s?\b", re.IGNORECASE)
 GLOB_PATTERN = re.compile(
-    r"[A-Za-z0-9_.\-*/\\]*[A-Za-z0-9_]\.(?:xlsx|xlsm|csv|json|ics)\b"
+    r"[A-Za-z0-9_.\-*/\\]*[A-Za-z0-9_]\.(?:xlsx|xlsm|csv|json|ics|md)\b"
 )
 URL_PATTERN = re.compile(r"https?://[A-Za-z0-9._-]+(?:/[A-Za-z0-9._\-/%]*)?")
-# The deterministic fallbacks when no URL was named anywhere: the same
+# The deterministic fallback when no URL was named anywhere: the same
 # neutral host the registry's own network plugin uses in its examples.
-DEFAULT_HTTP_URL = "https://example.com/data.json"
+DEFAULT_HTTP_URL = vocab.WEB_DETAIL_DEFAULT
 # json-watch always needs a selector; the deterministic composer's
 # default addresses the value key a hand-maintained metric file carries.
 DEFAULT_JSON_SELECTOR = "$.value"
 
 # Asks the declarative vocabulary cannot honor. Each rule carries the
 # plain-language label the escalation uses, so the refusal names what the
-# manager asked for instead of talking in failure codes.
+# manager asked for instead of talking in failure codes. Reading mail is a
+# source now, so only writing mail is refused.
 UNBUILDABLE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\b(e-?mail|mail)s?\b", re.IGNORECASE), "sending mail"),
+    (
+        re.compile(r"\b(send|sends|sending|draft|drafts|drafting|reply|replies|"
+                   r"forward|forwards|forwarding|compose|composes|composing)\b"
+                   r".{0,24}\b(e-?mails?|mails?|messages?)\b", re.IGNORECASE),
+        "sending mail",
+    ),
     (re.compile(r"\bscripts?\b", re.IGNORECASE), "running scripts"),
     (re.compile(r"\bexecut(e|es|ed|ing|ion|able)\b", re.IGNORECASE), "executing code"),
     (
@@ -148,62 +128,55 @@ UNBUILDABLE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bcode\b", re.IGNORECASE), "executing code"),
 )
 
-# The deterministic question set: stable, offline, and the fallback for
-# every endpoint failure, so the wizard never blocks on the llm.
-DEFAULT_QUESTIONS = (
-    {
-        "id": "source",
-        "question": "What should the widget watch?",
-        "options": ["An Excel workbook", "A JSON file", "A web page (HTTP GET)", "My calendar"],
-        "default": "An Excel workbook",
-    },
-    {
-        "id": "file",
-        "question": "Which files should it read?",
-        "options": ["reports/*.xlsx", "data/*.json", "cache/*.json", "calendar/*.ics"],
-        "default": "reports/*.xlsx",
-    },
-    {
-        "id": "display",
-        "question": "What should the widget show?",
-        "options": ["The 24-hour change", "The latest value", "A short summary line"],
-        "default": "The latest value",
-    },
-)
+# The deterministic question set, asked one at a time. It is the offline
+# fallback for every endpoint failure and the only path when no AI is saved.
+# Each question's options are computed from the answers already given, so the
+# sets below are the source question and its default only; the rest are built
+# by ``questions_for_answers``.
+SOURCE_QUESTION = {
+    "id": vocab.QUESTION_SOURCE,
+    "question": "What should this tile watch?",
+    "options": list(vocab.SOURCE_LABELS),
+    "default": "An Excel workbook",
+}
 
-QUESTION_PROMPT = """A manager wants a dashboard widget and described the idea like this:
+AUTOFILL_PROMPT = """A manager wants a dashboard tile and described it like this:
 "{description}"
 
-Ask her at most {max} multiple-choice questions so the wizard can build the
-widget. The only data source types that exist are: {vocabulary}. Ask about the
-workbook or file to watch, the refresh cadence, what the widget should show,
-and a threshold if one matters. Never ask for typed technical input: every
-question offers ready options and one default.
+Fill in the four choices below for her, using only these options.
 
-Reply with JSON only, an array of objects:
-[{{"id": "...", "question": "...", "options": ["...", "..."], "default": "..."}}]"""
+Source: {sources}
+{followups}
+Reply with JSON only, one object:
+{{"source": "<one of the source options>",
+  "detail": "<the address or file pattern, or an empty string>",
+  "show": "<one of the show options for that source>",
+  "look": "<one of the look options for that source and show>",
+  "update": "<one of the update options for that source>",
+  "reasons": {{"source": "<short sentence>", "show": "<short sentence>",
+               "look": "<short sentence>", "update": "<short sentence>"}}}}
 
-STYLE_PROMPT = """A manager wants a dashboard widget and described the idea like this:
+If you cannot tell, use an empty string for that field rather than guessing.
+Never invent an option that is not listed."""
+
+AUTOFILL_VOCABULARY = """
+Shows and looks, per source:
+{shows}
+
+Update options, per source:
+{updates}"""
+
+STYLE_PROMPT = """A manager wants a dashboard tile and described it like this:
 "{description}"
 
 Her chosen answers:
 {answers}
 
-Draft a declarative plugin manifest for her. The only data source types that
-exist are: {vocabulary}. Hard rules you cannot change: schemaVersion is 1,
-class is "declarative", version is a semver string like 0.1.0, permissions are
-fixed (filesystem read only of the chosen "${{workspace}}/..." glob, network
-allow [], llm allow false, shell "none"), contributes.widgets[0] carries a
-dataSource and a render of type "ui-schema" pointing at "widget.ui.json", and
-activationEvents lists an onWidget and an onSchedule entry.
-
-If the ask cannot be met by watching files (for example sending mail, running
-scripts, executing code, or opening apps), set "buildable" to false and explain
-in plain language.
+Give the tile a short name and one sentence describing what it shows. Do not
+describe permissions or how it is built.
 
 Reply with JSON only, one object:
-{{"buildable": true, "reason": "", "title": "...", "description": "...",
-"manifest": {{}}}}"""
+{{"title": "...", "description": "..."}}"""
 
 REPAIR_PROMPT = """The plugin validator rejected this draft manifest.
 
@@ -213,9 +186,10 @@ Validator failures:
 Draft manifest:
 {manifest}
 
-The only data source types that exist are: {vocabulary}. Permissions can never
-change: filesystem read of the chosen glob, network allow [], llm allow false,
-shell "none". Return the same manifest with the failures fixed.
+The data source type, the permissions and the activation events cannot change:
+filesystem read of the chosen glob, network allow [] unless this is a web
+source, llm allow false, shell "none". Return the same manifest with the
+failures fixed.
 
 Reply with JSON only, one object: {{"manifest": {{...the corrected manifest...}}}}"""
 
@@ -276,6 +250,11 @@ class WizardSession:
     draft: dict | None = None
     feature_request: dict | None = None
     created_ts: float = 0.0
+    # True when the description filled at least one choice in, so the page can
+    # say so instead of presenting the fill as the manager's own answers.
+    autofilled: bool = False
+    # The one-line why per filled field, for the fill screen. Copy only.
+    reasons: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Reject a state outside WIZARD_STATES."""
@@ -290,6 +269,8 @@ class WizardSession:
             "description": self.description,
             "questions": copy.deepcopy(self.questions),
             "answers": dict(self.answers),
+            "autofilled": self.autofilled,
+            "reasons": dict(self.reasons),
             "attempts": self.attempts,
             "draft": copy.deepcopy(self.draft),
             "featureRequest": copy.deepcopy(self.feature_request),
@@ -352,6 +333,8 @@ class WizardStore:
                 "description": session.description,
                 "questions": session.questions,
                 "answers": session.answers,
+                "autofilled": session.autofilled,
+                "reasons": session.reasons,
                 "attempts": session.attempts,
                 "draft": session.draft,
                 "feature_request": session.feature_request,
@@ -383,6 +366,8 @@ def _session_from_document(document: dict) -> WizardSession:
         draft=document.get("draft"),
         feature_request=document.get("feature_request"),
         created_ts=float(document.get("created_ts") or 0.0),
+        autofilled=bool(document.get("autofilled") or False),
+        reasons=dict(document.get("reasons") or {}),
     )
 
 
@@ -408,44 +393,6 @@ def _load_json_reply(reply: object) -> object:
             except json.JSONDecodeError:
                 continue
     raise ValueError("no JSON found in the endpoint reply")
-
-
-def _parse_questions(reply: object) -> list[dict]:
-    """Validate endpoint questions into the pinned shape, dropping every
-    one that would need typed input, and capping at MAX_QUESTIONS."""
-    data = _load_json_reply(reply)
-    if isinstance(data, dict):
-        data = data.get("questions")
-    if not isinstance(data, list):
-        return []
-    questions: list[dict] = []
-    seen_ids: set[str] = set()
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        qid, text = item.get("id"), item.get("question")
-        options = item.get("options")
-        if not (isinstance(qid, str) and qid.strip()):
-            continue
-        if not (isinstance(text, str) and text.strip()):
-            continue
-        if not isinstance(options, list):
-            continue
-        options = [option for option in options if isinstance(option, str) and option.strip()]
-        if len(options) < 2:
-            continue
-        default = item.get("default")
-        if not (isinstance(default, str) and default in options):
-            default = options[0]
-        if qid in seen_ids:
-            continue
-        seen_ids.add(qid)
-        questions.append(
-            {"id": qid, "question": text.strip(), "options": options, "default": default}
-        )
-        if len(questions) == MAX_QUESTIONS:
-            break
-    return questions
 
 
 # ---- escalation payload ------------------------------------------------
@@ -492,21 +439,6 @@ def _short_text(text: object, limit: int) -> str:
     return ((cut or cleaned[:limit]).rstrip(",;:")) + "..."
 
 
-def _source_type(description: str, answers: dict) -> str:
-    """One of VOCABULARY: the chosen answer first, then the manager's own
-    words, then the workbook default."""
-    named = str(answers.get("source") or "").lower()
-    if named:
-        for source_type, aliases in SOURCE_ANSWER_ALIASES:
-            if any(alias in named for alias in aliases):
-                return source_type
-    haystack = description.lower()
-    for source_type, hints in SOURCE_TEXT_HINTS:
-        if any(hint in haystack for hint in hints):
-            return source_type
-    return DEFAULT_SOURCE_TYPE
-
-
 def _clean_glob(candidate: object) -> str:
     """A workspace-relative glob, or "" when the candidate is not one:
     absolute paths, escapes and whitespace would quietly widen the read."""
@@ -533,15 +465,15 @@ def _glob_in_text(description: str) -> str:
 def _file_glob(description: str, answers: dict, source_type: str) -> str:
     """Return the workspace-relative glob to watch for one source type.
 
-    The chosen answer is tried first, then a glob written in the description,
+    The chosen detail is tried first, then a glob written in the description,
     and both must survive _clean_glob; when neither does, the source type's
-    default applies.
+    first offered pattern applies.
     """
-    for candidate in (answers.get("file"), _glob_in_text(description)):
+    for candidate in (answers.get(vocab.QUESTION_DETAIL), _glob_in_text(description)):
         glob = _clean_glob(candidate)
         if glob:
             return glob
-    return DEFAULT_FILE_GLOBS[source_type]
+    return vocab.DEFAULT_FILE_DETAIL[source_type]
 
 
 def _http_url(description: str, answers: dict) -> str:
@@ -564,25 +496,239 @@ def _http_host(url: str) -> str:
     return (urlsplit(url).hostname or "").lower() or "example.com"
 
 
-def _cadence(answers: dict) -> str:
-    """Return the cron entry the answers' wording asks for, or the default.
+@dataclass
+class Choice:
+    """One answered field of the wizard, once its label is resolved.
 
-    Phrases are tried in CADENCE_CRON order and matched anywhere in the string
-    answers, so the earliest listed cadence wins when several are named.
+    An unanswered field is None on the Choice's owner, never a default filled
+    in behind the manager's back: the whole point of the executive path is
+    that the tile is what was chosen.
     """
-    joined = " ".join(str(value).lower() for value in answers.values() if isinstance(value, str))
-    for phrases, cron in CADENCE_CRON:
-        if any(phrase in joined for phrase in phrases):
-            return cron
-    return DEFAULT_SCHEDULE
+
+    source_type: str
+    detail: str = ""
+    show: str = ""
+    look: str = ""
+    update_mode: str = ""
+    update_value: str = ""
 
 
-def _mentions_day_window(description: str, answers: dict) -> bool:
-    """Return True when the description or an answer says 24 hours."""
-    haystack = description + " " + " ".join(
-        str(value) for value in answers.values() if isinstance(value, str)
-    )
-    return bool(DAY_WINDOW_PATTERN.search(haystack))
+def resolve_choice(answers: dict) -> Choice | None:
+    """Resolve the answers into a Choice, or None while any field is open.
+
+    A label outside the legal set for its field leaves that field open, which
+    is how a dropped autofill and a manager's skip are both handled: the
+    question stays on the page. ``detail`` is only required for a web source,
+    because a file pattern has a usable default.
+    """
+    source_type = vocab.source_for_label(answers.get(vocab.QUESTION_SOURCE))
+    if not source_type:
+        return None
+    show = vocab.show_for_label(answers.get(vocab.QUESTION_SHOW), source_type)
+    if not show:
+        return None
+    look = vocab.look_for_label(answers.get(vocab.QUESTION_LOOK), source_type, show)
+    if not look:
+        return None
+    update_mode, update_value = vocab.update_for_label(
+        answers.get(vocab.QUESTION_UPDATE), source_type)
+    if not update_mode:
+        return None
+    detail = str(answers.get(vocab.QUESTION_DETAIL) or "").strip()
+    if source_type == "http-get" and not detail:
+        return None
+    return Choice(source_type, detail, show, look, update_mode, update_value)
+
+
+def questions_for_answers(answers: dict) -> list[dict]:
+    """The questions still open on the path these answers have chosen.
+
+    Each question's options depend on the answers before it, so the set is
+    computed rather than fixed: the source list, then the one detail that
+    source needs, then the shows it can bind, then the looks that fit that
+    show, then the update choices it admits. A step with a single legal
+    answer is folded into the next one instead of being asked.
+
+    A question already answered comes back with that answer selected, so the
+    page shows the manager the choice that is actually in force (an autofill's
+    included) rather than the first option.
+    """
+    def with_default(question: dict) -> dict:
+        """Return the question with its chosen answer, or its first option."""
+        chosen = answers.get(question["id"])
+        if isinstance(chosen, str) and chosen in question["options"]:
+            return {**question, "default": chosen}
+        return question
+
+    open_questions = [with_default(dict(SOURCE_QUESTION))]
+    source_type = vocab.source_for_label(answers.get(vocab.QUESTION_SOURCE))
+    if not source_type:
+        return open_questions
+
+    if source_type in vocab.FILE_DETAIL:
+        open_questions.append(with_default({
+            "id": vocab.QUESTION_DETAIL,
+            "question": "Which file should it read?",
+            "options": list(vocab.FILE_DETAIL[source_type]),
+            "default": vocab.DEFAULT_FILE_DETAIL[source_type],
+        }))
+    elif source_type == "http-get":
+        open_questions.append({
+            "id": vocab.QUESTION_DETAIL,
+            "question": "Which web address should it read?",
+            "options": [],
+            "default": str(answers.get(vocab.QUESTION_DETAIL) or ""),
+        })
+
+    shows = vocab.shows_for(source_type)
+    if shows:
+        open_questions.append(with_default({
+            "id": vocab.QUESTION_SHOW,
+            "question": "What should the tile show?",
+            "options": [vocab.SHOW_LABELS[show] for show in shows],
+            "default": vocab.SHOW_LABELS[shows[0]],
+        }))
+
+    show = vocab.show_for_label(answers.get(vocab.QUESTION_SHOW), source_type)
+    looks = vocab.looks_for(source_type, show) if show else ()
+    if len(looks) > 1:
+        open_questions.append(with_default({
+            "id": vocab.QUESTION_LOOK,
+            "question": "How should it look?",
+            "options": [vocab.LOOK_LABELS[look] for look in looks],
+            "default": vocab.LOOK_LABELS[looks[0]],
+        }))
+
+    open_questions.append(with_default({
+        "id": vocab.QUESTION_UPDATE,
+        "question": "When should it update?",
+        "options": list(vocab.update_choices(source_type)),
+        "default": vocab.UPDATE_VIEW_LABEL,
+    }))
+    return open_questions
+
+
+# The first question on a fresh description: the compatibility name the server
+# and the tests import. It is the same list ``questions_for_answers`` returns.
+DEFAULT_QUESTIONS: list[dict] = questions_for_answers({})
+
+
+def _activation_events(slug: str, choice: Choice) -> list[str]:
+    """The one widget event plus the one update event the choice names.
+
+    The change topic is derived from the source, so a manager never picks an
+    event name and a model can never introduce one.
+    """
+    events = [f"onWidget:{slug}"]
+    if choice.update_mode == vocab.UPDATE_CLOCK:
+        events.append(f"onSchedule:{choice.update_value}")
+    elif choice.update_mode == vocab.UPDATE_HOOK:
+        events.append(f"onHook:{choice.update_value}")
+    return events
+
+
+def _autofill_followups() -> str:
+    """The autofill prompt's vocabulary: shows, looks, and update choices."""
+    shows = []
+    for _, source_type in vocab.SOURCE_CHOICES:
+        for show in vocab.shows_for(source_type):
+            looks = vocab.looks_for(source_type, show)
+            shows.append(
+                f"- {source_type} / {vocab.SHOW_LABELS[show]}: "
+                + ", ".join(vocab.LOOK_LABELS[look] for look in looks))
+    updates = [f"- {source_type}: " + ", ".join(vocab.update_choices(source_type))
+               for _, source_type in vocab.SOURCE_CHOICES]
+    return AUTOFILL_VOCABULARY.format(shows="\n".join(shows),
+                                      updates="\n".join(updates))
+
+
+def _checked_autofill(data: dict) -> dict:
+    """Keep only the autofilled fields whose labels are legal for their field.
+
+    A rejected field is omitted, never defaulted, so the caller can tell the
+    manager which choices are still theirs to make. The reasons come back
+    under their own key, beside the answers rather than inside them.
+    """
+    checked: dict = {}
+    source_type = vocab.source_for_label(data.get("source"))
+    if not source_type:
+        return checked
+    checked["source"] = data["source"].strip()
+
+    detail = data.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        checked["detail"] = detail.strip()
+
+    show = vocab.show_for_label(data.get("show"), source_type)
+    if show:
+        checked["show"] = vocab.SHOW_LABELS[show]
+        look = vocab.look_for_label(data.get("look"), source_type, show)
+        if look:
+            checked["look"] = vocab.LOOK_LABELS[look]
+
+    update_mode, _ = vocab.update_for_label(data.get("update"), source_type)
+    if update_mode:
+        checked["update"] = data["update"].strip()
+    return checked
+
+
+def checked_reasons(data: dict, checked: dict) -> dict:
+    """The short reasons for the fields that survived, keyed by field.
+
+    They are copy for the fill screen, never answers: storing them as
+    answers would put prose where the composer expects a label.
+    """
+    reasons = data.get("reasons") if isinstance(data, dict) else None
+    if not isinstance(reasons, dict):
+        return {}
+    return {
+        key: _short_text(value, BLURB_LIMIT)
+        for key, value in reasons.items()
+        if key in checked and _short_text(value, BLURB_LIMIT)
+    }
+
+
+def merge_answers(earlier: dict, filled: dict) -> dict:
+    """The filled choices laid over the answers already given.
+
+    A field the manager already answered wins, so an autofill can never
+    overwrite a correction they made.
+    """
+    merged = dict(earlier or {})
+    for key, value in (filled or {}).items():
+        merged.setdefault(key, value)
+    return normalize_answers(merged)
+
+
+def normalize_answers(answers: dict) -> dict:
+    """Drop choices that the chosen source does not offer.
+
+    Changing the source makes the old show, look, detail and update choices
+    meaningless: a mail list's look is not a workbook's. Keeping only the
+    legal fields is what makes the questions re-ask exactly what the new
+    source needs, instead of silently building a stale combination.
+    """
+    answers = dict(answers or {})
+    source_type = vocab.source_for_label(answers.get(vocab.QUESTION_SOURCE))
+    if not source_type:
+        return answers
+    kept = {vocab.QUESTION_SOURCE: answers[vocab.QUESTION_SOURCE]}
+
+    detail = answers.get(vocab.QUESTION_DETAIL)
+    if isinstance(detail, str) and detail.strip():
+        kept[vocab.QUESTION_DETAIL] = detail.strip()
+
+    show = vocab.show_for_label(answers.get(vocab.QUESTION_SHOW), source_type)
+    if show:
+        kept[vocab.QUESTION_SHOW] = vocab.SHOW_LABELS[show]
+        look = vocab.look_for_label(answers.get(vocab.QUESTION_LOOK), source_type, show)
+        if look:
+            kept[vocab.QUESTION_LOOK] = vocab.LOOK_LABELS[look]
+
+    update_mode, _ = vocab.update_for_label(answers.get(vocab.QUESTION_UPDATE), source_type)
+    if update_mode:
+        kept[vocab.QUESTION_UPDATE] = answers[vocab.QUESTION_UPDATE].strip()
+    return kept
 
 
 def _human_copy(description: str, style: dict) -> tuple[str, str]:
@@ -640,8 +786,9 @@ def _sanitize_manifest(raw: object, skeleton: dict) -> dict:
         floored["version"] = skeleton["version"]
     if not isinstance(floored.get("engines"), dict):
         floored["engines"] = copy.deepcopy(skeleton["engines"])
-    if not isinstance(floored.get("activationEvents"), list):
-        floored["activationEvents"] = list(skeleton["activationEvents"])
+    # Activation events are the manager's update choice, decided by the
+    # composer: a suggestion may not add, drop, or retime one.
+    floored["activationEvents"] = list(skeleton["activationEvents"])
 
     contributes = floored.get("contributes")
     if not isinstance(contributes, dict):
@@ -674,28 +821,47 @@ class WizardCompiler:
         """Hold the prompt-to-text callable; None keeps every step offline."""
         self.llm = llm
 
-    # -- questions --------------------------------------------------------
+    # -- questions and autofill -------------------------------------------
 
-    def questions_for(self, description: str) -> list[dict]:
-        """Up to MAX_QUESTIONS multiple-choice questions, each with a
-        default. The endpoint's suggestion is used only when it parses,
-        holds the pinned shape, and needs no typed input; anything else
-        falls back to DEFAULT_QUESTIONS."""
-        if self.llm is not None:
-            try:
-                reply = self.llm(
-                    QUESTION_PROMPT.format(
-                        description=description,
-                        max=MAX_QUESTIONS,
-                        vocabulary=", ".join(VOCABULARY),
-                    )
-                )
-                questions = _parse_questions(reply)
-            except Exception:
-                questions = []
-            if questions:
-                return questions
-        return copy.deepcopy(list(DEFAULT_QUESTIONS))
+    def questions_for(self, description: str, answers: dict | None = None) -> list[dict]:
+        """The questions still open for this description and these answers.
+
+        The path is fixed and its options come from the vocabulary tables, so
+        the list is never invented: the endpoint's only job is to preselect
+        the choices, which is what ``autofill`` does. A question whose path
+        has one legal answer is skipped rather than asked.
+        """
+        return questions_for_answers(answers or {})
+
+    def autofill(self, description: str) -> dict:
+        """Preselect the fields from the description; empty when unusable.
+
+        The reply may only name plain-language labels from the vocabulary.
+        Anything else is dropped, and the field it would have filled is left
+        open for the manager. With no endpoint, this returns nothing at all,
+        which is how the caller knows not to claim any fill happened.
+        """
+        return self._autofill_reply(description)[0]
+
+    def autofill_with_reasons(self, description: str) -> tuple[dict, dict]:
+        """The same fill, plus one short reason per field for the fill screen."""
+        return self._autofill_reply(description)
+
+    def _autofill_reply(self, description: str) -> tuple[dict, dict]:
+        """One endpoint round trip, parsed and checked against the vocabulary."""
+        if self.llm is None:
+            return {}, {}
+        try:
+            reply = self.llm(AUTOFILL_PROMPT.format(
+                description=description, sources=", ".join(vocab.SOURCE_LABELS),
+                followups=_autofill_followups()))
+            data = _load_json_reply(reply)
+        except Exception:
+            return {}, {}
+        if not isinstance(data, dict):
+            return {}, {}
+        checked = _checked_autofill(data)
+        return checked, checked_reasons(data, checked)
 
     # -- building ---------------------------------------------------------
 
@@ -712,30 +878,27 @@ class WizardCompiler:
         if label:
             raise WizardError(
                 "wizard:unbuildable",
-                f"this widget cannot be built from watched files alone: it needs {label}",
+                f"this tile cannot be built from what the desk can read: it needs {label}",
                 422,
                 escalate(
-                    f"the ask needs {label}, which the declarative widget "
-                    f"vocabulary ({', '.join(VOCABULARY)}) cannot express"
+                    f"the ask needs {label}, which the plugin vocabulary "
+                    f"({', '.join(VOCABULARY)}) cannot express"
                 ),
             )
 
-        style = self._consult_style(session.description, answers) or {}
-        if style.get("buildable") is False:
-            reason = style.get("reason") or (
-                "the assistant says the ask is outside the declarative widget vocabulary"
-            )
+        choice = resolve_choice(answers)
+        if choice is None:
             raise WizardError(
-                "wizard:unbuildable",
-                f"this widget cannot be built from watched files alone: {reason}",
-                422,
-                escalate(reason),
+                "wizard:unanswered",
+                "the choices are not complete yet, so there is nothing to build",
+                400,
+                escalate("the wizard was asked to build before its choices were complete"),
             )
 
-        skeleton, ui_schema = self._compose(session.description, answers, style)
+        style = self._consult_style(session.description, answers) or {}
+        skeleton, ui_schema = self._compose(description=session.description,
+                                            answers=answers, choice=choice, style=style)
         manifest = skeleton
-        if isinstance(style.get("manifest"), dict):
-            manifest = _sanitize_manifest(style["manifest"], skeleton)
 
         failures: tuple = ()
         for attempt in range(1, MAX_REPAIRS + 1):
@@ -769,10 +932,12 @@ class WizardCompiler:
     # -- steps -------------------------------------------------------------
 
     def _consult_style(self, description: str, answers: dict) -> dict | None:
-        """One endpoint round trip: buildability, human copy, and an
-        optional manifest suggestion. Any failure (endpoint down, reply
-        not JSON, reply not an object) returns None, which means the
-        deterministic path decides."""
+        """One endpoint round trip for the tile's name and one-line blurb.
+
+        The endpoint writes copy and nothing else: it cannot set
+        buildability, a source, a permission, or an activation event. Any
+        failure returns None, which means the deterministic copy decides.
+        """
         if self.llm is None:
             return None
         try:
@@ -780,7 +945,6 @@ class WizardCompiler:
                 STYLE_PROMPT.format(
                     description=description,
                     answers=json.dumps(answers, ensure_ascii=False),
-                    vocabulary=", ".join(VOCABULARY),
                 )
             )
             data = _load_json_reply(reply)
@@ -789,60 +953,40 @@ class WizardCompiler:
         if not isinstance(data, dict):
             return None
         style: dict = {}
-        if isinstance(data.get("buildable"), bool):
-            style["buildable"] = data["buildable"]
-        if isinstance(data.get("reason"), str) and data["reason"].strip():
-            style["reason"] = data["reason"].strip()
         if isinstance(data.get("title"), str) and data["title"].strip():
             style["title"] = data["title"].strip()
         if isinstance(data.get("description"), str) and data["description"].strip():
             style["description"] = data["description"].strip()
-        if isinstance(data.get("manifest"), dict):
-            style["manifest"] = data["manifest"]
         return style
 
-    def _compose(self, description: str, answers: dict, style: dict) -> tuple[dict, dict]:
-        """The deterministic Class D draft: one widget, permissions that
-        cannot widen, shaped like the repo's fixtures. A workbook ask
-        composes the config-backed shape the bundled tracker uses
-        (T2): no fabricated glob, no watched file. The install lands in
-        the setup state, and the data is picked per instance through the
-        file dialog. A web ask composes the same file-less shape the
-        registry's network plugin uses: no read globs, the URL and its
-        one host parsed from the answers, the network reach declared as
-        an optional permission the consent flow shows. Every other kind
-        keeps the watched-glob shape."""
-        slug = safe_slug(description)
-        source_type = _source_type(description, answers)
-        glob_full = WORKSPACE_PREFIX + _file_glob(description, answers, source_type)
-        cadence = _cadence(answers)
-        window = (
-            "24h"
-            if source_type in ("excel-watch", "json-watch")
-            and _mentions_day_window(description, answers)
-            else ""
-        )
+    def _compose(self, *, description: str, answers: dict, choice: Choice,
+                 style: dict) -> tuple[dict, dict]:
+        """The Class D draft for one answered choice: one widget, one element.
 
-        # The workbook kind is config-backed, and the validator forbids a
-        # config kind alongside a data source file: the read permission
-        # stays empty and the data source names only its type. The 24h
-        # window stays a preview-copy concern, not a manifest one.
+        Permissions follow the source and nothing else. A workbook ask composes
+        the config-backed shape the bundled tracker uses (T2): no fabricated
+        glob, no watched file, and the file is picked per instance in setup. A
+        web ask composes the file-less shape the registry's network plugin
+        uses, with the URL and its one host as an optional permission the
+        consent flow shows. Every file source keeps the watched-glob shape.
+        """
+        slug = safe_slug(description)
+        source_type = choice.source_type
         config_backed = source_type == "excel-watch"
         network_backed = source_type == "http-get"
         data_source: dict = {"type": source_type}
-        if config_backed or network_backed:
-            read_globs: list[str] = []
-            if network_backed:
-                url = _http_url(description, answers)
-                data_source["url"] = url
-                data_source["allow"] = [_http_host(url)]
-        else:
+        read_globs: list[str] = []
+
+        if network_backed:
+            url = choice.detail or _http_url(description, answers)
+            data_source["url"] = url
+            data_source["allow"] = [_http_host(url)]
+        elif source_type in vocab.FILE_DETAIL:
+            glob_full = WORKSPACE_PREFIX + _file_glob(description, answers, source_type)
             data_source["file"] = glob_full
-            if window:
-                data_source["deltaWindow"] = window
+            read_globs = [glob_full]
             if source_type == "json-watch":
                 data_source["selector"] = DEFAULT_JSON_SELECTOR
-            read_globs = [glob_full]
 
         manifest = {
             "schemaVersion": 1,
@@ -859,7 +1003,7 @@ class WizardCompiler:
                 "llm": {"allow": False},
                 "shell": SHELL_NONE,
             },
-            "activationEvents": [f"onWidget:{slug}", f"onSchedule:{cadence}"],
+            "activationEvents": _activation_events(slug, choice),
             "contributes": {
                 "widgets": [
                     {
@@ -878,22 +1022,17 @@ class WizardCompiler:
                 "network": {
                     "allow": data_source["allow"],
                     "userPrompt": (
-                        f"Allow this widget to read {data_source['url']} "
+                        f"Allow this tile to read {data_source['url']} "
                         "on its schedule?"),
                 },
             }
 
         title, blurb = _human_copy(description, style)
-        if not blurb:
-            blurb = "Change over the last 24 hours" if window else "Latest value"
-        ui_schema = {
-            "type": "card",
-            "title": title,
-            "elements": [
-                {"type": "text", "text": blurb},
-                {"type": "metric", "binding": "delta24h" if window else "value"},
-            ],
-        }
+        element = vocab.element_for(source_type, choice.show, choice.look)
+        elements = [element] if element else []
+        if blurb:
+            elements.insert(0, {"type": "text", "text": blurb})
+        ui_schema = {"type": "card", "title": title, "elements": elements}
         return manifest, ui_schema
 
     def _repair(self, manifest: dict, failures: tuple) -> dict | None:

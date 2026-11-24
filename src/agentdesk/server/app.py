@@ -225,7 +225,15 @@ from agentdesk.server.wizard_view import (
     approval_summary,
     render_wizard_page,
 )
-from agentdesk.wizard.core import WizardCompiler, WizardError, WizardStore
+from agentdesk.wizard.core import (
+    WizardCompiler,
+    WizardError,
+    WizardStore,
+    merge_answers,
+    normalize_answers,
+    questions_for_answers,
+    resolve_choice,
+)
 from agentdesk.server.touches import render_touches
 from agentdesk.server.core import (
     ATTENTION,
@@ -1261,6 +1269,48 @@ def _detached_handler(server: "AgentDeskServer") -> "DashboardHandler":
     handler.server = server
     return handler
 
+
+def _refresh_plugins_on(server: "AgentDeskServer", topic: str) -> list:
+    """Refresh the change-driven plugin tiles whose topic just fired.
+
+    One place for every event that reports itself, so a new event source is
+    one call rather than a copy of the wiring. It never raises: a failing
+    refresh must not break the watch or poll that fired it.
+    """
+    plugins = getattr(server, "plugins", None)
+    if plugins is None:
+        return []
+    try:
+        return plugins.runner.refresh_on_event(topic)
+    except Exception:  # noqa: BLE001 - an event must never break its source
+        LOG.exception("plugin refresh failed for topic %s", topic)
+        return []
+
+
+def _tick_plugin_refresh(server: "AgentDeskServer") -> list:
+    """Refresh the plugin tiles whose next update is due.
+
+    Scheduled tiles refresh when their cron's minute has come. Change tiles
+    for piped sources (calendar, mail, research) and for files are re-read
+    here too, and the runner stores the result only when it differs from what
+    the card already shows, so an unchanged poll leaves the tile and its
+    as-of time exactly as they were. The workbook is the one source with its
+    own change signal, wired to its watch's hook instead.
+
+    Called once a minute by ``start_plugin_refresh_tick``.
+    """
+    plugins = getattr(server, "plugins", None)
+    if plugins is None:
+        return []
+    refreshed: list = []
+    for step in (plugins.runner.refresh_due,
+                 plugins.runner.refresh_files_and_pipelines):
+        try:
+            refreshed += step()
+        except Exception:  # noqa: BLE001 - the tick must survive one bad plugin
+            LOG.exception("plugin refresh step failed")
+    return refreshed
+
 def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, delta) -> None:
     """The memory loop's workbook channel: rows that changed since the
     watch's 24-hour reference become facts written from the cells, staged
@@ -1270,6 +1320,8 @@ def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, de
         return
     if not bool(server.settings.get("excel_enabled")):
         return
+    # A workbook tile set to "when it changes" follows its own watch's signal.
+    _refresh_plugins_on(server, "workbook")
     candidates = memory_loop.workbook_candidates(header, delta.added, delta.removed)
     if not candidates:
         return
@@ -1583,10 +1635,19 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
         handle_post(self)
 
+    def _send_wizard_availability(self) -> None:
+        """Say whether the description can fill the wizard's choices in.
+
+        The page asks this once, on mount, to decide between the fill dialog
+        and the plain question walk. It is a read-only probe: it resolves the
+        AI connection the wizard would use and makes no model call.
+        """
+        compiler = self._wizard_compiler()
+        self._send_json(200, {"autofill": compiler is not None and compiler.llm is not None})
+
     def _send_plugins_api_list(self) -> None:
         """Serve the plugin records the widgets and the marketplace page read."""
         self._send_json(200, {"plugins": self.server_plugins_widget_records()})
-
     def _send_registry_listing(self) -> None:
         """Serve the registry listing visible to this request."""
         self._send_json(200, self._registry_listing_for_request())
@@ -2515,6 +2576,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # store is what research concluded, never what it tried to.
             if answer.status == STATUS_OK and server.research_store is not None:
                 server.research_store.save(answer.summary, answer.sources)
+                # A research tile set to "when it changes" follows the save.
+                _refresh_plugins_on(server, "research")
             return answer
         return assistant_reply(question, context, **common)
 
@@ -6434,15 +6497,27 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._send_error_page(404, "Nothing here", "No wizard action lives at this address.")
 
     def _advance_describe(self, session, description: str) -> None:
-        """Ask the compiler for the multiple-choice questions."""
+        """Let the description fill the choices in, then ask what is left.
+
+        With no AI connection nothing is filled and the source question opens
+        the walk. With one, the autofill preselects what it can and the same
+        walk shows the rest; a field it could not fill is simply still open.
+        Either way the questions are the closed vocabulary's, never invented.
+        """
         compiler = self._wizard_compiler()
         if compiler is None:
-            return
+            compiler = WizardCompiler(None)
+        filled: dict = {}
+        reasons: dict = {}
         try:
-            session.questions = compiler.questions_for(description)
-        except Exception:  # noqa: BLE001 - the defaults are the floor
-            LOG.exception("wizard questions failed; using defaults")
-            session.questions = WizardCompiler(None).questions_for(description)
+            filled, reasons = compiler.autofill_with_reasons(description)
+        except Exception:  # noqa: BLE001 - a failed fill leaves every field open
+            LOG.exception("wizard autofill failed; asking every question")
+            filled, reasons = {}, {}
+        session.autofilled = bool(filled)
+        session.reasons = reasons
+        session.answers = merge_answers(session.answers, filled)
+        session.questions = questions_for_answers(session.answers)
         session.state = "questions"
         self.server.wizard_store.save(session)  # type: ignore[attr-defined]
 
@@ -6529,11 +6604,26 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if answers is None and self._is_form_submit():
             answers = self._answers_from_form(body, session.questions,
                                               session.answers)
+            if answers is None:
+                # A form post carrying no usable answer is a no-op: it must
+                # not build from whatever the session already held.
+                self._send_redirect(f"/wizard/{session_id}")
+                return
         if not answers:
-            answers = {
-                q["id"]: q.get("default", "") for q in session.questions
-            }
+            # A post with no answer at all is the manager opening the walk,
+            # not answering it: the questions stay, unanswered.
+            answers = dict(session.answers)
+        answers = normalize_answers(answers)
         session.answers = answers
+        # Only every question on the chosen path answered builds anything.
+        # Anything short of that re-renders the walk with what is answered so
+        # far, which is what keeps the workbook from being filled in behind
+        # a manager who chose something else.
+        session.questions = questions_for_answers(answers)
+        if resolve_choice(answers) is None:
+            wizard.save(session)
+            self._send_redirect(f"/wizard/{session_id}")
+            return
         compiler = self._wizard_compiler()
         if compiler is None:
             self._send_json(503, {"error": "the wizard is not available"})
@@ -8383,9 +8473,34 @@ def start_background_polls(server: AgentDeskServer) -> None:
         # Attached plugin data sources resume their hourly loops; each
         # already polled once at attach, so no immediate poll is needed.
         plugins.start_widget_polls()
+        start_plugin_refresh_tick(server)
     loop = getattr(server, "agent_loop", None)
     if loop is not None:
         loop.start()
+
+
+def start_plugin_refresh_tick(server: AgentDeskServer,
+                              interval_s: float = 60.0) -> threading.Thread | None:
+    """Start the minute tick that refreshes scheduled and file-change tiles.
+
+    One daemon thread for the process, started beside the other background
+    polls. It never blocks a request: each wake asks the runner which tiles
+    are due and returns. The thread is named so a shutdown or a test can see
+    it, and a missing plugin runtime simply means no threads.
+    """
+    if getattr(server, "plugins", None) is None:
+        return None
+
+    def run() -> None:
+        """Wake once a minute and refresh what the modes say is due."""
+        while True:
+            time.sleep(interval_s)
+            _tick_plugin_refresh(server)
+
+    thread = threading.Thread(target=run, name="plugin-refresh-tick", daemon=True)
+    thread.start()
+    server.plugin_refresh_tick = thread
+    return thread
 
 def _poll_mail_once(watch: MailWatch) -> None:
     """One immediate read so the first inbox look already sees the digest."""

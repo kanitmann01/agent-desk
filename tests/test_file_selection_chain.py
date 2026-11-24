@@ -31,6 +31,16 @@ from tests import excel_fixtures
 CANONICAL = "Watch this workbook and show me the 24-hour change"
 NOW = datetime(2026, 11, 17, 9, 0, 0).astimezone()
 
+# The whole wizard path in one post: a workbook, its latest figure as a big
+# number, read when the desk is opened. A tile read live is what this chain
+# is about; the scheduled and change modes are covered by their own suite.
+WORKBOOK_ANSWERS = {
+    "source": "An Excel workbook",
+    "show": "The latest figure",
+    "look": "A big number",
+    "update": "When I open the desk",
+}
+
 # The tracked selection, zero-based data rows: Atlas ERP and Care plans.
 TRACKED_ROWS = [0, 2]
 TRACKED_SUM = "186500"  # 164000 + 22500, the fixture's Revenue column
@@ -126,13 +136,14 @@ def test_the_whole_chain_wizard_to_live_card(walk):
     assert status == 200
     assert "text/html" in _content_type(headers)
     questions_page = body.decode("utf-8")
-    assert "What should the widget watch?" in questions_page
+    assert "What should this tile watch?" in questions_page
     assert f'action="/wizard/{sid}/answer"' in questions_page
 
-    # (d) One answer form: the workbook ask builds the config-backed
-    # draft, and the post answers 303 back to the session page.
-    status, headers, body = post_form(walk, f"/wizard/{sid}/answer",
-                                     {"question": "0", "answer": "An Excel workbook"}, auth)
+    # (d) The whole path answered at once: a workbook, its first figure, a big
+    # number, and a tile read when the desk is opened. The post answers 303
+    # back to the session page, now in preview.
+    status, headers, body = walk.post_json(
+        f"/wizard/{sid}/answer", {"answers": WORKBOOK_ANSWERS}, auth)
     assert status == 303
     assert headers["Location"] == f"/wizard/{sid}"
     session = walk.server.wizard_store.get(sid)
@@ -140,6 +151,8 @@ def test_the_whole_chain_wizard_to_live_card(walk):
     manifest = session.draft["manifest"]
     assert manifest["config"] == {"kinds": ["workbook"]}
     assert manifest["permissions"]["filesystem"]["read"] == []  # no fabricated glob
+    assert manifest["activationEvents"] == [
+        f"onWidget:{manifest['contributes']['widgets'][0]['id']}"]
 
     # (e) The preview screen carries the approve form and the summary
     # that names the setup handoff instead of a glob.
@@ -262,20 +275,22 @@ def test_the_whole_chain_wizard_to_live_card(walk):
     assert saved["instance"]["confirmedAt"]
 
     # The card is fresh and reads exactly the selected rows' values:
-    # 164000 + 22500, never the untouched Field services row.
+    # 164000 + 22500, never the untouched Field services row. It draws the
+    # face the manager chose (a big number), not the classic tracker face.
     status, headers, body = walk.request("GET", "/api/dashboard", auth)
     assert status == 200
     cards = json.loads(body)["plugins"]["cards"]
     card = next(item for item in cards if item["id"] == f"{plugin_id}~pipeline")
     assert card["freshness"] == "fresh"
     assert card["title"] == "Pipeline"
+    assert card["payload"]["face"] == "ui-schema"
     metrics = {element["label"]: element["value"]
                for element in card["payload"]["elements"]
                if element["kind"] == "metric"}
-    assert metrics["Value"] == TRACKED_SUM
-    workbook = next(element for element in card["payload"]["elements"]
-                    if element["kind"] == "text" and element.get("label") == "Workbook")
-    assert workbook["text"] == "chain.xlsx"
+    assert metrics["The latest figure"] == TRACKED_SUM
+    # The chosen face names the workbook in its own text element, not in the
+    # classic card's "Workbook" line, so the reading is still traceable.
+    assert card["payload"]["tracker"]["file"] == "chain.xlsx"
 
     # (h, continued) The existing error gates stay intact on the same
     # walk: a stale row selection is refused with the mismatched-file
@@ -341,9 +356,7 @@ def test_the_chain_walk_never_serves_json_to_a_form_or_html_to_an_api(walk):
                                      {"description": CANONICAL}, auth)
     assert status == 303
     sid = headers["Location"].rsplit("/", 1)[-1]
-    post_form(walk, f"/wizard/{sid}/answer",
-              {"question": "0", "answer": "An Excel workbook"}, auth)
-
+    walk.post_json(f"/wizard/{sid}/answer", {"answers": WORKBOOK_ANSWERS}, auth)
     # The session screen is a page even mid-walk (no JSON on GET): the
     # preview state renders the approve form, not a document.
     status, headers, body = walk.request("GET", f"/wizard/{sid}", auth)

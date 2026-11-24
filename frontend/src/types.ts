@@ -195,7 +195,13 @@ export interface PluginCard {
     setup?: PluginSetup;
     tracker?: TrackerView;
     insight?: InsightReading;
+    // "ui-schema" means the tile asked for its own face (a big number, a
+    // bar, a table), so the elements are drawn instead of TrackerCard.
+    face?: 'ui-schema';
+    asOf?: string;
   } | null;
+  // Set on a hand-kept number tile, whose value only the manager can supply.
+  manualMetric?: string;
 }
 
 // One card in the dashboard's layout as the payload lists it: visible

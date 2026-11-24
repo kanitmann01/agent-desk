@@ -240,7 +240,7 @@ def _summary_html(summary: dict) -> str:
 
 
 def _questions_html(session_json: dict) -> str:
-    """One plain form per question: radios, default checked, one Ask."""
+    """One plain form per open question: radios, or a text field."""
     sid = _esc(session_json.get("id"))
     blocks: list[str] = []
     for idx, question in enumerate(_questions_of(session_json)):
@@ -285,11 +285,22 @@ def _conversation_html(session_json: dict) -> str:
         "<p>Plain English only. A few questions, then a preview; "
         "nothing is added until you approve it.</p>",
     ]
+
     note = str(session_json.get("degradedNote") or "")
     if note:
-        # Honest degradation: the standard questions are named as such,
-        # never passed off as tailored ones.
-        parts.append(f'<div class="alert"><p>{_esc(note)}</p></div>')
+        # A missing AI connection is an invitation, not an error: the
+        # questions below work fully without one.
+        parts.append(
+            '<p class="w-note no-ai">'
+            '<a href="/settings#connections">Add an AI connection</a> to fill '
+            "these in from your description next time.</p>"
+        )
+    if session_json.get("autofilled"):
+        parts.append(
+            '<p class="w-note" role="status" data-autofilled="true">'
+            "Filled in from your description. Change anything that is off."
+            "</p>"
+        )
     if description.strip():
         parts.append(
             '<section class="answer" aria-label="Your request">'
@@ -321,10 +332,18 @@ def _preview_html(session_json: dict) -> str:
         widget_body = "<pre>" + "\n".join(_esc(line) for line in lines) + "</pre>"
     else:
         widget_body = '<p class="empty">Nothing to preview yet.</p>'
+    fill_note = ""
+    if session_json.get("autofilled"):
+        fill_note = (
+            '<p class="w-note" role="status" data-autofilled="true">'
+            "Filled in from your description. Change anything that is off."
+            "</p>"
+        )
     return (
         "<h1>Preview</h1>"
         "<p>This is what you would see every morning. Nothing is added "
         "until you approve it.</p>"
+        f"{fill_note}"
         '<section class="widget" aria-label="Dry-run preview">'
         '<div class="w-head"><h2>Your widget</h2>'
         '<span class="stamp"><span class="dot sample" aria-hidden="true">'
