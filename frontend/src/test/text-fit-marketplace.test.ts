@@ -99,6 +99,8 @@ describe('R3 a text row wraps before it squeezes', () => {
 describe('R4 a chip stays inside its card', () => {
   it('caps chips, tags and status words at the card width', () => {
     expect(decl(marketCss, '.mkt-chip', 'max-width'), '.mkt-chip').toBe('100%');
+    expect(decl(marketCss, '.mkt-chip', 'overflow'), '.mkt-chip').toBe('hidden');
+    expect(decl(marketCss, '.mkt-chip', 'text-overflow'), '.mkt-chip').toBe('ellipsis');
     expect(decl(marketCss, '.mkt-tag', 'max-width'), '.mkt-tag').toBe('100%');
     expect(decl(marketCss, '.mkt-tag', 'white-space'), '.mkt-tag').toBe('nowrap');
     expect(decl(marketCss, '.mkt-tag', 'overflow-x'), '.mkt-tag').toBe('auto');
@@ -119,6 +121,13 @@ describe('R3 the featured row keeps its figure and category whole', () => {
       '.mkt-row-featured .mkt-row-cat').toBe('nowrap');
     expect(decl(marketCss, '.mkt-row-featured .mkt-row-cat', 'overflow-x'),
       '.mkt-row-featured .mkt-row-cat').toBe('auto');
+  });
+});
+
+describe('R6 the admin policy diff scrolls in its wrapper', () => {
+  it('keeps policy values whole inside the table that scrolls', () => {
+    expect(decl(adminCss, '.mkt-diff code', 'white-space'), '.mkt-diff code').toBe('nowrap');
+    expect(decl(adminCss, '.mkt-diff code', 'overflow-wrap'), '.mkt-diff code').toBe('normal');
   });
 });
 

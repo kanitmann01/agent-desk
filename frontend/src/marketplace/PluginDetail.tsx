@@ -8,7 +8,7 @@ import { ConsentSheet } from './ConsentSheet';
 import { InstanceSetupSheet, instanceFileName } from './InstanceSetupSheet';
 import { MarketLink, useMarketplaceNav } from './context';
 import { MarketGrid, PublisherMark, SkeletonGrid, categoryLabel, riskLabel } from './MarketGrid';
-import { canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
+import { asksForWeb, canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { SamplePreview } from './Sample';
 import { SignatureChip, StatusChip } from './StatusChip';
 import { useDialogFocus } from './useDialogFocus';
@@ -67,7 +67,7 @@ function Digest({ digest }: { digest: string }) {
   };
   return (
     <span className="mkt-digest">
-      <code title={digest}>{shortDigest(digest)}</code>
+      <code title={digest} tabIndex={0}>{shortDigest(digest)}</code>
       <button type="button" className="mkt-icon-btn" onClick={copy}
               aria-label={copied ? 'Digest copied' : 'Copy digest'}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -90,11 +90,12 @@ function Digest({ digest }: { digest: string }) {
  * one action is in flight.
  */
 function PluginActions({
-  detail, installed, busy, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
+  detail, installed, busy, cannotRun = false, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
 }: {
   detail: MarketDetail;
   installed: InstalledSummary | null;
   busy: boolean;
+  cannotRun?: boolean;
   onInstall: () => void;
   onUpdate: () => void;
   onConsent: () => void;
@@ -130,7 +131,9 @@ function PluginActions({
       <Button tone="secondary" disabled={busy} onClick={() => onAction(installed.enabled ? 'disable' : 'enable')}>
         {installed.enabled ? 'Disable' : 'Enable'}
       </Button>
-      <Button tone="secondary" disabled={busy} onClick={() => onAction('retest')}>Re-test</Button>
+      {!cannotRun && (
+        <Button tone="secondary" disabled={busy} onClick={() => onAction('retest')}>Re-test</Button>
+      )}
       <Button tone="secondary" disabled={busy} onClick={() => onAction('rollback')}>Roll back</Button>
       <Button tone="secondary" disabled={busy} onClick={onPurge}>Purge data</Button>
       <Button tone="secondary" disabled={busy} onClick={onUninstall}>Uninstall</Button>
@@ -166,7 +169,7 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
         <div className="mkt-sheet-body">
           <p>This deletes the plugin's data folder and its install record. There is no undo.</p>
           <label className="mkt-field">
-            <span>Type <code>{expected}</code> to confirm</span>
+            <span>Type <code tabIndex={0} title={expected}>{expected}</code> to confirm</span>
             <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
@@ -370,6 +373,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const scopes = plugin.capabilities.permissions;
   const never = canNever(plugin.capabilities);
   const title = manage ? `Manage ${plugin.name}` : plugin.name;
+  const cannotRun = data.deskNetwork === false && asksForWeb(plugin.capabilities);
 
   /** Open the consent sheet for a first install, dropping the previous sheet's error. */
   const openInstall = () => { setSheetError(''); setConsent({ kind: 'install' }); };
@@ -503,6 +507,22 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     }
   };
 
+  const actions = (
+    <PluginActions
+      detail={plugin}
+      installed={installed}
+      busy={busy}
+      cannotRun={cannotRun}
+      onInstall={openInstall}
+      onUpdate={openUpdate}
+      onConsent={openConsent}
+      onAction={lifecycle}
+      onPurge={() => { setPurgeError(''); setPurgeOpen(true); }}
+      onRevert={declineUpdate}
+      onUninstall={() => lifecycle('uninstall')}
+    />
+  );
+
   return (
     <div className="mkt-page mkt-detail">
       <nav className="mkt-crumbs" aria-label="Breadcrumb">
@@ -531,18 +551,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             </p>
           </div>
         </div>
-        <PluginActions
-          detail={plugin}
-          installed={installed}
-          busy={busy}
-          onInstall={openInstall}
-          onUpdate={openUpdate}
-          onConsent={openConsent}
-          onAction={lifecycle}
-          onPurge={() => { setPurgeError(''); setPurgeOpen(true); }}
-          onRevert={declineUpdate}
-          onUninstall={() => lifecycle('uninstall')}
-        />
+        {cannotRun ? (
+          <div className="mkt-detail-side">
+            <p className="mkt-attention">
+              This desk cannot read web pages yet, so this plugin cannot run here.
+            </p>
+            {actions}
+          </div>
+        ) : actions}
       </header>
 
       <ActionMessage error={error} message={message} />
@@ -555,14 +571,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       <p className="mkt-detail-summary">{plugin.summary}</p>
 
       <section className="mkt-facts" aria-label="Plugin facts">
-        <div><span>Publisher</span><strong>{plugin.publisher}</strong></div>
-        <div><span>Version</span><strong className="mkt-mono">v{plugin.version}</strong></div>
-        <div><span>Minimum host</span><strong>{plugin.minHost || 'not stated'}</strong></div>
-        <div><span>License</span><strong>{plugin.license || 'not stated'}</strong></div>
-        <div><span>Digest</span><strong><Digest digest={plugin.digest} /></strong></div>
-        <div><span>Signature</span><strong><SignatureChip status={plugin.signature.status} /></strong></div>
-        <div><span>Risk tier</span><strong>{riskLabel(plugin.riskTier)}</strong></div>
-        <div><span>Published</span><strong>{formatDate(plugin.publishedAt)}</strong></div>
+        <div><span>Publisher</span><strong tabIndex={0} title={plugin.publisher}>{plugin.publisher}</strong></div>
+        <div><span>Version</span><strong className="mkt-mono" tabIndex={0} title={`v${plugin.version}`}>v{plugin.version}</strong></div>
+        <div><span>Minimum host</span><strong tabIndex={0} title={plugin.minHost || 'not stated'}>{plugin.minHost || 'not stated'}</strong></div>
+        <div><span>License</span><strong tabIndex={0} title={plugin.license || 'not stated'}>{plugin.license || 'not stated'}</strong></div>
+        <div><span>Digest</span><strong tabIndex={0}><Digest digest={plugin.digest} /></strong></div>
+        <div><span>Signature</span><strong tabIndex={0} title={plugin.signature.status || 'missing'}><SignatureChip status={plugin.signature.status} /></strong></div>
+        <div><span>Risk tier</span><strong tabIndex={0} title={riskLabel(plugin.riskTier)}>{riskLabel(plugin.riskTier)}</strong></div>
+        <div><span>Published</span><strong tabIndex={0} title={formatDate(plugin.publishedAt)}>{formatDate(plugin.publishedAt)}</strong></div>
       </section>
 
       {manage && installed && instances?.configBacked && (
@@ -752,14 +768,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         <section className="mkt-panel" aria-labelledby="mkt-install-state">
           <h2 id="mkt-install-state">Installed state</h2>
           <div className="mkt-facts">
-            <div><span>Status</span><strong><StatusChip status={installed.status.status} /></strong></div>
-            <div><span>Pinned version</span><strong className="mkt-mono">v{installed.pinned.version}</strong></div>
-            <div><span>Pinned digest</span><strong className="mkt-mono">{shortDigest(installed.pinned.sha256)}</strong></div>
-            <div><span>Pilot</span><strong>{pilotBudget(installed.pilot)}</strong></div>
-            <div><span>Data folder</span><strong>{formatBytes(installed.dataDirSize)}</strong></div>
-            <div><span>Shared with peers</span><strong>{installed.shared ? 'Yes' : 'No'}</strong></div>
+            <div><span>Status</span><strong tabIndex={0} title={installed.status.status}><StatusChip status={installed.status.status} /></strong></div>
+            <div><span>Pinned version</span><strong className="mkt-mono" tabIndex={0} title={`v${installed.pinned.version}`}>v{installed.pinned.version}</strong></div>
+            <div><span>Pinned digest</span><strong className="mkt-mono" tabIndex={0} title={installed.pinned.sha256}>{shortDigest(installed.pinned.sha256)}</strong></div>
+            <div><span>Pilot</span><strong tabIndex={0} title={pilotBudget(installed.pilot)}>{pilotBudget(installed.pilot)}</strong></div>
+            <div><span>Data folder</span><strong tabIndex={0} title={formatBytes(installed.dataDirSize)}>{formatBytes(installed.dataDirSize)}</strong></div>
+            <div><span>Shared with peers</span><strong tabIndex={0} title={installed.shared ? 'Yes' : 'No'}>{installed.shared ? 'Yes' : 'No'}</strong></div>
           </div>
-          {installed.status.cause && <p className="mkt-attention">{installed.status.cause}</p>}
+          {installed.status.cause && !cannotRun && <p className="mkt-attention">{installed.status.cause}</p>}
         </section>
       )}
 

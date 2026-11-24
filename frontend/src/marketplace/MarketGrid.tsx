@@ -81,7 +81,7 @@ export function MarketCardView({ card }: { card: MarketCard }) {
     <MarketLink
       to={`/marketplace/plugin/${encodeURIComponent(card.id)}`}
       className={`mkt-card${card.eligible ? '' : ' mkt-card-blocked'}`}
-      aria-label={`${card.name}, version ${card.version}, ${card.publisher}. View plugin details`}
+      aria-label={`${card.name}, version ${card.version}, ${card.publisher}, ${categoryLabel(card.category)}. View plugin details`}
     >
       <div className="mkt-card-top">
         <span className="mkt-card-icon"><PluginIcon name={card.icon} /></span>
@@ -96,7 +96,7 @@ export function MarketCardView({ card }: { card: MarketCard }) {
       </div>
       <p className="mkt-card-summary">{card.summary}</p>
       <div className="mkt-card-tags">
-        <span className="mkt-tag">{categoryLabel(card.category)}</span>
+        <span className="mkt-tag" tabIndex={0} title={categoryLabel(card.category)}>{categoryLabel(card.category)}</span>
         <span className={`mkt-risk mkt-risk-${card.riskTier}`}>
           <span className="mkt-dot" aria-hidden="true" />
           {riskLabel(card.riskTier)}
@@ -189,7 +189,7 @@ function Row({ card, featured = false }: { card: MarketCard; featured?: boolean 
       <MarketLink
         to={`/marketplace/plugin/${encodeURIComponent(card.id)}`}
         className={`mkt-row${featured ? ' mkt-row-featured' : ''}${card.eligible ? '' : ' mkt-card-blocked'}`}
-        aria-label={`${card.name}, version ${card.version}, ${card.publisher}. View plugin details`}
+        aria-label={`${card.name}, version ${card.version}, ${card.publisher}, ${categoryLabel(card.category)}. View plugin details`}
       >
         {featured ? <Miniature id={card.id} /> : null}
         <span className="mkt-row-name">{card.name}</span>

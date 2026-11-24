@@ -324,7 +324,7 @@ export function StudioPage() {
         <section className="mkt-panel mkt-pending" aria-labelledby="mkt-pending-title" role="status">
           <h2 id="mkt-pending-title">Pending review</h2>
           <p>
-            Submitted as <code>{pending.pendingId}</code>. An operator reviews it before it can appear
+            Submitted as <code tabIndex={0} title={pending.pendingId}>{pending.pendingId}</code>. An operator reviews it before it can appear
             in the catalog. This review does not change the copy already installed on this desk.
           </p>
           <p className="w-note">

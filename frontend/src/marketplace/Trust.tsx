@@ -72,7 +72,7 @@ export default function TrustPage() {
                   'No signing key is pinned yet'
                 ) : (
                   snapshot.anchor.fingerprints.map((fingerprint) => (
-                    <code className="mkt-fingerprint" key={fingerprint}>{fingerprint}</code>
+                    <code className="mkt-fingerprint" key={fingerprint} tabIndex={0} title={fingerprint}>{fingerprint}</code>
                   ))
                 )}
               </dd>
@@ -95,7 +95,7 @@ export default function TrustPage() {
               <dt>Signer fingerprint</dt>
               <dd>
                 {snapshot.policy.signerFingerprint ? (
-                  <code className="mkt-fingerprint">{snapshot.policy.signerFingerprint}</code>
+                  <code className="mkt-fingerprint" tabIndex={0} title={snapshot.policy.signerFingerprint}>{snapshot.policy.signerFingerprint}</code>
                 ) : (
                   'Unsigned local policy'
                 )}
@@ -155,7 +155,7 @@ export default function TrustPage() {
               </MarketLink>
             </div>
             <p className="w-note">
-              Local report index: <code>{snapshot.reportPath}</code>
+              Local report index: <code tabIndex={0} title={snapshot.reportPath}>{snapshot.reportPath}</code>
             </p>
           </section>
 

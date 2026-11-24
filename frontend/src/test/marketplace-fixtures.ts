@@ -69,12 +69,13 @@ export const SAMPLE: MarketSample = {
   checked_at: '2026-11-01T09:05:00Z',
 };
 
-export function catalog(entries: MarketCard[] = [card()]): CatalogResponse {
+export function catalog(entries: MarketCard[] = [card()], deskNetwork?: boolean): CatalogResponse {
   return {
     entries,
     total: entries.length,
     sources: [{ source: 'bundled', count: entries.length }],
     policy: { mode: 'curated', source: 'bundled', signatureStatus: 'required' },
+    ...(deskNetwork === undefined ? {} : { deskNetwork }),
   };
 }
 
@@ -95,8 +96,12 @@ export function installed(overrides: Partial<InstalledSummary> = {}): InstalledS
   };
 }
 
-export function installedResponse(records: InstalledSummary[] = [installed()]): InstalledResponse {
-  return { plugins: records, policy: { mode: 'curated', source: 'bundled', signatureStatus: 'required' } };
+export function installedResponse(records: InstalledSummary[] = [installed()], deskNetwork?: boolean): InstalledResponse {
+  return {
+    plugins: records,
+    policy: { mode: 'curated', source: 'bundled', signatureStatus: 'required' },
+    ...(deskNetwork === undefined ? {} : { deskNetwork }),
+  };
 }
 
 export function detailResponse(overrides: Partial<DetailResponse> = {}): DetailResponse {

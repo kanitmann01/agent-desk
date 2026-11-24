@@ -57,6 +57,14 @@ describe('plugin detail', () => {
 
     expect(screen.getByText('SHA256:feedfacefeedfacefeedfacefeedface')).toBeInTheDocument();
     expect(screen.getByText(/Checked Nov 1, 2026/)).toBeInTheDocument();
+
+    const facts = screen.getByRole('region', { name: 'Plugin facts' });
+    const publisherValue = within(facts).getByText('agent-desk');
+    expect(publisherValue).toHaveAttribute('tabindex', '0');
+    expect(publisherValue).toHaveAttribute('title', 'agent-desk');
+    const digestCode = within(facts).getByTitle(detailResponse().plugin.digest);
+    expect(digestCode.tagName).toBe('CODE');
+    expect(digestCode).toHaveAttribute('tabindex', '0');
     expect(screen.getByText('Adds a days-late column and a largest-balance line.')).toBeInTheDocument();
 
     const table = screen.getByRole('table', { name: /Versions of AR Aging/ });

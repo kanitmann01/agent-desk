@@ -7,10 +7,10 @@ import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import { getMarket, marketErrorText, postMarket } from './client';
 import { ConsentSheet } from './ConsentSheet';
 import { MarketLink } from './context';
-import { canNeverFromScopes, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
+import { asksForWeb, canNeverFromScopes, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { StatusChip } from './StatusChip';
 import { useDialogFocus } from './useDialogFocus';
-import type { InstalledResponse, InstalledSummary } from './types';
+import type { DetailResponse, InstalledResponse, InstalledSummary } from './types';
 
 type Load =
   | { kind: 'loading' }
@@ -51,7 +51,7 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
         <div className="mkt-sheet-body">
           <p>This deletes {formatBytes(record.dataDirSize)} of plugin data and its install record. There is no undo.</p>
           <label className="mkt-field">
-            <span>Type <code>{expected}</code> to confirm</span>
+            <span>Type <code tabIndex={0} title={expected}>{expected}</code> to confirm</span>
             <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
@@ -89,6 +89,7 @@ export function InstalledPage() {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [purgeRecord, setPurgeRecord] = useState<InstalledSummary | null>(null);
   const [purgeError, setPurgeError] = useState('');
+  const [cannotRunIds, setCannotRunIds] = useState<Set<string>>(() => new Set());
   const confirmFocus = useDialogFocus<HTMLButtonElement>(confirm !== null, () => setConfirm(null));
 
   const loadList = useCallback(async () => {
@@ -103,6 +104,29 @@ export function InstalledPage() {
   }, []);
 
   useEffect(() => { void loadList(); }, [loadList, attempt]);
+
+  // The list DTO carries no capability block, so when the desk has no HTTP
+  // transport each installed plugin's detail DTO is read once to learn
+  // whether it asks for the web. A failed read claims nothing.
+  useEffect(() => {
+    if (load.kind !== 'ready' || load.data.deskNetwork !== false) {
+      setCannotRunIds((current) => (current.size === 0 ? current : new Set()));
+      return undefined;
+    }
+    let cancelled = false;
+    void Promise.all(load.data.plugins.map(async (record) => {
+      try {
+        const data = await getMarket<DetailResponse>(
+          `/api/marketplace/plugin/${encodeURIComponent(record.id)}`);
+        return asksForWeb(data.plugin.capabilities) ? record.id : '';
+      } catch {
+        return '';
+      }
+    })).then((ids) => {
+      if (!cancelled) setCannotRunIds(new Set(ids.filter(Boolean)));
+    });
+    return () => { cancelled = true; };
+  }, [load]);
 
   /**
    * Run one mutation for a record, show the note it returns, then re-read the
@@ -302,7 +326,9 @@ export function InstalledPage() {
       )}
       {load.kind === 'ready' && load.data.plugins.length > 0 && (
         <ul className="mkt-installed" role="list">
-          {load.data.plugins.map((record) => (
+          {load.data.plugins.map((record) => {
+            const cannotRun = cannotRunIds.has(record.id);
+            return (
             <li key={record.id}>
               <article className="mkt-installed-card" aria-labelledby={`inst-${record.id}`}>
                 <div className="mkt-installed-head">
@@ -320,15 +346,31 @@ export function InstalledPage() {
                     </p>
                   </div>
                   <div className="mkt-installed-flags">
-                    <span className="mkt-chip">Pilot: {pilotBudget(record.pilot)}</span>
+                    {cannotRun && <span className="mkt-chip" title="Cannot run on this desk">Cannot run on this desk</span>}
+                    <span className="mkt-chip" title={`Pilot: ${pilotBudget(record.pilot)}`}>Pilot: {pilotBudget(record.pilot)}</span>
                     <span className="w-note">Data {formatBytes(record.dataDirSize)}</span>
                     <span className="w-note">Validated {formatDate(record.status.checked_at)}</span>
                   </div>
                 </div>
 
-                {record.status.cause && <p className="mkt-attention">{record.status.cause}</p>}
+                {record.status.cause && !cannotRun && <p className="mkt-attention">{record.status.cause}</p>}
 
-                {record.pendingConsent ? (
+                {cannotRun && (
+                  <>
+                    <div className="mkt-attention">
+                      <strong>Cannot run on this desk.</strong>{' '}
+                      <span>This desk cannot read web pages yet, so this plugin cannot run here.</span>
+                    </div>
+                    <div className="mkt-actions">
+                      <Button tone="primary" disabled={busyId === record.id}
+                              onClick={() => setConfirm({ kind: 'uninstall', record })}>
+                        Remove
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {!cannotRun && (record.pendingConsent ? (
                   <div className="mkt-update-row">
                     <p>
                       <strong>Permission change needs review.</strong>{' '}
@@ -362,7 +404,7 @@ export function InstalledPage() {
                   </div>
                 ) : (
                   <p className="w-note">Up to date. No update is waiting.</p>
-                )}
+                ))}
 
                 <div className="mkt-actions mkt-installed-actions">
                   <Button tone="secondary" disabled={busyId === record.id} onClick={() => void toggle(record)}>
@@ -380,14 +422,17 @@ export function InstalledPage() {
                           onClick={() => { setPurgeError(''); setPurgeRecord(record); }}>
                     Purge data
                   </Button>
-                  <Button tone="secondary" disabled={busyId === record.id}
-                          onClick={() => setConfirm({ kind: 'uninstall', record })}>
-                    Uninstall
-                  </Button>
+                  {!cannotRun && (
+                    <Button tone="secondary" disabled={busyId === record.id}
+                            onClick={() => setConfirm({ kind: 'uninstall', record })}>
+                      Uninstall
+                    </Button>
+                  )}
                 </div>
               </article>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 
