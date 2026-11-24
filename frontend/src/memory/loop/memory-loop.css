@@ -59,8 +59,8 @@
 #memory-loop-root .ml-step-link:hover{background:var(--surface-2)}
 #memory-loop-root .ml-step-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
 #memory-loop-root .ml-step-index{flex:none;font-size:11px;color:var(--ink-4);white-space:nowrap}
-#memory-loop-root .ml-flow .ml-tag{min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#memory-loop-root .ml-step-top .ml-chip-quiet{margin-left:auto;flex:none}
+#memory-loop-root .ml-flow .ml-tag{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+#memory-loop-root .ml-step-top .ml-chip-quiet{margin-left:auto;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left}
 #memory-loop-root .ml-figure{font-size:40px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--heading);white-space:nowrap}
 #memory-loop-root .ml-step-capture .ml-figure{color:var(--accent-text)}
 #memory-loop-root .ml-step-unit{display:block;max-width:100%;font-size:13px;color:var(--ink-2);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

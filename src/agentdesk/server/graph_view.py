@@ -276,7 +276,8 @@ links.</p>
         if island_query is not None:
             content = _island(content.replace("<h1>Memory graph</h1>\n", ""), island_query)
         return page_shell(
-            "Memory graph", "/memory", content, version, inbox_count=inbox_count
+            "Memory graph", "/memory", content, version, inbox_count=inbox_count,
+            wide=island_query is not None,
         )
 
     positions = {
@@ -304,9 +305,12 @@ links.</p>
     if island_query is not None:
         # The interactive graph mounts over the static picture, which
         # stays as the no-JavaScript fallback inside the mount point.
+        # The wide document is what contains the canvas: the island's
+        # stylesheet keeps the page's prose at its 720px measure.
         content = _island(f"{counts}{window}{_legend()}{scrolled}", island_query)
         return page_shell(
-            "Memory graph", "/memory", content, version, inbox_count=inbox_count
+            "Memory graph", "/memory", content, version, inbox_count=inbox_count,
+            wide=True,
         )
     content = f"""<h1>Memory graph</h1>
 <p>The bank as one static picture: newest first, each node's shading

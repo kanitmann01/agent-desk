@@ -169,6 +169,22 @@ describe('MemoryLoop', () => {
     ]));
   });
 
+  it('gives every truncated step and capture label its full text as a title', async () => {
+    serve(state());
+    render(<MemoryLoop pollMs={0} />);
+    const flow = await screen.findByRole('list', { name: 'How memory is built' });
+    const units = Array.from(flow.querySelectorAll('.ml-step-unit'));
+    expect(units).toHaveLength(4);
+    for (const unit of units) {
+      expect(unit.textContent?.trim()).toBeTruthy();
+      expect(unit.getAttribute('title')).toBe(unit.textContent?.trim());
+    }
+    const ask = screen.getByRole('radio', { name: 'Ask me first' });
+    const auto = screen.getByRole('radio', { name: 'Save automatically' });
+    expect(ask.getAttribute('title')).toBe('Ask me first');
+    expect(auto.getAttribute('title')).toBe('Save automatically');
+  });
+
   it('greys the channel switches when capture is off', async () => {
     const off = state({ capture: { ...state().capture, enabled: false } });
     serve(off);
