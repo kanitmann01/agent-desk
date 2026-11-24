@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Rail from '../dashboard/Rail';
 import Button from '../components/Button';
+import { useAnnouncement } from '../components/feedback';
 import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from '../api';
 import AdminPage from './Admin';
 import { CatalogPage } from './CatalogPage';
@@ -115,12 +116,15 @@ function Page({ route }: { route: MarketRoute }) {
  * route, and a polite announcement of that route's title.
  *
  * The announcement is what tells a screen reader that navigation happened;
- * the document itself is never reloaded.
+ * the document itself is never reloaded. The shell also owns the outcome
+ * channel a sheet reports through when it closed before its request
+ * answered, so a setup that finished after the reader left still says so.
  */
 export default function MarketplaceApp() {
   const { path, route, navigate } = useMarketplaceRouter();
   const [announcement, setAnnouncement] = useState('');
   const [expired, setExpired] = useState(false);
+  const liveOutcome = useAnnouncement();
 
   useEffect(() => {
     setAnnouncement(routeTitle(route));
@@ -138,6 +142,7 @@ export default function MarketplaceApp() {
         <main className="mkt-main" id="marketplace-main" tabIndex={-1}>
           <div className="mkt-sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
           <Tabs route={route} />
+          {liveOutcome && <p className="mkt-success" role="status">{liveOutcome}</p>}
           {expired ? <SessionNotice /> : <Page route={route} />}
         </main>
       </div>
