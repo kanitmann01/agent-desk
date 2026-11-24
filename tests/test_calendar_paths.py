@@ -56,6 +56,16 @@ class TestCandidates:
         assert default_calendar_candidates() == [override]
         assert default_read_calendar() is None
 
+    def test_an_empty_override_means_no_calendar(self, monkeypatch, tmp_path):
+        fake_home(monkeypatch, tmp_path)
+        plant(tmp_path, "OneDrive")  # a real file in the default place exists
+        monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", "")
+
+        # A demo or test pins the variable empty to boot a desk that sees
+        # no calendar even on a machine that syncs one.
+        assert default_calendar_candidates() == []
+        assert default_read_calendar() is None
+
     def test_env_override_is_read_once_it_exists(self, monkeypatch, tmp_path):
         fake_home(monkeypatch, tmp_path)
         override = tmp_path / "elsewhere" / "calendar_sync.json"
