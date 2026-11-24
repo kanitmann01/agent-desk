@@ -4,11 +4,12 @@ Status: charting, 2026-11-24. Local-markdown tracker: this file is the map, chil
 
 ## Destination
 
-A decision-ready spec for `agent-desk-core` that lets a corporate Windows laptop feed Outlook mail metadata, and calendar where possible, into the desk on a schedule with no admin rights, no tenant consent, no Graph, no IMAP, no EWS, no Power Automate and no Outlook add-in. The spec must settle the mechanism, the schedule, the privacy contract, the setup and failure states, and the test and evidence plan.
+A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Windows or macOS, feed Outlook mail metadata, and calendar where possible, into the desk on a schedule with no admin rights, no tenant consent, no Graph, no IMAP, no EWS, no Power Automate and no Outlook add-in. The spec must settle a platform-agnostic feeder core with pluggable collectors, the schedule, the privacy contract, the setup and failure states, and the test and evidence plan.
 
 ## Notes
 
-- Hard constraints: no tenant admin, no app registration, no Graph, no IMAP, no EWS, no Power Automate, no Outlook add-in, no machine-wide install, no Windows service, no admin rights, no cloud copy, header-only mail.
+- Hard constraints: no tenant admin, no app registration, no Graph, no IMAP, no EWS, no Power Automate, no Outlook add-in, no machine-wide install, no OS service, no admin rights, no cloud copy, header-only mail.
+- Platform agnostic: the feeder core, settings and output contract work on Windows and macOS. The user may run the app on a work Mac. No Windows COM, PowerShell, Task Scheduler or Windows Search dependency in the core. Platform collectors sit behind one Python interface: Spotlight on macOS, the Windows Search index or classic COM on Windows, and the manual folder everywhere. Scheduling is the app's own timer, not an OS scheduler.
 - The app already reads RFC 822 `.eml` files from a watched folder (`src/agentdesk/mail/`) and calendar data from a JSON file (`src/agentdesk/calendar/`). The feeder is host-side, not a plugin. The plugin set was retired; do not add a plugin for this.
 - Research lives in `D:/20-projects/Personal Agents/.scratch/outlook-ingest-swarm`. The synthesis will be linked from this map.
 - Skills every session consults: `wayfinder` (this map), `ponytail` (smallest complete change), `implement-spec` (ticket graph plus TDD subagents), `tdd`, `code-review`.
@@ -31,8 +32,8 @@ The frontier is the two research tickets. The contract and proof tickets are blo
 
 ## Not yet specified
 
-- Which local Outlook data source is reliable on the corporate client, classic Outlook or new Outlook, and what evidence proves it.
-- Whether the feeder is a per-user scheduled task, an app-owned background loop, or both, and how it is installed and removed without admin.
+- Which local Outlook data source is reliable on the corporate client, classic Outlook or new Outlook, on Windows and on macOS, and what evidence proves it.
+- Whether the feeder is an app-owned background loop, an OS scheduler, or both, and why the cross-platform answer wins.
 - The privacy and consent contract for a feeder that reads from a local Outlook store rather than an exported folder.
 - The setup, verification, staleness and failure states the user sees, and the exact copy.
 - Calendar parity: the same feeder, a separate file contract, or explicitly out of scope.
@@ -42,5 +43,6 @@ The frontier is the two research tickets. The contract and proof tickets are blo
 
 - Microsoft Graph, IMAP, EWS, OAuth app registration, Power Automate, Outlook add-ins or tenant consent. These are the access paths the user has ruled out.
 - Reading, storing or sending message bodies or attachments. The mail path stays header-only.
-- Machine-wide installation, a Windows service, drivers, or admin rights.
+- Machine-wide installation, an OS service, drivers, or admin rights.
+- A Windows-only core. Windows COM, PowerShell and the Windows Search index may be optional collectors, never the only path.
 - Sending mail from the app. Drafts stay local and explicit.
