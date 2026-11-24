@@ -19,4 +19,16 @@ For each, state what it needs (rights, paths, user context), how it is installed
 
 ## Answer
 
-Pending. Resolve from the swarm research and record the chosen mechanism, the install and remove commands, the failure modes and the evidence here, then close this ticket and add a line to the map's Decisions so far.
+Chosen: the app's own daemon timer, on both platforms, plus one pass at startup.
+
+Why this and not an OS scheduler:
+
+- The PRD bans autostart persistence until Security approves (`docs/PRD.md:19`), and the IT statement says "No Run key, no scheduled task, no service" and "the app runs only while you keep it open" (`src/agentdesk/server/touches.py:58-59`, pinned by `tests/test_server_it_surface.py:120-122`). A per-user Task Scheduler entry or a `launchd` agent changes that promise and needs sign-off.
+- The app already schedules mail and calendar with daemon `threading.Timer` chains (`src/agentdesk/mail/watcher.py:344-377`, `src/agentdesk/calendar/watcher.py:441-474`) and runs one immediate pass at startup (`app.py:7897-7936`). The feeder can run inside that pattern, so there is no new scheduler, no install step and no OS-specific code.
+- The app is a desktop app the user opens. A pass at startup plus the existing 30-minute mail cadence is enough for a digest. When the app is closed, collection pauses; the next start catches up from the collector's own window. That limit is honest and must be said in Settings.
+
+Install and remove: none. The feeder is constructed when `mail_enabled` and `mail_feeder` are both on, started with the mail watcher, and stopped with it. No command is needed. The app must update the IT statement because it now starts a local read-only helper while it is open; the statement remains true that no task, service or autostart entry is created.
+
+Failure modes: the timer chain survives a collector exception; the next tick still runs. A lock file prevents overlapping passes. If the app is closed, the last run and coverage window are shown, never a false "live" claim.
+
+Deferred: a per-user Task Scheduler task on Windows or a per-user `launchd` agent on macOS would collect while the app is closed. That is a separate decision with Security sign-off, not part of v1.
