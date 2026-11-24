@@ -6,7 +6,9 @@ back through the same session gate.
 """
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -66,34 +68,43 @@ def _write_pack(root: Path, plugin_id: str, version: str, tool: str) -> None:
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def test_the_run_and_the_audit_name_the_declaring_plugin(env, auth):
+def test_the_run_and_the_audit_name_the_declaring_plugin():
     """Two installed packs declare the same tool name: the catalog row,
     the run result and the audit record all attribute the work to the
     declaring pack, not to the pack that happened to load first or to
     the starter template that did the writing."""
-    templates = getattr(env, "_templates_root", None)
-    if templates is None:
-        pytest.skip("AGENTDESK_TEMPLATES is set outside the harness")
-    templates = Path(templates.name)
-    _write_pack(templates / "alpha-pack", "alpha-pack", "1.2.0", "presentation_create")
-    _write_pack(templates / "beta-pack", "beta-pack", "0.3.0", "presentation_create")
-    status, _headers, body = env.request("GET", "/api/presentation/tools", auth)
-    assert status == 200
-    listed = next(row for row in _json(body)["tools"] if row["name"] == "presentation_create")
-    assert listed["plugin"] == "alpha-pack"
-    assert listed["pluginVersion"] == "1.2.0"
-    status, _headers, body = env.post_json(
-        "/api/presentation/tools",
-        {"tool": "presentation_create", "brief": "the Q3 review"},
-        auth,
-    )
-    assert status == 200, body
-    result = _json(body)
-    assert result["plugin"] == "alpha-pack"
-    rows = [row for row in audit_store.entries(env.server.audit_conn)
-            if row["action"] == "presentation.tool"]
-    assert rows, "the run left no audit record"
-    assert "plugin alpha-pack" in rows[-1]["detail"]
+    with tempfile.TemporaryDirectory(prefix="agentdesk-toolpacks-") as root:
+        _write_pack(Path(root) / "alpha-pack", "alpha-pack", "1.2.0", "presentation_create")
+        _write_pack(Path(root) / "beta-pack", "beta-pack", "0.3.0", "presentation_create")
+        prev = os.environ.get("AGENTDESK_TEMPLATES")
+        os.environ["AGENTDESK_TEMPLATES"] = root
+        booted = server_harness.Booted()
+        try:
+            auth = booted.exchange()
+            status, _headers, body = booted.request("GET", "/api/presentation/tools", auth)
+            assert status == 200
+            listed = next(row for row in _json(body)["tools"]
+                          if row["name"] == "presentation_create")
+            assert listed["plugin"] == "alpha-pack"
+            assert listed["pluginVersion"] == "1.2.0"
+            status, _headers, body = booted.post_json(
+                "/api/presentation/tools",
+                {"tool": "presentation_create", "brief": "the Q3 review"},
+                auth,
+            )
+            assert status == 200, body
+            result = _json(body)
+            assert result["plugin"] == "alpha-pack"
+            rows = [row for row in audit_store.entries(booted.server.audit_conn)
+                    if row["action"] == "presentation.tool"]
+            assert rows, "the run left no audit record"
+            assert "plugin alpha-pack" in rows[-1]["detail"]
+        finally:
+            booted.close()
+            if prev is None:
+                os.environ.pop("AGENTDESK_TEMPLATES", None)
+            else:
+                os.environ["AGENTDESK_TEMPLATES"] = prev
 
 
 def test_the_agents_page_names_the_deck_tools(env, auth):
