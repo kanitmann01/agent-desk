@@ -8,7 +8,14 @@ writes. The rule's documented origin is the settings store
 InterfaceError on the guard's hot path. Every store that adopts a shared
 connection applies serialized to the methods that touch it and holds one
 RLock, re-entrant because locked methods call other locked methods.
+
+The future import is load-bearing: threading.RLock is a factory
+function, not a class, on the 3.10 to 3.12 interpreters, so the union
+annotation below must stay unevaluated or the module import dies with
+"unsupported operand type(s) for |".
 """
+
+from __future__ import annotations
 
 import functools
 import threading
