@@ -349,3 +349,127 @@ def test_a_widget_card_names_its_plugin_for_the_reading_seam(runtime, tmp_path):
     assert len(cards) == 1
     assert cards[0]["pluginId"] == "sales-delta-widget", cards[0]
     assert cards[0]["instanceId"] == "main", cards[0]
+
+
+# -- the golden emission matrix -----------------------------------------
+
+def _golden_runtime(case, tmp_path):
+    """Build the installed-plugin state one golden-matrix row exercises."""
+    from agentdesk.plugins.config import InstanceStore
+    from agentdesk.plugins.runtime import PILOT_VIEWS, PluginRuntime
+    from excel_fixtures import make_xlsx
+    from plugin_fixtures import write_alias_plugin
+
+    workspace = tmp_path / "workspace"
+    reports = workspace / "reports"
+    reports.mkdir(parents=True)
+    (reports / "q4.xlsx").write_bytes(
+        make_xlsx([["Region", "Sales"], ["North", 10]]))
+    dirs = dict(plugins_dir=tmp_path / "plugins", data_dir=tmp_path / "data",
+                workspace_dir=workspace, now=NOW)
+    runtime = PluginRuntime(**dirs)
+    registry = Path(__file__).resolve().parents[1] / "registry" / "plugins"
+    if case == "plain":
+        runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+    elif case == "alias":
+        runtime.install(registry / "excel-report", source="dir")
+        runtime.install(write_alias_plugin(
+            tmp_path, "sales-alias", "Sales Alias", "Sales"), source="dir")
+    elif case == "instances":
+        runtime.install(registry / "excel-report", source="dir")
+        store = InstanceStore(runtime.data_dir, workspace)
+        store.create("excel-report", "main", "Main")
+        store.create("excel-report", "pipeline", "Pipeline")
+    elif case == "unconfirmed-main":
+        runtime.install(registry / "excel-report", source="dir")
+        InstanceStore(runtime.data_dir, workspace).create(
+            "excel-report", "main", "Main")
+    elif case == "tampered":
+        runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+        version_dir = Path(
+            runtime.record("sales-delta-widget")["versions"][0]["dir"])
+        manifest_file = version_dir / "manifest.json"
+        manifest_file.write_text(
+            manifest_file.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        # A rebuilt runtime re-verifies the pin; the installing runtime
+        # already attached its runner and would never look again.
+        runtime = PluginRuntime(**dirs)
+    elif case == "pilot-out":
+        runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+        for _expected in range(PILOT_VIEWS):
+            assert runtime.record_dashboard_view() == 1
+    elif case == "disabled":
+        runtime.install(zip_file(tmp_path / "a.zip"), source="zip")
+        runtime.disable("sales-delta-widget")
+    return runtime
+
+
+GOLDEN_MATRIX = {
+    # case: (layout_keys, card projections (id, pluginId, instanceId,
+    # freshness, pilot, title), views spent by record_dashboard_view)
+    "plain": (
+        ["sales-delta-widget"],
+        [("sales-delta-widget", "sales-delta-widget", "main", "fresh",
+          True, "Sales 24h Delta")],
+        1,
+    ),
+    "alias": (
+        # The alias contributes none; its unconfirmed instance keys under
+        # the target as plugin~instance.
+        ["excel-report~sales"],
+        [("excel-report~sales", "excel-report", "sales", "setup",
+          True, "Sales")],
+        1,
+    ),
+    "instances": (
+        # Per-instance emission: the unconfirmed main keys as the bare
+        # plugin id, the other instance as plugin~instance.
+        ["excel-report", "excel-report~pipeline"],
+        [("excel-report", "excel-report", "main", "setup", True, "Main"),
+         ("excel-report~pipeline", "excel-report", "pipeline", "setup",
+          True, "Pipeline")],
+        1,
+    ),
+    "unconfirmed-main": (
+        # The unconfirmed main instance is the plugin's own setup card.
+        ["excel-report"],
+        [("excel-report", "excel-report", "main", "setup", True, "Main")],
+        1,
+    ),
+    "tampered": (
+        # The key stays (the setup card has a home), the card is an
+        # attention card carrying no payload, and no view is spent.
+        ["sales-delta-widget"],
+        [("sales-delta-widget", "sales-delta-widget", "main", "attention",
+          True, "Sales 24h Delta")],
+        0,
+    ),
+    "pilot-out": (
+        ["sales-delta-widget"],
+        [("sales-delta-widget", "sales-delta-widget", "main", "fresh",
+          False, "Sales 24h Delta")],
+        0,
+    ),
+    "disabled": ([], [], 0),
+}
+
+
+@pytest.mark.parametrize("case", sorted(GOLDEN_MATRIX))
+def test_the_golden_emission_matrix_pins_all_three_emitters(case, tmp_path):
+    """layout_keys, widget_cards and record_dashboard_view decide from one
+    rule; the matrix pins what each answers for every shape of install.
+
+    Before the emitters share a seam, this is the rule's photograph: any
+    refactor that moves a decision must reproduce these answers exactly.
+    """
+    runtime = _golden_runtime(case, tmp_path)
+    keys, projections, spent = GOLDEN_MATRIX[case]
+
+    assert runtime.layout_keys() == keys
+    cards = [
+        (card["id"], card["pluginId"], card["instanceId"],
+         card["freshness"], card["pilot"], card["title"])
+        for card in runtime.widget_cards()
+    ]
+    assert cards == projections
+    assert runtime.record_dashboard_view() == spent
