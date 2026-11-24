@@ -1,7 +1,7 @@
 // The honest "cannot run on this desk" state: a plugin that asks to reach
 // the web cannot run when the plugin runner has no HTTP transport. The
 // desk says so without deciding whether the plugin may be installed.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MarketplaceApp from '../marketplace/MarketplaceApp';
@@ -154,6 +154,12 @@ describe('an installed plugin that cannot run', () => {
     const remove = screen.getByRole('button', { name: 'Remove' });
     expect(remove).toHaveClass('btn-primary');
     expect(screen.queryByRole('button', { name: /Re-test/ })).not.toBeInTheDocument();
+    // Remove is the only action: a plugin that cannot run has nothing else
+    // to do here.
+    const article = screen.getByRole('heading', { level: 2, name: 'Competitor Watch' })
+      .closest('article') as HTMLElement;
+    expect(within(article).getAllByRole('button').map((button) => button.textContent?.trim()))
+      .toEqual(['Remove']);
 
     const user = userEvent.setup();
     await user.click(remove);
