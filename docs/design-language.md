@@ -121,6 +121,70 @@ the declarations that express them.
 Both root overflow rules stay as they are: the SPA body hides horizontal
 overflow, the server body does not. Causes are fixed, not masked.
 
+### Numbers
+
+A number a person compares is a reading, not a string. Four rules hold
+wherever one appears, in the SPA and on the server pages.
+
+- **N1. Every number a person compares is grouped for display
+  (9,270,950), and the value a system reads is never altered to achieve
+  it.** Grouping happens in the surface that prints the value. A binding,
+  a progress bar, a chart point and a pinned payload keep their exact
+  digits.
+- **N2. A figure never breaks across lines, is never cut off and never
+  scrolls.** The headline figure and the tracker figure print in full and
+  the layout makes room: the chart beside the headline figure moves below
+  it when the figure needs the width.
+- **N3. A label on a bar or inside a narrow track may use compact
+  notation (1.2M) when the full value would not fit, and then the exact
+  value is reachable.** A `title`, an `aria-label` and the reading carry
+  the full number.
+- **N4. A time, a date or a title inside a timeline has a column that
+  fits its content; a rule written for one list never moves another
+  list's columns.** A timeline owns its own column contract, and a plain
+  list or a checklist keeps its own.
+
+The layout audit's "long values" fixture renders 9,270,950 and 1,234,567
+at every numeric site, so a regression in fit fails a run rather than a
+review.
+
+## Feedback on every wait
+
+A wait is part of the interface, not an absence of one. Seven rules hold
+on every surface. They are enhancements where the browser has no script:
+the server pages keep their normal navigation and every form still works.
+The shared pending state on `Button` and the `useBusy` hook carry the
+first second; the region that will receive the result owns the rest.
+
+- **F1. Nothing shows under 100 ms.** From 100 ms to 1 s the control that
+  started the work shows it on itself: it cannot be pressed again, it
+  carries `aria-busy="true"`, its verb becomes the continuous form
+  ("Saving...", "Asking your AI..."), and its box does not change size. A
+  dot may pulse in colour only, and `prefers-reduced-motion` freezes it.
+- **F2. From 1 s to 30 s the region that will receive the result shows a
+  placeholder with the same shape as the incoming content** (a skeleton
+  or the app's dotted wireframe) and one plain line naming the phase in
+  the reader's words. Never a spinner over an empty panel; never a
+  blocked page.
+- **F3. While the agent chooses between outcomes, the region shows a
+  mock-up of the outcome** (the dashed chart sketches) with a status
+  line, and the real result replaces it in place without a jump.
+- **F4. Labels are honest.** A phase is named only while it is really
+  happening. After 10 seconds without a change the line says it is taking
+  longer than usual and that the reader may leave this page.
+- **F5. The result replaces the placeholder in place.** Success is said
+  where the reader is looking, in a `role="status"` line. A failure is
+  said where it happened, with the next step, and what the reader typed
+  is kept.
+- **F6. A refetch keeps what is on screen (dimmed) instead of swapping in
+  skeletons.** One loading indicator per region. A page never waits on
+  its slowest part: the shell and the other regions appear at once.
+- **F7. Every surface obeys the same rules, including server-rendered
+  pages, which keep their normal navigation:** a busy button on every
+  form, and for a model-backed form a placeholder in the outgoing page
+  while the request is in flight. Pages must keep working with the script
+  off.
+
 ## Components and motion
 
 - Buttons, wells and cards read only the semantic tokens; state copy is
