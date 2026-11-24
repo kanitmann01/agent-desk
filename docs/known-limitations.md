@@ -1,6 +1,6 @@
 # Known limitations
 
-Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in this tree or comes from the ticket reports. None of these is a promise of future work.
+Honest gaps in the marketplace branch as of 2026-11-24. Each item is verified in this tree or comes from the ticket reports. None of these is a promise of future work.
 
 ## Distribution and legal
 
@@ -28,8 +28,12 @@ Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in
 - The audit log keeps the last 1000 events in `audit.json` and does not rotate. The NDJSON export at `GET /api/marketplace/audit/export` includes only `at`, `action`, `pluginId`, `actor` and `outcome`; it drops the internal detail field, so changelog text, rejection reasons and report notes are not exportable. There is no SIEM forwarding.
 - Reports from plugin and publisher pages are stored locally in `reports.json`. The Admin page has no report queue, and the Trust Center displays `reportPath` as `/marketplace/report` even though the SPA has no route at that path; it renders the marketplace 404.
 - The Trust Center says nothing has been validated until a validator run is recorded, and a bundled registry release with no recorded run shows as not checked.
-- competitor-watch is the only plugin that uses `http-get`, and it requests `example.com`. The default policy has an empty `networkAllowlist`, so it is refused with `policy:network-not-allowed` until an operator adds the host.
+- competitor-watch is the only plugin that uses `http-get`, and it requests `example.com`. The default policy has an empty `networkAllowlist`, so it is refused with `policy:network-not-allowed` until an operator adds the host. Even after the host is allowed, the production runner has no HTTP transport, so the source still cannot run (see Plugins and the network).
 - There are no ratings, reviews, download counts or usage telemetry, by design. There is also no way to see which other desks use a plugin.
+
+## Plugins and the network
+
+- No plugin can reach the network on this desk. The production runner is built without an HTTP transport (`src/agentdesk/server/app.py:7782-7783`; the default at `src/agentdesk/plugins/runtime.py:189`), no setting turns it on, and an `http-get` source answers "The host has no HTTP transport available for this plugin." (`src/agentdesk/plugins/sources.py:1318-1320`) even when its optional host grant was accepted. The shipped `competitor-watch` (Page watch) therefore cannot run even with its `example.com` grant (`registry/plugins/competitor-watch/manifest.json:39-46`), and the wizard still offers "A web page" (`src/agentdesk/wizard/vocabulary.py:66`). Spec 015's promise that the Page watch card works on a fresh desk (`specs/015-retire-the-plugin-set.md:66-68`) is retracted until a transport exists.
 
 ## Studio and publishing
 
@@ -46,8 +50,8 @@ Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in
 - A workbook reading looks only at the rows the tracker already selected: at most 10 columns and 60 rows, and only the first five suggested row indices are exposed. It names a chart shape; it does not draw one.
 - Digest readings and reply drafts work from message headers and the first line only. No message body is read, so a thread that buried its question is not recognised.
 - A drafted reply is a skeleton or a single model output. It is never sent, never saved to the draft folder, and it carries no recipient, so the user must open it in the reply writer.
-- No surface draws the press button yet. `payload["insight"]["press"]` carries the offer and `POST /api/insight/draft` answers it, but the dashboard and the SPA do not render a control for it.
-- The built SPA's tracker card renders its own figure and ignores appended elements, so the workbook reading appears on the server-rendered dashboard only.
+- The press button is drawn on the SPA's tracker and plugin cards. Its explanation and its reply draft have no placeholder while the model works; the answer or the staged card simply appears when it arrives.
+- The built SPA's tracker card draws its own figure and then every appended element, so a live tracker repeats its value, change, workbook, pace and history on one tile.
 - Research suggestions are keyword-anchored: a focus topic named once in the stored answer counts as covered. The reading cannot judge depth, so it says "not named" rather than "not answered".
 - The insight readings never write memory. Recall is read-only and a sealed or empty bank degrades to one sentence naming what was not consulted.
 - The next meeting's reading knows its title, time and prep items, not its attendees, so no prompt names a person.
@@ -56,6 +60,7 @@ Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in
 
 - The consent sheet traps Tab and Shift+Tab, closes on Escape and restores focus to its trigger. Initial focus lands on the close button, not the confirm button, so the first keypress cannot accidentally accept a widening.
 - The source filter is supplied as described above, so one visible option can never produce results.
+- Server-rendered pages navigate on submit. A model-backed action can show a busy button and a same-shape placeholder in the outgoing page, but its result arrives as a new page, not in place. The page script binds its controls once at load (`src/agentdesk/server/pages.py:488` onward), so a fetch-based swap would leave the new markup unbound.
 
 ## Keys, connections and the legacy upgrade (spec 018)
 
