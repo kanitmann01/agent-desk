@@ -131,6 +131,10 @@ def test_create_stores_the_key_in_the_keychain_and_answers_the_mask(env, auth, k
     # The preset default filled the blank base URL.
     assert payload["baseUrl"] == "https://api.openai.com/v1"
     assert payload["maskedKey"] == "sk-...9999"
+    # The preset default filled the blank model too, the way it fills the
+    # blank base URL (a preset with no verified default, like OpenCode,
+    # saves none; that case has its own test below).
+    assert payload["model"] == "gpt-6-luna"
     # The secret itself went to the keychain alone, under the spec's shape.
     assert keychain.secrets == {("agent-desk", f"key/{payload['id']}"): SECRET}
 
@@ -159,6 +163,16 @@ def test_a_save_that_arrives_with_no_model_takes_the_preset_default(env, auth):
         "apiKey": SECRET, "model": ""}, auth)
     assert status == 201
     assert json.loads(body)["model"] == ""
+
+
+def test_create_saves_the_model_with_the_key(env, auth):
+    status, _h, body = _create(env, auth, model="kimi-k3")
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["model"] == "kimi-k3"
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "kimi-k3" in page
+    assert "name='model'" in page
 
 
 def test_the_secret_is_never_echoed_after_create(env, auth):

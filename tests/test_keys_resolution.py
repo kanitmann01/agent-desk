@@ -81,6 +81,25 @@ def test_leg_1_a_blank_binding_model_takes_the_connections_model(tmp_path):
     assert resolved.model == "mock-chat"
 
 
+def test_a_blank_binding_uses_the_model_saved_on_the_connection(tmp_path):
+    conn = _connection(tmp_path, model="kimi-k3")
+    resolved = resolve_job(
+        "agents", connections=[conn],
+        bindings=[JobBinding("agents", conn.id, "")], env=ENV)
+    assert resolved.model == "kimi-k3"
+    own = resolve_job(
+        "agents", connections=[conn],
+        bindings=[JobBinding("agents", conn.id, "other-model")], env=ENV)
+    assert own.model == "other-model"
+
+
+def test_a_single_connection_serves_the_model_saved_with_its_key(tmp_path):
+    only = _connection(tmp_path, "Only", model="kimi-k3")
+    resolved = resolve_job("agents", connections=[only], bindings=[], env=ENV)
+    assert resolved.source == "single"
+    assert resolved.model == "kimi-k3"
+
+
 def test_leg_1_with_no_model_anywhere_on_the_connection_the_env_model_serves(
         tmp_path):
     """A connection saved before it could carry a model has none, and it

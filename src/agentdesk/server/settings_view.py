@@ -546,11 +546,12 @@ def _jobs_section(bindings: list[dict] | None,
             model = str(binding.get("model") or "") if binding else ""
             choices = _job_choices(connections, selected)
             if selected and selected in by_id:
+                shown = model or str(by_id[selected].get("model") or "")
                 current = (
                     f"<span class='empty'>Answers through"
                     f" <b>{html.escape(str(by_id[selected].get('label', '')))}</b>"
-                    + (f", model <span class='mono'>{html.escape(model)}</span>"
-                       if model else "")
+                    + (f", model <span class='mono'>{html.escape(shown)}</span>"
+                       if shown else "")
                     + ".</span>")
             elif binding:
                 current = ("<span class='empty'>The AI it used was removed, so it"
@@ -585,7 +586,8 @@ def _jobs_section(bindings: list[dict] | None,
 <p>{serves}</p>
 <details class='settings-disclosure'><summary>Use a different model for one of these</summary>
 <p class='empty'>Each model field is picked from the cached lists or typed.
-Leave "Same as everything else" to use the AI that serves the rest.</p>
+A blank model uses the model saved with that AI. Leave "Same as everything
+else" to use the AI that serves the rest.</p>
 {body}
 </details>
 </section>"""
@@ -869,6 +871,10 @@ def _connections_section(
             headers_text = html.escape("\n".join(
                 f"{name}: {value}"
                 for name, value in (editing.get("headers") or {}).items()))
+            model_value = html.escape(str(editing.get("model") or ""), quote=True)
+            model_options = "".join(
+                f"<option value='{html.escape(str(item), quote=True)}'></option>"
+                for item in (editing.get("models") or []))
             default_checked = " checked" if editing.get("isDefault") else ""
             clear_row = (
                 "<label class='empty'><input type='checkbox' name='keyClear'"
@@ -885,11 +891,11 @@ def _connections_section(
             selected = PRESETS[0].id
             key_placeholder = "Paste the key from your provider"
             headers_text = ""
+            model_value = ""
+            model_options = []
             default_checked = ""
             clear_row = ""
             cancel = ""
-            model_value = ""
-            model_options = []
         # Three fields are all a person needs to add an AI: provider, key
         # and model. The rest sit behind "More options" (spec 022). An
         # address is the one field a provider without one of its own cannot
@@ -937,6 +943,8 @@ def _connections_section(
 <input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
 <label class='empty' for='conn-key-show'><input type='checkbox' id='conn-key-show' data-key-reveal> Show the key while typing</label>
 {_model_field(model_value, model_options)}
+<p class='empty'>Saved with this AI. A place that names its own model uses
+that instead.</p>
 {shown_address}
 {optional}
 <button class='btn btn-primary' type='submit'>Save</button>{cancel}

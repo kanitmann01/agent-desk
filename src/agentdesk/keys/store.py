@@ -114,12 +114,14 @@ def mask_key(secret: str) -> str:
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Create the connections table and commit; safe on every open.
 
-    A store saved before spec 022 has no model column, and CREATE TABLE IF
-    NOT EXISTS leaves an existing table alone, so the column is added by
-    one guarded ALTER: table_info is read first and the ALTER runs only
-    when the column is missing. That is what lets a keys file from an
-    earlier build open and upgrade on boot, its rows unchanged (the new
-    column's empty default is the "no model chosen" state).
+    ``model`` is the id saved with the key (spec 022). A store saved
+    before the column existed has none, and CREATE TABLE IF NOT EXISTS
+    leaves an existing table alone, so the column is added by one guarded
+    ALTER: table_info is read first and the ALTER runs only when the
+    column is missing. That is what lets a keys file from an earlier
+    build open and upgrade on boot, its rows unchanged (the new column's
+    empty default is the "no model chosen" state); a second open finds
+    the column already there.
     """
     conn.executescript(SCHEMA)
     present = {row[1] for row in conn.execute("PRAGMA table_info(connections)")}
@@ -195,7 +197,8 @@ class KeysStore:
                     (connection_id, label, provider, base_url, model,
                      f"key/{connection_id}", masked_key,
                      json.dumps(headers or {}, ensure_ascii=False),
-                     1 if is_default else 0, 1 if enabled else 0, now, now),
+                     1 if is_default else 0, 1 if enabled else 0,
+                     now, now),
                 )
                 if is_default:
                     self.conn.execute(

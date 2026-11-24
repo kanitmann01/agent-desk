@@ -112,20 +112,19 @@ def resolve_job(job: str, *, connections: list[Connection],
     if binding is not None and _can_serve(by_id.get(binding.connection_id)):
         connection = by_id[binding.connection_id]
         return Resolution(job, "job", connection, connection.base_url, "",
-                          binding.model_id or connection.model or env_model)
+                          _model(connection, binding.model_id, env_model))
 
     if job != DEFAULT_JOB:
         fallback = _binding_for(bindings, DEFAULT_JOB)
         if fallback is not None and _can_serve(by_id.get(fallback.connection_id)):
             connection = by_id[fallback.connection_id]
             return Resolution(job, "default", connection, connection.base_url,
-                              "", fallback.model_id or connection.model
-                              or env_model)
+                              "", _model(connection, fallback.model_id, env_model))
 
     serving = [connection for connection in connections if _can_serve(connection)]
     if len(serving) == 1:
         return Resolution(job, "single", serving[0], serving[0].base_url, "",
-                          serving[0].model or env_model)
+                          _model(serving[0], "", env_model))
 
     if env_base:
         return Resolution(job, "env", None, env_base, env_key, env_model)
@@ -148,6 +147,12 @@ def _can_serve(connection: Connection | None) -> bool:
         return True
     preset = preset_for(connection.provider)
     return preset is not None and preset.key_optional
+
+
+def _model(connection: Connection, explicit: str, env_model: str) -> str:
+    """The model one call uses: the job's own, else the one saved with
+    the connection's key, else the environment."""
+    return explicit or connection.model or env_model
 
 
 def _binding_for(bindings: list[JobBinding], job: str) -> JobBinding | None:
