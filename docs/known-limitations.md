@@ -65,6 +65,18 @@ Honest gaps in the marketplace branch as of 2026-11-21. Each item is verified in
 - A recovery boot restores a migrated connection's binding only when that job is unbound and takes the default star only when no connection holds it. A user who deleted a migrated connection and bound the job elsewhere keeps their choice, but the migrated connection still reappears (unstarred, unbound) in the list.
 - The migrated connections carry the custom preset and the legacy base URLs verbatim; nothing re-validates them at migration time, so a row that was already wrong (a portal URL, a dead key) migrates as a connection with an unknown badge, exactly as wrong as it was before.
 
+## Mail and Outlook alerts
+
+- The automatic Outlook feed is alerts only, not a mailbox. It reads the sender and subject lines of the alerts the OS notification store kept. It has no Message-ID, folder, read state, recipients, attachments or calendar data from the alert, so it cannot mirror an inbox or complete a thread history.
+- Windows keeps only a short alert history, about 20 toasts per app. macOS retention is also short. A quiet app, a long sleep or a pruned store leaves gaps, and the Settings card shows the coverage window rather than claiming completeness.
+- The feeder reads only while the app is open. No OS task, service, login item or autostart entry is created, and nothing is collected while the app is closed. The next pass starts from the alerts the store still keeps.
+- On macOS, reading Notification Center needs Full Disk Access, a per-app user consent. Corporate MDM may refuse it. Without it the collector is unavailable and the manual folder remains the path.
+- Message bodies, attachments, inline images and preview lines are never read or written. The Windows reader stops after the second toast text node and the macOS reader reads only the title and subtitle keys, so the preview and body never reach a record or a file.
+- History stays manual on both platforms: save or download `.eml` files into the mail folder. That folder is the history source, and it is the only history source on macOS with new Outlook.
+- Turning on "Fetch Outlook alerts" also turns on the mail digest, because the alert files are written into the mail folder the digest reads. Turning mail off stops both.
+- The macOS reader is verified against a synthetic Notification Center store and a written manual procedure, not on a real Mac in this build's evidence. Treat the macOS automatic path as unverified until that procedure is run and recorded.
+- When the platform reader is unavailable, the Settings card shows the reader's own cause (for example Full Disk Access) and names the reader; the manual folder sentence appears as the fallback. On a platform with no reader, the generic manual sentence is the whole state.
+
 ## Operations
 
 - No autostart, no Windows service, no scheduled task and no tray helper. The app starts when the user launches it.
