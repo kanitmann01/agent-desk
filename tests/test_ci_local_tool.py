@@ -8,6 +8,7 @@ the gate cannot silently lose a check.
 
 import ast
 import sys
+import types
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parent.parent / "tools" / "ci_local.py"
@@ -122,3 +123,40 @@ def test_a_missing_check_is_a_failure_never_a_skip():
     assert "except Exception" in source
     # and a failed gate drives the exit code
     assert "return 1" in source
+
+
+def test_the_pytest_gate_adds_xdist_only_when_it_is_installed():
+    ci_local = _gate()
+    serial = [ci_local.PYTHON, "-m", "pytest", "tests", "-q", "--no-header"]
+    # the fallback is the exact invocation the gate shipped with; xdist only
+    # appends its worker flag, so selectors and reported counts stay identical.
+    assert ci_local._pytest_args(False) == serial
+    parallel = ci_local._pytest_args(True)
+    assert parallel[:len(serial)] == serial
+    assert parallel[-2] == "-n"
+    # eight is the measured stable ceiling on the 20-core Windows host;
+    # the flag must stay a positive worker count, never "auto".
+    assert parallel[-1].isdigit() and 1 <= int(parallel[-1]) <= 8
+
+
+def test_the_pytest_gate_reports_which_mode_it_chose(monkeypatch):
+    ci_local = _gate()
+    seen: list[list[str]] = []
+
+    class _Done:
+        returncode = 0
+        stdout = "3212 passed, 2 skipped in 120.00s\n"
+
+    def fake_run(args, **_kwargs):
+        seen.append(list(args))
+        return _Done()
+
+    monkeypatch.setattr(ci_local, "subprocess",
+                        types.SimpleNamespace(run=fake_run))
+    for parallel, expect_mode in ((True, "parallel -n"),
+                                  (False, "serial")):
+        monkeypatch.setattr(ci_local, "_xdist_available", lambda p=parallel: p)
+        ok, detail = ci_local._pytest_gate({})
+        assert ok is True
+        assert expect_mode in detail, detail
+        assert ("-n" in seen[-1]) is parallel

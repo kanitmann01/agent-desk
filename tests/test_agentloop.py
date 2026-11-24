@@ -1,10 +1,13 @@
-"""The agent loop's primitives and its supervision (spec 016, ticket 04).
+"""The agent loop's primitives and its supervision (spec 016, ticket 04;
+spec 023 ticket 023-2).
 
-interval_due seeds on first sight and defers one interval; the run claim is
+interval_due is due on first sight and seeds the interval from that
+moment, so the first pass comes now (spec 023); the run claim is
 exclusive between two loops on one data folder and takes over a dead or
-stale holder; a pass isolates a failing step, writes its audit rows, heals
-the inbox on the startup desk check, never runs at agent_loop_minutes 0,
-restarts a dead thread and joins on stop. No test sleeps longer than 0.2 s.
+stale holder; a pass isolates a failing step, writes its audit rows, and
+the startup pass runs every step and heals the inbox, never runs at
+agent_loop_minutes 0, restarts a dead thread and joins on stop. No test
+sleeps longer than 0.2 s.
 """
 
 import json
@@ -94,15 +97,39 @@ def _wait_until(predicate, timeout: float = 5.0, step: float = 0.02) -> bool:
     return False
 
 
+def _expected_full_pass_steps(settings) -> list[str]:
+    """The step names one full pass should run, derived as the loop does.
+
+    The server module is imported for its registration side effect, so the
+    registry holds every ticket step even when this file runs on its own. A
+    full pass (only=None) runs every step whose gate allows it, in registry
+    order; a gate that raises still yields a row, a failed one, exactly as
+    _run_steps records it, so it counts as expected too.
+    """
+    import agentdesk.server.app  # noqa: F401 - registers the ticket steps
+
+    names = []
+    for step in STEPS:
+        try:
+            enabled = step.enabled(settings)
+        except Exception:  # noqa: BLE001 - the loop records the failure row
+            enabled = True
+        if enabled:
+            names.append(step.name)
+    return names
+
+
 # ---- schedule.interval_due ----------------------------------------------
 
 
-def test_interval_seeds_then_defers():
+def test_interval_is_due_on_first_sight():
     now = datetime(2026, 11, 21, 9, 0, 0)
-    # First sight is not due; the value to store seeds now, deferring one interval.
-    assert schedule.interval_due(None, 1.0, now) == (False, now.isoformat())
-    # A stored time this build cannot parse is treated as first sight.
-    assert schedule.interval_due("not a date", 1.0, now) == (False, now.isoformat())
+    # First sight is due at once, and the value to store seeds now: the
+    # first pass comes now and the interval counts from it (spec 023).
+    assert schedule.interval_due(None, 1.0, now) == (True, now.isoformat())
+    # A stored time this build cannot parse is treated as first sight: one
+    # run now, then the fresh seed restarts the interval.
+    assert schedule.interval_due("not a date", 1.0, now) == (True, now.isoformat())
     # Before the interval there is nothing to store.
     assert schedule.interval_due(now.isoformat(), 1.0,
                                  now + timedelta(minutes=59)) == (False, None)
@@ -203,7 +230,7 @@ def test_the_built_in_steps_are_registered():
     # §6.2 says.
     assert [step.name for step in STEPS] == [
         "deskcheck", "recommend", "rank", "learn-topics", "profile-review",
-        "skills", "curator", "update"]
+        "skills", "curator", "update", "engine"]
 
 
 # ---- run_pass: order, isolation, audit -----------------------------------
@@ -349,9 +376,15 @@ def test_startup_deskcheck_heals(tmp_path, monkeypatch):
                     and "deskcheck ok" in row["detail"]
                     for row in audit_store.entries(server.audit_conn)))
         assert server.ledger.entries()[0].action == "deskcheck.fixed"
-        # The startup check is not a full pass: no interval time was stored.
-        assert server.ledger.latch_value("loop:last_run_at") is None
-        assert [row["name"] for row in loop.status()["lastSteps"]] == ["deskcheck"]
+        # The startup pass is a full pass (spec 023): the interval counts
+        # from it, so the next pass is a full interval after this one.
+        assert server.ledger.latch_value("loop:last_run_at") is not None
+        # It also ran every step a fresh desk's switches allow, in registry
+        # order, not the old desk-check-only startup pass. The expected set
+        # is derived from the registry and the gates, as the loop derives it.
+        expected = _expected_full_pass_steps(server.settings)
+        assert [row["name"] for row in loop.status()["lastSteps"]] == expected
+        assert len(expected) > 1
     finally:
         loop.stop()
 
@@ -373,19 +406,25 @@ def test_zero_disables(tmp_path):
     assert audit_store.entries(audit) == []
 
 
-def test_the_first_full_pass_waits_for_the_interval(tmp_path):
+def test_the_first_pass_comes_now(tmp_path):
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=_audit_conn())
     loop = AgentLoop(server, clock=lambda: NOW, startup_delay=0.02,
                      wake_seconds=0.02, data_dir=tmp_path)
     loop.start()
     try:
-        time.sleep(0.15)
+        assert _wait_until(lambda: loop.status()["lastRunTs"] is not None)
         status = loop.status()
         assert status["enabled"] is True
         assert status["intervalMinutes"] == 60
-        # Only the startup desk check ran; the first full pass is a full interval out.
-        assert [row["name"] for row in status["lastSteps"]] == ["deskcheck"]
+        # The first pass ran at startup (spec 023), and the next one is a
+        # full interval after it, not after boot.
+        assert status["lastRunTs"] == pytest.approx(NOW, abs=5)
         assert status["nextRunTs"] == pytest.approx(NOW + 3600, abs=5)
+        # The first pass is a full pass (spec 023), not just the desk
+        # check: every registered step whose gate allows it ran, in order.
+        expected = _expected_full_pass_steps(server.settings)
+        assert [row["name"] for row in status["lastSteps"]] == expected
+        assert len(expected) > 1
     finally:
         loop.stop()
 

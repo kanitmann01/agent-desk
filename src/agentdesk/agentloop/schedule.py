@@ -1,8 +1,9 @@
 """Portions adapted from Hermes Agent (github.com/NousResearch/hermes-agent, commit f6c3eb1, agent/idle_schedule.py), Copyright (c) 2025 Nous Research, MIT License; see licenses/third-party/hermes-agent-LICENSE.txt.
 
 The loop's two time rules. interval_due decides whether a job's interval
-has elapsed, seeding the stored time on first sight so the very first
-sighting defers one full interval instead of firing at once. claim_run and
+has elapsed, seeding the stored time on first sight and firing that same
+sighting, so the first pass comes now and the interval counts from it
+(spec 023). claim_run and
 release_run are the single-runner rule: a lock file created exclusively
 holds the run, a holder whose process is gone or whose claim is older than
 the stale threshold is taken over, and anything else waits.
@@ -27,22 +28,24 @@ def interval_due(last_run_iso: str | None, hours: float,
                  now: datetime) -> tuple[bool, str | None]:
     """Whether the interval elapsed, and the time value to store.
 
-    The first time a job is seen there is no stored time: the answer is not
-    due, and the value to store seeds now, deferring the first run by one
-    full interval. A stored time this build cannot parse is treated the
-    same way, so a damaged state cannot fire a burst of runs. Zero or
-    negative hours is never due.
+    The first time a job is seen there is no stored time: the answer is
+    due, and the value to store seeds now, so the first run comes at once
+    and the interval counts from it (spec 023). A stored time this build
+    cannot parse is treated the same way: one run now, then the fresh seed
+    restarts the interval, so a damaged state still cannot fire a burst of
+    runs. Zero or negative hours is never due.
     """
     if hours <= 0:
         return (False, None)
     if not last_run_iso:
-        return (False, now.isoformat())
+        return (True, now.isoformat())
     try:
         last_run = datetime.fromisoformat(last_run_iso)
         elapsed = now - last_run
     except (ValueError, TypeError):
-        # Naive against aware, or a value that is not a timestamp: re-seed.
-        return (False, now.isoformat())
+        # Naive against aware, or a value that is not a timestamp: fire once
+        # and re-seed, so the next spacing is a known-good interval.
+        return (True, now.isoformat())
     if elapsed >= timedelta(hours=hours):
         return (True, now.isoformat())
     return (False, None)

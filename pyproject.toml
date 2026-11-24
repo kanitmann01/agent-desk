@@ -9,6 +9,15 @@ dependencies = [
     "keyring>=25",
 ]
 
+[project.optional-dependencies]
+# Developer tools only: installed with `pip install -e ".[dev]"`. Nothing
+# here ships or enters the SBOM; the local gate uses xdist when importable
+# and keeps its serial invocation when it is not.
+dev = [
+    "pytest",
+    "pytest-xdist>=3.8",
+]
+
 [tool.agent-desk-licenses]
 cryptography = "Apache-2.0 OR BSD-3-Clause"
 keyring = "MIT"

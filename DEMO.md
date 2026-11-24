@@ -12,7 +12,7 @@ long page, so check the branch before you rehearse.
 Every click below exists in the product and was walked on 2026-11-23. The
 whole first-ten-minutes path is proven without a browser by
 `python tools/demo_readiness.py`, which boots the real app on a fresh folder
-and prints one PASS line per check (`METRIC ready=23`).
+and prints one PASS line per check (`METRIC ready=27`).
 
 ## The story in one sentence
 
@@ -172,7 +172,7 @@ bring data in. The desk is what connects it.
   workbook and the calendar. Nothing from the day before is lost.
 - **Nothing on the screen works.** In a command window:
   `python tools\demo_readiness.py`. It prints one line per check and ends
-  with `METRIC ready=23` on a clean folder. Read the first FAIL out loud if
+  with `METRIC ready=27` on a clean folder. Read the first FAIL out loud if
   there is one: that is the thing to fix, named.
 
 ## Appendix: where the rest lives (for questions only)

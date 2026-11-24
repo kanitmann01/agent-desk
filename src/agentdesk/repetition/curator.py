@@ -44,9 +44,14 @@ def due(skills: SkillStore, now: datetime) -> bool:
 
     The first sighting stores now and defers one full interval (Hermes
     should_run_now), so a fresh desk never mutates its skills on the
-    first pass. The stored time lives in the curator_state table.
+    first pass: the loop's own interval fires on first sight since
+    spec 023, and this weekly pass keeps the defer rule here, locally.
+    The stored time lives in the curator_state table.
     """
     stored = skills.curator_state_value(LAST_RUN_KEY)
+    if not stored:
+        skills.set_curator_state(LAST_RUN_KEY, now.isoformat())
+        return False
     ok, seed = schedule.interval_due(stored, DEFAULT_INTERVAL_HOURS, now)
     if seed is not None:
         skills.set_curator_state(LAST_RUN_KEY, seed)

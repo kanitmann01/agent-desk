@@ -45,9 +45,17 @@ function isMarketplacePath(pathname: string): boolean {
   return pathname === '/marketplace' || pathname.startsWith('/marketplace/');
 }
 
+// The desk acts on its own now (spec 023), so the dashboard re-reads the
+// payload on a cadence instead of waiting for a click: every 8 seconds
+// while the tab is visible, paused while it is hidden, the Memory
+// island's own pattern. A changed payload re-renders the bento; no
+// socket, no event stream, no new dependency.
+const POLL_MS = 8000;
+
 /**
- * Dashboard route: fetch `/api/dashboard` once and render the loading state,
- * the expired-session notice, a failure with retry, or the dashboard.
+ * Dashboard route: fetch `/api/dashboard` on mount and then, while the tab
+ * is visible, every POLL_MS, and render the loading state, the
+ * expired-session notice, a failure with retry, or the dashboard.
  */
 function DashboardApp() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -56,6 +64,10 @@ function DashboardApp() {
   // The view report is a POST, so it must fire once per mount, after the
   // first successful load, and never make rendering wait for it.
   const reportedView = useRef(false);
+  // One increasing number per read. A response that comes back after a
+  // newer read was started is stale: it belongs to a payload the screen
+  // has already moved past, so it is dropped instead of overwriting it.
+  const latestRead = useRef(0);
 
   // Focus the failure heading as it mounts (it stays out of the tab
   // order) so Try again is the following keypress. A callback ref runs
@@ -65,24 +77,42 @@ function DashboardApp() {
   }, []);
 
   const refetch = useCallback(async () => {
-    const res = await getJson('/api/dashboard');
-    if (res.status === 401) {
-      setExpired(true);
-      return;
-    }
-    if (!res.ok) {
-      setLoadFailed(true);
-      return;
-    }
-    setData(res.data as DashboardData);
-    if (!reportedView.current) {
-      reportedView.current = true;
-      void postJson('/api/dashboard/view').catch(() => {});
+    const read = ++latestRead.current;
+    try {
+      const res = await getJson('/api/dashboard');
+      if (read !== latestRead.current) return;
+      if (res.status === 401) {
+        setExpired(true);
+        return;
+      }
+      if (!res.ok) {
+        setLoadFailed(true);
+        return;
+      }
+      setData(res.data as DashboardData);
+      if (!reportedView.current) {
+        reportedView.current = true;
+        void postJson('/api/dashboard/view').catch(() => {});
+      }
+    } catch {
+      // A tick that cannot reach the server (offline, a dropped
+      // connection) is not a user action: the last good screen stays up
+      // and the console stays quiet. The next tick tries again.
     }
   }, []);
 
   useEffect(() => {
     void refetch();
+  }, [refetch]);
+
+  // The screen listens (spec 023): a pass that lands while the user
+  // reads shows up on the next tick, without a click. Hidden tabs
+  // pause; the tick after returning picks the change up.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refetch();
+    }, POLL_MS);
+    return () => window.clearInterval(timer);
   }, [refetch]);
 
   if (expired) {

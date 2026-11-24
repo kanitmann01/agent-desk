@@ -9,12 +9,16 @@ here: a stable dedup key, a pending cap, and no repeat while one waits. The
 latch makes Not now permanent even if the card row is later removed.
 """
 
+import hashlib
 import json
+import logging
 import time
 from datetime import datetime
 
 from agentdesk.inbox.core import KIND_SUGGESTION
 from agentdesk.recommend.rules import Candidate, deadline_candidates, meeting_candidates
+
+LOG = logging.getLogger(__name__)
 
 # Hermes cron/suggestions.py MAX_PENDING: the desk never stacks more than
 # this many waiting suggestions; the soonest deadline earns the slot.
@@ -84,6 +88,70 @@ class RecommendationBuilder:
             for card in self._inbox.waiting(include_snoozed=True)
             if _recommendation(card) is not None
         ]
+
+    def add_engine_card(self, *, title: str, body: str, why: str = "",
+                        href: str = "/inbox",
+                        action_label: str = "Review") -> tuple | None:
+        """Add one suggestion the desk's engine proposed, as an ordinary card.
+
+        The card takes the same shape, cap, latch and ledger entry every
+        recommendation does (rule "engine", no cites, so the withdrawal
+        check never retracts it on a guess), and its entry carries the
+        card-added undo kind, so Undo dismisses it. None when
+        recommendations are off, when the waiting cap is already full,
+        or when a card for the same content is already waiting or was
+        latched: the desk never floods or stacks the same suggestion.
+        A record that fails removes the card and the latch it wrote, so
+        a suggestion without its ledger entry leaves nothing behind.
+        """
+        if self._ledger is None or self._inbox is None:
+            return None
+        if not self._settings.get("recommendations"):
+            return None
+        live = self._live()
+        if len(live) >= MAX_PENDING:
+            return None
+        key = "engine:" + hashlib.sha256(
+            f"{title}\n{body}".encode("utf-8")).hexdigest()[:16]
+        taken = {self._key(card) for card in live}
+        if key in taken or self._ledger.latched(LATCH_PREFIX + key):
+            return None
+        candidate = Candidate(
+            rule="engine", key=key, title=title, why=why or "The desk suggests this.",
+            body=body, cites=(), href=href, action_label=action_label,
+            due_ts=None, sample=False,
+        )
+        card = self._inbox.add(
+            kind=KIND_SUGGESTION,
+            origin=candidate.why,
+            title=candidate.title,
+            body=candidate.body,
+            action_label=candidate.action_label,
+            meta=self._meta(candidate),
+        )
+        self._ledger.latch(LATCH_PREFIX + key)
+        try:
+            entry = self._record(
+                "recommend.added",
+                card,
+                candidate,
+                "The desk suggested this while working on its own.",
+                undo_kind="card-added",
+            )
+        except Exception:
+            # The card and its latch are this call's only writes; a record
+            # that failed cannot leave them standing.
+            try:
+                self._inbox.delete(card.id)
+            except Exception:  # noqa: BLE001 - the original failure is the news
+                LOG.exception("engine card %s could not be removed after a failed record",
+                              card.id)
+            try:
+                self._ledger.unlatch(LATCH_PREFIX + key)
+            except Exception:  # noqa: BLE001 - the original failure is the news
+                LOG.exception("the engine card latch %s could not be cleared", key)
+            raise
+        return card, entry
 
     def _add_candidates(self, live: list) -> int:
         """Add cards for kept candidates until the pending cap is reached."""
@@ -183,13 +251,13 @@ class RecommendationBuilder:
         )
         self._record("recommend.withdrawn", card, candidate, origin, undo_kind="none")
 
-    def _record(self, action: str, card, candidate: Candidate, why: str, *, undo_kind: str) -> None:
+    def _record(self, action: str, card, candidate: Candidate, why: str, *, undo_kind: str):
         """Append the ledger entry that the Activity page shows.
 
         The detail holds the rule and fact ids only; the quoted fact stays
         on the card body, so the ledger never captures memory text.
         """
-        self._ledger.record(
+        return self._ledger.record(
             actor="agent",
             action=action,
             subject=f"recommendation/{candidate.key}",
@@ -214,7 +282,7 @@ class RecommendationBuilder:
                 "dueTs": candidate.due_ts,
                 "sample": candidate.sample,
                 "score": None,
-                "whySource": "rule",
+                "whySource": "engine" if candidate.rule == "engine" else "rule",
             }
         }
 

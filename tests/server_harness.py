@@ -39,6 +39,7 @@ from agentdesk.ledger.store import Ledger
 from agentdesk.mail.store import MailStore
 from agentdesk.memory.profile import LearnedProfileStore
 from agentdesk.memory.store import MemoryStore
+from agentdesk.engine import Action, TurnResult
 from agentdesk.peers.store import PeerStore
 from agentdesk.plugins.runtime import PluginRuntime
 from agentdesk.probe.core import UNKNOWN, GateResult
@@ -174,6 +175,52 @@ def _inert_plugins(root: Path) -> PluginRuntime:
         workspace_dir=root / "workspace",
         now="2026-11-11T16:00:00",
     )
+
+
+class FakeEngine:
+    """The canned engine the engine tests inject (spec 023).
+
+    A boot with this runner takes its engine turns from here instead of
+    the real side-car, which no test ever starts: run_turn records the
+    context and connection it was handed and answers the canned actions
+    through the boundary's own shapes, so the pass, the tools route and
+    the ledger toll are all the real ones.
+    """
+
+    def __init__(self, actions: tuple[Action, ...] = ()) -> None:
+        """Hold the actions every turn answers with."""
+        self.actions = tuple(actions)
+        self.turns: list[dict] = []
+
+    def available(self) -> bool:
+        """The fake is always installed."""
+        return True
+
+    def run_turn(self, context: str, *, connection=None, **kwargs) -> TurnResult:
+        """Record the turn and answer the canned actions and event kinds."""
+        self.turns.append({"context": context, "connection": connection})
+        return TurnResult(
+            backend="sidecar",
+            actions=self.actions,
+            events=(
+                {"type": "system/init"},
+                {"type": "text", "text": "thinking"},
+                {"type": "result", "text": "[]"},
+            ),
+            note="the fake's turn",
+        )
+
+
+def _engine_actions(**calls: dict) -> tuple[Action, ...]:
+    """Build boundary actions from keyword tool calls, undo kinds declared."""
+    from agentdesk.engine import tool_by_name
+
+    actions = []
+    for name, args in calls.items():
+        spec = tool_by_name(name)
+        actions.append(Action(tool=name, args=args, undo_kinds=spec.undo_kinds,
+                              why=spec.summary))
+    return tuple(actions)
 
 
 class Booted:

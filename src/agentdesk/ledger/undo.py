@@ -184,6 +184,35 @@ def _undo_card_dismissed(server: "AgentDeskServer", entry: Entry, before: bytes 
     return current
 
 
+# -- the rank step's re-rank and snooze (spec 023) -------------------------
+
+
+@register("card-ranked")
+def _undo_card_ranked(server: "AgentDeskServer", entry: Entry, before: bytes | None) -> bytes | None:
+    """The reverse of a rank step's change: the card's earlier why line,
+    meta and snooze, exactly as the entry captured them.
+
+    The rank step writes three columns (origin, meta, snoozed_until), so
+    the restore rewrites exactly those and leaves the row's status and
+    stamps as they stand: a card the user accepted meanwhile is not thrown
+    back to waiting by an undo of the ranking that touched it.
+    """
+    card = _card_for(server, entry, before)
+    data = _payload(entry, before)
+    origin = data.get("origin")
+    meta = data.get("meta")
+    snoozed_until = data.get("snoozedUntil")
+    if not isinstance(origin, str) or not origin.strip() or not isinstance(meta, dict):
+        raise LedgerError("That change's earlier card was not captured, so it cannot be undone.")
+    if snoozed_until is not None and (
+        isinstance(snoozed_until, bool) or not isinstance(snoozed_until, (int, float))
+    ):
+        raise LedgerError("That change's earlier card was not captured, so it cannot be undone.")
+    current = _capture_current(server, _card_json(server, card))
+    server.inbox.unrank(card.id, origin=origin, meta=meta, snoozed_until=snoozed_until)
+    return current
+
+
 # -- desk-check set-aside rows -------------------------------------------
 
 

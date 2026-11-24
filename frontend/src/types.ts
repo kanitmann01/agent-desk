@@ -238,11 +238,13 @@ export interface DeskCheckSummary {
 
 // A deadline the desk found in a saved fact, shaped by the screens #195
 // added to /api/dashboard. cites holds fact ids only, never the fact text.
+// whySource 'engine' is a suggestion the desk's engine proposed; screens
+// that only distinguish a model-ranked why treat it as the rule text.
 export interface Recommendation {
   cardId: string;
   title: string;
   why: string;
-  whySource: 'rule' | 'model';
+  whySource: 'rule' | 'model' | 'engine';
   score: number | null;
   due: string | null;
   href: string;

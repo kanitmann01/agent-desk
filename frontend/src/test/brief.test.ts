@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentCheckedLine, decisionsEmptyText, dealName, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline, recommendationRows } from '../dashboard/briefModel';
+import { agentCheckedLine, decisionsEmptyText, dealName, deskActionLine, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline, recommendationRows } from '../dashboard/briefModel';
 
 const atlas = (amount: number) => ['Halvorsen Freight renewal', 'AMER', 'Prospect', amount];
 const field = (amount: number) => ['Kestrel Foods pilot', 'EMEA', 'Qualify', amount];
@@ -101,6 +101,27 @@ describe('the morning brief agent loop line', () => {
   });
 });
 
+describe('the brief line naming the desk action', () => {
+  it('names the desk action once a stamp newer than the baseline arrives', () => {
+    // The desk had not acted when the page opened (baseline null), then
+    // the poll brings a stamp: the Brief says so in the desk's own voice.
+    expect(deskActionLine(null, 1_700_000_000)).toBe('The desk checked your sources.');
+    // A newer stamp after one already on screen names the newer pass too.
+    expect(deskActionLine(1_700_000_000, 1_700_100_000)).toBe('The desk checked your sources.');
+  });
+
+  it('stays quiet about the stamp the page opened with, and about anything older', () => {
+    expect(deskActionLine(1_700_000_000, 1_700_000_000)).toBeNull();
+    expect(deskActionLine(1_700_100_000, 1_700_000_000)).toBeNull();
+  });
+
+  it('stays quiet while no pass has run or the stamp is unreadable', () => {
+    expect(deskActionLine(null, null)).toBeNull();
+    expect(deskActionLine(1_700_000_000, null)).toBeNull();
+    expect(deskActionLine(null, Number.NaN)).toBeNull();
+  });
+});
+
 describe('the morning brief decisions', () => {
   const data = (recommendations?: unknown[], agentLoop?: unknown) => ({
     recommendations,
@@ -144,6 +165,11 @@ describe('the morning brief decisions', () => {
   it('marks a model-ranked why line', () => {
     const [row] = recommendationRows(data([{ ...halvorsen, whySource: 'model' }])).rows;
     expect(row.why).toBe('You told the desk this deadline; it is 24 days away. · ranked by your endpoint');
+  });
+
+  it('treats an engine-sourced why line as the rule text', () => {
+    const [row] = recommendationRows(data([{ ...halvorsen, whySource: 'engine' }])).rows;
+    expect(row.why).toBe('You told the desk this deadline; it is 24 days away.');
   });
 
   it('falls back to the setup decisions when there are no recommendations', () => {

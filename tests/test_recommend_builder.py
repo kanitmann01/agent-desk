@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
@@ -209,3 +211,45 @@ def test_ledger_detail_holds_fact_ids_only_and_undo_dismisses():
     server = SimpleNamespace(inbox=desk.inbox, ledger=desk.ledger)
     undo(server, desk.ledger, entry.id)
     assert desk.inbox.get(card.id).status == STATUS_DISMISSED
+
+
+def test_an_engine_card_is_refused_while_recommendations_are_off():
+    """The engine's card checks the same switch the rule candidates do."""
+    desk = Desk(settings={"recommendations": False})
+    assert desk.builder.add_engine_card(title="T", body="B") is None
+    assert desk.builder.waiting() == []
+    assert [entry for entry in desk.ledger.entries(limit=10)
+            if entry.action == "recommend.added"] == []
+
+
+def test_an_engine_card_is_refused_at_the_waiting_cap():
+    """The engine cannot flood the desk past MAX_PENDING waiting cards."""
+    desk = Desk()
+    for index in range(MAX_PENDING):
+        made = desk.builder.add_engine_card(title=f"T{index}", body="B")
+        assert made is not None
+    assert len(desk.builder.waiting()) == MAX_PENDING
+    before = [entry.id for entry in desk.ledger.entries(limit=20)]
+    assert desk.builder.add_engine_card(title="One too many", body="B") is None
+    assert len(desk.builder.waiting()) == MAX_PENDING
+    assert [entry.id for entry in desk.ledger.entries(limit=20)] == before
+
+
+def test_an_engine_card_rolls_back_when_its_record_fails():
+    """A failed ledger record removes the card and the latch it wrote."""
+    desk = Desk()
+
+    def broken_record(**kwargs):
+        """One record that fails before it can promise an undo."""
+        raise RuntimeError("the ledger is unwritable")
+
+    desk.ledger.record = broken_record
+    with pytest.raises(RuntimeError):
+        desk.builder.add_engine_card(title="T", body="B")
+    assert desk.builder.waiting() == []
+    assert desk.inbox.waiting(include_snoozed=True) == []
+    assert desk.ledger.latched("rec:") is False
+    # The latch key starts with rec: and this card's own key; no latch
+    # exists at all, so a retry is possible once the ledger recovers.
+    rows = desk.ledger.conn.execute("SELECT key FROM latches").fetchall()
+    assert rows == []

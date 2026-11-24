@@ -35,8 +35,9 @@ LOG = logging.getLogger("agentdesk.agentloop")
 LATCH_LAST_RUN = "loop:last_run_at"
 LOCK_NAME = "agentloop.lock"
 
-# Spec 016 section 6.2: wake every 60 s, and the first desk check about
-# 5 s after boot so self-heal does not wait an hour.
+# Spec 016 section 6.2: wake every 60 s, and the first full pass about
+# 5 s after boot so the desk acts at once instead of waiting an hour
+# (spec 023).
 WAKE_SECONDS = 60.0
 STARTUP_DELAY = 5.0
 DEFAULT_MINUTES = 60
@@ -190,8 +191,9 @@ class AgentLoop:
     def run_pass(self, only: set[str] | None = None) -> list[dict]:
         """Run one pass synchronously: claim, steps, audit, remember.
 
-        only names the steps to run (the startup desk check passes
-        {"deskcheck"}); None runs every enabled step. A pass that cannot
+        only names the steps to run; None runs every enabled step, which
+        is what the startup pass and every tick run (spec 023: the first
+        pass covers all the steps). A pass that cannot
         claim the run slot records the refusal as its only step row and
         changes nothing else. This is the loop-thread path, so it owns the
         running flag for its duration; when a pass is already running in
@@ -261,12 +263,23 @@ class AgentLoop:
                 context = LoopContext(server=self.server, ledger=ledger,
                                       settings=settings, now=self._now_dt())
                 outcome = step.run(context)
-                results.append({
+                # A step may return its own verdict: an engine turn that
+                # failed answers ok False, and the pass must not record it
+                # as a success. A dict without ok is a success, as before.
+                ok = bool(outcome.get("ok", True)) if isinstance(outcome, dict) else True
+                row = {
                     "name": step.name,
-                    "ok": True,
+                    "ok": ok,
                     "ms": round((time.monotonic() - started) * 1000),
                     "note": _note_text(outcome),
-                })
+                }
+                if isinstance(outcome, dict):
+                    # A step's own counts stay readable to the status API
+                    # and the readiness walk without being folded into the
+                    # note prose: the engine step's backend, action count,
+                    # refusal count and verdict live here.
+                    row["detail"] = dict(outcome)
+                results.append(row)
             except Exception as exc:  # noqa: BLE001 - one step never stops the pass
                 LOG.exception("agent loop step %s failed", step.name)
                 results.append(self._failed_row(step.name, started, exc))
@@ -320,22 +333,26 @@ class AgentLoop:
         self._thread.start()
 
     def _run(self) -> None:
-        """The thread target: one startup desk check, then the cadence.
+        """The thread target: one full startup pass, then the cadence.
 
-        Nothing here is caught wholesale: a bug that raises out of this
-        target kills the thread, which is exactly the death the supervisor
-        (restart_if_dead) heals on the next dashboard view. Step failures
-        never get that far; run_pass isolates each one.
+        The startup pass runs every step, not just the desk check, so a
+        fresh desk acts within seconds of its first start (spec 023) and
+        the interval counts from that pass. Nothing here is caught
+        wholesale: a bug that raises out of this target kills the thread,
+        which is exactly the death the supervisor (restart_if_dead) heals
+        on the next dashboard view. Step failures never get that far;
+        run_pass isolates each one.
         """
         if self._stop.wait(self.startup_delay):
             return
         if self.minutes() != 0:
-            self.run_pass(only={"deskcheck"})
+            self.run_pass()
         while not self._stop.wait(self.wake_seconds):
             self._tick()
 
     def _tick(self) -> None:
-        """One wake: seed the interval on first sight, run a pass when due."""
+        """One wake: fire and seed on first sight, run a pass when the
+        interval has elapsed."""
         ledger = getattr(self.server, "ledger", None)
         minutes = self.minutes()
         if minutes == 0 or ledger is None:
@@ -347,6 +364,16 @@ class AgentLoop:
             ledger.latch(LATCH_LAST_RUN, store)
         if due:
             self.run_pass()
+
+    def is_running(self) -> bool:
+        """Whether a pass holds the run slot right now.
+
+        The public answer the fallback backend reads before it would
+        call run_pass(): a pass that is already running must never be
+        started again, and its ledger entries must never be re-executed.
+        """
+        with self._state_lock:
+            return self._running
 
     def stop(self, timeout: float = 2) -> None:
         """Ask both loop threads to stop and join them, bounded by the
