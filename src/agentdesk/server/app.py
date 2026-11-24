@@ -1675,9 +1675,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _send_agent_loop_api(self) -> None:
         """Serve the agent loop's status payload (spec 016 sections 6.2 and 7)."""
-        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        loop = self._require_store(getattr(self.server, "agent_loop", None), "agent loop")
         if loop is None:
-            self._send_json(503, {"error": "the agent loop is not available"})
             return
         self._send_json(200, loop.status())
 
@@ -1688,9 +1687,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         already running. A plain form post (the settings page's Run now
         button) goes back to the agent section instead.
         """
-        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        loop = self._require_store(getattr(self.server, "agent_loop", None), "agent loop")
         if loop is None:
-            self._send_json(503, {"error": "the agent loop is not available"})
             return
         started = loop.run_now()
         if self._is_form_submit():
@@ -1792,17 +1790,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _excel_watch_pick(self) -> None:
         """Open the workbook picker and return the chosen path."""
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         self._send_json(200, {"path": self.server.pick_workbook()})  # type: ignore[attr-defined]
 
     def _excel_watch_register(self) -> None:
         """Validate and register the workbook path the card submitted."""
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         body = self._read_json_body()
         if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
@@ -1820,18 +1816,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _excel_watch_retest(self) -> None:
         """Re-test the registered workbook and return the watch status."""
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         excel.retest()
         self._send_json(200, excel.status())
 
     def _commitment_check(self) -> None:
         """Toggle one commitment checkbox on the calendar bridge."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         body = self._read_json_body()
         if body is None or not isinstance(body.get("eventId"), str):
@@ -1844,9 +1838,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_retest(self) -> None:
         """Re-test the calendar bridge and return its status."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         calendar.retest()
         self._maybe_briefs()
@@ -1854,17 +1847,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_pick(self) -> None:
         """Open the calendar picker and return the chosen path."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         self._send_json(200, {"path": self.server.pick_calendar()})  # type: ignore[attr-defined]
 
     def _calendar_bridge_path(self) -> None:
         """Store the explicit calendar path the card submitted, then re-poll."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         body = self._read_json_body()
         if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
@@ -1886,9 +1877,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_upload(self) -> None:
         """Store the uploaded calendar document and point the bridge at it."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         raw = getattr(self, "_raw_body", b"")
         declared = getattr(self, "_content_length", 0)
@@ -1912,9 +1902,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_reset(self) -> None:
         """Clear the explicit calendar path, re-poll and return the status."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         calendar.clear_explicit_path()
         calendar.retest()
@@ -1940,8 +1929,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _inbox_card_add(self) -> None:
         """Add one inbox card from the posted body and return it."""
-        if self.server.inbox is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the inbox is not available"})
+        if self._require_store(self.server.inbox, "inbox") is None:  # type: ignore[attr-defined]
             return
         body = self._read_json_body() or {}
         try:
@@ -1987,8 +1975,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _inbox_consolidate(self) -> None:
         """Run the repetition detector and return its consolidated cards."""
-        if self.server.consolidator is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the repetition detector is not available"})
+        if self._require_store(self.server.consolidator, "repetition detector") is None:  # type: ignore[attr-defined]
             return
         self._send_json(200, self.server.consolidator.consolidate())  # type: ignore[attr-defined]
 
@@ -2373,9 +2360,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         503 when no watcher exists: the widget's shape belongs to the watcher, and
         inventing an empty one here would look like a connected source with no data.
         """
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         self._send_json(200, excel.status())
 
@@ -2385,9 +2371,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         503 when no bridge exists, since an unbuilt collaborator is not the same thing
         as a source that happens to be empty.
         """
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         self._send_json(200, calendar.status())
 
@@ -2482,8 +2467,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                           " characters; shorten it"},
             )
             return
-        if server.agents is None:
-            self._send_json(503, {"error": "the agents store is not available"})
+        if self._require_store(server.agents, "agents store") is None:
             return
         if not self._source_allowed("endpoint_enabled"):
             result = endpoint_off_run()
@@ -2570,8 +2554,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                           " characters; shorten it"},
             )
             return
-        if server.agents is None:
-            self._send_json(503, {"error": "the agents store is not available"})
+        if self._require_store(server.agents, "agents store") is None:
             return
         ready, sentence = self._presentation_endpoint()
         if not ready:
@@ -3109,8 +3092,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                           " characters; shorten it"},
             )
             return
-        if server.agents is None:
-            self._send_json(503, {"error": "the agents store is not available"})
+        if self._require_store(server.agents, "agents store") is None:
             return
         try:
             run_id = int(str(run_id_text).strip())
@@ -3169,8 +3151,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         503 without a store: the tail is the store's data, and an empty list would claim
         there was nothing to record.
         """
-        if self.server.audit_conn is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the audit store is not available"})
+        if self._require_store(self.server.audit_conn, "audit store") is None:  # type: ignore[attr-defined]
             return
         self._send_json(200, {"entries": audit_store.entries(self.server.audit_conn)})  # type: ignore[attr-defined]
 
@@ -3181,8 +3162,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         the file carries exactly what the store holds; the content type tells a browser
         to download it.
         """
-        if self.server.audit_conn is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the audit store is not available"})
+        if self._require_store(self.server.audit_conn, "audit store") is None:  # type: ignore[attr-defined]
             return
         self._send_bytes(
             200,
@@ -3343,9 +3323,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         see, never the raw store, so the widget route cannot become a second read
         surface.
         """
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         self._send_json(200, self._settings_public_values())
 
@@ -3358,9 +3337,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         rows are read-only fallback now, so every other field name is
         refused with the accepted names: a silent ok with dropped values
         is how a typo loses data."""
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         unknown = sorted(
@@ -3405,8 +3383,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         state every store route uses.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         self._send_json(200, {
             "connections": [_connection_payload(c) for c in server.keys.all()],
@@ -3438,8 +3415,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         user's starred connection keeps its star.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         body = self._read_json_body() or {}
         values, error = _connection_input(body, CONNECTION_CREATE_FIELDS)
@@ -3503,8 +3479,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         keychain still holds the secret.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             existing = server.keys.get(connection_id)
@@ -3587,8 +3562,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         connection back with its key: that delete is the recovery path,
         and both confirmations say so."""
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -3645,8 +3619,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         lands back on Settings, where the badge re-renders from the row.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -3678,8 +3651,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         stamps the row exactly like the free check's.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -3717,8 +3689,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         model by hand is always the allowed path.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -3749,8 +3720,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """GET /api/bindings: every job binding. 503 without a store, the
         honest unavailable state every keys route uses."""
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         self._send_json(200, {
             "bindings": [_binding_payload(b) for b in server.keys.bindings()],
@@ -3768,8 +3738,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         binding back.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         body = self._read_json_body() or {}
         unknown = sorted(name for name in body if name not in BINDING_FIELDS)
@@ -3824,8 +3793,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         goes back to the inbox, the one page that posts this without JavaScript.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.settings is None:
-            self._send_json(503, {"error": "settings are not available"})
+        if self._require_store(server.settings, "settings store") is None:
             return
         body = self._read_json_body() or {}
         key = body.get("key")
@@ -3967,8 +3935,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         card.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.layout is None:
-            self._send_json(503, {"error": "the layout store is not available"})
+        if self._require_store(server.layout, "layout store") is None:
             return
         body = self._read_json_body() or {}
         known = set(BUILTIN_LAYOUT_KEYS) | set(enabled_plugin_ids(server))
@@ -4074,8 +4041,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         than breaking the run.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         if not self._source_allowed("endpoint_enabled"):
             self._send_json(200, {"status": "degraded", "cause": "Company endpoint calls are turned off in settings."})
@@ -4111,8 +4077,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         on success the body is the store's own record of the deactivation.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         try:
             skill = server.skills.get(skill_id)  # type: ignore[attr-defined]
@@ -4143,8 +4108,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                                   "No skill lives at this address.")
             return
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         body = self._read_json_body() or {}
         raw = body.get("pinned")
@@ -4208,8 +4172,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         shows the text instead of rendering it as a page.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         try:
             markdown = server.skills.markdown(skill_id)  # type: ignore[attr-defined]
@@ -4255,9 +4218,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         while the page was away is already waiting. The clock is the store's own, like
         every payload, so a card never ages by two different clocks.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
         self._evaluate_inbox(inbox)
@@ -4288,9 +4250,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         them; notified counts waiting cards that have been announced, so the badge does
         not double-count a card that already asked for attention.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
         self._evaluate_inbox(inbox)
@@ -4312,9 +4273,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         follow-up and the fact-carried hook, and both decisions are audited under
         inbox.approved or inbox.denied.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         try:
@@ -4400,9 +4360,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _inbox_edit(self, card_id: str) -> None:
         """Update the card's draft; the decision vocabulary calls it
         edited. An identical draft is a no-op, like the donor's edit."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         draft = body.get("draft")
@@ -4423,9 +4382,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _inbox_snooze(self, card_id: str) -> None:
         """Hide the card for one hour or until the next morning. The
         store's own clock judges the return time, like every payload."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         choice = body.get("choice")
@@ -4446,9 +4404,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _inbox_more_info(self, card_id: str) -> None:
         """Attach the user's instruction; the card stays waiting for the
         decision, and a running snooze ends so it is visible again."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         instruction = body.get("instruction")
@@ -4535,9 +4492,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         results (or the never-tested state), and probing belongs to the
         explicit re-test POST. The cards age by the cache's own clock, so
         a stored result never reads fresher than it is."""
-        cache = self.server.capabilities_cache
+        cache = self._require_store(self.server.capabilities_cache, "capabilities cache")
         if cache is None:
-            self._send_json(503, {"error": "the capabilities cache is not available"})
             return
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
@@ -4597,9 +4553,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         runner set and re-cache the answer. An unknown gate address is a
         404 before any runner is touched."""
         server = self.server  # type: ignore[attr-defined]
-        cache = server.capabilities_cache
+        cache = self._require_store(server.capabilities_cache, "capabilities cache")
         if cache is None:
-            self._send_json(503, {"error": "the capabilities cache is not available"})
             return
         runner = (server.gate_runners or {}).get(gate_key)
         if runner is None:
@@ -4767,12 +4722,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         No message content goes into the card: the draft body is the
         user's own words, by construction and by rule."""
         server = self.server  # type: ignore[attr-defined]
-        mail = server.mail
+        mail = self._require_store(server.mail, "mail watcher")
         if mail is None:
-            self._send_json(503, {"error": "the mail watcher is not available"})
             return
-        if server.inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
+        if self._require_store(server.inbox, "inbox") is None:
             return
         body = self._read_json_body() or {}
         text = body.get("body")
@@ -4853,9 +4806,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """The settings page's mail folder field. An empty value clears
         the choice; the watcher re-reads the folder right away."""
         server = self.server  # type: ignore[attr-defined]
-        settings = server.settings
+        settings = self._require_store(server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         folder = body.get("folder")
@@ -4876,9 +4828,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         follow-up cards that cannot know which threads were answered).
         A saved address is retried against the folder right away."""
         server = self.server  # type: ignore[attr-defined]
-        settings = server.settings
+        settings = self._require_store(server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         address = body.get("address")
@@ -5029,9 +4980,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         410 for one that is gone for good. A restore is audited like every other
         decision, so a card cannot reappear with no history.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         try:
             card = inbox.restore(card_id)
@@ -5057,9 +5007,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         with its own status and code, any other failure goes through the setup envelope
         so it still names itself, and a path matching neither shape is a 404 quoting it.
         """
-        plugins = self.server.plugins  # type: ignore[attr-defined]
+        plugins = self._require_store(self.server.plugins, "plugin runtime")
         if plugins is None:
-            self._send_json(503, {"error": "plugins are not available"})
             return
         parts = [part for part in path.split("/") if part]
         try:
@@ -5868,9 +5817,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _registry_path_save(self) -> None:
         """Save or clear the registry checkout path (the settings form)."""
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         chosen = str(body.get("path", "")).strip()
@@ -5890,9 +5838,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         host[:port] entries admitted beyond loopback. Stored as typed
         (comma or space separated); the guard re-reads it on every
         request, so an empty save returns to loopback-only at once."""
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         if self._is_form_submit():
@@ -5913,9 +5860,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _route_wizard(self, method: str, path: str) -> None:
         """The wizard surface: describe, answer, build, preview, approve."""
-        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        wizard = self._require_store(self.server.wizard_store, "wizard")
         if wizard is None:
-            self._send_json(503, {"error": "the wizard is not available"})
             return
         parts = [part for part in path.split("/") if part]  # ["wizard", ...]
         if method == "GET" and len(parts) < 2 and parts[0] == "wizard":
@@ -6064,9 +6010,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 q["id"]: q.get("default", "") for q in session.questions
             }
         session.answers = answers
-        compiler = self._wizard_compiler()
+        compiler = self._require_store(self._wizard_compiler(), "wizard")
         if compiler is None:
-            self._send_json(503, {"error": "the wizard is not available"})
             return
         try:
             draft = compiler.build(session, answers)
@@ -6322,6 +6267,19 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             json.dumps(payload, indent=2).encode("utf-8"),
             "application/json; charset=utf-8",
         )
+
+    def _require_store(self, store, name: str):
+        """The one refusal for an optional store that is not configured.
+
+        Every handler used to write its own None check, and the sentences
+        drifted ("skills are not available", "settings are not available").
+        One helper keeps the status, the JSON shape and the wording in one
+        place. Returns the store, or None once the 503 has gone out.
+        """
+        if store is None:
+            self._send_json(503, {"error": f"the {name} is not available"})
+            return None
+        return store
 
     def _send_error_page(self, status: int, title: str, message: str) -> None:
         """Send one HTML error page with the given status.
