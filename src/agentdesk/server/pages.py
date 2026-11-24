@@ -545,6 +545,7 @@ function post(url, body) {
 // page's own note.
 var BUSY_DELAY_MS = 100;
 var TAKING_LONGER_MS = 10000;
+var BUSY_WATCHDOG_MS = 180000;
 
 function shouldReloadAfterPost(ok) {
   return ok === true;
@@ -566,6 +567,12 @@ function stackButton(btn) {
 
 function setButtonBusy(btn, on, label) {
   if (!btn) return;
+  // A resting control cancels the delayed busy mark: a fast answer must
+  // not be followed by a timer that locks the control after it is done.
+  if (!on && btn._busyTimer) {
+    window.clearTimeout(btn._busyTimer);
+    btn._busyTimer = null;
+  }
   stackButton(btn);
   var busy = btn.querySelector('.btn-label-busy');
   if (on && label && busy) busy.textContent = label;
@@ -589,10 +596,14 @@ function controlLabel(btn) {
 }
 
 function beginControl(btn) {
-  var timer = window.setTimeout(function () {
+  if (!btn) return;
+  if (btn._busyTimer) window.clearTimeout(btn._busyTimer);
+  // The timer lives on the element, so setButtonBusy(false) can cancel
+  // it from anywhere: no caller has to keep the returned cancel.
+  btn._busyTimer = window.setTimeout(function () {
+    btn._busyTimer = null;
     setButtonBusy(btn, true, controlLabel(btn));
   }, BUSY_DELAY_MS);
-  return function cancel() { window.clearTimeout(timer); };
 }
 
 function noteRegion() {
@@ -685,7 +696,10 @@ function onSubmit(event) {
   if (!form || form.tagName !== 'FORM') return;
   if ((form.getAttribute('method') || '').toLowerCase() !== 'post') return;
   if (form.getAttribute('data-busy-form') === '1') {
+    // A duplicate submit must reach no listener at all: the fetch-backed
+    // forms would post twice, because aria-disabled arrives 100 ms late.
     event.preventDefault();
+    event.stopPropagation();
     return;
   }
   form.setAttribute('data-busy-form', '1');
@@ -697,12 +711,57 @@ function onSubmit(event) {
     setButtonBusy(btn, true, controlLabel(btn));
     if (wait) showWaitPlaceholder(form, wait);
   }, BUSY_DELAY_MS);
+  // A native post can lose its navigation (Escape stops the load) and
+  // leave the form flagged busy forever. After a generous limit, while
+  // the page is still visible, the form unlocks itself and says so.
+  form._busyDeadline = Date.now() + BUSY_WATCHDOG_MS;
+  form._busyWatchdog = window.setTimeout(function () {
+    form._busyWatchdog = null;
+    if (document.visibilityState === 'visible') {
+      unlockStuckForm(form);
+      return;
+    }
+    form._busyVisibility = function () {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() < form._busyDeadline) return;
+      unlockStuckForm(form);
+    };
+    document.addEventListener('visibilitychange', form._busyVisibility);
+  }, BUSY_WATCHDOG_MS);
+}
+
+function unlockStuckForm(form) {
+  if (!form || form.getAttribute('data-busy-form') !== '1') return;
+  cancelFormBusy(form);
+  Array.prototype.forEach.call(
+    form.querySelectorAll('[data-stacked="1"]'), function (btn) {
+      setButtonBusy(btn, false);
+    });
+  removeWaitPlaceholder(form.getAttribute('data-wait'));
+  showNote('This is taking too long. Check that the desk is still running, then try again.');
+}
+
+function removeWaitPlaceholder(selector) {
+  if (!selector) return;
+  var region = document.querySelector(selector);
+  if (!region) return;
+  var placeholder = region.querySelector('[data-wait-ph]');
+  if (placeholder) placeholder.remove();
+  region.removeAttribute('aria-busy');
 }
 
 function cancelFormBusy(form) {
   if (form && form._busyTimer) {
     window.clearTimeout(form._busyTimer);
     form._busyTimer = null;
+  }
+  if (form && form._busyWatchdog) {
+    window.clearTimeout(form._busyWatchdog);
+    form._busyWatchdog = null;
+  }
+  if (form && form._busyVisibility) {
+    document.removeEventListener('visibilitychange', form._busyVisibility);
+    form._busyVisibility = null;
   }
   if (form) form.removeAttribute('data-busy-form');
 }
@@ -714,10 +773,8 @@ function restoreAfterBack() {
   Array.prototype.forEach.call(document.querySelectorAll('[data-stacked="1"]'), function (btn) {
     setButtonBusy(btn, false);
   });
-  Array.prototype.forEach.call(document.querySelectorAll('[data-wait-ph]'), function (ph) {
-    var region = ph.parentNode;
-    ph.remove();
-    if (region) region.removeAttribute('aria-busy');
+  Array.prototype.forEach.call(document.querySelectorAll('[data-wait]'), function (form) {
+    removeWaitPlaceholder(form.getAttribute('data-wait'));
   });
 }
 
@@ -832,9 +889,16 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   var show = function (text) { note.hidden = false; note.textContent = text; };
   var couldNotReach = 'The dashboard could not reach its own server; nothing changed.';
   var apply = function (url, body, btn) {
-    post(url, body).then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { setButtonBusy(btn, false); show(d.error); return; }
+    post(url, body).then(function (r) {
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return {ok: r.ok, data: d}; });
+      })
+      .then(function (res) {
+        if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+          setButtonBusy(btn, false);
+          show(causeOf(res));
+          return;
+        }
         location.reload();
       })
       .catch(function () {
@@ -881,9 +945,16 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
       fetch('/sources/calendar-bridge/upload', {method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: reader.result})
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.error) { setButtonBusy(upload, false); show(d.error); return; }
+        .then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (d) { return {ok: r.ok, data: d}; });
+        })
+        .then(function (res) {
+          if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+            setButtonBusy(upload, false);
+            show(causeOf(res));
+            return;
+          }
           location.reload();
         })
         .catch(function () {
