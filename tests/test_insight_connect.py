@@ -10,13 +10,19 @@ saved no card carries one.
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
+from pathlib import Path
+from types import SimpleNamespace
 
 import server_harness
 from agentdesk.insight import insight_connect
 from agentdesk.insight import reading as insight_reading
 from agentdesk.insight import workbook
+from agentdesk.insight.context import build_context
 from agentdesk.insight.types import InsightContext
 from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass
@@ -75,6 +81,49 @@ def test_empty_memory_draws_no_line():
     assert insight_connect.connect_line([], ()) == ("", 0)
 
 
+def test_a_card_with_no_rows_carries_no_line():
+    index = _index(_Entity(1, "Halvorsen Freight", fact_count=3))
+    found = _reading_for(
+        {"tracker": {"table": {"headers": ["Account", "Amount"], "rows": []},
+                     "labelColumn": "Account"}},
+        index,
+    )
+    text = " ".join(block["text"] for block in insight_reading.blocks(found))
+    assert "Also in your desk" not in text
+
+
+def test_the_longer_name_wins_a_span_it_shares_with_a_shorter_one():
+    """Memory holds both names; a row naming the longer one is one
+    connection, to the longer entity, and the shorter is not counted."""
+    index = _index(
+        _Entity(1, "Halvorsen Freight", fact_count=3),
+        _Entity(2, "Halvorsen Freight Logistics", fact_count=5),
+    )
+    row = "Halvorsen Freight Logistics renewal"
+    named = insight_connect.match_names(row, index)
+    assert [entry.entity_id for entry in named] == [2]
+    line, notes = insight_connect.connect_line([row], index)
+    assert line.startswith("Also in your desk: Halvorsen Freight Logistics, 5 things")
+    assert "3 things" not in line
+    assert line.count("Halvorsen Freight") == 1
+    assert notes == 5
+
+
+def test_the_agenda_clause_reaches_every_entity_its_title_names():
+    agenda = {"title": "Renewal call: Halvorsen Freight and Kestrel Foods",
+              "time": "2026-11-23T14:38:00"}
+    index = _index(
+        _Entity(1, "Halvorsen Freight", fact_count=3),
+        _Entity(2, "Kestrel Foods", fact_count=2),
+        agenda=agenda,
+        now=datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc).timestamp(),
+    )
+    assert all(entry.event_clause.endswith("14:38") for entry in index)
+    line, _notes = insight_connect.connect_line(
+        ["Halvorsen Freight renewal", "Kestrel Foods pilot"], index)
+    assert line.count("at 14:38") == 2
+
+
 def test_the_agenda_dates_the_entity_it_names():
     agenda = {"title": "Renewal call: Halvorsen Freight", "time": "2026-11-23T14:38:00"}
     index = _index(_Entity(1, "Halvorsen Freight", fact_count=3), agenda=agenda,
@@ -84,6 +133,25 @@ def test_the_agenda_dates_the_entity_it_names():
     assert named and named[0].event_clause.endswith("14:38")
     line, _notes = insight_connect.connect_line(["Halvorsen Freight"], index)
     assert "you told the desk" in line and "at 14:38" in line
+    # The title keeps the casing it was stored with; matching lowercased
+    # it only to find the entity.
+    assert "Renewal call: Halvorsen Freight" in line
+    assert "renewal call: halvorsen freight" not in line
+
+
+def test_a_sealed_bank_yields_no_names_and_no_line():
+    """A sealed bank contributes nothing: no desk names, no line, and the
+    documented refusal note. This fake would answer with an entity if the
+    is_sealed guard in context._entities were dropped, so the guard is
+    what the test pins."""
+    sealed = SimpleNamespace(
+        is_sealed=True,
+        entities=lambda: [_Entity(1, "Halvorsen Freight", fact_count=3)],
+    )
+    context = build_context(SimpleNamespace(memory=sealed, calendar=None), {})
+    assert context.desk_names == ()
+    assert "locked" in context.memory_note
+    assert insight_connect.connect_line(["Halvorsen Freight"], context.desk_names) == ("", 0)
 
 
 def _tracker_payload(label_column=None):
@@ -151,10 +219,9 @@ def _desk(**kwargs):
 
 
 def _tracker_card(booted, auth):
-    """The excel-report card's payload from the dashboard, or None."""
+    """The excel-report card's insight payload from the dashboard, or None."""
     status, _headers, body = booted.request("GET", "/api/dashboard", auth)
     assert status == 200
-    import json
     dashboard = json.loads(body)
     for card in ((dashboard.get("plugins") or {}).get("cards") or []):
         if card.get("pluginId") == "excel-report":
@@ -162,19 +229,45 @@ def _tracker_card(booted, auth):
     return None
 
 
-def test_the_sample_desk_holds_nameable_things():
-    """Through the real server: with the labelled sample set on, the
-    context the dashboard's families read carries the sample desk's org
-    and person entities, and refuses its concept."""
+def test_the_sample_desk_holds_nameable_things(tmp_path, monkeypatch):
+    """Through the real server: with the labelled sample set on and the
+    sample workbook open in the Workbook tracker, the card's own insight
+    payload carries the line, naming an entity the desk holds; the
+    sample desk's concept is still refused."""
     import time as time_module
-    booted = _desk()
+    from agentdesk.plugins.runtime import PluginRuntime
+    from agentdesk.server import demo_data
+
+    data_dir = tmp_path / "desk-data"
+    monkeypatch.setenv("AGENTDESK_DATA", str(data_dir))
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "plugin-data",
+        workspace_dir=data_dir,
+    )
+    runtime.install(ROOT / "registry" / "plugins" / "excel-report", source="dir")
+    booted = _desk(
+        plugins=runtime,
+        pick_workbook=lambda: str(demo_data.sample_workbook_path(data_dir)),
+    )
     try:
         auth = booted.exchange()
-        booted.post_json("/settings/toggle", {"key": "sample_data"}, auth)
+        status, _headers, body = booted.post_json(
+            "/settings/toggle", {"key": "sample_data"}, auth)
+        assert status == 200, body
+        status, _headers, body = booted.post_json(
+            "/api/plugins/excel-report/instances/main/pick",
+            {"name": "Workbook tracker"}, auth)
+        assert status == 200, body
+        status, _headers, body = booted.post_json(
+            "/api/plugins/excel-report/instances/main/confirm",
+            {"tracking": {"labelColumn": "Deal", "valueColumn": "Amount",
+                          "aggregate": "sum"}}, auth)
+        assert status == 200, body
+
         deadline = time_module.monotonic() + 10
         names = ()
         while time_module.monotonic() < deadline:
-            from agentdesk.insight.context import build_context
             names = build_context(booted.server, {}, now=time_module.time()).desk_names
             if any("Halvorsen Freight" in entry.names for entry in names):
                 break
@@ -184,6 +277,13 @@ def test_the_sample_desk_holds_nameable_things():
         assert not any("Q4 pipeline review" in named for _entry in names)
         counts = {entry.names[0]: entry.fact_count for entry in names}
         assert counts.get("Halvorsen Freight") == 3
+
+        insight = _tracker_card(booted, auth)
+        assert insight is not None
+        text = " ".join(block["text"] for block in insight.get("blocks") or [])
+        assert "Also in your desk" in text
+        assert "Halvorsen Freight" in text
+        assert "memory (6 notes)" in text
     finally:
         booted.close()
 

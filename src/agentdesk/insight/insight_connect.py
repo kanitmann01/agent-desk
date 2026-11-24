@@ -43,14 +43,63 @@ class DeskName:
     event_clause: str = ""
 
 
+@dataclass(frozen=True)
+class _Span:
+    """One whole-word match of a held name in a block of text."""
+
+    start: int
+    end: int
+    order: int
+    entry: DeskName
+
+
+def _matching_spans(text: str, index: tuple[DeskName, ...], *,
+                    limit: int | None = None) -> list[_Span]:
+    """The desk names one block of text carries, as spans in text order.
+
+    Every held name is searched as a whole word, case-insensitively.
+    Candidates are taken longest first (then earliest, then index order),
+    and one overlapping an already taken span is skipped, so where two
+    held names share letters the longer name owns that span and a shorter
+    name inside it is not also a match. One span per entity survives (its
+    earliest taken occurrence), and the result is ordered by where each
+    span starts: the order the text names them. `limit` caps the result;
+    the agenda's own pass asks for every match."""
+    lowered = (text or "").lower()
+    if not lowered.strip() or not index:
+        return []
+    candidates: list[_Span] = []
+    for order, entry in enumerate(index):
+        for name in entry.names:
+            if _longest_word(name) < MIN_LONGEST_WORD:
+                continue
+            pattern = re.compile(rf"(?<!\w){re.escape(name.lower())}(?!\w)")
+            for hit in pattern.finditer(lowered):
+                candidates.append(_Span(hit.start(), hit.end(), order, entry))
+    candidates.sort(key=lambda span: (span.start - span.end, span.start, span.order))
+    taken: list[_Span] = []
+    for candidate in candidates:
+        if any(candidate.start < span.end and candidate.end > span.start
+               for span in taken):
+            continue
+        taken.append(candidate)
+    earliest: dict[int, _Span] = {}
+    for span in taken:
+        current = earliest.get(span.entry.entity_id)
+        if current is None or span.start < current.start:
+            earliest[span.entry.entity_id] = span
+    ordered = sorted(earliest.values(), key=lambda span: (span.start, span.order))
+    return ordered[:limit] if limit is not None else ordered
+
+
 def build_index(entities, agenda: dict | None, now: float) -> tuple[DeskName, ...]:
     """The desk's nameable things, from the memory store's entity list.
 
     `entities` is whatever `memory.entities()` returned (already [] for a
     missing store). Only org and person entities enter, a single-word
-    alias is refused, and the agenda's title names at most one of them
-    with its event clause. `now` dates the clause; a time it cannot read
-    leaves the clause at the bare title, never at nothing."""
+    alias is refused, and every one of them the agenda's title names
+    carries its event clause. `now` dates the clause; a time it cannot
+    read leaves the clause at the bare title, never at nothing."""
     names: list[DeskName] = []
     for entity in entities or ():
         kind = str(getattr(entity, "type", "") or "")
@@ -69,36 +118,25 @@ def build_index(entities, agenda: dict | None, now: float) -> tuple[DeskName, ..
             fact_count=int(getattr(entity, "fact_count", 0) or 0),
         ))
     if agenda and str(agenda.get("title") or "").strip():
-        named = match_names(str(agenda.get("title")), tuple(names))
+        named = _matching_spans(str(agenda.get("title")), tuple(names))
         if named:
             clause = _event_clause(agenda, now)
+            named_ids = {span.entry.entity_id for span in named}
             names = [DeskName(n.entity_id, n.names, n.fact_count, clause)
-                     if n.entity_id == named[0].entity_id else n for n in names]
+                     if n.entity_id in named_ids else n for n in names]
     return tuple(names)
 
 
 def match_names(text: str, index: tuple[DeskName, ...]) -> list[DeskName]:
-    """The desk names one block of text carries, best first.
+    """The desk names one block of text carries, in the order it names them.
 
-    Longest name present as a whole word wins in the text; one entry per
-    entity id (a name and its alias count once); the refusals are the
-    spec's. Returns at most MAX_PER_CARD, in first-named order."""
-    lowered = (text or "").lower()
-    if not lowered.strip() or not index:
-        return []
-    found: dict[int, tuple[int, int, DeskName]] = {}
-    for order, entry in enumerate(index):
-        best = 0
-        for name in entry.names:
-            if _longest_word(name) < MIN_LONGEST_WORD:
-                continue
-            hit = re.search(rf"\b{re.escape(name.lower())}\b", lowered)
-            if hit and len(name) > best:
-                best = len(name)
-        if best:
-            found[entry.entity_id] = (best, order, entry)
-    ranked = sorted(found.values(), key=lambda triple: (-triple[0], triple[1]))
-    return [entry for _best, _order, entry in ranked[:MAX_PER_CARD]]
+    A held name matches only as a whole word, case-insensitively. Where
+    two names overlap, the longest span wins and a shorter name inside it
+    is not also a match; one entry per entity id (a name and its alias
+    count once); the refusals are the spec's. Returns at most
+    MAX_PER_CARD, in first-named order."""
+    return [span.entry for span in
+            _matching_spans(text, index, limit=MAX_PER_CARD)]
 
 
 def connect_line(rows: list[str], index: tuple[DeskName, ...]) -> tuple[str, int]:
@@ -108,27 +146,13 @@ def connect_line(rows: list[str], index: tuple[DeskName, ...]) -> tuple[str, int
     No match draws no line (""), so a card with nothing to say stays
     quiet; a match names each entity once, in the order the rows name
     them (a row's own matches in the order they appear in the text),
-    with its fact count and its event clause when there is one."""
+    with its fact count and its event clause when there is one. The
+    longest name present wins each span, so a shorter held name inside a
+    longer one is never counted as a second connection."""
     picked: dict[int, tuple[int, DeskName]] = {}
     for position, row in enumerate(rows or ()):
-        lowered = str(row).lower()
-        if not lowered.strip():
-            continue
-        hits = []
-        for entry in index:
-            best_at, best_name = -1, ""
-            for name in entry.names:
-                if _longest_word(name) < MIN_LONGEST_WORD:
-                    continue
-                found = re.search(rf"\b{re.escape(name.lower())}\b", lowered)
-                if not found:
-                    continue
-                if best_at == -1 or found.start() < best_at:
-                    best_at, best_name = found.start(), name
-            if best_at >= 0:
-                hits.append((best_at, entry.entity_id, entry))
-        for _at, _id, entry in sorted(hits, key=lambda hit: hit[0]):
-            picked.setdefault(entry.entity_id, (position, entry))
+        for span in _matching_spans(str(row), index):
+            picked.setdefault(span.entry.entity_id, (position, span.entry))
     if not picked:
         return "", 0
     ordered = [entry for _position, entry in
@@ -146,8 +170,11 @@ def connect_line(rows: list[str], index: tuple[DeskName, ...]) -> tuple[str, int
 
 
 def _event_clause(agenda: dict, now: float) -> str:
-    """The agenda's next meeting as one clause: title, day, clock time."""
-    title = str(agenda.get("title") or "").strip().lower()
+    """The agenda's next meeting as one clause: title, day, clock time.
+
+    The title keeps the casing it was stored with; matching lowercased it
+    only to find which entities the agenda names."""
+    title = str(agenda.get("title") or "").strip()
     when = str(agenda.get("time") or "").strip()
     day = ""
     clock = ""
