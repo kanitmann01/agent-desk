@@ -9,6 +9,7 @@ live-path check is skipped off macOS.
 """
 
 import dataclasses
+import os
 import plistlib
 import shutil
 import sqlite3
@@ -253,6 +254,33 @@ def test_permission_denied_names_full_disk_access(tmp_path, monkeypatch):
     assert "Full Disk Access" in cause
 
 
+def test_a_denied_stat_names_full_disk_access_not_a_missing_store(tmp_path, monkeypatch):
+    """exists() swallows PermissionError, so the reader stats the store:
+    a denied path is present and needs Full Disk Access."""
+    reader = collector(three_records(tmp_path))
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "stat", denied)
+    available, cause = reader.available()
+    assert not available
+    assert "Full Disk Access" in cause
+
+
+def test_a_denied_copy_during_collect_raises_the_full_disk_access_sentence(
+        tmp_path, monkeypatch):
+    reader = collector(three_records(tmp_path))
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(shutil, "copy2", denied)
+    with pytest.raises(RuntimeError) as caught:
+        reader.collect(since(T1), 10)
+    assert "Full Disk Access" in str(caught.value)
+
+
 def test_a_store_with_no_outlook_app_row_is_unavailable_with_its_own_cause(tmp_path):
     db = build_store(
         tmp_path,
@@ -278,7 +306,11 @@ def test_outlook_records_make_the_reader_available(tmp_path):
     assert collector(three_records(tmp_path)).available() == (True, "")
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="live Notification Center store is macOS-only")
+@pytest.mark.skipif(
+    sys.platform != "darwin" or os.environ.get("AGENTDESK_MACOS_LIVE_STORE") != "1",
+    reason="the live Notification Center store needs macOS and "
+           "AGENTDESK_MACOS_LIVE_STORE=1",
+)
 def test_live_store_path_is_the_usernoted_database():
     reader = MacNotificationCollector()
     assert str(reader.db_path).endswith("group.com.apple.usernoted/db2/db")

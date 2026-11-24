@@ -29,7 +29,6 @@ _LABELS = {
     "quiet_hours": "Quiet hours (18:00-08:00)",
     "daily_cap": "Notifications per day",
     "mail_enabled": "Mail digest (headers only)",
-    "mail_feeder": "Outlook alerts (not a mailbox)",
     "sample_data": "Sample data",
     "semantic_memory": "Semantic memory (embeddings)",
     "suggest_headers_only": "Suggest columns from headers only",
@@ -1045,7 +1044,8 @@ def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> s
     platform = str(fetch.get("platform", "") or "")
     error = html.escape(str(fetch.get("lastError", "") or ""))
     written = fetch.get("written")
-    attention = result in ("error", "unavailable") or collector == "manual"
+    attention = (result in ("error", "unavailable", "busy", "running")
+                 or collector == "manual")
     if not fetch:
         state = ("<p class='empty'>Not run yet. The first pass runs with the "
                  "next mail poll, or press Fetch now.</p>")
@@ -1061,7 +1061,7 @@ def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> s
         if result in ("busy", "running"):
             state += ("<p class='empty'>Another pass is already running; "
                       "nothing new ran.</p>")
-        if not attention and isinstance(written, int):
+        if not attention and result == "ok" and isinstance(written, int):
             alert_word = "alert" if written == 1 else "alerts"
             state += (f"<p>{written} {alert_word} written into the mail "
                       f"folder in this fetch.</p>")
@@ -1089,8 +1089,9 @@ def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> s
 <p class='empty'>Alerts only, not a mailbox: while the desk is open it reads
 the sender and subject lines of the Outlook alerts the OS notification
 store kept, writes them as header-only .eml files into the mail folder
-above, and drops any preview. The manual .eml folder stays the history
-source.</p>
+above, and drops any preview. Turning alerts on also turns the mail
+digest on, because the alerts land in that same folder. The manual .eml
+folder stays the history source.</p>
 <div class='settings-block'>
 {_toggle_button("mail_feeder", on, label="Fetch Outlook alerts")}
 </div>

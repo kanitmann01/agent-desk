@@ -3852,6 +3852,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # memory write would otherwise have to wait for.
             if key == "recommendations":
                 self._after_memory_change()
+        elif key == "mail_feeder":
+            # Alerts land in the mail folder, so the feed needs the mail
+            # watch that reads it: turning alerts on turns the digest on
+            # as part of the same action.
+            value = self._apply_mail_feeder(value)
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
                      "agent_loop_minutes", "auto_update",
                      "auto_update_plugins", "learn_topics", "learn_profile",
@@ -4045,6 +4050,35 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if server.mail is not None and settings is not None:
                 feeder = _default_outlook_feeder(settings) if value else None
                 server.mail.feeder = feeder.run_once if feeder is not None else None
+
+    def _apply_mail_feeder(self, value) -> bool:
+        """Apply the Outlook alert switch, turning the mail digest on with it.
+
+        Alerts land in the mail folder, so an alert feed without its
+        watcher would never be polled. Turning alerts on therefore sets
+        mail_enabled too, constructs and starts the watcher exactly as
+        the mail toggle does, polls once, and only then wires the feeder;
+        the effective switch value is returned. A watcher that cannot be
+        constructed answers with the switch back off, never on with
+        nothing to run it.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if value and settings is not None:
+            mail_on = bool(settings.get("mail_enabled"))
+            if not mail_on:
+                settings.set("mail_enabled", True)
+            # Construct and start the watch only when mail was off or no
+            # watcher exists, exactly the mail_enabled branch.
+            if not mail_on or server.mail is None:
+                self._apply_source_toggles("mail_enabled", True)
+            if server.mail is None:
+                settings.set("mail_feeder", False)
+                return False
+        if server.mail is not None and settings is not None:
+            feeder = _default_outlook_feeder(settings) if value else None
+            server.mail.feeder = feeder.run_once if feeder is not None else None
+        return value
 
     def _source_allowed(self, key: str) -> bool:
         """Whether a settings-keyed source is switched on, a missing store counting as on.

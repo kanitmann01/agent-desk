@@ -93,8 +93,16 @@ class MacNotificationCollector:
         """
         if self.platform != "darwin":
             return False, PLATFORM_CAUSE
-        if not self.db_path.exists():
+        try:
+            self.db_path.stat()
+        except FileNotFoundError:
             return False, MISSING_CAUSE
+        except PermissionError:
+            # exists() swallows this and would report MISSING_CAUSE: a
+            # denied store is there, the app just may not read it.
+            return False, FULL_DISK_ACCESS_CAUSE
+        except OSError:
+            return False, UNREADABLE_CAUSE
         try:
             if not self._outlook_app_present():
                 return False, NO_OUTLOOK_CAUSE
@@ -121,15 +129,22 @@ class MacNotificationCollector:
         return row is not None
 
     def collect(self, since: datetime, limit: int) -> list[Message]:
-        """Outlook alerts delivered since the moment, oldest first, up to limit."""
+        """Outlook alerts delivered since the moment, oldest first, up to limit.
+
+        A copy denied by macOS becomes a RuntimeError carrying the Full
+        Disk Access sentence, so the pass reports the fix rather than a
+        generic failure.
+        """
         if limit < 1:
             return []
         cutoff = since.timestamp() - APPLE_EPOCH_OFFSET_S
+        try:
+            rows = self._select(cutoff=cutoff, limit=limit)
+        except PermissionError as exc:
+            raise RuntimeError(FULL_DISK_ACCESS_CAUSE) from exc
         messages = []
         seen = set()
-        for _rec_id, uuid, identifier, data, delivered in self._select(
-            cutoff=cutoff, limit=limit
-        ):
+        for _rec_id, uuid, identifier, data, delivered in rows:
             lines = _lines(data)
             if not lines:
                 continue
