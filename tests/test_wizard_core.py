@@ -85,7 +85,7 @@ def test_pinned_constants_hold_and_match_the_validator_vocabulary():
     assert WIZARD_STATES == ("questions", "building", "preview", "approved", "escalated")
     # Every source the questions can offer is one the composer can build, and
     # the pin that matters holds: none of them can fail the validator's type
-    # check. The pipeline kinds are drafted now, unlike before spec 024.
+    # check. The pipeline kinds are drafted now, unlike before spec 025.
     assert set(VOCABULARY) <= set(KNOWN_DATA_SOURCE_TYPES)
     assert "mail-digest" in VOCABULARY and "calendar-read" in VOCABULARY
     assert MAX_QUESTIONS == 5

@@ -1,6 +1,6 @@
 """The face a workbook tile draws, once the manager has chosen one.
 
-Before spec 024 every confirmed workbook instance drew the classic tracker
+Before spec 025 every confirmed workbook instance drew the classic tracker
 face: value, change, workbook, trend. A tile built by describing it may ask
 for a big number, a table, a bar or a trend instead, and the card the runtime
 serves has to draw what was asked. A tile with no chosen face, and every

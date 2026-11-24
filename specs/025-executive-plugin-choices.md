@@ -1,4 +1,4 @@
-# Spec 024: Executive choices when creating a plugin
+# Spec 025: Executive choices when creating a plugin
 
 Status: ready-for-agent (2026-11-24). `GLOSSARY.md` at the repo root is the
 vocabulary; the user-facing word for a plugin on the home screen is "tile".
