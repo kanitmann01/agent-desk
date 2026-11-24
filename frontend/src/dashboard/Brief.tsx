@@ -67,6 +67,40 @@ function isTracker(card: PluginCard): boolean {
   return card.id === 'excel-report' || card.id.startsWith('excel-report~');
 }
 
+/**
+ * The structural reason a plugin card's source gave for producing no reading.
+ *
+ * The runner's code (for example "no-transport") is a machine value, so the
+ * client never matches the English sentence beside it.
+ */
+function sourceReason(card: PluginCard): string {
+  const payload = card.payload as { source?: { reason?: unknown } } | null | undefined;
+  return typeof payload?.source?.reason === 'string' ? payload.source.reason : '';
+}
+
+/** True when an attention card has nothing to draw: no elements and no facet. */
+function hasNoReading(card: PluginCard): boolean {
+  const payload = card.payload;
+  if (!payload) return true;
+  if (payload.setup || payload.tracker || payload.insight || payload.face) return false;
+  return (payload.elements?.length ?? 0) === 0;
+}
+
+/**
+ * True when this card cannot run on this desk, so it gets no home-screen tile.
+ *
+ * A card with a setup step always stays: a tracker whose workbook moved is
+ * attention, but its Set up control can still do something. On a desk with
+ * no web transport (deskNetwork false) an attention card with no reading is
+ * a dead tile; on an older payload without the flag, the source's own
+ * "no-transport" reason names the same refusal.
+ */
+function cannotRunHere(card: PluginCard, deskNetwork: boolean | undefined): boolean {
+  if (card.freshness !== 'attention' || card.payload?.setup) return false;
+  if (deskNetwork === false) return hasNoReading(card);
+  return sourceReason(card) === 'no-transport';
+}
+
 /** A clock time for an epoch-seconds stamp, or a hyphen when it is absent. */
 function fromEpoch(ts: number | null | undefined): string {
   if (ts == null || !Number.isFinite(ts)) return '-';
@@ -151,8 +185,13 @@ export default function Brief({
   const skillsShown = shows('skills') && data.skills.length > 0;
   const columnCount = (salesShown ? 1 : 0) + (commitmentsShown ? 1 : 0);
   const pluginCards = data.plugins.cards
-    .filter((card) => layoutOrder.has(card.id))
+    .filter((card) => layoutOrder.has(card.id) && !cannotRunHere(card, data.deskNetwork))
     .sort((a, b) => (layoutOrder.get(a.id) ?? 0) - (layoutOrder.get(b.id) ?? 0));
+  // A structural no-transport reason from any card is the same desk fact
+  // the deskNetwork flag names, so an older payload still gets the honest
+  // Page watch placeholder instead of an Add link that cannot work.
+  const noWebTransport = data.deskNetwork === false
+    || data.plugins.cards.some((card) => sourceReason(card) === 'no-transport');
   const trackers = pluginCards.filter(isTracker);
   /** The status word of one dashboard source, or an empty string. */
   const sourceStatus = (id: string) => data.sources.items.find((item) => item.id === id)?.status ?? '';
@@ -407,7 +446,9 @@ export default function Brief({
       ),
     });
   }
-  const anyWatch = data.plugins.cards.some((card) => !isTracker(card) && pluginKind(card.id) === 'watch');
+  // A watch card that cannot run here is not on the home screen, so its
+  // absence must explain itself where the tile would have been.
+  const anyWatch = pluginCards.some((card) => !isTracker(card) && pluginKind(card.id) === 'watch');
   if (!anyWatch) {
     lower.push({
       key: 'watch',
@@ -416,6 +457,9 @@ export default function Brief({
         <>
           <CellHead tag="PAGE WATCH" sample />
           <WatchDiff view={sampleWatch(now)} />
+          {noWebTransport ? (
+            <p className="cell-foot">This desk cannot read web pages yet</p>
+          ) : null}
         </>
       ) : (
         <>
@@ -424,7 +468,7 @@ export default function Brief({
           <WireState
             shape="lines"
             line="No page is being watched. Name one page and see what changed on it."
-            action={data.deskNetwork === false
+            action={noWebTransport
               ? <p className="w-note">This desk cannot read web pages yet</p>
               : <Button tone="secondary" className="btn-sm" href="/marketplace/plugin/competitor-watch">Add a page</Button>}
           />

@@ -227,6 +227,130 @@ describe('the research answer card follows the layout', () => {
   });
 });
 
+describe('a plugin that cannot run on this desk', () => {
+  const CANNOT_RUN: PluginCard = {
+    id: 'competitor-watch',
+    title: 'Competitor Watch',
+    version: '0.1.0',
+    pilot: true,
+    state: 'enabled',
+    freshness: 'attention',
+    cause: 'This desk cannot read web pages yet.',
+    checkedAt: '2026-11-24T18:42:33',
+    pluginId: 'competitor-watch',
+    instanceId: 'main',
+    payload: { elements: [], source: { reason: 'no-transport' } },
+  };
+
+  const SETUP_WATCH: PluginCard = {
+    id: 'competitor-watch~custom',
+    title: 'Competitor Watch setup',
+    version: '0.1.0',
+    pilot: false,
+    state: 'enabled',
+    freshness: 'attention',
+    cause: '',
+    payload: {
+      elements: [],
+      setup: { pluginId: 'competitor-watch', instanceId: 'custom', name: 'Competitor Watch setup', step: 'source' },
+    },
+  };
+
+  const FRESH_WATCH: PluginCard = {
+    ...CANNOT_RUN,
+    id: 'competitor-watch~live',
+    title: 'Competitor Watch live',
+    freshness: 'fresh',
+    cause: '',
+    payload: { elements: [{ kind: 'text', label: 'Reading', text: 'A change was seen.' }] },
+  };
+
+  const FRESH_PLUGIN: PluginCard = {
+    id: 'notes',
+    title: 'Notes digester',
+    version: '1.0.0',
+    pilot: false,
+    state: 'enabled',
+    freshness: 'fresh',
+    cause: '',
+    payload: { elements: [{ kind: 'text', label: 'Reading', text: 'A note.' }] },
+  };
+
+  /** The home screen with one plugin card set and no builtin columns. */
+  function show(deskNetwork: boolean | undefined, cards: PluginCard[]) {
+    const data: DashboardData = {
+      ...DATA,
+      ...(deskNetwork === undefined ? {} : { deskNetwork }),
+      layout: { cards: cards.map((card) => ({ key: card.id, title: null })) },
+      plugins: { cards },
+    };
+    render(<Brief data={data} onRefetch={NOOP_REFETCH} onExpired={NOOP} />);
+  }
+
+  it('shows the Page watch placeholder instead of a tile that cannot run', () => {
+    show(false, [CANNOT_RUN]);
+    expect(screen.queryByText('Competitor Watch')).toBeNull();
+    expect(screen.queryByText('Re-test available')).toBeNull();
+    expect(
+      screen.getByText('No page is being watched. Name one page and see what changed on it.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('This desk cannot read web pages yet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Add a page' })).toBeNull();
+  });
+
+  it('explains the absence on an older payload with no deskNetwork', () => {
+    show(undefined, [CANNOT_RUN]);
+    expect(screen.queryByText('Competitor Watch')).toBeNull();
+    expect(
+      screen.getByText('No page is being watched. Name one page and see what changed on it.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('This desk cannot read web pages yet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Add a page' })).toBeNull();
+  });
+
+  it('carries the line under the sample watch when the desk cannot read the web', () => {
+    const data: DashboardData = {
+      ...DATA,
+      sample: true,
+      deskNetwork: false,
+      layout: { cards: [{ key: CANNOT_RUN.id, title: null }] },
+      plugins: { cards: [CANNOT_RUN] },
+    };
+    render(<Brief data={data} onRefetch={NOOP_REFETCH} onExpired={NOOP} />);
+    const watch = document.querySelector('.cell-watch') as HTMLElement;
+    expect(within(watch).getByText('SAMPLE DATA')).toBeInTheDocument();
+    expect(within(watch).getByText('This desk cannot read web pages yet')).toBeInTheDocument();
+    expect(screen.queryByText('Competitor Watch')).toBeNull();
+  });
+
+  it('never hides an attention card that carries a setup step', () => {
+    show(false, [SETUP_WATCH]);
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Competitor Watch setup' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('No page is being watched. Name one page and see what changed on it.'),
+    ).toBeNull();
+  });
+
+  it('does not show the placeholder next to a live watch card', () => {
+    show(false, [FRESH_WATCH]);
+    expect(screen.getAllByText('Competitor Watch live').length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText('No page is being watched. Name one page and see what changed on it.'),
+    ).toBeNull();
+  });
+
+  it('keeps the cannot-run plugin out of Desk health', () => {
+    show(false, [CANNOT_RUN, FRESH_PLUGIN]);
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).getByText('Notes digester')).toBeInTheDocument();
+    expect(within(health).queryByText('Competitor Watch')).toBeNull();
+    expect(within(health).getByText('1 of 1 live')).toBeInTheDocument();
+  });
+});
+
 describe('the Page watch offer on a desk without the network', () => {
   function show(deskNetwork: boolean | undefined) {
     const data: DashboardData = {
