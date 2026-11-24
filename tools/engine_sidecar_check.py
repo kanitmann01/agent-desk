@@ -2,27 +2,34 @@
 
 The opt-in evidence that the contained engine turn works end to end:
 boot the desk's mock endpoint in-process, run one real turn through the
-engine boundary against the installed side-car venv, and print the
-event kinds the stream carried and the actions the boundary parsed. A
-PASS requires a result event, at least one known action and no refusal.
-It is evidence, not a gate: the suite
-never runs it (the side-car itself is never started by a test), and a
-machine without the side-car gets the named refusal and the installer's
-command instead of a failure to guess at.
+engine boundary against the installed side-car venv, print the event
+kinds the stream carried and the actions the boundary parsed, then boot
+a throwaway desk and execute the parsed add_card through its own tools
+route, printing the ledger entry it records. A PASS requires a result
+event, at least one known action, no refusal, and an undoable
+recommend.added entry with the card-added undo kind. It is evidence,
+not a gate: the suite never runs it (the side-car itself is never
+started by a test), and a machine without the side-car gets the named
+refusal and the installer's command instead of a failure to guess at.
 
     python tools/engine_sidecar_check.py
 
 Stdlib only, loopback only: the mock binds 127.0.0.1, the turn runs one
-process under the side-car home folder, and nothing outside that folder
-is read or written.
+process under the side-car home folder, and the execution desk writes
+only inside a throwaway temp folder with an in-memory keychain.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import sys
+import tempfile
 import threading
+import urllib.error
+import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -44,6 +51,97 @@ def _load_mock():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _pin_env(folder: Path) -> dict[str, str | None]:
+    """Point the desk's data and template folders at this smoke's temp folder."""
+    saved = {name: os.environ.get(name)
+             for name in ("AGENTDESK_DATA", "AGENTDESK_TEMPLATES")}
+    for name, child in (("AGENTDESK_DATA", "data"),
+                        ("AGENTDESK_TEMPLATES", "templates")):
+        path = folder / child
+        path.mkdir(parents=True, exist_ok=True)
+        os.environ[name] = str(path)
+    return saved
+
+
+def _restore_env(saved: dict[str, str | None]) -> None:
+    """Put every pinned variable back exactly as it was."""
+    for name, value in saved.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+
+
+def _boot_temp_desk(folder: Path):
+    """Boot the real desk over a throwaway folder with a stand-in keychain.
+
+    The data and template folders are this boot's own, and the keychain
+    is the in-memory stand-in, so no real user store is read or written.
+    """
+    from agentdesk.keys.secrets import KeychainSecrets, MemoryKeychain
+    from agentdesk.server import app as server_app
+
+    saved = _pin_env(folder)
+    try:
+        server = server_app.create_server(
+            port=0, keychain=KeychainSecrets(backend=MemoryKeychain()))
+    except Exception:
+        _restore_env(saved)
+        raise
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, saved
+
+
+def _close_stores(server) -> None:
+    """Close every SQLite connection the throwaway desk holds.
+
+    Windows will not delete the temporary folder while a connection is
+    open, and some stores keep their connection on the store object.
+    """
+    for value in list(vars(server).values()):
+        for holder in (value, getattr(value, "conn", None)):
+            if isinstance(holder, sqlite3.Connection):
+                try:
+                    holder.close()
+                except sqlite3.Error:
+                    pass
+
+
+def _stop_temp_desk(server, thread, saved: dict[str, str | None]) -> None:
+    """Stop the throwaway desk and restore the environment it pinned."""
+    try:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        _close_stores(server)
+    finally:
+        _restore_env(saved)
+
+
+def _post_action(server, action) -> tuple[int, dict]:
+    """POST one parsed action to the desk's own tools route with its token."""
+    data = json.dumps({"tool": action.tool, "args": dict(action.args),
+                       "why": action.why}).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.port}/api/engine/tools", data=data,
+        method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {server.engine_token}",
+                 "Host": f"127.0.0.1:{server.port}"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=30) as response:
+            status, raw = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read()
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        body = {}
+    return status, body if isinstance(body, dict) else {}
 
 
 def main() -> int:
@@ -120,8 +218,35 @@ def main() -> int:
     if problems:
         print("FAIL " + " ".join(problems), flush=True)
         return 1
-    print(f"PASS the turn carried a result event and {len(actions)} "
-          "action(s).", flush=True)
+    card_action = next(
+        (action for action in actions if action.tool == "add_card"), None)
+    if card_action is None:
+        print("FAIL the turn drew no add_card action to execute.", flush=True)
+        return 1
+    with tempfile.TemporaryDirectory(prefix="agentdesk-engine-smoke-") as folder:
+        server, desk_thread, saved = _boot_temp_desk(Path(folder))
+        try:
+            status, body = _post_action(server, card_action)
+            ledger = getattr(server, "ledger", None)
+            entry_id = str(body.get("entryId") or "")
+            entry = (ledger.get(entry_id)
+                     if ledger is not None and entry_id else None)
+        finally:
+            _stop_temp_desk(server, desk_thread, saved)
+    if status != 201 or entry is None:
+        print(f"FAIL the tools route answered {status}: "
+              f"{body.get('error') or body!r}", flush=True)
+        return 1
+    print(f"ledger: {entry.id} {entry.action} undo_kind={entry.undo_kind} "
+          f"undoable={entry.undoable}", flush=True)
+    if entry.action != "recommend.added" or entry.undo_kind != "card-added" \
+            or not entry.undoable:
+        print("FAIL the add_card entry is not an undoable recommend.added "
+              "with card-added.", flush=True)
+        return 1
+    print(f"PASS the turn carried a result event, {len(actions)} action(s), "
+          "and the tools route recorded the card with card-added undo.",
+          flush=True)
     return 0
 
 

@@ -304,7 +304,11 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
                 prompt = content
                 break
         reply = reply_for(prompt)
-        print(f"mock endpoint: {len(prompt)}-char prompt -> {len(reply)}-char reply", flush=True)
+        # One write, not print's several: readiness prints its verdicts
+        # from the walk's main thread while this request thread logs.
+        sys.stdout.write(
+            f"mock endpoint: {len(prompt)}-char prompt -> {len(reply)}-char reply\n")
+        sys.stdout.flush()
         if body.get("stream"):
             self._send_stream(str(body.get("model") or "mock-chat"), reply)
             return

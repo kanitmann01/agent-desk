@@ -450,11 +450,14 @@ class Report:
 
     def check(self, number: int, name: str, ok: bool, detail: str = "") -> None:
         """Print and count one check; a false `ok` is a FAIL with the detail."""
+        line = (f"PASS R{number:02d} {name}" if ok
+                else f"FAIL R{number:02d} {name}: {detail}")
         if ok:
             self.passed += 1
-            print(f"PASS R{number:02d} {name}", flush=True)
-        else:
-            print(f"FAIL R{number:02d} {name}: {detail}", flush=True)
+        # One write, not print's several: the mock endpoint logs from its
+        # own request threads, and a whole line cannot interleave with it.
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
 
     def run(self, number: int, name: str, probe) -> None:
         """Decide one check from `probe`, which returns (ok, detail).
@@ -805,32 +808,50 @@ def _collect_first_boot_activity(desk: Desk) -> tuple[bool, str]:
     return True, f"the desk ran its first pass by itself (stamp {stamp.get('lastRunTs')})"
 
 
-def _pass_finished(desk: Desk, before: dict) -> bool:
-    """Whether a Run now pass has finished and its stamp has advanced."""
-    stamp = desk.get_json("/api/agent-loop")
-    if stamp.get("running"):
+def _run_now(desk: Desk, seconds: float = 30.0) -> tuple[bool, int]:
+    """Click Run now until the loop accepts it, waiting out a running pass.
+
+    The answer is the final status: 200 means a pass was started, any
+    other status is a refusal the caller reports.
+    """
+    deadline = time.monotonic() + seconds
+    status = 0
+    while time.monotonic() < deadline:
+        status, _headers, _body = desk.post_json("/api/agent-loop/run", {})
+        if status == 200:
+            return True, status
+        if status != 409:
+            return False, status
+        time.sleep(0.25)
+    return False, status
+
+
+def _stamp_advanced(desk: Desk, before) -> bool:
+    """Whether the dashboard's stamp now carries a run newer than before."""
+    value = _loop_stamp(desk).get("lastRunTs")
+    if not isinstance(value, (int, float)):
         return False
-    after = _loop_stamp(desk)
-    return (isinstance(after.get("lastRunTs"), (int, float))
-            and after.get("lastRunTs") != before.get("lastRunTs"))
+    if isinstance(before, (int, float)):
+        return value != before
+    return True
 
 
 def _stamp_carries_what_changed(desk: Desk) -> tuple[bool, str]:
     """R27: the payload carries the loop's stamp, and it advances when the desk acts.
 
     The poll hook's HTTP contract: a screen that re-fetches can see the
-    desk's own activity change in the payload it already reads.
+    desk's own activity change in the payload it already reads. The
+    stamp need not exist before the click: the first full pass after a
+    restart writes it, so the check waits for None to become a number
+    or for a number to advance.
     """
-    before = _loop_stamp(desk)
-    if not isinstance(before.get("lastRunTs"), (int, float)):
-        return False, f"the payload carries no lastRunTs ({before!r})"
-    status, _headers, _body = desk.post_json("/api/agent-loop/run", {})
-    advanced = _wait_until(lambda: _pass_finished(desk, before), seconds=30.0)
-    after = _loop_stamp(desk)
-    return (status == 200 and bool(advanced)
-            and after.get("lastRunTs") != before.get("lastRunTs"),
-            f"Run now answered {status}; stamp {before.get('lastRunTs')} -> "
-            f"{after.get('lastRunTs')}")
+    before = _loop_stamp(desk).get("lastRunTs")
+    accepted, status = _run_now(desk)
+    if not accepted:
+        return False, f"Run now answered {status}; stamp stayed {before!r}"
+    advanced = _wait_until(lambda: _stamp_advanced(desk, before), seconds=30.0)
+    after = _loop_stamp(desk).get("lastRunTs")
+    return bool(advanced), f"Run now answered 200; stamp {before!r} -> {after!r}"
 
 
 def _connect_lines_name_held(desk: Desk, held: set[str]) -> tuple[bool, str]:
@@ -863,48 +884,105 @@ def _connect_lines_name_held(desk: Desk, held: set[str]) -> tuple[bool, str]:
                   if cards else "no card claims a connection")
 
 
-def _names_are_held(desk: Desk) -> tuple[bool, str]:
-    """R28: the engine's reading carries exactly the names the desk holds."""
-    desk.post_json("/memory/add", {
-        "text": "The Halvorsen Freight renewal is settled for this quarter."})
+def _auto_approve_on(desk: Desk) -> tuple[bool, str]:
+    """Turn automatic saving on through the page's own switch, unless it is on."""
+    def auto_approve() -> bool:
+        """Whether the desk currently saves learned facts automatically."""
+        capture = desk.get_json("/api/memory/loop").get("capture") or {}
+        return bool(capture.get("autoApprove"))
+
+    if auto_approve():
+        return True, "already on"
+    status, _headers, _body = desk.post_json(
+        "/settings/toggle", {"key": "memory_auto_approve"})
+    now = auto_approve()
+    return (status == 200 and now,
+            f"toggle answered {status}; autoApprove {now!r}")
+
+
+def _engine_held_names(desk: Desk) -> tuple[int, list[str]]:
+    """The desk_names tool's memory names and the status it answered."""
     status, _headers, body = desk.post_engine_tool("desk_names", {})
     if status != 200:
-        return False, f"the desk_names tool answered {status}: {body[:120]!r}"
+        return status, []
     names = json.loads(body.decode("utf-8")).get("names") or {}
-    held = [str(row.get("name") or "") for row in names.get("memory") or []]
-    if "Halvorsen Freight" not in held:
-        return False, f"the desk's own reading misses the saved name: {held!r}"
+    return status, [str(row.get("name") or "") for row in names.get("memory") or []]
+
+
+def _names_are_held(desk: Desk) -> tuple[bool, str]:
+    """R28: the engine's reading carries exactly the names the desk holds.
+
+    The seed is an organisation the desk's own entity miner types as
+    org, because the engine's reading is the dashboard's org and person
+    names. The reading is polled, so a store that finishes its write a
+    moment after the response is not read as a missing name.
+    """
+    approve_ok, approve_detail = _auto_approve_on(desk)
+    if not approve_ok:
+        return False, f"automatic saving could not be turned on: {approve_detail}"
+    seeded = desk.post_json("/memory/add", {
+        "text": "The Halvorsen Freight Group renewal is settled for this quarter."})
+    if seeded[0] not in (200, 201):
+        return False, f"saving the named fact answered {seeded[0]}: {seeded[2][:120]!r}"
+
+    def name_held() -> bool:
+        """Whether the desk_names tool now reads the seeded organisation."""
+        status, held = _engine_held_names(desk)
+        return status == 200 and "Halvorsen Freight Group" in held
+
+    appeared = _wait_until(name_held, seconds=15.0)
+    status, held = _engine_held_names(desk)
+    if status != 200:
+        return False, f"the desk_names tool answered {status}"
+    if not appeared:
+        return False, (f"the desk's own reading misses the saved name after "
+                       f"15 seconds: {held!r}")
     if "Quiebro Nova" in held:
         return False, "the desk's reading names something it does not hold"
     lines_ok, lines_detail = _connect_lines_name_held(desk, set(held))
     return lines_ok, f"the reading holds {held}; {lines_detail}"
 
 
+def _fact_listed(desk: Desk, fact: str) -> bool:
+    """Whether the Memory page or recall shows this exact saved fact."""
+    if fact in page_text(desk.get("/memory")[2].decode("utf-8")):
+        return True
+    status, _headers, body = desk.post_json(
+        "/memory/recall", {"query": "Acme renewal"})
+    return status == 200 and fact in body.decode("utf-8")
+
+
 def _pass_pays_the_toll(desk: Desk) -> tuple[bool, str]:
     """R29: the pass's every entry carries an undo kind, and Undo works on one.
 
-    The walk saves a dated fact first, so the pass has something to act
-    on (the suggestion card the recommend step adds), then reads the
-    window of entries the pass recorded and undoes the newest through
-    the Activity page's own route.
+    The walk saves a dated fact first. The save path runs the same
+    recommendation builder the pass's recommend step runs, so the card's
+    entry can land during the save; the window starts before the seed so
+    that action and anything the pass adds are both counted. Then Run
+    now, wait for the stamp, and undo the newest through Activity.
     """
     due = datetime.now().date() + timedelta(days=10)
     fact = f"The Acme renewal is due {due.strftime('%B')} {due.day}"
+    started = time.time()
     saved = desk.post_json("/memory/add", {"text": fact})
     if saved[0] not in (200, 201):
         return False, f"saving the dated fact answered {saved[0]}: {saved[2][:120]!r}"
-    before = desk.get_json("/api/agent-loop")
-    started = time.time()
-    desk.post_json("/api/agent-loop/run", {})
-    finished = _wait_until(lambda: _pass_finished(desk, before), seconds=30.0)
+    listed = _wait_until(lambda: _fact_listed(desk, fact), seconds=15.0)
+    if not listed:
+        return False, "the seeded dated fact never appeared in memory"
+    before = _loop_stamp(desk).get("lastRunTs")
+    accepted, status = _run_now(desk)
+    if not accepted:
+        return False, f"Run now answered {status} after the seeded fact was saved"
+    finished = _wait_until(lambda: _stamp_advanced(desk, before), seconds=30.0)
     entries = desk.get_json("/api/ledger?limit=50").get("entries") or []
     window = [row for row in entries if row.get("ts", 0) >= started]
     if not finished or not window:
         why = "did not finish" if not finished else "recorded no ledger entry"
-        return False, f"the pass {why} in its window ({len(entries)} recent entries)"
+        return False, f"the seed and pass {why} in their window ({len(entries)} recent entries)"
     held_back = [row["id"] for row in window if not row.get("undoable")]
     if held_back:
-        return False, f"{len(held_back)} entry(ies) in the pass lack an undo kind"
+        return False, f"{len(held_back)} entry(ies) in the pass window lack an undo kind"
     target = window[0]
     undo = desk.post_json("/api/ledger/undo", {"id": target["id"]})
     if undo[0] != 200:
