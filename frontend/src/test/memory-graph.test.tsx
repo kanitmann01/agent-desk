@@ -152,6 +152,27 @@ describe('MemoryGraph', () => {
     expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings');
   });
 
+  it('gives every fixed column and step label the full text as its title', async () => {
+    serve(bank);
+    const { container } = render(<MemoryGraph initialWidth={1000} />);
+    await screen.findByText('How this memory was made');
+    const columns = [...container.querySelectorAll('.mg-cols .mg-col-title')];
+    expect(columns.map((column) => column.getAttribute('title')))
+      .toEqual(['Came from', 'Facts', 'Observations', 'Entities']);
+    const reflect = [...container.querySelectorAll('.mg-step-name')]
+      .find((name) => name.textContent === 'Reflect');
+    expect(reflect?.getAttribute('title')).toBe('Reflect');
+  });
+
+  it('gives the empty ghost columns their full headings as titles', async () => {
+    serve({ ...bank, pipeline: pipeline([0, 0, 0, 0, 0, 0]), nodes: [], edges: [] });
+    const { container } = render(<MemoryGraph initialWidth={1000} />);
+    await screen.findByText('No knowledge points yet');
+    const titles = [...container.querySelectorAll('.mg-empty-col .mg-col-title')];
+    expect(titles.map((title) => title.getAttribute('title')))
+      .toEqual(['Came from', 'Facts', 'Observations', 'Entities']);
+  });
+
   it('says so when the bank is locked', async () => {
     serve({ status: 'locked', error: 'the key file is missing' }, 423);
     render(<MemoryGraph initialWidth={1000} />);
