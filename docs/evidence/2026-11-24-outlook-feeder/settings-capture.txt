@@ -1,0 +1,14 @@
+$ python docs/evidence/2026-11-24-outlook-feeder/capture_settings_snapshot.py
+feed off: GET /widgets/settings status 200
+feed off: mail_feeder = False
+feed off: alerts block bytes = 968
+feed off: block says 'Not run yet': True
+feed off: block says 'Alerts only, not a mailbox': True
+
+manual fallback: POST /settings/mail/fetch-now status 200
+manual fallback: ran = True collector = manual lastResult = unavailable
+manual fallback: alerts block bytes = 1407
+manual fallback: names the manual folder source: True
+manual fallback: shows an alert count: False
+
+exit code: 0

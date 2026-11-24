@@ -1,0 +1,25 @@
+$ python docs/evidence/2026-11-24-outlook-feeder/live_wpn_smoke.py
+Windows WPN live smoke: counts and handler ids only
+run at: 2026-11-24T08:49:56+00:00
+python: 3.14.5 on win32
+store path: C:\Users\mannk\AppData\Local\Microsoft\Windows\Notifications\wpndatabase.db
+store exists: yes (1048576 bytes)
+  sidecar -wal: yes (3745112 bytes)
+  sidecar -shm: yes (32768 bytes)
+collector.available: True
+collector cause: (none)
+notification handlers: 281
+  outlook handler RecordId=129 PrimaryId=Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows HandlerType=app:immersive
+non-Outlook handlers are counted, not named, to keep the evidence to Outlook identifiers only
+notification rows: 71
+  Type=badge PayloadType=Xml count=2
+  Type=toast PayloadType=Xml count=33
+  Type=toastCondensed PayloadType=Xml count=36
+outlook handler RecordIds: [129]
+outlook toast Xml rows: 0
+outlook rows with a non-empty payload: 0
+  (payload text is never selected or printed)
+collector.collect(since=14 days, limit=100): 0 messages
+live Outlook alert messages on this host: none
+
+exit code: 0

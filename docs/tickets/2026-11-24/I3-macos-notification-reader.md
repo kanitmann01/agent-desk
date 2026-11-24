@@ -21,3 +21,7 @@ macOS stores delivered notifications in a per-user SQLite database at `~/Library
 ## Acceptance
 
 The focused tests pass; a synthetic store produces header-only messages; the body sentinel never reaches a file; a missing Full Disk Access returns an honest cause; the reader contains no AppleScript, no network and no model import.
+
+## Resolution (2026-11-24)
+
+Resolved against synthetic stores. `src/agentdesk/feeder/collectors/mac_notifications.py` copies `db`, `db-wal` and `db-shm` together, opens the copy read-only, joins `record` to `app`, filters the Outlook bundle ids, and reads only the title and subtitle keys from the plist. Body, preview and unknown keys are never read. The synthetic suite maps 2 Outlook records out of 3, keeps all three body sentinels out of every file, returns the Full Disk Access cause on `PermissionError`, treats a readable store with an Outlook app row and zero records as available with an empty collect, and proves rerun stability. A real Mac was not used; the manual procedure is recorded as unverified in `docs/evidence/2026-11-24-outlook-feeder/macos-manual-check.md`. A cause-propagation gap in the runner was fixed in review by commit `661c6fb`, so this reader's Full Disk Access cause now reaches the status.

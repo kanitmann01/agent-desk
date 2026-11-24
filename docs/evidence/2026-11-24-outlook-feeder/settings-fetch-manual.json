@@ -1,0 +1,13 @@
+{
+  "fetch": {
+    "collector": "manual",
+    "coverageFromTs": null,
+    "coverageToTs": null,
+    "lastError": "No automatic Outlook collector is available on this machine. Save the messages you want with Save as into the mail folder, and the desk will read them.",
+    "lastResult": "unavailable",
+    "lastRunTs": 1700000000.0,
+    "platform": "win32",
+    "written": 0
+  },
+  "ran": true
+}

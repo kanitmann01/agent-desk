@@ -26,3 +26,7 @@ The proof plan:
 7. **Commands.** The focused feeder tests, the mail/settings/route/IT-surface tests, and the local app start command. Evidence goes under `docs/evidence/` with the exact commands and outputs.
 
 This plan proves the parser, the readers and the honesty states. It does not claim that a real Outlook mailbox was read on this machine.
+
+## Resolution (2026-11-24)
+
+Resolved and executed. The evidence pack is `docs/evidence/2026-11-24-outlook-feeder/`: the focused feeder suite (66 passed, 1 skipped), the mail/settings/route/IT-surface suites (160 passed), synthetic WPN and Notification Center runs with sentinel checks and rerun idempotence, a metadata-only live Windows smoke (`available=True`, 0 Outlook alerts, counts and handler ids only), settings captures for the feed off and the manual fallback, and the unverified macOS manual procedure. The proof does not claim a real Outlook mailbox or a real Mac was used.

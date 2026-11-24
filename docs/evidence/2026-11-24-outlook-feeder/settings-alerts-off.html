@@ -1,0 +1,17 @@
+<h3>Outlook alerts</h3>
+<p class='empty'>Alerts only, not a mailbox: while the desk is open it reads
+the sender and subject lines of the Outlook alerts the OS notification
+store kept, writes them as header-only .eml files into the mail folder
+above, and drops any preview. The manual .eml folder stays the history
+source.</p>
+<div class='settings-block'>
+<div class='setting-row'><span>Fetch Outlook alerts</span><button class='btn btn-secondary' data-setting='mail_feeder'>Off</button></div>
+</div>
+<p class='empty'>Not run yet. The first pass runs with the next mail poll, or press Fetch now.</p>
+<form method="post" action="/settings/mail/fetch-now" class="cardform">
+<button class="btn btn-secondary" type="submit">Fetch now</button>
+</form>
+<p class='empty'>Coverage: only the alerts the OS notification store still keeps.
+On Windows that is about 20 per app; it is a live signal, not mailbox
+history. The manual .eml folder is the history source.</p>
+</section>

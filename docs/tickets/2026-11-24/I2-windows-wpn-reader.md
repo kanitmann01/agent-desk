@@ -21,3 +21,7 @@ Windows persists every toast in the per-user WPN store at `%LOCALAPPDATA%\Micros
 ## Acceptance
 
 The focused tests pass; a synthetic store produces header-only messages; the preview line never reaches a file; the reader contains no COM, no network and no model import.
+
+## Resolution (2026-11-24)
+
+Resolved. `src/agentdesk/feeder/collectors/wpn.py` snapshots the live store with the SQLite backup API and falls back to copying `db`, `-wal` and `-shm` together. It filters to Outlook handler rows, `Type = "toast"` and `PayloadType = "Xml"`, keeps at most the first two text nodes, drops the preview, and maps the FILETIME arrival. The synthetic suite covers the mapping, the preview sentinel, the handler filter, the limit, stable reruns and the no-handler cause: 3 Outlook messages from 5 rows, 3 files, 3 after a rerun. The live smoke on this host records one Outlook handler and 0 Outlook toast rows, so there is no live alert to read; `available=True` and `collect` returns 0. Tests are Windows-gated by `sys.platform` even with an injected store, which is recorded as a discrepancy.

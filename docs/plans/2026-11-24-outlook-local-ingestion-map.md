@@ -1,6 +1,6 @@
 # Wayfinder map: Outlook data into the desk without tenant access
 
-Status: charting, 2026-11-24. Local-markdown tracker: this file is the map, child tickets live in `docs/tickets/2026-11-24/`.
+Status: resolved, 2026-11-24. Local-markdown tracker: this file is the map, child tickets live in `docs/tickets/2026-11-24/`.
 
 ## Destination
 
@@ -17,17 +17,17 @@ A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Win
 
 ## Open tickets
 
-All four decision tickets are resolved. The frontier is now the implementation tickets.
+All nine tickets are resolved as of 2026-11-24. The implementation and the docs and evidence pack are on branch `spec024/outlook-feeder`.
 
 - [Which local Outlook data sources actually work here?](docs/tickets/2026-11-24/O1-local-outlook-sources.md): resolved.
 - [How does the feeder run without admin?](docs/tickets/2026-11-24/O2-feeder-scheduling.md): resolved.
 - [What is the feeder's privacy, consent and failure contract?](docs/tickets/2026-11-24/O3-feeder-contract.md): resolved.
 - [What is the proof plan?](docs/tickets/2026-11-24/O4-proof-plan.md): resolved.
-- [The feeder core and header-only writer](docs/tickets/2026-11-24/I1-feeder-core.md): writer and contract complete; runner and platform seam in progress.
-- [The Windows notification-store reader](docs/tickets/2026-11-24/I2-windows-wpn-reader.md): in progress.
-- [The macOS Notification Center reader](docs/tickets/2026-11-24/I3-macos-notification-reader.md): in progress.
-- [Watcher, settings, UI and disclosure](docs/tickets/2026-11-24/I4-watcher-settings-ui.md): in progress.
-- [Docs, walkthrough and evidence](docs/tickets/2026-11-24/I5-docs-evidence.md): blocked by I2 to I4.
+- [The feeder core and header-only writer](docs/tickets/2026-11-24/I1-feeder-core.md): resolved.
+- [The Windows notification-store reader](docs/tickets/2026-11-24/I2-windows-wpn-reader.md): resolved.
+- [The macOS Notification Center reader](docs/tickets/2026-11-24/I3-macos-notification-reader.md): resolved against synthetic stores; real Mac unverified.
+- [Watcher, settings, UI and disclosure](docs/tickets/2026-11-24/I4-watcher-settings-ui.md): resolved.
+- [Docs, walkthrough and evidence](docs/tickets/2026-11-24/I5-docs-evidence.md): resolved.
 
 ## Decisions so far
 
@@ -37,6 +37,11 @@ All four decision tickets are resolved. The frontier is now the implementation t
 - [How does the feeder run without admin?](docs/tickets/2026-11-24/O2-feeder-scheduling.md): the app's own daemon timer on both platforms, plus a startup pass. No OS task, service or autostart entry, because the PRD and the IT statement forbid persistence and the existing watchers already use cross-platform timer chains. Closed-app collection is deferred to a separate Security decision.
 - [What is the feeder's privacy, consent and failure contract?](docs/tickets/2026-11-24/O3-feeder-contract.md): read the two alert lines, drop the preview and body, write header-only `.eml`, keep read-only status, off by default, name the collector and coverage, never a number in an attention state.
 - [What is the proof plan?](docs/tickets/2026-11-24/O4-proof-plan.md): synthetic WPN and Notification Center stores, a writer round-trip, a no-leak sentinel test, idempotence, honest states, a metadata-only Windows live smoke, and a written manual Mac procedure.
+- [The feeder core and header-only writer](docs/tickets/2026-11-24/I1-feeder-core.md): `contract.py`, `writer.py`, `runner.py` and `platform.py` landed; the writer round-trips through `parse_eml`, synthesizes stable Message-IDs, writes atomically and prunes only feeder files; the runner holds a run claim and never raises. Focused suite 66 passed, 1 skipped.
+- [The Windows notification-store reader](docs/tickets/2026-11-24/I2-windows-wpn-reader.md): `wpn.py` snapshots the store read-only, keeps Outlook `toast`/`Xml` rows, drops the preview, and maps FILETIME arrival. Synthetic run: 3 messages from 5 rows, sentinel absent, rerun stable. Live smoke: one Outlook handler, 0 Outlook alerts on this host, `available=True`.
+- [The macOS Notification Center reader](docs/tickets/2026-11-24/I3-macos-notification-reader.md): `mac_notifications.py` copies the store plus WAL, filters Outlook bundle ids, reads title and subtitle only, and returns the Full Disk Access cause at the reader. Synthetic run: 2 messages from 3 records, all body sentinels absent. Real Mac remains unverified.
+- [Watcher, settings, UI and disclosure](docs/tickets/2026-11-24/I4-watcher-settings-ui.md): `MailWatch` runs the injected feeder before the folder read, `mail_feeder` is off by default, the Sources card renders the alerts block and Fetch now, the fetch-now route runs the pass, and the IT statement says the reader runs only while the app is open. Focused suites 160 passed.
+- [Docs, walkthrough and evidence](docs/tickets/2026-11-24/I5-docs-evidence.md): resolved. The research note `docs/research/2026-11-24-outlook-metadata-feeder.md`, the known-limitations and README updates, and the evidence pack under `docs/evidence/2026-11-24-outlook-feeder/` landed in the last commit. The pack records 66 and 160 passing tests, the synthetic runs, the live Windows smoke with `available=True` and 0 Outlook alerts, the settings captures, and the unverified macOS procedure. No real Mac was used.
 
 ## Not yet specified
 

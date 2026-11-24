@@ -19,3 +19,7 @@ The mail watcher polls every 30 minutes and once at startup. The feeder should r
 ## Acceptance
 
 The focused mail, settings, route and IT-surface tests pass; the settings page renders the block; the fetch-now route runs the injected feeder; the IT statement truthfully says the desk reads the local OS notification store for Outlook alerts while it is open and creates no scheduled task or service.
+
+## Resolution (2026-11-24)
+
+Resolved. `MailWatch` accepts a `feeder` callable, calls it after folder resolution and before the read, catches every exception, records `fetch` in `status()` and `view()`, and audits `mail.fetch`. `mail_feeder` defaults to false and is accepted by the settings save route; turning it on also turns on the mail digest, because the alert files land in the same folder. The Sources card renders the alerts block with the toggle, collector, last run, result, count, coverage window, error and Fetch now. `POST /settings/mail/fetch-now` runs the injected feeder and answers `ran: false` when the feed is off. The IT statement now says the reader runs only while the app is open and starts no task, service or autostart entry. The focused suites are 160 passed. One copy gap remains recorded, not fixed: the coverage line says "On Windows" on every platform.

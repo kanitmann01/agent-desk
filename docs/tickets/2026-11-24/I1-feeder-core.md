@@ -31,3 +31,7 @@ Create `src/agentdesk/feeder/`:
 ## Acceptance
 
 `python -m pytest tests/test_feeder_contract.py tests/test_feeder_writer.py tests/test_feeder_runner.py tests/test_feeder_platform.py -q` passes; a generated file parses with `parse_eml` and carries no body; the core imports on any platform.
+
+## Resolution (2026-11-24)
+
+Resolved. `src/agentdesk/feeder/` now holds `contract.py`, `writer.py`, `runner.py` and `platform.py`, with the four focused test files. The writer round-trips through `parse_eml`, strips CR/LF from values, writes CRLF UTF-8 without BOM, synthesizes a stable Message-ID, writes atomically, prunes only feeder-owned files, and leaves no bytes after the blank line. The runner selects the first available collector, records an honest status, and holds a cross-process run claim. No feeder core module imports a platform, a subprocess or a network or model client. The focused feeder suite is 66 passed, 1 skipped.

@@ -32,3 +32,7 @@ Install and remove: none. The feeder is constructed when `mail_enabled` and `mai
 Failure modes: the timer chain survives a collector exception; the next tick still runs. A lock file prevents overlapping passes. If the app is closed, the last run and coverage window are shown, never a false "live" claim.
 
 Deferred: a per-user Task Scheduler task on Windows or a per-user `launchd` agent on macOS would collect while the app is closed. That is a separate decision with Security sign-off, not part of v1.
+
+## Resolution (2026-11-24)
+
+Resolved and implemented as chosen. The feeder runs inside `MailWatch.poll()` before the folder read and once at startup, through an injected callable, and it has its own run lock (`outlook-feeder.lock`). It is constructed only when `mail_enabled` and `mail_feeder` are both on, and stopped with the watcher. No OS task, service, login item or autostart entry is created; the IT statement and `tests/test_server_it_surface.py` were updated to say the alert reader runs only while the app is open.
