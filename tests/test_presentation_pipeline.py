@@ -6,11 +6,13 @@ still uses the 10 second cap.
 
 import json
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 for _p in (str(ROOT / "src"), str(ROOT / "tools"), str(ROOT / "tests")):
@@ -21,7 +23,14 @@ import server_harness
 import pytest
 from agentdesk.assistant import audit as audit_store
 from agentdesk.llm import REQUEST_TIMEOUT_S, LlmUnavailable, chat_client
-from agentdesk.presentations.pipeline import call_model, gather, guard_numbers, outline_from_fill
+from agentdesk.presentations.packs import load_packs
+from agentdesk.presentations.pipeline import (
+    call_model,
+    gather,
+    guard_numbers,
+    outline_from_fill,
+    run_fill,
+)
 from agentdesk.presentations.writer import read_parts, slide_texts
 from mock_endpoint import MockEndpointHandler
 
@@ -256,6 +265,55 @@ def test_the_digit_guard_replaces_only_unsourced_numbers():
     )
     assert outline["slides"][1]["title"] == "Up [data needed]"
     assert "220" in outline["slides"][2]["bullets"][0]
+
+
+def test_run_fill_answers_with_the_delivered_deck_or_a_cause():
+    """The one fill entry under a fake llm, no server: a good run writes
+    the deck and names its folder, a dead endpoint and a malformed fill
+    come back as the degraded sentences with nothing written."""
+    def runner(_argv, _timeout):
+        """A renderer that never succeeds, so the test needs none installed."""
+        return SimpleNamespace(returncode=1)
+
+    with tempfile.TemporaryDirectory(prefix="agentdesk-runfill-") as root:
+        empty_user = Path(root) / "templates"
+        empty_user.mkdir()
+        deck_dir = Path(root) / "decks"
+        pack = next(item for item in load_packs(registry_root=ROOT / "registry", user_dir=empty_user)
+                    if item.id == "starter")
+        recipe = pack.recipe("briefing")
+        planned = [{"id": "context", "title": "Context"}]
+
+        def llm(prompt, timeout=30):
+            return json.dumps({"title": "Filled", "bullets": ["Noted."], "citations": []})
+
+        delivered, cause = run_fill(
+            pack, "dark", recipe, planned, [], "the Q3 review",
+            "Q3 Review", llm, 30, deck_dir, runner=runner,
+        )
+        assert cause == ""
+        assert delivered["rendered"]["renderer"] == "none"
+        assert (deck_dir / delivered["folder"] / "deck.pptx").is_file()
+
+        def dead(prompt, timeout=30):
+            raise LlmUnavailable("the endpoint did not answer")
+
+        delivered, cause = run_fill(
+            pack, "dark", recipe, planned, [], "the Q3 review",
+            "Q3 Review", dead, 30, deck_dir, runner=runner,
+        )
+        assert delivered is None
+        assert cause == "the endpoint did not answer"
+
+        def malformed(prompt, timeout=30):
+            return "not json"
+
+        delivered, cause = run_fill(
+            pack, "dark", recipe, planned, [], "the Q3 review",
+            "Q3 Review", malformed, 30, deck_dir, runner=runner,
+        )
+        assert delivered is None
+        assert cause == "The presentation could not be filled, so no deck was written."
 
 
 def test_a_real_type_error_is_not_tried_twice():

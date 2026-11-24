@@ -10,7 +10,6 @@ session validation before handshake.
 
 import html
 import json
-import secrets
 import logging
 import os
 import re
@@ -122,7 +121,6 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
-from agentdesk.presentations.deliver import deliver_deck
 from agentdesk.presentations.packs import load_packs
 from agentdesk.presentations.tools import (
     ToolError,
@@ -138,13 +136,12 @@ from agentdesk.presentations.research import (
 )
 from agentdesk.presentations.pipeline import (
     call_model,
-    fill_prompt,
+    fill_cause,
     gather,
-    outline_from_fill,
-    parse_fill,
     parse_plan,
     plan_prompt,
     receipt_lines,
+    run_fill,
     timeout_seconds,
 )
 from agentdesk.memory.crypto import MemoryEncryptedError
@@ -2619,6 +2616,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             server.settings.get("presentation_timeout_s") if server.settings is not None else "30"
         )
         llm = self._effective_llm("presentations")[0]
+        delivered = None
+        cause = ""
         try:
             parsed = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
             if not parsed:
@@ -2629,47 +2628,22 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     server, brief, pack, variant, recipe, planned, sources, timeout, deck_title,
                 )
                 return
-            filled = []
-            for section in planned:
-                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
-                if not slides:
-                    raise ValueError("malformed fill")
-                filled.append(slides)
-            outline = outline_from_fill(
-                brief, recipe_doc, planned, filled, sources, title=deck_title,
+            delivered, cause = run_fill(
+                pack, variant, recipe_doc, planned, sources, brief, deck_title,
+                llm, timeout, self._presentation_dir(),
+                runner=getattr(server, "presentation_runner", None),
             )
-
-            def shorten(text, limit, call_timeout):
-                """One shorten call, on the presentation timeout."""
-                reply = call_model(
-                    llm,
-                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
-                    call_timeout,
-                )
-                return (reply or "").strip() or text
-
-            folder = self._presentation_dir() / secrets.token_hex(8)
-            delivered = deliver_deck(
-                shell_path.read_bytes(), recipe_doc, outline, sources, folder,
-                shorten, timeout, runner=getattr(server, "presentation_runner", None),
-            )
-            fit_notes = delivered["fit"]
-            rendered = delivered["rendered"]
         except (OSError, ValueError, LlmUnavailable) as exc:
-            if isinstance(exc, LlmUnavailable):
-                cause = str(exc)
-            elif isinstance(exc, ValueError) and "plan" in str(exc):
-                cause = "The presentation plan could not be read, so no deck was written."
-            elif isinstance(exc, ValueError) and "fill" in str(exc):
-                cause = "The presentation could not be filled, so no deck was written."
-            else:
-                cause = "The deck could not be written."
+            cause = fill_cause(exc)
+        if delivered is None:
             run_id = server.agents.record("presentation", brief, "degraded", cause=cause)
             self._audit("agents.run", target="presentation", status="error",
                         detail=f"status degraded; {cause}")
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
-        prefix = folder.name
+        fit_notes = delivered["fit"]
+        rendered = delivered["rendered"]
+        prefix = delivered["folder"]
         artifact = {
             "kind": "presentation",
             "templateId": pack.id,
@@ -2840,55 +2814,30 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         timeout = timeout_seconds(artifact.get("timeout") or 30)
         llm = self._effective_llm("assistant")[0]
-        planned = artifact.get("plan") or []
-        try:
-            filled = []
-            for section in planned:
-                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
-                if not slides:
-                    raise ValueError("malformed fill")
-                filled.append(slides)
-            outline = outline_from_fill(
-                brief, recipe_doc, planned, filled, sources, title=str(artifact.get("title") or ""),
-            )
-
-            def shorten(text, limit, call_timeout):
-                """One shorten call, on the presentation timeout."""
-                reply = call_model(
-                    llm,
-                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
-                    call_timeout,
-                )
-                return (reply or "").strip() or text
-
-            folder = self._presentation_dir() / secrets.token_hex(8)
-            delivered = deliver_deck(
-                shell_path.read_bytes(), recipe_doc, outline, sources, folder,
-                shorten, timeout, runner=getattr(server, "presentation_runner", None),
-            )
-        except (OSError, ValueError, LlmUnavailable) as exc:
-            if isinstance(exc, LlmUnavailable):
-                cause = str(exc)
-            elif isinstance(exc, ValueError) and "fill" in str(exc):
-                cause = "The presentation could not be filled, so no deck was written."
-            else:
-                cause = "The deck could not be written."
+        delivered, cause = run_fill(
+            pack, artifact.get("variant"), recipe_doc, artifact.get("plan") or [],
+            sources, brief, str(artifact.get("title") or ""),
+            llm, timeout, self._presentation_dir(),
+            runner=getattr(server, "presentation_runner", None),
+        )
+        if delivered is None:
             server.agents.update_outcome(run_id, "degraded", None, cause)
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
         rendered = delivered["rendered"]
+        prefix = delivered["folder"]
         updated = {
             **{key: artifact[key] for key in artifact if key not in ("plan", "webSources")},
             "phase": "written",
-            "file": f"{folder.name}/deck.pptx",
+            "file": f"{prefix}/deck.pptx",
             "sources": receipt_lines(sources),
             "research": True,
             "kept": [source.get("id") for source in chosen],
             "fit": delivered["fit"],
             "renderer": rendered["renderer"],
             "previewNote": rendered["note"],
-            "pdf": f"{folder.name}/{rendered['pdf']}" if rendered["pdf"] else "",
-            "images": [f"{folder.name}/{image}" for image in rendered["images"]],
+            "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
+            "images": [f"{prefix}/{image}" for image in rendered["images"]],
         }
         server.agents.update_outcome(run_id, "ok", updated, "")
         kept = ", ".join(str(source.get("id")) for source in chosen) or "none"
