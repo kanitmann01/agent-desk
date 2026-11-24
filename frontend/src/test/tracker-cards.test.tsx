@@ -80,6 +80,8 @@ describe('the workbook card draws the reading', () => {
       },
     }} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
     expect(screen.getByRole('img', { name: 'Jan to Apr' })).toBeInTheDocument();
+    expect(screen.getByText('Jan')).toBeInTheDocument();
+    expect(screen.getByText('Apr')).toBeInTheDocument();
   });
 
   it('renders the appended elements and the resolved lines under the figure', () => {

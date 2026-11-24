@@ -2,7 +2,7 @@
 // a typed path or an upload), assign the columns and pick the rows on
 // the preview grid, then confirm. The dashboard's tracker sheet and the
 // marketplace's instance sheet are this walk with app-specific slots
-// (the tracker's suggest and evaluate steps, the marketplace's create
+// (the tracker's suggestion and chart controls, the marketplace's create
 // phase), so the guarded requests, the picker-unavailable recovery and
 // the outside-workspace acceptance exist once and cannot drift again.
 // The app-specific requests arrive as an adapter: each call returns the

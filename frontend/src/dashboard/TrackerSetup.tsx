@@ -1,9 +1,9 @@
 // The tracker setup sheet: the shared instance walk (open a workbook,
-// choose columns and rows, confirm) with the tracker's own slots, the
-// suggest proposal and the endpoint's evaluate check among them. The
-// walk owns the guarded requests, the picker recovery and the
-// outside-workspace acceptance; this file only adapts the dashboard's
-// API envelope onto the walk's answers.
+// choose columns and rows, confirm) with the tracker's own slots: the
+// chart skeleton, the time/chart/aggregate controls, and the one
+// suggestion the default model fills. The walk owns the guarded
+// requests, the picker recovery and the outside-workspace acceptance;
+// this file only adapts the dashboard's API envelope onto its answers.
 import { useEffect, useRef, useState } from 'react';
 import { postFile, postJson, type ApiResult } from '../api';
 import Button from '../components/Button';

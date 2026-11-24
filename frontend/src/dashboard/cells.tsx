@@ -213,13 +213,20 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
         {view.delta === 'First reading' ? null : <span>{view.deltaLabel || 'since the last reading'}</span>}
       </p>
       {view.points.length >= 2 ? (
-        <SeriesChart
-          points={view.points}
-          kind={view.chart === 'column' || view.chart === 'area' ? view.chart : 'line'}
-          label={view.axis === 'time' && view.labels && view.labels.length >= 2
-            ? `${view.labels[0]} to ${view.labels[view.labels.length - 1]}`
-            : `${view.points.length} readings`}
-        />
+        <>
+          <SeriesChart
+            points={view.points}
+            kind={view.chart === 'column' || view.chart === 'area' ? view.chart : 'line'}
+            label={view.axis === 'time' && view.labels && view.labels.length >= 2
+              ? `${view.labels[0]} to ${view.labels[view.labels.length - 1]}`
+              : `${view.points.length} readings`}
+          />
+          {view.axis === 'time' && view.labels && view.labels.length >= 2 ? (
+            <p className="spark-axis mono" aria-hidden="true">
+              <span>{view.labels[0]}</span><span>{view.labels[view.labels.length - 1]}</span>
+            </p>
+          ) : null}
+        </>
       ) : <WireChart bars={8} />}
       {pace != null && view.goal ? (
         <div className="pace">
