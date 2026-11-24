@@ -127,11 +127,14 @@ modes. Every question option and every autofilled value is one member of it.
 The autofill may only pick member labels; anything else is dropped. This is the
 same confinement the wizard already applies to its drafted manifest.
 
-Sources are the eleven the desk can read: workbook, CSV, JSON, notes, web page,
-calendar, mail, hand-kept number, desk state (with its runtime, audit, or policy
-selector), and research. Composed sources (compare, aggregate) are out of
-vocabulary because each needs two sources and a question the manager cannot
-answer without naming both; the registry keeps authoring those.
+Sources are the ten the desk can read: workbook, CSV, JSON, notes, web page,
+calendar, mail, hand-kept number, and research. Composed sources (compare,
+aggregate) are out of vocabulary because each needs two sources and a question
+the manager cannot answer without naming both; the registry keeps authoring
+those. Desk state (runtime, audit, policy) is out too: the plugin runtime is
+built without the host callbacks that source needs, so offering it would build
+a tile that is always blank. It stays registry-authored until the runtime is
+handed those callbacks.
 
 The unbuildable rule that treats any mention of mail as "sending mail" is
 narrowed to sending or drafting mail. Reading mail is a source.
@@ -205,6 +208,8 @@ field, bounded by the existing copy limits. The reply is parsed through the same
 tolerant JSON reader the wizard already uses. Each returned label is checked
 against the legal set for that field; a rejected field stays unanswered for the
 manager. A rejected source falls back to the questions, never to the workbook.
+The reasons are copy for the fill screen and are stored beside the answers, not
+inside them: an answer map holds labels the composer reads, never prose.
 
 The endpoint's answer is advisory in the same sense the manifest suggestion is:
 it may name labels and prose, and nothing else. Permissions, identity, version,
@@ -263,7 +268,8 @@ marketplace SPA suites for a dialog's focus, Escape, and copy.
 ## Out of Scope
 
 - Compare and aggregate sources in the wizard. Each needs two sources; the
-  registry keeps authoring them.
+  registry keeps authoring them. Desk state is out for the same reason: the
+  plugin runtime is not handed the host callbacks that source reads.
 - Editing a plugin's answers after install. The manager deletes and rebuilds, or
   uses the existing instance setup for a workbook.
 - Sub-minute refresh, and any scheduling that survives more than one process.
@@ -282,4 +288,11 @@ it. The mail narrowing is therefore part of this spec, not a follow-up.
 
 The four vocabulary sets are the artifact to get right. They are the contract
 between the questions, the autofill, and the composer; if a label is not in the
-set, no surface can offer it and no model can introduce it.
+set, no surface can offer it and no model can introduce it. The sets live in
+one module, and the tests pin them to the host's own binding list, so a look
+that names a binding no reader fills fails before it can ship.
+
+The ticket set did not include a ninth ticket for the card face or the manual
+number: both landed inside 02 and 06, because a tile that shows the wrong face
+or offers no way to set its number is a broken tile, not a follow-up.
+
