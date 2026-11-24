@@ -191,12 +191,12 @@ def test_a_404_means_the_path_is_not_an_api_base():
         stub.close()
 
 
-def test_a_5xx_is_named_as_the_endpoint_side():
+def test_a_5xx_is_named_as_the_providers_side():
     stub = ScriptedEndpoint(status=503, body=b"")
     try:
         cause = chat_cause(stub.base_url)
         assert "503" in cause
-        assert "endpoint" in cause
+        assert "AI provider" in cause
     finally:
         stub.close()
 
@@ -233,7 +233,7 @@ def test_a_base_without_a_scheme_or_host_is_refused_before_any_call():
 
 
 def test_no_base_is_still_the_documented_unconfigured_cause():
-    assert "no corporate endpoint configured" in chat_cause("")
+    assert "no AI connection is saved" in chat_cause("")
 
 
 def test_dns_failure_names_the_host(monkeypatch):
@@ -254,7 +254,7 @@ def test_transport_causes_for_failures_a_stub_cannot_produce():
     timed_out = transport_cause(socket.timeout(), host="llm.x.example", timeout=10)
     assert "did not answer within" in timed_out and "10" in timed_out
     unknown = transport_cause(OSError("strange"), host="h")
-    assert "endpoint" in unknown and "strange" in unknown
+    assert "AI provider" in unknown and "strange" in unknown
 
 
 def test_a_malformed_ipv6_literal_is_refused_not_crashed():
@@ -270,7 +270,7 @@ def test_a_non_http_answer_is_classified_not_crashed():
     stub = GarbageEndpoint()
     try:
         cause = chat_cause(stub.base_url)
-        assert "endpoint" in cause
+        assert "AI provider" in cause
         assert "did not answer" in cause
     finally:
         stub.close()

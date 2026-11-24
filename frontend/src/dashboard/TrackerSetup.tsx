@@ -355,7 +355,7 @@ export default function TrackerSetup({
                 {ctx.busy ? 'Checking…' : 'Continue'}
               </Button>
               <p className="setup-check-note">
-                One check runs here: the headers and up to 5 row values go to the company endpoint. The file path
+                One check runs here: the headers and up to 5 row values go to your AI. The file path
                 stays on this machine. A missing endpoint skips the check; your choice still works.
               </p>
             </>

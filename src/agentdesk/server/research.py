@@ -12,7 +12,7 @@ from agentdesk.server.core import ATTENTION, FRESH, Freshness
 from agentdesk.server.pages import page_shell
 from agentdesk.server.demo import Widget
 
-RESEARCH_BUSY = "Asking the company endpoint for a sourced summary"
+RESEARCH_BUSY = "Asking your AI for a sourced summary"
 
 # The save-to-memory excerpt's bound (ticket #91): a few thousand
 # characters of the visible conversation, recent turns kept first.
@@ -59,7 +59,7 @@ def render_research_widget(last_answered_ts: float | None, now: datetime) -> Wid
             '<div class="answer" id="research-answer" hidden></div>'
             f'<p class="empty" id="research-status" data-busy-text="{RESEARCH_BUSY}"></p>'
         ),
-        foot_html="Searches run through the company endpoint. Every call is logged: what was asked, never file contents.",
+        foot_html="Searches run through your AI. Every call is logged: what was asked, never file contents.",
     )
 
 
@@ -73,7 +73,7 @@ def render_research_disabled(now: datetime) -> Widget:
         freshness=Freshness(ATTENTION, "Paused", now.strftime("%Y-%m-%dT%H:%M:%S")),
         body_html=(
             '<div class="well"><p class="q">Research is turned off in settings. '
-            "Nothing is being asked of the company endpoint right now.</p></div>"
+            "Nothing is being asked of your AI right now.</p></div>"
             '<a class="btn btn-primary btn-start" href="/settings">Turn it back on</a>'
         ),
         foot_html="No endpoint calls while off. Nothing is sent anywhere.",

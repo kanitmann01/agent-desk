@@ -382,7 +382,7 @@ def test_without_an_injection_the_builtin_extractor_rides_the_llm_seam(boot, aut
 
 
 def test_an_endpoint_failure_through_the_seam_degrades_in_plain_language(boot, auth):
-    cause = "no corporate endpoint configured"
+    cause = "no AI connection is saved"
     boot.server.llm = ScriptedLlm(error=LlmUnavailable(cause))
     status, _h, body = _retain(boot, auth)
     payload = json.loads(body)

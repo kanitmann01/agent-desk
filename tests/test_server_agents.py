@@ -184,7 +184,7 @@ def test_an_unconfigured_endpoint_degrades_with_the_adapter_cause(env, auth):
     payload = json.loads(body)
     assert status == 200
     assert payload["status"] == "degraded"
-    assert payload["cause"] == "no corporate endpoint configured"
+    assert payload["cause"] == "no AI connection is saved"
     assert _runs(env)[0]["artifact"] is None
 
 
@@ -212,7 +212,7 @@ def test_the_agents_page_renders_roster_and_history_as_plain_forms(env, auth):
     page = body.decode("utf-8")
     assert "Worksheet brief" in page
     assert "Presentation" in page
-    assert "no corporate endpoint configured" in page
+    assert "no AI connection is saved" in page
     assert 'class="template-tiles" disabled' in page
     assert 'action="/agents/run"' in page
     assert 'name="brief"' in page
@@ -403,7 +403,7 @@ def test_an_unconfigured_presentation_run_is_degraded_and_stores_no_file(env, au
     assert status == 200
     payload = json.loads(body)
     assert payload["status"] == "degraded"
-    assert payload["cause"] == "no corporate endpoint configured"
+    assert payload["cause"] == "no AI connection is saved"
     assert payload["artifact"] is None
     assert _runs(env)[0]["artifact"] is None
 

@@ -368,7 +368,7 @@ def build_memory_graph(
          "text": "Capture keeps the excerpt from the Assistant or Research, or a conversation you saved."},
         {"step": STEP_EXTRACT, "count": sum(1 for f in all_facts if f.source_id is not None),
          "waiting": waiting_drafts,
-         "text": "The company endpoint, or the built-in rules when it does not answer, proposes up to five facts."},
+         "text": "Your AI, or the built-in rules when it does not answer, proposes up to five facts."},
         {"step": STEP_APPROVE, "count": sum(1 for f in all_facts if f.source.startswith("inbox card ")),
          "text": "Each candidate waits for review unless auto-approve is on."},
         {"step": STEP_STORE, "count": len(all_facts),

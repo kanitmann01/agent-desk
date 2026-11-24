@@ -9,11 +9,11 @@ import json
 from agentdesk.plugins.config import ConfigError
 
 DISCLOSURE_ROWS = (
-    "This sends the column names and up to 5 rows to the company endpoint. "
+    "This sends the column names and up to 5 rows to your AI. "
     "The file path stays on this machine."
 )
 DISCLOSURE_HEADERS = (
-    "This sends the column names to the company endpoint. "
+    "This sends the column names to your AI. "
     "No cell values and no file path leave this machine."
 )
 _MAX_BYTES = 8192
@@ -199,7 +199,7 @@ def evaluate_choice(request: dict, complete) -> dict:
     if complete is None:
         return {
             "verdict": "unchecked",
-            "message": "Model check skipped: no corporate endpoint configured. Your choice is used as chosen.",
+            "message": "Model check skipped: no AI is saved. Your choice is used as chosen.",
             "recommendation": None,
             "source": "none",
         }

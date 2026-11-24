@@ -177,7 +177,7 @@ def test_endpoint_down_degrades_alone(env, auth):
     payload = json.loads(body)
     assert research_status == 200
     assert payload["status"] == "degraded"
-    assert "endpoint" in payload["cause"]
+    assert "AI provider" in payload["cause"]
 
     ask_status, _h, body = env.post_json("/assistant/ask", {"question": "q"}, auth)
     assert ask_status == 200

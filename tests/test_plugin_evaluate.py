@@ -56,7 +56,7 @@ def test_a_recommendation_naming_columns_or_rows_the_file_lacks_is_dropped():
 def test_no_endpoint_is_an_unchecked_verdict_not_an_error():
     result = evaluate_choice(_request(), None)
     assert result["verdict"] == "unchecked"
-    assert "no corporate endpoint configured" in result["message"]
+    assert "no AI is saved" in result["message"]
     assert result["recommendation"] is None
 
 

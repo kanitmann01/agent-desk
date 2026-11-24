@@ -8,7 +8,7 @@ import { hhmmFromTs } from '../fmt';
 import WidgetCard, { type CardSpan } from '../components/WidgetCard';
 import EmptyState, { ICON_SEARCH } from '../components/EmptyState';
 
-export const RESEARCH_BUSY = 'Asking the company endpoint for a sourced summary';
+export const RESEARCH_BUSY = 'Asking your AI for a sourced summary';
 export const UNREACHABLE_SEND = 'The dashboard could not reach its own server; nothing was sent.';
 
 export interface ResearchAnswer {
@@ -57,7 +57,7 @@ export default function ResearchCard({
       sparse={!answer}
       stamp={stamp}
       menuItems={[{ label: 'Open settings', href: '/settings' }]}
-      foot="Searches run through the company endpoint. Every call is logged: what was asked, never file contents."
+      foot="Searches run through your AI. Every call is logged: what was asked, never file contents."
     >
       {answer && (
         <div className="answer" key={answerSeq}>

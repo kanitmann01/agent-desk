@@ -716,7 +716,7 @@ class MemoryApiMixin:
         from and how."""
         label = memory_loop.CHANNEL_LABELS.get(channel, channel)
         names = ", ".join(name for name, _type in candidate.entities)
-        how = ("the company endpoint" if method == memory_loop.METHOD_MODEL
+        how = ("your AI" if method == memory_loop.METHOD_MODEL
                else "the built-in rules (no endpoint answered)")
         return self.server.inbox.add(  # type: ignore[attr-defined]
             kind=KIND_MEMORY_DRAFT,

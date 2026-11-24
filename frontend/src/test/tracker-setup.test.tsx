@@ -62,7 +62,7 @@ describe('tracker setup sheet', () => {
       }
       if (String(url).endsWith('/suggest')) {
         return jsonResponse({
-          disclosure: 'This sends the column names and up to 5 rows to the company endpoint. The file path stays on this machine.',
+          disclosure: 'This sends the column names and up to 5 rows to your AI. The file path stays on this machine.',
           proposal: {
             labelColumn: 'Region',
             valueColumn: 'Booked',
@@ -119,7 +119,7 @@ describe('tracker setup sheet', () => {
       }
       if (target.endsWith('/suggest')) {
         return jsonResponse({
-          disclosure: 'This sends the column names and up to 5 rows to the company endpoint. The file path stays on this machine.',
+          disclosure: 'This sends the column names and up to 5 rows to your AI. The file path stays on this machine.',
           proposal: {
             labelColumn: 'Region',
             valueColumn: 'Booked',

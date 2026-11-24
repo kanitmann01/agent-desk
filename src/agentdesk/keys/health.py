@@ -54,15 +54,15 @@ OUTCOME_NO_MODELS = "no-models"
 # quota or listing semantics to name); every other cause reuses its
 # strings verbatim, so the surfaces never show a second vocabulary.
 LIMITED_NOTE = (
-    "the endpoint is rate limiting this key (HTTP 429); the connection"
-    " works, the quota is the limit"
+    "the AI provider is rate limiting this key (HTTP 429); the"
+    " connection works, the quota is the limit"
 )
 NO_MODELS_NOTE = (
-    "this endpoint offers no model listing; type the model by hand, or"
+    "this AI provider offers no model listing; type the model by hand,"
     " run the deeper check to verify the key"
 )
 BAD_MODELS_SHAPE_CAUSE = (
-    "the endpoint answered JSON that is not a model list; check the base"
+    "the AI provider answered JSON that is not a model list; check the"
     " URL is an OpenAI-compatible base, usually ending in /v1"
 )
 

@@ -31,7 +31,7 @@ ENDPOINT_OFF_CAUSE = (
     "surface is paused. Everything else keeps working."
 )
 DEGRADED_CAUSE = (
-    "The company endpoint is not answering right now, so this is running "
+    "Your AI is not answering right now, so this is running "
     "at reduced capacity. Everything else on the dashboard keeps working."
 )
 

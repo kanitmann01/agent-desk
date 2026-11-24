@@ -223,7 +223,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
     const d = (res.data ?? {}) as ResearchResponse;
     if (d.status === 'degraded') {
       showAnswer(null);
-      setStatusText(d.cause || 'The company endpoint did not answer.');
+      setStatusText(d.cause || 'Your AI did not answer.');
       return false;
     }
     setStatusText('');

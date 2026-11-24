@@ -42,7 +42,7 @@ def test_record_and_recent_roundtrip_every_column():
         reply='{"title": "Q3"}', artifact=artifact, facts=facts,
     )
     clock.advance(5)
-    store.record("worksheet-brief", "a second brief", "degraded", cause="no corporate endpoint configured")
+    store.record("worksheet-brief", "a second brief", "degraded", cause="no AI connection is saved")
     rows = store.recent()
     assert [row["id"] for row in rows] == [run_id + 1, run_id]
     first = rows[1]
@@ -60,7 +60,7 @@ def test_record_and_recent_roundtrip_every_column():
     assert first["feedbackTs"] is None
     second = rows[0]
     assert second["status"] == "degraded"
-    assert second["cause"] == "no corporate endpoint configured"
+    assert second["cause"] == "no AI connection is saved"
     assert second["artifact"] is None
     assert second["facts"] == []
     assert second["createdTs"] == 105.0

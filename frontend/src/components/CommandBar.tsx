@@ -70,7 +70,7 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
   }
 
   return (
-    <section className="cmd" aria-label="Ask the company endpoint">
+    <section className="cmd" aria-label="Ask your desk">
       <div className="cmd-inner">
         <span className="cmd-icon" aria-hidden="true">{ICON_SEARCH}</span>
         <textarea

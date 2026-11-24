@@ -122,7 +122,7 @@ def test_a_model_that_fails_explains_nothing_rather_than_crashing():
 def test_a_named_endpoint_failure_keeps_its_cause_in_the_note():
     def complete(_prompt: str) -> str:
         raise LlmUnavailable(
-            "the endpoint answered 401; check the API key in Settings"
+            "the AI provider answered 401; check the API key in Settings"
         )
 
     answer = press.draft_reply(

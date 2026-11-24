@@ -29,7 +29,7 @@ DEFAULT_MODEL = "gpt-4o-mini"
 # The pinned cause vocabulary. Every surface (settings test, research
 # bar, assistant, wizard) shows one of these strings as-is, so the words
 # live here once and nowhere else.
-NO_ENDPOINT_CAUSE = "no corporate endpoint configured"
+NO_ENDPOINT_CAUSE = "no AI connection is saved"
 NO_SCHEME_CAUSE = (
     "the base URL must start with http:// or https://, "
     "for example https://llm.yourcompany.example/v1"
@@ -38,17 +38,17 @@ NO_HOST_CAUSE = (
     "the base URL is missing its host, the part right after https://, "
     "for example https://llm.yourcompany.example/v1"
 )
-REDIRECT_CAUSE = "the endpoint answered a redirect (possibly a login page), not an API"
+REDIRECT_CAUSE = "the AI provider answered a redirect (possibly a login page), not an API"
 WEB_PAGE_CAUSE = (
-    "the endpoint answered a web page, not the API; check the base URL "
+    "the AI provider answered a web page, not the API; check the base URL "
     "is the API base, not the portal"
 )
 NOT_API_BASE_CAUSE = (
-    "the endpoint answered 404; the base URL is likely not the API "
+    "the AI provider answered 404; the base URL is likely not the API "
     "base: it usually ends in the API version, like /v1"
 )
 BAD_SHAPE_CAUSE = (
-    "the endpoint answered JSON that is not an OpenAI chat reply; check "
+    "the AI provider answered JSON that is not an OpenAI chat reply; check "
     "the base URL is an OpenAI-compatible base, usually ending in /v1"
 )
 
@@ -184,15 +184,15 @@ def _http_cause(code: int) -> str:
     if 300 <= code < 400:
         return REDIRECT_CAUSE
     if code in (401, 403):
-        return f"the endpoint rejected the API key (HTTP {code}); check the key"
+        return f"the AI provider rejected the API key (HTTP {code}); check the key"
     if code == 404:
         return NOT_API_BASE_CAUSE
     if 500 <= code < 600:
         return (
-            f"the endpoint failed on its own side (HTTP {code}); nothing "
+            f"the AI provider failed on its own side (HTTP {code}); nothing "
             "is wrong with the key or the base URL"
         )
-    return f"the endpoint refused the request (HTTP {code})"
+    return f"the AI provider refused the request (HTTP {code})"
 
 
 def transport_cause(exc: BaseException, host: str = "",
@@ -207,18 +207,18 @@ def transport_cause(exc: BaseException, host: str = "",
         )
     if isinstance(exc, ssl.SSLError):
         return (
-            "could not open a secure connection to the endpoint host "
+            "could not open a secure connection to the AI provider's host "
             "(TLS failed): check that the address and port are right"
         )
     if isinstance(exc, (socket.timeout, TimeoutError)):
         waited = f"{timeout:g} seconds" if timeout is not None else "the waiting period"
-        return f"the endpoint did not answer within {waited} (timeout)"
+        return f"the AI provider did not answer within {waited} (timeout)"
     if isinstance(exc, ConnectionRefusedError):
         return (
-            f"the endpoint host refused the connection: nothing is "
+            f"the AI provider's host refused the connection: nothing is "
             f"listening at {host or 'that address'}"
         )
-    return f"the endpoint did not answer: {exc}"
+    return f"the AI provider did not answer: {exc}"
 
 
 def _reply_text(raw: str, content_type: str) -> str:
@@ -340,3 +340,4 @@ def settings_chat(settings_store=None):
         return chat(base, key, model, prompt, timeout=timeout)
 
     return complete
+

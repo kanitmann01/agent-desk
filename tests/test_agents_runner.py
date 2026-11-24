@@ -260,10 +260,10 @@ def test_run_agent_calls_the_llm_once_and_returns_the_parsed_artifact():
 
 
 def test_run_agent_degrades_with_the_pinned_cause():
-    llm = ScriptLlm(error=LlmUnavailable("no corporate endpoint configured"))
+    llm = ScriptLlm(error=LlmUnavailable("no AI connection is saved"))
     result = runner.run_agent(find_agent("worksheet-brief"), "brief", llm)
     assert result.status == runner.STATUS_DEGRADED
-    assert result.cause == "no corporate endpoint configured"
+    assert result.cause == "no AI connection is saved"
     assert result.artifact is None
 
 

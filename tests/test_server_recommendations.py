@@ -156,7 +156,7 @@ def test_server_rendered_dashboard_shows_setup_decisions_when_nothing_is_saved(d
     assert "The digest reads today" in page
     assert "meetings from it." in page
     assert "Ask your first question" in page
-    assert "Answers come from your company endpoint and are logged." in page
+    assert "Answers come from your AI and are logged." in page
     assert page.count('class="decision-title"') == 3
 
 

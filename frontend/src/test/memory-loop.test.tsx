@@ -196,7 +196,7 @@ describe('MemoryLoop', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: /Entities/ }), { key: 'End' });
     expect(screen.getByRole('tab', { name: /Observations/ }).getAttribute('aria-selected')).toBe('true');
     const obsPanel = screen.getByRole('tabpanel');
-    expect(within(obsPanel).getByText('Summarized by the endpoint')).toBeTruthy();
+    expect(within(obsPanel).getByText('Summarized by your AI')).toBeTruthy();
     expect(within(obsPanel).getByText('Acme', { selector: '.ml-row-eyebrow' })).toBeTruthy();
   });
 

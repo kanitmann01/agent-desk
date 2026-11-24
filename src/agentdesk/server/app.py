@@ -427,7 +427,7 @@ def _setup_decisions(state) -> list[dict]:
         rows.append(
             {
                 "title": "Ask your first question",
-                "why": "Answers come from your company endpoint and are logged.",
+                "why": "Answers come from your AI and are logged.",
                 "href": "/assistant",
                 "actionLabel": "Ask",
             }
@@ -436,7 +436,7 @@ def _setup_decisions(state) -> list[dict]:
         rows.append(
             {
                 "title": "Turn research back on",
-                "why": "Answers come from your company endpoint, and it is off in settings.",
+                "why": "Answers come from your AI, and it is turned off in settings.",
                 "href": "/settings#endpoint",
                 "actionLabel": "Open settings",
             }
@@ -6336,7 +6336,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if not base_url_problem(saved_base):
                 return ""
         return (
-            "No corporate endpoint is configured: the wizard asks its "
+            "No AI is saved: the wizard asks its "
             "standard questions and builds the same way. Add an endpoint "
             "in Settings for questions tailored to your ask."
         )

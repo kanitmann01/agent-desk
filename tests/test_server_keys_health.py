@@ -236,7 +236,7 @@ def test_a_rejected_check_never_refuses_the_save(env, auth, stub):
     payload = json.loads(body)
     assert payload["status"] == "error"
     assert payload["lastError"] == (
-        "the endpoint rejected the API key (HTTP 401); check the key")
+        "the AI provider rejected the API key (HTTP 401); check the key")
     listing = json.loads(env.request("GET", "/api/connections", auth)[2])
     assert [c["label"] for c in listing["connections"]] == ["Typo'd key"]
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
@@ -285,10 +285,10 @@ def test_a_rejected_key_turns_the_badge_to_error_with_the_named_cause(
         assert payload["status"] == "error"
         # The adapter's own sentence, verbatim, never a bare status code.
         assert payload["lastError"] == (
-            f"the endpoint rejected the API key (HTTP {code}); check the key")
+            f"the AI provider rejected the API key (HTTP {code}); check the key")
         # The page shows the same words inline with the badge.
         page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-        assert f"the endpoint rejected the API key (HTTP {code})" in page
+        assert f"the AI provider rejected the API key (HTTP {code})" in page
 
 
 def test_a_rate_limited_key_stays_ok_with_a_limited_note(env, auth, stub):

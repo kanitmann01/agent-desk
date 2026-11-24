@@ -611,7 +611,7 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onKeep, onRef
           </p>
           <button type="button" className="ml-btn" onClick={onReflect} disabled={data.extractor.mode !== 'model'}
             title={data.extractor.mode !== 'model' ? 'Needs a working endpoint' : undefined}>
-            Ask the endpoint for observations
+            Ask your AI for observations
           </button>
         </div>
         {rows.length === 0 ? <Empty filter={filter} noun="observations" /> : (

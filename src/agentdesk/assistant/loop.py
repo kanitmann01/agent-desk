@@ -21,7 +21,7 @@ STATUS_OK = "ok"
 STATUS_DEGRADED = "degraded"
 
 DEGRADED_CAUSE = (
-    "The company endpoint is not answering right now, so this is running "
+    "Your AI is not answering right now, so this is running "
     "at reduced capacity. Everything else on the dashboard keeps working."
 )
 
@@ -153,5 +153,5 @@ def _parse_summary(text: str) -> dict:
     if not summary:
         summary = stripped or "The endpoint returned an empty answer."
     if not sources:
-        sources = ["company endpoint"]
+        sources = ["your AI"]
     return {"summary": summary, "sources": sources}

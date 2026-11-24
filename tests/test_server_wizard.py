@@ -373,7 +373,7 @@ def test_wizard_completes_with_no_endpoint_configured(tmp_path, monkeypatch):
         ]
         # The questions screen says why they are the standard ones.
         page = booted.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-        assert "No corporate endpoint is configured" in page
+        assert "No AI is saved" in page
         assert booted.post_json(f"/wizard/{started['id']}/answer", {}, auth)[0] == 303
         status, _h, body = booted.request("POST", f"/wizard/{started['id']}/approve",
                                           auth, b"")
@@ -481,7 +481,7 @@ def test_a_workbook_install_lands_in_setup_with_its_dashboard_card(tmp_path, mon
 def test_wizard_with_an_endpoint_does_not_claim_it_is_missing(env, auth):
     started = json.loads(env.post_json("/wizard/start", {"description": CANONICAL}, auth)[2])
     page = env.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-    assert "No corporate endpoint is configured" not in page
+    assert "No AI is saved" not in page
 
 
 def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monkeypatch):
@@ -509,7 +509,7 @@ def test_wizard_names_the_cause_when_the_saved_base_is_malformed(tmp_path, monke
             q["id"] for q in DEFAULT_QUESTIONS
         ]
         page = booted.request("GET", f"/wizard/{started['id']}", auth)[2].decode("utf-8")
-        assert "No corporate endpoint is configured" in page
+        assert "No AI is saved" in page
     finally:
         booted.close()
 

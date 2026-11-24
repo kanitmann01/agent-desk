@@ -322,7 +322,7 @@ def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
         history = "<p class='empty'>No runs yet. Give one of the agents above a brief.</p>"
     content = f"""<h1>Agents</h1>
 <p>Task the desk with a brief. Each run recalls what the memory bank
-knows about the topic, sends one prompt through the company endpoint,
+knows about the topic, sends one prompt through your AI,
 and prints its receipt: the exact facts it used, or that it used
 nothing.</p>
 <h2>The roster</h2>

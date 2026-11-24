@@ -75,8 +75,8 @@ export const CHANNEL_HINT: Record<string, string> = {
 // Who wrote an observation, in the row's meta line.
 /** Who produced an observation, for the row's meta line. */
 export function observationWriter(obs: { derived: string; method: string | null }): string {
-  if (obs.derived !== 'consolidated') return 'Reflected by the endpoint';
-  return obs.method === 'model' ? 'Summarized by the endpoint' : 'Built-in summary';
+  if (obs.derived !== 'consolidated') return 'Reflected by your AI';
+  return obs.method === 'model' ? 'Summarized by your AI' : 'Built-in summary';
 }
 
 // The stored-knowledge lists show this many rows until "Show all".
