@@ -7,3 +7,18 @@ the runner owns the pass, the lock and the honest status. The platform
 branch lives in one module; no HTTP client and no model client exists
 anywhere in this package.
 """
+
+from agentdesk.feeder.contract import MailCollector, UnavailableCollector
+from agentdesk.feeder.platform import default_collectors
+from agentdesk.feeder.runner import OutlookFeeder
+from agentdesk.feeder.writer import render_eml, write_mail, write_status
+
+__all__ = [
+    "MailCollector",
+    "OutlookFeeder",
+    "UnavailableCollector",
+    "default_collectors",
+    "render_eml",
+    "write_mail",
+    "write_status",
+]

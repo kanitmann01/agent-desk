@@ -8,11 +8,11 @@ The feature is only trustworthy if the docs say what it does, what it cannot do,
 
 ## Scope
 
-- Write `docs/research/2026-11-24-outlook-metadata-feeder.md`: the ranked mechanisms, the collector matrix, the rejected paths (Graph, IMAP, EWS, Power Automate, add-ins), the local probe facts, and the macOS manual check.
-- Update `docs/known-limitations.md`: the feeder only sees what the OS index contains; it does not mirror a mailbox; bodies are never read; macOS depends on Spotlight; no OS task or service is created.
+- Write `docs/research/2026-11-24-outlook-metadata-feeder.md`: the ranked mechanisms, the alert-plus-manual coverage matrix, the rejected paths (Graph, IMAP, EWS, Power Automate, add-ins, Windows Search/COM/Spotlight/AppleScript as v1 promises), the local probe facts, and the macOS manual check.
+- Update `docs/known-limitations.md`: the feeder sees OS alerts, not a mailbox; bodies and previews are never read; Windows keeps about 20 toasts per app; macOS needs Full Disk Access; no OS task or service is created; history stays manual.
 - Update `README.md` and the Settings copy where they describe the mail source.
 - Update the wayfinder map's Decisions so far and close O1 to O4 with answers.
-- Evidence: focused test output, a live Windows Search run with counts and field names only, a generated `.eml` listing with no body, and a settings screenshot or HTML snapshot with the feeder on, off and unavailable. The macOS check is a written manual procedure, not a claimed result.
+- Evidence: focused test output, a synthetic WPN store run and a synthetic Notification Center run, a live Windows WPN smoke with counts and handler ids only, a generated `.eml` listing with no body, and a settings screenshot or HTML snapshot with the feeder on, off and blocked. The macOS check is a written manual procedure, not a claimed result.
 - Record the exact commands a reviewer can rerun.
 
 ## Acceptance

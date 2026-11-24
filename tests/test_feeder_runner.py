@@ -7,6 +7,7 @@ raises into the caller, including when the collector or the folder
 fails.
 """
 
+import ast
 import json
 import sys
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ DAY_S = 24 * 60 * 60
 
 STATUS_KEYS = {
     "collector", "platform", "lastRunTs", "lastResult", "lastError", "written",
+    "coverageFromTs", "coverageToTs",
 }
 
 
@@ -122,6 +124,7 @@ def test_run_once_picks_the_first_available_collector_and_records_it(tmp_path):
     assert status["lastResult"] == "ok"
     assert status["lastError"] == ""
     assert status["written"] == 2
+    assert set(status) == STATUS_KEYS
     assert first.calls == []
     assert third.calls == []
     (since, limit), = second.calls
@@ -129,6 +132,32 @@ def test_run_once_picks_the_first_available_collector_and_records_it(tmp_path):
     assert limit == 3
     assert sorted(p.suffix for p in folder.iterdir()) == [".eml", ".eml"]
     assert status_file(status_path) == status
+
+
+def test_run_once_reports_the_coverage_window_of_the_collected_messages(tmp_path):
+    collector = FakeCollector(messages=[
+        message(id="<a-1@example.com>", date_ts=SAMPLE_NOW - 3 * DAY_S),
+        message(id="<b-1@example.com>", date_ts=SAMPLE_NOW - DAY_S),
+        message(id="<c-1@example.com>", date_ts=SAMPLE_NOW - 2 * DAY_S),
+    ])
+    feeder, _, status_path = make_feeder(tmp_path, [collector])
+
+    status = feeder.run_once()
+
+    assert status["coverageFromTs"] == SAMPLE_NOW - 3 * DAY_S
+    assert status["coverageToTs"] == SAMPLE_NOW - DAY_S
+    assert status_file(status_path) == status
+
+
+def test_an_undated_record_does_not_widen_the_coverage_window(tmp_path):
+    collector = FakeCollector(messages=[message(id="<a-1@example.com>", date_ts=0.0)])
+    feeder, _, _ = make_feeder(tmp_path, [collector])
+
+    status = feeder.run_once()
+
+    assert status["written"] == 1  # the file is still written
+    assert status["coverageFromTs"] is None  # but no window is claimed
+    assert status["coverageToTs"] is None
 
 
 def test_run_once_is_idempotent_across_reruns(tmp_path):
@@ -256,9 +285,10 @@ def test_the_lock_prevents_overlapping_runs(tmp_path):
     busy = feeder.run_once()
 
     assert set(busy) == STATUS_KEYS
-    assert busy["lastResult"] == "running"
+    assert busy["lastResult"] == "busy"
     assert busy["lastRunTs"] is None
     assert busy["written"] == 0
+    assert busy["coverageFromTs"] is None
     assert "in progress" in busy["lastError"]
     assert collector.calls == []
     assert not status_path.exists()  # a skipped pass must not clobber the run
@@ -268,3 +298,43 @@ def test_the_lock_prevents_overlapping_runs(tmp_path):
     status = feeder.run_once()
     assert status["lastResult"] == "ok"
     assert status_file(status_path) == status
+
+
+def test_run_once_releases_the_lock_after_success_and_after_a_failure(tmp_path):
+    broken = FakeCollector(name="broken", failure=RuntimeError("the index is offline"))
+    feeder, _, _ = make_feeder(tmp_path, [broken])
+
+    feeder.run_once()
+    assert not feeder.lock_path.exists()
+
+    good = FakeCollector(name="good", messages=[message()])
+    feeder.collectors = [good]
+    feeder.run_once()
+    assert not feeder.lock_path.exists()
+
+
+# -- the privacy seam -----------------------------------------------------
+
+
+FEEDER_SRC = ROOT / "src" / "agentdesk" / "feeder"
+FORBIDDEN_ROOTS = {
+    "ctypes", "http", "requests", "socket", "subprocess",
+    "urllib", "win32api", "win32com", "winreg", "agentdesk.llm",
+}
+
+
+def imported_roots(path: Path) -> set[str]:
+    """The top-level modules one source file imports, relative imports aside."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            roots.add(node.module.split(".")[0])
+    return roots
+
+
+def test_no_feeder_module_imports_a_network_platform_or_model_client():
+    for path in sorted(FEEDER_SRC.glob("*.py")):
+        assert not imported_roots(path) & FORBIDDEN_ROOTS, path.name
