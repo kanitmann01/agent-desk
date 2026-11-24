@@ -1924,6 +1924,30 @@ def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None
         notes.append("busy: no mock endpoint, connection and AI turns were skipped")
         return notes
     mock_base = f"http://127.0.0.1:{mock_port}/v1"
+    real = tmp_root / "real"
+    real.mkdir(parents=True, exist_ok=True)
+    sample_dir = tmp_root / "data" / "sample"
+    try:
+        shutil.copy(sample_dir / "sample-sales.xlsx", real / "pipeline.xlsx")
+        shutil.copy(sample_dir / "sample-calendar.json", real / "calendar.json")
+        response = context.request.post(
+            base + "/sources/excel-watch",
+            data=json.dumps({"path": str(real / "pipeline.xlsx")}),
+            headers={"Content-Type": "application/json"}, timeout=60000)
+        if response.status != 200:
+            notes.append(f"busy: workbook register answered {response.status}")
+        else:
+            notes.append("busy: real workbook connected")
+        response = context.request.post(
+            base + "/sources/calendar-bridge/upload",
+            data=(real / "calendar.json").read_bytes(),
+            headers={"Content-Type": "application/json"}, timeout=60000)
+        if response.status != 200:
+            notes.append(f"busy: calendar upload answered {response.status}")
+        else:
+            notes.append("busy: real calendar connected")
+    except Exception as exc:  # noqa: BLE001 - report the page state that follows
+        notes.append(f"busy: real sources failed: {type(exc).__name__}: {exc}")
     label = "Regional Enterprise Sales Operation Team"
     model = "regional-forecast-model-enterprise-2026x"
     connection = {
