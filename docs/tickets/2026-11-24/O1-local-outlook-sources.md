@@ -39,3 +39,7 @@ Why the history collectors are not v1:
 These remain future options for a machine where a read-only probe passes. They are not promises of v1.
 
 Evidence: the WPN probe facts and synthetic-store self-checks on this machine; the macOS findings from Microsoft support and current macOS notification-database research. The macOS reader is verified against a synthetic store and a written manual Mac procedure, not a real Mac used in this session.
+
+## Resolution (2026-11-24)
+
+Resolved. The answer stands as the v1 decision, and the implementation landed under `src/agentdesk/feeder/` with the Settings wiring in spec 024. The live WPN probe was re-run for the I5 evidence: 281 handlers, one Outlook handler (`RecordId=129`, `Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows`), 71 notification rows, 0 Outlook toast rows, `available=True`, 0 collected alerts. The macOS reader is verified against a synthetic store only; the manual Mac check remains unverified and is recorded in `docs/evidence/2026-11-24-outlook-feeder/macos-manual-check.md`. The research note for the shipped feature is `docs/research/2026-11-24-outlook-metadata-feeder.md`.

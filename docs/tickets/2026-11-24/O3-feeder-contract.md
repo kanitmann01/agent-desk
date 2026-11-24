@@ -29,3 +29,7 @@ The contract:
 - **Never:** no network, no model, no cloud copy, no send, no body, no attachment, no OS scheduler, no admin.
 
 The exact user-facing copy follows the repo's existing mail and calendar attention states. The card names the collector and its coverage, not a Windows or macOS promise.
+
+## Resolution (2026-11-24)
+
+Resolved and implemented. The writer emits header-only `.eml` files with deterministic names and atomic replaces, the status dict carries collector, platform, last run, result, error, written count and coverage window, `mail_feeder` is off by default, and the manual Save as sentence is the fallback. The exact strings are recorded in the research note and the settings captures. One gap between this contract and the current surface is recorded rather than fixed: the runner replaces reader-specific unavailable causes with the generic manual sentence, so a macOS Full Disk Access cause does not reach the card today.
