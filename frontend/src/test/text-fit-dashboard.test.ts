@@ -172,6 +172,9 @@ describe('the headline figure prints in full and the layout makes room', () => {
     expect(rules.length).toBeGreaterThan(0);
     expect(rules.every((rule) => !rule.includes('overflow-wrap'))).toBe(true);
     expect(decl(css, '.kpi .value', 'white-space')).toBe('nowrap');
+    // An absent declaration only means something when the rule exists:
+    // assert the block first, or a deleted rule would pass this test.
+    expect(block(css, '.kpi .value')).not.toBe('');
     expect(decl(css, '.kpi .value', 'overflow-x')).toBe('');
     expect(decl(css, '.kpi .value', 'max-width')).toBe('');
   });
@@ -188,7 +191,9 @@ describe('the headline figure prints in full and the layout makes room', () => {
 
   it('lets the hero stats wrap when their counts are wide', () => {
     expect(decl(css, '.hero-stats', 'flex-wrap')).toBe('wrap');
-    expect(decl(css, '.hero-stats div', 'flex')).toBe('1 1 80px');
+    // A stat takes its content width so a nine-character count cannot be
+    // squeezed under the next one; the row wraps instead.
+    expect(decl(css, '.hero-stats div', 'flex')).toBe('0 0 auto');
     expect(decl(css, '.hero-stats div', 'min-width')).toBe('0');
     expect(decl(css, '.hero-stats dd', 'white-space')).toBe('nowrap');
   });
@@ -198,6 +203,7 @@ describe('the headline figure prints in full and the layout makes room', () => {
     expect(decl(css, '.figure', 'flex')).toBe('none');
     expect(decl(css, '.figure-unit', 'white-space')).toBe('nowrap');
     expect(decl(css, '.figure-unit', 'flex')).toBe('none');
+    expect(block(css, '.tracker-figure')).not.toBe('');
     expect(decl(css, '.tracker-figure', 'overflow-x')).toBe('');
   });
 });

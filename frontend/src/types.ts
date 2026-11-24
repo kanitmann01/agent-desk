@@ -306,6 +306,9 @@ export interface SetupData {
 
 export interface DashboardData {
   sample?: boolean;
+  /** False when this desk's plugin runner cannot fetch web pages. Absent
+   *  on servers older than the network flag. */
+  deskNetwork?: boolean;
   /** Absent only on a server older than spec 022. */
   setup?: SetupData;
   version: string;

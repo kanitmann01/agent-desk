@@ -28,6 +28,7 @@ import Brief from './Brief';
 import CommandBar from '../components/CommandBar';
 import Button from '../components/Button';
 import { PhaseText, useAnnouncement, usePhase } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
 import { PendingBody } from './pending';
 
 interface DashboardProps {
@@ -48,6 +49,7 @@ interface SkillResponse {
 interface ResearchResponse {
   status?: string;
   cause?: string;
+  error?: string;
   summary?: string;
   sources?: string[];
 }
@@ -121,6 +123,11 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
   const [openingCustomize, setOpeningCustomize] = useState(false);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutPending, setLayoutPending] = useState<{ key: string; action: CustomizePending } | null>(null);
+  // The control that started a layout save is inert at once; its pending
+  // verb and aria-busy wait out the 100 ms gate (F1), and its phase line
+  // owns the ten-second honesty rule (F4) on a slow disk.
+  const layoutPendingShown = useBusy(layoutBusy);
+  const layoutPhase = usePhase(layoutBusy, customizeNote);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   // Nothing shows under 100 ms: the Customize control and the panel both
@@ -252,6 +259,13 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
     setResearchBusy(false);
     if (res.status === 401) { onExpired(); return false; }
     const d = (res.data ?? {}) as ResearchResponse;
+    if (!res.ok) {
+      // A refused request is not an empty answer: say the server's
+      // sentence in the answer area and keep the question.
+      showAnswer(null);
+      setAnswerError(d.error || 'Your AI did not answer. Try again in a moment.');
+      return false;
+    }
     if (d.status === 'degraded') {
       showAnswer(null);
       setAnswerError(d.cause || 'Your AI did not answer. Try again in a moment.');
@@ -706,7 +720,11 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
                   Drag a card's handle onto another card, or use the Move buttons, to
                   reorder. Rename or hide from each card. Every change saves itself.
                 </p>
-                <p className="cust-note" role="status">{customizeNote}</p>
+                <p className="cust-note" role="status">
+                  {layoutBusy
+                    ? (layoutPhase.shown ? <PhaseText text={customizeNote} slow={layoutPhase.slow} /> : null)
+                    : customizeNote}
+                </p>
               </>
             ) : (
               <>
@@ -733,10 +751,13 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
               onExpired={onExpired}
               setupDismissed={setupDismissed}
               onDismissSetup={dismissSetup}
+              skillBusyId={skillBusyId}
+              onRunSkill={(id) => void runSkill(id)}
             />
-            {answer || answerPending.shown || answerError ? (
+            {visible.some((card) => card.key === 'research')
+              && (answer || answerPending.shown || answerError) ? (
               <section className="brief-answer" aria-label="Research answer">
-                <h2>Research</h2>
+                <h2>{layoutTitle('research') ?? 'Research'}</h2>
                 {answerPending.shown ? (
                   <PendingBody
                     phase={answerPhase}
@@ -772,6 +793,7 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
                 dragOver={dragOverKey === entry.key}
                 busy={layoutBusy}
                 pending={layoutPending?.key === entry.key ? layoutPending.action : null}
+                pendingShown={layoutPending?.key === entry.key && layoutPendingShown}
                 onRenaming={(key) => {
                   setRenameDraft(null);
                   setRenaming(key);
@@ -796,6 +818,9 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
             <ul>
               {hiddenEntries.map((entry) => {
                 const restoring = layoutPending?.key === entry.key && layoutPending.action === 'restore';
+                // The control is inert at once; its pending verb and
+                // aria-busy wait out the 100 ms gate.
+                const restoringShown = restoring && layoutPendingShown;
                 return (
                   <li key={entry.key}>
                     <span>{cardName(entry.key)}</span>
@@ -804,14 +829,29 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
                         type="button"
                         className="cust-btn"
                         disabled
-                        aria-busy="true"
-                        aria-label={`Restoring ${cardName(entry.key)}...`}
+                        aria-busy={restoringShown ? 'true' : undefined}
+                        aria-label={restoringShown
+                          ? `Restoring ${cardName(entry.key)}...`
+                          : `Restore ${cardName(entry.key)}`}
                         data-restore-key={entry.key}
                       >
-                        <span className="btn-busy-dot" aria-hidden="true" />
+                        <span
+                          className={restoringShown ? 'btn-busy-dot' : 'btn-busy-dot busy-hidden'}
+                          aria-hidden="true"
+                        />
                         <span className="btn-labels">
-                          <span className="btn-label btn-label-hidden" aria-hidden="true">Restore</span>
-                          <span className="btn-label">Restoring...</span>
+                          <span
+                            className={restoringShown ? 'btn-label btn-label-hidden' : 'btn-label'}
+                            aria-hidden={restoringShown ? 'true' : undefined}
+                          >
+                            Restore
+                          </span>
+                          <span
+                            className={restoringShown ? 'btn-label' : 'btn-label btn-label-hidden'}
+                            aria-hidden={restoringShown ? undefined : 'true'}
+                          >
+                            Restoring...
+                          </span>
                         </span>
                       </button>
                     ) : (
