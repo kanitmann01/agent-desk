@@ -29,6 +29,7 @@ def serialized(method):
     """
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        """Run one store method with the store's re-entrant lock held."""
         with self._lock:
             return method(self, *args, **kwargs)
     return wrapper

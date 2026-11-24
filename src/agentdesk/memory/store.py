@@ -1915,8 +1915,7 @@ class MemoryStore:
     def recall(self, query: str) -> list[tuple[float, Fact]]:
         """The hybrid ranked recall (memory/hybrid): keyword, entity
         graph, recency and time windows fused deterministically, best
-        first, the score the fused rank contribution. The old overlap
-        rank stays in memory/service as the fallback scorer. Over a
+        first, the score the fused rank contribution. Over a
         sealed bank the rows decrypt in memory (a known donor limit at
         personal scale). Ticket #95: when the semantic half is active,
         the query embeds once and the matching rows' cosine scores join
