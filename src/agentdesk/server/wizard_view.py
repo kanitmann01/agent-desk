@@ -29,7 +29,7 @@ than an error:
 
 import html
 
-from agentdesk.server.pages import document_head, page_footer
+from agentdesk.server.pages import document_head, page_footer, status_line
 
 STATE_DESCRIBING = "describing"
 STATE_QUESTIONS = "questions"
@@ -266,7 +266,9 @@ def _questions_html(session_json: dict) -> str:
                 f'aria-label="{_esc(question.get("question"))}">'
             )
         blocks.append(
-            f'<form class="answer" method="post" action="/wizard/{sid}/answer">'
+            f'<form class="answer" method="post" action="/wizard/{sid}/answer" '
+            'data-wait="#wizard-progress" data-wait-shape="panel" '
+            'data-wait-label="Working out your plugin..." data-busy="Working...">'
             f'<input type="hidden" name="question" value="{idx}">'
             f'<p class="aq">{_esc(question.get("question"))}</p>'
             f"{inputs_html}"
@@ -310,7 +312,9 @@ def _conversation_html(session_json: dict) -> str:
     parts.append(_questions_html(session_json))
     if not description.strip() and not _questions_of(session_json):
         parts.append(
-            f'<form class="answer" method="post" action="/wizard/{sid}/answer">'
+            f'<form class="answer" method="post" action="/wizard/{sid}/answer" '
+            'data-wait="#wizard-progress" data-wait-shape="panel" '
+            'data-wait-label="Writing your questions..." data-busy="Working...">'
             '<p class="aq">What should the plugin do?</p>'
             "<label for=\"wizard-description\">Describe it in one or two "
             "sentences.</label>"
@@ -341,6 +345,7 @@ def _preview_html(session_json: dict) -> str:
         )
     return (
         "<h1>Preview</h1>"
+        f"{status_line('Your preview is below.')}"
         "<p>This is what you would see every morning. Nothing is added "
         "until you approve it.</p>"
         f"{fill_note}"
@@ -411,6 +416,7 @@ def _approved_html(session_json: dict) -> str:
         )
     return (
         "<h1>Added</h1>"
+        f"{status_line('The widget is added and on your dashboard now.')}"
         "<p>The widget is on your dashboard now.</p>"
         f"{installed_line}"
         f"{_summary_html(approval_summary(draft))}"
@@ -433,9 +439,22 @@ def _escalated_html(session_json: dict) -> str:
         request_html = f"<pre>{_esc(request)}</pre>"
     else:
         request_html = '<p class="empty">No request text was captured.</p>'
+    answers = session_json.get("answers")
+    answers_html = ""
+    if isinstance(answers, dict) and answers:
+        lines = "".join(
+            f"<li>{_esc(value)}</li>" for value in answers.values()
+            if isinstance(value, str) and value.strip()
+        )
+        if lines:
+            answers_html = (
+                "<p>You chose:</p>"
+                f"<ul aria-label='The answers you gave'>{lines}</ul>"
+            )
     return (
         "<h1>Not buildable yet</h1>"
         f"<p>{_esc(reason)}</p>"
+        f"{answers_html}"
         "<p>I can't build this automatically yet. Your words went to the "
         "technical owner as a feature request, unchanged:</p>"
         f"{request_html}"
@@ -450,11 +469,14 @@ def _page_shell(title: str, body: str, version: str) -> str:
     breadcrumb so the way back is never a mystery."""
     esc_title = html.escape(title)
     return f"""{document_head(f"{title}, Agent Desk")}
-<div class="doc">
+<main id="main" class="doc">
+<p class="page-status" id="page-note" role="status" hidden></p>
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {body}
+<div id="wizard-progress"></div>
 {page_footer(version, note="Local only: nothing here reaches the internet.", touches=False)}
-</div>
+</main>
+<script src="/static/app.js"></script>
 </body>
 </html>
 """

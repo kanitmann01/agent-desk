@@ -20,7 +20,7 @@ from agentdesk.keys.resolve import JOB_LABELS
 from agentdesk.keys.store import mask_key
 from agentdesk.repetition.skills import render_skill_md
 from agentdesk.server import audit_view
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 
 _LABELS = {
     "excel_enabled": "Sales workbook watching",
@@ -127,12 +127,16 @@ def _endpoint_form(status: dict) -> str:
     )
 
 
-def _toggle_button(key: str, value, label: str | None = None) -> str:
-    """One settings row: its label and a button showing the current value.
+def _toggle_button(key: str, value, label: str | None = None,
+                   section: str = "advanced") -> str:
+    """One settings row: its label and a switch showing the current value.
 
     daily_cap is shown as a named level, plugin_instance_cap as a plain count, and every
     other key as On or Off, so the button text reads as the state the next click
-    changes. data-setting names the key the client posts back.
+    changes. The switch is a plain form post, so it works with no script; with the
+    script the same form keeps the page and shows its busy state. data-setting names
+    the key the client posts back, and return_to lands the no-script post on the
+    section that holds it.
     """
     label = label or _LABELS.get(key, key)
     if key == "daily_cap":
@@ -148,7 +152,11 @@ def _toggle_button(key: str, value, label: str | None = None) -> str:
         state = "On" if value else "Off"
     return (
         f"<div class='setting-row'><span>{label}</span>"
-        f"<button class='btn btn-secondary' data-setting='{key}'>{state}</button></div>"
+        "<form method='post' action='/settings/toggle' class='setting-form'>"
+        f"<input type='hidden' name='key' value='{key}'>"
+        f"<input type='hidden' name='return_to' value='/settings#{section}'>"
+        f"<button class='btn btn-secondary' type='submit' data-setting='{key}'>{state}</button>"
+        "</form></div>"
     )
 
 
@@ -687,7 +695,7 @@ def _connection_rows(connections: list[dict]) -> str:
             f"<td>{html.escape(preset_name)}</td>"
             f"<td>{key_cell}</td>"
             f"<td class='mono conn-url'>{base}</td>"
-            f"<td><span class='conn-status conn-{status}'>{status}</span>"
+            f"<td class='conn-state'><span class='conn-status conn-{status}'>{status}</span>"
             f"{cause_line}{when}{models_line}</td>"
             f"<td class='conn-actions'><form method='post' action='/api/connections/{connection_id}/test'"
             " class='inlineform'>"
@@ -780,13 +788,19 @@ def _health_forms(editing: dict | None) -> str:
         return ""
     connection_id = html.escape(str(editing.get("id", "")), quote=True)
     return f"""<h3>Check the key</h3>
-<form method='post' action='/api/connections/{connection_id}/test' class='cardform'>
+<form method='post' action='/api/connections/{connection_id}/test' class='cardform'
+ data-wait='#connections-wait' data-wait-shape='panel'
+ data-wait-label='Checking the key with one free model-list request...'
+ data-busy='Checking...'>
 <p class='empty'>Test makes one free model-list request with the saved
 key; it never completes a chat. The badge in the list above shows the
 outcome with its cause.</p>
 <button class='btn btn-secondary' type='submit'>Test connection</button>
 </form>
-<form method='post' action='/api/connections/{connection_id}/check' class='cardform'>
+<form method='post' action='/api/connections/{connection_id}/check' class='cardform'
+ data-wait='#connections-wait' data-wait-shape='panel'
+ data-wait-label='Running the deeper check: one token with the model you typed...'
+ data-busy='Checking...'>
 <label class='empty' for='conn-check-model'>Model, typed by hand (the
 deeper check completes exactly one token with it)</label>
 <input id='conn-check-model' type='text' name='model'
@@ -941,7 +955,11 @@ def _connections_section(
             "<p class='empty'>Saving with the key field empty keeps the stored"
             " key; Remove the stored key is the only action that deletes it.</p>")
         form = f"""<h3>{heading}</h3>
-<form method='post' action='{action}' class='cardform' id='connection-form'>
+<div id='connections-wait'></div>
+<form method='post' action='{action}' class='cardform' id='connection-form'
+ data-wait='#connections-wait' data-wait-shape='panel'
+ data-wait-label='Saving your AI. The key goes to this computer&apos;s keychain, then the address is checked.'
+ data-busy='Saving...'>
 {_provider_select(selected)}
 <label class='empty' for='conn-key'>API key</label>
 <input id='conn-key' type='password' name='apiKey' placeholder='{key_placeholder}' autocomplete='new-password'>
@@ -982,7 +1000,9 @@ def _finding_action(finding: dict) -> str:
     if fix == "auto":
         label = html.escape(str(finding.get("fixLabel") or "Fix it"))
         return (
-            "<form method='post' action='/api/desk-check/fix' class='finding-fix'>"
+            "<form method='post' action='/api/desk-check/fix' class='finding-fix' "
+            "data-wait='#desk-check' data-wait-shape='panel' "
+            "data-wait-label='Fixing this finding...' data-busy='Fixing...'>"
             f"<input type='hidden' name='id' value='{finding_id}'>"
             f"<button class='btn btn-secondary' type='submit'>{label}</button>"
             "</form>"
@@ -1053,7 +1073,9 @@ updates are not installed automatically in this release.</p>
 <p>{html.escape(line)}</p>
 <p class='empty'>Current version <span class='mono'>{html.escape(str(update.get("current") or ""))}</span>.
 Last check <span class='mono'>{html.escape(checked)}</span>. {html.escape(result_line)}</p>
-<form method='post' action='/api/update/check' class='cardform'>
+<form method='post' action='/api/update/check' class='cardform'
+ data-wait='#updates' data-wait-shape='panel'
+ data-wait-label='Checking the update share...' data-busy='Checking...'>
 <input type='hidden' name='return_to' value='/settings#updates'>
 <button class='btn btn-secondary' type='submit'>Check now</button>
 </form>
@@ -1173,7 +1195,7 @@ def _tools_section(excel_status: dict | None, calendar_status: dict | None,
     folder = html.escape(mail_folder, quote=True)
     mail_state = ("On. Only the headers of the .eml files in the folder are read."
                   if mail_on else "Off. Nothing is read.")
-    mail_switch = _toggle_button("mail_enabled", mail_on)
+    mail_switch = _toggle_button("mail_enabled", mail_on, section="tools")
     return f"""<section class='card settings-card' id='sources'>
 <div class='w-head'><h2>Workbook, calendar and mail</h2></div>
 <div class='settings-block'>
@@ -1220,7 +1242,7 @@ def _memory_card(settings_values: dict) -> str:
     """
     values = settings_values or {}
     switches = "".join(
-        _toggle_button(key, values.get(key), label)
+        _toggle_button(key, values.get(key), label, section="memory")
         for key, label in (
             ("memory_auto_approve", "Learn automatically"),
             ("memory_capture_assistant", "Learn from Assistant conversations"),
@@ -1281,6 +1303,8 @@ def render_settings_page(
     ai: dict | None = None,
     excel_status: dict | None = None,
     calendar_status: dict | None = None,
+    notice: str = "",
+    notice_kind: str = "status",
 ) -> str:
     """The settings document: six sections, one card per concern, each
     stamped with the live state it actually reads (never a decoration).
@@ -1289,6 +1313,7 @@ def render_settings_page(
     page. `ai` is what serves the desk (connected, label, model), read by
     the same resolution hub every model call uses; `excel_status` and
     `calendar_status` are the sources' own status for the Your tools rows.
+    `notice` is the outcome line a form post lands on.
     """
     settings_values = settings_values or {}
     endpoint_status = endpoint_status or {"configured": False, "last": "never"}
@@ -1510,6 +1535,7 @@ screen, and this list is yours. The full trail is on
 {questions}
 </section>"""
     content = f"""<h1>Settings</h1>
+{status_line(notice, notice_kind)}
 <p>Everything this desk does, set from one page. Your AI comes first; the
 rest is grouped, so nothing you need every day sits under a switch you
 will touch once. A card's stamp is its live state on this machine, read

@@ -11,19 +11,22 @@ because the app never read them.
 import html
 from urllib.parse import quote
 
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 from agentdesk.mail.core import format_header_ts
 from agentdesk.mail.watcher import STATE_ERROR
 
 
-def _off_page(version: str, off_reason: str, inbox_count: int = 0) -> str:
+def _off_page(version: str, off_reason: str, inbox_count: int = 0,
+              notice: str = "", notice_kind: str = "status") -> str:
     """The whole page for the mail toggle being off, with the reason it is off.
 
     The reason is escaped and shown as the body; the rest of the copy says what the page
-    would show and what it reads, so the off state still explains the feature.
+    would show and what it reads, so the off state still explains the feature. A form
+    post's outcome is said above the reason.
     """
     esc_reason = html.escape(off_reason)
     content = f"""<h1>Mail</h1>
+{status_line(notice, notice_kind)}
 <div class="widget" id="mail-off">
 <div class="w-head"><h2>Mail digest is off</h2></div>
 <p>{esc_reason}</p>
@@ -127,13 +130,15 @@ def _followups_section(view: dict) -> str:
     return f"<h2>Waiting on you</h2>{rows}"
 
 
-def _message_rows(view: dict) -> str:
+def _message_rows(view: dict, drafts: dict | None = None) -> str:
     """One card per message: its headers, an optional Cc line, and a reply draft form.
 
     The message id is percent-encoded before it is escaped, so an id with a slash or
     space still reaches /mail/<id>/draft intact. The textarea starts empty: the draft is
-    the user's own words, and the body was never read.
+    the user's own words, and the body was never read. `drafts` keeps the typed reply
+    after a refusal, keyed by the message id.
     """
+    drafts = drafts or {}
     messages = view.get("messages") or []
     if not messages:
         return (
@@ -142,10 +147,11 @@ def _message_rows(view: dict) -> str:
             "yet. Drop some in and check the folder again.</p>"
         )
     rows = []
-    for message in messages:
+    for message in view.get("messages") or []:
         target = quote(message.id, safe="")
         cc = html.escape(message.cc) if message.cc else ""
         cc_line = f"<span class='empty'>Cc: {cc}</span> " if cc else ""
+        typed = html.escape(str(drafts.get(message.id, "")), quote=True)
         rows.append(
             f"<article class='widget' id='message-{html.escape(target)}'>"
             "<div class='w-head'>"
@@ -158,7 +164,7 @@ def _message_rows(view: dict) -> str:
             f"<label class='empty' for='draft-{html.escape(target)}'>Draft reply (your own words; "
             "recipients and subject come from the headers)</label>"
             f"<textarea id='draft-{html.escape(target)}' name='body' rows='3' "
-            "placeholder='Type the reply you want to send.'></textarea>"
+            f"placeholder='Type the reply you want to send.'>{typed}</textarea>"
             "<button class='btn btn-primary' type='submit'>Draft reply</button>"
             "</form>"
             "</article>"
@@ -183,11 +189,20 @@ def _handled_section(view: dict) -> str:
     return f"<h2>Handled</h2>{rows}"
 
 
-def render_mail_page(version: str, view: dict | None, off_reason: str = "", inbox_count: int = 0) -> str:
-    """The full mail document: off state, or the live digest view."""
+def render_mail_page(version: str, view: dict | None, off_reason: str = "",
+                     inbox_count: int = 0, notice: str = "",
+                     notice_kind: str = "status",
+                     drafts: dict | None = None) -> str:
+    """The full mail document: off state, or the live digest view.
+
+    `notice` names the outcome of the last mail action; `drafts` keeps a
+    typed reply in its textarea after a refusal.
+    """
     if view is None:
-        return _off_page(version, off_reason, inbox_count)
+        return _off_page(version, off_reason, inbox_count,
+                         notice=notice, notice_kind=notice_kind)
     content = f"""<h1>Mail</h1>
+{status_line(notice, notice_kind)}
 <p>A metadata-only digest of the folder you chose: thread names, senders
 and dates. Message bodies are discarded the moment the file is read;
 nothing goes to any model; reply drafts contain the words you type
@@ -197,6 +212,6 @@ yourself.</p>
 {_retest_form()}
 {_digest_section(view)}
 {_followups_section(view)}
-{_message_rows(view)}
+{_message_rows(view, drafts)}
 {_handled_section(view)}"""
     return page_shell("Mail", "/mail", content, version, inbox_count=inbox_count)

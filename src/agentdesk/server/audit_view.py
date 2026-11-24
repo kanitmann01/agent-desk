@@ -110,7 +110,7 @@ def _rows(entries: list[dict]) -> str:
             else f"<b>{html.escape(status)}</b>"
         )
         body.append(
-            "<tr><td class='mono'>"
+            "<tr><td class='mono nowrap'>"
             f"{when_text(float(entry.get('ts', 0)))}</td>"
             f"<td>{html.escape(kind_for(action))}</td>"
             f"<td><b>{html.escape(word)}</b>{code}</td>"
@@ -137,7 +137,7 @@ def questions_table(questions: list[dict]) -> str:
             "questions land here, for you to see.</p>"
         )
     body = "".join(
-        "<tr><td class='mono'>"
+        "<tr><td class='mono nowrap'>"
         f"{when_text(float(q.get('ts', 0)))}</td>"
         f"<td>{html.escape(str(q.get('kind', '')))}</td>"
         f"<td>{html.escape(str(q.get('text', ''))[:200])}</td></tr>"

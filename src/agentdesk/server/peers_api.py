@@ -304,16 +304,19 @@ class PeersApiMixin:
 
     # -- the peers page and its flows ---------------------------------------
 
-    def _send_peers_page(self, notice: str = "") -> None:
+    def _send_peers_page(self, notice: str = "", pair_address: str = "",
+                         pair_code: str = "") -> None:
         """Render the peers page, starting discovery first if it never started.
 
         Discovery is lazy by design: a desk that never opens this page announces
         nothing, so the page rather than the constructor is where announcing begins.
+        A refused pairing keeps the typed address and code in the manual form.
         """
         self.server.ensure_peer_discovery()  # type: ignore[attr-defined]
         page = render_peers_page(
             self._peers_catalog(), agentdesk.__version__, notice=notice,
-            inbox_count=self._inbox_waiting_count())
+            inbox_count=self._inbox_waiting_count(),
+            pair_address=pair_address, pair_code=pair_code)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _peers_catalog(self) -> dict:
@@ -390,10 +393,20 @@ class PeersApiMixin:
         self._send_redirect(f"/peers?notice={quote(message)}")
 
     def _peers_refuse(self, code: str, message: str,
-                      status: int = 409) -> None:
+                      status: int = 409, keep_address: str = "",
+                      keep_code: str = "") -> None:
         """The peers page's own refusals: forms get the notice line,
-        JSON callers get the named error."""
-        self._respond_form_or_json(f"/peers?notice={quote(message)}",
+        JSON callers get the named error.
+
+        A refused pairing keeps the typed address and code on the page it
+        lands back on, so retyping is never the price of a typo.
+        """
+        target = f"/peers?notice={quote(message)}"
+        if keep_address:
+            target += "&address=" + quote(keep_address)
+        if keep_code:
+            target += "&code=" + quote(keep_code)
+        self._respond_form_or_json(target,
                                    {"error": code, "message": message}, status)
 
     def _peers_code_generate(self) -> None:
@@ -432,13 +445,15 @@ class PeersApiMixin:
             self._peers_refuse(
                 "peer:bad-request",
                 "Type both the other desk's address (host:port) and its "
-                "pairing code.", 400)
+                "pairing code.", 400,
+                keep_address=typed_address, keep_code=code)
             return
         address = _normalize_peer_address(typed_address)
         if address is None:
             self._peers_refuse(
                 "peer:bad-address",
-                f"{typed_address!r} is not a host:port address.", 400)
+                f"{typed_address!r} is not a host:port address.", 400,
+                keep_address=typed_address, keep_code=code)
             return
         desk = store.desk()
         try:
@@ -447,7 +462,8 @@ class PeersApiMixin:
                 my_name=desk["name"], my_host="127.0.0.1",
                 my_port=self.server.port)  # type: ignore[attr-defined]
         except PeerClientError as exc:
-            self._peers_refuse(exc.code, str(exc))
+            self._peers_refuse(exc.code, str(exc), keep_address=typed_address,
+                               keep_code=code)
             return
         store.add_peer(peer_id=str(answer.get("peer_id", "")),
                        name=str(answer.get("name", "peer")),
