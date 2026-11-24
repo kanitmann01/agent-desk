@@ -18,3 +18,7 @@ The feature is only trustworthy if the docs say what it does, what it cannot do,
 ## Acceptance
 
 The docs match the code; the evidence folder contains the commands and outputs; the wayfinder map has no open decision tickets; no document claims macOS was verified on a Mac that was not used.
+
+## Resolution (2026-11-24)
+
+Resolved. Wrote `docs/research/2026-11-24-outlook-metadata-feeder.md` (ranked mechanisms, coverage matrix, rejected paths, verified facts separated from documentation claims, the unverified macOS procedure, the exact user-facing states, and the discrepancies found). Updated `docs/known-limitations.md` and `README.md` for the alerts-only source. Closed O1 to O4 and I1 to I4 with resolution notes and updated the map's Open tickets and Decisions. Evidence is under `docs/evidence/2026-11-24-outlook-feeder/`: focused pytest output (66 passed, 1 skipped on the feeder suite; 160 passed on the mail/settings/route/IT-surface suite), synthetic WPN and Notification Center runs with sentinel and idempotence checks, a live Windows WPN smoke (`available=True`, one Outlook handler, 0 Outlook alerts, counts and handler ids only, no payload text), settings captures for the feed off and the manual fallback, and the written macOS procedure marked unverified. No product code was changed. The macOS path is not claimed as verified on a real Mac.
