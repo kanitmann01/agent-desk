@@ -187,16 +187,15 @@ def test_nested_short_keys_are_read_case_insensitively(tmp_path):
     assert (message.sender, message.subject) == ("Alice", "Budget")
 
 
-def test_unknown_keys_fall_back_to_the_first_two_strings(tmp_path):
+def test_unrecognized_keys_are_skipped_without_reading_the_value(tmp_path):
     db = build_store(
         tmp_path,
         apps=[(1, OUTLOOK)],
-        records=[(1, 1, "fallback", payload(
-            alpha="First value", beta="Second value", body=BODY_SENTINEL,
-        ), apple(T1))],
+        records=[(1, 1, "body-only", payload(message=BODY_SENTINEL), apple(T1))],
     )
-    [message] = collector(db).collect(since(T1), 10)
-    assert (message.sender, message.subject) == ("First value", "Second value")
+    messages = collector(db).collect(since(T1), 10)
+    assert messages == []
+    assert BODY_SENTINEL not in repr(messages)
 
 
 def test_one_line_is_the_subject_and_sender_stays_empty(tmp_path):

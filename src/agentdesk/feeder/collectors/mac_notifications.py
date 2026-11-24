@@ -45,7 +45,6 @@ FIELD_CAP = 500  # an alert line is short; a malformed plist value is not
 
 TITLE_KEYS = frozenset({"title", "titl", "sender"})
 SUBTITLE_KEYS = frozenset({"subtitle", "subt", "sub", "subject"})
-BODY_KEYS = frozenset({"body", "preview"})
 
 PLATFORM_CAUSE = (
     "The macOS Notification Center reader only runs on macOS."
@@ -72,7 +71,6 @@ NO_OUTLOOK_CAUSE = (
 )
 
 _NEWLINES = re.compile(r"[\r\n]+")
-_BODY_IN_KEY = ("body", "preview")
 
 
 class MacNotificationCollector:
@@ -179,20 +177,16 @@ def _walk(value, pairs: list[tuple[str, object]]) -> None:
             _walk(item, pairs)
 
 
-def _is_body(key: str) -> bool:
-    """A body or preview key is never a source for a header line."""
-    return key in BODY_KEYS or any(part in key for part in _BODY_IN_KEY)
-
-
 def _lines(data) -> list[str]:
     """The title and subtitle lines from one record's binary plist.
 
     Keys are matched case-insensitively across the whole plist because
-    Notification Center nests them (req.titl is the common shape). When
-    neither key is present, the first two non-empty string values stand
-    in. Body and preview values are excluded before any fallback, so
-    they cannot leak through the back door. An unreadable plist has no
-    lines: the record is skipped rather than guessed at.
+    Notification Center nests them (req.titl is the common shape). Only
+    the named title and subtitle keys are read: a plist that names
+    neither is skipped rather than guessed at, because an unrecognized
+    key can hold body text (message, content, desc) and the reader must
+    never turn a body into a header. An unreadable plist has no lines
+    for the same reason.
     """
     try:
         plist = plistlib.loads(data)
@@ -200,19 +194,8 @@ def _lines(data) -> list[str]:
         return []
     pairs: list[tuple[str, object]] = []
     _walk(plist, pairs)
-    values = [
-        _one_line(value)
-        for key, value in pairs
-        if isinstance(value, str) and not _is_body(key)
-    ]
-    values = [value for value in values if value]
     title = _by_key(pairs, TITLE_KEYS)
     subtitle = _by_key(pairs, SUBTITLE_KEYS)
-    rest = [value for value in values if value not in (title, subtitle)]
-    if not title and rest:
-        title = rest.pop(0)
-    if not subtitle and rest:
-        subtitle = rest.pop(0)
     return [line for line in (title, subtitle) if line]
 
 
