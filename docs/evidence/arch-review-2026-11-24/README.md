@@ -71,6 +71,44 @@ Two full `python tools/ci_local.py` runs on the branch, both 7/7 PASS:
 The baseline on the untouched checkout before the wave: pytest 3112
 passed, 2 skipped in 620 s.
 
+## The PR audit round
+
+The PR (kanitmann01/agent-desk-core #5) was then audited by an
+independent reviewer subagent with read-only tools. Its verdict, "fix 1
+and 2 first", and every finding, is addressed on the branch:
+
+Must fix 1, the consent sheet called a permission value drop a
+widening: the installed DTO now splits the held update into widening
+(positive adds only) and dropping (granted leaves removed), computed
+off the active and staged manifests, and the surfaces render a drop as
+a drop ("The staged version drops N scope(s).", the drops note, no
+widening callout). The built SPA bundle is committed with the fix.
+Hosted CI had also caught, before the audit, that `agentdesk/locking`
+died at import on the 3.10 floor (`threading.RLock | None` evaluated;
+RLock is a factory function there): the future import defers it, the
+packaging-subset job is green.
+
+Must fix 2, the resume's `run_fill` call had moved the run-folder
+creation outside the failure ladder: it is wrapped again, so a write
+failure degrades the run honestly instead of reaching the generic 500.
+
+Should fixes: the split skills/ledger guard no longer doubles "the";
+the golden matrix gains a rollback case that drives the newest and
+active manifests apart (mutation-checked: swapping the sources fails
+exactly that test); `ordered_steps` sorting is pinned with an
+out-of-order list; the resumed artifact's identity refresh is pinned by
+a pack-changed-between-phases test; the two residual safe-name copies
+(registry index, peers guard) read `validator.grammar.SAFE_NAME`.
+Nice-to-haves: `run_fill` turns a missing shell variant into a cause,
+the `fill_cause` ladder has its four unit arms, the misleading
+marketplace test name is fixed, `_manifest_scopes`'s docstring says
+display-only, and the boot builds its shared lock through
+`store_lock()`.
+
+Slices after the round: marketplace 54, plugins runtime 24, agentloop
+20, presentation pipeline 16, presentation research 7, skill refine and
+memory loop 47, peers and registry 31, tsc clean, vitest 327.
+
 ## Commits (branch order)
 
 16dbf86 one fill entry, af886ff one artifact builder, 8f25fa6 + ede7eb9
