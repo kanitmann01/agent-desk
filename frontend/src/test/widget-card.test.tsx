@@ -99,6 +99,35 @@ describe('the widget card header contract', () => {
     );
     expect(document.querySelector('.cell.span-8')).not.toBeNull();
   });
+
+  it('marks a header with a menu so the menu keeps its own gutter', () => {
+    render(
+      <WidgetCard
+        title="T"
+        span="span-4"
+        stamp={{ fresh: true, text: 'Ready' }}
+        menuItems={[{ label: 'Open settings', href: '/settings' }]}
+        foot="note"
+      >
+        <p>body</p>
+      </WidgetCard>,
+    );
+    const head = document.querySelector('.w-head');
+    expect(head).toHaveClass('has-menu');
+    // The trigger stays in the header, so the dots are in the card's top
+    // right rather than at the end of a squeezed title row.
+    const trigger = screen.getByRole('button', { name: 'Widget options, T' });
+    expect(trigger.closest('.w-head')).toBe(head);
+  });
+
+  it('leaves the menu gutter off a header with no menu', () => {
+    render(
+      <WidgetCard title="T" span="span-4" stamp={{ fresh: true, text: 'Ready' }} foot="note">
+        <p>body</p>
+      </WidgetCard>,
+    );
+    expect(document.querySelector('.w-head')).not.toHaveClass('has-menu');
+  });
 });
 
 describe('the widget card overflow menu', () => {

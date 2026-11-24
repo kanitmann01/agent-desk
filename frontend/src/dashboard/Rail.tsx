@@ -126,7 +126,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
         <ThemePicker compact />
       </div>
       <div className="user">
-        <span className="avatar" aria-hidden="true">AD</span>
+        <span className="avatar" aria-hidden="true" title="Agent Desk">AD</span>
         <div>
           <b className="user-name">Agent Desk</b>
           <small>local only</small>
