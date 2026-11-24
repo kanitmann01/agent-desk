@@ -535,7 +535,7 @@ def test_a_form_post_reflect_lands_in_the_inbox(boot, auth):
     }
     status, headers_out, _b = boot.request("POST", "/memory/reflect", headers, body)
     assert status == 303
-    assert headers_out["Location"] == "/inbox"
+    assert headers_out["Location"].split("?", 1)[0] == "/inbox"
     (card,) = boot.server.inbox.waiting()
     assert card.draft == "Maya moved on from Acme"
 

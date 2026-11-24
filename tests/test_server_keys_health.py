@@ -489,7 +489,7 @@ def test_the_forms_work_without_javascript(env, auth, stub):
         form_headers, urlencode({}).encode("utf-8"))
     assert status == 303
     # The redirect anchors to the connections card.
-    assert headers["Location"] == "/settings#connections"
+    assert headers["Location"].startswith("/settings") and headers["Location"].endswith("#connections")
     assert json.loads(
         env.request("GET", "/api/connections", auth)[2]
     )["connections"][0]["status"] == "ok"

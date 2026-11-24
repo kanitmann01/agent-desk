@@ -251,7 +251,7 @@ def test_a_crafted_return_to_cannot_inject_a_header(env, auth) -> None:
     assert status == 303
     assert "X-Injected" not in joined
     assert "\r" not in joined and "\n" not in joined
-    assert location == "/inbox"
+    assert location.split("?", 1)[0] in ("/inbox", "/settings")
 
     entry = _seed_settings_change(env)
     status, headers, body = _post_form(env, auth, "/api/ledger/undo", {

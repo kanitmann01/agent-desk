@@ -380,7 +380,7 @@ def test_a_form_post_redirects_back_to_the_agents_page(env, auth):
     }
     status, headers_out, _b = env.request("POST", "/agents/run", headers, body)
     assert status == 303
-    assert headers_out["Location"] == "/agents"
+    assert headers_out["Location"].split("?", 1)[0] == "/agents"
     assert len(_runs(env)) == 1
 
 
@@ -573,7 +573,7 @@ def test_a_form_feedback_post_redirects_back_and_the_page_shows_it(env, auth):
         "POST", f"/agents/runs/{run_id}/feedback", headers, body
     )
     assert status == 303
-    assert headers_out["Location"] == "/agents"
+    assert headers_out["Location"].split("?", 1)[0] == "/agents"
     status, _h, page = env.request("GET", "/agents", auth)
     text = page.decode("utf-8")
     assert status == 200

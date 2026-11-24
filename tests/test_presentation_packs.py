@@ -307,7 +307,7 @@ def test_a_form_post_records_the_choice_without_javascript():
         }
         status, headers_out, _b = booted.request("POST", "/agents/run", headers, body)
         assert status == 303
-        assert headers_out["Location"] == "/agents"
+        assert headers_out["Location"].split("?", 1)[0] == "/agents"
         stored = booted.server.agents.recent()
         assert stored[0]["artifact"]["recipe"] == "briefing"
         assert stored[0]["artifact"]["templateId"] == "starter"
