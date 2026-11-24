@@ -17,6 +17,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
+from agentdesk.assistant import audit as audit_store
 
 PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
@@ -49,6 +50,50 @@ def test_the_catalog_lists_the_declared_tools(env, auth):
         "presentation_inspect",
         "presentation_render",
     ]
+
+
+def _write_pack(root: Path, plugin_id: str, version: str, tool: str) -> None:
+    """One installed pack that declares a deck tool and owns no real templates."""
+    root.mkdir(parents=True)
+    manifest = {
+        "id": plugin_id,
+        "version": version,
+        "contributes": {
+            "presentationTemplates": [{"id": plugin_id, "name": plugin_id}],
+            "tools": [{"name": tool, "description": f"{plugin_id} declares {tool}"}],
+        },
+    }
+    (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_the_run_and_the_audit_name_the_declaring_plugin(env, auth):
+    """Two installed packs declare the same tool name: the catalog row,
+    the run result and the audit record all attribute the work to the
+    declaring pack, not to the pack that happened to load first or to
+    the starter template that did the writing."""
+    templates = getattr(env, "_templates_root", None)
+    if templates is None:
+        pytest.skip("AGENTDESK_TEMPLATES is set outside the harness")
+    templates = Path(templates.name)
+    _write_pack(templates / "alpha-pack", "alpha-pack", "1.2.0", "presentation_create")
+    _write_pack(templates / "beta-pack", "beta-pack", "0.3.0", "presentation_create")
+    status, _headers, body = env.request("GET", "/api/presentation/tools", auth)
+    assert status == 200
+    listed = next(row for row in _json(body)["tools"] if row["name"] == "presentation_create")
+    assert listed["plugin"] == "alpha-pack"
+    assert listed["pluginVersion"] == "1.2.0"
+    status, _headers, body = env.post_json(
+        "/api/presentation/tools",
+        {"tool": "presentation_create", "brief": "the Q3 review"},
+        auth,
+    )
+    assert status == 200, body
+    result = _json(body)
+    assert result["plugin"] == "alpha-pack"
+    rows = [row for row in audit_store.entries(env.server.audit_conn)
+            if row["action"] == "presentation.tool"]
+    assert rows, "the run left no audit record"
+    assert "plugin alpha-pack" in rows[-1]["detail"]
 
 
 def test_the_agents_page_names_the_deck_tools(env, auth):

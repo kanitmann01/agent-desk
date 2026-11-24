@@ -2994,7 +2994,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_json(500, {"error": "The deck tool failed."})
             return
         self._audit("presentation.tool", target=name.strip(),
-                    detail=f"{result.get('file') or result.get('bytes') or ''}")
+                    detail=(f"plugin {result['plugin']}; "
+                            f"{result.get('file') or result.get('bytes') or ''}"))
         self._send_json(200, self._presentation_tool_urls(result))
 
     def _presentation_file(self, rest: str) -> None:
