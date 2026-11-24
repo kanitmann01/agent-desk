@@ -29,7 +29,7 @@ export function CellHead({ tag, sample = false, meta, id }: {
 }) {
   return (
     <header className="cell-head">
-      <h2 className="tag" id={id}>{tag}</h2>
+      <h2 className="tag" id={id} title={tag}>{tag}</h2>
       {meta != null ? <span className="cell-meta">{meta}</span> : null}
       {sample ? <span className="sample-tag">SAMPLE DATA</span> : null}
     </header>
@@ -85,9 +85,11 @@ export function StageChart({ stages }: { stages: StageNet[] }) {
       </div>
       <div className="stage-axis" aria-hidden="true">
         {ordered.map((s) => (
-          <span key={s.stage}>
+          <span key={s.stage} title={s.stage}>
             {s.stage}
-            <small>{s.deals} {s.deals === 1 ? 'deal' : 'deals'}</small>
+            <small title={`${s.deals} ${s.deals === 1 ? 'deal' : 'deals'}`}>
+              {s.deals} {s.deals === 1 ? 'deal' : 'deals'}
+            </small>
           </span>
         ))}
       </div>

@@ -194,15 +194,16 @@ interface WidgetCardProps {
 export default function WidgetCard({
   title, span, stamp, badge, amber, sparse = false, footLines = 1, menuItems, foot, children,
 }: WidgetCardProps) {
+  const hasMenu = Boolean(menuItems && menuItems.length > 0);
   return (
     <div className={`cell ${span}`}>
       <div className={`card${amber ? ' amber' : ''}`}>
         <article className="widget">
-          <div className="w-head">
+          <div className={hasMenu ? 'w-head has-menu' : 'w-head'}>
             <h2>{title}</h2>
             {badge ? <span className="badge-pilot">{badge}</span> : null}
             <Stamp {...stamp} />
-            {menuItems && menuItems.length > 0 ? <CardMenu title={title} items={menuItems} /> : null}
+            {hasMenu ? <CardMenu title={title} items={menuItems!} /> : null}
           </div>
           <div className={sparse ? 'w-body sparse' : 'w-body'}>
             <div className="w-body-inner">{children}</div>
