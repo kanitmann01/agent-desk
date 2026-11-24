@@ -32,7 +32,7 @@ export function channelList(labels: string[]): string {
 
 /** The user-facing name of an extraction method; unknown ones pass through. */
 export function methodLabel(method: string): string {
-  return method === 'model' ? 'Endpoint' : method === 'rules' ? 'Rules' : method;
+  return method === 'model' ? 'AI' : method === 'rules' ? 'Rules' : method;
 }
 
 export const TARGET_NOUN: Record<RemovalPlan['target']['type'], string> = {

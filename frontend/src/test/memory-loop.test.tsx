@@ -117,7 +117,7 @@ describe('MemoryLoop', () => {
     // The page title is the server page's, above the island (ticket #283).
     const flow = await screen.findByRole('list', { name: 'How memory is built' });
     const steps = within(flow).getAllByRole('listitem');
-    expect(steps.map((s) => s.querySelector('.ml-tag')?.textContent)).toEqual(['Capture', 'Store', 'Process', 'Remove']);
+    expect(steps.map((s) => s.querySelector('.ml-tag')?.textContent)).toEqual(['Learn', 'Store', 'Process', 'Remove']);
     expect(within(steps[0]).getByText('Rules')).toBeTruthy();
     expect(screen.getByText(/2 facts the assistant can recall, across 1 entity/)).toBeTruthy();
     expect(screen.getByText(/New facts wait for your review/)).toBeTruthy();
@@ -175,7 +175,7 @@ describe('MemoryLoop', () => {
     render(<MemoryLoop pollMs={0} />);
     const assistant = await screen.findByRole('switch', { name: /^Assistant/ });
     expect((assistant as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/Capture is off/)).toBeTruthy();
+    expect(screen.getByText(/Learning is off/)).toBeTruthy();
   });
 
   it('switches tabs with the arrow keys and filters rows', async () => {
@@ -378,7 +378,7 @@ describe('MemoryLoop, the new pieces', () => {
     const old = within(dialog).getByText('Acme renews in February and has 40 seats.');
     expect(old.tagName).toBe('S');
     const next = within(dialog).getByText('Acme has 40 seats.', { selector: '.ml-rewrite-new' });
-    expect(within(next).getByText('Endpoint')).toBeTruthy();
+    expect(within(next).getByText('AI')).toBeTruthy();
   });
 
   it('stops each stored list at eight rows with a Show all button', async () => {

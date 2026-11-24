@@ -190,7 +190,7 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
           onReflect={async () => {
             const res = await act('/memory/reflect', {}, 'Observations could not be derived.');
             if (res && (res as { status?: string }).status === 'degraded') setNotice((res as { cause: string }).cause);
-            else if (res) setNotice('The endpoint proposed observations; they are waiting in the review queue.');
+            else if (res) setNotice('The AI proposed observations; they are waiting in the review queue.');
             await refresh();
           }}
         />
@@ -211,8 +211,8 @@ type Act = (url: string, body: unknown, failure: string) => Promise<unknown | nu
 function Header({ data }: { data: LoopState }) {
   const on = data.capture.channels.filter((c) => c.on).map((c) => c.label);
   const capture = !data.capture.enabled || on.length === 0
-    ? 'Capture is off: facts arrive only when you type or approve them.'
-    : `Capturing from ${channelList(on)}. ${data.capture.autoApprove ? 'New facts are saved automatically.' : 'New facts wait for your review.'}`;
+    ? 'Learning is off: facts arrive only when you type or approve them.'
+    : `Learning from ${channelList(on)}. ${data.capture.autoApprove ? 'New facts are saved automatically.' : 'New facts wait for your review.'}`;
   return (
     <header className="ml-head">
       <p className="ml-sub">
@@ -223,7 +223,7 @@ function Header({ data }: { data: LoopState }) {
 }
 
 /**
- * The four-step strip: capture, store, process, remove.
+ * The four-step strip: learn, store, process, remove.
  *
  * Each step links to the section that works it and reports state rather than
  * instructions: the last capture, the standing counts, the window a removal can
@@ -233,10 +233,10 @@ function Flow({ data, removedCount }: { data: LoopState; removedCount: number })
   const last = data.lastCapture;
   const lastLine = last
     ? `Last from ${last.channelLabel} at ${stamp(last.ts)}: ${count(last.found, 'fact')} found, ${last.staged} to review, ${last.stored} saved.`
-    : 'Nothing captured since the app started.';
+    : 'Nothing learned since the app started.';
   const steps: { id: string; tag: string; figure: number; unit: string; line: string; href: string; mark?: string }[] = [
     {
-      id: 'capture', tag: 'Capture', figure: data.counts.waiting, unit: 'waiting for review',
+      id: 'capture', tag: 'Learn', figure: data.counts.waiting, unit: 'waiting for review',
       line: lastLine, href: '#ml-review', mark: methodLabel(data.extractor.mode),
     },
     {
@@ -329,8 +329,8 @@ function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged
             {data.capture.enabled && !data.capture.autoApprove
               ? 'When you tell the Assistant or Research something worth keeping, the facts it finds wait here before they are saved.'
               : data.capture.autoApprove
-                ? 'Auto-approve is on, so captured facts are saved straight to memory. Turn on review in Capture settings to check them first.'
-                : 'Capture is off. Turn it on in Capture settings, or type a fact yourself.'}
+                ? 'Facts are saved as soon as they are found. Turn on review in Learning settings to check them first.'
+                : 'Learning is off. Turn it on in Learning settings, or type a fact yourself.'}
           </p>
         </div>
       ) : (
@@ -431,7 +431,7 @@ function Switch({ id, label, hint, on, disabled, onToggle }: {
 }
 
 /**
- * Capture settings: what is read from, and whether a found fact waits.
+ * Learning settings: what is read from, and whether a found fact waits.
  *
  * Each switch writes one setting and re-reads the page. The channel list and
  * the review choice are disabled while capture itself is off.
@@ -445,9 +445,9 @@ function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; 
   return (
     <section className="ml-tile" aria-labelledby="ml-capture-h">
       <div className="ml-tile-head">
-        <h2 className="ml-tag" id="ml-capture-h">Capture settings</h2>
+        <h2 className="ml-tag" id="ml-capture-h">Learning settings</h2>
       </div>
-      <Switch id="ml-sw-capture" label="Capture facts as you work" on={capture.enabled}
+      <Switch id="ml-sw-capture" label="Learn facts as you work" on={capture.enabled}
         onToggle={() => toggle('memory_capture')} />
       <fieldset className="ml-fieldset" disabled={!capture.enabled}>
         <legend>Read from</legend>
@@ -468,7 +468,7 @@ function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; 
       </fieldset>
       <p className="ml-note">{data.extractor.detail}</p>
       {data.lastCapture?.cause && (
-        <p className="ml-note">Last endpoint error: {data.lastCapture.cause}</p>
+        <p className="ml-note">Last error: {data.lastCapture.cause}</p>
       )}
     </section>
   );
@@ -607,10 +607,10 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onKeep, onRef
       <>
         <div className="ml-subbar">
           <p className="ml-note">
-            Each entity with two or more facts gets one short observation, rewritten whenever those facts change. Reflected ones come from the endpoint and stay until you remove them.
+            Each entity with two or more facts gets one short observation, rewritten whenever those facts change. Reflected ones come from the AI and stay until you remove them.
           </p>
           <button type="button" className="ml-btn" onClick={onReflect} disabled={data.extractor.mode !== 'model'}
-            title={data.extractor.mode !== 'model' ? 'Needs a working endpoint' : undefined}>
+            title={data.extractor.mode !== 'model' ? 'Needs a working AI connection' : undefined}>
             Ask your AI for observations
           </button>
         </div>
@@ -857,7 +857,7 @@ function RewriteList({ rows }: { rows: RemovalPlan['observationsUpdated'] }) {
             {row.after !== null ? (
               <p className="ml-rewrite-new">
                 <span className="ml-sr">After: </span>{row.after}
-                <span className="ml-chip-quiet">{row.afterMethod === 'model' ? 'Endpoint' : 'Built-in'}</span>
+                <span className="ml-chip-quiet">{row.afterMethod === 'model' ? 'AI' : 'Built-in'}</span>
               </p>
             ) : <p className="ml-rewrite-new ml-quiet">Rewritten from the facts that remain.</p>}
           </li>
