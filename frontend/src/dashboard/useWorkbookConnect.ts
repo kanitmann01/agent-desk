@@ -10,6 +10,9 @@ export interface WorkbookConnect {
   note: string;
   setNote: (text: string) => void;
   busy: boolean;
+  // Which half of the walk is working, so the control that started it
+  // carries the honest verb.
+  busyKind: 'pick' | 'connect' | null;
   manualOpen: boolean;
   pathInput: string;
   setPathInput: (value: string) => void;
@@ -33,6 +36,7 @@ export function useWorkbookConnect(
   const [manualOpen, setManualOpen] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<'pick' | 'connect' | null>(null);
 
   /**
    * Connect a workbook by path and reload the dashboard; a note says why
@@ -40,12 +44,13 @@ export function useWorkbookConnect(
    */
   async function connect(path: string) {
     setBusy(true);
+    setBusyKind('connect');
     try {
       const res = await postJson('/sources/excel-watch', { path });
       if (res.status === 401) { onExpired(); return; }
       const body = res.data as { error?: string };
       if (!res.ok || body.error) {
-        setNote(body.error || 'The workbook was not connected; nothing changed.');
+        setNote(body.error || 'The workbook was not connected; nothing changed. Check the path and try again.');
         return;
       }
       setNote('');
@@ -53,9 +58,10 @@ export function useWorkbookConnect(
       setPathInput('');
       await onConnected();
     } catch {
-      setNote('The dashboard could not reach its own server; nothing was connected.');
+      setNote('The dashboard could not reach its own server; nothing was connected. Try again.');
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
@@ -65,6 +71,7 @@ export function useWorkbookConnect(
    */
   async function pick() {
     setBusy(true);
+    setBusyKind('pick');
     try {
       const res = await postJson('/sources/excel-watch/pick');
       if (res.status === 401) { onExpired(); return; }
@@ -76,9 +83,10 @@ export function useWorkbookConnect(
       }
       await connect(body.path);
     } catch {
-      setNote('The dashboard could not reach its own server; the file dialog was not opened.');
+      setNote('The dashboard could not reach its own server; the file dialog was not opened. Try again.');
     } finally {
       setBusy(false);
+      setBusyKind(null);
     }
   }
 
@@ -91,5 +99,5 @@ export function useWorkbookConnect(
     }
   }
 
-  return { note, setNote, busy, manualOpen, pathInput, setPathInput, pick, connect, onPathKey };
+  return { note, setNote, busy, busyKind, manualOpen, pathInput, setPathInput, pick, connect, onPathKey };
 }

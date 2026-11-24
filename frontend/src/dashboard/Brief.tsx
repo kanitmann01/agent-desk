@@ -11,6 +11,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import type { DashboardData, PluginCard } from '../types';
 import Button from '../components/Button';
 import { postJson } from '../api';
+import { useBusy } from '../components/useBusy';
 import TrackerCard from './TrackerCard';
 import PluginCardView from './PluginCardView';
 import SetupStrip from './SetupStrip';
@@ -191,19 +192,29 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
     });
   }
   const recommendations = recommendationRows(data);
-  const [dismissError, setDismissError] = useState<string | null>(null);
+  const [dismissing, setDismissing] = useState<string | null>(null);
+  const [dismissError, setDismissError] = useState<{ cardId: string; text: string } | null>(null);
+  // The row that started the dismiss shows it after 100 ms; every other
+  // row refuses a second press until it settles.
+  const dismissShown = useBusy(dismissing !== null);
   /** Dismiss one recommendation, then refresh the dashboard it was on. */
   async function dismissRecommendation(cardId: string) {
+    setDismissing(cardId);
+    setDismissError(null);
     try {
       const res = await postJson(`/inbox/cards/${cardId}/dismiss`);
       if (!res.ok) {
-        setDismissError('Could not dismiss that decision. Try again.');
+        setDismissError({ cardId, text: 'Could not dismiss that decision. Try again.' });
         return;
       }
-      setDismissError(null);
       await onRefetch();
     } catch {
-      setDismissError('Could not reach the desk. Check the connection and try again.');
+      setDismissError({
+        cardId,
+        text: 'Could not reach the desk. Check the connection and try again.',
+      });
+    } finally {
+      setDismissing(null);
     }
   }
   const recommendationDecisions: typeof setupDecisions = recommendations.rows.map((row) => ({
@@ -214,7 +225,19 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
     action: (
       <>
         <Button tone="secondary" className="btn-sm" href={row.href}>{row.actionLabel}</Button>
-        <Button tone="secondary" className="btn-sm" onClick={() => void dismissRecommendation(row.cardId)}>Not now</Button>
+        <Button
+          tone="secondary"
+          className="btn-sm"
+          disabled={dismissing !== null}
+          pending={dismissShown && dismissing === row.cardId}
+          pendingLabel="Dismissing..."
+          onClick={() => void dismissRecommendation(row.cardId)}
+        >
+          Not now
+        </Button>
+        {dismissError?.cardId === row.cardId ? (
+          <span className="alert decision-error" role="alert">{dismissError.text}</span>
+        ) : null}
       </>
     ),
   }));
@@ -565,7 +588,6 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
             ) : (
               <p className="empty">{decisionsEmpty}</p>
             )}
-            {dismissError ? <p className="alert" role="alert">{dismissError}</p> : null}
           </section>
         ) : null}
         <article className={digestItems.length > 0 ? 'cell cell-digest' : 'cell cell-digest is-empty'} aria-labelledby="cell-digest">

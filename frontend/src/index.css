@@ -332,6 +332,8 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
    header and the foot instead of hugging the top and leaving a void. */
 .w-body.sparse{justify-content:center}
 .w-body-inner{display:flex;flex-direction:column;gap:12px}
+/* A region wrapper keeps the body's stack when it gains the busy dim. */
+.w-body-stack{display:flex;flex-direction:column;gap:12px;min-width:0}
 .w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--rule);padding-top:12px;font-size:12px;line-height:1.5;color:var(--muted);margin-top:auto;flex:none}
 /* 12px of padding plus two 12px lines at 1.5. */
 .w-foot.two-line{min-height:48px}
@@ -480,6 +482,16 @@ table.rows td.neg{color:var(--text-2)}
 .research-status{display:flex;align-items:center;gap:10px;color:var(--text-2);font-size:13px}
 .command-status{margin:6px 0 0}
 
+/* Feedback on every wait (spec 027): one plain phase line in the region
+   that is filling, a dotted placeholder with the incoming shape, and the
+   dimmed-content pattern a refetch uses. The dot is the pending button's,
+   so every wait speaks one language. */
+.phase-line{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--text-2)}
+.pending-shape{display:flex;flex-direction:column;gap:10px;min-width:0}
+.region-busy{opacity:.6}
+.page-status{margin:0 0 16px;font-size:13px;color:var(--text-2)}
+.poll-note{margin:0 0 16px;font-size:12.5px;color:var(--muted)}
+
 /* Stacked: a plugin's alert carries two paragraphs (the cause, then
    what Re-test does) and they read top to bottom. */
 .alert{display:flex;flex-direction:column;gap:6px;align-items:flex-start;color:var(--accent-text);font-size:13.5px}
@@ -528,6 +540,7 @@ table.rows td.neg{color:var(--text-2)}
 .skill-name{font-size:14px;font-weight:600;line-height:1.35;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .skill-desc{color:var(--text-2);font-size:12.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .skill-go{flex:none;color:var(--muted);align-self:center}
+.skill-busy{display:flex;align-items:center;gap:6px;flex:none;font-size:12px;color:var(--text-2)}
 
 /* The centered states (loading, session expired, load failed). */
 .center-wrap{position:relative;z-index:1;min-height:100vh;display:grid;place-items:center;padding:24px}
@@ -538,6 +551,14 @@ table.rows td.neg{color:var(--text-2)}
 .center-card h1{font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-.01em}
 .center-card p{color:var(--text-2);font-size:13.5px}
 .center-loader{display:flex;align-items:center;gap:10px;color:var(--text-2);padding-top:2px}
+
+/* The first load is the dashboard's own geometry in dotted wire, not a
+   centered text card: the hero, the command bar and the brief's cells. */
+.skeleton-title{height:40px;max-width:320px;border:1px dashed var(--rule-strong);border-radius:var(--r-inner)}
+.skeleton-btn{width:104px;height:36px;border:1px dashed var(--rule-strong);border-radius:var(--r-control)}
+.hero-meta-wire{max-width:360px;margin-top:12px}
+.skeleton-cmd{min-height:56px}
+.skeleton-cell{min-height:132px}
 
 .page-foot{margin-top:48px;color:var(--muted);font-size:13px;border-top:1px solid var(--rule);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot p{margin:0;max-width:none}
@@ -593,6 +614,7 @@ table.rows td.neg{color:var(--text-2)}
   text-decoration:underline;text-decoration-color:var(--rule-strong);text-underline-offset:4px;
 }
 .text-btn:hover{text-decoration-color:var(--accent)}
+.text-btn .btn-busy-dot{display:inline-block;vertical-align:middle;margin-right:6px}
 
 /* The hero: one figure, its parts, and the stage chart. The radial
    light is a theme token; only Unkey sets it. */
@@ -677,6 +699,7 @@ table.rows td.neg{color:var(--text-2)}
 .decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;max-width:100%}
 .decision-title{font-weight:600;color:var(--heading);font-size:14px}
 .decision-why{font-size:12.5px;color:var(--muted);line-height:1.4}
+.decision-error{flex:1 1 100%;margin-top:4px}
 .cell-decisions{flex:0 0 auto!important}
 
 /* Get started (spec 022): three steps across, each one click. The strip
@@ -834,6 +857,9 @@ table.rows td.neg{color:var(--text-2)}
 
 .brief-answer{margin-top:28px}
 .brief-answer h2{font-family:var(--font-heading);font-size:20px;font-weight:var(--heading-weight)}
+/* The answer's box is reserved while its placeholder is up, so the real
+   answer replaces it without pushing the page again. */
+.brief-answer-copy{min-height:84px}
 
 /* ---- The tracker setup sheet ---------------------------------------- */
 .setup-scrim{position:fixed;inset:0;z-index:40;background:var(--scrim);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto;overscroll-behavior:contain}
@@ -1020,6 +1046,7 @@ table.rows td.neg{color:var(--text-2)}
 }
 .cust-hint{font-size:12.5px;color:var(--text-2)}
 .cust-note{font-size:12px;color:var(--muted)}
+.cust-panel-wire{max-width:420px;min-height:28px}
 .cust-cell{grid-column:span 6;display:flex;flex-direction:column;gap:8px}
 /* A tracker's figure prints in full, so its customize tile takes the row. */
 .cust-cell:has(.tracker-card){grid-column:1/-1}

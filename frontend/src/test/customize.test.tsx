@@ -161,7 +161,7 @@ describe('entering and leaving customize', () => {
     // rejection, no half-open mode.
     expect(
       await screen.findByText(
-        'The dashboard could not reach its own server; customize did not open.'),
+        'The dashboard could not reach its own server; customize did not open. Try again.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Done customizing' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument();
@@ -349,7 +349,7 @@ describe('the save model', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: `Move ${SALES} down` }));
     expect(
-      await screen.findByText('The dashboard could not reach its own server; the layout was not saved.'),
+      await screen.findByText('The dashboard could not reach its own server; the layout was not saved. Try again.'),
     ).toBeInTheDocument();
     // The optimistic move is reverted to the server's truth.
     await vi.waitFor(() => {

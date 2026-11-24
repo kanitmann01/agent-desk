@@ -90,6 +90,7 @@ export default function TrackerSetup({
   const [disclosure, setDisclosure] = useState('');
   const [suggested, setSuggested] = useState(false);
   const [suggesting, setSuggesting] = useState(true);
+  const [suggestFailed, setSuggestFailed] = useState(false);
   const [noModel, setNoModel] = useState(false);
 
   const base = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}`;
@@ -189,8 +190,9 @@ export default function TrackerSetup({
     }
     asked.current = token;
     setSuggesting(true);
+    setSuggestFailed(false);
     setNoModel(false);
-    await ctx.ask(async () => {
+    const answer = await ctx.ask(async () => {
       let res;
       try {
         res = await postJson(suggestUrl, {});
@@ -207,6 +209,7 @@ export default function TrackerSetup({
       setProposal(data.proposal);
       return { ok: true };
     });
+    setSuggestFailed(answer === undefined);
     setSuggesting(false);
   }
 
@@ -244,7 +247,15 @@ export default function TrackerSetup({
           <input aria-label="Unit" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="USD" />
         </label>
         {ctx.outside}
-        <Button tone="primary" onClick={ctx.save} disabled={ctx.busy || !instanceName.trim()}>Confirm</Button>
+        <Button
+          tone="primary"
+          onClick={ctx.save}
+          disabled={ctx.busy || !instanceName.trim()}
+          pending={ctx.busyShown && ctx.action === 'confirm'}
+          pendingLabel="Saving..."
+        >
+          Confirm
+        </Button>
       </>
     );
   }
@@ -323,6 +334,24 @@ export default function TrackerSetup({
             </p>
           ) : (
             <>
+          {suggestFailed ? (
+            <div className="setup-proposal" role="alert">
+              <p className="setup-reason">
+                The suggestion did not run. Pick the columns yourself, or try it again.
+              </p>
+              <div className="setup-actions">
+                <Button
+                  tone="secondary"
+                  onClick={() => {
+                    asked.current = '';
+                    void suggest(ctx);
+                  }}
+                >
+                  Try the suggestion again
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {noModel ? (
             <p className="setup-note">
               Add a model in <a href="/settings">Your AI</a> to fill this in next time.

@@ -10,6 +10,8 @@ import { useState, type ReactNode } from 'react';
 import type { SetupData, SetupStep } from '../types';
 import Button from '../components/Button';
 import { postJson } from '../api';
+import { PhaseLine } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
 import type { WorkbookConnect } from './useWorkbookConnect';
 
 /** What the one click of each open step is called. */
@@ -49,6 +51,14 @@ export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, wor
   const steps = setup.steps;
   const doneCount = steps.filter((step) => step.done).length;
   const firstOpen = steps.find((step) => !step.done)?.id;
+  // Nothing shows under 100 ms; the control that started each wait says
+  // so on itself, and the strip names the phase in one line.
+  const sampleShown = useBusy(sampleBusy);
+  const pickShown = useBusy(workbook.busy && workbook.busyKind === 'pick');
+  const connectShown = useBusy(workbook.busy && workbook.busyKind === 'connect');
+  const workbookPhase = workbook.busyKind === 'pick'
+    ? 'Opening the file dialog'
+    : 'Connecting the workbook';
 
   /** Turn sample data on or off, then reload the dashboard once. */
   async function toggleSample() {
@@ -77,8 +87,14 @@ export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, wor
     if (step.done) return <span className="gs-state">Done</span>;
     if (step.id === 'workbook') {
       return (
-        <Button tone="secondary" className="btn-sm" disabled={workbook.busy}
-          onClick={() => void workbook.pick()}>
+        <Button
+          tone="secondary"
+          className="btn-sm"
+          disabled={workbook.busy}
+          pending={pickShown}
+          pendingLabel="Opening..."
+          onClick={() => void workbook.pick()}
+        >
           {STEP_VERBS.workbook}
         </Button>
       );
@@ -113,11 +129,43 @@ export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, wor
       {setup.sample || setup.sampleOffer ? (
         <p className="gs-foot">
           {setup.sample ? 'You are looking at sample data. ' : 'Nothing is connected yet. '}
-          <button type="button" className="text-btn" disabled={sampleBusy}
-            onClick={() => void toggleSample()}>
-            {setup.sample ? 'Hide sample data' : 'Try it with sample data'}
+          <button
+            type="button"
+            className="text-btn"
+            disabled={sampleBusy}
+            aria-busy={sampleShown ? 'true' : undefined}
+            aria-label={sampleShown
+              ? (setup.sample ? 'Hiding the sample data...' : 'Turning on the sample data...')
+              : (setup.sample ? 'Hide sample data' : 'Try it with sample data')}
+            onClick={() => void toggleSample()}
+          >
+            {sampleShown ? <span className="btn-busy-dot" aria-hidden="true" /> : null}
+            <span className="btn-labels">
+              <span
+                className={sampleShown ? 'btn-label btn-label-hidden' : 'btn-label'}
+                aria-hidden={sampleShown ? 'true' : undefined}
+              >
+                {setup.sample ? 'Hide sample data' : 'Try it with sample data'}
+              </span>
+              <span
+                className={sampleShown ? 'btn-label' : 'btn-label btn-label-hidden'}
+                aria-hidden={sampleShown ? undefined : 'true'}
+              >
+                {setup.sample ? 'Hiding...' : 'Turning on...'}
+              </span>
+            </span>
           </button>
         </p>
+      ) : null}
+      {sampleBusy ? (
+        <PhaseLine
+          active
+          text={setup.sample ? 'Hiding the sample data' : 'Turning on the sample data'}
+          phaseKey={setup.sample ? 'hide' : 'show'}
+        />
+      ) : null}
+      {workbook.busy ? (
+        <PhaseLine active text={workbookPhase} phaseKey={workbook.busyKind ?? ''} />
       ) : null}
       {sampleNote ? <p className="alert" role="status">{sampleNote}</p> : null}
       {workbook.note ? <p className="alert" role="status">{workbook.note}</p> : null}
@@ -134,10 +182,16 @@ export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, wor
             onChange={(e) => workbook.setPathInput(e.target.value)}
             onKeyDown={workbook.onPathKey}
           />
-          <button className="btn btn-primary btn-sm" type="button" disabled={workbook.busy}
-            onClick={() => void workbook.connect(workbook.pathInput.trim())}>
+          <Button
+            tone="primary"
+            className="btn-sm"
+            disabled={workbook.busy}
+            pending={connectShown}
+            pendingLabel="Connecting..."
+            onClick={() => void workbook.connect(workbook.pathInput.trim())}
+          >
             Connect
-          </button>
+          </Button>
         </div>
       ) : null}
     </section>

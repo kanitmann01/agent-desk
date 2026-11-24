@@ -153,7 +153,7 @@ describe('the sales card', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Re-test now' }));
     expect(
-      await screen.findByText('The dashboard could not reach its own server; the re-test did not run.'),
+      await screen.findByText('The dashboard could not reach its own server; the re-test did not run. Try again.'),
     ).toBeInTheDocument();
     expect(onRefetch).not.toHaveBeenCalled();
   });
@@ -246,7 +246,6 @@ describe('the research card', () => {
         lastAnsweredTs={null}
         answer={{ question: 'Who sells to Meridian?', summary: 'Two reps named Meridian.', sources: ['crm', 'notes'] }}
         answerSeq={1}
-        statusText=""
       />,
     );
     expect(screen.getByText('Who sells to Meridian?')).toBeInTheDocument();
@@ -255,7 +254,7 @@ describe('the research card', () => {
     expect(document.querySelector('.card canvas')).toBeNull();
   });
 
-  it('states the busy status as honest text', () => {
+  it('states the busy phase as honest text and shows the answer-shaped placeholder', async () => {
     render(
       <ResearchCard
         span="span-8"
@@ -263,10 +262,13 @@ describe('the research card', () => {
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
-        statusText={RESEARCH_BUSY}
+        busy
+        busyPhase={RESEARCH_BUSY}
       />,
     );
-    expect(screen.getByRole('status')).toHaveTextContent(RESEARCH_BUSY);
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent(RESEARCH_BUSY);
+    expect(document.querySelector('.answer-pending')).not.toBeNull();
     expect(document.querySelector('.card canvas')).toBeNull();
   });
 
@@ -278,7 +280,6 @@ describe('the research card', () => {
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
-        statusText=""
       />,
     );
     expect(screen.getByText('Paused')).toBeInTheDocument();
@@ -526,7 +527,6 @@ describe('the card overflow menus', () => {
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
-        statusText=""
       />,
     );
     await user.click(screen.getByRole('button', { name: /^Widget options/ }));
