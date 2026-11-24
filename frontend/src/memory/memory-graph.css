@@ -10,12 +10,21 @@
    ramp, the one accent, and the --kind-* roles derived from them. No
    colour literal lives here. One bento language with the dashboard:
    1px hairlines, 8px cells, Geist for words, Geist Mono for figures. */
-#memory-graph-root{position:relative;left:50%;transform:translateX(-50%);
-  width:min(1128px,calc(100vw - 306px))}
-/* The rail collapses to 68px: the graph takes the room back. */
-.rail-collapsed #memory-graph-root{width:min(1128px,calc(100vw - 174px))}
+/* The /memory/graph page is the shell's wide document: the canvas gets a
+   column that really contains it. The prose above it keeps the 720px
+   measure (688px of content) centered where the text column was, so the
+   page reads exactly as before; only the box that holds the canvas is
+   wider. */
+.doc.doc-wide:has(> #memory-graph-root){max-width:none;padding:0}
+.doc.doc-wide:has(> #memory-graph-root)>h1,
+.doc.doc-wide:has(> #memory-graph-root)>.crumbs,
+.doc.doc-wide:has(> #memory-graph-root)>.page-foot{
+  width:calc(100% - 32px);max-width:688px;margin-left:auto;margin-right:auto}
+#memory-graph-root{width:100%;max-width:1128px;margin-inline:auto}
+/* Under the shell's single-column breakpoint the wide document is the
+   text column's own width, so the canvas keeps the 16px gutter. */
 @media (max-width:980px){
-#memory-graph-root,.rail-collapsed #memory-graph-root{left:auto;transform:none;width:auto}
+#memory-graph-root{width:calc(100% - 32px)}
 }
 #memory-graph-root .mg{display:flex;flex-direction:column;gap:12px;margin:18px 0 28px;overflow-wrap:anywhere}
 #memory-graph-root .mg .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}

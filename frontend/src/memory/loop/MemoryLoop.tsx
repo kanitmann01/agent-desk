@@ -387,7 +387,7 @@ function Flow({ data, removedCount }: { data: LoopState; removedCount: number })
               {step.mark && <span className="ml-chip-quiet">{step.mark}</span>}
             </span>
             <span className="ml-figure">{step.figure}</span>
-            <span className="ml-step-unit">{step.unit}</span>
+            <span className="ml-step-unit" title={step.unit}>{step.unit}</span>
             <span className="ml-step-line">{step.line}</span>
           </a>
         </li>
@@ -671,10 +671,12 @@ function CaptureSettings({ data, actOutcome, onChanged }: { data: LoopState; act
         <div className="ml-segment" role="radiogroup" aria-label="When a fact is found">
           <button type="button" role="radio" aria-checked={!capture.autoApprove}
             aria-busy={askBusy || undefined}
+            title="Ask me first"
             disabled={pendingKey !== null}
             onClick={() => !capture.autoApprove && chooseAuto(false)}>Ask me first</button>
           <button type="button" role="radio" aria-checked={capture.autoApprove}
             aria-busy={autoBusy || undefined}
+            title="Save automatically"
             disabled={pendingKey !== null}
             onClick={() => capture.autoApprove && chooseAuto(true)}>Save automatically</button>
         </div>

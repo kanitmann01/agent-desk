@@ -206,6 +206,9 @@ def test_the_graph_island_mounts_on_its_own_page_and_the_memory_page_links_it(bo
     assert 'id="memory-graph-root"' in graph
     assert 'data-endpoint="/api/memory/graph"' in graph
     assert "/static/spa/assets/memory-graph.js" in graph
+    # The canvas needs a column that really contains it: the island page
+    # is the shell's wide document, the prose keeps its measure in CSS.
+    assert 'class="doc doc-wide"' in graph
     # The graph is a maintenance tool (ticket #283): the Memory page no
     # longer mounts it inline, it links the graph's own address from the
     # Maintenance disclosure, with or without scripting.

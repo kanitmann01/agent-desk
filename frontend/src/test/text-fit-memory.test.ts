@@ -75,6 +75,14 @@ describe('memory graph text fit', () => {
     expect(scroller).not.toContain('-4px');
   });
 
+  it('gives the canvas a wide document column that really contains it', () => {
+    const page = rule(graphCss, '.doc.doc-wide:has(> #memory-graph-root)');
+    expect(page).toContain('padding:0');
+    const root = rule(graphCss, '#memory-graph-root');
+    expect(root).toContain('width:100%');
+    expect(root).not.toContain('transform');
+  });
+
   it('lets the legend text shrink beside its glyph', () => {
     expect(rule(graphCss, '#memory-graph-root .mg-legend li>span')).toContain('min-width:0');
   });
@@ -115,13 +123,16 @@ describe('memory loop text fit', () => {
     expect(rule(loopCss, '#memory-loop-root .ml-figure')).toContain('white-space:nowrap');
   });
 
-  it('wraps the four-step strip top row', () => {
+  it('wraps the four-step strip top row and keeps its labels inside the step', () => {
     expect(rule(loopCss, '#memory-loop-root .ml-step-top')).toContain('flex-wrap:wrap');
     expect(rule(loopCss, '#memory-loop-root .ml-step-index')).toContain('white-space:nowrap');
     const tag = rule(loopCss, '#memory-loop-root .ml-flow .ml-tag');
     expect(tag).toContain('min-width:0');
-    expect(tag).toContain('white-space:nowrap');
-    expect(tag).toContain('text-overflow:ellipsis');
+    expect(tag).toContain('white-space:normal');
+    expect(tag).not.toContain('text-overflow:ellipsis');
+    const chip = rule(loopCss, '#memory-loop-root .ml-step-top .ml-chip-quiet');
+    expect(chip).toContain('max-width:100%');
+    expect(chip).toContain('white-space:normal');
     const unit = rule(loopCss, '#memory-loop-root .ml-step-unit');
     expect(unit).toContain('white-space:nowrap');
     expect(unit).toContain('overflow:hidden');
