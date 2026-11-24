@@ -332,9 +332,11 @@ export function InstalledPage() {
                   <div className="mkt-update-row">
                     <p>
                       <strong>Permission change needs review.</strong>{' '}
-                      {record.update
+                      {record.update && record.update.widening.length > 0
                         ? `The staged version adds ${record.update.widening.length} scope${record.update.widening.length === 1 ? '' : 's'}.`
-                        : 'Open the review to see the staged scopes.'}
+                        : record.update && record.update.dropping.length > 0
+                          ? `The staged version drops ${record.update.dropping.length} scope${record.update.dropping.length === 1 ? '' : 's'}.`
+                          : 'Open the review to see the staged scopes.'}
                     </p>
                     <div className="mkt-actions">
                       <Button tone="primary" disabled={busyId === record.id}
@@ -397,6 +399,7 @@ export function InstalledPage() {
         intro="The staged version asks for the scopes below. Nothing runs with them until you accept."
         scopes={consentRecord?.update?.scopes ?? []}
         addedScopes={consentRecord?.update?.widening ?? []}
+        removedScopes={consentRecord?.update?.dropping ?? []}
         canNever={canNeverFromScopes(consentRecord?.update?.scopes ?? [])}
         confirmLabel="Accept update"
         busy={busyId === consentRecord?.id}

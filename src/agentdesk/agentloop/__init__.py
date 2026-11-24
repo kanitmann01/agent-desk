@@ -7,7 +7,14 @@ loop itself; the server builds and starts it in create_server and
 start_background_polls (spec 016, ticket 04).
 """
 
-from agentdesk.agentloop.loop import AgentLoop, LoopContext, Step, STEPS, register_step
+from agentdesk.agentloop.loop import (
+    AgentLoop,
+    LoopContext,
+    Step,
+    STEPS,
+    ordered_steps,
+    register_step,
+)
 from agentdesk.agentloop.schedule import claim_run, interval_due, release_run
 
 __all__ = [
@@ -15,6 +22,7 @@ __all__ = [
     "LoopContext",
     "STEPS",
     "Step",
+    "ordered_steps",
     "claim_run",
     "interval_due",
     "register_step",

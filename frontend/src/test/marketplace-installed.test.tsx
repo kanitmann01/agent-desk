@@ -58,6 +58,7 @@ describe('installed plugins', () => {
       update: {
         version: '1.3.0', digest: 'sha256:abc',
         widening: ['filesystem.write: ${workspace}/finance/**'],
+        dropping: [],
         scopes: ['filesystem.read: ${workspace}/finance/**', 'filesystem.write: ${workspace}/finance/**'],
       },
     });
@@ -69,6 +70,7 @@ describe('installed plugins', () => {
           update: {
             version: '1.3.0', digest: 'sha256:abc',
             widening: ['filesystem.write: ${workspace}/finance/**'],
+            dropping: [],
             scopes: ['filesystem.read: ${workspace}/finance/**', 'filesystem.write: ${workspace}/finance/**'],
           },
         });
@@ -96,6 +98,31 @@ describe('installed plugins', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Accept update' }));
     expect(await screen.findByText('AR Aging updated to 1.3.0.')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('reads a held permission drop as a drop, not a widening', async () => {
+    const record = installed({
+      pendingConsent: true,
+      update: {
+        version: '1.3.0', digest: 'sha256:abc',
+        widening: [],
+        dropping: ['llm.allow: True'],
+        scopes: ['llm.allow: False'],
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(installedResponse([record]))));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    expect(await screen.findByText('The staged version drops 1 scope.')).toBeInTheDocument();
+    expect(screen.queryByText(/adds 1 scope/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review update' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review update for AR Aging' });
+    expect(within(dialog).getByText('It asks for no new data access.')).toBeInTheDocument();
+    expect(within(dialog).getByText('The new version drops 1 scope.')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/This update widens access/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('It asks for no data access.')).not.toBeInTheDocument();
   });
 
   it('requires the typed delete-data confirmation before purging', async () => {

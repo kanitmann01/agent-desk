@@ -59,7 +59,11 @@ export function ConsentSheet({
           <section aria-labelledby="mkt-consent-scopes">
             <h3 id="mkt-consent-scopes">What it can use</h3>
             {shown.length === 0 ? (
-              <p className="mkt-empty-inline">It asks for no data access.</p>
+              <p className="mkt-empty-inline">
+                {removedScopes.length > 0
+                  ? 'It asks for no new data access.'
+                  : 'It asks for no data access.'}
+              </p>
             ) : (
               <ul className="mkt-scope-list">
                 {shown.map((scope) => {

@@ -388,6 +388,11 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     : consent?.kind === 'consent'
       ? (installed?.update?.widening ?? [])
       : [];
+  const sheetRemoved = consent?.kind === 'update'
+    ? (installed?.update?.dropping ?? [])
+    : consent?.kind === 'consent'
+      ? (installed?.update?.dropping ?? [])
+      : [];
 
   /**
    * Apply whichever decision the open sheet was showing, then re-read the
@@ -777,6 +782,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
           : `The staged update changes what ${plugin.name} can reach. Review the new scopes before it runs.`}
         scopes={sheetScopes}
         addedScopes={sheetAdded}
+        removedScopes={sheetRemoved}
         canNever={never}
         confirmLabel={consent?.kind === 'install' ? 'Install plugin'
           : consent?.kind === 'update' ? 'Update plugin' : 'Accept update'}

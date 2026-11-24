@@ -11,8 +11,9 @@ memory as v2 with no publisher keys), and every write emits v2.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
+
+from agentdesk.validator.grammar import SAFE_NAME as _SAFE_NAME
 
 
 class RegistryIndexError(Exception):
@@ -23,11 +24,6 @@ class RegistryIndexError(Exception):
         super().__init__(code)
         self.code = code
 
-
-# Ids, versions and tags become path fragments (install directories, git
-# pathspecs), so they are names, not free text: no separators, no leading
-# dashes, no dot-segments, ever.
-_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 _PROVENANCE_KINDS = {"dns", "github", "manual"}
 

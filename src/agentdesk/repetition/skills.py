@@ -16,13 +16,13 @@ skills or skill_versions row.
 
 from __future__ import annotations
 
-import functools
 import re
 import sqlite3
 import threading
 import time
 from collections.abc import Callable
 
+from agentdesk.locking import serialized as _serialized, store_lock
 from agentdesk.safety import first_threat_message
 
 NAME_MAX = 64
@@ -94,23 +94,6 @@ class SkillError(Exception):
     """The skill name or description breaks the format contract."""
 
 
-def _serialized(method):
-    """Every read and write holds the store's one lock, the inbox store's
-    pattern. The connection is shared (check_same_thread=False) by the
-    server's request threads and the agent loop's skills and curator
-    steps; Python's sqlite3 connection keeps one implicit transaction, so
-    a request-thread refine committing mid-way through a loop-thread
-    set_state can commit the other's half-done write, and the
-    MAX(version)+1 read races another writer. An RLock, because methods
-    call each other (markdown reads through get)."""
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        """Run one store method with the store's re-entrant lock held."""
-        with self._lock:
-            return method(self, *args, **kwargs)
-    return wrapper
-
-
 def slugify(name: str) -> str:
     """A skill name as a stable slug: lower case, single dashes, length-capped.
 
@@ -153,7 +136,7 @@ class SkillStore:
         """
         self.conn = conn
         self.clock = clock
-        self._lock = lock if lock is not None else threading.RLock()
+        self._lock = store_lock(lock)
         with self._lock:
             ensure_schema(conn)
 
