@@ -79,7 +79,8 @@ PENDING_ENUM_JS = r"""
     return {index:index, ordinal:ordinal, tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
             path:path(el), text:text,
             disabled:!!el.disabled, ariaBusy:el.getAttribute('aria-busy') || '',
-            type:el.getAttribute('type') || ''};
+            type:el.getAttribute('type') || '',
+            in_form:!!el.form, form_method:el.form ? String(el.form.method || 'get').toLowerCase() : ''};
   });
 }
 """
@@ -2385,7 +2386,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
         try:
             page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
             _wait_for_view(page, view)
-            _settle_page(page)
+            page.wait_for_timeout(300)
             if view.get("kind") == "overlay":
                 reason = _open_overlay(page, combo)
                 if reason:
@@ -2415,8 +2416,17 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 record["evidence"] = {"reason": "already disabled"}
                 records.append(record)
                 continue
+            if control.get("in_form") and control.get("form_method") == "post":
+                record["evidence"] = {"reason": "form submit navigates; not clicked"}
+                records.append(record)
+                print(f"[{condition}] pending {total} {view.get('state')} "
+                      f"{record.get('control', '')[:40]!r}: skipped form submit",
+                      flush=True)
+                continue
             fresh = context.new_page()
+            fresh.set_default_timeout(4000)
             started: list[dict] = []
+            held: list = []
             file_dialog = [False]
 
             def hold(route):
@@ -2426,6 +2436,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 else:
                     started.append({"method": route.request.method,
                                     "url": route.request.url})
+                    held.append(route)
                     return
 
             def on_dialog(dialog):
@@ -2451,7 +2462,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             try:
                 fresh.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
                 _wait_for_view(fresh, view)
-                _settle_page(fresh)
+                fresh.wait_for_timeout(300)
                 if view.get("kind") == "overlay":
                     reason = _open_overlay(fresh, combo)
                     if reason:
@@ -2494,10 +2505,17 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:200]}
                 records.append(record)
             finally:
+                for route in held:
+                    try:
+                        route.abort()
+                    except Exception:
+                        pass
                 try:
                     fresh.close()
                 except Exception:
                     pass
+            print(f"[{condition}] pending {total} {view.get('state')} "
+                  f"{record.get('control', '')[:40]!r}: {record.get('verdict')}", flush=True)
     return records
 
 
