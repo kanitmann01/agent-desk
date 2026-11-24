@@ -432,7 +432,7 @@ class EndpointSummarizer:
         try:
             reply = self._llm(prompt)
         except Exception as exc:  # noqa: BLE001 - any endpoint failure falls back to the rules
-            raise SummaryFailed(str(exc)[:200] or "The endpoint did not answer.") from exc
+            raise SummaryFailed(str(exc)[:200] or "The AI did not answer.") from exc
         parsed = model_json_object(reply, SummaryFailed, "Summarizer")
         text = " ".join(str(parsed.get("text") or "").split()).strip('"')
         if not normalize_fact_text(text):
@@ -592,7 +592,7 @@ def model_summaries(memory, summarize: Summarize,
         try:
             out[entry.scope] = summarize(entry.name, list(entry.facts))
         except SummaryFailed as exc:
-            return out, asked, str(exc) or "The endpoint did not answer."
+            return out, asked, str(exc) or "The AI did not answer."
     return out, asked, ""
 
 
@@ -778,7 +778,7 @@ def capture(
             candidates = facts_to_retain(list(extract(excerpt)))
             method = METHOD_MODEL
         except Exception as exc:  # noqa: BLE001 - the classified extractor errors and anything else fall back
-            cause = str(exc)[:200] or "The endpoint did not answer."
+            cause = str(exc)[:200] or "The AI did not answer."
             candidates = []
     if method == METHOD_RULES and not candidates:
         candidates = rule_candidates(own_words)

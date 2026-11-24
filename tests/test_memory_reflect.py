@@ -472,10 +472,10 @@ def test_the_endpoint_reflector_sends_one_prompt_and_parses_the_reply():
 
 
 def test_an_unreachable_endpoint_raises_reflector_unavailable():
-    cause = LlmUnavailable("The endpoint did not answer.")
+    cause = LlmUnavailable("The AI did not answer.")
     with pytest.raises(ReflectorUnavailable) as excinfo:
         EndpointReflector(ScriptedLlm(error=cause)).reflect("", [])
-    assert "The endpoint did not answer." in str(excinfo.value)
+    assert "The AI did not answer." in str(excinfo.value)
 
 
 def test_any_other_endpoint_failure_raises_reflector_unavailable():

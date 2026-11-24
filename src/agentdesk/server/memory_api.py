@@ -854,9 +854,9 @@ class MemoryApiMixin:
         extractor, _endpoint, model = self._capture_extractor()
         if extractor is not None:
             return {"mode": memory_loop.METHOD_MODEL,
-                    "detail": f"Extracting with {model or 'the default model'}. If the endpoint does not answer, the built-in rules take over."}
+                    "detail": f"Extracting with {model or 'the default model'}. If the AI does not answer, the built-in rules take over."}
         return {"mode": memory_loop.METHOD_RULES,
-                "detail": "No endpoint is saved in Settings, so capture uses the built-in rules on your own words."}
+                "detail": "No AI is saved in Settings, so facts are found by the built-in rules on your own words."}
 
     def _memory_loop_json(self) -> None:
         """The memory loop's state as JSON, and a chance to re-offer rule-built

@@ -122,7 +122,7 @@ def test_the_model_extracts_first_and_the_rules_take_over_when_it_fails():
     assert first.method == loop.METHOD_MODEL and len(first.card_ids) == 1 and calls
 
     def broken(_excerpt):
-        raise ExtractorUnavailable("The endpoint did not answer.")
+        raise ExtractorUnavailable("The AI did not answer.")
 
     second = loop.capture(memory, inbox, channel="assistant", excerpt="You: The Berlin office has 40 people.",
                           own_words="The Berlin office has 40 people.",

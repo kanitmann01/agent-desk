@@ -23,7 +23,7 @@ function state(overrides: Partial<LoopState> = {}): LoopState {
         { id: 'research', label: 'Research', setting: 'memory_capture_research', on: true },
       ],
     },
-    extractor: { mode: 'rules', detail: 'No endpoint is saved.' },
+    extractor: { mode: 'rules', detail: 'No AI is saved, so facts are found by the built-in rules.' },
     lastCapture: null,
     undoWindowS: 30,
     counts: { waiting: 1, facts: 2, standing: 2, replaced: 0, entities: 1, observations: 1, flagged: 0, sources: 1 },
