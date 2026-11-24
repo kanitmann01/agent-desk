@@ -146,6 +146,11 @@ describe('the morning brief decisions', () => {
     expect(row.why).toBe('You told the desk this deadline; it is 24 days away. · ranked by your endpoint');
   });
 
+  it('treats an engine-sourced why line as the rule text', () => {
+    const [row] = recommendationRows(data([{ ...halvorsen, whySource: 'engine' }])).rows;
+    expect(row.why).toBe('You told the desk this deadline; it is 24 days away.');
+  });
+
   it('falls back to the setup decisions when there are no recommendations', () => {
     expect(recommendationRows(data()).rows).toEqual([]);
     expect(decisionsEmptyText(undefined)).toBe('Nothing needs a decision.');

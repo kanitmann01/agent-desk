@@ -68,9 +68,11 @@ The desk acting by itself (spec 023, tickets 023-3; the numbers 24 and
   R27  the dashboard payload carries what changed (the agent loop's
        stamp), and it advances when the desk acts
   R28  the names the desk says are names the desk holds (the engine's
-       reading, and any connect line on a card)
-  R29  every action in the engine's first pass has a ledger entry with
-       an undo kind, and Undo works on one of them
+       reading, and a real connect line on a card when the build has
+       the connect step)
+  R29  the pass pays the ledger toll: every action has a ledger entry
+       with an undo kind, Undo works on one, and the engine step row
+       says which backend ran and what it did
 """
 
 from __future__ import annotations
@@ -100,6 +102,8 @@ ROOT = Path(__file__).resolve().parents[1]
 for _path in (str(ROOT / "src"),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
+
+from agentdesk.engine import DEFAULT_TURN_TIMEOUT_S
 
 MOCK_KEY = "sk-ready-0001"
 MOCK_MODEL = "mock-chat"
@@ -776,6 +780,79 @@ def _free_udp_port() -> int:
         return probe.getsockname()[1]
 
 
+# How long a pass may take after Run now. The engine turn's own ceiling
+# is DEFAULT_TURN_TIMEOUT_S, and the pass runs its other steps around
+# it, so the wait is that ceiling plus a margin: a real side-car turn
+# cannot fail the check spuriously.
+READY_PASS_WAIT_S = DEFAULT_TURN_TIMEOUT_S + 30.0
+
+# The engine step's absent-side-car sentence, pinned here independently:
+# R29 accepts this exact fallback and nothing vaguer.
+FALLBACK_NOTE = ("The side-car is not installed; the pass's fixed steps "
+                 "are the fallback.")
+
+
+def _loop_status(desk: Desk) -> dict:
+    """The agent loop's status payload, with lastSteps, or an empty dict."""
+    payload = desk.get_json("/api/agent-loop")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _engine_step_row(payload: dict) -> dict | None:
+    """The engine step row in one status payload, or None when absent."""
+    for row in payload.get("lastSteps") or []:
+        if isinstance(row, dict) and row.get("name") == "engine":
+            return row
+    return None
+
+
+def _audit_tail(desk: Desk) -> list[dict]:
+    """The newest audit rows, detail included, or nothing readable."""
+    payload = desk.get_json("/audit/tail")
+    rows = payload.get("entries") if isinstance(payload, dict) else None
+    return [row for row in rows or [] if isinstance(row, dict)]
+
+
+def _wait_for_loop_idle(desk: Desk, seconds: float = 60.0) -> bool:
+    """Wait until no pass is running, so a seed never writes beside one.
+
+    The dashboard's stamp advances at the end of a pass's steps, a
+    moment before the run slot is released; a memory write landing in
+    that window races the pass's own reads. R28 and R29 seed facts, so
+    they first wait for the slot to be idle.
+    """
+    return _wait_until(lambda: _loop_status(desk).get("running") is False,
+                       seconds=seconds)
+
+
+def _sidecar_installed() -> bool:
+    """Whether this walk's desk can run the real side-car right now."""
+    from agentdesk.engine import available
+
+    try:
+        return bool(available())
+    except Exception:  # noqa: BLE001 - an unreadable install is absent
+        return False
+
+
+def _connect_step_present() -> bool:
+    """Whether this build carries the connect step that writes the line.
+
+    The connect line belongs to the sibling slice (spec 023, ticket
+    023-1). In a build composed with it, R28 requires a real card line;
+    in a build without it no card can carry one, and the requirement
+    would fail on a fact of composition rather than a regression, so
+    the invariant-only half runs. A build that keeps the module but
+    loses the line still fails: the producer is present, the card is
+    not.
+    """
+    try:
+        from agentdesk.insight import insight_connect  # noqa: F401
+    except Exception:  # noqa: BLE001 - the sibling slice is not in this build
+        return False
+    return True
+
+
 # -- the desk acting by itself (spec 023, R26 to R29) -----------------------
 
 
@@ -849,21 +926,29 @@ def _stamp_carries_what_changed(desk: Desk) -> tuple[bool, str]:
     accepted, status = _run_now(desk)
     if not accepted:
         return False, f"Run now answered {status}; stamp stayed {before!r}"
-    advanced = _wait_until(lambda: _stamp_advanced(desk, before), seconds=30.0)
+    advanced = _wait_until(lambda: _stamp_advanced(desk, before),
+                           seconds=READY_PASS_WAIT_S)
     after = _loop_stamp(desk).get("lastRunTs")
     return bool(advanced), f"Run now answered 200; stamp {before!r} -> {after!r}"
 
 
-def _connect_lines_name_held(desk: Desk, held: set[str]) -> tuple[bool, str]:
-    """Whether any connect line on the dashboard names only held names.
+def _connect_lines_name_held(desk: Desk, held: set[str],
+                             connect_present: bool | None = None) -> tuple[bool, str]:
+    """Whether a real connect line exists and names only held names.
 
     The invariant behind R28: a card may say "Also in your desk" only
-    about a name the desk holds. A desk with no cards (and no such
-    line) has nothing claimed and passes honestly.
+    about a name the desk holds. When this build carries the connect
+    step, at least one card must actually carry the line, so a
+    regression that removes it fails; when the step is absent from the
+    build, no card can carry it and the walk says so rather than
+    claiming a connection it never checked. A card that names an unheld
+    name fails in either case.
     """
+    present = _connect_step_present() if connect_present is None else connect_present
     cards = ((desk.get_json("/api/dashboard").get("plugins") or {})
              .get("cards") or [])
     held_lower = {name.lower() for name in held}
+    lines_seen = 0
     for card in cards:
         payload = card.get("payload") if isinstance(card, dict) else None
         insight = payload.get("insight") if isinstance(payload, dict) else None
@@ -876,12 +961,19 @@ def _connect_lines_name_held(desk: Desk, held: set[str]) -> tuple[bool, str]:
         for line in lines:
             if not line.startswith("Also in your desk:"):
                 continue
+            lines_seen += 1
             for clause in line.split(":", 1)[1].split(";"):
                 name = clause.split(",")[0].strip().rstrip(".").lower()
                 if name and name not in held_lower:
                     return False, f"a card names {name!r}, which the desk does not hold"
-    return True, (f"{len(cards)} card(s), none claims an unheld name"
-                  if cards else "no card claims a connection")
+    if lines_seen:
+        return True, (f"{len(cards)} card(s), {lines_seen} connect line(s), "
+                      "every name held")
+    if present:
+        return False, (f"{len(cards)} card(s), none carries an 'Also in your "
+                       "desk' line although the connect step is in this build")
+    return True, ("the connect step is not in this build, so no card can carry "
+                  "the line; no card claims an unheld name")
 
 
 def _auto_approve_on(desk: Desk) -> tuple[bool, str]:
@@ -920,6 +1012,8 @@ def _names_are_held(desk: Desk) -> tuple[bool, str]:
     approve_ok, approve_detail = _auto_approve_on(desk)
     if not approve_ok:
         return False, f"automatic saving could not be turned on: {approve_detail}"
+    if not _wait_for_loop_idle(desk):
+        return False, "the agent loop was still running when R28 tried to seed a name"
     seeded = desk.post_json("/memory/add", {
         "text": "The Halvorsen Freight Group renewal is settled for this quarter."})
     if seeded[0] not in (200, 201):
@@ -940,7 +1034,31 @@ def _names_are_held(desk: Desk) -> tuple[bool, str]:
     if "Quiebro Nova" in held:
         return False, "the desk's reading names something it does not hold"
     lines_ok, lines_detail = _connect_lines_name_held(desk, set(held))
+    if not lines_ok and _connect_step_present() and "none carries" in lines_detail:
+        # The connect step is in this build but the current names do not
+        # appear in any workbook row. Boot the sample desk for this one
+        # check, so a real card carries the line; the switch goes back
+        # off in the finally, and R29 seeds its own fact afterwards.
+        lines_ok, lines_detail = _with_sample_connect_line(desk, set(held))
     return lines_ok, f"the reading holds {held}; {lines_detail}"
+
+
+def _with_sample_connect_line(desk: Desk, held: set[str]) -> tuple[bool, str]:
+    """Boot the sample desk once, check its connect line, and switch it off.
+
+    The sample workbook's rows carry the names the sample memory holds,
+    so the connect step has something real to say. Nothing is left on:
+    the switch returns off even when the check fails.
+    """
+    if not _wait_for_loop_idle(desk):
+        return False, "the agent loop was still running when the sample desk was asked"
+    desk.post_json("/settings/toggle", {"key": "sample_data"})
+    try:
+        _wait_until(lambda: _connect_lines_name_held(desk, held)[0], seconds=15.0)
+        ok, detail = _connect_lines_name_held(desk, held)
+    finally:
+        desk.post_json("/settings/toggle", {"key": "sample_data"})
+    return ok, "with the sample desk booted once: " + detail
 
 
 def _fact_listed(desk: Desk, fact: str) -> bool:
@@ -952,34 +1070,15 @@ def _fact_listed(desk: Desk, fact: str) -> bool:
     return status == 200 and fact in body.decode("utf-8")
 
 
-def _pass_pays_the_toll(desk: Desk) -> tuple[bool, str]:
-    """R29: the pass's every entry carries an undo kind, and Undo works on one.
+def _pass_toll_half(desk: Desk, window: list[dict]) -> tuple[bool, str]:
+    """The pass-toll half: every entry in the window is undoable, and Undo works.
 
-    The walk saves a dated fact first. The save path runs the same
-    recommendation builder the pass's recommend step runs, so the card's
-    entry can land during the save; the window starts before the seed so
-    that action and anything the pass adds are both counted. Then Run
-    now, wait for the stamp, and undo the newest through Activity.
+    Reads and writes alike must carry an undo kind; undoing the newest
+    through Activity must mark it undone. This half is true whether the
+    pass acted through the engine or through its fixed steps.
     """
-    due = datetime.now().date() + timedelta(days=10)
-    fact = f"The Acme renewal is due {due.strftime('%B')} {due.day}"
-    started = time.time()
-    saved = desk.post_json("/memory/add", {"text": fact})
-    if saved[0] not in (200, 201):
-        return False, f"saving the dated fact answered {saved[0]}: {saved[2][:120]!r}"
-    listed = _wait_until(lambda: _fact_listed(desk, fact), seconds=15.0)
-    if not listed:
-        return False, "the seeded dated fact never appeared in memory"
-    before = _loop_stamp(desk).get("lastRunTs")
-    accepted, status = _run_now(desk)
-    if not accepted:
-        return False, f"Run now answered {status} after the seeded fact was saved"
-    finished = _wait_until(lambda: _stamp_advanced(desk, before), seconds=30.0)
-    entries = desk.get_json("/api/ledger?limit=50").get("entries") or []
-    window = [row for row in entries if row.get("ts", 0) >= started]
-    if not finished or not window:
-        why = "did not finish" if not finished else "recorded no ledger entry"
-        return False, f"the seed and pass {why} in their window ({len(entries)} recent entries)"
+    if not window:
+        return False, "no ledger entry exists in the pass window"
     held_back = [row["id"] for row in window if not row.get("undoable")]
     if held_back:
         return False, f"{len(held_back)} entry(ies) in the pass window lack an undo kind"
@@ -996,13 +1095,108 @@ def _pass_pays_the_toll(desk: Desk) -> tuple[bool, str]:
                   f"undo of {target['action']} worked")
 
 
+def _engine_half(desk: Desk, status_payload: dict, window: list[dict],
+                 *, installed: bool | None = None) -> tuple[bool, str]:
+    """The engine half: the pass has an engine row, and it says what ran.
+
+    The row must exist and be ok in every case. With the side-car
+    installed the turn must have proposed actions and refused none, and
+    the pass must carry either an engine-sourced ledger entry or an
+    engine.pass audit row that says actions > 0. Without it, the row
+    must be the honest fallback note and no action may be counted; the
+    fixed pass's own entries are the fallback, so this half does not
+    require any.
+    """
+    installed_now = _sidecar_installed() if installed is None else installed
+    row = _engine_step_row(status_payload)
+    if row is None:
+        return False, "the pass's lastSteps carries no engine step row"
+    if row.get("ok") is not True:
+        return False, f"the engine step row is not ok: {row.get('note')!r}"
+    detail = row.get("detail") if isinstance(row.get("detail"), dict) else {}
+    backend = str(detail.get("backend") or "")
+    actions = detail.get("actions")
+    refused = detail.get("refused")
+    note = str(detail.get("note") or row.get("note") or "")
+    if not installed_now:
+        if backend != "fallback":
+            return False, f"the side-car is absent but the engine row says {backend!r}"
+        if actions not in (0, None):
+            return False, f"the side-car is absent but the engine row claims {actions} action(s)"
+        if FALLBACK_NOTE not in note:
+            return False, f"the side-car is absent but the note is not the fallback: {note!r}"
+        return True, "no side-car is installed; the engine step names the fallback"
+    if backend != "sidecar":
+        return False, f"the side-car is installed but the engine row says {backend!r}"
+    if not isinstance(actions, int) or actions <= 0:
+        return False, "the engine turn proposed no action"
+    if refused not in (0, None):
+        return False, f"the engine turn refused {refused} action(s)"
+    acted = detail.get("acted")
+    if not isinstance(acted, int) or acted <= 0:
+        return False, "the engine turn executed no action"
+    engine_entry = any(
+        str(row.get("subject") or "").startswith("recommendation/engine:")
+        for row in window)
+    audit_ok = any(
+        entry.get("action") == "engine.pass"
+        and entry.get("status") == "ok"
+        and f"{actions} action(s)" in str(entry.get("detail") or "")
+        for entry in _audit_tail(desk))
+    if not engine_entry and not audit_ok:
+        return False, "no engine-sourced ledger entry and no engine.pass with actions"
+    return True, (f"the engine turn proposed {actions}, executed {acted}, "
+                  "refused none, and left its entry")
+
+
+def _pass_pays_the_toll(desk: Desk) -> tuple[bool, str]:
+    """R29: the pass pays the ledger toll, and the engine step says what ran.
+
+    The walk saves a dated fact first; the save path runs the same
+    recommendation builder the pass's recommend step runs, so the card's
+    entry can land during the save. Then Run now, wait on
+    READY_PASS_WAIT_S (a real engine turn may take its own ceiling),
+    read the pass's rows, and check both halves: every entry in the
+    window is undoable and Undo works, and the engine step row exists,
+    is ok, and matches what this desk can actually run.
+    """
+    due = datetime.now().date() + timedelta(days=10)
+    fact = f"The Acme renewal is due {due.strftime('%B')} {due.day}"
+    if not _wait_for_loop_idle(desk):
+        return False, "the agent loop was still running when R29 tried to seed its fact"
+    started = time.time()
+    saved = desk.post_json("/memory/add", {"text": fact})
+    if saved[0] not in (200, 201):
+        return False, f"saving the dated fact answered {saved[0]}: {saved[2][:120]!r}"
+    listed = _wait_until(lambda: _fact_listed(desk, fact), seconds=15.0)
+    if not listed:
+        return False, "the seeded dated fact never appeared in memory"
+    before = _loop_stamp(desk).get("lastRunTs")
+    accepted, status = _run_now(desk)
+    if not accepted:
+        return False, f"Run now answered {status} after the seeded fact was saved"
+    pass_started = time.time()
+    finished = _wait_until(lambda: _stamp_advanced(desk, before),
+                           seconds=READY_PASS_WAIT_S)
+    entries = desk.get_json("/api/ledger?limit=50").get("entries") or []
+    window = [row for row in entries if row.get("ts", 0) >= started]
+    if not finished or not window:
+        why = "did not finish" if not finished else "recorded no ledger entry"
+        return False, f"the seed and pass {why} in their window ({len(entries)} recent entries)"
+    toll_ok, toll_detail = _pass_toll_half(desk, window)
+    engine_ok, engine_detail = _engine_half(
+        desk, _loop_status(desk),
+        [row for row in window if row.get("ts", 0) >= pass_started])
+    return engine_ok and toll_ok, f"{engine_detail}; {toll_detail}"
+
+
 def _the_desk_acting(desk: Desk, report: Report, first_boot: tuple[bool, str]) -> None:
     """R26 to R29: what the desk does by itself, all of it visible and undoable."""
     report.run(26, "a fresh desk acts by itself", lambda: first_boot)
     report.run(27, "the dashboard carries what changed",
                lambda: _stamp_carries_what_changed(desk))
     report.run(28, "names the desk says are held", lambda: _names_are_held(desk))
-    report.run(29, "the engine's first pass pays the ledger toll",
+    report.run(29, "the pass pays the ledger toll",
                lambda: _pass_pays_the_toll(desk))
 
 
