@@ -376,3 +376,71 @@ def test_the_self_address_is_re_read_from_the_provider_each_poll(tmp_path):
     assert case.watch.self_address == ""
     status = case.watch.status()
     assert status["selfDetection"] is False
+
+
+# -- the Outlook alert feeder, injected before the folder read -------------
+
+
+def test_the_feeder_runs_once_before_the_folder_read_and_lands_in_status(tmp_path):
+    case = WatchCase(tmp_path)
+    write_message(case.folder, "<a1@example.com>", "Alert", "Wed, 11 Nov 2026 08:00:00 GMT")
+    calls = []
+
+    def feeder():
+        calls.append(case.reads)  # 0 means the folder has not been read yet
+        return {
+            "collector": "notification-store",
+            "platform": "test-os",
+            "lastRunTs": case.now,
+            "lastResult": "ok",
+            "lastError": "",
+            "written": 1,
+        }
+
+    case.watch.feeder = feeder
+    status = case.watch.poll()
+    assert calls == [0]
+    assert status["fetch"]["collector"] == "notification-store"
+    assert status["fetch"]["written"] == 1
+    assert case.watch.view()["fetch"] == status["fetch"]
+    assert case.audit == [("mail.fetch", "mail", "ok"), ("mail.poll", "mail", "ok")]
+
+
+def test_a_failing_feeder_never_stops_the_folder_read(tmp_path):
+    case = WatchCase(tmp_path)
+    write_message(case.folder, "<a1@example.com>", "Alert", "Wed, 11 Nov 2026 08:00:00 GMT")
+
+    def feeder():
+        raise RuntimeError("the notification store is locked")
+
+    case.watch.feeder = feeder
+    status = case.watch.poll()
+    assert status["state"] == STATE_WATCHING
+    assert status["messageCount"] == 1  # the folder was read anyway
+    assert status["fetch"]["lastResult"] == "error"
+    assert "the notification store is locked" in status["fetch"]["lastError"]
+    assert case.audit == [("mail.fetch", "mail", "error"), ("mail.poll", "mail", "ok")]
+
+
+def test_no_feeder_runs_without_a_folder_and_status_says_so(tmp_path):
+    case = WatchCase(tmp_path, mailbox=None)
+    case.watch.folder_provider = lambda: ""
+    calls = []
+    case.watch.feeder = lambda: calls.append(1) or {"lastResult": "ok"}
+    status = case.watch.poll()
+    assert status["state"] == STATE_UNCONFIGURED
+    assert calls == []
+    assert status["fetch"] is None
+
+
+def test_the_feeder_path_imports_no_network_or_model_client():
+    """The structural half of the privacy promise: the watcher and the
+    feeder core cannot reach a socket or the model client."""
+    import agentdesk.feeder.runner as runner
+    import agentdesk.mail.watcher as watcher
+
+    for module in (runner, watcher):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for banned in ("import socket", "import urllib", "import requests",
+                       "http.client", "agentdesk.llm"):
+            assert banned not in source, (module.__name__, banned)

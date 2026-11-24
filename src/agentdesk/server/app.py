@@ -101,6 +101,8 @@ from agentdesk.layout import (
     parse_layout,
     resolved_layout,
 )
+from agentdesk.feeder.platform import current_platform, default_collectors
+from agentdesk.feeder.runner import OutlookFeeder
 from agentdesk.ledger import Ledger, LedgerError, may_act
 from agentdesk.ledger import undo as ledger_undo
 from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
@@ -3261,6 +3263,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
             mail_self_address=(server.settings.get("mail_self_address")
                                if server.settings is not None else ""),
+            mail_fetch=(server.mail.status().get("fetch")
+                        if server.mail is not None else None),
             registry_status=self._registry_status_for_settings(),
             extra_hosts=(server.settings.get("extra_allowed_hosts")
                          if server.settings is not None else ""),
@@ -3821,7 +3825,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "mail_feeder", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents", "learn_topics", "learn_profile",
@@ -4034,6 +4038,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # card reads the folder either.
             if server.plugins is not None:
                 server.plugins.runner.mail = server.mail if value else None
+        if key == "mail_feeder":
+            # The feeder rides the mail watcher: with no watcher there is
+            # nothing to fetch, so the toggle only rewires an existing one.
+            settings = server.settings
+            if server.mail is not None and settings is not None:
+                feeder = _default_outlook_feeder(settings) if value else None
+                server.mail.feeder = feeder.run_once if feeder is not None else None
 
     def _source_allowed(self, key: str) -> bool:
         """Whether a settings-keyed source is switched on, a missing store counting as on.
@@ -4859,6 +4870,24 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             server.mail.retest()
         self._respond_form_or_json("/settings",
                                    {"key": "mail_folder", "value": folder.strip()})
+
+    def _mail_fetch_now(self) -> None:
+        """Run one Outlook alert pass now, the Settings card's button.
+
+        The pass writes headers only into the mail folder; it reads no
+        body and calls no model. A desk with the feed off has nothing to
+        run, which is an honest answer rather than an error page.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.mail is None or server.mail.feeder is None:
+            self._respond_form_or_json(
+                "/settings#sources",
+                {"ran": False, "error": "Outlook alerts are off."},
+            )
+            return
+        fetch = server.mail.fetch_now()
+        self._respond_form_or_json(
+            "/settings#sources", {"ran": True, "fetch": fetch})
 
     def _mail_address_save(self) -> None:
         """The settings page's mail address field, next to the folder.
@@ -7149,16 +7178,35 @@ def _default_mail_store() -> MailStore | None:
         LOG.exception("mail store unavailable")
         return None
 
+def _default_outlook_feeder(settings_store) -> OutlookFeeder:
+    """The real Outlook alert feeder: the host's collectors, the same
+    mail folder the watcher reads, and its own status and lock files
+    beside the other data."""
+    return OutlookFeeder(
+        collectors=default_collectors(),
+        folder_provider=lambda: settings_store.get("mail_folder"),
+        status_path=default_data_dir() / "outlook-feeder.json",
+        lock_path=default_data_dir() / "outlook-feeder.lock",
+        clock=time.time,
+        platform=current_platform(),
+    )
+
 def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
     """The real mail watcher: settings decide the folder and the user's
     own address on every poll, so either saved in the app applies
-    without a restart."""
+    without a restart. The Outlook alert feeder rides the same watcher
+    and exists only when its own toggle is on."""
     try:
+        feeder = (
+            _default_outlook_feeder(settings_store)
+            if bool(settings_store.get("mail_feeder")) else None
+        )
         return MailWatch(
             inbox=inbox_store,
             store=mail_store,
             folder_provider=lambda: settings_store.get("mail_folder"),
             self_address_provider=lambda: settings_store.get("mail_self_address"),
+            feeder=feeder.run_once if feeder is not None else None,
         )
     except (OSError, sqlite3.Error):
         LOG.exception("mail watcher unavailable")

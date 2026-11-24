@@ -29,6 +29,7 @@ _LABELS = {
     "quiet_hours": "Quiet hours (18:00-08:00)",
     "daily_cap": "Notifications per day",
     "mail_enabled": "Mail digest (headers only)",
+    "mail_feeder": "Outlook alerts (not a mailbox)",
     "sample_data": "Sample data",
     "semantic_memory": "Semantic memory (embeddings)",
     "suggest_headers_only": "Suggest columns from headers only",
@@ -1028,6 +1029,71 @@ def _desk_check_section(desk_check: dict | None) -> str:
 </section>"""
 
 
+def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> str:
+    """The Outlook alerts block under the mail source.
+
+    Alerts only, not a mailbox: the card names the collector, its last
+    run, the count inside the coverage window and any honest cause. An
+    attention state (error, unavailable or the manual fallback) shows the
+    cause and no count, because a number there would read as mail the
+    desk had actually seen.
+    """
+    on = bool(settings_values.get("mail_feeder", False))
+    fetch = mail_fetch or {}
+    result = str(fetch.get("lastResult", "") or "")
+    collector = str(fetch.get("collector", "") or "")
+    platform = str(fetch.get("platform", "") or "")
+    error = html.escape(str(fetch.get("lastError", "") or ""))
+    written = fetch.get("written")
+    attention = result in ("error", "unavailable") or collector == "manual"
+    if not fetch:
+        state = ("<p class='empty'>Not run yet. The first pass runs with the "
+                 "next mail poll, or press Fetch now.</p>")
+    else:
+        parts = []
+        if collector:
+            parts.append(f"Collector <b class='mono'>{html.escape(collector)}</b>")
+        if fetch.get("lastRunTs"):
+            parts.append(f"last run <span class='mono'>"
+                         f"{_agent_clock(fetch['lastRunTs'])}</span>")
+        parts.append(f"result <b class='mono'>{html.escape(result or 'unknown')}</b>")
+        state = "<p class='empty'>" + " · ".join(parts) + ".</p>"
+        if not attention and isinstance(written, int):
+            alert_word = "alert" if written == 1 else "alerts"
+            state += (f"<p>{written} {alert_word} written into the mail "
+                      f"folder in this fetch.</p>")
+        if error:
+            state += f"<div class='alert'><p>{error}</p></div>"
+        if platform == "darwin" and "Full Disk Access" in error:
+            state += ("<p class='empty'>On a Mac, grant the desk Full Disk "
+                      "Access in System Settings, Privacy and Security, then "
+                      "press Fetch now.</p>")
+        if attention:
+            state += ("<p class='empty'>No alert count is shown while the "
+                      "fetch is not working.</p>")
+    manual = (
+        "<p class='empty'>No automatic collector is available on this "
+        "machine, so the manual .eml folder above is the mail source.</p>"
+        if collector == "manual" or result == "unavailable" else ""
+    )
+    return f"""<h3>Outlook alerts</h3>
+<p class='empty'>Alerts only, not a mailbox: while the desk is open it reads
+the sender and subject lines of the Outlook alerts the OS notification
+store kept, writes them as header-only .eml files into the mail folder
+above, and drops any preview. The manual .eml folder stays the history
+source.</p>
+<div class='settings-block'>
+{_toggle_button("mail_feeder", on, label="Fetch Outlook alerts")}
+</div>
+{state}{manual}
+<form method="post" action="/settings/mail/fetch-now" class="cardform">
+<button class="btn btn-secondary" type="submit">Fetch now</button>
+</form>
+<p class='empty'>Coverage: only the alerts the OS notification store still keeps.
+On Windows that is about 20 per app; it is a live signal, not mailbox
+history. The manual .eml folder is the history source.</p>"""
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -1037,6 +1103,7 @@ def render_settings_page(
     endpoint_status: dict | None = None,
     mail_folder: str = "",
     mail_self_address: str = "",
+    mail_fetch: dict | None = None,
     registry_status: dict | None = None,
     extra_hosts: str = "",
     server_port: int = 8765,
@@ -1228,6 +1295,7 @@ address inside the From header), so threads you already answered stop
 producing follow-up cards. With no address set, self-detection is simply
 off: the digest works, follow-up cards are not filed.</p>
 <p class="empty">With the toggle off, nothing is read: no watcher runs and no mail cards are created. <a href="/mail">Open the mail page</a> to see the digest once it is on.</p>
+{_outlook_alerts_section(settings_values, mail_fetch)}
 </section>
 
 {_desk_check_section(desk_check)}
