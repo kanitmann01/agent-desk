@@ -4,9 +4,9 @@
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Opening the home screen does not re-read a scheduled tile; the tile shows the stored reading and its as-of time.
-- [ ] The minute tick refreshes a scheduled tile once its time has passed, and not before.
-- [ ] A newly installed scheduled tile shows one reading immediately.
-- [ ] Re-testing a scheduled tile reads once, on demand.
+- [x] Opening the home screen does not re-read a scheduled tile; the tile shows the stored reading and its as-of time.
+- [x] The minute tick refreshes a scheduled tile once its time has passed, and not before.
+- [x] A newly installed scheduled tile shows one reading immediately.
+- [x] Re-testing a scheduled tile reads once, on demand.

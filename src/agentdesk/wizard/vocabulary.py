@@ -192,11 +192,18 @@ def looks_for(source_type: str, show: str) -> tuple[str, ...]:
 
 
 def element_for(source_type: str, show: str, look: str) -> dict | None:
-    """The ui-schema element for a choice, or None when it is not offered."""
+    """The ui-schema element for a choice, or None when it is not offered.
+
+    A kind that shows a value carries the show's own label, so the tile reads
+    as a sentence rather than an unlabelled number.
+    """
     spec = ELEMENTS.get(source_type, {}).get(show, {}).get(look)
     if spec is None:
         return None
-    return {"type": look, **spec}
+    element = {"type": look, **spec}
+    if look in ("metric", "status", "progress"):
+        element.setdefault("label", SHOW_LABELS[show])
+    return element
 
 
 def source_for_label(label: object) -> str:

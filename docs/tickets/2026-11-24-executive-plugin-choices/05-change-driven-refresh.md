@@ -4,10 +4,10 @@
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A workbook tile refreshes after the workbook watch reports a change.
-- [ ] A calendar or mail tile refreshes after its poll, and only when the reading differs from the stored one.
-- [ ] A research tile refreshes after a new research answer is saved.
-- [ ] A file tile and a hand-kept number refresh only when the file's modification time changes.
-- [ ] Opening the home screen does not re-read a change-driven tile.
+- [x] A workbook tile refreshes after the workbook watch reports a change.
+- [x] A calendar or mail tile refreshes after its poll, and only when the reading differs from the stored one.
+- [x] A research tile refreshes after a new research answer is saved.
+- [x] A file tile and a hand-kept number refresh only when the file's modification time changes.
+- [x] Opening the home screen does not re-read a change-driven tile.

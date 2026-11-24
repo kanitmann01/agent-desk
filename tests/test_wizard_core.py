@@ -247,7 +247,9 @@ def test_build_without_llm_compiles_a_draft_that_passes_the_shared_validator(tmp
 
     ui_schema = draft["ui_schema"]
     assert set(ui_schema) == set(FIXTURE_UI)
-    assert ui_schema["elements"][-1] == {"type": "metric", "binding": "value"}
+    # The chosen show is the element, labelled in the manager's words.
+    assert ui_schema["elements"][-1] == {
+        "type": "metric", "binding": "value", "label": "The latest figure"}
 
     # The same bytes, written the fixture way, pass the shared validator.
     plugin_dir = tmp_path / "draft"

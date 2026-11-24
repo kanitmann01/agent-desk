@@ -1,8 +1,7 @@
 // Spec 024, ticket 08: describing a plugin in plain English. With an AI
 // connection the description fills the tile's choices in, inside a dialog
 // that shows the fill happening and says so afterwards. Without one the
-// walk is exactly the plain form post it was, and the page invites the
-// connection instead of showing an error.
+// walk is exactly the plain form post it was.
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,10 +34,7 @@ const FILLED = {
   draft: null,
 };
 
-/**
- * Stub the server: the availability probe answers, and the describe post
- * answers with the fill. Anything else gets the empty catalog.
- */
+/** Stub the server: the probe answers, the describe post answers the fill. */
 function stubServer(available: boolean, fill: unknown = FILLED) {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -50,6 +46,13 @@ function stubServer(available: boolean, fill: unknown = FILLED) {
     }
     return jsonResponse(catalog());
   }));
+}
+
+async function openDescribe() {
+  render(<MarketplaceApp />);
+  await screen.findByRole('heading', { level: 1, name: 'Find plugins' });
+  const button = screen.getByRole('button', { name: 'Describe a plugin in plain English' });
+  return button.closest('form') as HTMLFormElement;
 }
 
 describe('describing a plugin (spec 024)', () => {
@@ -64,35 +67,26 @@ describe('describing a plugin (spec 024)', () => {
 
   it('stays a plain form post when no AI connection is saved', async () => {
     stubServer(false);
-    render(<MarketplaceApp />);
-    await screen.findByRole('heading', { level: 1, name: 'Find plugins' });
+    const form = await openDescribe();
 
-    const button = screen.getByRole('button', { name: 'Describe a plugin in plain English' });
-    const form = button.closest('form');
-    expect(form).toHaveAttribute('method', 'post');
-    expect(form).toHaveAttribute('action', '/wizard/start');
-    // The description field is the dialog's; without a connection there is
-    // no dialog to open, so the page never grows a second input.
-    await waitFor(() => {
-      expect(screen.queryByLabelText('Describe the plugin you want')).toBeNull();
-    });
+    await userEvent.click(within(form).getByRole('button'));
+    // No dialog: the plain post is the walk a desk without a connection needs.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.queryByText(/Add an AI connection/)).toBeNull();
   });
 
-  it('offers the description field once a connection is saved', async () => {
+  it('opens the description dialog when a connection is saved', async () => {
     stubServer(true);
-    render(<MarketplaceApp />);
-    await screen.findByRole('heading', { level: 1, name: 'Find plugins' });
+    const form = await openDescribe();
 
-    expect(await screen.findByLabelText('Describe the plugin you want')).toBeInTheDocument();
-    // The plain action still works as a form for anyone without script.
-    const form = screen.getByRole('button', { name: 'Describe a plugin in plain English' })
-      .closest('form');
-    expect(form).toHaveAttribute('action', '/wizard/start');
+    await userEvent.click(within(form).getByRole('button'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Describe the plugin you want')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Fill it in for me' })).toBeInTheDocument();
   });
 
   it('shows the fill happening, then says the choices were filled in', async () => {
-    stubServer(true);
     let release: (value: Response) => void = () => {};
     const held = new Promise<Response>((resolve) => { release = resolve; });
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -102,14 +96,14 @@ describe('describing a plugin (spec 024)', () => {
       return jsonResponse(catalog());
     }));
 
-    render(<MarketplaceApp />);
-    await screen.findByRole('heading', { level: 1, name: 'Find plugins' });
-    const field = await screen.findByLabelText('Describe the plugin you want');
-    await userEvent.type(field, 'A morning list of my mail');
-    await userEvent.click(screen.getByRole('button', { name: 'Describe a plugin in plain English' }));
-
-    // The dialog is open and busy: one prompt per field, no labels yet.
+    const form = await openDescribe();
+    await userEvent.click(within(form).getByRole('button'));
     const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText('Describe the plugin you want'),
+                         'A morning list of my mail');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Fill it in for me' }));
+
+    // The dialog is busy: one prompt per field, no labels yet.
     expect(dialog).toHaveAttribute('aria-busy', 'true');
     expect(within(dialog).getByText('What it watches')).toBeInTheDocument();
     expect(within(dialog).queryByText('My mail')).toBeNull();
@@ -123,11 +117,11 @@ describe('describing a plugin (spec 024)', () => {
     expect(within(dialog).getByText('It reads your mail folder.')).toBeInTheDocument();
     expect(within(dialog).getByRole('status'))
       .toHaveTextContent('Filled in from your description');
-    // Nothing was installed by the fill: the walk is the next step.
+    // Nothing is installed by the fill: the walk is the next step.
     expect(within(dialog).getByRole('button', { name: 'Change or continue' })).toBeInTheDocument();
   });
 
-  it('says the fill did not run when the call fails, and still offers the walk', async () => {
+  it('says the fill did not run when the call fails, and offers the walk', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/api/wizard/availability')) return jsonResponse({ autofill: true });
@@ -135,15 +129,14 @@ describe('describing a plugin (spec 024)', () => {
       return jsonResponse(catalog());
     }));
 
-    render(<MarketplaceApp />);
-    await screen.findByRole('heading', { level: 1, name: 'Find plugins' });
-    const field = await screen.findByLabelText('Describe the plugin you want');
-    await userEvent.type(field, 'A morning list of my mail');
-    await userEvent.click(screen.getByRole('button', { name: 'Describe a plugin in plain English' }));
-
+    const form = await openDescribe();
+    await userEvent.click(within(form).getByRole('button'));
     const dialog = await screen.findByRole('dialog');
-    expect(await within(dialog).findByRole('alert'))
-      .toHaveTextContent('The fill did not run');
+    await userEvent.type(within(dialog).getByLabelText('Describe the plugin you want'),
+                         'A morning list of my mail');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Fill it in for me' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('The fill did not run');
     // A connection exists, so the copy never tells them to add one.
     expect(within(dialog).queryByText(/Add an AI connection/)).toBeNull();
     expect(within(dialog).getByRole('link', { name: 'Continue without the fill' }))

@@ -21,7 +21,14 @@ def _workbook_zip(tmp_path: Path, elements: list) -> Path:
 
     schema = json.dumps({"type": "card", "title": "Workbook face",
                          "elements": elements}, indent=2)
-    return build_zip(VALID_PLUGIN_DIR, tmp_path / "wb.zip",
+    # The fixture's own schema is replaced, not duplicated: build_zip writes
+    # the files first and the extras last, so the same name twice is a warning.
+    source = tmp_path / "wb-source"
+    source.mkdir()
+    for path in VALID_PLUGIN_DIR.iterdir():
+        if path.is_file() and path.name != "widget.ui.json":
+            (source / path.name).write_bytes(path.read_bytes())
+    return build_zip(source, tmp_path / "wb.zip",
                      manifest_overrides={
                          "id": "wb-face",
                          "name": "Workbook face",

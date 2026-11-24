@@ -4,10 +4,10 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each source offers only the shows its reader binds; a figure source never offers "the items that need me".
-- [ ] Each show offers only the manners that fit it; a trend is offered only when the source binds a point series.
-- [ ] The installed ui-schema contains exactly the chosen element and binding.
-- [ ] A workbook instance renders the face the ui-schema asks for, and the classic tracker face remains available as one of the manners.
-- [ ] The preview names the chosen show and look before approval.
+- [x] Each source offers only the shows its reader binds; a figure source never offers "the items that need me".
+- [x] Each show offers only the manners that fit it; a trend is offered only when the source binds a point series.
+- [x] The installed ui-schema contains exactly the chosen element and binding.
+- [x] A workbook instance renders the face the ui-schema asks for, and the classic tracker face remains available as one of the manners.
+- [x] The preview names the chosen show and look before approval.

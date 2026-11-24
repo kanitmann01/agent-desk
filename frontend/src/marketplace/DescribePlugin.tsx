@@ -1,8 +1,10 @@
-// The describe door on Find plugins. Without an AI connection it is the
-// plain form post the no-JS walk already accepts. With one, submitting opens
-// a dialog that shows the description filling the tile's choices in, then
-// hands the manager straight to that walk with the fields presellected.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+// The describe door on Find plugins. The button is a plain form submit, which
+// is the whole path without JavaScript: the server's walk asks for the words.
+// With JavaScript the click first asks whether an AI connection can fill the
+// choices in. When it can, a dialog collects the description, shows the fill
+// happening, and hands the manager the walk with the fields preselected. When
+// it cannot, the form submits as it always did.
+import { useRef, useState, type FormEvent } from 'react';
 import Button from '../components/Button';
 import ModalSheet from '../components/ModalSheet';
 import { getJson, postJson } from '../api';
@@ -37,69 +39,66 @@ function filledFields(answers: Record<string, string>, reasons: Record<string, s
 }
 
 type Phase =
-  | { kind: 'idle' }
+  | { kind: 'closed' }
+  | { kind: 'writing' }
   | { kind: 'asking' }
   | { kind: 'filled'; fields: FilledField[]; sessionId: string }
   | { kind: 'failed'; message: string };
 
 /**
- * The describe control: a plain form post until an AI connection exists.
+ * The describe control: a plain form post that offers a fill when it can.
  *
- * The availability probe runs on mount. It is one read-only request; when it
- * fails or answers false the form stays a plain post, which is the walk a
- * manager without a connection needs.
+ * The availability probe runs on the click, not on render, so opening the
+ * Plugins page makes no request it did not make before and the offline
+ * behaviour of the page is unchanged.
  */
 export default function DescribePlugin() {
-  const [autofill, setAutofill] = useState(false);
+  const [phase, setPhase] = useState<Phase>({ kind: 'closed' });
   const [description, setDescription] = useState('');
-  const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    getJson('/api/wizard/availability')
-      .then((res) => {
-        if (cancelled) return;
-        const body = res.ok ? (res.data as { autofill?: boolean } | null) : null;
-        setAutofill(Boolean(body?.autofill));
-      })
-      .catch(() => {
-        // No probe, no dialog: the plain post is the safe default.
-        if (!cancelled) setAutofill(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
-
   /**
-   * Submit through the dialog when a connection is present.
+   * Ask whether a fill is possible, then open the dialog or submit the form.
    *
-   * The server does the fill; this only shows it happening and then hands the
-   * manager the walk with their answers already selected. A failed fill opens
-   * the same walk with nothing preselected, never an error wall.
+   * A failed probe is treated as "no fill": the plain walk is always a valid
+   * outcome, and it never depends on the AI being reachable.
    */
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    if (!autofill) return; // the native post carries the walk
+  async function onClick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    let autofill = false;
+    try {
+      const probe = await getJson('/api/wizard/availability');
+      autofill = Boolean(probe.ok && (probe.data as { autofill?: boolean } | null)?.autofill);
+    } catch {
+      autofill = false;
+    }
+    if (!autofill) {
+      formRef.current?.submit();
+      return;
+    }
+    setPhase({ kind: 'writing' });
+  }
+
+  /** Fill the choices from the description and show what it chose. */
+  async function onFill() {
     const words = description.trim();
     if (!words) return;
     setPhase({ kind: 'asking' });
     setBusy(true);
     try {
       const res = await postJson('/wizard/start', { description: words });
-      if (!res.ok) {
+      const body = res.ok
+        ? res.data as { id?: string; answers?: Record<string, string>;
+                        reasons?: Record<string, string> } | null
+        : null;
+      const fields = filledFields(body?.answers ?? {}, body?.reasons ?? {});
+      if (!res.ok || !body?.id || fields.length === 0) {
+        // A refused or empty fill is an honest no-fill: say so, and offer
+        // the walk rather than claiming anything was chosen.
         setPhase({ kind: 'failed',
           message: 'The fill did not run. Your questions are ready with nothing preselected.' });
         setBusy(false);
-        return;
-      }
-      const body = res.data as {
-        id?: string; answers?: Record<string, string>; reasons?: Record<string, string>;
-      } | null;
-      const fields = filledFields(body?.answers ?? {}, body?.reasons ?? {});
-      if (!body?.id || fields.length === 0) {
-        // An honest no-fill: go to the walk rather than claim anything.
-        window.location.assign('/wizard/start');
         return;
       }
       setPhase({ kind: 'filled', fields, sessionId: body.id });
@@ -110,6 +109,7 @@ export default function DescribePlugin() {
     setBusy(false);
   }
 
+  /** Go to the walk, where every filled choice is preselected and editable. */
   function continueToWalk() {
     if (phase.kind === 'filled') window.location.assign(`/wizard/${phase.sessionId}`);
   }
@@ -117,29 +117,31 @@ export default function DescribePlugin() {
   return (
     <>
       <form ref={formRef} method="post" action="/wizard/start" className="mkt-describe"
-            onSubmit={onSubmit}>
-        {autofill ? (
-          <label className="mkt-sr-only" htmlFor="mkt-describe-words">
-            Describe the plugin you want
-          </label>
-        ) : null}
-        {autofill ? (
-          <input id="mkt-describe-words" type="text" className="mkt-describe-input"
-                 value={description} autoComplete="off"
-                 placeholder="A morning list of my mail, or last week's sales by region"
-                 onChange={(event) => setDescription(event.target.value)} />
-        ) : null}
-        <Button tone="secondary" type="submit" disabled={busy}>
-          Describe a plugin in plain English
-        </Button>
+            onSubmit={onClick}>
+        <Button tone="secondary" type="submit">Describe a plugin in plain English</Button>
       </form>
 
       <ModalSheet
-        open={phase.kind === 'asking' || phase.kind === 'filled' || phase.kind === 'failed'}
+        open={phase.kind !== 'closed'}
         title={phase.kind === 'filled' ? 'Choices filled in' : 'Reading your description'}
         busy={phase.kind === 'asking'}
-        onClose={() => { if (!busy) setPhase({ kind: 'idle' }); }}
+        onClose={() => { if (!busy) setPhase({ kind: 'closed' }); }}
       >
+        {phase.kind === 'writing' ? (
+          <div className="mkt-fill">
+            <label className="mkt-fill-prompt" htmlFor="mkt-describe-words">
+              Describe the plugin you want
+            </label>
+            <input id="mkt-describe-words" type="text" className="mkt-describe-input"
+                   value={description} autoComplete="off"
+                   placeholder="A morning list of my mail, or last week's sales by region"
+                   onChange={(event) => setDescription(event.target.value)} />
+            <div className="mkt-fill-actions">
+              <Button tone="primary" onClick={() => { void onFill(); }}>Fill it in for me</Button>
+            </div>
+          </div>
+        ) : null}
+
         {phase.kind === 'asking' || phase.kind === 'filled' ? (
           <div className="mkt-fill" aria-live="polite">
             {phase.kind === 'asking'

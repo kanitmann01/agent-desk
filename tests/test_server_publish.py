@@ -266,7 +266,14 @@ def test_wizard_approved_screen_offers_publish(tmp_path):
             "/wizard/start",
             {"description": "Watch this workbook and show me the 24-hour change"},
             auth)[2])
-        booted.post_json(f"/wizard/{started['id']}/answer", {}, auth)
+        # The whole path is answered before anything builds: a workbook, its
+        # latest figure, and a tile read when the desk is opened.
+        booted.post_json(f"/wizard/{started['id']}/answer", {"answers": {
+            "source": "An Excel workbook",
+            "show": "The latest figure",
+            "look": "A big number",
+            "update": "When I open the desk",
+        }}, auth)
         status, _h, _b = booted.request(
             "POST", f"/wizard/{started['id']}/approve", auth, b"")
         assert status == 200

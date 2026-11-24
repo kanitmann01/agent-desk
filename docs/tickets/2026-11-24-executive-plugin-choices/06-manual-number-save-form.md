@@ -4,9 +4,9 @@
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The tile offers a form with a value, an optional unit, and an optional target.
-- [ ] Saving writes the file the manual reader already reads, and the tile shows the new value.
-- [ ] Before any value exists the tile is blank and names why, rather than showing zero.
-- [ ] A saved value with a target renders the on-track manner the manager chose.
+- [x] The tile offers a form with a value, an optional unit, and an optional target.
+- [x] Saving writes the file the manual reader already reads, and the tile shows the new value.
+- [x] Before any value exists the tile is blank and names why, rather than showing zero.
+- [x] A saved value with a target renders the on-track manner the manager chose.

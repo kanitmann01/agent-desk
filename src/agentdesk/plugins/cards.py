@@ -124,9 +124,8 @@ def tracker_card(plugin_id: str, instance_id: str, *, title: str,
     face = _rendered_face(manifest, reading)
     if face is not None:
         payload["elements"] = face
-        # The classic face is what TrackerCard draws; without it the SPA
-        # draws the elements this manifest asked for.
-        payload.pop("tracker", None)
+        # The tracker block stays: it is the reading's provenance, and the SPA
+        # picks its presentation from `face`, never from the block's presence.
         payload["face"] = "ui-schema"
     card["payload"] = payload
     return card
@@ -274,7 +273,7 @@ def card_to_api(card: dict, title: str | None = None) -> dict:
     pre-factory card could lack keep the empty defaults the payload always
     served.
     """
-    return {
+    card = {
         "id": card["id"],
         "title": card["title"] if title is None else title,
         "version": card["version"],
@@ -286,5 +285,9 @@ def card_to_api(card: dict, title: str | None = None) -> dict:
         "pluginId": card.get("pluginId", ""),
         "instanceId": card.get("instanceId", ""),
         "payload": card.get("payload"),
-        "manualMetric": card.get("manualMetric", ""),
     }
+    # Only a hand-kept number carries this, so the shape every other card
+    # serves stays exactly what it has always been.
+    if card.get("manualMetric"):
+        card["manualMetric"] = card["manualMetric"]
+    return card

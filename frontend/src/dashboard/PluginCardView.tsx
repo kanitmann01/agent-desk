@@ -431,9 +431,9 @@ function ManualValueForm({ pluginId, onRefetch, onExpired }: {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
 
+  /** Save the typed value, then refresh so the tile shows it. */
   async function save() {
-    if (!value.trim()) return;
-    setBusy(true);
+    if (!value.trim()) return;    setBusy(true);
     let res;
     try {
       res = await postJson('/api/marketplace/manual-value', {

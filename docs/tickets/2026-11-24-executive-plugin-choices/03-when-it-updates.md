@@ -4,9 +4,9 @@
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The update question offers opened, morning, hourly, Monday morning, and Friday afternoon, plus when it changes where an event exists.
-- [ ] The web page and the desk fact offer no change option.
-- [ ] The installed plugin carries the chosen activation events: one widget event plus one schedule event or one hook event.
-- [ ] The preview names the chosen update mode in the same words the manager chose.
+- [x] The update question offers opened, morning, hourly, Monday morning, and Friday afternoon, plus when it changes where an event exists.
+- [x] The web page and the desk fact offer no change option.
+- [x] The installed plugin carries the chosen activation events: one widget event plus one schedule event or one hook event.
+- [x] The preview names the chosen update mode in the same words the manager chose.

@@ -617,6 +617,7 @@ def questions_for_answers(answers: dict) -> list[dict]:
     included) rather than the first option.
     """
     def with_default(question: dict) -> dict:
+        """Return the question with its chosen answer, or its first option."""
         chosen = answers.get(question["id"])
         if isinstance(chosen, str) and chosen in question["options"]:
             return {**question, "default": chosen}
