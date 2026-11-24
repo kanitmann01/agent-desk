@@ -25,12 +25,12 @@ LOG = logging.getLogger("agentdesk.feeder")
 DEFAULT_WINDOW_DAYS = 14  # the settings choice's default, mail_feeder_days
 DEFAULT_LIMIT = 100       # the export helper's cap, enough for one window
 
-# The lastResult vocabulary the Settings card renders. "running" means a
-# pass was already under way, so nothing new ran and nothing was written.
+# The lastResult vocabulary the Settings card renders. "busy" means
+# another pass holds the run lock, so nothing new ran and nothing changed.
 RESULT_OK = "ok"
 RESULT_ERROR = "error"
 RESULT_UNAVAILABLE = "unavailable"
-RESULT_RUNNING = "running"
+RESULT_BUSY = "busy"
 
 DAY_S = 24 * 60 * 60
 
@@ -80,10 +80,10 @@ class OutlookFeeder:
         """Run one pass and return the status dict, never raising.
 
         The claim is taken before any collection, so an overlapping call
-        returns "running" without touching the folder or the status
-        file. Every other outcome is persisted atomically and returned:
-        "ok" with the written count, "unavailable" with the manual Save
-        as sentence, or "error" with a plain cause.
+        returns "busy" without touching the folder or the status file.
+        Every other outcome is persisted atomically and returned: "ok"
+        with the written count and the coverage window, "unavailable"
+        with the manual Save as sentence, or "error" with a plain cause.
         """
         now = self.clock()
         try:
@@ -94,7 +94,7 @@ class OutlookFeeder:
                 f"The feeder could not claim its run lock: {exc}.",
             )
         if not claimed:
-            return self._status(RESULT_RUNNING, "", None, 0, CLAIM_BUSY)
+            return self._status(RESULT_BUSY, "", None, 0, CLAIM_BUSY)
         try:
             return self._run_claimed(now)
         except Exception:  # noqa: BLE001 - a feeder pass must never reach the caller
@@ -128,7 +128,7 @@ class OutlookFeeder:
                 RESULT_ERROR, collector.name, now, 0,
                 f"The {collector.name} collector could not finish: {detail}.",
             )
-        return self._record(RESULT_OK, collector.name, now, written, "")
+        return self._record(RESULT_OK, collector.name, now, written, "", messages)
 
     def _first_available(self) -> MailCollector | None:
         """The first collector that says it can run, or None.
@@ -151,13 +151,13 @@ class OutlookFeeder:
         return None
 
     def _record(self, result: str, collector: str, last_run_ts: float | None,
-                written: int, error: str) -> dict:
+                written: int, error: str, messages=()) -> dict:
         """Build the status, persist it atomically, and return it.
 
         A status write that fails is logged, not raised: the pass's own
         outcome is still the honest answer for this call.
         """
-        status = self._status(result, collector, last_run_ts, written, error)
+        status = self._status(result, collector, last_run_ts, written, error, messages)
         try:
             write_status(status, self.status_path)
         except OSError as exc:
@@ -165,8 +165,15 @@ class OutlookFeeder:
         return status
 
     def _status(self, result: str, collector: str, last_run_ts: float | None,
-                written: int, error: str) -> dict:
-        """The one status shape: what ran, when, how it ended, how much landed."""
+                written: int, error: str, messages=()) -> dict:
+        """The one status shape: what ran, when, how it ended, how much landed.
+
+        The coverage window is the dated first and last record the pass
+        collected. A record with no readable date does not widen it, and
+        an empty pass leaves both ends None rather than claiming a window
+        it never saw.
+        """
+        dated = [m.date_ts for m in messages if m.date_ts > 0]
         return {
             "collector": collector,
             "platform": self.platform,
@@ -174,4 +181,6 @@ class OutlookFeeder:
             "lastResult": result,
             "lastError": error,
             "written": written,
+            "coverageFromTs": min(dated) if dated else None,
+            "coverageToTs": max(dated) if dated else None,
         }

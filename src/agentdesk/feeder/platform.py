@@ -3,8 +3,8 @@
 The core never asks what platform it is on; it asks each collector
 whether it is available. This module is where that list is built, so a
 platform import stays out of the contract, the writer and the runner.
-I1 ships the manual fallback only: the Windows Search collector and the
-macOS Spotlight collector arrive in later tickets, and they belong in
+I1 ships the manual fallback only: the Windows WPN reader and the macOS
+Notification Center reader arrive in later tickets, and they belong in
 this function, not in the core.
 """
 
@@ -18,11 +18,11 @@ def current_platform() -> str:
     return sys.platform
 
 
-def default_collectors(platform: str | None = None) -> list[MailCollector]:
+def default_collectors(platform: str | None = None) -> tuple[MailCollector, ...]:
     """The collectors to try, in trust order, on this host.
 
     The platform parameter is the seam later collectors branch on; I1
     has no platform-specific collector yet, so every platform gets the
     manual fallback and an honest unavailable state that names Save as.
     """
-    return [UnavailableCollector()]
+    return (UnavailableCollector(),)
