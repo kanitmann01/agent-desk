@@ -277,53 +277,132 @@ class MemoryApiMixin:
     def _memory_forget_all(self) -> None:
         """Forget everything (ticket #283): one form, two submits.
 
-        A first post, while the bank holds a fact, renders the page with
-        the question in place of the control and writes nothing; the
-        question's own form carries the confirm field, so the second
-        submit is the action. An empty bank has nothing to forget and
-        simply lands back on the page."""
-        memory = self._memory_available()
+        A first post, while the bank holds anything the action could
+        remove (a standing fact, a saved excerpt or a memory card
+        waiting for review), renders the page with the question in
+        place of the control and writes nothing; the question's own
+        form carries the confirm field, so the second submit is the
+        action. A bank with nothing in any of those places has nothing
+        to forget and simply lands back on the page. The reads that
+        decide, the card rejections, the plan with its apply and the
+        recommendations refresh all run inside the store's write lock,
+        so a second confirmed click cannot read alongside the first
+        write (the connection is shared) or plan against rows the
+        first is already removing. A locked store answers a form post
+        with the memory page's locked banner, never raw JSON; fetch
+        clients keep the JSON cause."""
+        memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            # A browser form must never meet raw JSON: the person gets
+            # the same page GET /memory renders for a locked store.
+            if self._is_form_submit():
+                self._send_memory_page()
+                return
+            self._send_json(503, {"error": memory.locked_cause})
             return
         body = self._read_json_body() or {}
-        if not memory.all():
-            self._respond_form_or_json("/memory", {"status": "ok", "forgot": 0})
-            return
         if body.get("confirm") != "yes":
+            # The ask: only whether anything is left to forget.
+            with memory.exclusive():
+                _source_ids, anything = self._forget_all_pending(memory)
+            if not anything:
+                self._respond_form_or_json("/memory", {"status": "ok", "forgot": 0})
+                return
             self._send_memory_page(confirm_forget_all=True)
             return
         # The excerpts go with the facts, so the review cards still
         # waiting on them are rejected first, exactly as removing one
-        # excerpt rejects its cards.
-        self._reject_cards_waiting_on({excerpt.id for excerpt in memory.sources()})
-        result = memory_loop.apply_removal(memory, memory_loop.plan_forget_all(memory))
+        # excerpt rejects its cards; the reflections quote fact text
+        # that is going, so accepting one later must not bring it back.
+        # The recommendations refresh rides the same lock: it reads the
+        # bank unlocked of its own, and a second post must not read
+        # alongside it either (the connection is shared).
+        with memory.exclusive():
+            source_ids, anything = self._forget_all_pending(memory)
+            if not anything:
+                self._respond_form_or_json("/memory", {"status": "ok", "forgot": 0})
+                return
+            rejected = self._reject_cards_waiting_on(source_ids)
+            rejected += self._reject_reflection_cards()
+            result = memory_loop.apply_removal(
+                memory, memory_loop.plan_forget_all(memory))
+            self._after_memory_change()
         self._schedule_observation_pass()
-        self._after_memory_change()
         self._audit(
             "memory.forget_all",
             target=memory_loop.counted(len(result.fact_ids), "fact"),
             detail=(f"{len(result.entities_removed)} names, "
                     f"{len(result.observations_removed)} summaries and "
-                    f"{len(result.sources_removed)} excerpts forgotten"),
+                    f"{len(result.sources_removed)} excerpts forgotten; "
+                    f"{memory_loop.counted(rejected, 'review card')} rejected"),
         )
         self._respond_form_or_json("/memory", {
             "status": "ok",
             "forgot": len(result.fact_ids),
+            "excerpts": len(result.sources_removed),
+            "cards": rejected,
         })
 
-    def _reject_cards_waiting_on(self, source_ids) -> None:
-        """Reject the review cards still waiting on one of these excerpts.
+    def _forget_all_pending(self, memory) -> tuple[set[int], bool]:
+        """The bank's excerpt ids and whether anything remains for Forget
+        everything to remove: a standing fact, a saved excerpt or a
+        memory card waiting for review (a review-first desk stores the
+        excerpt and the cards before any fact exists). Call it with the
+        store's write lock held, so the answer describes one moment."""
+        source_ids = {excerpt.id for excerpt in memory.sources()}
+        return source_ids, bool(
+            memory.all() or source_ids or self._memory_cards_waiting())
+
+    def _memory_cards_waiting(self) -> bool:
+        """Whether a memory card still waits for review: a draft tied to
+        a saved excerpt or a reflection over standing facts. Forget
+        everything counts these as something to remove even while no
+        fact stands yet (a review-first desk stores the excerpt and the
+        cards before any fact exists)."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            return False
+        return any(
+            card.kind in (KIND_MEMORY_DRAFT, KIND_MEMORY_REFLECTION)
+            for card in inbox.waiting(include_snoozed=True)
+        )
+
+    def _reject_cards_waiting_on(self, source_ids) -> int:
+        """Reject the review cards still waiting on one of these
+        excerpts, and say how many went.
 
         An excerpt is about to go. Its cards are rejected first, the way
         the user would reject them, so nothing is left waiting on an
         excerpt that no longer exists."""
         inbox = self.server.inbox  # type: ignore[attr-defined]
         if inbox is None:
-            return
+            return 0
+        rejected = 0
         for card in inbox.waiting(include_snoozed=True):
             meta = card.meta.get("memoryFact") if isinstance(card.meta, dict) else None
             if isinstance(meta, dict) and meta.get("source_id") in source_ids:
                 inbox.dismiss(card.id)
+                rejected += 1
+        return rejected
+
+    def _reject_reflection_cards(self) -> int:
+        """Reject the waiting reflection cards, and say how many went.
+
+        A reflection's draft quotes fact text Forget everything is
+        removing; accepted later it would write an observation about
+        facts that no longer exist, so it goes with them."""
+        inbox = self.server.inbox  # type: ignore[attr-defined]
+        if inbox is None:
+            return 0
+        rejected = 0
+        for card in inbox.waiting(include_snoozed=True):
+            if card.kind == KIND_MEMORY_REFLECTION:
+                inbox.dismiss(card.id)
+                rejected += 1
+        return rejected
 
     def _memory_add(self) -> None:
         """The page's typed-fact path. (The Assistant and Research create

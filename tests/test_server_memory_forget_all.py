@@ -386,6 +386,186 @@ def test_review_cards_waiting_on_the_forgotten_excerpts_are_rejected():
         booted.close()
 
 
+# -- hardening: pending content, a locked store, two clicks --------------------
+
+
+def _review_first_boot():
+    """A review-first desk over HTTP: automatic saving off and endpoint
+    calls off, so a turn leaves a saved excerpt and waiting review cards
+    instead of facts."""
+    import sqlite3
+    import time
+
+    from agentdesk.settings import SettingsStore
+
+    settings = SettingsStore(sqlite3.connect(":memory:", check_same_thread=False), time.time)
+    settings.set("memory_auto_approve", False)
+    settings.set("endpoint_enabled", False)
+    return server_harness.Booted(llm=CaptureLlm(), settings_store=settings)
+
+
+def test_pending_excerpts_and_waiting_cards_go_even_when_no_fact_stands():
+    booted = _review_first_boot()
+    auth = booted.exchange()
+    try:
+        memory = booted.server.memory
+        booted.post_json("/assistant/ask",
+                         {"question": "The Berlin office has 40 people."}, auth)
+        assert memory.all() == [], "review first: nothing stands yet"
+        assert len(memory.sources()) == 1, "the turn's excerpt is saved"
+        [card] = [c for c in booted.server.inbox.waiting()
+                  if c.kind == "memory_draft"]
+
+        # The question still comes first: there is something to forget.
+        status, _h, _b = _post_form(booted, auth, "/memory/forget-all", {})
+        assert status == 200, status
+        status, _h, body = booted.post_json("/memory/forget-all",
+                                            {"confirm": "yes"}, auth)
+        assert status == 200, status
+        payload = json.loads(body)
+        assert payload["status"] == "ok"
+        assert payload["forgot"] == 0
+        assert payload["excerpts"] == 1
+        assert payload["cards"] == 1
+
+        assert _rows(memory) == (0, 0, 0, 0, 0), _rows(memory)
+        assert booted.server.inbox.waiting() == []
+        assert booted.server.inbox.get(card.id).status == "dismissed"
+        status, _h, export = booted.request("GET", "/audit/export.csv", auth)
+        [row] = [line for line in export.decode("utf-8").splitlines()
+                 if "memory.forget_all" in line]
+        assert row.startswith("agent-desk,memory.forget_all,0 facts,"), row
+        # The export carries the target only; the detail is read back
+        # from the store, the way the reflect suite reads its rows.
+        [entry] = [entry for entry in audit_store.entries(booted.server.audit_conn)
+                   if entry["action"] == "memory.forget_all"]
+        assert "1 excerpts forgotten" in entry["detail"], entry["detail"]
+        assert "1 review card rejected" in entry["detail"], entry["detail"]
+        status, _h, page = booted.request("GET", "/memory", auth)
+        assert "Memory is empty" in page.decode("utf-8")
+    finally:
+        booted.close()
+
+
+class _ScriptedReflector:
+    """Answers reflect runs with the given drafts, recording nothing."""
+
+    def __init__(self, drafts) -> None:
+        self.drafts = list(drafts)
+
+    def reflect(self, topic, facts):
+        return list(self.drafts)
+
+
+def test_waiting_reflection_cards_are_rejected_with_the_facts(env, auth):
+    from agentdesk.memory.reflect import ObservationDraft
+
+    memory = env.server.memory
+    first = _add(env, auth, "Maya left Acme.")
+    second = _add(env, auth, "Acme ships widgets.")
+    env.server.reflector = _ScriptedReflector([
+        ObservationDraft(text="Maya moved on from Acme", confidence=0.9,
+                         fact_ids=(first, second)),
+    ])
+    status, _h, _b = env.post_json("/memory/reflect", {}, auth)
+    assert status == 200, status
+    [card] = [c for c in env.server.inbox.waiting()
+              if c.kind == "memory_reflection"]
+
+    _forget_everything(env, auth)
+
+    assert _rows(memory) == (0, 0, 0, 0, 0), _rows(memory)
+    assert env.server.inbox.waiting() == [], "no reflection outlives its facts"
+    assert env.server.inbox.get(card.id).status == "dismissed"
+
+
+def test_a_locked_store_answers_a_form_post_with_the_locked_page_never_json(tmp_path):
+    import sqlite3
+    import time
+
+    from agentdesk.memory.crypto import load_key
+    from agentdesk.memory.store import MemoryStore
+
+    # A bank sealed in a previous life, reopened without its key.
+    db = tmp_path / "memory.sqlite3"
+    first = sqlite3.connect(str(db), check_same_thread=False)
+    seeded = MemoryStore(first, time.time, key=load_key(bytes(range(32))))
+    seeded.add("revenue is 220", source="page")
+    first.close()
+    conn = sqlite3.connect(str(db), check_same_thread=False)
+    store = MemoryStore(conn, time.time, key_path=tmp_path / "memory.key")
+    assert store.locked_cause is not None
+    booted = server_harness.Booted(memory_store=store, llm=CaptureLlm())
+    auth = booted.exchange()
+    try:
+        status, headers, body = _post_form(booted, auth, "/memory/forget-all",
+                                           {"confirm": "yes"})
+        page = body.decode("utf-8")
+        assert status == 200, status
+        assert "text/html" in headers.get("Content-Type", ""), headers
+        assert '"error"' not in page, "a browser form never meets raw JSON"
+        assert "Memory is locked" in page
+        assert "key file is missing" in page
+
+        # The same post as fetch still gets the JSON cause.
+        status, _h, body = booted.post_json("/memory/forget-all",
+                                            {"confirm": "yes"}, auth)
+        assert status == 503, status
+        assert json.loads(body)["error"] == store.locked_cause
+    finally:
+        booted.close()
+        conn.close()
+
+
+def _forget_all_rows(env, auth):
+    """The forget-all audit rows in the export, as (target, detail) fields."""
+    status, _h, export = env.request("GET", "/audit/export.csv", auth)
+    assert status == 200
+    return [line.split(",") for line in export.decode("utf-8").splitlines()
+            if "memory.forget_all" in line]
+
+
+def test_two_confirmed_posts_back_to_back_both_answer_and_one_row_names_it(env, auth):
+    memory = env.server.memory
+    _a_bank_with_everything_derived(env, auth)
+    first = _post_form(env, auth, "/memory/forget-all", {"confirm": "yes"})
+    second = _post_form(env, auth, "/memory/forget-all", {"confirm": "yes"})
+    assert first[0] == 303 and second[0] == 303, (first[0], second[0])
+    assert _rows(memory) == (0, 0, 0, 0, 0), _rows(memory)
+    [row] = _forget_all_rows(env, auth)
+    assert row[2] == "3 facts", row
+    status, _h, page = env.request("GET", "/memory", auth)
+    assert "Memory is empty" in page.decode("utf-8")
+
+
+def test_two_confirmed_posts_at_the_same_time_both_answer_without_error(env, auth):
+    import threading
+
+    memory = env.server.memory
+    _a_bank_with_everything_derived(env, auth)
+    answers = []
+
+    def fire() -> None:
+        answers.append(_post_form(env, auth, "/memory/forget-all",
+                                  {"confirm": "yes"}))
+
+    threads = [threading.Thread(target=fire) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert len(answers) == 2
+    for status, _h, _b in answers:
+        assert status < 500, status
+    assert _rows(memory) == (0, 0, 0, 0, 0), _rows(memory)
+    rows = _forget_all_rows(env, auth)
+    # One row names what went; a racing second row may only say nothing
+    # was left. Nothing else is acceptable.
+    assert [row for row in rows if row[2] == "3 facts"], rows
+    for row in rows:
+        assert row[2] in ("3 facts", "0 facts"), row
+
+
 # -- each fact: where it came from, and its own Forget -----------------------
 
 
