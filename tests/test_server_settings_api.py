@@ -4,6 +4,7 @@ permission prompts.
 """
 
 import json
+import sqlite3
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,7 +18,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 import server_harness
+from agentdesk.inbox.store import InboxStore
 from agentdesk.llm import LlmUnavailable
+from agentdesk.mail.store import MailStore
+from agentdesk.mail.watcher import MailWatch
 from agentdesk.server import app as server_app
 from agentdesk.settings import SettingsStore
 
@@ -57,6 +61,8 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         # Mail (#44): off by default, no folder chosen.
         "mail_enabled": False,
         "mail_folder": "",
+        # Outlook alerts (spec 024): off by default.
+        "mail_feeder": False,
         # Registry: no checkout pinned, so resolution is automatic.
         "registry_path": "",
         # Demo sample data (#68): off until the user asks for it.
@@ -486,3 +492,142 @@ def test_the_settings_page_lists_the_ranking_controls(env, auth):
     assert json.loads(body) == {"key": "recommend_model_rank", "value": False}
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
     assert "Rank with my endpoint" in page
+
+
+# -- the Outlook alerts source (spec 024) ----------------------------------
+
+
+def _watch_with_feeder(tmp_path, feeder):
+    """A real watcher over in-memory stores, with the alert pass faked."""
+    folder = tmp_path / "mail"
+    folder.mkdir()
+    return MailWatch(
+        inbox=InboxStore(sqlite3.connect(":memory:", check_same_thread=False), lambda: 0.0),
+        store=MailStore(sqlite3.connect(":memory:", check_same_thread=False), lambda: 0.0),
+        folder_provider=lambda: str(folder),
+        feeder=feeder,
+    )
+
+
+def test_the_settings_page_renders_the_outlook_alerts_block(env, auth):
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert "Outlook alerts" in page
+    assert "Alerts only, not a mailbox" in page
+    assert 'action="/settings/mail/fetch-now"' in page
+    assert "Fetch now" in page
+    assert "Not run yet" in page
+    assert "The manual .eml folder is the history source" in page
+
+
+def test_the_mail_feeder_toggle_is_accepted_and_saved(env, auth):
+    status, _h, body = env.post_json(
+        "/settings/toggle", {"key": "mail_feeder"}, auth)
+    assert status == 200
+    assert json.loads(body) == {"key": "mail_feeder", "value": True}
+    assert json.loads(env.request("GET", "/widgets/settings", auth)[2])["mail_feeder"] is True
+
+
+def test_fetch_now_runs_the_injected_feeder_and_shows_the_manual_fallback(
+        tmp_path):
+    calls = []
+    prompts = []
+
+    def feeder():
+        calls.append(1)
+        return {
+            "collector": "manual",
+            "platform": "test-os",
+            "lastRunTs": 1700000000.0,
+            "lastResult": "unavailable",
+            "lastError": "No automatic Outlook collector is available on this machine.",
+            "written": 7,
+        }
+
+    booted = server_harness.Booted(
+        mail=_watch_with_feeder(tmp_path, feeder),
+        llm=lambda prompt: prompts.append(prompt) or "",
+    )
+    try:
+        auth = booted.exchange()
+        status, _h, body = booted.post_json("/settings/mail/fetch-now", {}, auth)
+        assert status == 200
+        payload = json.loads(body)
+        assert payload["ran"] is True
+        assert payload["fetch"]["collector"] == "manual"
+        assert calls == [1]
+        # The alert pass reads no model and writes no network call.
+        assert prompts == []
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "Outlook alerts" in page
+        assert "No automatic collector is available" in page
+        assert "manual .eml folder above is the mail source" in page
+        assert "7 alerts" not in page  # no number in an attention state
+        # The no-JS form post lands back on the Sources card.
+        form_headers = dict(auth)
+        form_headers["Content-Type"] = "application/x-www-form-urlencoded"
+        status, headers, _b = booted.request(
+            "POST", "/settings/mail/fetch-now", form_headers, b"")
+        assert status == 303
+        assert headers["Location"] == "/settings#sources"
+    finally:
+        booted.close()
+
+
+def test_fetch_now_with_the_feed_off_answers_honestly(tmp_path):
+    booted = server_harness.Booted()
+    try:
+        auth = booted.exchange()
+        status, _h, body = booted.post_json("/settings/mail/fetch-now", {}, auth)
+        assert status == 200
+        assert json.loads(body)["ran"] is False
+    finally:
+        booted.close()
+
+
+def test_a_healthy_fetch_shows_its_count_and_coverage_window(tmp_path):
+    fetch = {
+        "collector": "notification-store",
+        "platform": "test-os",
+        "lastRunTs": 1700000000.0,
+        "lastResult": "ok",
+        "lastError": "",
+        "written": 2,
+        "coverageFromTs": 1699000000.0,
+        "coverageToTs": 1700000000.0,
+    }
+    booted = server_harness.Booted(
+        mail=_watch_with_feeder(tmp_path, lambda: dict(fetch)))
+    try:
+        auth = booted.exchange()
+        booted.post_json("/settings/mail/fetch-now", {}, auth)
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "2 alerts" in page
+        assert "notification-store" in page
+        assert "Coverage" in page
+    finally:
+        booted.close()
+
+
+def test_a_busy_fetch_and_the_macos_cause_render_plainly(tmp_path):
+    answers = [
+        {"collector": "", "platform": "test-os", "lastRunTs": None,
+         "lastResult": "busy", "lastError": "A feeder run is already in progress.",
+         "written": 0},
+        {"collector": "mac-notifications", "platform": "darwin",
+         "lastRunTs": 1700000000.0, "lastResult": "error",
+         "lastError": "Reading the store needs Full Disk Access.",
+         "written": 0},
+    ]
+    booted = server_harness.Booted(
+        mail=_watch_with_feeder(tmp_path, lambda: answers.pop(0)))
+    try:
+        auth = booted.exchange()
+        booted.post_json("/settings/mail/fetch-now", {}, auth)
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "Another pass is already running" in page
+        booted.post_json("/settings/mail/fetch-now", {}, auth)
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "Full Disk Access" in page
+        assert "On a Mac the fix is Full Disk Access" in page
+    finally:
+        booted.close()
