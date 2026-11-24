@@ -87,6 +87,13 @@ body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-siz
 /* One table per wrapper: the table may be wider than the reading column,
    so it scrolls inside its own box; the page never scrolls sideways. */
 .table-scroll{max-width:100%;overflow-x:auto}
+/* A plugin's authored table (plugins/html.py) breaks only a word that
+   cannot fit its cell; the wrapper above scrolls a table that still
+   cannot fit the card. */
+.w-table{width:100%;border-collapse:collapse;font-size:13px}
+.w-table th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+.w-table td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+.w-table tr:last-child td{border-bottom:none}
 /* The static memory graph (/memory/graph without JavaScript). */
 .graph-static{overflow-x:auto;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);padding:8px}
 .graph-edge{stroke:var(--ink-4)}
@@ -1279,6 +1286,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     app.classList.toggle('rail-collapsed', collapsed);
     btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    btn.setAttribute('title', collapsed ? 'Expand navigation' : 'Collapse navigation');
     var label = btn.querySelector('.rail-toggle-label');
     if (label) label.textContent = collapsed ? 'Expand' : 'Collapse';
   };
@@ -1378,7 +1386,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
     toggle = (
         '<button type="button" class="rail-toggle" aria-expanded="true" '
-        'aria-label="Collapse navigation">'
+        'aria-label="Collapse navigation" title="Collapse navigation">'
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
         '<path d="M14.5 6.5 8 12l6.5 5.5"/></svg>'
@@ -1403,8 +1411,11 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         if href == "/inbox" and inbox_count:
             name = f"{label}, {inbox_count} waiting"
         mark = label[:1]
+        # The CSS cuts a label that cannot fit; the title is the full
+        # word, the same one the SPA rail offers.
         return (
-            f'<a href="{href}"{current} aria-label="{name}">'
+            f'<a href="{href}"{current} aria-label="{name}" '
+            f'title="{html.escape(label)}">'
             f'<span class="rail-mark" aria-hidden="true">{mark}</span>'
             f'<span class="rail-label">{label}</span>{extra}</a>'
         )
