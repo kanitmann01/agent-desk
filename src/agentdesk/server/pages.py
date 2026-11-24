@@ -1416,15 +1416,26 @@ def page_footer(version: str, note: str = "", touches: bool = True) -> str:
     )
 
 
+NOTICE_MAX_CHARS = 300
+
+
 def status_line(text: str, kind: str = "status") -> str:
     """The one line that names an outcome where the reader is looking.
 
-    `kind` is "status" for a success and "alert" for a failure; the line
-    is escaped here and omitted when `text` is empty.
+    `kind` is "status" for a success and "alert" for a failure. The role
+    is chosen from an allow-list, never taken from the caller's string,
+    because a handler forwards `notice_kind` straight from the URL: a
+    crafted link must not close the attribute and inject markup. The line
+    is escaped here and omitted when `text` is empty; a notice longer
+    than NOTICE_MAX_CHARS is cut, so a URL cannot paste a wall of text.
     """
     if not text:
         return ""
-    return f'<p class="page-status" role="{kind}">{html.escape(text)}</p>'
+    text = str(text)
+    if len(text) > NOTICE_MAX_CHARS:
+        text = text[:NOTICE_MAX_CHARS].rstrip()
+    role = "alert" if kind == "alert" else "status"
+    return f'<p class="page-status" role="{role}">{html.escape(text)}</p>'
 
 
 def page_shell(
