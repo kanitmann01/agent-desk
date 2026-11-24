@@ -5746,16 +5746,20 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         ignored saved settings is gone.
         """
         server = self.server  # type: ignore[attr-defined]
-        if self._job_resolution("insights") is None and not server.llm_endpoint:
+        injected = (
+            not getattr(server, "llm_defaulted_to_env", False)
+            or server.llm is not getattr(server, "_startup_llm", None)
+        )
+        if self._job_resolution(DEFAULT_JOB) is None and not server.llm_endpoint and not injected:
             return None
 
         def complete(prompt: str) -> str:
             """One prompt in, one answer out, in the shape the flow expects.
 
             It is a closure so the flow receives a plain callable and never the handler
-            or the server.
+            or the server. The tracker asks the default model, not the insights place.
             """
-            client, _name, _model = self._effective_llm("insights")
+            client, _name, _model = self._effective_llm(DEFAULT_JOB)
             return client(prompt)
         return complete
 

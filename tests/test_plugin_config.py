@@ -527,3 +527,176 @@ def test_tracker_reads_the_granted_file_and_pace_uses_only_the_users_numbers(tmp
     # The sibling is not opened: a second read of the granted file still totals 15.
     assert read_tracker(store, "excel-report", "budget")["value"] == 15
     assert pace_line(15, 2, 30, 10) == "7.50 per day against 3.00 per day"
+
+
+def _confirmed(tmp_path, rows, tracking, name="kpi.xlsx"):
+    from tests import excel_fixtures
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / name
+    book.write_bytes(excel_fixtures.make_xlsx(rows))
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "KPI")
+    store.stage_file("excel-report", "main", book)
+    store.confirm("excel-report", "main", tracking)
+    return store
+
+
+def test_a_time_column_sums_a_week_and_the_value_is_the_latest(tmp_path):
+    store = _confirmed(tmp_path, [
+        ["Person", "Week", "Points"],
+        ["Ada", "2026-01-06", 3],
+        ["Bea", "2026-01-06", 4],
+        ["Ada", "2026-01-13", 5],
+        ["Bea", "03/01/2026", 1],
+    ], {
+        "labelColumn": "Person",
+        "valueColumn": "Points",
+        "dateColumn": "Week",
+        "aggregate": "sum",
+        "chart": "column",
+    })
+    reading = read_tracker(store, "excel-report", "main")
+    assert reading["labels"] == ["2026-01-03", "2026-01-06", "2026-01-13"]
+    assert reading["points"] == [1, 7, 5]
+    assert reading["value"] == 5
+    assert reading["delta"] == "−2"
+    assert reading["deltaLabel"] == "since the previous period"
+    assert reading["axis"] == "time"
+    assert reading["chart"] == "column"
+    saved = store.read("excel-report", "main")
+    assert saved["tracking"]["chart"] == "column"
+
+
+def test_sprint_labels_stay_in_file_order_and_a_missing_column_falls_back(tmp_path):
+    store = _confirmed(tmp_path, [
+        ["Person", "Sprint", "Points"],
+        ["Ada", "Sprint 2", 2],
+        ["Ada", "Sprint 14", 9],
+    ], {
+        "labelColumn": "Person",
+        "valueColumn": "Points",
+        "dateColumn": "Sprint",
+        "aggregate": "sum",
+    })
+    reading = read_tracker(store, "excel-report", "main")
+    assert reading["labels"] == ["Sprint 2", "Sprint 14"]
+    assert reading["chart"] == "line"
+    store.confirm("excel-report", "main", {
+        "labelColumn": "Person",
+        "valueColumn": "Points",
+        "dateColumn": "Missing",
+        "aggregate": "sum",
+    })
+    fallen = read_tracker(store, "excel-report", "main")
+    assert fallen["axis"] == "reading"
+    assert "not in this file" in fallen["seriesNote"]
+
+
+def test_an_empty_time_column_draws_no_points_and_a_long_series_keeps_sixty(tmp_path):
+    store = _confirmed(tmp_path, [
+        ["Person", "Week", "Points"],
+        ["Ada", "", 3],
+        ["Bea", "  ", 4],
+    ], {
+        "labelColumn": "Person",
+        "valueColumn": "Points",
+        "dateColumn": "Week",
+        "aggregate": "sum",
+    })
+    empty = read_tracker(store, "excel-report", "main")
+    assert empty["points"] == []
+    assert empty["value"] == 0
+    assert "No points" in empty["seriesNote"]
+    rows = [["Person", "Week", "Points"]]
+    for index in range(61):
+        month = 1 + (index // 28)
+        day = (index % 28) + 1
+        rows.append(["Ada", f"2026-{month:02d}-{day:02d}", index + 1])
+    long_root = tmp_path / "long"
+    long_root.mkdir()
+    store = _confirmed(long_root, rows, {
+        "labelColumn": "Person",
+        "valueColumn": "Points",
+        "dateColumn": "Week",
+        "aggregate": "latest",
+    }, name="long.xlsx")
+    long = read_tracker(store, "excel-report", "main")
+    assert len(long["points"]) == 60
+    assert long["value"] == 61
+    assert "Older periods" in long["seriesNote"]
+
+
+def test_a_bad_chart_or_a_time_column_equal_to_the_value_is_refused(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(b"x")
+    store = InstanceStore(tmp_path / "data", workspace)
+    store.create("excel-report", "main", "KPI")
+    store.stage_file("excel-report", "main", book)
+    with pytest.raises(ConfigError) as bad_chart:
+        store.confirm("excel-report", "main", {
+            "labelColumn": "Region", "valueColumn": "Booked", "chart": "pie",
+        })
+    assert bad_chart.value.code == "config:bad-tracking"
+    with pytest.raises(ConfigError):
+        store.confirm("excel-report", "main", {
+            "labelColumn": "Region", "valueColumn": "Booked", "dateColumn": "booked",
+        })
+    store.confirm("excel-report", "main", {
+        "labelColumn": "Region", "valueColumn": "Booked",
+    })
+    assert store.read("excel-report", "main")["tracking"]["chart"] == "line"
+
+
+def test_propose_columns_keeps_a_chart_and_drops_row_indexes():
+    proposal = propose_columns(
+        {"headers": ["Region", "Week", "Booked"], "rows": [["East", "2026-01-06", "10"]]},
+        lambda _prompt: (
+            '{"labelColumn": "Region", "valueColumn": "Booked", "dateColumn": "Week", '
+            '"chart": "area", "aggregate": "sum", "rows": [0]}'
+        ),
+    )
+    assert proposal["dateColumn"] == "Week"
+    assert proposal["chart"] == "area"
+    assert proposal["rows"] is None
+    dropped = propose_columns(
+        {"headers": ["Region", "Booked"], "rows": [["East", "10"]]},
+        lambda _prompt: (
+            '{"labelColumn": "Region", "valueColumn": "Booked", '
+            '"dateColumn": "Nope", "chart": "pie"}'
+        ),
+    )
+    assert dropped["dateColumn"] is None
+    assert dropped["chart"] == "line"
+
+
+def test_the_heuristic_picks_a_date_column_when_the_sample_parses():
+    from agentdesk.plugins.suggest import heuristic
+    choice = heuristic(
+        ["Person", "Week", "Points"],
+        [["Ada", "2026-01-06", "3"], ["Bea", "2026-01-13", "5"]],
+    )
+    assert choice["valueColumn"] == "Points"
+    assert choice["dateColumn"] == "Week"
+    assert choice["chart"] == "line"
+    assert choice["source"] == "heuristic"
+
+
+def test_suggest_with_no_model_sends_nothing(tmp_path):
+    from types import SimpleNamespace
+    from tests import excel_fixtures
+    from agentdesk.plugins.setup_flow import suggest
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    book = workspace / "q4.xlsx"
+    book.write_bytes(excel_fixtures.make_xlsx([["Region", "Booked"], ["East", 10]]))
+    runtime = SimpleNamespace(data_dir=tmp_path / "data", workspace_dir=workspace)
+    store = InstanceStore(runtime.data_dir, workspace)
+    store.create("excel-report", "main", "KPI")
+    store.stage_file("excel-report", "main", book)
+    result = suggest(runtime, 6, "main", headers_only=False, complete=None, plugin_id="excel-report")
+    assert result["proposal"] is None
+    assert result["disclosure"] == ""
+    assert result["available"] is False

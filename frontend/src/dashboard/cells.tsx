@@ -95,9 +95,11 @@ export function StageChart({ stages }: { stages: StageNet[] }) {
   );
 }
 
+const SKETCH_HEIGHTS = [38, 62, 46, 80, 54, 70, 44, 66];
+
 /** A dotted chart skeleton for a figure that has no history yet. */
 export function WireChart({ bars = 6, label }: { bars?: number; label?: string }) {
-  const heights = [38, 62, 46, 80, 54, 70, 44, 66].slice(0, bars);
+  const heights = SKETCH_HEIGHTS.slice(0, bars);
   return (
     <div className="wire-chart" aria-hidden={label ? undefined : true} aria-label={label} role={label ? 'img' : undefined}>
       {heights.map((h, i) => <span key={i} style={{ height: `${h}%` }} />)}
@@ -105,35 +107,29 @@ export function WireChart({ bars = 6, label }: { bars?: number; label?: string }
   );
 }
 
-/**
- * A trend line over the readings, scaled to their own range and marked at the
- * last point.
- *
- * Two readings are needed: the horizontal scale divides by one less than the
- * count, so a single point has no place to sit.
- */
-export function Sparkline({ points, label }: { points: number[]; label: string }) {
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const span = max - min || 1;
-  const xy = points.map((point, index) => ({
-    x: (index / (points.length - 1)) * 200,
-    y: 44 - ((point - min) / span) * 40,
-  }));
-  const line = xy.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const last = xy[xy.length - 1];
+/** The silhouette of a chosen chart, not a plot of the workbook. */
+export function ChartSketch({ chart, caption }: { chart: string; caption: string }) {
+  const kind = chart === 'column' || chart === 'area' ? chart : 'line';
   return (
-    <div className="spark">
-      <svg viewBox="-4 0 208 48" preserveAspectRatio="none" role="img" aria-label={label}>
-        <line x1="0" x2="200" y1="44" y2="44" className="spark-base" />
-        <polyline points={line} className="spark-line" vectorEffect="non-scaling-stroke" />
-        <circle cx={last.x} cy={last.y} r="3" className="spark-end" />
-      </svg>
-      <div className="spark-scale" aria-hidden="true">
-        <span>{formatCompact(max)}</span>
-        <span>{formatCompact(min)}</span>
-      </div>
-    </div>
+    <figure className="chart-sketch" role="img" aria-label={caption}>
+      {kind === 'column' ? <WireChart bars={8} /> : <SketchLine area={kind === 'area'} />}
+      <figcaption className="chart-sketch-cap" aria-hidden="true">{caption}</figcaption>
+    </figure>
+  );
+}
+
+/** A dotted line, filled down to the baseline when the chart is an area. */
+function SketchLine({ area }: { area: boolean }) {
+  const xy = SKETCH_HEIGHTS.map((height, index) => ({
+    x: (index / (SKETCH_HEIGHTS.length - 1)) * 200,
+    y: 48 - (height / 100) * 40,
+  }));
+  const line = xy.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  return (
+    <svg className="chart-sketch-line" viewBox="0 0 200 48" preserveAspectRatio="none" aria-hidden="true">
+      {area ? <polygon points={`${line} 200,48 0,48`} className="sketch-area" /> : null}
+      <polyline points={line} className="sketch-line" />
+    </svg>
   );
 }
 
@@ -157,6 +153,45 @@ function parseFigure(value: string): number | null {
   return Number.isFinite(n) && value.trim() !== '' ? n : null;
 }
 
+/** Line, columns, or area over the same scaled points. */
+export function SeriesChart({ points, kind, label }: { points: number[]; kind: string; label: string }) {
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const xy = points.map((point, index) => ({
+    x: (index / (points.length - 1)) * 200,
+    y: 44 - ((point - min) / span) * 40,
+  }));
+  const line = xy.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  const last = xy[xy.length - 1];
+  const bar = Math.max(2, 200 / points.length - 4);
+  return (
+    <div className="spark">
+      <svg viewBox="-4 0 208 48" preserveAspectRatio="none" role="img" aria-label={label}>
+        <line x1="0" x2="200" y1="44" y2="44" className="spark-base" />
+        {kind === 'area' ? <polygon points={`${line} ${last.x.toFixed(1)},44 ${xy[0].x.toFixed(1)},44`} className="spark-area" /> : null}
+        {kind === 'column'
+          ? xy.map((point, index) => (
+            <rect
+              key={index}
+              x={point.x - bar / 2}
+              y={point.y}
+              width={bar}
+              height={Math.max(0, 44 - point.y)}
+              className={index === xy.length - 1 ? 'spark-bar is-last' : 'spark-bar'}
+            />
+          ))
+          : <polyline points={line} className="spark-line" vectorEffect="non-scaling-stroke" />}
+        {kind === 'column' ? null : <circle cx={last.x} cy={last.y} r="3" className="spark-end" />}
+      </svg>
+      <div className="spark-scale" aria-hidden="true">
+        <span>{formatCompact(max)}</span>
+        <span>{formatCompact(min)}</span>
+      </div>
+    </div>
+  );
+}
+
 /** The tracker pattern: name, big figure, signed delta, trend, pace. */
 export function TrackerFigure({ view, action }: { view: TrackerView; action?: ReactNode }) {
   const goal = view.goal ? parseFigure(view.goal.value) : null;
@@ -175,9 +210,24 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
       </div>
       <p className="tracker-delta">
         <span className={deltaClass}>{view.delta === 'First reading' ? 'First reading' : view.delta}</span>
-        {view.delta === 'First reading' ? null : <span>since the last reading</span>}
+        {view.delta === 'First reading' ? null : <span>{view.deltaLabel || 'since the last reading'}</span>}
       </p>
-      {view.points.length >= 2 ? <Sparkline points={view.points} label={`${view.points.length} readings`} /> : <WireChart bars={8} />}
+      {view.points.length >= 2 ? (
+        <>
+          <SeriesChart
+            points={view.points}
+            kind={view.chart === 'column' || view.chart === 'area' ? view.chart : 'line'}
+            label={view.axis === 'time' && view.labels && view.labels.length >= 2
+              ? `${view.labels[0]} to ${view.labels[view.labels.length - 1]}`
+              : `${view.points.length} readings`}
+          />
+          {view.axis === 'time' && view.labels && view.labels.length >= 2 ? (
+            <p className="spark-axis mono" aria-hidden="true">
+              <span>{view.labels[0]}</span><span>{view.labels[view.labels.length - 1]}</span>
+            </p>
+          ) : null}
+        </>
+      ) : <WireChart bars={8} />}
       {pace != null && view.goal ? (
         <div className="pace">
           <div className="pace-track" aria-hidden="true">
@@ -193,6 +243,7 @@ export function TrackerFigure({ view, action }: { view: TrackerView; action?: Re
         {view.file}
         {typeof view.rowsSeen === 'number' ? ` · ${view.rowsSeen.toLocaleString('en-US')} rows` : ''}
         {view.readAt ? ` · read ${readAgo(view.readAt)}` : ''}
+        {view.seriesNote ? ` · ${view.seriesNote}` : ''}
       </p>
     </div>
   );

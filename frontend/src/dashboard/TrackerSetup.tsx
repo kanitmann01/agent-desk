@@ -1,11 +1,11 @@
 // The tracker setup sheet: the shared instance walk (open a workbook,
-// choose columns and rows, confirm) with the tracker's own slots, the
-// suggest proposal and the endpoint's evaluate check among them. The
-// walk owns the guarded requests, the picker recovery and the
-// outside-workspace acceptance; this file only adapts the dashboard's
-// API envelope onto the walk's answers.
-import { useEffect, useState } from 'react';
-import { getJson, postFile, postJson, type ApiResult } from '../api';
+// choose columns and rows, confirm) with the tracker's own slots: the
+// chart skeleton, the time/chart/aggregate controls, and the one
+// suggestion the default model fills. The walk owns the guarded
+// requests, the picker recovery and the outside-workspace acceptance;
+// this file only adapts the dashboard's API envelope onto its answers.
+import { useEffect, useRef, useState } from 'react';
+import { postFile, postJson, type ApiResult } from '../api';
 import Button from '../components/Button';
 import InstanceWalk, {
   type ChooseCtx,
@@ -15,7 +15,7 @@ import InstanceWalk, {
   type WalkOpen,
   type WalkSave,
 } from '../components/InstanceWalk';
-import { WireChart } from './cells';
+import { ChartSketch } from './cells';
 
 const STEPS = ['Open', 'Choose what to track', 'Confirm'] as const;
 
@@ -29,15 +29,36 @@ interface Proposal {
   labelColumn: string;
   valueColumn: string;
   aggregate: string;
+  dateColumn?: string | null;
+  chart?: string;
   rows?: number[];
   reason?: string;
   source?: string;
 }
 
-interface Review {
-  verdict: 'ok' | 'adjust' | 'unchecked';
-  message: string;
-  recommendation: Proposal | null;
+type ChartKind = 'line' | 'column' | 'area';
+
+/** A chart name the sheet can store, or line when the value is anything else. */
+function asChart(value: string | undefined): ChartKind {
+  return value === 'column' || value === 'area' ? value : 'line';
+}
+
+/** The skeleton's one line: the metric, the time column or each reading, and the chart. */
+function sketchCaption(metric: string, time: string, chart: string): string {
+  const shape = chart === 'column' ? 'columns' : chart === 'area' ? 'an area' : 'a line';
+  const by = time ? `by ${time}` : 'each reading';
+  return `${metric || 'The metric'}, ${by}, as ${shape}`;
+}
+
+/** One suggestion request per opened preview. */
+function AskOnce({ run }: { run: () => void }) {
+  const once = useRef(false);
+  useEffect(() => {
+    if (once.current) return;
+    once.current = true;
+    run();
+  }, [run]);
+  return null;
 }
 
 interface TrackerSetupProps {
@@ -61,26 +82,19 @@ export default function TrackerSetup({
 }: TrackerSetupProps) {
   const [instanceName, setInstanceName] = useState(name);
   const [unit, setUnit] = useState('');
-  const [headersOnly, setHeadersOnly] = useState(false);
+  const [timeColumn, setTimeColumn] = useState('');
+  const [chart, setChart] = useState<ChartKind>('line');
+  const [aggregate, setAggregate] = useState('sum');
   const [proposal, setProposal] = useState<Proposal | null>(null);
-  const [review, setReview] = useState<Review | null>(null);
+  const asked = useRef('');
+  const [disclosure, setDisclosure] = useState('');
   const [suggested, setSuggested] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getJson('/widgets/settings').then((res) => {
-      if (cancelled) return;
-      if (res.status === 401) { onExpired(); return; }
-      const only = Boolean((res.data as { suggest_headers_only?: boolean }).suggest_headers_only);
-      setHeadersOnly(only);
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [onExpired]);
+  const [suggesting, setSuggesting] = useState(true);
+  const [noModel, setNoModel] = useState(false);
 
   const base = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}`;
   const pickUrl = `${base}/pick`;
   const suggestUrl = `${base}/suggest`;
-  const evaluateUrl = `${base}/evaluate`;
   const confirmUrl = `${base}/confirm`;
   const outsideUrl = `${base}/outside`;
   const stageUrl = `${base}/stage`;
@@ -138,9 +152,11 @@ export default function TrackerSetup({
           tracking: {
             labelColumn: choice.labelColumn,
             valueColumn: choice.valueColumn,
-            aggregate: 'sum',
+            dateColumn: timeColumn || null,
+            chart,
+            aggregate,
             unit,
-            rows: choice.picked,
+            rows: choice.picked.length ? choice.picked : null,
             good: 'up',
           },
         });
@@ -162,112 +178,65 @@ export default function TrackerSetup({
   };
 
   /**
-   * Ask for a suggestion and adopt its columns and rows as a proposal
-   * awaiting Accept or Adjust; the request runs under the walk's guard,
-   * so an unreachable server fills the error slot and unblocks.
+   * Ask once for this preview. No proposal is the manual sheet, not an error.
+   * A network failure still fills the sheet's error slot.
    */
   async function suggest(ctx: ChooseCtx) {
+    const token = ctx.preview.headers.join('\n');
+    if (asked.current === token) {
+      setSuggesting(false);
+      return;
+    }
+    asked.current = token;
+    setSuggesting(true);
+    setNoModel(false);
     await ctx.ask(async () => {
       let res;
       try {
-        res = await postJson(suggestUrl, { headersOnly });
+        res = await postJson(suggestUrl, {});
       } catch {
         return { ok: false, message: 'The dashboard could not reach its own server; nothing was suggested.' };
       }
       if (res.status === 401) { onExpired(); return { ok: false }; }
-      const data = res.data as { proposal?: Proposal | null; error?: string };
+      const data = res.data as { proposal?: Proposal | null; disclosure?: string; available?: boolean };
       if (!res.ok || !data.proposal) {
-        return { ok: false, message: data.error || 'No suggestion came back.' };
+        if (res.ok) setNoModel(true);
+        return { ok: true };
       }
+      setDisclosure(data.disclosure || '');
       setProposal(data.proposal);
-      setSuggested(true);
-      ctx.adopt({
-        labelColumn: data.proposal.labelColumn,
-        valueColumn: data.proposal.valueColumn,
-        picked: data.proposal.rows ?? [],
-      });
       return { ok: true };
     });
+    setSuggesting(false);
   }
 
-  /** Keep the suggestion as it stands and move to the naming step. */
-  function acceptSuggestion(ctx: ChooseCtx) {
+  /** Fill the controls from the suggestion and move to the naming step. */
+  function acceptSuggestion(ctx: ChooseCtx, next: Proposal) {
+    setChart(asChart(next.chart));
+    setTimeColumn(next.dateColumn || '');
+    setAggregate(next.aggregate || 'sum');
     setProposal(null);
     setSuggested(true);
-    ctx.toConfirm();
-  }
-
-  // Continue is one press: the endpoint gets one look at the chosen
-  // columns and rows. A missing endpoint, a bad response, or a verdict
-  // with nothing to change lets the choice straight through; only a real
-  // recommendation holds the sheet open.
-  /**
-   * Run the one check on the chosen columns and rows before the naming step.
-   *
-   * The sheet stays open only for a recommendation with something to change; an
-   * unreachable endpoint, a refused answer or a verdict that offers nothing
-   * lets the choice through to the naming step.
-   */
-  async function checkChoice(ctx: ChooseCtx) {
-    const res = await ctx.try(() => postJson(evaluateUrl, {
-      tracking: {
-        labelColumn: ctx.choice.labelColumn,
-        valueColumn: ctx.choice.valueColumn,
-        aggregate: 'sum',
-        rows: ctx.choice.picked,
-      },
-    }));
-    if (res === undefined) { ctx.toConfirm(); return; }
-    if (res.status === 401) { onExpired(); return; }
-    if (!res.ok) { ctx.toConfirm(); return; }
-    const data = res.data as { verdict?: string; message?: string; recommendation?: Proposal | null };
-    const verdict = data.verdict === 'adjust' || data.verdict === 'unchecked' ? data.verdict : 'ok';
-    const next: Review = {
-      verdict,
-      message: data.message || 'The check came back without a note.',
-      recommendation: data.recommendation ?? null,
-    };
-    setReview(next);
-    if (!next.recommendation) ctx.toConfirm();
-  }
-
-  /**
-   * Adopt the checker's recommendation, keeping the picked rows unless it names
-   * its own, and move to the naming step.
-   */
-  function useRecommendation(ctx: ChooseCtx, recommendation: Proposal) {
     ctx.adopt({
-      labelColumn: recommendation.labelColumn,
-      valueColumn: recommendation.valueColumn,
-      picked: recommendation.rows && recommendation.rows.length > 0
-        ? recommendation.rows
-        : ctx.choice.picked,
+      labelColumn: next.labelColumn,
+      valueColumn: next.valueColumn,
+      picked: [],
     });
-    setReview(null);
-    setProposal(null);
-    setSuggested(true);
     ctx.toConfirm();
   }
 
-  /** Keep the chosen columns and rows, dismiss the review and move on. */
-  function keepMine(ctx: ChooseCtx) {
-    setReview(null);
-    ctx.toConfirm();
+  /** Drop a pending suggestion once the person edits a control. */
+  function clearSuggestion() {
+    setProposal(null);
+    setSuggested(false);
   }
 
   /** The naming step's body, from the choice the walk carries. */
   function confirmBody(ctx: ConfirmCtx) {
     return (
       <>
-        <p className="setup-summary mono">{ctx.columns.valueColumn} by {ctx.columns.labelColumn} · {ctx.columns.picked.length} rows</p>
-        {review ? (
-          <p className="setup-check-note" data-testid="evaluate-note">
-            <span className={`verdict-tag is-${review.verdict}`}>
-              {review.verdict === 'unchecked' ? 'CHECK SKIPPED' : review.verdict === 'adjust' ? 'KEPT YOUR CHOICE' : 'LOOKS RIGHT'}
-            </span>{' '}
-            {review.message}
-          </p>
-        ) : null}
+        <ChartSketch chart={chart} caption={sketchCaption(ctx.columns.valueColumn, timeColumn, chart)} />
+        <p className="setup-summary mono">{ctx.columns.valueColumn} by {ctx.columns.labelColumn} · {ctx.columns.picked.length ? `${ctx.columns.picked.length} rows` : 'every row'}</p>
         <label className="setup-field">Name this tracker
           <input aria-label="Instance name" value={instanceName} onChange={(event) => setInstanceName(event.target.value)} />
         </label>
@@ -295,69 +264,91 @@ export default function TrackerSetup({
           <p>Open the workbook. Nothing is read until you confirm.</p>
           <dl className="setup-reads">
             <div><dt>Reads</dt><dd>A copy of the file, never the one you work in</dd></div>
-            <div><dt>You pick</dt><dd>One value column, a row label and the rows to count</dd></div>
-            <div><dt>Shows</dt><dd>The total, its change since the last reading and a sparkline</dd></div>
+            <div><dt>You pick</dt><dd>A metric, an optional time column, and a line, columns, or an area</dd></div>
+            <div><dt>Shows</dt><dd>That chart, from the workbook when a time column is set</dd></div>
           </dl>
         </>
       )}
-      openTrail={<div className="setup-open-wire"><WireChart bars={8} /></div>}
+      openTrail={(
+        <div className="setup-open-wire">
+          <ChartSketch chart="line" caption="The metric, each reading, as a line" />
+        </div>
+      )}
+      allowEmptyRows
       onChoiceChanged={() => {
         setProposal(null);
-        setReview(null);
         setSuggested(false);
       }}
+      chooseLead={(ctx) => (
+        <ChartSketch
+          chart={proposal?.chart || chart}
+          caption={sketchCaption(
+            proposal?.valueColumn || ctx.choice.valueColumn,
+            proposal ? (proposal.dateColumn || '') : timeColumn,
+            proposal?.chart || chart,
+          )}
+        />
+      )}
       chooseFooter={(ctx) => (
         <>
+          <AskOnce run={() => void suggest(ctx)} />
           <div className="setup-suggest">
-            <p data-testid="suggest-disclosure">
-              {headersOnly
-                ? `Sends the headers ${ctx.preview.headers.join(', ')}. No cell values and no file path leave this machine.`
-                : `Sends the headers ${ctx.preview.headers.join(', ')} and ${Math.min(ctx.preview.rows.length, 5)} rows. The file path stays on this machine.`}
-            </p>
-            <Button tone="secondary" onClick={() => void suggest(ctx)} disabled={ctx.busy}>Suggest what to track</Button>
+            <label className="setup-field">Time column
+              <select aria-label="Time column" value={proposal ? (proposal.dateColumn || '') : timeColumn} onChange={(event) => { setTimeColumn(event.target.value); clearSuggestion(); }}>
+                <option value="">Each reading of the total</option>
+                {ctx.preview.headers.map((header) => <option key={header} value={header}>{header}</option>)}
+              </select>
+            </label>
+            <label className="setup-field">Chart
+              <select aria-label="Chart" value={asChart(proposal?.chart || chart)} onChange={(event) => { setChart(asChart(event.target.value)); clearSuggestion(); }}>
+                <option value="line">Line</option>
+                <option value="column">Columns</option>
+                <option value="area">Area</option>
+              </select>
+            </label>
+            <label className="setup-field">Aggregate
+              <select aria-label="Aggregate" value={proposal?.aggregate || aggregate} onChange={(event) => { setAggregate(event.target.value); clearSuggestion(); }}>
+                <option value="sum">Sum</option>
+                <option value="count">Count</option>
+                <option value="latest">Latest</option>
+                <option value="min">Min</option>
+                <option value="max">Max</option>
+              </select>
+            </label>
           </div>
+          {suggesting ? (
+            <p className="setup-picking" role="status">
+              <span className="setup-picking-dot" aria-hidden="true" />
+              Choosing the columns
+            </p>
+          ) : (
+            <>
+          {noModel ? (
+            <p className="setup-note">
+              Add a model in <a href="/settings">Your AI</a> to fill this in next time.
+            </p>
+          ) : null}
           {proposal ? (
             <div className="setup-proposal" role="status">
+              {disclosure ? <p className="setup-reason">{disclosure}</p> : null}
               <p className="setup-reason">
                 {proposal.source === 'heuristic' ? 'Suggested on this machine. ' : ''}
                 {proposal.reason}
               </p>
               <div className="setup-actions">
-                <Button tone="primary" onClick={() => acceptSuggestion(ctx)}>Accept</Button>
-                <Button tone="secondary" onClick={() => setProposal(null)}>Adjust</Button>
-              </div>
-            </div>
-          ) : review?.recommendation ? (
-            <div className="setup-proposal setup-review" role="status">
-              <p className="setup-verdict" data-testid="evaluate-verdict">
-                <span className={`verdict-tag is-${review.verdict}`}>SUGGESTION</span>
-                {review.message}
-              </p>
-              <p className="setup-reason">
-                <strong>{review.recommendation.valueColumn}</strong> by <strong>{review.recommendation.labelColumn}</strong>
-                {review.recommendation.rows && review.recommendation.rows.length > 0
-                  ? ` · ${review.recommendation.rows.length} rows` : ''}
-                {review.recommendation.reason ? ` (${review.recommendation.reason})` : ''}
-              </p>
-              <div className="setup-actions">
-                <Button tone="primary" onClick={() => useRecommendation(ctx, review.recommendation as Proposal)}>Use this instead</Button>
-                <Button tone="secondary" onClick={() => keepMine(ctx)}>Keep mine</Button>
+                <Button tone="primary" onClick={() => acceptSuggestion(ctx, proposal)}>Accept</Button>
               </div>
             </div>
           ) : (
-            <>
-              <Button
-                tone="primary"
-                className="setup-continue"
-                onClick={() => void checkChoice(ctx)}
-                disabled={ctx.busy || !ctx.ready}
-              >
-                {ctx.busy ? 'Checking…' : 'Continue'}
-              </Button>
-              <p className="setup-check-note">
-                One check runs here: the headers and up to 5 row values go to your AI. The file path
-                stays on this machine. A missing endpoint skips the check; your choice still works.
-              </p>
+            <Button
+              tone="primary"
+              className="setup-continue"
+              onClick={() => ctx.toConfirm()}
+              disabled={ctx.busy || !ctx.ready}
+            >
+              Continue
+            </Button>
+          )}
             </>
           )}
         </>

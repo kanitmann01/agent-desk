@@ -107,6 +107,11 @@ export interface TrackerView {
   delta: string;
   direction: string;
   points: number[];
+  chart?: 'line' | 'column' | 'area' | string;
+  axis?: 'time' | 'reading' | string;
+  labels?: string[];
+  deltaLabel?: string;
+  seriesNote?: string;
   file: string;
   rowsSeen?: number;
   /** Epoch seconds of the reading behind this card. */

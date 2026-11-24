@@ -87,8 +87,6 @@ describe('tracker setup sheet', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
     expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
-    expect(screen.getByText(/Sends the headers Region, Booked and 2 rows/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Suggest what to track' }));
     expect(await screen.findByText(/Suggested on this machine/)).toBeInTheDocument();
     expect(screen.getByText(/Booked looks like the amount/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Accept' }));
@@ -151,7 +149,6 @@ describe('tracker setup sheet', () => {
     await user.click(screen.getByRole('button', { name: 'Set up' }));
     await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
     expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Suggest what to track' }));
     await user.click(await screen.findByRole('button', { name: 'Accept' }));
     const name = screen.getByLabelText('Instance name');
     await user.clear(name);
@@ -363,13 +360,85 @@ describe('tracker setup sheet', () => {
     await user.click(screen.getByRole('button', { name: 'Set up' }));
     await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
     expect(await screen.findByRole('columnheader', { name: 'Booked' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Suggest what to track' }));
 
     // The sheet degrades visibly: the error slot fills, busy clears, and
     // the sheet stays operable instead of wedging on a disabled screen.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The dashboard could not reach its own server; nothing was suggested.');
-    expect(screen.getByRole('button', { name: 'Suggest what to track' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Close dialog' })).toBeEnabled();
+  });
+
+  it('sketches the selected chart and posts a time column over every row', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/widgets/settings')) return jsonResponse({ suggest_headers_only: false });
+      if (target.endsWith('/pick')) {
+        return jsonResponse({
+          preview: {
+            sheet: 'Data',
+            headers: ['Region', 'Week', 'Booked'],
+            rows: [['East', '2026-01-06', '10']],
+          },
+        });
+      }
+      if (target.endsWith('/suggest')) return jsonResponse({ disclosure: '', proposal: null });
+      if (target.endsWith('/confirm')) return jsonResponse({ step: 'done' });
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    expect(await screen.findByRole('img', { name: 'The metric, each reading, as a line' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Your AI' })).toHaveAttribute('href', '/settings');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Chart'), 'column');
+    expect(screen.getByRole('img', { name: 'The metric, each reading, as columns' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Chart'), 'area');
+    await user.click(screen.getByRole('button', { name: 'Booked' }));
+    await user.click(screen.getByRole('radio', { name: 'Row label' }));
+    await user.click(screen.getByRole('button', { name: 'Region' }));
+    await user.selectOptions(screen.getByLabelText('Time column'), 'Week');
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('img', { name: 'Booked, by Week, as an area' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    const confirm = fetchMock.mock.calls.find(([target]) => String(target).endsWith('/confirm'))?.[1];
+    expect(JSON.parse(String(confirm?.body)).tracking).toMatchObject({
+      labelColumn: 'Region',
+      valueColumn: 'Booked',
+      dateColumn: 'Week',
+      chart: 'area',
+      rows: null,
+    });
+  });
+
+  it('shows a loading line while the columns are being chosen', async () => {
+    const user = userEvent.setup();
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => { release = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/widgets/settings')) return jsonResponse({});
+      if (target.endsWith('/pick')) return jsonResponse({ preview: openPreview });
+      if (target.endsWith('/suggest')) {
+        await pending;
+        return jsonResponse({
+          proposal: {
+            labelColumn: 'Region', valueColumn: 'Booked', aggregate: 'sum',
+            reason: 'Booked looks like the amount.', source: 'model',
+          },
+        });
+      }
+      return jsonResponse({}, 404);
+    }));
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Choosing the columns');
+    release(undefined);
+    expect(await screen.findByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.queryByText('Choosing the columns')).not.toBeInTheDocument();
   });
 });

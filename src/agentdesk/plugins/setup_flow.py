@@ -18,7 +18,10 @@ from agentdesk.plugins.suggest import (
     propose_columns,
 )
 
-JOB = "Track one series from this workbook: a label column and a value column."
+JOB = (
+    "Track one metric from this workbook over an optional time column, "
+    "drawn as a line, columns, or an area."
+)
 
 
 def store_for(runtime, cap: int) -> InstanceStore:
@@ -171,8 +174,7 @@ def suggest(runtime, cap: int, instance_id: str, *, headers_only: bool, complete
         rows=table["rows"], headers_only=headers_only, path=source["path"],
     )
     if complete is None:
-        proposal = heuristic(table["headers"], table["rows"])
-        return {"disclosure": note, "proposal": proposal, "error": ""}
+        return {"disclosure": "", "proposal": None, "available": False, "error": ""}
     try:
         proposal = propose_columns(request, complete)
     except ConfigError:

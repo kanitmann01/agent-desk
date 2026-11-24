@@ -134,7 +134,8 @@ def _tracker_payload(title: str, reading: dict) -> dict:
         elements.append({"kind": TEXT, "label": "Pace",
                          "text": reading["paceNote"]})
     points = reading.get("points") or []
-    if len(points) >= 2:
+    chart = reading.get("chart") or "line"
+    if chart == "line" and len(points) >= 2:
         elements.append({"kind": SPARKLINE, "label": "History",
                          "points": points})
     goal = reading.get("goal") if isinstance(reading.get("goal"), dict) else None
@@ -148,6 +149,11 @@ def _tracker_payload(title: str, reading: dict) -> dict:
             "delta": reading["delta"],
             "direction": reading["direction"],
             "points": points,
+            "chart": reading.get("chart") or "line",
+            "axis": reading.get("axis") or "reading",
+            "labels": reading.get("labels") or [],
+            "deltaLabel": reading.get("deltaLabel") or "",
+            "seriesNote": reading.get("seriesNote") or "",
             "file": reading["file"],
             "rowsSeen": reading.get("rowsSeen", 0),
             "labelColumn": reading.get("labelColumn") or "",

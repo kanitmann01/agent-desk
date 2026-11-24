@@ -9,6 +9,12 @@ import time
 
 from agentdesk.plugins.config import InstanceStore
 from agentdesk.plugins.preview import preview_table
+from agentdesk.plugins.sources import cell_date
+
+_CHARTS = ("line", "column", "area")
+_SERIES_CAP = 60
+_SCALAR_LIMIT = 500
+_SERIES_LIMIT = 5000
 
 
 def pace_line(spent: float, elapsed: float, plan: float, period: float) -> str:
@@ -23,42 +29,77 @@ def pace_line(spent: float, elapsed: float, plan: float, period: float) -> str:
 def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict:
     """Read a confirmed tracker's file and return its value, history and provenance.
 
-    Only the granted file is opened, and only its first 500 data rows are read; the
-    configured row selection then indexes those rows, so row numbers are positions
-    in the preview rather than in the sheet. The value is reduced with the configured
-    aggregate and appended to the instance's ``history.json`` when it differs from
-    the previous reading; the newest 30 values come back as ``points``, with ``delta``
-    and ``direction`` comparing the last two. ``sample`` is true when the file sits
+    Only the granted file is opened. With no time column the first 500 data rows
+    are read and the points are the last 30 re-reads of that total. With a time
+    column the first 5000 rows are bucketed and the points are those periods.
+    The configured row selection indexes the preview, so row numbers are positions
+    in the preview rather than in the sheet. The value is appended to the instance's
+    ``history.json`` when it differs from the previous reading. ``sample`` is true when the file sits
     under a ``sample`` folder, which is the shipped demo fixture rather than a file
     the user connected.
     """
     document = store.read(plugin_id, instance_id)
     path = store.granted_file(plugin_id, instance_id)
     tracking = document.get("tracking") or {}
+    chart = str(tracking.get("chart") or "line").lower()
+    if chart not in _CHARTS:
+        chart = "line"
+    date_name = str(tracking.get("dateColumn") or "").strip()
     preview = preview_table(
         path,
         sheet=None,
         header_row=int((document.get("source") or {}).get("headerRow") or 1),
         range_text=(document.get("source") or {}).get("range"),
-        limit=500,
+        limit=_SERIES_LIMIT if date_name else _SCALAR_LIMIT,
     )
     headers = [cell.strip().lower() for cell in preview["headers"]]
-    label_at = _index(headers, tracking.get("labelColumn"))
     value_at = _index(headers, tracking.get("valueColumn"))
     body = list(preview["rows"])
     selected = tracking.get("rows")
     if isinstance(selected, list):
         body = [body[index] for index in selected if isinstance(index, int) and 0 <= index < len(body)]
-    numbers = []
-    for row in body:
-        if value_at is None or value_at >= len(row):
-            continue
-        number = _number(row[value_at])
-        if number is not None:
-            numbers.append(number)
-    value = _aggregate(numbers, tracking.get("aggregate") or "sum")
-    history = _remember(store, plugin_id, instance_id, value)
-    delta, direction = _delta(history)
+    series_note = ""
+    labels: list[str] = []
+    axis = "reading"
+    buckets = _buckets(headers, body, date_name, value_at, tracking.get("aggregate") or "sum")
+    if buckets is not None and buckets.get("missing"):
+        series_note = "The time column is not in this file, so this is the history of readings."
+        buckets = None
+    if buckets is None:
+        numbers = []
+        for row in body:
+            if value_at is None or value_at >= len(row):
+                continue
+            number = _number(row[value_at])
+            if number is not None:
+                numbers.append(number)
+        value = _aggregate(numbers, tracking.get("aggregate") or "sum")
+        history = _remember(store, plugin_id, instance_id, value)
+        delta, direction = _delta(history)
+        points = history[-30:]
+        delta_label = "" if len(history) < 2 else "since the last reading"
+    elif not buckets["points"]:
+        value = 0.0
+        _remember(store, plugin_id, instance_id, value)
+        delta, direction = "First reading", "flat"
+        points = []
+        series_note = "No points in the time column."
+        delta_label = ""
+        axis = "time"
+    else:
+        value = buckets["points"][-1]
+        _remember(store, plugin_id, instance_id, value)
+        points = buckets["points"]
+        labels = buckets["labels"]
+        axis = "time"
+        if buckets["truncated"]:
+            series_note = "Older periods are not on the chart."
+        if len(points) < 2:
+            delta, direction = "First reading", "flat"
+            delta_label = ""
+        else:
+            delta, direction = _delta(points[-2:])
+            delta_label = "since the previous period"
     pace = tracking.get("pace")
     pace_note = ""
     if isinstance(pace, dict):
@@ -68,7 +109,12 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
         "value": value,
         "delta": delta,
         "direction": direction,
-        "points": history[-30:],
+        "points": points,
+        "chart": chart,
+        "axis": axis,
+        "labels": labels,
+        "deltaLabel": delta_label,
+        "seriesNote": series_note,
         "file": path.name,
         "unit": str(tracking.get("unit") or ""),
         "paceNote": pace_note,
@@ -88,6 +134,61 @@ def read_tracker(store: InstanceStore, plugin_id: str, instance_id: str) -> dict
         "readAt": time.time(),
         "sample": any(part.lower() == "sample" for part in path.parent.parts),
     }
+
+
+def _buckets(headers, body, date_name: str, value_at, mode: str):
+    """Group rows by the time column, or None when the tracker has no time column.
+
+    A time column that is not a header returns ``{"missing": True}``. Blank
+    cells are skipped. Parsed dates share a ``YYYY-MM-DD`` label and, when
+    every kept bucket parsed, the buckets are sorted by that label. Otherwise
+    the first-seen file order stands. At most the newest 60 buckets come back.
+    """
+    if not date_name:
+        return None
+    date_at = _index(headers, date_name)
+    if date_at is None:
+        return {"missing": True}
+    order: list[str] = []
+    grouped: dict[str, list[float]] = {}
+    parsed_all = True
+    for row in body:
+        if date_at >= len(row):
+            continue
+        raw = str(row[date_at]).strip()
+        if not raw:
+            continue
+        when = cell_date(row[date_at])
+        if when is None and raw.isdigit():
+            when = cell_date(float(raw))
+        if when is None:
+            parsed_all = False
+            key = raw
+        else:
+            key = when.date().isoformat()
+        if key not in grouped:
+            order.append(key)
+            grouped[key] = []
+        if value_at is not None and value_at < len(row):
+            number = _number(row[value_at])
+            if number is not None:
+                grouped[key].append(number)
+    labels = []
+    points = []
+    for key in order:
+        if not grouped[key]:
+            continue
+        labels.append(key)
+        points.append(_aggregate(grouped[key], mode))
+    if parsed_all and labels:
+        paired = sorted(zip(labels, points))
+        labels = [label for label, _point in paired]
+        points = [point for _label, point in paired]
+    truncated = len(points) > _SERIES_CAP
+    if truncated:
+        labels = labels[-_SERIES_CAP:]
+        points = points[-_SERIES_CAP:]
+    return {"missing": False, "labels": labels, "points": points, "truncated": truncated}
 
 
 def _index(headers, name):
