@@ -7225,11 +7225,27 @@ def _default_outlook_feeder(settings_store) -> OutlookFeeder:
         platform=current_platform(),
     )
 
+def _read_feeder_status() -> dict | None:
+    """The last persisted Outlook alert status, or None when there is none.
+
+    The runner writes outlook-feeder.json on every pass; reading it at
+    watcher construction keeps the Settings card honest across a
+    restart. A missing, unreadable or malformed file is ignored: the
+    card falls back to its Not run yet state rather than failing a boot.
+    """
+    path = default_data_dir() / "outlook-feeder.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
 def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
     """The real mail watcher: settings decide the folder and the user's
     own address on every poll, so either saved in the app applies
     without a restart. The Outlook alert feeder rides the same watcher
-    and exists only when its own toggle is on."""
+    and exists only when its own toggle is on; its last persisted status
+    seeds the card so a restart does not read as Not run yet."""
     try:
         feeder = (
             _default_outlook_feeder(settings_store)
@@ -7241,6 +7257,7 @@ def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | 
             folder_provider=lambda: settings_store.get("mail_folder"),
             self_address_provider=lambda: settings_store.get("mail_self_address"),
             feeder=feeder.run_once if feeder is not None else None,
+            fetch_status=_read_feeder_status(),
         )
     except (OSError, sqlite3.Error):
         LOG.exception("mail watcher unavailable")
