@@ -25,6 +25,8 @@ import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import urllib.error
+import urllib.request
 from urllib.parse import parse_qs, quote, unquote
 
 import agentdesk
@@ -103,6 +105,13 @@ from agentdesk.layout import (
 )
 from agentdesk.ledger import Ledger, LedgerError, may_act
 from agentdesk.ledger import undo as ledger_undo
+from agentdesk.engine import (
+    ConnectionSpec,
+    TurnResult,
+    available as engine_available,
+    run_turn as engine_run_turn,
+    tool_by_name as engine_tool_by_name,
+)
 from agentdesk.mail.core import reply_recipients, reply_subject, write_reply
 from agentdesk.mail.store import MailStore
 from agentdesk.mail.watcher import (
@@ -765,6 +774,7 @@ class AgentDeskServer(ThreadingHTTPServer):
         reflector=None,
         announce_port: int | None = None,
         skills_snapshots_dir: Path | str | None = None,
+        engine_runner=None,
     ) -> None:
         """Bind the ports the handler set shares, then start listening on address.
 
@@ -778,6 +788,15 @@ class AgentDeskServer(ThreadingHTTPServer):
         unavailable state.
         """
         self.sessions = sessions
+        # The engine boundary's token (spec 023): minted once per boot,
+        # held by this process, and accepted only by the loopback tools
+        # route. It never rides a page or a log.
+        self.engine_token = secrets.token_urlsafe(32)
+        # The engine runner (spec 023, ticket 023-3): the injected seam
+        # tests use instead of the real side-car. None means the engine
+        # step asks the boundary, which answers with the side-car when
+        # its pinned venv is installed and with the fixed loop otherwise.
+        self.engine = engine_runner
         self.excel = excel
         self.pick_workbook = pick_workbook
         self.pick_plugin_file = (
@@ -1436,6 +1455,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._raw_body = self._drain_body()
             self._route_peer_post(path)
             return
+        if path == "/api/engine/tools":
+            # The engine surface (spec 023): the guard with the boot
+            # token, never a browser session (the engine holds a token,
+            # not a cookie), and loopback only. The body is drained
+            # first, like the peer branch, so keep-alive survives.
+            self._raw_body = self._drain_body()
+            self._route_engine_post()
+            return
         if not self._gate():
             return
         # Drain the request body up front: an unread body on a keep-alive
@@ -1651,6 +1678,270 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_redirect("/settings#desk-check")
             return
         self._send_json(200, payload)
+
+    # -- the engine surface: one token-gated, loopback-only tools route ----
+
+    def _engine_bearer_token(self) -> str:
+        """The engine token from the one transport it accepts: a Bearer header.
+
+        There is no query-string form by design (tokens must not land in
+        logs), the same rule the peer surface keeps.
+        """
+        header = self.headers.get("Authorization") or ""
+        scheme, _, value = header.partition(" ")
+        if scheme.lower() == "bearer" and value.strip():
+            return value.strip()
+        return ""
+
+    def _route_engine_post(self) -> None:
+        """Serve one engine tool call: the loopback guard, the token, the tool.
+
+        The plain Host/Origin check runs with no sanctioned extra hosts,
+        so the route is loopback-only however wide the settings allow
+        other surfaces. The token is this boot's own, compared with a
+        constant-time equal; the session gate deliberately does not run,
+        because the engine holds a token rather than a browser cookie.
+        """
+        verdict = check_request(
+            self.headers.get("Host"), self.headers.get("Origin"),
+            self.server.port)  # type: ignore[attr-defined]
+        if not verdict.allowed:
+            self._send_json(403, {
+                "error": "engine:blocked",
+                "message": ("The engine tools answer on this desk's loopback "
+                            "address only: " + verdict.reason)})
+            return
+        token = self._engine_bearer_token()
+        expected = getattr(self.server, "engine_token", "")  # type: ignore[attr-defined]
+        if not expected or not token:
+            self._send_json(403, {
+                "error": "engine:token-required",
+                "message": ("This surface is the desk engine's: send this "
+                            "boot's token as an Authorization: Bearer header.")})
+            return
+        if not secrets.compare_digest(token, expected):
+            self._send_json(403, {
+                "error": "engine:token-unknown",
+                "message": "That token is not this boot's engine token."})
+            return
+        self._engine_tool_run()
+
+    def _engine_tool_run(self) -> None:
+        """Dispatch one token-valid tool call through the desk's vocabulary.
+
+        A name the vocabulary does not carry is a 400, never a guess;
+        every write runs its `may_act` gate and lands its ledger entry
+        with an undo kind, or nothing changes and the refusal names why.
+        """
+        body = self._read_json_body()
+        if not isinstance(body, dict):
+            self._send_json(400, {"error": 'expected {"tool": "<name>", "args": {...}}'})
+            return
+        spec = engine_tool_by_name(body.get("tool"))
+        if spec is None:
+            self._send_json(400, {
+                "error": "engine:tool-unknown",
+                "message": "That tool is not one the desk's engine may call."})
+            return
+        args = body.get("args")
+        if not isinstance(args, dict):
+            args = {}
+        handlers = {
+            "desk_names": self._engine_tool_desk_names,
+            "add_card": self._engine_tool_add_card,
+            "propose_fact": self._engine_tool_propose_fact,
+            "desk_probes": self._engine_tool_desk_probes,
+        }
+        self._audit("engine.tool", target=spec.name,
+                    detail="read-only" if spec.read_only else "write")
+        handlers[spec.name](args)
+
+    def _engine_tool_desk_names(self, args: dict) -> None:
+        """The dashboard's names, read-only: what the desk holds right now."""
+        self._send_json(200, {"tool": "desk_names",
+                              "names": engine_names_payload(self.server)})  # type: ignore[attr-defined]
+
+    def _engine_tool_desk_probes(self, args: dict) -> None:
+        """One read-only run of the desk check's probes, as JSON."""
+        self._send_json(200, {"tool": "desk_probes",
+                              "probes": desk_check_api_payload(self.server)})  # type: ignore[attr-defined]
+
+    def _engine_tool_add_card(self, args: dict) -> None:
+        """Add one suggestion card through the existing recommendation builder.
+
+        The builder records the ledger entry with the card-added undo
+        kind; without autonomy the desk refuses before anything
+        changes.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        if server.recommender is None:
+            self._send_json(503, {"error": "the recommendation builder is not available"})
+            return
+        if not self._engine_write_allowed("engine.card", "cards"):
+            return
+        title = str(args.get("title") or "").strip()
+        body = str(args.get("body") or "").strip()
+        if not title or not body:
+            self._send_json(400, {"error": "the add_card call needs a title and a body"})
+            return
+        made = server.recommender.add_engine_card(
+            title=title, body=body, why=str(args.get("why") or "").strip())
+        if made is None:
+            self._send_json(409, {
+                "error": "That suggestion is already waiting or was already made."})
+            return
+        card, entry = made
+        self._send_json(201, {"tool": "add_card", "cardId": card.id,
+                              "entryId": entry.id})
+
+    def _engine_tool_propose_fact(self, args: dict) -> None:
+        """Propose one memory fact through capture's normal review path.
+
+        Review mode stages the same memory draft card a capture makes
+        (the entry's undo dismisses it); automatic mode stores the fact
+        through the one write every fact takes, with the auto-saved
+        entry's fact undo. A fact the desk already holds, a capture
+        switch that is off, or autonomy that is off is a refusal with
+        nothing written.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        memory = server.memory
+        if memory is None:
+            self._send_json(503, {"error": "the memory store is not available"})
+            return
+        if memory.locked_cause is not None:
+            self._send_json(423, {"status": "locked", "error": memory.locked_cause})
+            return
+        settings = memory_loop.capture_settings(server.settings)
+        if not settings.enabled:
+            self._send_json(409, {
+                "error": "Memory capture is off in settings, so nothing was proposed."})
+            return
+        if not self._engine_write_allowed("engine.memory", "memory proposals"):
+            return
+        text = str(args.get("text") or "").strip()
+        if not text:
+            self._send_json(400, {"error": "the propose_fact call needs the fact text"})
+            return
+        if self._fact_already_held(text):
+            self._send_json(409, {
+                "error": "The desk already holds that fact, so nothing was proposed."})
+            return
+        if settings.auto_approve:
+            entry_id = self._engine_fact_store(memory, text)
+        else:
+            entry_id = self._engine_fact_stage(memory, text)
+        self._audit("memory.capture", target="engine", detail="1 proposal")
+        self._send_json(201, {"tool": "propose_fact", "entryId": entry_id})
+
+    def _engine_write_allowed(self, action: str, noun: str) -> bool:
+        """The write gate: may_act as today, with a plain refusal otherwise.
+
+        The engine's writes ride the same autonomy rule as every other
+        thing the desk does by itself; the refusal names what stayed
+        untouched.
+        """
+        settings = self.server.settings  # type: ignore[attr-defined]
+        if settings is None or not may_act(settings, action):
+            self._send_json(409, {
+                "error": (f"Autonomy is off in settings, so the desk's engine "
+                          f"cannot make {noun}.")})
+            return False
+        return True
+
+    def _fact_already_held(self, text: str) -> bool:
+        """Whether this exact fact is stored, waiting or was already rejected.
+
+        The same shape capture's dedupe keeps: a proposal the desk has
+        seen before is refused rather than asked about twice.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        memory, inbox = server.memory, server.inbox
+        key = memory_loop.normalize_fact_text(text)
+        if memory is not None:
+            for fact in memory.all():
+                if memory_loop.normalize_fact_text(fact.text) == key:
+                    return True
+        if inbox is not None:
+            for card in [*inbox.waiting(include_snoozed=True), *inbox.dismissed()]:
+                if card.kind == KIND_MEMORY_DRAFT and card.draft.strip() \
+                        and memory_loop.normalize_fact_text(card.draft) == key:
+                    return True
+        return False
+
+    def _engine_fact_store(self, memory, text: str) -> str:
+        """Store the proposed fact at once (review off) and record its entry.
+
+        The write is store_fact, the one write every fact takes, with
+        the engine channel named in the source; the ledger entry is the
+        auto-saved shape whose undo deletes exactly this fact.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        outcome = memory_loop.store_fact(
+            memory, text, source=f"{memory_loop.AUTO_SOURCE_PREFIX}engine",
+            entities=memory_loop.names_in(text))
+        entry_id = ""
+        ledger = getattr(server, "ledger", None)
+        if ledger is not None:
+            entry = ledger.record(
+                actor="agent-desk",
+                action="memory.auto-saved",
+                subject=f"memory:{outcome.fact.id}",
+                why="Saved a fact the desk proposed, without asking.",
+                undo_kind="memory-fact",
+                before=json.dumps({"id": int(outcome.fact.id)}).encode("utf-8"),
+                detail={"factId": int(outcome.fact.id), "channel": "engine"},
+            )
+            entry_id = entry.id
+        self._schedule_observation_pass()
+        return entry_id
+
+    def _engine_fact_stage(self, memory, text: str) -> str:
+        """Stage the proposed fact as the review card capture makes.
+
+        The card is the memory draft kind the approval flow already
+        writes, with the desk named as where it came from; the ledger
+        entry's card-added undo dismisses the card, so the proposal
+        itself is undoable while it waits.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        source_id = memory.add_source(
+            f"The desk proposed: {text}", speaker="The desk", context="engine")
+        names = memory_loop.names_in(text)
+        card = server.inbox.add(
+            kind=KIND_MEMORY_DRAFT,
+            origin=("The desk learned this while working on its own and saved it "
+                    "here for your review. Approving adds it to memory; rejecting "
+                    "leaves nothing behind."),
+            title="The desk suggests a fact" + (
+                f": {', '.join(name for name, _type in names)}" if names else ""),
+            body="The desk found this while working by itself.",
+            action_label="Save to memory",
+            draft=text,
+            meta={"memoryFact": {
+                "kind": "world",
+                "occurrence_ts": None,
+                "entities": [[name, entity_type] for name, entity_type in names],
+                "source_id": source_id,
+                "channel": "engine",
+                "method": "desk",
+            }},
+        )
+        entry_id = ""
+        ledger = getattr(server, "ledger", None)
+        if ledger is not None:
+            entry = ledger.record(
+                actor="agent-desk",
+                action="memory.proposed",
+                subject=f"memory-draft/{card.id}",
+                why="The desk proposed a fact and left it for your review.",
+                undo_kind="card-added",
+                before=json.dumps(card.to_json(server.inbox.now_ts()),
+                                  ensure_ascii=False).encode("utf-8"),
+                detail={"cardId": card.id, "channel": "engine"},
+            )
+            entry_id = entry.id
+        return entry_id
 
     def _send_update_api(self) -> None:
         """Serve the update state, whether the share is set, and the banner."""
@@ -6532,6 +6823,7 @@ def create_server(
     reflector=None,
     announce_port: int | None = None,
     skills_snapshots_dir: Path | str | None = None,
+    engine_runner=None,
 ) -> AgentDeskServer:
     """Bind the app to the loopback and nothing else.
 
@@ -6683,6 +6975,7 @@ def create_server(
             reflector=reflector,
             announce_port=announce_port,
             skills_snapshots_dir=skills_snapshots_dir,
+            engine_runner=engine_runner,
         )
 
     if port is None:
@@ -8102,3 +8395,201 @@ def _run_update_step(ctx) -> dict:
 # Ticket 11 appends the update step last: a pass heals, ranks, and then
 # reads the share, which is the only step that can replace the program.
 register_step(Step(name="update", enabled=_update_enabled, run=_run_update_step))
+
+
+# -- the engine step (spec 023, ticket 023-3) -------------------------------
+#
+# The engine's own turn, appended last so a pass heals, recommends,
+# ranks and updates before the engine acts on what all of that found.
+# The step is enabled only when the side-car is installed: without it
+# the pass is exactly today's, which is what makes the fallback the
+# proof of the boundary rather than a second behaviour.
+
+ENGINE_LOOPBACK_TIMEOUT_S = 30
+
+
+def _engine_enabled(settings) -> bool:
+    """The engine step runs only when the side-car is installed.
+
+    An injected runner (a test's fake) does not enable the step by
+    itself; the tests that drive the engine pass pin the side-car's
+    presence explicitly, the same fact a real install is.
+    """
+    return engine_available()
+
+
+def _run_engine(ctx) -> dict:
+    """One engine turn for this pass: the boundary decides, the desk executes."""
+    return engine_step_run(ctx)
+
+
+register_step(Step(name="engine", enabled=_engine_enabled, run=_run_engine))
+
+
+def _server_resolution_or_none(server, job: str):
+    """The hub's resolution for one job, or None when it cannot be asked."""
+    try:
+        return _server_resolution(server, job)
+    except Exception:  # noqa: BLE001 - an unbound job is a no-turn, not a crash
+        return None
+
+
+def _engine_connection(server) -> ConnectionSpec | None:
+    """The saved connection a side-car turn runs against, via the hub.
+
+    The same resolution the assistant's calls take (the job's binding,
+    then the default, then the single serving connection, then the
+    environment). The key comes from the keychain for a saved
+    connection and stays only for this one call. A desk with no usable
+    endpoint, or one whose connection serves without a key, answers
+    None: the side-car grammar needs all three parts, and the fallback
+    covers the desk instead.
+    """
+    resolved = _server_resolution_or_none(server, DEFAULT_JOB)
+    if resolved is None or not resolved.base_url or not resolved.model:
+        return None
+    if resolved.connection is not None:
+        api_key = server.keychain.fetch(resolved.connection.id) or ""
+    else:
+        api_key = resolved.api_key
+    if not api_key:
+        return None
+    return ConnectionSpec(base_url=resolved.base_url, api_key=api_key,
+                          model=resolved.model)
+
+
+def engine_names_payload(server) -> dict:
+    """The dashboard's names, read once for the engine: what the desk holds.
+
+    Memory's org and person entities with their names and counts, the
+    agenda's next meeting, and the watched workbook's rows summary. A
+    locked bank, a missing store or an unreadable watch contributes its
+    empty state, so the engine reads the desk as it is and invents
+    nothing.
+    """
+    names: list[dict] = []
+    memory = getattr(server, "memory", None)
+    if memory is not None:
+        try:
+            for summary in memory.entities():
+                if summary.type not in ("org", "person"):
+                    continue
+                names.append({
+                    "name": summary.canonical_name,
+                    "type": summary.type,
+                    "facts": summary.fact_count,
+                    "aliases": list(summary.aliases or ()),
+                })
+        except Exception:  # noqa: BLE001 - a locked bank reads as no names
+            LOG.info("engine names: the memory bank could not be read", exc_info=True)
+    agenda = None
+    calendar = getattr(server, "calendar", None)
+    if calendar is not None:
+        try:
+            view = calendar.day_view()
+            upcoming = [row for row in (view.get("upcoming") or [])
+                        if isinstance(row, dict)]
+            if upcoming:
+                agenda = {"title": str(upcoming[0].get("title") or "Busy"),
+                          "time": str(upcoming[0].get("time") or "")}
+        except Exception:  # noqa: BLE001 - an unreadable calendar reads as none
+            LOG.info("engine names: the calendar could not be read", exc_info=True)
+    workbook = None
+    excel = getattr(server, "excel", None)
+    if excel is not None:
+        try:
+            status = excel.status() or {}
+            if status.get("configured"):
+                workbook = {
+                    "workbook": Path(str(status.get("path") or "")).name,
+                    "rowsSeen": status.get("rowsSeen"),
+                    "grid": status.get("grid") or {"columns": [], "rows": []},
+                }
+        except Exception:  # noqa: BLE001 - an unreadable watch reads as none
+            LOG.info("engine names: the workbook watch could not be read", exc_info=True)
+    return {"memory": names, "agenda": agenda, "workbook": workbook}
+
+
+def engine_context_text(server) -> str:
+    """The engine turn's context block: the names payload as compact JSON."""
+    return json.dumps(engine_names_payload(server), ensure_ascii=False)
+
+
+def _engine_tools_post(server, payload: dict) -> tuple[int, dict]:
+    """POST one tool call to this desk's own tools route over loopback.
+
+    The boot-minted token rides the Authorization header; the proxy
+    rules are emptied so the call can never leave the machine. The
+    answer is the status and the parsed body (an empty dict when the
+    body is not JSON).
+    """
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.port}/api/engine/tools", data=data,
+        method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {server.engine_token}",
+                 "Host": f"127.0.0.1:{server.port}"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=ENGINE_LOOPBACK_TIMEOUT_S) as response:
+            status, raw = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read()
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        body = {}
+    return status, body if isinstance(body, dict) else {}
+
+
+def execute_engine_actions(server, actions) -> tuple[int, int]:
+    """Run the turn's actions through the tools route; count acted and refused.
+
+    Every action, reads included, goes over the loopback route, so the
+    route is the one path the engine's hands take and its audit trail
+    records each call. A refused call names its reason in the server
+    log; nothing is ever executed around the route.
+    """
+    acted = refused = 0
+    for action in actions:
+        status, body = _engine_tools_post(server, {
+            "tool": action.tool, "args": dict(action.args), "why": action.why,
+        })
+        if 200 <= status < 300:
+            acted += 1
+        else:
+            refused += 1
+            LOG.warning("engine tool call %s refused (%s): %s",
+                        action.tool, status, body.get("error") or "")
+    return acted, refused
+
+
+def engine_step_run(ctx) -> dict:
+    """One engine turn for a pass: run it through the boundary, act on it.
+
+    An injected runner (the tests' fake) takes the turn; otherwise the
+    boundary runs the side-car when it is installed and the fixed loop
+    when it is not. The pass's answer names the backend, how many
+    actions the turn proposed, and how many the desk executed or
+    refused.
+    """
+    server = ctx.server
+    runner = getattr(server, "engine", None)
+    loop = getattr(server, "agent_loop", None)
+    context_text = engine_context_text(server)
+    if runner is not None:
+        result = runner.run_turn(context_text, connection=_engine_connection(server))
+    else:
+        result = engine_run_turn(context_text, connection=_engine_connection(server),
+                                 loop=loop)
+    acted, refused = execute_engine_actions(server, result.actions)
+    audit_conn = getattr(server, "audit_conn", None)
+    if audit_conn is not None:
+        audit_store.record(
+            audit_conn, "engine.pass", target=result.backend,
+            detail=(f"{len(result.actions)} action(s), {acted} acted, "
+                    f"{refused} refused"
+                    + (f"; {result.note}" if result.note else "")))
+    return {"backend": result.backend, "actions": len(result.actions),
+            "acted": acted, "refused": refused}

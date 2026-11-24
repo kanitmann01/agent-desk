@@ -28,8 +28,10 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # The stable markers the reply builder keys on: the extraction system
-# prompt's own first sentence, and the agent prompt's instructions label.
+# prompt's own first sentence, the agent prompt's instructions label, and
+# the engine boundary's prompt opening (tools/engine_sidecar_check.py).
 _EXTRACTION_MARKER = "durable memory facts"
+_ENGINE_MARKER = "You act for a small business desk."
 _AGENT_MARKER = "agent instructions:"
 _FEEDBACK_MARKER = "How it landed (the user's own words): "
 _BRIEF_MARKER = "The user's brief (they will not restate their context; use it):"
@@ -211,6 +213,24 @@ def _slide_titles(section: str) -> tuple[str, str]:
     return own.get(section.lower(), (section, f"The point of {section}"))
 
 
+def _engine_reply(prompt: str) -> str:
+    """Two tool calls the engine's vocabulary knows, as strict JSON.
+
+    The engine boundary asks for one JSON array of calls. The mock answers
+    a read and a write, so a smoke run proves the boundary's action path
+    and not only its event stream; the parts are canned, the shape is the
+    one a real turn's result carries.
+    """
+    return json.dumps([
+        {"tool": "desk_names", "args": {}},
+        {"tool": "add_card", "args": {
+            "title": "Renewal due soon",
+            "body": "Acme's renewal is ten days out.",
+            "why": "The desk holds a dated renewal fact.",
+        }},
+    ])
+
+
 def _skill_refine_reply(prompt: str) -> str:
     """The refined prompt as strict JSON: the current prompt with the
     queued feedback appended as instructions, what a careful refine
@@ -237,6 +257,8 @@ def reply_for(prompt: str) -> str:
     The kind is read from the agent-instructions label, never from loose
     words in the prompt.
     """
+    if _ENGINE_MARKER in prompt:
+        return _engine_reply(prompt)
     if _EXTRACTION_MARKER in prompt:
         return _extraction_reply(prompt)
     if _SKILL_REFINE_MARKER in prompt:
@@ -270,6 +292,17 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
         prompt = ""
         if messages and isinstance(messages[0], dict):
             prompt = str(messages[0].get("content") or "")
+        # The side-car sends its own system prompt first and the turn's
+        # prompt as a later user message. The engine marker selects that
+        # message, so the smoke reads the prompt the boundary built; every
+        # other caller keeps the first-message rule unchanged.
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            content = str(message.get("content") or "")
+            if _ENGINE_MARKER in content:
+                prompt = content
+                break
         reply = reply_for(prompt)
         print(f"mock endpoint: {len(prompt)}-char prompt -> {len(reply)}-char reply", flush=True)
         if body.get("stream"):

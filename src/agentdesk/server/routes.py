@@ -14,12 +14,15 @@ that would also accept it (/marketplace before /marketplace/,
 /api/plugins before /api/plugins/), and the /api/plugins/...instances...
 pattern sits before the general /api/plugins/ record route.
 
-Three families do not live here:
+Four families do not live here:
 
 * /peer/... carries a peer token rather than a browser cookie, so its guard
   necessarily runs before the session gate can.
 * /auth/... creates the very session the gate checks, so it too settles
   before the gate.
+* /api/engine/tools carries the engine's own boot token rather than a
+  browser cookie, so its loopback guard and token check also settle before
+  the session gate.
 * /wizard, /api/marketplace/, /marketplace/ and /static/spa/ are prefix rows
   whose handlers hand off to their own routers (the wizard router, the
   marketplace API, the SPA asset directory); this table owns the gate and

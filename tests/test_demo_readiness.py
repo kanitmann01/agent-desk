@@ -11,6 +11,7 @@ on a checkout where the product does not yet have the behaviour.
 """
 
 import importlib.util
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -45,7 +46,11 @@ def test_the_walk_reports_every_check_and_the_metric(readiness, capsys):
 
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
     verdicts = [line for line in lines if line.startswith(("PASS R", "FAIL R"))]
-    assert [int(line[6:8]) for line in verdicts] == list(range(1, readiness.CHECK_COUNT + 1))
+    # A new check is a new number (spec 022's frozen-list rule); 24 and
+    # 25 belong to the sibling slices, so the walk's numbers jump there.
+    assert [int(line[6:8]) for line in verdicts] == list(readiness.CHECK_NUMBERS)
+    assert len(verdicts) == readiness.CHECK_COUNT
+    assert readiness.CHECK_NUMBERS[-1] == 29
     assert all(line.startswith(("PASS R", "FAIL R")) for line in verdicts)
     passed = sum(line.startswith("PASS") for line in verdicts)
     assert lines[-1] == f"METRIC ready={passed}"
@@ -66,3 +71,8 @@ def test_the_mock_endpoint_lists_models_and_remembers_what_it_was_sent(readiness
         "You turn a conversation snippet into a few durable memory facts.\n\ncontent:\n"
         "You: What changed?\nAssistant: Nothing.")
     assert '"facts": []' in quiet
+    # The engine turn gets two calls the boundary's vocabulary knows, so
+    # the side-car smoke proves the action path and not only the stream.
+    engine = json.loads(mock.reply_for(
+        "You act for a small business desk.\n\nThe desk's context:\n{}"))
+    assert [call["tool"] for call in engine] == ["desk_names", "add_card"]
