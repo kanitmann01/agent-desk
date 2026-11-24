@@ -699,3 +699,4 @@ def test_suggest_with_no_model_sends_nothing(tmp_path):
     result = suggest(runtime, 6, "main", headers_only=False, complete=None, plugin_id="excel-report")
     assert result["proposal"] is None
     assert result["disclosure"] == ""
+    assert result["available"] is False

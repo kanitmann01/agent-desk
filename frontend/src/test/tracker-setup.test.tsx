@@ -391,6 +391,8 @@ describe('tracker setup sheet', () => {
     await user.click(screen.getByRole('button', { name: 'Set up' }));
     await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
     expect(await screen.findByRole('img', { name: 'The metric, each reading, as a line' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Your AI' })).toHaveAttribute('href', '/settings');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Chart'), 'column');
     expect(screen.getByRole('img', { name: 'The metric, each reading, as columns' })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Chart'), 'area');
@@ -410,5 +412,33 @@ describe('tracker setup sheet', () => {
       chart: 'area',
       rows: null,
     });
+  });
+
+  it('shows a loading line while the columns are being chosen', async () => {
+    const user = userEvent.setup();
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => { release = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/widgets/settings')) return jsonResponse({});
+      if (target.endsWith('/pick')) return jsonResponse({ preview: openPreview });
+      if (target.endsWith('/suggest')) {
+        await pending;
+        return jsonResponse({
+          proposal: {
+            labelColumn: 'Region', valueColumn: 'Booked', aggregate: 'sum',
+            reason: 'Booked looks like the amount.', source: 'model',
+          },
+        });
+      }
+      return jsonResponse({}, 404);
+    }));
+    render(<TrackerCard card={setupCard} onRefetch={async () => {}} onExpired={() => {}} />);
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+    await user.click(screen.getByRole('button', { name: 'Open a workbook' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Choosing the columns');
+    release(undefined);
+    expect(await screen.findByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.queryByText('Choosing the columns')).not.toBeInTheDocument();
   });
 });

@@ -89,6 +89,8 @@ export default function TrackerSetup({
   const asked = useRef('');
   const [disclosure, setDisclosure] = useState('');
   const [suggested, setSuggested] = useState(false);
+  const [suggesting, setSuggesting] = useState(true);
+  const [noModel, setNoModel] = useState(false);
 
   const base = `/api/plugins/${encodeURIComponent(pluginId)}/instances/${encodeURIComponent(instanceId)}`;
   const pickUrl = `${base}/pick`;
@@ -181,8 +183,13 @@ export default function TrackerSetup({
    */
   async function suggest(ctx: ChooseCtx) {
     const token = ctx.preview.headers.join('\n');
-    if (asked.current === token) return;
+    if (asked.current === token) {
+      setSuggesting(false);
+      return;
+    }
     asked.current = token;
+    setSuggesting(true);
+    setNoModel(false);
     await ctx.ask(async () => {
       let res;
       try {
@@ -191,12 +198,16 @@ export default function TrackerSetup({
         return { ok: false, message: 'The dashboard could not reach its own server; nothing was suggested.' };
       }
       if (res.status === 401) { onExpired(); return { ok: false }; }
-      const data = res.data as { proposal?: Proposal | null; disclosure?: string };
-      if (!res.ok || !data.proposal) return { ok: true };
+      const data = res.data as { proposal?: Proposal | null; disclosure?: string; available?: boolean };
+      if (!res.ok || !data.proposal) {
+        if (res.ok) setNoModel(true);
+        return { ok: true };
+      }
       setDisclosure(data.disclosure || '');
       setProposal(data.proposal);
       return { ok: true };
     });
+    setSuggesting(false);
   }
 
   /** Fill the controls from the suggestion and move to the naming step. */
@@ -305,6 +316,18 @@ export default function TrackerSetup({
               </select>
             </label>
           </div>
+          {suggesting ? (
+            <p className="setup-picking" role="status">
+              <span className="setup-picking-dot" aria-hidden="true" />
+              Choosing the columns
+            </p>
+          ) : (
+            <>
+          {noModel ? (
+            <p className="setup-note">
+              Add a model in <a href="/settings">Your AI</a> to fill this in next time.
+            </p>
+          ) : null}
           {proposal ? (
             <div className="setup-proposal" role="status">
               {disclosure ? <p className="setup-reason">{disclosure}</p> : null}
@@ -325,6 +348,8 @@ export default function TrackerSetup({
             >
               Continue
             </Button>
+          )}
+            </>
           )}
         </>
       )}

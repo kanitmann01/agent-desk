@@ -187,10 +187,11 @@ describe('the setup sheet row selection', () => {
     await dragRows(user, [3, 4]);
     expect(screen.getByText('4/5 rows')).toBeInTheDocument();
 
-    // The Tab trap: shift-tab from the first focusable wraps to the last.
+    // The Tab trap: shift-tab from the first focusable wraps to the last
+    // enabled control (Continue waits on a column choice).
     within(dialog).getByRole('button', { name: 'Close dialog' }).focus();
     await user.tab({ shift: true });
-    expect(within(dialog).getByRole('button', { name: 'Suggest what to track' })).toHaveFocus();
+    expect(within(dialog).getByLabelText('Aggregate')).toHaveFocus();
 
     await user.click(within(dialog).getByRole('button', { name: 'Booked' }));
     await user.click(within(dialog).getByRole('radio', { name: 'Row label' }));

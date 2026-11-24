@@ -737,6 +737,11 @@ table.rows td.neg{color:var(--text-2)}
 .sketch-line{fill:none;stroke:var(--rule-strong);stroke-width:2;stroke-dasharray:4 4}
 .sketch-area{fill:var(--surface-3)}
 .chart-sketch-cap{margin:0;font-size:13px;color:var(--text-2)}
+.setup-picking{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--text-2)}
+.setup-picking-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:setup-pick .9s ease-in-out infinite}
+@keyframes setup-pick{0%,100%{opacity:.25}50%{opacity:1}}
+.setup-note{margin:0;font-size:13px;color:var(--text-2)}
+.setup-note a{color:var(--accent-text)}
 .spark-base{stroke:var(--rule);stroke-width:1;vector-effect:non-scaling-stroke}
 .spark-end{fill:var(--accent)}
 .spark-scale{display:flex;flex-direction:column;justify-content:space-between;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-align:right}

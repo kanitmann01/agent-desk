@@ -174,7 +174,7 @@ def suggest(runtime, cap: int, instance_id: str, *, headers_only: bool, complete
         rows=table["rows"], headers_only=headers_only, path=source["path"],
     )
     if complete is None:
-        return {"disclosure": "", "proposal": None, "error": ""}
+        return {"disclosure": "", "proposal": None, "available": False, "error": ""}
     try:
         proposal = propose_columns(request, complete)
     except ConfigError:
