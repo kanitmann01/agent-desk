@@ -91,6 +91,15 @@ describe('the rail', () => {
     expect(document.querySelector('.rail .count')).toBeNull();
   });
 
+  it('keeps every entry label in its own span and names the avatar', () => {
+    render(<Rail inboxWaiting={2} />);
+    expect(document.querySelectorAll('.rail-label')).toHaveLength(8);
+    // The avatar is a 30px square: its initials can be elided, so the
+    // same name the user line carries is the reachable title.
+    expect(document.querySelector('.rail .user .avatar'))
+      .toHaveAttribute('title', 'Agent Desk');
+  });
+
   it('keeps Memory and Mail on the rail', () => {
     render(<Rail inboxWaiting={0} />);
     const nav = screen.getByRole('navigation', { name: 'Main' });

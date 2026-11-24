@@ -10,6 +10,7 @@ import PluginCardView from '../dashboard/PluginCardView';
 import ResearchCard, { RESEARCH_BUSY } from '../dashboard/ResearchCard';
 import SalesCard from '../dashboard/SalesCard';
 import SkillsCard from '../dashboard/SkillsCard';
+import { CellHead, HealthMatrix, StageChart } from '../dashboard/cells';
 import type { SalesStatus } from '../types';
 
 const NOOP_REFETCH = async () => {};
@@ -543,3 +544,29 @@ describe('the card overflow menus', () => {
   });
 });
 
+describe('the cell text-fit markup', () => {
+  it('gives a cell tag a title so a clipped tag stays reachable', () => {
+    render(<CellHead tag="DESK HEALTH" meta={<span className="mono">2/3 live</span>} />);
+    expect(screen.getByRole('heading', { name: 'DESK HEALTH' }))
+      .toHaveAttribute('title', 'DESK HEALTH');
+  });
+
+  it('titles every source row and keeps the numbers in their numeric cells', () => {
+    render(
+      <HealthMatrix
+        rows={[{ name: 'Workbook', live: true, status: 'live', lastRun: '15:05', items: '1,234,567' }]}
+      />,
+    );
+    expect(screen.getAllByRole('columnheader')).toHaveLength(4);
+    expect(screen.getByRole('rowheader', { name: 'Workbook' }))
+      .toHaveAttribute('title', 'Workbook');
+    expect(document.querySelector('.matrix td.num.mono')).toHaveTextContent('15:05');
+  });
+
+  it('titles the stage axis labels, so the ellipsis has a reachable value', () => {
+    render(<StageChart stages={[{ stage: 'Prospect', deals: 3, net: 4 }]} />);
+    const span = document.querySelector('.stage-axis span');
+    expect(span).toHaveAttribute('title', 'Prospect');
+    expect(span?.querySelector('small')).toHaveAttribute('title', '3 deals');
+  });
+});

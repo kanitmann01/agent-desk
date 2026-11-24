@@ -27,6 +27,7 @@ from agentdesk.calendar.watcher import (
     default_calendar_candidates,
     default_read_calendar,
 )
+import server_harness
 from agentdesk.server.app import default_calendar_hint
 
 
@@ -130,6 +131,16 @@ class TestHint:
 
         assert default_calendar_hint() == home / "OneDrive" / "agent-desk" / "calendar_sync.json"
 
+    def test_an_empty_pin_still_names_the_plain_default(self, monkeypatch, tmp_path):
+        # The empty pin is the documented way to boot a desk that reads
+        # no calendar. The reader answers nothing, but the walkthrough
+        # still needs a path to show, so the hint falls back to the
+        # plain OneDrive default instead of raising.
+        home = fake_home(monkeypatch, tmp_path)
+        monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", "")
+
+        assert default_calendar_hint() == home / "OneDrive" / "agent-desk" / "calendar_sync.json"
+
     def test_shows_the_env_override_even_before_it_exists(self, monkeypatch, tmp_path):
         fake_home(monkeypatch, tmp_path)
         override = tmp_path / "custom" / "calendar_sync.json"
@@ -203,3 +214,23 @@ class TestExplicitPathPrecedence:
         explicit = tmp_path / "chosen" / "my-calendar.json"
 
         assert default_calendar_hint(str(explicit)) == explicit
+
+
+def test_the_walkthrough_renders_when_the_calendar_is_pinned_off(monkeypatch):
+    """The demo and test boot with an empty pin must still show a page.
+
+    The hint used to index the candidate list unconditionally, so this
+    boot answered 500 on the walkthrough. The page now renders and names
+    the plain default it would use once the pin is lifted.
+    """
+    monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", "")
+    booted = server_harness.Booted()
+    try:
+        headers = booted.exchange()
+        status, _headers, body = booted.request("GET", "/walkthrough/calendar", headers)
+        page = body.decode("utf-8")
+        assert status == 200, (status, page[:200])
+        assert "Connect your calendar" in page
+        assert "agent-desk" in page
+    finally:
+        booted.close()
