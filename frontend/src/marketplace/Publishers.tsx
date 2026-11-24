@@ -295,7 +295,7 @@ export function PublisherPage({ name }: { name: string }) {
         <h2 id="mkt-pub-plugins">Plugins by {data.publisher}</h2>
         {data.plugins.length === 0
           ? <p className="mkt-empty-inline">No plugins in the catalog from this publisher.</p>
-          : <MarketGrid cards={data.plugins} />}
+          : <MarketGrid cards={data.plugins} deskNetwork={data.deskNetwork} />}
       </section>
     </div>
   );
