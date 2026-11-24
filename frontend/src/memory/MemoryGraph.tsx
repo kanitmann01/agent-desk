@@ -149,17 +149,20 @@ function Ready({
       </header>
 
       <ol className="mg-pipeline" aria-label="How a knowledge point is made">
-        {data.pipeline.map((step, index) => (
-          <li key={step.step} className="mg-step">
-            <span className="mg-step-top">
-              <span className="mg-step-index mono">{String(index + 1).padStart(2, '0')}</span>
-              <Glyph kind={STEP_GLYPH[step.step]} />
-              <span className="mg-step-name" title={STEP_LABEL[step.step]}>{STEP_LABEL[step.step]}</span>
-            </span>
-            <span className="mg-step-count mono">{stepUnit(step.step, step.count, step.waiting)}</span>
-            <span className="mg-step-text">{step.text}</span>
-          </li>
-        ))}
+        {data.pipeline.map((step, index) => {
+          const unit = stepUnit(step.step, step.count, step.waiting);
+          return (
+            <li key={step.step} className="mg-step">
+              <span className="mg-step-top">
+                <span className="mg-step-index mono">{String(index + 1).padStart(2, '0')}</span>
+                <Glyph kind={STEP_GLYPH[step.step]} />
+                <span className="mg-step-name" title={STEP_LABEL[step.step]}>{STEP_LABEL[step.step]}</span>
+              </span>
+              <span className="mg-step-count mono" tabIndex={0} title={unit}>{unit}</span>
+              <span className="mg-step-text">{step.text}</span>
+            </li>
+          );
+        })}
       </ol>
       </>)}
 

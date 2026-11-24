@@ -58,6 +58,7 @@ describe('memory graph text fit', () => {
     const count = rule(graphCss, '#memory-graph-root .mg-step-count');
     expect(count).toContain('white-space:nowrap');
     expect(count).toContain('overflow-x:auto');
+    expect(rule(graphCss, '#memory-graph-root .mg-step-count:focus-visible')).toContain('outline:2px solid var(--focus)');
   });
 
   it('clips the picture column titles to their own column', () => {
