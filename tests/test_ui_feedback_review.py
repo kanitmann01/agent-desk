@@ -53,6 +53,17 @@ def booted():
         server.close()
 
 
+@pytest.fixture()
+def registry_desk():
+    """One booted desk that browses the real bundled registry checkout."""
+    server = server_harness.Booted(
+        llm=CaptureLlm(), registry_root=str(ROOT / "registry"))
+    try:
+        yield server
+    finally:
+        server.close()
+
+
 def _get(booted, path):
     """Fetch one page through the real HTTP seam, requiring 200."""
     headers = booted.exchange()
@@ -273,6 +284,113 @@ def test_a_runner_with_a_transport_reports_network_available(booted):
     runtime.runner = PluginWidgetRunner(
         runtime.workspace_dir, http_transport=object())
     assert _dashboard_payload(booted)["deskNetwork"] is True
+
+
+# -- S12: the bundled DTOs carry the capabilities the client reads -------
+
+
+def _marketplace(booted, path):
+    """Fetch one marketplace JSON payload through the real HTTP seam."""
+    headers = booted.exchange()
+    status, _headers, body = booted.request("GET", path, headers)
+    assert status == 200, (status, path)
+    return json.loads(body)
+
+
+def test_the_shipped_competitor_watch_carries_network_and_its_source(
+        registry_desk):
+    payload = _marketplace(
+        registry_desk, "/api/marketplace/plugin/competitor-watch")
+    assert payload["deskNetwork"] is False
+    capabilities = payload["plugin"]["capabilities"]
+    assert "example.com" in capabilities["network"]
+    assert "http-get" in capabilities["sources"]
+    catalog = _marketplace(registry_desk, "/api/marketplace/catalog")
+    card = next(entry for entry in catalog["entries"]
+                if entry["id"] == "competitor-watch")
+    assert card["capabilities"]["network"] == capabilities["network"]
+    assert card["capabilities"]["sources"] == capabilities["sources"]
+
+
+def test_every_bundled_dto_carries_a_capabilities_block(registry_desk):
+    catalog = _marketplace(registry_desk, "/api/marketplace/catalog")
+    for entry in catalog["entries"]:
+        capabilities = entry.get("capabilities")
+        assert isinstance(capabilities, dict), entry["id"]
+        for key in ("sources", "permissions", "elementKinds", "filesystem",
+                    "network"):
+            assert isinstance(capabilities[key], list), (entry["id"], key)
+    excel = next(entry for entry in catalog["entries"]
+                 if entry["id"] == "excel-report")
+    assert "excel-watch" in excel["capabilities"]["sources"]
+    assert excel["capabilities"]["network"] == []
+    starter = next(entry for entry in catalog["entries"]
+                   if entry["id"] == "presentation-starter")
+    assert starter["capabilities"]["network"] == []
+    for plugin_id in ("excel-report", "presentation-starter"):
+        detail_payload = _marketplace(
+            registry_desk, f"/api/marketplace/plugin/{plugin_id}")
+        assert detail_payload["plugin"]["capabilities"]["network"] == []
+
+
+# -- S11: a plugin that cannot run here gets no dashboard card -----------
+
+
+REGISTRY_PLUGINS = ROOT / "registry" / "plugins"
+
+
+def test_a_network_plugin_without_a_transport_gets_no_dashboard_card(booted):
+    installed = booted.server.plugins.install(
+        REGISTRY_PLUGINS / "competitor-watch", source="dir")
+    assert installed["ok"] is True
+    cards = _dashboard_payload(booted)["plugins"]["cards"]
+    assert [card["id"] for card in cards] == []
+    # The marketplace still lists it, with the honest cause and its Remove.
+    headers = booted.exchange()
+    status, _headers, body = booted.request(
+        "GET", "/api/marketplace/installed", headers)
+    assert status == 200
+    rows = json.loads(body)["plugins"]
+    row = next(item for item in rows if item["id"] == "competitor-watch")
+    assert row["status"]["cause"] == "This desk cannot read web pages yet."
+
+
+def test_a_tracker_in_setup_keeps_its_dashboard_card(booted):
+    installed = booted.server.plugins.install(
+        REGISTRY_PLUGINS / "excel-report", source="dir")
+    assert installed["ok"] is True
+    cards = _dashboard_payload(booted)["plugins"]["cards"]
+    tracker = next(card for card in cards if card["id"] == "excel-report")
+    assert tracker["freshness"] == "setup"
+
+
+def test_the_card_filter_drops_the_no_transport_identity_not_its_wording():
+    from agentdesk.server.dashboard_state import dashboard_plugin_cards
+
+    unrunnable = {
+        "id": "competitor-watch",
+        "freshness": "attention",
+        "cause": "This desk cannot read web pages yet.",
+        "sourceReason": "no-transport",
+    }
+    other_attention = {
+        "id": "tampered",
+        "freshness": "attention",
+        "cause": "installed files changed",
+        "sourceReason": "",
+    }
+    setup = {
+        "id": "tracker",
+        "freshness": "setup",
+        "cause": "",
+        "payload": {"setup": {"step": "columns"}},
+    }
+    assert dashboard_plugin_cards(
+        [unrunnable, other_attention, setup]) == [other_attention, setup]
+    # The decision is the code, not the sentence: new reader wording keeps
+    # the same internal identity and is still filtered.
+    unrunnable["cause"] = "The web is out of reach on this desk."
+    assert dashboard_plugin_cards([unrunnable]) == []
 
 
 # -- S8: a truncated rail label still offers its full text ---------------
