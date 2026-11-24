@@ -94,7 +94,7 @@ export function MarketCardView({ card }: { card: MarketCard }) {
         </div>
         <span className="mkt-version">v{card.version}</span>
       </div>
-      <p className="mkt-card-summary">{card.summary}</p>
+      <p className="mkt-card-summary" title={card.summary}>{card.summary}</p>
       <div className="mkt-card-tags">
         <span className="mkt-tag" tabIndex={0} title={categoryLabel(card.category)}>{categoryLabel(card.category)}</span>
         <span className={`mkt-risk mkt-risk-${card.riskTier}`}>
@@ -257,6 +257,22 @@ export function SkeletonGrid({ count = 6 }: { count?: number }) {
           <span className="mkt-skel mkt-skel-short" />
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Render one panel-shaped placeholder: a heading line and body lines.
+ *
+ * It borrows the panel's own box and rhythm, so the region that receives the
+ * result keeps its shape while the result is read. Hidden from assistive
+ * technology; the phase line beside it carries the words.
+ */
+export function SkeletonPanel({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="mkt-panel mkt-panel-skel" aria-hidden="true">
+      <span className="mkt-skel mkt-skel-title" />
+      {Array.from({ length: lines }, (_, i) => <span className="mkt-skel" key={i} />)}
     </div>
   );
 }

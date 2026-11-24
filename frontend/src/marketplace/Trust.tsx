@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Button from '../components/Button';
+import { useBusy } from '../components/useBusy';
 import { getMarket, marketErrorText } from './client';
 import { MarketLink } from './context';
+import { SkeletonPanel } from './MarketGrid';
 import type { TrustSnapshot } from './types';
 import './admin-trust.css';
 
@@ -17,8 +19,10 @@ export default function TrustPage() {
   const [snapshot, setSnapshot] = useState<TrustSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const retryBusy = useBusy(loading);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await getMarket<TrustSnapshot>('/api/marketplace/trust');
       setSnapshot(data);
@@ -45,17 +49,25 @@ export default function TrustPage() {
         </p>
       </header>
 
-      {loading && !snapshot && (
-        <section className="mkt-panel">
-          <p role="status">Loading the trust snapshot…</p>
-        </section>
+      {loading && !snapshot && !error && (
+        <div className="mkt-skeleton-region" aria-busy="true">
+          <p className="mkt-result-count" role="status">Reading the trust snapshot…</p>
+          <div className="mkt-admin-grid">
+            <SkeletonPanel lines={3} />
+            <SkeletonPanel lines={4} />
+            <SkeletonPanel lines={2} />
+          </div>
+        </div>
       )}
 
       {error && (
         <section className="mkt-error-panel" role="alert">
           <h2>The trust snapshot could not be loaded</h2>
           <p>{error}</p>
-          <Button onClick={() => void load()}>Try again</Button>
+          <Button disabled={loading} pending={retryBusy} pendingLabel="Trying again…"
+                  onClick={() => void load()}>
+            Try again
+          </Button>
         </section>
       )}
 

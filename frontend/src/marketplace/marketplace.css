@@ -190,6 +190,10 @@
 .mkt-row-name { font-weight: 650; font-size: 16px; }
 .mkt-row-summary { color: var(--text-2); font-size: 14px; }
 .mkt-row-cat, .mkt-row-extra { font-size: 14px; color: var(--muted); }
+/* A row's ineligible sentence is prose, not a badge: it takes its own full
+   line so it never sets the width of the row's auto column and squeezes the
+   summary and publisher beside it. */
+.mkt-row .mkt-ineligible { grid-column: 1 / -1; }
 .mkt-group { margin-top: 20px; }
 .mkt-group h2 { font-family: var(--font-display); font-size: 20px; font-weight: 560; margin: 0 0 4px; }
 @media (max-width: 800px) {
@@ -304,6 +308,49 @@
 .mkt-skel-title { height: 16px; width: 55%; }
 .mkt-skel-short { width: 35%; }
 @keyframes mkt-pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+/* A region whose first load is a shaped placeholder: one phase line and the
+   same box the result will occupy. */
+.mkt-skeleton-region { display: flex; flex-direction: column; gap: 12px; }
+.mkt-panel-skel { background: var(--surface); }
+.mkt-panel-skel .mkt-skel { width: 100%; }
+.mkt-panel-skel .mkt-skel-title { width: 45%; }
+/* The import diff's placeholder keeps the table's three columns. */
+.mkt-import-skel {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-inner);
+  background: var(--surface);
+}
+.mkt-import-skel-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr) minmax(0, 2fr);
+  gap: 14px;
+  align-items: center;
+}
+.mkt-import-skel-row .mkt-skel { width: 100%; }
+.mkt-import-skel-row .mkt-skel-short { width: 70%; }
+/* A table placeholder: one row per column, on the same rhythm as a row. */
+.mkt-rows-skel { display: flex; flex-direction: column; }
+.mkt-rows-skel-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1.2fr) minmax(0, 2fr) minmax(70px, 1fr) minmax(70px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.mkt-rows-skel-row .mkt-skel { width: 100%; }
+.mkt-rows-skel-row .mkt-skel-short { width: 65%; }
+/* Installed cards keep the card's own box while the list is read. */
+.mkt-installed-skel { min-height: 128px; }
+.mkt-installed-skel .mkt-skel { width: 100%; }
+.mkt-installed-skel .mkt-skel-title { width: 38%; }
+.mkt-installed-skel .mkt-skel-short { width: 24%; }
+/* A refetch keeps the results where they are and dims them; no skeletons
+   replace them and no box moves. */
+.mkt-refetching { opacity: .6; }
 
 /* The describe fill: one row per choice, a skeleton while it runs and the
    chosen label with its reason when it lands. Reuses .mkt-skel's animation,
