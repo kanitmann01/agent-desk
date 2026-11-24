@@ -502,6 +502,18 @@ table.rows td.neg{color:var(--text-2)}
 .btn-secondary{background:var(--surface);color:var(--heading);box-shadow:none;border:1px solid var(--rule-strong)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-3)}
 .btn-sm{min-height:30px;padding:4px 12px;font-size:13px;font-weight:600;flex:none}
+/* A button that has started work says so without moving: the idle and
+   pending labels share one grid cell (both in the DOM, the inactive one
+   hidden), and the dot reuses the setup-picking pulse. */
+.btn-pending:disabled{cursor:progress;opacity:.55}
+.btn-primary.btn-pending:disabled{opacity:1}
+.btn-busy-dot{
+  width:8px;height:8px;border-radius:50%;background:var(--live);flex:none;
+  animation:setup-pick .9s ease-in-out infinite;
+}
+.btn-labels{display:grid;min-width:0}
+.btn-label{grid-area:1/1;min-width:0;white-space:nowrap}
+.btn-label-hidden{visibility:hidden}
 
 /* The skills strip: plain rows (title, up to two description lines, and
    a quiet run chevron). */
@@ -1037,4 +1049,5 @@ table.rows td.neg{color:var(--text-2)}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}
+  .btn-busy-dot{animation:none}
 }
