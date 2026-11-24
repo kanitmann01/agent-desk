@@ -109,6 +109,7 @@ from agentdesk.mail.watcher import (
     STATE_UNCONFIGURED,
     MailWatch,
 )
+from agentdesk.locking import store_lock
 from agentdesk.llm import (
     LlmUnavailable,
     NO_ENDPOINT_CAUSE,
