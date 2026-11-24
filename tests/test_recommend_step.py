@@ -81,3 +81,61 @@ def test_a_pass_builds_the_deadline_recommendation(env, auth):
     recs = _get_json(env, auth, "/api/dashboard")["recommendations"]
     card = next(rec for rec in recs if rec["due"] == target.isoformat())
     assert fact["id"] in card["cites"]
+
+
+def test_the_rank_step_pays_the_ledger_and_undo_restores_the_card(env, auth, monkeypatch):
+    """The ledger toll on the rank step (spec 023), over the user's surfaces.
+
+    One Run-now pass ranks the waiting recommendation through the stubbed
+    endpoint reply; the change must appear in the ledger with its Undo, and
+    Undo must put the rule's why line back on the card.
+    """
+    from agentdesk.recommend import rank as rank_module
+
+    target = datetime.date.today() + datetime.timedelta(days=10)
+    if (target.month, target.day) == (2, 29):
+        target += datetime.timedelta(days=1)
+    text = f"The Halvorsen renewal is due {target:%B} {target.day}."
+    status, _headers, body = env.post_json("/memory/add", {"text": text}, auth)
+    assert status == 201, body
+    rule_row = next(rec for rec in _get_json(env, auth, "/api/dashboard")["recommendations"]
+                    if rec["due"] == target.isoformat())
+    assert rule_row["whySource"] == "rule"
+
+    model_why = "Renewal is close and it is your largest account."
+
+    def stub_chat(prompt):
+        """Score every waiting recommendation above the threshold."""
+        return json.dumps([
+            {"id": card.id, "score": 9, "why": model_why}
+            for card in env.server.inbox.waiting()
+            if (card.meta or {}).get("recommendation")
+        ])
+
+    monkeypatch.setattr(rank_module, "settings_chat", lambda settings: stub_chat)
+    status, _headers, body = env.post_json("/api/agent-loop/run", {}, auth)
+    assert status == 200, body
+    assert _wait_until(lambda: env.server.agent_loop.status()["running"] is False)
+
+    ranked = next(rec for rec in _get_json(env, auth, "/api/dashboard")["recommendations"]
+                  if rec["due"] == target.isoformat())
+    assert ranked["whySource"] == "model"
+    assert ranked["why"] == model_why
+
+    # The change is in the ledger, undoable, and Undo restores the rule's why.
+    entry = next(row for row in _get_json(env, auth, "/api/ledger")["entries"]
+                 if row["action"] == "recommend.ranked")
+    assert entry["undoable"] is True
+    stored = env.server.ledger.get(entry["id"])
+    assert stored.undo_kind == "card-ranked"
+    assert stored.actor == "agent"
+    status, _headers, body = env.post_json("/api/ledger/undo", {"id": entry["id"]}, auth)
+    assert status == 200, body
+
+    restored = next(rec for rec in _get_json(env, auth, "/api/dashboard")["recommendations"]
+                    if rec["due"] == target.isoformat())
+    assert restored["whySource"] == "rule"
+    assert restored["why"] == rule_row["why"]
+    undone = env.server.ledger.get(entry["id"])
+    assert undone.undone_by is not None
+    assert env.server.ledger.get(undone.undone_by).undoes == entry["id"]

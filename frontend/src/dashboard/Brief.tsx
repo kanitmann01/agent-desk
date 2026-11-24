@@ -7,7 +7,7 @@
 //
 // While the Sample data switch is on, a cell with no real source shows
 // the sample world (sampleDesk.ts) and says so once, in its header.
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { DashboardData, PluginCard } from '../types';
 import Button from '../components/Button';
 import { postJson } from '../api';
@@ -20,6 +20,7 @@ import {
   MOVER_CAP,
   agentCheckedLine,
   decisionsEmptyText,
+  deskActionLine,
   deskCheckAlert,
   formatAmount,
   formatSigned,
@@ -140,6 +141,23 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
   // The AI is the one thing every model call needs, so the first question
   // waits for it. The step itself lives in the Get started strip.
   const aiConnected = sourceStatus('research-endpoint') === 'connected';
+  // The desk's own action, named when it is new to this sitting (spec
+  // 023): the poll watch sees the payload's agent-activity stamp move,
+  // and this line says what the desk did, in the desk's own voice. The
+  // sitting ref folds every stamp it has seen, so the line stands from
+  // the first new pass until a newer one, and the pass the page opened
+  // with is never announced.
+  const sitting = useRef<{ baseline: number | null; newest: number | null } | null>(null);
+  const rawStamp = data.agentLoop?.lastRunTs;
+  const stamp = typeof rawStamp === 'number' && Number.isFinite(rawStamp) ? rawStamp : null;
+  if (sitting.current === null) {
+    sitting.current = { baseline: stamp, newest: stamp };
+  } else if (stamp !== null && (sitting.current.newest === null || stamp > sitting.current.newest)) {
+    sitting.current = { baseline: sitting.current.baseline, newest: stamp };
+  }
+  const deskAction = sitting.current === null
+    ? null
+    : deskActionLine(sitting.current.baseline, sitting.current.newest);
   // The Get started strip leads with the setup steps the server reports;
   // it goes away once every step is done, or for this sitting.
   const setupSteps = data.setup?.steps ?? [];
@@ -296,6 +314,11 @@ export default function Brief({ data, onRefetch, onExpired, setupDismissed = fal
           const checked = agentCheckedLine(data.agentLoop);
           return checked ? <p className="cell-foot health-foot">{checked}</p> : null;
         })()}
+        {deskAction ? (
+          // Announced politely: the line arrives on its own, while the
+          // user reads, so it is a status and not a surprise.
+          <p className="cell-foot health-foot" role="status">{deskAction}</p>
+        ) : null}
       </>
     ),
   });

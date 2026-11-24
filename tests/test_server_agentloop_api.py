@@ -70,14 +70,67 @@ def auth(env):
     return env.exchange()
 
 
-def test_status_route_reports_the_loop_shape(env, auth):
-    payload = _get_json(env, auth, "/api/agent-loop")
-    assert payload["enabled"] is True
-    assert payload["intervalMinutes"] == 60
-    assert payload["running"] is False
-    assert payload["lastSteps"] == []
-    assert payload["lastRunTs"] is None
-    assert payload["nextRunTs"] > time.time() + 3500
+def test_status_route_reports_the_loop_shape(env, auth, tmp_path):
+    """The status payload over HTTP, after the first pass (spec 023).
+
+    The loop runs on tiny injected clocks so the first pass lands at once,
+    with no Run now; the payload then reports that pass, and the next one
+    a full interval after it.
+    """
+    fast = AgentLoop(env.server, startup_delay=0.02, wake_seconds=3600,
+                     data_dir=tmp_path / "claim")
+    env.server.agent_loop = fast
+    server_app.start_background_polls(env.server)
+    try:
+        assert _wait_until(lambda: fast.status()["lastRunTs"] is not None
+                           and fast.status()["running"] is False)
+        payload = _get_json(env, auth, "/api/agent-loop")
+        assert payload["enabled"] is True
+        assert payload["intervalMinutes"] == 60
+        assert payload["running"] is False
+        # The first pass ran at startup, and the next one is a full
+        # interval after that pass.
+        assert payload["lastRunTs"] <= time.time() + 5
+        assert payload["lastSteps"]
+        assert payload["nextRunTs"] == pytest.approx(payload["lastRunTs"] + 3600, abs=10)
+    finally:
+        fast.stop()
+
+
+def test_a_fresh_desk_acts_within_120_seconds_of_first_boot(env, auth, tmp_path):
+    """R26 (spec 023): left alone, a fresh desk acts within 120 seconds.
+
+    The loop starts on tiny injected clocks (a 0.02 s startup delay, the
+    desk clock advanced one second per read) and the test never posts Run
+    now. The first pass must be in the audit trail, the record Activity
+    shows, inside the window, with the desk check among its steps, and
+    the interval must count from that pass.
+    """
+    boot_ts = time.time()
+    reads = {"now": boot_ts}
+
+    def clock():
+        """The injected desk clock: one second per read, starting at boot."""
+        reads["now"] += 1.0
+        return reads["now"]
+
+    fast = AgentLoop(env.server, clock=clock, startup_delay=0.02,
+                     wake_seconds=3600, data_dir=tmp_path / "claim")
+    env.server.agent_loop = fast
+    server_app.start_background_polls(env.server)
+    try:
+        assert _wait_until(lambda: fast.status()["lastRunTs"] is not None)
+        passes = [row for row in audit_store.entries(env.server.audit_conn)
+                  if row["action"] == "agentloop.pass"]
+        assert passes, "the desk's first pass never landed in the trail"
+        assert passes[0]["ts"] <= boot_ts + 120
+        assert "deskcheck ok" in passes[0]["detail"]
+        # The interval counts from the first pass, not from boot.
+        payload = _get_json(env, auth, "/api/agent-loop")
+        assert payload["lastRunTs"] <= reads["now"]
+        assert payload["nextRunTs"] == pytest.approx(payload["lastRunTs"] + 3600, abs=10)
+    finally:
+        fast.stop()
 
 
 def test_run_now_starts_and_a_second_call_is_409(env, auth, monkeypatch, tmp_path):
@@ -221,8 +274,8 @@ def test_settings_agent_section_shows_the_loop(env, auth):
 
 def test_settings_agent_section_empty_state_is_verbatim(env, auth):
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
-    assert ("The agent hasn't run yet. It runs about an hour after the app "
-            "opens, or now.") in page
+    assert ("The agent hasn't run yet. The first pass runs a few seconds "
+            "after the app opens, or now.") in page
 
 
 def test_settings_says_automatic_checks_are_off_when_disabled(tmp_path, monkeypatch):

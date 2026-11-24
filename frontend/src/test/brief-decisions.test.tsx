@@ -151,3 +151,26 @@ describe('the Decisions cell', () => {
     expect(screen.queryByText('Connect your calendar')).not.toBeInTheDocument();
   });
 });
+
+describe('the desk action line (spec 023)', () => {
+  const view = (lastRunTs: number | null) =>
+    render(<Brief data={{ ...BASE, agentLoop: { lastRunTs, nextRunTs: null, enabled: true } }} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+
+  it('names the desk action when a poll brings a stamp the page has not shown', () => {
+    const brief = view(null);
+    // No pass had run when the page opened: nothing to name yet.
+    expect(screen.queryByText('The desk checked your sources.')).toBeNull();
+    // The poll lands the first pass: the stamp moves and the line says so.
+    brief.rerender(<Brief data={{ ...BASE, agentLoop: { lastRunTs: 1_700_000_000, nextRunTs: null, enabled: true } }} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+    expect(screen.getByRole('status')).toHaveTextContent('The desk checked your sources.');
+    // An unrelated re-render on the same payload keeps the line up.
+    brief.rerender(<Brief data={{ ...BASE, agentLoop: { lastRunTs: 1_700_000_000, nextRunTs: null, enabled: true } }} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+    expect(screen.getByRole('status')).toHaveTextContent('The desk checked your sources.');
+  });
+
+  it('never names the pass the page opened with', () => {
+    view(1_700_000_000);
+    expect(screen.queryByText('The desk checked your sources.')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});

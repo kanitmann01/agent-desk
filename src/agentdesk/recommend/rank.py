@@ -5,8 +5,11 @@ Model ranking of waiting recommendations (spec 016 §6.3).
 One pass sends the waiting recommendation titles, the facts they cite and
 the learned profile lines to the company endpoint. A reply above the
 threshold replaces the card's why line; a reply below it snoozes the card
-until tomorrow morning. The step never writes the reply, the prompt or any
-fact text to the audit trail: only the model name and the request size.
+until tomorrow morning. Every change pays the ledger toll (spec 023):
+each re-ranked or snoozed card records one undoable entry, undo_kind
+card-ranked. The step never writes the reply, the prompt or any fact
+text to the audit trail: only the model name and the request size, and
+the ledger entries name the decision, never the model's words.
 
 The rules and the builder stay deterministic. This module is the one
 place where a recommendation's wording may come from the endpoint, so
@@ -119,8 +122,18 @@ def tomorrow_8am_ts(now) -> float:
 
 
 def apply_scores(inbox, ledger, scored, threshold: int, tomorrow_8am: float) -> dict:
-    """Show a card with a model why, or snooze it until tomorrow morning."""
-    del ledger  # the ranking is display-only; the card itself is the record
+    """Show a card with a model why, or snooze it until tomorrow morning.
+
+    Every change is recorded before it is applied, one undoable entry per
+    card (undo_kind card-ranked) whose before capture is the card as it
+    was, so a capture that cannot be stored leaves the cards alone and an
+    Undo puts a card back exactly as it stood. Without a ledger the toll
+    cannot be paid, so the change is refused, never applied unrecorded
+    (spec 023: nothing skips the ledger). The entries name the decision
+    and the score, never the model's words.
+    """
+    if ledger is None:
+        return {"shown": 0, "snoozed": 0, "refused": len(scored)}
     shown = 0
     snoozed = 0
     for row in scored:
@@ -128,7 +141,20 @@ def apply_scores(inbox, ledger, scored, threshold: int, tomorrow_8am: float) -> 
             card = inbox.get(row["id"])
         except Exception:  # noqa: BLE001 - a card may be decided mid-pass
             continue
+        before = json.dumps(card.to_json(inbox.now_ts()), ensure_ascii=False).encode("utf-8")
+        recommendation = (card.meta or {}).get("recommendation") or {}
+        subject = f"recommendation/{recommendation.get('key') or card.id}"
         if row["score"] >= threshold:
+            ledger.record(
+                actor="agent",
+                action="recommend.ranked",
+                subject=subject,
+                why="The desk re-ranked this decision: your AI's why line "
+                    "replaced the rule's.",
+                undo_kind="card-ranked",
+                before=before,
+                detail={"score": row["score"], "decision": "shown"},
+            )
             meta = dict(card.meta or {})
             recommendation = dict(meta.get("recommendation") or {})
             recommendation["score"] = row["score"]
@@ -137,6 +163,16 @@ def apply_scores(inbox, ledger, scored, threshold: int, tomorrow_8am: float) -> 
             inbox.update_meta(card.id, meta, origin=row["why"])
             shown += 1
         else:
+            ledger.record(
+                actor="agent",
+                action="recommend.ranked",
+                subject=subject,
+                why="The desk ranked this decision low, so it rests until "
+                    "tomorrow morning.",
+                undo_kind="card-ranked",
+                before=before,
+                detail={"score": row["score"], "decision": "snoozed"},
+            )
             inbox.snooze(card.id, tomorrow_8am)
             snoozed += 1
     return {"shown": shown, "snoozed": snoozed}

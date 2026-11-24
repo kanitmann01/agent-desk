@@ -68,6 +68,22 @@ export function agentCheckedLine(
   return `Agent checked at ${LOOP_TIME.format(new Date(agentLoop.lastRunTs * 1000))}`;
 }
 
+/**
+ * The Brief's one line naming the desk's own action, or null while nothing
+ * new has happened.
+ *
+ * `baseline` is the agent-activity stamp the page opened with and `newest`
+ * the newest stamp this sitting has seen; a newest newer than the baseline
+ * means a pass ran while the dashboard was open, so the Brief names it in
+ * the desk's own voice (spec 023). The pass the page opened with is never
+ * named, and a sitting without a stamp stays quiet.
+ */
+export function deskActionLine(baseline: number | null, newest: number | null): string | null {
+  if (newest === null || !Number.isFinite(newest)) return null;
+  if (baseline !== null && newest <= baseline) return null;
+  return 'The desk checked your sources.';
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** A workbook date cell as "27 Jan", or "" when the value is not an ISO date. */

@@ -35,8 +35,9 @@ LOG = logging.getLogger("agentdesk.agentloop")
 LATCH_LAST_RUN = "loop:last_run_at"
 LOCK_NAME = "agentloop.lock"
 
-# Spec 016 section 6.2: wake every 60 s, and the first desk check about
-# 5 s after boot so self-heal does not wait an hour.
+# Spec 016 section 6.2: wake every 60 s, and the first full pass about
+# 5 s after boot so the desk acts at once instead of waiting an hour
+# (spec 023).
 WAKE_SECONDS = 60.0
 STARTUP_DELAY = 5.0
 DEFAULT_MINUTES = 60
@@ -190,8 +191,9 @@ class AgentLoop:
     def run_pass(self, only: set[str] | None = None) -> list[dict]:
         """Run one pass synchronously: claim, steps, audit, remember.
 
-        only names the steps to run (the startup desk check passes
-        {"deskcheck"}); None runs every enabled step. A pass that cannot
+        only names the steps to run; None runs every enabled step, which
+        is what the startup pass and every tick run (spec 023: the first
+        pass covers all the steps). A pass that cannot
         claim the run slot records the refusal as its only step row and
         changes nothing else. This is the loop-thread path, so it owns the
         running flag for its duration; when a pass is already running in
@@ -320,22 +322,26 @@ class AgentLoop:
         self._thread.start()
 
     def _run(self) -> None:
-        """The thread target: one startup desk check, then the cadence.
+        """The thread target: one full startup pass, then the cadence.
 
-        Nothing here is caught wholesale: a bug that raises out of this
-        target kills the thread, which is exactly the death the supervisor
-        (restart_if_dead) heals on the next dashboard view. Step failures
-        never get that far; run_pass isolates each one.
+        The startup pass runs every step, not just the desk check, so a
+        fresh desk acts within seconds of its first start (spec 023) and
+        the interval counts from that pass. Nothing here is caught
+        wholesale: a bug that raises out of this target kills the thread,
+        which is exactly the death the supervisor (restart_if_dead) heals
+        on the next dashboard view. Step failures never get that far;
+        run_pass isolates each one.
         """
         if self._stop.wait(self.startup_delay):
             return
         if self.minutes() != 0:
-            self.run_pass(only={"deskcheck"})
+            self.run_pass()
         while not self._stop.wait(self.wake_seconds):
             self._tick()
 
     def _tick(self) -> None:
-        """One wake: seed the interval on first sight, run a pass when due."""
+        """One wake: fire and seed on first sight, run a pass when the
+        interval has elapsed."""
         ledger = getattr(self.server, "ledger", None)
         minutes = self.minutes()
         if minutes == 0 or ledger is None:
