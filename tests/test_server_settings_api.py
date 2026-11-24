@@ -582,3 +582,52 @@ def test_fetch_now_with_the_feed_off_answers_honestly(tmp_path):
         assert json.loads(body)["ran"] is False
     finally:
         booted.close()
+
+
+def test_a_healthy_fetch_shows_its_count_and_coverage_window(tmp_path):
+    fetch = {
+        "collector": "notification-store",
+        "platform": "test-os",
+        "lastRunTs": 1700000000.0,
+        "lastResult": "ok",
+        "lastError": "",
+        "written": 2,
+        "coverageFromTs": 1699000000.0,
+        "coverageToTs": 1700000000.0,
+    }
+    booted = server_harness.Booted(
+        mail=_watch_with_feeder(tmp_path, lambda: dict(fetch)))
+    try:
+        auth = booted.exchange()
+        booted.post_json("/settings/mail/fetch-now", {}, auth)
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "2 alerts" in page
+        assert "notification-store" in page
+        assert "Coverage" in page
+    finally:
+        booted.close()
+
+
+def test_a_busy_fetch_and_the_macos_cause_render_plainly(tmp_path):
+    answers = [
+        {"collector": "", "platform": "test-os", "lastRunTs": None,
+         "lastResult": "busy", "lastError": "A feeder run is already in progress.",
+         "written": 0},
+        {"collector": "mac-notifications", "platform": "darwin",
+         "lastRunTs": 1700000000.0, "lastResult": "error",
+         "lastError": "Reading the store needs Full Disk Access.",
+         "written": 0},
+    ]
+    booted = server_harness.Booted(
+        mail=_watch_with_feeder(tmp_path, lambda: answers.pop(0)))
+    try:
+        auth = booted.exchange()
+        booted.post_json("/settings/mail/fetch-now", {}, auth)
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "Another pass is already running" in page
+        booted.post_json("/settings/mail/fetch-now", {}, auth)
+        page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
+        assert "Full Disk Access" in page
+        assert "On a Mac the fix is Full Disk Access" in page
+    finally:
+        booted.close()

@@ -1058,16 +1058,25 @@ def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> s
                          f"{_agent_clock(fetch['lastRunTs'])}</span>")
         parts.append(f"result <b class='mono'>{html.escape(result or 'unknown')}</b>")
         state = "<p class='empty'>" + " · ".join(parts) + ".</p>"
+        if result in ("busy", "running"):
+            state += ("<p class='empty'>Another pass is already running; "
+                      "nothing new ran.</p>")
         if not attention and isinstance(written, int):
             alert_word = "alert" if written == 1 else "alerts"
             state += (f"<p>{written} {alert_word} written into the mail "
                       f"folder in this fetch.</p>")
+        coverage_from = fetch.get("coverageFromTs")
+        coverage_to = fetch.get("coverageToTs")
+        if coverage_from and coverage_to:
+            state += (f"<p class='empty'>Coverage <span class='mono'>"
+                      f"{_agent_clock(coverage_from)}</span> to "
+                      f"<span class='mono'>{_agent_clock(coverage_to)}</span>, "
+                      "the oldest and newest alert in this fetch.</p>")
         if error:
             state += f"<div class='alert'><p>{error}</p></div>"
         if platform == "darwin" and "Full Disk Access" in error:
-            state += ("<p class='empty'>On a Mac, grant the desk Full Disk "
-                      "Access in System Settings, Privacy and Security, then "
-                      "press Fetch now.</p>")
+            state += ("<p class='empty'>On a Mac the fix is Full Disk Access "
+                      "for this app; the manual .eml folder works without it.</p>")
         if attention:
             state += ("<p class='empty'>No alert count is shown while the "
                       "fetch is not working.</p>")
