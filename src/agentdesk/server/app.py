@@ -4153,10 +4153,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                                   "No skill lives at this address.")
             return
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None or server.ledger is None:
-            self._send_json(503, {"error": "skills are not available"})
+        skills = self._require_store(server.skills, "the skills store")
+        if skills is None:
             return
-        skill = server.skills.get(skill_id)  # type: ignore[attr-defined]
+        if self._require_store(server.ledger, "the ledger") is None:
+            return
+        skill = skills.get(skill_id)  # type: ignore[attr-defined]
         if skill is None:
             self._send_json(404, {"error": f"no skill {skill_id}"})
             return

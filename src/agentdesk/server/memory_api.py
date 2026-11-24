@@ -225,9 +225,8 @@ class MemoryApiMixin:
         key, a wrong key, a key on a populated plaintext bank) refuses
         with its specific plain-language cause, never silently reading
         or writing plaintext."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return None
         if memory.locked_cause is not None:
             self._send_json(503, {"error": memory.locked_cause})
@@ -246,9 +245,8 @@ class MemoryApiMixin:
         the encryption state alongside the facts, the entities with
         their merge form (ticket #92), the junk-sweep preview when
         asked, and the locked banner alone when the store is locked."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if memory.locked_cause is not None:
             page = render_memory_page(
@@ -358,9 +356,8 @@ class MemoryApiMixin:
         """The sweep's dry run (ticket #92): the memory page with the
         candidates, each carrying its reason and a checkbox. A locked
         store renders the banner, like the main page does."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if memory.locked_cause is not None:
             self._send_memory_page()
@@ -373,9 +370,8 @@ class MemoryApiMixin:
         memory page's banner, like the sweep's dry run does; the query
         string parses defensively (memory dates, a clamped limit), so
         the page renders whatever arrives."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if memory.locked_cause is not None:
             self._send_memory_page()
@@ -531,9 +527,8 @@ class MemoryApiMixin:
 
     def _send_learned_profile(self) -> None:
         """The learned profile document, exactly as it is stored."""
-        store = getattr(self.server, "learned_profile", None)  # type: ignore[attr-defined]
+        store = self._require_store(getattr(self.server, "learned_profile", None), "learned profile")
         if store is None:
-            self._send_json(503, {"error": "the learned profile is not available"})
             return
         self._send_json(200, store.document())
 
@@ -546,9 +541,8 @@ class MemoryApiMixin:
         mutate, record `learned-profile`) so Undo puts the document back
         whole while the latch keeps the topic away."""
         server = self.server  # type: ignore[attr-defined]
-        store = getattr(server, "learned_profile", None)
+        store = self._require_store(getattr(server, "learned_profile", None), "learned profile")
         if store is None:
-            self._send_json(503, {"error": "the learned profile is not available"})
             return
         body = self._read_json_body() or {}
         entry_id = body.get("id")
@@ -1020,9 +1014,8 @@ class MemoryApiMixin:
         """The dry run: the memory page with the conversion form and the
         per-table counts of what would be sealed. An already-encrypted
         bank says so; a locked one renders the banner."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if memory.locked_cause is not None:
             self._send_memory_page()
@@ -1039,9 +1032,8 @@ class MemoryApiMixin:
         confirm field, no conversion. The key file is ensured before the
         transaction, the conversion is one transaction, and the audit
         row names the field count, never a key byte or a fact text."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if memory.locked_cause is not None:
             self._memory_error_response(503, memory.locked_cause)
@@ -1180,8 +1172,7 @@ class MemoryApiMixin:
         memory = self._memory_available()
         if memory is None:
             return
-        if server.inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
+        if self._require_store(server.inbox, "inbox") is None:
             return
         body = self._read_json_body() or {}
         excerpt = body.get("excerpt")
@@ -1298,8 +1289,7 @@ class MemoryApiMixin:
         if memory is None:
             return
         self._configure_memory_embeddings()
-        if server.inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
+        if self._require_store(server.inbox, "inbox") is None:
             return
         body = self._read_json_body() or {}
         topic = _scope_text(body.get("topic"))
