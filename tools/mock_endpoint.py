@@ -254,7 +254,12 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
     """One route, the chat shape the desk's client already parses."""
 
     def do_POST(self) -> None:  # noqa: N802 - the stdlib's spelling
-        """Answer /chat/completions with the deterministic reply."""
+        """Answer /chat/completions with the deterministic reply.
+
+        A body that asks to stream (the side-car engines do; the desk's
+        own client never sets stream) gets the same reply as an OpenAI
+        SSE chunk sequence, so a streaming consumer reads a complete
+        turn with a finish reason instead of an empty stream."""
         if self.path.rstrip("/") != "/v1/chat/completions" and self.path.rstrip("/") != "/chat/completions":
             self._send_json(404, {"error": "the mock serves /chat/completions only"})
             return
@@ -267,9 +272,44 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
             prompt = str(messages[0].get("content") or "")
         reply = reply_for(prompt)
         print(f"mock endpoint: {len(prompt)}-char prompt -> {len(reply)}-char reply", flush=True)
+        if body.get("stream"):
+            self._send_stream(str(body.get("model") or "mock-chat"), reply)
+            return
         self._send_json(200, {
             "choices": [{"message": {"role": "assistant", "content": reply}}],
         })
+
+    def _send_stream(self, model: str, reply: str) -> None:
+        """The reply as OpenAI SSE chunks: role, the words, stop, [DONE].
+
+        The reply leaves in a few word-group chunks, the way a real
+        endpoint streams a short sentence, and every chunk carries the
+        id, object and created fields a strict client reads."""
+        import time
+        created = int(time.time())
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        def chunk(delta: dict, finish: str | None) -> bytes:
+            payload = {
+                "id": "chatcmpl-mock", "object": "chat.completion.chunk",
+                "created": created, "model": model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+            }
+            return b"data: " + json.dumps(payload).encode("utf-8") + b"\n\n"
+
+        words = reply.split(" ")
+        groups = [" ".join(words[i:i + 3]) for i in range(0, len(words), 3)]
+        try:
+            self.wfile.write(chunk({"role": "assistant"}, None))
+            for group in groups:
+                self.wfile.write(chunk({"content": group + (" " if group is not groups[-1] else "")}, None))
+            self.wfile.write(chunk({}, "stop"))
+            self.wfile.write(b"data: [DONE]\n\n")
+        except OSError:
+            pass  # the consumer hung up mid-stream; nothing to answer to
 
     def do_GET(self) -> None:  # noqa: N802 - the stdlib's spelling
         """The model list a connection's save-time check reads, else a refusal.
