@@ -4,7 +4,7 @@ Status: charting, 2026-11-24. Local-markdown tracker: this file is the map, chil
 
 ## Destination
 
-A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Windows or macOS, feed Outlook mail metadata, and calendar where possible, into the desk on a schedule with no admin rights, no tenant consent, no Graph, no IMAP, no EWS, no Power Automate and no Outlook add-in. The spec must settle a platform-agnostic feeder core with pluggable collectors, the schedule, the privacy contract, the setup and failure states, and the test and evidence plan.
+A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Windows or macOS, feed Outlook alerts and manual `.eml` history into the desk with no admin rights, no tenant consent, no Graph, no IMAP, no EWS, no Power Automate and no Outlook add-in. The spec must settle a platform-agnostic feeder core with one automatic collector and one manual fallback, the schedule, the privacy contract, the setup and failure states, and the test and evidence plan.
 
 ## Notes
 
@@ -17,32 +17,32 @@ A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Win
 
 ## Open tickets
 
-The frontier is the two research tickets. The contract and proof tickets are blocked until the research answers land.
+All four decision tickets are resolved. The frontier is now the implementation tickets I1 to I5 in the same folder.
 
-- [Which local Outlook data sources actually work here?](docs/tickets/2026-11-24/O1-local-outlook-sources.md): research, frontier.
-- [How does the feeder run without admin?](docs/tickets/2026-11-24/O2-feeder-scheduling.md): research, frontier.
-- [What is the feeder's privacy, consent and failure contract?](docs/tickets/2026-11-24/O3-feeder-contract.md): grilling, blocked by O1 and O2.
-- [What is the proof plan?](docs/tickets/2026-11-24/O4-proof-plan.md): task, blocked by O1, O2 and O3.
+- [Which local Outlook data sources actually work here?](docs/tickets/2026-11-24/O1-local-outlook-sources.md): resolved.
+- [How does the feeder run without admin?](docs/tickets/2026-11-24/O2-feeder-scheduling.md): resolved.
+- [What is the feeder's privacy, consent and failure contract?](docs/tickets/2026-11-24/O3-feeder-contract.md): resolved.
+- [What is the proof plan?](docs/tickets/2026-11-24/O4-proof-plan.md): resolved.
 
 ## Decisions so far
 
 <!-- one line per closed ticket, with a link and a gist -->
 
-- None yet.
+- [Which local Outlook data sources actually work here?](docs/tickets/2026-11-24/O1-local-outlook-sources.md): one automatic source, the OS notification store, WPN on Windows and Notification Center on macOS, plus the manual `.eml` folder for history. New Outlook for Mac has no AppleScript and no Spotlight indexing; Windows Search, COM, Spotlight and AppleScript are future options, not v1 promises.
+- [How does the feeder run without admin?](docs/tickets/2026-11-24/O2-feeder-scheduling.md): the app's own daemon timer on both platforms, plus a startup pass. No OS task, service or autostart entry, because the PRD and the IT statement forbid persistence and the existing watchers already use cross-platform timer chains. Closed-app collection is deferred to a separate Security decision.
+- [What is the feeder's privacy, consent and failure contract?](docs/tickets/2026-11-24/O3-feeder-contract.md): read the two alert lines, drop the preview and body, write header-only `.eml`, keep read-only status, off by default, name the collector and coverage, never a number in an attention state.
+- [What is the proof plan?](docs/tickets/2026-11-24/O4-proof-plan.md): synthetic WPN and Notification Center stores, a writer round-trip, a no-leak sentinel test, idempotence, honest states, a metadata-only Windows live smoke, and a written manual Mac procedure.
 
 ## Not yet specified
 
-- Which local Outlook data source is reliable on the corporate client, classic Outlook or new Outlook, on Windows and on macOS, and what evidence proves it.
-- Whether the feeder is an app-owned background loop, an OS scheduler, or both, and why the cross-platform answer wins.
-- The privacy and consent contract for a feeder that reads from a local Outlook store rather than an exported folder.
-- The setup, verification, staleness and failure states the user sees, and the exact copy.
-- Calendar parity: the same feeder, a separate file contract, or explicitly out of scope.
-- The test and evidence plan that proves the mechanism on this machine without touching real mail.
+None. The way to the spec is clear. Calendar parity is explicitly out of scope for this spec and becomes a separate effort if the user wants it.
 
 ## Out of scope
 
 - Microsoft Graph, IMAP, EWS, OAuth app registration, Power Automate, Outlook add-ins or tenant consent. These are the access paths the user has ruled out.
 - Reading, storing or sending message bodies or attachments. The mail path stays header-only.
 - Machine-wide installation, an OS service, drivers, or admin rights.
-- A Windows-only core. Windows COM, PowerShell and the Windows Search index may be optional collectors, never the only path.
+- A Windows-only core. Windows COM, PowerShell and the Windows Search index may be optional future collectors, never the only path.
+- Windows Search, classic COM, Spotlight and AppleScript in v1. Each has an uncontrolled gate and none is proven on the user's machines.
+- Calendar export in v1. The calendar contract still assumes a synced JSON file.
 - Sending mail from the app. Drafts stay local and explicit.
