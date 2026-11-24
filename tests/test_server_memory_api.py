@@ -114,7 +114,7 @@ def test_add_with_a_form_post_redirects_back_to_the_page(env, auth):
     }
     status, headers_out, _b = env.request("POST", "/memory/add", headers, body)
     assert status == 303
-    assert headers_out["Location"] == "/memory"
+    assert headers_out["Location"].split("?", 1)[0] == "/memory"
     assert [f.text for f in _facts(env)] == ["revenue is 220"]
 
 
@@ -339,7 +339,7 @@ def test_post_memory_sweep_form_checkboxes_delete_the_checked_ones(env, auth):
     }
     status, headers_out, _b = env.request("POST", "/memory/sweep", headers, body)
     assert status == 303
-    assert headers_out["Location"] == "/memory"
+    assert headers_out["Location"].split("?", 1)[0] == "/memory"
     texts = [f.id for f in _facts(env)]
     assert junk_one["id"] not in texts
     assert junk_two["id"] in texts

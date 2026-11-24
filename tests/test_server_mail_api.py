@@ -495,7 +495,7 @@ def test_mail_folder_save_via_form_redirects_back_to_settings(env, auth):
     status, resp_headers, _b = env.request("POST", "/settings/mail/folder", {
         **headers, "Content-Length": str(len(body)), **auth}, body)
     assert status == 303
-    assert resp_headers["Location"] == "/settings"
+    assert resp_headers["Location"].split("?", 1)[0] == "/settings"
     assert env.server.settings.get("mail_folder") == str(FIXTURES)
 
 

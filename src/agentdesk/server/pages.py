@@ -258,6 +258,43 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .dot.amber{background:var(--attention-ink)}
 .dot.sample{background:var(--ink-4)}
 .btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;white-space:nowrap;max-width:100%;overflow-x:auto;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+/* F1, the server pages: a pressed submit button keeps its box and says
+   what it is doing. The idle and busy labels sit in one grid cell, and
+   the busy label is in the layout from load, so the box is the same
+   before and during the wait. The dot pulses in colour only; the
+   reduced-motion rule freezes it. */
+.btn-stack{display:inline-grid;align-items:center;justify-items:center}
+.btn-stack .btn-label{grid-area:1/1;white-space:nowrap;min-width:0}
+.btn-label-busy{visibility:hidden}
+.btn-stack.is-busy .btn-label-idle{visibility:hidden}
+.btn-stack.is-busy .btn-label-busy{visibility:visible}
+.btn-label-busy::before{content:"";display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--accent-text);opacity:.35;margin-right:8px;vertical-align:middle}
+.btn-stack.is-busy .btn-label-busy::before{animation:busy-dot .9s ease-in-out infinite}
+@keyframes busy-dot{0%,100%{background:var(--ink-4);opacity:.55}50%{background:var(--accent-text);opacity:1}}
+/* F2: the region that will receive the result shows a dotted wireframe
+   with the incoming shape and one plain phase line. No spinner, no
+   shadow, no gradient: a dashed rule and the surface token. */
+.wait-ph{display:flex;flex-direction:column;gap:10px;margin-top:16px;padding:12px;border:1px dashed var(--hairline);border-radius:var(--r-card);background:var(--surface)}
+.wait-line{margin:0;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.wait-ph[data-long="1"] .wait-line{color:var(--attention-ink)}
+.wait-wire{display:flex;flex-direction:column;gap:8px}
+.wait-row{display:block;height:12px;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.answer .wait-row:nth-child(1){width:60%}
+.wait-ph.answer .wait-row:nth-child(2){width:100%;height:44px}
+.wait-ph.answer .wait-row:nth-child(3){width:80%}
+.wait-ph.list .wait-row:nth-child(odd){width:88%}
+.wait-ph.list .wait-row:nth-child(even){width:64%;margin-left:24px}
+.wait-ph.card .wait-row:nth-child(1){width:48%;height:16px}
+.wait-ph.card .wait-row:nth-child(2){width:100%;height:56px}
+.wait-ph.panel .wait-row:nth-child(1){width:36%;height:14px}
+.wait-ph.panel .wait-row:nth-child(2){width:100%;height:36px}
+.wait-ph.panel .wait-row:nth-child(3){width:72%}
+/* One skip link, first in the body, off screen until it takes focus. */
+.skip-link{position:absolute;left:8px;top:-56px;z-index:30;background:var(--accent);color:var(--on-accent);padding:10px 14px;border-radius:var(--r-control);font-weight:700;transition:top var(--dur) ease}
+.skip-link:focus{top:8px}
+/* The outcome line F5 asks for, where the reader is already looking. */
+.page-status{margin:0 0 16px;padding:10px 14px;border:1px solid var(--hairline);border-left:3px solid var(--accent);border-radius:var(--r-control);background:var(--surface);color:var(--ink-1);font-size:14px}
+.page-status.alert{border-left-color:var(--bad)}
 .btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:none;border:1px solid var(--accent)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
@@ -385,6 +422,8 @@ table.rows td.neg{color:var(--bad)}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important}
+  /* The busy-dot pulse and every placeholder freeze to a still state. */
+  .btn-stack.is-busy .btn-label-busy::before{animation:none;background:var(--accent-text);opacity:1}
 }
 
 /* Appearance: three theme tiles. Each swatch is drawn from the tile's
@@ -460,6 +499,9 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
    its theme and 4.5:1 on the surface, so error, unknown and ok read
    as three colors in all three themes (spec 019). */
 .conn-status{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);color:var(--ink-3)}
+/* The status cell's lines stay whole; the table scrolls inside its own
+   wrapper when the columns cannot share the reading width. */
+.conn-state,.conn-state span{white-space:nowrap}
 .conn-ok{color:var(--good)}
 .conn-error{color:var(--bad)}
 """
@@ -495,6 +537,211 @@ function post(url, body) {
     body: body ? JSON.stringify(body) : '{}'});
 }
 
+// F1 to F5 on the server pages, one set of helpers. Nothing shows under
+// 100 ms. A busy control keeps its box (both labels share one grid cell)
+// and cannot be pressed again. A model-backed form writes a same-shape
+// placeholder into the region that will receive the result. A fetch that
+// then reloads reloads only after a success; a failure is said in the
+// page's own note.
+var BUSY_DELAY_MS = 100;
+var TAKING_LONGER_MS = 10000;
+
+function shouldReloadAfterPost(ok) {
+  return ok === true;
+}
+
+function stackButton(btn) {
+  if (!btn || btn.getAttribute('data-stacked') === '1') return;
+  var idle = document.createElement('span');
+  idle.className = 'btn-label btn-label-idle';
+  while (btn.firstChild) idle.appendChild(btn.firstChild);
+  var busy = document.createElement('span');
+  busy.className = 'btn-label btn-label-busy';
+  busy.textContent = controlLabel(btn);
+  btn.appendChild(idle);
+  btn.appendChild(busy);
+  btn.classList.add('btn-stack');
+  btn.setAttribute('data-stacked', '1');
+}
+
+function setButtonBusy(btn, on, label) {
+  if (!btn) return;
+  stackButton(btn);
+  var busy = btn.querySelector('.btn-label-busy');
+  if (on && label && busy) busy.textContent = label;
+  if (on) {
+    btn.classList.add('is-busy');
+    btn.setAttribute('aria-busy', 'true');
+    btn.setAttribute('aria-disabled', 'true');
+  } else {
+    btn.classList.remove('is-busy');
+    btn.removeAttribute('aria-busy');
+    btn.removeAttribute('aria-disabled');
+  }
+}
+
+function controlLabel(btn) {
+  if (!btn) return 'Working...';
+  return btn.getAttribute('data-busy')
+    || (btn.form && btn.form.getAttribute('data-busy'))
+    || (btn.form && btn.form.getAttribute('data-wait-label'))
+    || 'Working...';
+}
+
+function beginControl(btn) {
+  var timer = window.setTimeout(function () {
+    setButtonBusy(btn, true, controlLabel(btn));
+  }, BUSY_DELAY_MS);
+  return function cancel() { window.clearTimeout(timer); };
+}
+
+function noteRegion() {
+  return document.getElementById('page-note')
+    || document.getElementById('pick-note')
+    || document.getElementById('calendar-note')
+    || document.getElementById('inbox-note')
+    || document.getElementById('memory-notice');
+}
+
+function showNote(text) {
+  var note = noteRegion();
+  if (!note) return;
+  note.hidden = false;
+  note.textContent = text;
+  note.setAttribute('role', 'alert');
+}
+
+function clearNote() {
+  var note = noteRegion();
+  if (!note) return;
+  note.textContent = '';
+  note.hidden = true;
+}
+
+function causeOf(res) {
+  var data = res && res.data ? res.data : {};
+  return data.error || data.cause || data.message
+    || 'That did not work; nothing changed.';
+}
+
+function postResult(url, body) {
+  return post(url, body).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      return {ok: r.ok, data: d};
+    });
+  });
+}
+
+function finishFetch(btn, res, reloadLabel) {
+  setButtonBusy(btn, false);
+  if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+    showNote(causeOf(res));
+    return false;
+  }
+  location.assign(reloadLabel || location.href);
+  return true;
+}
+
+function placeholderRows(shape) {
+  if (shape === 'answer') return 3;
+  if (shape === 'list') return 4;
+  if (shape === 'card') return 2;
+  return 3;
+}
+
+function showWaitPlaceholder(form, selector) {
+  var region = document.querySelector(selector);
+  if (!region || region.querySelector('[data-wait-ph]')) return;
+  var shape = form.getAttribute('data-wait-shape') || 'panel';
+  var label = form.getAttribute('data-wait-label') || 'Working...';
+  var box = document.createElement('div');
+  box.className = 'wait-ph ' + shape;
+  box.setAttribute('data-wait-ph', '1');
+  var line = document.createElement('p');
+  line.className = 'wait-line';
+  line.textContent = label;
+  var wire = document.createElement('div');
+  wire.className = 'wait-wire';
+  wire.setAttribute('aria-hidden', 'true');
+  for (var i = 0; i < placeholderRows(shape); i += 1) {
+    var row = document.createElement('span');
+    row.className = 'wait-row';
+    wire.appendChild(row);
+  }
+  box.appendChild(line);
+  box.appendChild(wire);
+  region.appendChild(box);
+  region.setAttribute('aria-busy', 'true');
+  window.setTimeout(function () {
+    if (box.parentNode && !box.getAttribute('data-long')) {
+      box.setAttribute('data-long', '1');
+      line.textContent = label + ' This is taking longer than usual; you may leave this page.';
+    }
+  }, TAKING_LONGER_MS);
+}
+
+function onSubmit(event) {
+  var form = event.target;
+  if (!form || form.tagName !== 'FORM') return;
+  if ((form.getAttribute('method') || '').toLowerCase() !== 'post') return;
+  if (form.getAttribute('data-busy-form') === '1') {
+    event.preventDefault();
+    return;
+  }
+  form.setAttribute('data-busy-form', '1');
+  var btn = event.submitter
+    || form.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
+  if (btn) stackButton(btn);
+  var wait = form.getAttribute('data-wait');
+  form._busyTimer = window.setTimeout(function () {
+    setButtonBusy(btn, true, controlLabel(btn));
+    if (wait) showWaitPlaceholder(form, wait);
+  }, BUSY_DELAY_MS);
+}
+
+function cancelFormBusy(form) {
+  if (form && form._busyTimer) {
+    window.clearTimeout(form._busyTimer);
+    form._busyTimer = null;
+  }
+  if (form) form.removeAttribute('data-busy-form');
+}
+
+function restoreAfterBack() {
+  Array.prototype.forEach.call(document.querySelectorAll('form[data-busy-form]'), function (form) {
+    cancelFormBusy(form);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stacked="1"]'), function (btn) {
+    setButtonBusy(btn, false);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-wait-ph]'), function (ph) {
+    var region = ph.parentNode;
+    ph.remove();
+    if (region) region.removeAttribute('aria-busy');
+  });
+}
+
+// S1: one delegated listener covers every form post on every server page.
+document.addEventListener('submit', onSubmit, true);
+window.addEventListener('pageshow', restoreAfterBack);
+
+// Reserve every submit button's busy label at load, so the box is the
+// same before the press and during the wait.
+Array.prototype.forEach.call(
+  document.querySelectorAll('form button[type="submit"]'), stackButton);
+
+// A navigation lands on the page's main heading, so the next Tab starts
+// in the content rather than the browser chrome. A hash keeps its own
+// destination.
+(function () {
+  if (window.location.hash) return;
+  var main = document.getElementById('main') || document.querySelector('main');
+  var heading = main && main.querySelector('h1');
+  if (!heading) return;
+  heading.setAttribute('tabindex', '-1');
+  heading.focus();
+})();
+
 // Workbook connect: the app opens the native file dialog, the chosen
 // path registers the watch, and the dashboard reloads with real data.
 // The picker is the only connect path (never a typed one); a cancelled
@@ -516,42 +763,63 @@ function post(url, body) {
         return r.json().then(function (d) { return {ok: r.ok, data: d}; });
       })
       .then(function (res) {
-        if (!res.ok || res.data.error) {
+        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+          setButtonBusy(btn, false);
           show(res.data.error || 'The workbook was not connected; nothing changed.');
           return;
         }
         location.reload();
       })
       .catch(function () {
+        setButtonBusy(btn, false);
         show('The dashboard could not reach its own server; nothing was connected.');
       });
   };
   btn.addEventListener('click', function () {
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
     post('/sources/excel-watch/pick').then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.path) {
+          setButtonBusy(btn, false);
           show('The file dialog did not open. Try Connect a workbook again; if it keeps failing, restart the app.');
           return;
         }
         connect(d.path);
       })
       .catch(function () {
+        setButtonBusy(btn, false);
         show('The dashboard could not reach its own server; the file dialog was not opened.');
       });
   });
 })();
 
-// Live Re-test: one poll right now, then the fresh state renders.
+// Live Re-test: one poll right now, then the fresh state renders. A
+// refused poll says why on the page and changes nothing.
 document.querySelectorAll('[data-retest]').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    post('/sources/excel-watch/retest').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult('/sources/excel-watch/retest')
+      .then(function (res) { finishFetch(btn, res); })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
 // Calendar Re-test: re-read the OneDrive file right now.
 document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    post('/sources/calendar-bridge/retest').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult('/sources/calendar-bridge/retest')
+      .then(function (res) { finishFetch(btn, res); })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
@@ -563,35 +831,51 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   if (!note) return;
   var show = function (text) { note.hidden = false; note.textContent = text; };
   var couldNotReach = 'The dashboard could not reach its own server; nothing changed.';
-  var apply = function (url, body) {
+  var apply = function (url, body, btn) {
     post(url, body).then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.error) { show(d.error); return; }
+        if (d.error) { setButtonBusy(btn, false); show(d.error); return; }
         location.reload();
       })
-      .catch(function () { show(couldNotReach); });
+      .catch(function () {
+        setButtonBusy(btn, false);
+        show(couldNotReach);
+      });
   };
   var pick = document.querySelector('[data-calendar-pick]');
   if (pick) pick.addEventListener('click', function () {
+    if (pick.getAttribute('aria-disabled') === 'true') return;
+    beginControl(pick);
     post('/sources/calendar-bridge/pick').then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.path) { show('The file dialog did not open. Paste the path below instead.'); return; }
-        apply('/sources/calendar-bridge/path', {path: d.path});
+        if (!d.path) {
+          setButtonBusy(pick, false);
+          show('The file dialog did not open. Paste the path below instead.');
+          return;
+        }
+        apply('/sources/calendar-bridge/path', {path: d.path}, pick);
       })
-      .catch(function () { show(couldNotReach); });
+      .catch(function () {
+        setButtonBusy(pick, false);
+        show(couldNotReach);
+      });
   });
   var usePath = document.querySelector('[data-calendar-path]');
   if (usePath) usePath.addEventListener('click', function () {
+    if (usePath.getAttribute('aria-disabled') === 'true') return;
     var input = document.getElementById('calendar-path');
     var path = input ? input.value.trim() : '';
     if (!path) { show('Paste the full path to the calendar file first.'); return; }
-    apply('/sources/calendar-bridge/path', {path: path});
+    beginControl(usePath);
+    apply('/sources/calendar-bridge/path', {path: path}, usePath);
   });
   var upload = document.querySelector('[data-calendar-upload]');
   if (upload) upload.addEventListener('click', function () {
+    if (upload.getAttribute('aria-disabled') === 'true') return;
     var input = document.getElementById('calendar-file');
     var file = input && input.files && input.files[0];
     if (!file) { show('Choose the calendar JSON file first.'); return; }
+    beginControl(upload);
     var reader = new FileReader();
     reader.onload = function () {
       fetch('/sources/calendar-bridge/upload', {method: 'POST',
@@ -599,41 +883,92 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
           body: reader.result})
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d.error) { show(d.error); return; }
+          if (d.error) { setButtonBusy(upload, false); show(d.error); return; }
           location.reload();
         })
-        .catch(function () { show('The dashboard could not reach its own server; nothing was uploaded.'); });
+        .catch(function () {
+          setButtonBusy(upload, false);
+          show('The dashboard could not reach its own server; nothing was uploaded.');
+        });
     };
-    reader.onerror = function () { show('The browser could not read that file.'); };
+    reader.onerror = function () {
+      setButtonBusy(upload, false);
+      show('The browser could not read that file.');
+    };
     reader.readAsText(file);
   });
   var reset = document.querySelector('[data-calendar-reset]');
   if (reset) reset.addEventListener('click', function () {
-    apply('/sources/calendar-bridge/reset');
+    if (reset.getAttribute('aria-disabled') === 'true') return;
+    beginControl(reset);
+    apply('/sources/calendar-bridge/reset', null, reset);
   });
 })();
 
 // Inbox decisions: dismiss is immediate and reversible, accept consumes.
-document.querySelectorAll('[data-accept]').forEach(function (btn) {
+// A success lands on the inbox with the outcome in its status line; a
+// refusal keeps the page and says why.
+function inboxDecision(btn, url, message) {
   btn.addEventListener('click', function () {
-    post('/inbox/cards/' + btn.dataset.accept + '/accept').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult(url)
+      .then(function (res) {
+        setButtonBusy(btn, false);
+        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+          showNote(causeOf(res));
+          return;
+        }
+        location.assign('/inbox?notice=' + encodeURIComponent(message));
+      })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
+}
+document.querySelectorAll('[data-accept]').forEach(function (btn) {
+  inboxDecision(btn, '/inbox/cards/' + btn.dataset.accept + '/accept',
+    'The card was accepted.');
 });
 document.querySelectorAll('[data-dismiss]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    post('/inbox/cards/' + btn.dataset.dismiss + '/dismiss').then(function () { location.reload(); });
-  });
+  inboxDecision(btn, '/inbox/cards/' + btn.dataset.dismiss + '/dismiss',
+    'The card moved to Dismissed at the bottom of the inbox. Restore it there for 30 days.');
 });
 document.querySelectorAll('[data-restore]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    post('/inbox/dismissed/' + btn.dataset.restore + '/restore').then(function () { location.reload(); });
-  });
+  inboxDecision(btn, '/inbox/dismissed/' + btn.dataset.restore + '/restore',
+    'The card is back in your inbox.');
 });
 
-// Settings: one click flips a toggle or cycles a choice; nothing to type.
+// Settings switches are forms (so they work with no script). With script
+// the same form stays on the page: the flip posts, a success reloads onto
+// the section it came from, and a refusal is said in the page's note.
 document.querySelectorAll('[data-setting]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    post('/settings/toggle', {key: btn.dataset.setting}).then(function () { location.reload(); });
+  var form = btn.form;
+  if (!form) return;
+  form.className += ' setting-form';
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    var fields = {key: btn.dataset.setting};
+    var back = form.querySelector("input[name='return_to']");
+    if (back) fields.return_to = back.value;
+    postResult('/settings/toggle', fields)
+      .then(function (res) {
+        cancelFormBusy(form);
+        setButtonBusy(btn, false);
+        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+          showNote(causeOf(res));
+          return;
+        }
+        location.reload();
+      })
+      .catch(function () {
+        cancelFormBusy(form);
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
@@ -750,13 +1085,20 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
 // Skills: one click re-runs the saved ask; undo is on the settings page.
 document.querySelectorAll('[data-skill-run]').forEach(function (btn) {
   btn.addEventListener('click', function () {
+    if (btn.getAttribute('aria-disabled') === 'true') return;
     var answerBox = document.getElementById('research-answer');
     var status = document.getElementById('research-status');
+    beginControl(btn);
     if (status) status.textContent = 'Running the saved ask';
     post('/skills/' + btn.dataset.skillRun + '/run').then(function (r) { return r.json(); })
       .then(function (d) {
+        setButtonBusy(btn, false);
         if (status) status.textContent = '';
-        if (!answerBox) return;
+        var failed = d.status === 'degraded' || d.error;
+        if (!answerBox) {
+          if (failed) showNote(d.cause || d.error || 'The saved ask could not run.');
+          return;
+        }
         answerBox.hidden = false;
         answerBox.innerHTML = '';
         var head = document.createElement('div');
@@ -764,13 +1106,25 @@ document.querySelectorAll('[data-skill-run]').forEach(function (btn) {
         head.textContent = d.status === 'ok' ? 'Skill result' : 'Skill unavailable';
         answerBox.appendChild(head);
         answerBox.appendChild(document.createTextNode(
-          d.status === 'ok' ? (d.summary || d.reply || '') : (d.cause || '')));
+          d.status === 'ok' ? (d.summary || d.reply || '') : (d.cause || d.error || '')));
+      })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        if (status) status.textContent = '';
+        showNote('The dashboard could not reach its own server; nothing was sent.');
       });
   });
 });
 document.querySelectorAll('[data-skill-undo]').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    post('/skills/' + btn.dataset.skillUndo + '/undo').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult('/skills/' + btn.dataset.skillUndo + '/undo')
+      .then(function (res) { finishFetch(btn, res); })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
@@ -802,11 +1156,12 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
   btn.addEventListener('click', function () {
     var question = input.value.trim();
     if (!question) { input.focus(); return; }
-    btn.disabled = true;
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
     status.textContent = status.dataset.busyText;
     post('/research', {question: question}).then(function (r) { return r.json(); })
       .then(function (d) {
-        btn.disabled = false;
+        setButtonBusy(btn, false);
         if (d.status === 'degraded') {
           answerBox.hidden = true;
           status.textContent = d.cause;
@@ -830,7 +1185,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
         answerBox.appendChild(chips);
       })
       .catch(function () {
-        btn.disabled = false;
+        setButtonBusy(btn, false);
         status.textContent = 'The dashboard could not reach its own server; nothing was sent.';
       });
   });
@@ -1043,7 +1398,8 @@ def document_head(title: str) -> str:
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>"""
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>"""
 
 
 def page_footer(version: str, note: str = "", touches: bool = True) -> str:
@@ -1058,6 +1414,17 @@ def page_footer(version: str, note: str = "", touches: bool = True) -> str:
         f'<span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span>'
         f"{note_html}{link}</footer>"
     )
+
+
+def status_line(text: str, kind: str = "status") -> str:
+    """The one line that names an outcome where the reader is looking.
+
+    `kind` is "status" for a success and "alert" for a failure; the line
+    is escaped here and omitted when `text` is empty.
+    """
+    if not text:
+        return ""
+    return f'<p class="page-status" role="{kind}">{html.escape(text)}</p>'
 
 
 def page_shell(
@@ -1077,12 +1444,14 @@ def page_shell(
     `content_html` is authored by the caller (each view escapes its own
     dynamic values) and sits inside the .doc column; the app.js actions
     script ships with every page. `wide` widens the column for a page
-    laid out as a grid of tiles (the Memory page).
+    laid out as a grid of tiles (the Memory page). The page script makes
+    the first h1 in the main region the focus target after a navigation,
+    so the reader lands at the result without a jump in the markup.
     """
     esc_title = html.escape(title)
     return f"""{document_head(f"{title}, Agent Desk")}
 <div class="app">{_rail(active, inbox_count)}
-<main><div class="{'doc doc-wide' if wide else 'doc'}">
+<main id="main"><p class="page-status" id="page-note" role="status" hidden></p><div class="{'doc doc-wide' if wide else 'doc'}">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
 {page_footer(version)}
@@ -1196,7 +1565,8 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     return f"""{document_head("Agent Desk")}
 <div class="app">
 {_rail("/", inbox_count)}
-<main>
+<main id="main">
+<p class="page-status" id="page-note" role="status" hidden></p>
 <div class="topbar">
   <div>
     <h1>{html.escape(greeting)}</h1>
@@ -1218,12 +1588,16 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 
 
 def render_error_page(title: str, message: str) -> str:
-    """The minimal same-language page for 401/403/404 answers."""
+    """The minimal same-language page for 401/403/404 answers.
+
+    The skip link still reaches a main region, so the error page obeys the
+    same keyboard contract as every other page.
+    """
     return f"""{document_head(f"{title}, Agent Desk")}
-<div class="error-card">
+<main id="main" class="error-card">
 <h1>{html.escape(title)}</h1>
 <p>{html.escape(message)}</p>
-</div>
+</main>
 </body>
 </html>
 """

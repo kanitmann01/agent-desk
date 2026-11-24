@@ -1619,10 +1619,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._send_redirect_302(target)
 
     def _send_peers_page_request(self) -> None:
-        """Serve the peers page, carrying its optional notice query field."""
+        """Serve the peers page, carrying its notice and kept pair fields."""
         _, _sep, query = self.path.partition("?")
-        notice = parse_qs(query).get("notice", [""])[0] if query else ""
-        self._send_peers_page(notice=notice)
+        fields = parse_qs(query) if query else {}
+        self._send_peers_page(
+            notice=fields.get("notice", [""])[0],
+            pair_address=fields.get("address", [""])[0],
+            pair_code=fields.get("code", [""])[0],
+        )
 
     def _send_skill_markdown_rest(self, rest: str) -> None:
         """Serve the generated markdown for the skill id in the path.
@@ -1767,7 +1771,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 detail=(outcome.entry_id or outcome.cause or ""),
             )
         if self._is_form_submit():
-            self._send_redirect("/settings#desk-check")
+            if payload.get("fixed"):
+                notice = "The finding was fixed."
+                kind_word = "status"
+            else:
+                notice = (f"That finding was not fixed: {payload.get('cause') or 'nothing changed'}")
+                kind_word = "alert"
+            self._send_redirect(
+                "/settings?notice_kind=" + kind_word + "&notice=" + quote(notice)
+                + "#desk-check")
             return
         self._send_json(200, payload)
 
@@ -2092,7 +2104,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         result = run_update(server)
         if self._is_form_submit():
             body = self._read_json_body() or {}
-            self._send_redirect(self._form_return_to(body, "/settings#updates"))
+            target = self._form_return_to(body, "/settings#updates")
+            sep = "&" if "?" in target else "?"
+            self._send_redirect(
+                target + sep + "notice=" + quote(
+                    "The update share was checked; the card above shows what "
+                    "it found."))
             return
         payload = update_payload(server)
         payload.update({key: value for key, value in result.items() if key not in payload})
@@ -2118,7 +2135,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         settings = self.server.settings  # type: ignore[attr-defined]
         settings.set("update_channel", path)
         if self._is_form_submit():
-            self._send_redirect(self._form_return_to(body, "/settings#updates"))
+            target = self._form_return_to(body, "/settings#updates")
+            sep = "&" if "?" in target else "?"
+            self._send_redirect(
+                target + sep + "notice=" + quote("The update share is saved."))
             return
         self._send_json(200, {"saved": True, "path": path})
 
@@ -2144,7 +2164,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         started = loop.run_now()
         if self._is_form_submit():
             body = self._read_json_body() or {}
-            self._send_redirect(self._form_return_to(body, "/settings#agent"))
+            target = self._form_return_to(body, "/settings#agent")
+            if started:
+                sep = "&" if "?" in target else "?"
+                target = target + sep + "notice=" + quote(
+                    "One pass started; its steps appear under Agent shortly.")
+            self._send_redirect(target)
             return
         if not started:
             self._send_json(409, {"error": "A pass is already running."})
@@ -2492,6 +2517,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """Answer one assistant question, as JSON or a form redirect."""
         question = self._ask_question_from_body()
         if not question:
+            if self._is_form_submit():
+                typed = str((self._read_json_body() or {}).get("question", ""))
+                self._send_assistant_page(
+                    notice="Type a question first: the box was empty, so nothing was sent.",
+                    notice_kind="alert", question=typed,
+                )
+                return
             self._send_json(400, {"error": "expected a question"})
             return
         self._log_activity("assistant", question)
@@ -2507,7 +2539,18 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             threadlog.append(self.server.audit_conn, "user", question)  # type: ignore[attr-defined]
             text = answer.reply if answer.status == "ok" else f"[degraded] {answer.cause}"
             threadlog.append(self.server.audit_conn, "assistant", text)  # type: ignore[attr-defined]
-        self._respond_form_or_json("/assistant", answer.to_json())
+        if self._is_form_submit():
+            if answer.status == "ok":
+                self._send_redirect(
+                    "/assistant?notice=" + quote("Your answer is below."))
+            else:
+                self._send_redirect(
+                    "/assistant?notice_kind=alert&notice="
+                    + quote(f"The AI could not answer: {answer.cause} Your "
+                            "question is kept in the conversation below; try "
+                            "again when the endpoint is back."))
+            return
+        self._send_json(200, answer.to_json())
 
     def _is_form_submit(self) -> bool:
         """Whether this POST came from a plain HTML form rather than fetch.
@@ -2843,30 +2886,45 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         self._send_json(200, calendar.status())
 
-    def _send_assistant_page(self) -> None:
+    def _send_assistant_page(self, notice: str = "", notice_kind: str = "status",
+                             question: str = "") -> None:
         """Render the assistant page from the stored conversation.
 
         The audit store holds every kind of action, so the turns come from the thread
         log's own reader rather than from the raw table; without a store the page opens
-        empty instead of failing.
+        empty instead of failing. A form post's outcome rides the query as `notice`
+        (and `notice_kind` for a failure), and a refusal's typed question rides
+        `question`, so the page says what happened and keeps the words.
         """
+        query = parse_qs(self.path.partition("?")[2])
+        notice = notice or query.get("notice", [""])[0]
+        notice_kind = query.get("notice_kind", [notice_kind])[0]
+        question = question or query.get("question", [""])[0]
         turns = []
         if self.server.audit_conn is not None:  # type: ignore[attr-defined]
             turns = threadlog.turns(self.server.audit_conn)  # type: ignore[attr-defined]
         page = render_assistant_page(
             turns, agentdesk.__version__, inbox_count=self._inbox_waiting_count(),
-            ai_connected=_server_resolution(self.server, "assistant") is not None)
+            ai_connected=_server_resolution(self.server, "assistant") is not None,
+            notice=notice, notice_kind=notice_kind, question=question)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
-    def _send_agents_page(self) -> None:
+    def _send_agents_page(self, notice: str = "", notice_kind: str = "status",
+                          typed_agent: str = "", typed_brief: str = "") -> None:
         """Render the agents page: the roster with a run form per agent,
         and the run history with each run's receipt.
 
         The history reads the store's newest-first rows; a store that
         could not open renders the roster with the honest absent-history
         note rather than an empty history that would claim no run ever
-        happened.
+        happened. A form post's outcome rides the query as `notice`, and
+        a refusal keeps the typed brief through `agent` and `brief`.
         """
+        query = parse_qs(self.path.partition("?")[2])
+        notice = notice or query.get("notice", [""])[0]
+        notice_kind = query.get("notice_kind", [notice_kind])[0]
+        typed_agent = typed_agent or query.get("agent", [""])[0]
+        typed_brief = typed_brief or query.get("brief", [""])[0]
         server = self.server  # type: ignore[attr-defined]
         runs = (
             server.agents.recent() if server.agents is not None else []
@@ -2891,6 +2949,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             endpoint_sentence="" if ready else sentence,
             research_ready=research_ready,
             research_sentence="" if research_ready else "Web research needs a provider URL in settings.",
+            notice=notice, notice_kind=notice_kind,
+            typed_agent=typed_agent, typed_brief=typed_brief,
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2913,7 +2973,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         brief = body.get("brief") if body is not None else None
         kind = find_agent(agent_id) if isinstance(agent_id, str) else None
+        typed_brief = brief if isinstance(brief, str) else ""
         if kind is None:
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice="That agent is not on the roster; the page lists the "
+                           "agents this desk can run.",
+                    notice_kind="alert", typed_agent=str(agent_id or ""),
+                    typed_brief=typed_brief)
+                return
             self._send_json(
                 400,
                 {"error": "unknown agent id; the /agents page lists the agents"
@@ -2921,6 +2989,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if not isinstance(brief, str) or not brief.strip():
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice="Type a brief first: the box was empty, so nothing was run.",
+                    notice_kind="alert", typed_agent=kind.id,
+                    typed_brief=typed_brief)
+                return
             self._send_json(
                 400,
                 {"error": "expected {\"agent\": \"worksheet-brief\","
@@ -2929,6 +3003,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         brief = brief.strip()
         if len(brief) > BRIEF_MAX_CHARS:
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice=f"The brief is longer than {BRIEF_MAX_CHARS} "
+                           "characters; shorten it.",
+                    notice_kind="alert", typed_agent=kind.id,
+                    typed_brief=typed_brief[:BRIEF_MAX_CHARS])
+                return
             self._send_json(
                 400,
                 {"error": f"the brief is longer than {BRIEF_MAX_CHARS}"
@@ -2936,6 +3017,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if server.agents is None:
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice="The run history is not available right now, so the "
+                           "brief was not run.",
+                    notice_kind="alert", typed_agent=kind.id,
+                    typed_brief=typed_brief)
+                return
             self._send_json(503, {"error": "the agents store is not available"})
             return
         if not self._source_allowed("endpoint_enabled"):
@@ -2962,7 +3050,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             status="ok" if result.status == AGENT_STATUS_OK else "error",
             detail=f"status {result.status}; {used}",
         )
-        self._respond_form_or_json("/agents", {
+        payload = {
             "id": run_id,
             "agent": kind.id,
             "status": result.status,
@@ -2970,7 +3058,21 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             "reply": result.reply,
             "artifact": result.artifact,
             "facts": result.facts,
-        })
+        }
+        if self._is_form_submit():
+            if result.status == AGENT_STATUS_OK:
+                notice = (f"Ran {kind.name}. Its receipt is at the top of "
+                          "the run history.")
+                kind_word = "status"
+            else:
+                notice = (f"Ran {kind.name}, but it came back degraded: "
+                          f"{result.cause} Its row is at the top of the run "
+                          "history.")
+                kind_word = "alert"
+            self._send_redirect(
+                "/agents?notice_kind=" + kind_word + "&notice=" + quote(notice))
+            return
+        self._send_json(200, payload)
 
     def _presentation_packs(self) -> list:
         """Shipped packs plus anything installed under the user templates dir."""
@@ -3008,7 +3110,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """
         server = self.server  # type: ignore[attr-defined]
         brief = body.get("brief")
+        typed_brief = brief if isinstance(brief, str) else ""
         if not isinstance(brief, str) or not brief.strip():
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice="Type a topic first: the box was empty, so no deck was built.",
+                    notice_kind="alert", typed_agent="presentation",
+                    typed_brief=typed_brief)
+                return
             self._send_json(
                 400,
                 {"error": "expected {\"agent\": \"presentation\","
@@ -3017,6 +3126,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         brief = brief.strip()
         if len(brief) > BRIEF_MAX_CHARS:
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice=f"The topic is longer than {BRIEF_MAX_CHARS} "
+                           "characters; shorten it.",
+                    notice_kind="alert", typed_agent="presentation",
+                    typed_brief=typed_brief[:BRIEF_MAX_CHARS])
+                return
             self._send_json(
                 400,
                 {"error": f"the brief is longer than {BRIEF_MAX_CHARS}"
@@ -3024,6 +3140,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if server.agents is None:
+            if self._is_form_submit():
+                self._send_agents_page(
+                    notice="The run history is not available right now, so no "
+                           "deck was built.",
+                    notice_kind="alert", typed_agent="presentation",
+                    typed_brief=typed_brief)
+                return
             self._send_json(503, {"error": "the agents store is not available"})
             return
         ready, sentence = self._presentation_endpoint()
@@ -3351,8 +3474,23 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._finish_agent_run(run_id, "presentation", "ok", "", "", updated, updated["sources"])
 
     def _finish_agent_run(self, run_id, agent_id, status, cause, reply, artifact, facts) -> None:
-        """JSON for a fetch, or a redirect back to the page for a form."""
-        self._respond_form_or_json("/agents", {
+        """JSON for a fetch, or a redirect back to the page for a form.
+
+        A form lands on the run history with the outcome in the page's
+        status line; a degraded run says its cause there too.
+        """
+        if self._is_form_submit():
+            if status == "ok":
+                notice = "Your deck is at the top of the run history."
+                kind_word = "status"
+            else:
+                notice = (f"The run came back degraded: {cause} Its row is at "
+                          "the top of the run history.")
+                kind_word = "alert"
+            self._send_redirect(
+                "/agents?notice_kind=" + kind_word + "&notice=" + quote(notice))
+            return
+        self._send_json(200, {
             "id": run_id,
             "agent": agent_id,
             "status": status,
@@ -3815,6 +3953,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             excel_status=(server.excel.status() if server.excel is not None else None),
             calendar_status=(server.calendar.status() if server.calendar is not None
                              else None),
+            notice=parse_qs(self.path.partition("?")[2]).get("notice", [""])[0],
+            notice_kind=parse_qs(self.path.partition("?")[2]).get(
+                "notice_kind", ["status"])[0],
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -3857,10 +3998,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     last = entry["status"]
                     break
         timeout = settings.get("presentation_timeout_s") if settings is not None else "30"
+        # A refused timeout comes back in the query so the form shows the
+        # typed value beside its cause instead of the last saved one.
+        typed = parse_qs(self.path.partition("?")[2]).get("presentation_timeout", [""])[0]
         return {
             "configured": configured,
             "last": last,
-            "presentationTimeout": timeout or "30",
+            "presentationTimeout": typed or timeout or "30",
         }
 
     def _send_settings_values(self) -> None:
@@ -3909,13 +4053,17 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 refusal = {"error": "presentation timeout must be a number of seconds from 5 to 300"}
                 if self._is_form_submit():
                     self._send_redirect(
-                        "/settings?connections_error=" + quote(refusal["error"]))
+                        "/settings?connections_error=" + quote(refusal["error"])
+                        + "&presentation_timeout=" + quote(timeout_raw)
+                        + "#endpoint")
                     return
                 self._send_json(400, refusal)
                 return
             settings.set("presentation_timeout_s", timeout_raw)
         if self._is_form_submit():
-            self._send_redirect("/settings")
+            self._send_redirect(
+                "/settings?notice=" + quote("The presentation timeout is saved.")
+                + "#endpoint")
             return
         self._send_json(200, {
             "ok": True,
@@ -4024,7 +4172,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._audit("keys.create", target=connection.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
-            self._send_redirect("/settings#connections")
+            self._send_redirect(
+                "/settings?notice=" + quote("Saved. The connection is live.")
+                + "#connections")
             return
         self._send_json(201, _connection_payload(connection))
 
@@ -4112,9 +4262,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._audit("keys.update", target=existing.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
-            self._send_redirect(
-                "/settings?connections_error=" + quote(clear_notice) + "#connections"
-                if clear_notice else "/settings#connections")
+            if clear_notice:
+                self._send_redirect(
+                    "/settings?connections_error=" + quote(clear_notice)
+                    + "#connections")
+            else:
+                self._send_redirect(
+                    "/settings?notice=" + quote("Saved. The connection is live.")
+                    + "#connections")
             return
         payload = _connection_payload(connection)
         if clear_notice:
@@ -4177,7 +4332,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             detail += "; the keychain entry stayed (it comes back on restart)"
         self._audit("keys.delete", target=connection.id, detail=detail)
         if self._is_form_submit():
-            self._send_redirect("/settings#connections")
+            self._send_redirect(
+                "/settings?notice=" + quote("The connection was deleted.")
+                + "#connections")
             return
         self._send_json(200, {"ok": True, "id": connection.id})
 
@@ -4211,7 +4368,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     status="error" if result.outcome == health.OUTCOME_ERROR else "ok",
                     detail=f"{connection.label}: {result.cause or result.outcome}")
         if self._is_form_submit():
-            self._send_redirect("/settings#connections")
+            if result.outcome == health.OUTCOME_ERROR:
+                notice = (f"The check failed: {result.cause or result.outcome}. "
+                          "The badge above names the cause.")
+                kind_word = "alert"
+            else:
+                notice = "The check passed. The badge above is fresh."
+                kind_word = "status"
+            self._send_redirect(
+                "/settings?notice_kind=" + kind_word + "&notice=" + quote(notice)
+                + "#connections")
             return
         self._send_json(200, _connection_payload(connection))
 
@@ -4251,7 +4417,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     detail=f"{connection.label}: deeper check"
                            f" ({result.cause or result.outcome})")
         if self._is_form_submit():
-            self._send_redirect("/settings#connections")
+            if result.outcome == health.OUTCOME_ERROR:
+                notice = (f"The deeper check failed: {result.cause or result.outcome}. "
+                          "The badge above names the cause.")
+                kind_word = "alert"
+            else:
+                notice = "The deeper check passed: one token came back."
+                kind_word = "status"
+            self._send_redirect(
+                "/settings?notice_kind=" + kind_word + "&notice=" + quote(notice)
+                + "#connections")
             return
         self._send_json(200, _connection_payload(connection))
 
@@ -4422,7 +4597,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         # A no-JS post lands back on the page it came from: settings
         # pages name themselves with return_to, and the inbox empty
         # state's offer (the only other form poster) defaults to /inbox.
-        self._respond_form_or_json("/inbox", {"key": key, "value": value})
+        if self._is_form_submit():
+            self._send_redirect(self._form_return_to(body, "/inbox"))
+            return
+        self._send_json(200, {"key": key, "value": value})
 
     def _apply_sample_data(self, value) -> None:
         """On seeds the labelled sample set into the real stores; off
@@ -4814,9 +4992,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         now_ts = inbox.now_ts()
         settings = self.server.settings  # type: ignore[attr-defined]
         sample_on = bool(settings.get("sample_data")) if settings is not None else False
+        query = parse_qs(self.path.partition("?")[2])
         page = render_inbox_page(inbox.waiting(), inbox.dismissed(),
                                  agentdesk.__version__, now_ts,
-                                 sample_data_on=sample_on)
+                                 sample_data_on=sample_on,
+                                 notice=query.get("notice", [""])[0],
+                                 notice_kind=query.get("notice_kind", ["status"])[0])
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _inbox_waiting_count(self) -> int:
@@ -4910,7 +5091,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             "inbox.approved" if decision == "accept" else "inbox.denied",
             target=card.id, detail=card.title,
         )
-        self._respond_form_or_json("/inbox", card.to_json(inbox.now_ts()))
+        if self._is_form_submit():
+            if decision == "accept":
+                notice = "The card was accepted."
+            else:
+                notice = ("The card moved to Dismissed at the bottom of the "
+                          "inbox. Restore it there for 30 days.")
+            self._send_redirect("/inbox?notice=" + quote(notice))
+            return
+        self._send_json(200, card.to_json(inbox.now_ts()))
 
     def _on_ask_card_decided(self, card, decision: str) -> None:
         """Carry out the one ask-first question the desk check asks.
@@ -5083,6 +5272,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         results (or the never-tested state), and probing belongs to the
         explicit re-test POST. The cards age by the cache's own clock, so
         a stored result never reads fresher than it is."""
+        query = parse_qs(self.path.partition("?")[2])
         cache = self.server.capabilities_cache
         if cache is None:
             self._send_json(503, {"error": "the capabilities cache is not available"})
@@ -5099,6 +5289,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             now_ts=cache.clock(),
             mail=self._mail_capabilities(),
             inbox_count=self._inbox_waiting_count(),
+            notice=query.get("notice", [""])[0],
+            notice_kind=query.get("notice_kind", ["status"])[0],
         )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -5154,7 +5346,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_error_page(404, "Nothing here", "No gate lives at this address.")
             return
         cached = cache.save_result(runner())
-        self._respond_form_or_json("/capabilities", cached.to_json())
+        if self._is_form_submit():
+            self._send_redirect(
+                "/capabilities?notice=" + quote(
+                    f"Gate re-tested: {cached.result.title} is "
+                    f"{cached.result.status}."))
+            return
+        self._send_json(200, cached.to_json())
 
     def _on_fact_carried(self, card) -> None:
         """An accepted card may carry a fact. Two shapes: the memory
@@ -5287,9 +5485,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     # -- mail: the page, the watcher controls, the reply drafts -----------
 
-    def _send_mail_page(self) -> None:
+    def _send_mail_page(self, notice: str = "", notice_kind: str = "status",
+                        drafts: dict | None = None) -> None:
         """The mail page. Off (or unconstructed) is an honest state with
-        an enable pointer, never a blank screen."""
+        an enable pointer, never a blank screen.
+
+        A form post's outcome rides the query as `notice`; a refused
+        draft's typed words ride `drafts` keyed by the message id.
+        """
+        query = parse_qs(self.path.partition("?")[2])
         server = self.server  # type: ignore[attr-defined]
         mail = server.mail
         off_reason = ""
@@ -5300,8 +5504,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             off_reason = ("The mail watcher is not available on this machine "
                           "(its store could not open).")
         view = mail.view() if (mail is not None and not off_reason) else None
-        page = render_mail_page(agentdesk.__version__, view, off_reason=off_reason,
-                                inbox_count=self._inbox_waiting_count())
+        page = render_mail_page(
+            agentdesk.__version__, view, off_reason=off_reason,
+            inbox_count=self._inbox_waiting_count(),
+            notice=notice or query.get("notice", [""])[0],
+            notice_kind=query.get("notice_kind", [notice_kind])[0],
+            drafts=drafts)
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _mail_retest(self) -> None:
@@ -5315,7 +5523,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         status = mail.retest()
         if server.inbox is not None:
             self._evaluate_inbox(server.inbox)
-        self._respond_form_or_json("/mail", status)
+        if self._is_form_submit():
+            self._send_redirect("/mail?notice=" + quote("The folder was read again."))
+            return
+        self._send_json(200, status)
 
     def _mail_draft(self, message_id: str) -> None:
         """The reply draft flow's opening move: a card from the message's
@@ -5325,23 +5536,54 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         mail = server.mail
         if mail is None:
+            if self._is_form_submit():
+                self._send_mail_page(
+                    notice="The mail watcher is not available on this machine, "
+                           "so no draft was made.",
+                    notice_kind="alert")
+                return
             self._send_json(503, {"error": "the mail watcher is not available"})
             return
         if server.inbox is None:
+            if self._is_form_submit():
+                self._send_mail_page(
+                    notice="The inbox is not available right now, so the draft "
+                           "was not made. Try again once it is back.",
+                    notice_kind="alert")
+                return
             self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         text = body.get("body")
         if not isinstance(text, str) or not text.strip():
+            if self._is_form_submit():
+                self._send_mail_page(
+                    notice="Type the reply first: the box was empty, so no "
+                           "draft was made.",
+                    notice_kind="alert",
+                    drafts={message_id: text if isinstance(text, str) else ""})
+                return
             self._send_json(400, {"error": 'expected {"body": "..."}: the reply text you want to send'})
             return
         message = next((m for m in mail.view()["messages"] if m.id == message_id), None)
         if message is None:
+            if self._is_form_submit():
+                self._send_mail_page(
+                    notice=f"No message {message_id} is in the mail folder any "
+                           "more, so no draft was made.",
+                    notice_kind="alert", drafts={message_id: text})
+                return
             self._send_json(404, {"error": f"no message {message_id} in the mail folder"})
             return
         try:
             recipients = reply_recipients(message, self_address=mail.self_address)
         except ValueError as exc:
+            if self._is_form_submit():
+                self._send_mail_page(
+                    notice=f"The reply could not be addressed: {exc} Your words "
+                           "are kept below.",
+                    notice_kind="alert", drafts={message_id: text})
+                return
             self._send_json(400, {"error": str(exc)})
             return
         subject = reply_subject(message.thread or message.subject)
@@ -5362,7 +5604,13 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         )
         self._audit("mail.draft", target=message.id, detail=f"To: {recipients}")
         self._evaluate_inbox(server.inbox)
-        self._respond_form_or_json("/mail", card.to_json(server.inbox.now_ts()), 201)
+        if self._is_form_submit():
+            self._send_redirect(
+                "/mail?notice=" + quote(
+                    "The reply draft is in your inbox for review; accepting "
+                    "it writes the file to your local outbox."))
+            return
+        self._send_json(201, card.to_json(server.inbox.now_ts()))
 
     def _write_mail_reply(self, card) -> bool:
         """Acceptance's effect, done first: write the threaded .eml into
@@ -5421,8 +5669,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         settings.set("mail_folder", folder.strip())
         if server.mail is not None and folder.strip():
             server.mail.retest()
-        self._respond_form_or_json("/settings",
-                                   {"key": "mail_folder", "value": folder.strip()})
+        if self._is_form_submit():
+            self._send_redirect(
+                "/settings?notice=" + quote("The mail folder is saved.")
+                + "#tools")
+            return
+        self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
 
     def _mail_address_save(self) -> None:
         """The settings page's mail address field, next to the folder.
@@ -5447,8 +5699,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         settings.set("mail_self_address", address.strip())
         if server.mail is not None and address.strip():
             server.mail.retest()
-        self._respond_form_or_json("/settings",
-                                   {"key": "mail_self_address", "value": address.strip()})
+        if self._is_form_submit():
+            self._send_redirect(
+                "/settings?notice=" + quote("Your mail address is saved.")
+                + "#tools")
+            return
+        self._send_json(200, {"key": "mail_self_address", "value": address.strip()})
 
     def _preferences_save(self) -> None:
         """The settings form for what the desk knows about this person.

@@ -265,7 +265,7 @@ def test_retest_runs_exactly_one_gate_and_recaches():
             b"",
         )
         assert status == 303
-        assert headers["Location"] == "/capabilities"
+        assert headers["Location"].split("?", 1)[0] == "/capabilities"
         assert runners["exec-user-space"].calls == 1
         for key in GATE_KEYS:
             if key != "exec-user-space":

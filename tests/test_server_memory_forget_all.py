@@ -202,7 +202,7 @@ def test_the_confirmed_post_forgets_every_fact_and_everything_made_from_them(env
     _a_bank_with_everything_derived(env, auth)
     status, headers, body = _post_form(env, auth, "/memory/forget-all", {"confirm": "yes"})
     assert status == 303, status
-    assert headers["Location"] == "/memory"
+    assert headers["Location"].split("?", 1)[0] == "/memory"
     assert _rows(memory) == (0, 0, 0, 0, 0), _rows(memory)
     assert memory.superseded_map() == {}
     # A replaced older value was a fact too: it went with the rest.
@@ -225,9 +225,9 @@ def test_an_empty_bank_lands_back_on_the_page_and_deletes_nothing(env, auth):
     memory = env.server.memory
     assert memory.all() == []
     status, headers, _b = _post_form(env, auth, "/memory/forget-all", {})
-    assert (status, headers["Location"]) == (303, "/memory")
+    assert (status, headers["Location"].split("?", 1)[0]) == (303, "/memory")
     status, headers, _b = _post_form(env, auth, "/memory/forget-all", {"confirm": "yes"})
-    assert (status, headers["Location"]) == (303, "/memory")
+    assert (status, headers["Location"].split("?", 1)[0]) == (303, "/memory")
     assert _rows(memory) == (0, 0, 0, 0, 0)
 
 
@@ -248,7 +248,7 @@ def test_the_route_sits_behind_the_same_guard_as_every_form_post(env, auth):
 
 def _forget_everything(env, auth):
     status, headers, _b = _post_form(env, auth, "/memory/forget-all", {"confirm": "yes"})
-    assert (status, headers["Location"]) == (303, "/memory")
+    assert (status, headers["Location"].split("?", 1)[0]) == (303, "/memory")
 
 
 def test_the_audit_export_gains_a_row_that_counts_and_never_quotes(env, auth):
@@ -311,7 +311,7 @@ def test_the_encryption_key_is_untouched_on_a_sealed_bank(tmp_path):
     auth = booted.exchange()
     _add(booted, auth, "The Acme renewal is due December 15.")
     status, _h, body = _post_form(booted, auth, "/memory/encrypt", {"confirm": "on"})
-    assert (status, _h["Location"]) == (303, "/memory"), body
+    assert (status, _h["Location"].split("?", 1)[0]) == (303, "/memory"), body
     sealed_key = key_path.read_bytes()
     raw_before = db.read_bytes()
     assert b"Acme renewal" not in raw_before
@@ -609,7 +609,7 @@ def test_forgetting_one_fact_from_its_row_removes_that_fact_only(env, auth):
     kept = _add(env, auth, "The Acme renewal is due December 15.")
     gone = _add(env, auth, "The Berlin office has 40 people.")
     status, headers, _b = _post_form(env, auth, f"/memory/{gone}/delete", {})
-    assert (status, headers["Location"]) == (303, "/memory")
+    assert (status, headers["Location"].split("?", 1)[0]) == (303, "/memory")
     assert [fact.id for fact in env.server.memory.all()] == [kept]
 
 

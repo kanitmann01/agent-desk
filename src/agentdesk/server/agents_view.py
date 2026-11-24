@@ -14,24 +14,30 @@ from datetime import datetime
 
 from agentdesk.agents.registry import AgentKind, find_agent
 from agentdesk.agents.runner import STATUS_DEGRADED, slides_text
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 
 USED_NOTHING = "used nothing"
 
 
-def _brief_form(agent: AgentKind) -> str:
+def _brief_form(agent: AgentKind, brief: str = "") -> str:
     """One roster entry's run form: the agent's id rides in a hidden
-    field, the brief in a textarea, both posted to the run route."""
+    field, the brief in a textarea, both posted to the run route.
+
+    The form names the run history as the region that will show the new
+    run, and `brief` keeps the typed words after a refusal.
+    """
     agent_id = _esc(agent.id)
     return (
         f'<article class="card" id="agent-{agent_id}">'
         f"<h3>{_esc(agent.name)}</h3>"
         f"<p>{_esc(agent.blurb)}</p>"
-        '<form method="post" action="/agents/run" class="cardform">'
+        '<form method="post" action="/agents/run" class="cardform" '
+        'data-wait="#agents-history" data-wait-shape="list" '
+        f'data-wait-label="Running {_esc(agent.name)}..." data-busy="Running...">'
         f'<input type="hidden" name="agent" value="{agent_id}">'
         f'<label class="empty" for="brief-{agent_id}">Brief</label>'
         f'<textarea id="brief-{agent_id}" name="brief" rows="2" required '
-        f'placeholder="e.g. the Q3 business review"></textarea>'
+        f'placeholder="e.g. the Q3 business review">{_esc(brief)}</textarea>'
         f'<button class="btn btn-primary" type="submit">Run {_esc(agent.name)}</button>'
         "</form></article>"
     )
@@ -51,12 +57,14 @@ def _receipt_html(run: dict) -> str:
 
 
 def _presentation_card(packs, endpoint_ready: bool, sentence: str,
-                       research_ready: bool = False, research_sentence: str = "") -> str:
+                       research_ready: bool = False, research_sentence: str = "",
+                       brief: str = "") -> str:
     """The template picker under the topic box.
 
     A plain form: one radio per pack, dark or light, one recipe. When
     the endpoint is off or unconfigured the controls are disabled and
-    the page shows the same sentence the rest of the desk uses.
+    the page shows the same sentence the rest of the desk uses. `brief`
+    keeps the typed topic after a refusal.
     """
     if not packs:
         return ""
@@ -115,11 +123,14 @@ def _presentation_card(packs, endpoint_ready: bool, sentence: str,
         "<h3>Presentation</h3>"
         "<p>A deck from a template you pick. The topic is one short brief.</p>"
         f"{note}"
-        '<form method="post" action="/agents/run" class="cardform presentation-form">'
+        '<form method="post" action="/agents/run" class="cardform presentation-form" '
+        'data-wait="#agents-history" data-wait-shape="card" '
+        'data-wait-label="Building your deck. This takes about a minute." '
+        'data-busy="Building...">'
         '<input type="hidden" name="agent" value="presentation">'
         '<label class="empty" for="brief-presentation">Topic</label>'
         f'<textarea id="brief-presentation" name="brief" rows="2" required{disabled} '
-        'placeholder="e.g. the Q3 business review"></textarea>'
+        f'placeholder="e.g. the Q3 business review">{_esc(brief)}</textarea>'
         f'<fieldset class="template-tiles"{disabled}><legend class="empty">Template</legend>'
         f'{"".join(tiles)}</fieldset>'
         f'<fieldset class="variant-row"{disabled}><legend class="empty">Variant</legend>'
@@ -184,13 +195,21 @@ def _artifact_html(run: dict) -> str:
                     f"{_esc(source.get('snippet') or '')}</label>"
                 )
             form = (
-                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform" '
+                'data-wait="#agents-history" data-wait-shape="card" '
+                'data-wait-label="Building your deck. This takes about a minute." '
+                'data-busy="Building...">'
                 + "".join(rows)
                 + '<button class="btn btn-primary" type="submit">Build the deck</button></form>'
-                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform" '
+                'data-wait="#agents-history" data-wait-shape="card" '
+                'data-wait-label="Building your deck from the desk\'s own sources." '
+                'data-busy="Building...">'
                 '<input type="hidden" name="continue" value="desk">'
                 '<button class="btn" type="submit">Continue with desk sources only</button></form>'
-                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform" '
+                'data-wait="#agents-history" data-wait-shape="panel" '
+                'data-wait-label="Cancelling this run..." data-busy="Cancelling...">'
                 '<input type="hidden" name="continue" value="cancel">'
                 '<button class="btn" type="submit">Cancel</button></form>'
             )
@@ -198,7 +217,10 @@ def _artifact_html(run: dict) -> str:
         if artifact.get("phase") == "research-failed":
             return (
                 f"<pre>{_esc(text)}</pre>"
-                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform">'
+                f'<form method="post" action="/agents/runs/{run_id}/sources" class="cardform" '
+                'data-wait="#agents-history" data-wait-shape="card" '
+                'data-wait-label="Building your deck from the desk\'s own sources." '
+                'data-busy="Building...">'
                 '<input type="hidden" name="continue" value="desk">'
                 '<button class="btn" type="submit">Continue with desk sources only</button></form>'
             )
@@ -299,18 +321,26 @@ def _esc(value: str) -> str:
 def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
                        history_available: bool = True, packs=(),
                        endpoint_ready: bool = False, endpoint_sentence: str = "",
-                       research_ready: bool = False, research_sentence: str = "") -> str:
+                       research_ready: bool = False, research_sentence: str = "",
+                       notice: str = "", notice_kind: str = "status",
+                       typed_agent: str = "", typed_brief: str = "") -> str:
     """The full agents document: the roster with a run form per agent,
     then the run history newest first with receipts and artifacts.
 
     `runs` carries the store's shaped rows; `history_available` False is
     the honest state of a store that could not open (the roster still
-    renders, the history says why it is absent).
+    renders, the history says why it is absent). `notice` is the outcome
+    line a form post lands on, and `typed_agent`/`typed_brief` keep the
+    typed words after a refusal.
     """
     roster = _presentation_card(
         packs, endpoint_ready, endpoint_sentence, research_ready, research_sentence,
+        brief=typed_brief if typed_agent == "presentation" else "",
     )
-    roster += "".join(_brief_form(agent) for agent in agents)
+    roster += "".join(
+        _brief_form(agent, typed_brief if typed_agent == agent.id else "")
+        for agent in agents
+    )
     if not history_available:
         history = (
             '<p class="empty">The run history is not available right now: '
@@ -321,6 +351,7 @@ def render_agents_page(agents, runs, version: str, inbox_count: int = 0,
     else:
         history = "<p class='empty'>No runs yet. Give one of the agents above a brief.</p>"
     content = f"""<h1>Agents</h1>
+{status_line(notice, notice_kind)}
 <p>Task the desk with a brief. Each run recalls what the memory bank
 knows about the topic, sends one prompt through your AI,
 and prints its receipt: the exact facts it used, or that it used
@@ -328,5 +359,5 @@ nothing.</p>
 <h2>The roster</h2>
 {roster}
 <h2>Run history</h2>
-{history}"""
+<div id="agents-history">{history}</div>"""
     return page_shell("Agents", "/agents", content, version, inbox_count=inbox_count)

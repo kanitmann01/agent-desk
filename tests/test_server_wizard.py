@@ -368,7 +368,7 @@ def test_approve_form_post_redirects_to_the_approved_screen(env, auth):
     assert "What it does" in page  # the does/reads/never summary
     assert "Delete it from the Plugins surface" in page  # the removal hint
     assert "marketplace" in page  # the call to action names its surface
-    assert '"status"' not in page  # no raw JSON anywhere on the page
+    assert '"status":' not in page  # no raw JSON anywhere on the page
 
 
 def test_second_approve_form_post_refuses_and_never_installs_twice(env, auth):

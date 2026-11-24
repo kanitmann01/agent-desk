@@ -188,7 +188,7 @@ def test_the_whole_chain_wizard_to_live_card(walk):
     assert "a workbook you pick in setup" in approved_page
     assert "Set up its data" in approved_page
     assert f'href="/marketplace/plugin/{plugin_id}/manage"' in approved_page
-    assert '"status"' not in approved_page  # no raw JSON on the page
+    assert '"status":' not in approved_page  # no raw JSON on the page
     assert '"install"' not in approved_page
 
     # (g, continued) The CTA is followable: the detail payload the manage
