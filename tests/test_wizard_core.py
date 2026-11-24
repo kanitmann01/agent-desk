@@ -36,6 +36,7 @@ from agentdesk.wizard import (
     safe_slug,
 )
 from agentdesk.wizard import core as wizard_core
+from agentdesk.wizard import vocabulary as vocab
 
 CANONICAL_DESCRIPTION = "Watch my sales workbook and show the latest figure."
 CANONICAL_ANSWERS = {
@@ -147,6 +148,39 @@ def test_a_single_look_is_folded_away_rather_than_asked():
     answers = {"source": "My calendar", "show": "The items that need me"}
 
     assert "look" not in [q["id"] for q in questions_for_answers(answers)]
+
+
+def test_every_binding_the_wizard_offers_is_one_the_host_fills():
+    """A look names a binding, and a binding no reader fills is a permanently
+    blank tile. The host's own binding list is the contract, so the wizard's
+    vocabulary has to stay inside it."""
+    from agentdesk.plugins.execute import BINDINGS
+
+    offered: set[str] = set()
+    for shows in vocab.ELEMENTS.values():
+        for looks in shows.values():
+            for spec in looks.values():
+                offered.update(value for key, value in spec.items()
+                               if key.endswith("Binding"))
+
+    assert offered <= set(BINDINGS), sorted(offered - set(BINDINGS))
+
+
+def test_every_look_is_a_real_element_kind():
+    """A look that is not one of the ten element kinds would fail the shared
+    validator at install time, which is too late to tell a manager."""
+    from agentdesk.plugins.vocabulary import ELEMENT_KINDS
+
+    for shows in vocab.ELEMENTS.values():
+        for looks in shows.values():
+            assert set(looks) <= set(ELEMENT_KINDS)
+
+
+def test_no_source_offers_a_show_no_reader_could_fill():
+    """Every source in the questions has at least one show, or choosing it
+    would leave the walk with nothing to ask."""
+    for label, source_type in vocab.SOURCE_CHOICES:
+        assert vocab.shows_for(source_type), label
 
 
 # ---- autofill ------------------------------------------------------------

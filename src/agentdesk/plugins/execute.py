@@ -79,7 +79,7 @@ from agentdesk.plugins.sources import (
 #                  sources, sourceRows, sourceTable
 BINDINGS = ("delta24h", "addedCount", "removedCount", "unchangedCount",
             "direction", "rowsSeen", "windowNote", "file",
-            "value", "target", "status", "tone",
+            "value", "target", "status", "tone", "points",
             "columns", "rows", "table", "bucketTable", "bucketRows",
             "nextEventTitle", "nextEventTime", "eventsToday",
             "todayRows", "upcoming", "weekPoints", "weekHours", "items",

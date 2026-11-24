@@ -273,7 +273,8 @@ def card_to_api(card: dict, title: str | None = None) -> dict:
     pre-factory card could lack keep the empty defaults the payload always
     served.
     """
-    card = {
+    manual_metric = card.get("manualMetric")
+    out = {
         "id": card["id"],
         "title": card["title"] if title is None else title,
         "version": card["version"],
@@ -288,6 +289,6 @@ def card_to_api(card: dict, title: str | None = None) -> dict:
     }
     # Only a hand-kept number carries this, so the shape every other card
     # serves stays exactly what it has always been.
-    if card.get("manualMetric"):
-        card["manualMetric"] = card["manualMetric"]
-    return card
+    if manual_metric:
+        out["manualMetric"] = manual_metric
+    return out

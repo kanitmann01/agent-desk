@@ -83,24 +83,6 @@ REASON_LIMIT = 300
 SLUG_LIMIT = 40
 DEFAULT_TITLE = "Wizard widget"
 
-DEFAULT_SCHEDULE = "0 8 * * *"
-DEFAULT_SOURCE_TYPE = "excel-watch"
-
-# Answers are option labels, not ids, so matching is by phrase. These hints
-# only serve the autofill and the free-text fallback; the question path reads
-# the vocabulary tables directly.
-SOURCE_TEXT_HINTS = (
-    ("excel-watch", ("excel", "workbook", "xlsx", "spreadsheet", "worksheet")),
-    ("csv-watch", ("csv",)),
-    ("json-watch", ("json",)),
-    ("markdown-watch", ("markdown", "notes file", "checklist")),
-    ("calendar-read", ("calendar", "appointment", "ics")),
-    ("mail-digest", ("mail", "inbox", "outlook", "email")),
-    ("manual-metric", ("manual", "i keep", "hand-kept")),
-    ("research-brief", ("research",)),
-    ("http-get", ("http", "url", "endpoint", "website", "web page", "api")),
-)
-DAY_WINDOW_PATTERN = re.compile(r"\b24[ -]?h(our)?s?\b", re.IGNORECASE)
 GLOB_PATTERN = re.compile(
     r"[A-Za-z0-9_.\-*/\\]*[A-Za-z0-9_]\.(?:xlsx|xlsm|csv|json|ics|md)\b"
 )
@@ -413,43 +395,6 @@ def _load_json_reply(reply: object) -> object:
     raise ValueError("no JSON found in the endpoint reply")
 
 
-def _parse_questions(reply: object) -> list[dict]:
-    """Validate endpoint questions into the pinned shape, dropping every
-    one that would need typed input, and capping at MAX_QUESTIONS."""
-    data = _load_json_reply(reply)
-    if isinstance(data, dict):
-        data = data.get("questions")
-    if not isinstance(data, list):
-        return []
-    questions: list[dict] = []
-    seen_ids: set[str] = set()
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        qid, text = item.get("id"), item.get("question")
-        options = item.get("options")
-        if not (isinstance(qid, str) and qid.strip()):
-            continue
-        if not (isinstance(text, str) and text.strip()):
-            continue
-        if not isinstance(options, list):
-            continue
-        options = [option for option in options if isinstance(option, str) and option.strip()]
-        if len(options) < 2:
-            continue
-        default = item.get("default")
-        if not (isinstance(default, str) and default in options):
-            default = options[0]
-        if qid in seen_ids:
-            continue
-        seen_ids.add(qid)
-        questions.append(
-            {"id": qid, "question": text.strip(), "options": options, "default": default}
-        )
-        if len(questions) == MAX_QUESTIONS:
-            break
-    return questions
-
 # ---- escalation payload ------------------------------------------------
 
 
@@ -549,14 +494,6 @@ def _http_url(description: str, answers: dict) -> str:
 def _http_host(url: str) -> str:
     """The allowlist host of a URL: the one host the source may fetch."""
     return (urlsplit(url).hostname or "").lower() or "example.com"
-
-
-def _mentions_day_window(description: str, answers: dict) -> bool:
-    """Return True when the description or an answer says 24 hours."""
-    haystack = description + " " + " ".join(
-        str(value) for value in answers.values() if isinstance(value, str)
-    )
-    return bool(DAY_WINDOW_PATTERN.search(haystack))
 
 
 @dataclass

@@ -118,10 +118,12 @@ ELEMENTS: dict[str, dict[str, dict[str, dict]]] = {
                      "list": {"rowsBinding": "rows"}},
         SHOW_STATUS: {"status": {"binding": "value", "toneBinding": "tone"},
                       "text": {"binding": "nextDue"}},
-    },
-    "http-get": {
+    },    "http-get": {
         SHOW_LATEST: {"metric": {"binding": "value"}},
-        SHOW_CHANGE: {"status": {"binding": "changed"}},
+        # The reader compares this body with the previous one: value and
+        # direction are both real bindings, so "how it moved" is a delta.
+        SHOW_CHANGE: {"delta": {"binding": "value",
+                                "directionBinding": "direction"}},
         SHOW_ROWS: {"list": {"rowsBinding": "rows"}},
     },
     "calendar-read": {
