@@ -112,6 +112,10 @@ interface InstanceWalkProps {
   outsideNoun: string;
   /** Called when a header is assigned or the picked rows change, so the caller drops its pending suggestion or review. */
   onChoiceChanged?: () => void;
+  /** Drawn above the preview grid. The tracker uses it for the chart skeleton. */
+  chooseLead?: (ctx: ChooseCtx) => ReactNode;
+  /** An empty row selection is a finished choice and means every row. */
+  allowEmptyRows?: boolean;
 }
 
 type Phase = 'lead' | 'open' | 'choose' | 'confirm';
@@ -126,6 +130,7 @@ type Phase = 'lead' | 'open' | 'choose' | 'confirm';
 export default function InstanceWalk({
   title, onClose, requests, onDone, unreachable, steps, stepNumber,
   openLead, openTrail, lead, chooseFooter, confirmBody, outsideNoun, onChoiceChanged,
+  chooseLead, allowEmptyRows = false,
 }: InstanceWalkProps) {
   const [phase, setPhase] = useState<Phase>(lead ? 'lead' : 'open');
   const [preview, setPreview] = useState<GridPreview | null>(null);
@@ -284,7 +289,7 @@ export default function InstanceWalk({
     choose: stepNumber.choose,
     confirm: stepNumber.confirm,
   };
-  const ready = Boolean(labelColumn) && Boolean(valueColumn) && picked.length > 0;
+  const ready = Boolean(labelColumn) && Boolean(valueColumn) && (allowEmptyRows || picked.length > 0);
 
   return (
     <ModalSheet open title={title} onClose={onClose} busy={busy} error={error}>
@@ -369,6 +374,9 @@ export default function InstanceWalk({
 
       {phase === 'choose' && preview ? (
         <section className="setup-choose">
+          {chooseLead?.({
+            busy, ready, preview, choice, toConfirm: () => setPhase('confirm'), adopt, ask, try: tryRun,
+          })}
           <div className="setup-toolbar">
             <div className="seg" role="radiogroup" aria-label="A click on a column header assigns">
               <span className="seg-label">Header click sets</span>

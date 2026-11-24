@@ -1,5 +1,5 @@
-"""A column suggestion. Nothing is sent until the user presses Suggest,
-and the disclosure sentence is the list of what leaves the machine.
+"""A column suggestion. Nothing is sent unless a key is saved and the
+columns step has opened. The disclosure sentence lists what left the machine.
 """
 
 from __future__ import annotations
@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 
 from agentdesk.plugins.config import ConfigError
+from agentdesk.plugins.sources import cell_date
 
 DISCLOSURE_ROWS = (
     "This sends the column names and up to 5 rows to your AI. "
@@ -74,9 +75,13 @@ def heuristic(headers: list, rows: list) -> dict:
     ]
     value_name = headers[best_index]
     label_name = headers[label_index]
+    date_index = _date_index(rows, best_index)
+    date_name = headers[date_index] if date_index is not None else None
     return {
         "labelColumn": label_name,
         "valueColumn": value_name,
+        "dateColumn": date_name,
+        "chart": "line" if date_name else "column",
         "aggregate": "sum",
         "rows": chosen_rows,
         "reason": f"{value_name} looks like the amount; {label_name} groups rows.",
@@ -113,6 +118,35 @@ def _variance(values: list) -> float:
         return 0.0
     mean = sum(values) / len(values)
     return sum((value - mean) ** 2 for value in values) / len(values)
+
+
+def _date_index(rows, value_index: int):
+    """The column whose sampled cells mostly parse as dates, or None.
+
+    The value column is skipped. A column qualifies when at least half of
+    its filled cells parse, and the one with the most parsed cells wins.
+    """
+    best = None
+    best_hits = 0
+    width = max((len(row) for row in rows), default=0)
+    for index in range(width):
+        if index == value_index:
+            continue
+        hits = 0
+        seen = 0
+        for row in rows:
+            if index >= len(row):
+                continue
+            text = str(row[index]).strip()
+            if not text:
+                continue
+            seen += 1
+            if cell_date(row[index]) is not None:
+                hits += 1
+        if seen and hits * 2 >= seen and hits > best_hits:
+            best = index
+            best_hits = hits
+    return best
 
 
 def _label_index(headers, rows, value_index: int) -> int:
@@ -285,8 +319,9 @@ def propose_columns(request: dict, complete) -> dict:
     """
     prompt = (
         "Choose which columns to track. Reply with one JSON object and nothing else, "
-        "with keys labelColumn, valueColumn, and aggregate (sum, count, latest, min, or max). "
-        "Use only the column names in this request.\n"
+        "with keys labelColumn, valueColumn, dateColumn (a header of dates or periods, "
+        "or null), chart (line, column, or area), aggregate (sum, count, latest, min, "
+        "or max), and reason. Use only the column names in this request.\n"
         + json.dumps(request)
     )
     try:
@@ -303,7 +338,9 @@ def propose_columns(request: dict, complete) -> dict:
         raise ConfigError("config:suggest-failed", f"The endpoint did not return a column choice: {exc}")
     if not isinstance(parsed, dict):
         raise ConfigError("config:suggest-failed", "The endpoint did not return a column choice.")
-    headers = set(request.get("headers") or [])
+    names = [str(cell) for cell in (request.get("headers") or [])]
+    headers = set(names)
+    by_lower = {name.lower(): name for name in names}
     label = str(parsed.get("labelColumn") or "")
     value = str(parsed.get("valueColumn") or "")
     if headers and (label not in headers or value not in headers):
@@ -311,14 +348,21 @@ def propose_columns(request: dict, complete) -> dict:
     aggregate = str(parsed.get("aggregate") or "sum").lower()
     if aggregate not in ("sum", "count", "latest", "min", "max"):
         aggregate = "sum"
-    rows = parsed.get("rows")
-    if not isinstance(rows, list):
-        rows = list(range(len(request.get("rows") or [])))
+    date = str(parsed.get("dateColumn") or "").strip()
+    if not date or date.lower() == "null" or date.lower() == value.lower() or date.lower() not in by_lower:
+        date = None
+    else:
+        date = by_lower[date.lower()]
+    chart = str(parsed.get("chart") or "line").lower()
+    if chart not in ("line", "column", "area"):
+        chart = "line"
     return {
         "labelColumn": label,
         "valueColumn": value,
+        "dateColumn": date,
+        "chart": chart,
         "aggregate": aggregate,
-        "rows": [item for item in rows if isinstance(item, int)],
+        "rows": None,
         "reason": str(parsed.get("reason") or f"{value} looks like the amount; {label} groups rows."),
         "source": "model",
     }

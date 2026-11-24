@@ -65,6 +65,23 @@ const READING_CARD: PluginCard = {
 };
 
 describe('the workbook card draws the reading', () => {
+  it('names a time-axis column chart by its first and last labels', () => {
+    render(<TrackerCard card={{
+      ...READING_CARD,
+      payload: {
+        ...READING_CARD.payload!,
+        tracker: {
+          ...TRACKER,
+          chart: 'column',
+          axis: 'time',
+          labels: ['Jan', 'Feb', 'Mar', 'Apr'],
+          points: [1, 2, 3, 4],
+        },
+      },
+    }} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+    expect(screen.getByRole('img', { name: 'Jan to Apr' })).toBeInTheDocument();
+  });
+
   it('renders the appended elements and the resolved lines under the figure', () => {
     render(<TrackerCard card={READING_CARD} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
 

@@ -345,7 +345,9 @@ def _tracking(incoming: dict, previous: dict) -> dict:
     """Validate a column choice and return it in the stored shape.
 
     ``labelColumn`` and ``valueColumn`` are required; ``aggregate`` defaults to sum
-    and must be sum, count, latest, min or max; ``good`` is carried over from
+    and must be sum, count, latest, min or max; ``chart`` defaults to line and must
+    be line, column, or area; a time column equal to the value column is refused;
+    ``good`` is carried over from
     ``previous`` when the incoming choice omits it; ``unit`` falls back to the goal's
     unit; ``rows`` is a list of non-negative row numbers or None meaning every row.
     Anything else raises ``config:bad-tracking``.
@@ -359,6 +361,12 @@ def _tracking(incoming: dict, previous: dict) -> dict:
     aggregate = str(incoming.get("aggregate") or "sum").lower()
     if aggregate not in ("sum", "count", "latest", "min", "max"):
         raise ConfigError("config:bad-tracking", "Aggregate must be sum, count, latest, min, or max.")
+    chart = str(incoming.get("chart") or "line").lower()
+    if chart not in ("line", "column", "area"):
+        raise ConfigError("config:bad-tracking", "Chart must be line, column, or area.")
+    date_column = str(incoming.get("dateColumn") or "").strip() or None
+    if date_column and date_column.lower() == value.lower():
+        raise ConfigError("config:bad-tracking", "The time column and the value column must differ.")
     good = incoming.get("good") or previous.get("good") or "up"
     rows = incoming.get("rows")
     if rows is not None and not (
@@ -369,7 +377,8 @@ def _tracking(incoming: dict, previous: dict) -> dict:
     result = {
         "labelColumn": label,
         "valueColumn": value,
-        "dateColumn": incoming.get("dateColumn") or None,
+        "dateColumn": date_column,
+        "chart": chart,
         "aggregate": aggregate,
         "good": "down" if good == "down" else "up",
         "unit": unit,
