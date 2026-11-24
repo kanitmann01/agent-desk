@@ -67,6 +67,23 @@ export function visibleScopes(scopes: string[]): string[] {
 }
 
 /**
+ * True when a plugin's declared capabilities ask to reach the web.
+ *
+ * The catalog DTO lists requested hosts under `network` (from permissions
+ * and optionalPermissions) and data-source kinds under `sources`; an HTTP
+ * source reads as `http-get`. Either one means the plugin needs the plugin
+ * runner's HTTP transport.
+ */
+export function asksForWeb(
+  capabilities: Pick<MarketCapabilities, 'network' | 'sources'> | undefined,
+): boolean {
+  if (!capabilities) return false;
+  const hosts = capabilities.network ?? [];
+  const sources = capabilities.sources ?? [];
+  return hosts.length > 0 || sources.some((source) => source.toLowerCase().startsWith('http'));
+}
+
+/**
  * State the promises a plugin's declared capabilities imply.
  *
  * An empty filesystem or network list is a true absence, so the wording

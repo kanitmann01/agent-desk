@@ -66,25 +66,27 @@ function DiffTable({ rows }: { rows: PolicyDiffEntry[] }) {
     );
   }
   return (
-    <table className="mkt-diff">
-      <caption className="mkt-sr-only">Policy fields changed by this signed bundle</caption>
-      <thead>
-        <tr>
-          <th scope="col">Field</th>
-          <th scope="col">Active policy</th>
-          <th scope="col">Imported bundle</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.field}>
-            <th scope="row">{row.field}</th>
-            <td><code>{valueText(row.before)}</code></td>
-            <td><code>{valueText(row.after)}</code></td>
+    <div className="mkt-table-wrap">
+      <table className="mkt-diff">
+        <caption className="mkt-sr-only">Policy fields changed by this signed bundle</caption>
+        <thead>
+          <tr>
+            <th scope="col">Field</th>
+            <th scope="col">Active policy</th>
+            <th scope="col">Imported bundle</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.field}>
+              <th scope="row">{row.field}</th>
+              <td><code tabIndex={0} title={valueText(row.before)}>{valueText(row.before)}</code></td>
+              <td><code tabIndex={0} title={valueText(row.after)}>{valueText(row.after)}</code></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -276,7 +278,7 @@ export default function AdminPage() {
         <section className="mkt-panel" aria-labelledby="mkt-admin-off">
           <h2 id="mkt-admin-off">Admin mode is off</h2>
           <p>
-            The admin surface is disabled on this desk. Set <code>AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
+            The admin surface is disabled on this desk. Set <code tabIndex={0} title="AGENTDESK_MARKETPLACE_ADMIN=1">AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
             in the environment that starts Agent Desk, then reload this page.
           </p>
           <p className="w-note">
@@ -321,30 +323,30 @@ export default function AdminPage() {
           <section className="mkt-panel" aria-labelledby="mkt-posture">
             <h2 id="mkt-posture">Posture</h2>
             <dl className="mkt-facts">
-              <div><span>Mode</span><strong>{snapshot.posture.mode}</strong></div>
-              <div><span>Risk ceiling</span><strong>{snapshot.posture.riskCeiling}</strong></div>
+              <div><span>Mode</span><strong tabIndex={0} title={snapshot.posture.mode}>{snapshot.posture.mode}</strong></div>
+              <div><span>Risk ceiling</span><strong tabIndex={0} title={snapshot.posture.riskCeiling}>{snapshot.posture.riskCeiling}</strong></div>
               <div>
                 <span>Signatures required</span>
-                <strong>{snapshot.posture.requireSignatures ? 'Yes' : 'No'}</strong>
+                <strong tabIndex={0} title={snapshot.posture.requireSignatures ? 'Yes' : 'No'}>{snapshot.posture.requireSignatures ? 'Yes' : 'No'}</strong>
               </div>
               <div>
                 <span>Allowed publishers</span>
-                <strong>{listText(snapshot.posture.allowedPublishers)}</strong>
+                <strong tabIndex={0} title={listText(snapshot.posture.allowedPublishers)}>{listText(snapshot.posture.allowedPublishers)}</strong>
               </div>
               <div>
                 <span>Allowed categories</span>
-                <strong>{listText(snapshot.posture.allowedCategories)}</strong>
+                <strong tabIndex={0} title={listText(snapshot.posture.allowedCategories)}>{listText(snapshot.posture.allowedCategories)}</strong>
               </div>
               <div>
                 <span>Network allowlist</span>
-                <strong>{listText(snapshot.posture.networkAllowlist)}</strong>
+                <strong tabIndex={0} title={listText(snapshot.posture.networkAllowlist)}>{listText(snapshot.posture.networkAllowlist)}</strong>
               </div>
               <div>
                 <span>Enabled sources</span>
-                <strong>{snapshot.posture.enabledSources.length} sources</strong>
+                <strong tabIndex={0} title={`${snapshot.posture.enabledSources.length} sources`}>{snapshot.posture.enabledSources.length} sources</strong>
               </div>
-              <div><span>Catalog source</span><strong>{snapshot.catalogSource}</strong></div>
-              <div><span>Audit events</span><strong>{snapshot.auditEvents}</strong></div>
+              <div><span>Catalog source</span><strong tabIndex={0} title={snapshot.catalogSource}>{snapshot.catalogSource}</strong></div>
+              <div><span>Audit events</span><strong tabIndex={0} title={String(snapshot.auditEvents)}>{snapshot.auditEvents}</strong></div>
             </dl>
           </section>
 
@@ -359,7 +361,7 @@ export default function AdminPage() {
                   'No signing key is pinned yet'
                 ) : (
                   snapshot.anchor.fingerprints.map((fingerprint) => (
-                    <code className="mkt-fingerprint" key={fingerprint}>{fingerprint}</code>
+                    <code className="mkt-fingerprint" key={fingerprint} tabIndex={0} title={fingerprint}>{fingerprint}</code>
                   ))
                 )}
               </dd>
@@ -368,7 +370,7 @@ export default function AdminPage() {
               <dt>Signer fingerprint</dt>
               <dd>
                 {snapshot.policy.signerFingerprint ? (
-                  <code className="mkt-fingerprint">{snapshot.policy.signerFingerprint}</code>
+                  <code className="mkt-fingerprint" tabIndex={0} title={snapshot.policy.signerFingerprint}>{snapshot.policy.signerFingerprint}</code>
                 ) : (
                   'Unsigned local policy'
                 )}
@@ -430,7 +432,7 @@ export default function AdminPage() {
               ) : (
                 snapshot.posture.killSwitch.map((pluginId) => (
                   <li key={pluginId} className="mkt-admin-row">
-                    <code className="mkt-fingerprint">{pluginId}</code>
+                    <code className="mkt-fingerprint" tabIndex={0} title={pluginId}>{pluginId}</code>
                     <Button
                       onClick={() => void setKill(pluginId, false)}
                       disabled={busy === `kill:${pluginId}`}
@@ -569,7 +571,7 @@ export default function AdminPage() {
                         <th scope="row">{item.id}</th>
                         <td>{item.version}</td>
                         <td>{item.publisher}</td>
-                        <td><code title={item.digest}>{item.digest ? item.digest.slice(0, 12) : 'none'}</code></td>
+                        <td><code title={item.digest} tabIndex={0}>{item.digest ? item.digest.slice(0, 12) : 'none'}</code></td>
                         <td>{item.enabled ? 'Yes' : 'No'}</td>
                         <td>
                           {item.eligible

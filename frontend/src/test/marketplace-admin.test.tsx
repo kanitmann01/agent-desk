@@ -96,7 +96,10 @@ describe('Marketplace admin', () => {
     expect(screen.getByText('curated')).toBeInTheDocument();
     expect(screen.getByText('a24fafdbac6e')).toBeInTheDocument();
     expect(screen.getByText('Adds the first widget.')).toBeInTheDocument();
-    expect(screen.getByText('abcdef123456')).toBeInTheDocument();
+    const inventoryDigest = screen.getByText('abcdef123456');
+    expect(inventoryDigest.tagName).toBe('CODE');
+    expect(inventoryDigest).toHaveAttribute('tabindex', '0');
+    expect(inventoryDigest).toHaveAttribute('title', 'abcdef1234567890abcdef');
     expect(screen.getAllByText('widget-one').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Approve widget-one' }));
@@ -166,6 +169,11 @@ describe('Marketplace admin', () => {
     expect(await screen.findByText('Changes in this bundle')).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'open' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'acme, zeta' })).toBeInTheDocument();
+    const changed = screen.getByRole('cell', { name: 'acme, zeta' }).querySelector('code');
+    expect(changed).toHaveAttribute('tabindex', '0');
+    expect(changed).toHaveAttribute('title', 'acme, zeta');
+    const diffTable = screen.getByRole('table', { name: 'Policy fields changed by this signed bundle' });
+    expect(diffTable.parentElement).toHaveClass('mkt-table-wrap');
     expect(requests.some((request) => request.body && (request.body as { confirm?: boolean }).confirm === true))
       .toBe(false);
 
@@ -190,7 +198,10 @@ describe('Marketplace admin', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Marketplace admin' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Admin mode is off' })).toBeInTheDocument();
-    expect(screen.getByText(/AGENTDESK_MARKETPLACE_ADMIN=1/)).toBeInTheDocument();
+    const envCode = screen.getByText(/AGENTDESK_MARKETPLACE_ADMIN=1/);
+    expect(envCode.tagName).toBe('CODE');
+    expect(envCode).toHaveAttribute('tabindex', '0');
+    expect(envCode).toHaveAttribute('title', 'AGENTDESK_MARKETPLACE_ADMIN=1');
     expect(screen.queryByRole('heading', { name: 'Posture' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Apply signed policy/ })).not.toBeInTheDocument();
   });

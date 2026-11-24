@@ -56,7 +56,7 @@ describe('the marketplace catalog surface', () => {
     const link = screen.getByRole('link', { name: /AR Aging, version 1\.2\.0, agent-desk/ });
     expect(within(link).getByText('Overdue invoices by customer, refreshed from the workbook you already keep.')).toBeInTheDocument();
     expect(within(link).getByText('v1.2.0')).toBeInTheDocument();
-    expect(within(link).getByText('Finance')).toBeInTheDocument();
+    expect(link.getAttribute('aria-label')).toContain('Finance');
     expect(within(link).getByText('Medium risk')).toBeInTheDocument();
     expect(within(link).queryByText('Bundled')).toBeNull();
     expect(within(link).queryByText('Verified')).toBeNull();
@@ -67,6 +67,22 @@ describe('the marketplace catalog surface', () => {
     expect(screen.getByText('Unverified publisher')).toBeInTheDocument();
 
     expect(link).toHaveAttribute('href', '/marketplace/plugin/ar-aging');
+  });
+
+  it('keeps a card category tag focusable and titled', async () => {
+    window.history.replaceState({}, '', '/marketplace/publisher/agent-desk');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      publisher: 'agent-desk', verified: true, proof: 'No proof on file',
+      plugins: [card()], firstSeen: '2026-11-01',
+    })));
+    render(<MarketplaceApp />);
+
+    const link = await screen.findByRole('link', {
+      name: /AR Aging, version 1\.2\.0, agent-desk, Finance/,
+    });
+    const categoryTag = within(link).getByText('Finance');
+    expect(categoryTag).toHaveAttribute('tabindex', '0');
+    expect(categoryTag).toHaveAttribute('title', 'Finance');
   });
 
   it('sends every filter to the catalog API instead of filtering a stale list', async () => {
