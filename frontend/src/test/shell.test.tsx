@@ -35,6 +35,7 @@ const DATA: DashboardData = {
 /** A fresh desk's setup object, as the server reports it (spec 022). */
 const COLD_SETUP: SetupData = {
   sample: false,
+  sampleOffer: true,
   steps: [
     { id: 'ai', title: 'Add your AI key', reason: 'The assistant uses it.', href: '/settings#ai', action: null, done: false },
     { id: 'workbook', title: 'Open your sales workbook', reason: 'Your pipeline figure comes from it.', href: '/settings#tools', action: '/sources/excel-watch/pick', done: false },

@@ -50,6 +50,10 @@ def setup_payload(ai_connected: bool, sample: bool, excel, calendar) -> dict:
     every tile alive while nothing is connected, so a workbook or calendar
     inside the sample folder leaves its step open: the desk must never look
     finished while it is still showing sample data.
+
+    `sampleOffer` says whether the strip offers "Try it with sample data":
+    true until a real workbook or calendar is connected. A saved AI is not
+    a source, so a person who adds the key first keeps the offer.
     """
     workbook = getattr(excel, "registered_path", None)
     workbook_done = bool(workbook) and not demo_data.under_sample_folder(workbook, None)
@@ -67,6 +71,7 @@ def setup_payload(ai_connected: bool, sample: bool, excel, calendar) -> dict:
             for step_id, title, reason, href, action in SETUP_STEPS
         ],
         "sample": bool(sample),
+        "sampleOffer": not (workbook_done or calendar_done),
     }
 
 

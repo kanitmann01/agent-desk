@@ -74,6 +74,8 @@ def test_a_fresh_desk_lists_three_steps_in_order_and_none_is_done():
         for step in setup["steps"]:
             assert step["title"] and step["reason"] and step["href"]
         assert setup["sample"] is False
+        # Nothing real is connected, so the strip offers sample data.
+        assert setup["sampleOffer"] is True
     finally:
         booted.close()
 
@@ -175,6 +177,8 @@ def test_sample_sources_do_not_complete_a_step(tmp_path, monkeypatch):
         calendar=_Calendar(str(sample / "sample-calendar.json")))
     assert [step["done"] for step in setup["steps"]] == [True, False, False]
     assert setup["sample"] is True
+    # Sample wiring is not a real source: the offer stays.
+    assert setup["sampleOffer"] is True
 
 
 def test_real_sources_complete_their_steps(tmp_path, monkeypatch):
@@ -186,6 +190,7 @@ def test_real_sources_complete_their_steps(tmp_path, monkeypatch):
         excel=_Workbook(str(elsewhere / "pipeline.xlsx")),
         calendar=_Calendar(str(elsewhere / "calendar.json")))
     assert [step["done"] for step in setup["steps"]] == [True, True, True]
+    assert setup["sampleOffer"] is False
 
 
 def test_an_empty_calendar_is_not_connected(tmp_path, monkeypatch):

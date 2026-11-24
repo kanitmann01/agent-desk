@@ -285,6 +285,10 @@ export interface SetupData {
   steps: SetupStep[];
   /** True while the desk is showing the labelled sample set. */
   sample: boolean;
+  /** True while the strip should offer sample data: until a real
+   *  workbook or calendar is connected. The AI key is not a source and
+   *  does not withdraw the offer. */
+  sampleOffer: boolean;
 }
 
 export interface DashboardData {

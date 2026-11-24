@@ -173,8 +173,10 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .doc .card h3{font-size:16px;font-weight:700;letter-spacing:-.01em}
 /* The Memory page's explanation (ticket #283): the card voice, its
    heading in the card-title voice, held to the reading column's width
-   on the wide island page. */
-.doc .card h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
+   on the wide island page. Scoped 2026-11-23 to this one block: a
+   blanket .doc .card h2 rule restyled every card heading on every
+   server page, and the visual system is out of scope there. */
+.doc .memory-explain h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
 .memory-explain{max-width:720px}
 .doc .card .cardrow{margin-top:0}
 /* The widget cards' internal rhythm: the 12px gap is the single spacer.

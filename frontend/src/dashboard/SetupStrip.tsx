@@ -39,8 +39,9 @@ interface SetupStripProps {
  *
  * The workbook step goes through the shared connect walk; the other two are
  * links. The sample switch posts the settings toggle the way the Settings
- * page does. It is offered while nothing real is connected, and named with
- * a way to hide it while the sample set is in use.
+ * page does. The server's sampleOffer decides when the offer shows: until
+ * a real workbook or calendar is connected, so adding the key first keeps
+ * it, and it is named with a way to hide it while the sample set is in use.
  */
 export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, workbook }: SetupStripProps) {
   const [sampleBusy, setSampleBusy] = useState(false);
@@ -48,7 +49,6 @@ export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, wor
   const steps = setup.steps;
   const doneCount = steps.filter((step) => step.done).length;
   const firstOpen = steps.find((step) => !step.done)?.id;
-  const nothingConnected = doneCount === 0;
 
   /** Turn sample data on or off, then reload the dashboard once. */
   async function toggleSample() {
@@ -110,7 +110,7 @@ export default function SetupStrip({ setup, onDismiss, onRefetch, onExpired, wor
           </li>
         ))}
       </ol>
-      {setup.sample || nothingConnected ? (
+      {setup.sample || setup.sampleOffer ? (
         <p className="gs-foot">
           {setup.sample ? 'You are looking at sample data. ' : 'Nothing is connected yet. '}
           <button type="button" className="text-btn" disabled={sampleBusy}

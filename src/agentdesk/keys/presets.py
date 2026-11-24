@@ -39,9 +39,12 @@ class Preset:
 
 PRESETS: tuple[Preset, ...] = (
     # Each default_model is an id read on the provider's own documentation
-    # on 2026-11-23. A provider whose page names no default (the local
-    # servers, OpenCode Go, Custom) records none, and its form then takes
-    # the model from the save-time listing or from the person.
+    # on 2026-11-23, and each was checked again the same evening against
+    # the provider's model list: a default a personal key cannot use is
+    # the "even then it's not working" the spec exists to end. A provider
+    # whose page names no default (the local servers, OpenCode Go, Custom)
+    # records none, and its form then takes the model from the save-time
+    # listing or from the person.
     Preset("openai", "OpenAI",
            "https://api.openai.com/v1",
            "https://platform.openai.com/api-keys",
@@ -53,11 +56,11 @@ PRESETS: tuple[Preset, ...] = (
     Preset("openrouter", "OpenRouter",
            "https://openrouter.ai/api/v1",
            "https://openrouter.ai/settings/keys",
-           default_model="openai/gpt-5.2"),
+           default_model="openai/gpt-6-luna"),
     Preset("groq", "Groq",
            "https://api.groq.com/openai/v1",
            "https://console.groq.com/keys",
-           default_model="llama-3.3-70b-versatile"),
+           default_model="openai/gpt-oss-120b"),
     Preset("together", "Together",
            "https://api.together.ai/v1",
            "https://api.together.ai/settings/api-keys",
@@ -73,7 +76,7 @@ PRESETS: tuple[Preset, ...] = (
     Preset("mistral", "Mistral",
            "https://api.mistral.ai/v1",
            "https://console.mistral.ai/api-keys",
-           default_model="mistral-small-4-0-26-03"),
+           default_model="mistral-small-2603"),
     Preset("opencode", "OpenCode Go",
            "https://opencode.ai/inference/go/v1",
            "https://opencode.ai/v2/docs/console/go/"),

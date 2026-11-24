@@ -199,7 +199,9 @@ section that holds it):
 steps in order (`ai`, `workbook`, `calendar`), each with a title, a
 reason, an address and a done flag. A sample source does not make a step
 done. The strip renders above the tiles while any step is open, offers
-"Try it with sample data" while no source is connected, "Not now"
+"Try it with sample data" while the payload's `sampleOffer` is true
+(true until a real workbook or calendar is connected: the AI key is not
+a source, so adding it first keeps the offer), "Not now"
 (remembered in the browser, replaced by a small "Finish setup" link in the
 header), and names the sample data with a "Hide sample data" action while
 it is in use. "Add plugin" leaves the header for a "Describe a plugin in
@@ -236,7 +238,11 @@ addresses and lose their links. No other navigation changes tonight.
 
 **Copy.** On-screen language follows `GLOSSARY.md` and PRODUCT.md's voice:
 no "job", "binding", "endpoint", "provider", "capture", "retain" or
-environment variable names where a user reads. The unbound sentence becomes
+environment variable names where a user reads. "Provider" keeps its one
+narrow sense: the form field that names the company serving the model,
+and the saved table's company column, say "Provider"; the AI as a whole
+never does (clarified 2026-11-23, after a review pass flagged the form).
+The unbound sentence becomes
 "Add your AI key" with the Settings address. Desk health's row "Research"
 is labelled "AI".
 
@@ -268,7 +274,7 @@ functions, CSS literals or component internals.
 - **Existing: vitest with Testing Library** for what the React home screen
   and the Plugins navigation render.
 
-**The frozen readiness list (22 HTTP checks and 2 browser-render checks).**
+**The frozen readiness list (23 HTTP checks and 2 browser-render checks).**
 
 | # | Check | Passes when |
 | --- | --- | --- |
@@ -407,3 +413,28 @@ the stale workbook figure) are already fixed on `main`.
 the demo machine's own data folder beyond non-secret metadata. A restart
 invalidates the browser session (sessions live in memory); the launcher
 opens a fresh start link, and `DEMO.md` carries that beat.
+
+**What the review pass changed (2026-11-23, second pass).** The branch was
+reviewed by three independent readers (standards, spec fidelity, and a
+bug and security read) after the first gate. Verified findings, fixed on
+this branch:
+
+- "Forget everything" hardened (ticket 022-8): it now also removes
+  excerpts and rejects waiting review cards when no standing fact exists,
+  answers a locked store's form post with a page instead of raw JSON, and
+  tolerates two quick clicks.
+- Copy leftovers finished (tickets 022-9 and 022-10): the delete
+  confirmation, the wizard notice, a paused research card, "Model:
+  (default)", and the Memory page's "Capture"/"endpoint" wording.
+- Three preset default models corrected against the providers' own
+  listings: Mistral's id (`mistral-small-2603`; the recorded value was a
+  documentation slug), Groq's (its previous default is Enterprise-only,
+  so a personal key would be refused; now `openai/gpt-oss-120b`) and
+  OpenRouter's (the previous default costs seventeen times more than the
+  small model we default to elsewhere; now `openai/gpt-6-luna`).
+- The sample offer waits for a real source, not for the AI step
+  (`sampleOffer` in the setup payload): a person who adds the key first
+  keeps the only way to see the desk working.
+- Readiness R01 now checks the sample offer and R08 checks the answer
+  the post itself returned; the heading rule added for the Memory
+  explanation is scoped to that one block.

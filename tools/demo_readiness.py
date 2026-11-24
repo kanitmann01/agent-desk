@@ -23,7 +23,7 @@ removed, and a new one is a new number.
 
 Fresh desk (nothing configured yet)
   R01  honest: no sample data, workbook and calendar not connected, and
-       the setup object says whether sample data is on
+       the setup object offers sample data while nothing real is on
   R02  the AI source reads not connected
   R03  the setup object lists three steps in order: ai, workbook,
        calendar, each with a title, a reason and an address, none done
@@ -32,7 +32,8 @@ Fresh desk (nothing configured yet)
   R06  Settings: never says "none bound"
   R07  Assistant without an AI links to Settings with "Add your AI key",
        and names no job and no environment variable
-  R08  asking without an AI is not a server error and says the same
+  R08  asking without an AI is not a server error and the answer the
+       post itself returned says why
   R09  Memory: an explanation block of 200+ characters, in plain words
   R10  learning is switched on for a fresh folder
   R11  the rail: every link answers 200, at most eight, none to Peers,
@@ -467,11 +468,12 @@ def _fresh_desk(desk: Desk, report: Report) -> None:
         dashboard.get("sample") is False
         and _source(dashboard, "excel-watch").get("status") == "not_connected"
         and _source(dashboard, "calendar-bridge").get("status") == "not_connected"
-        and isinstance(setup, dict) and isinstance(setup.get("sample"), bool),
+        and isinstance(setup, dict) and isinstance(setup.get("sample"), bool)
+        and setup.get("sampleOffer") is True,
         f"sample={dashboard.get('sample')!r}, "
         f"workbook={_source(dashboard, 'excel-watch').get('status')!r}, "
         f"calendar={_source(dashboard, 'calendar-bridge').get('status')!r}, "
-        f"setup.sample={(setup or {}).get('sample') if isinstance(setup, dict) else 'no setup object'}"))
+        f"setup.sampleOffer={(setup or {}).get('sampleOffer') if isinstance(setup, dict) else 'no setup object'}"))
     report.run(2, "the AI reads not connected", lambda: (
         _source(dashboard, "research-endpoint").get("status") == "not_connected",
         f"research-endpoint status={_source(dashboard, 'research-endpoint').get('status')!r}"))
@@ -516,10 +518,13 @@ def _fresh_desk(desk: Desk, report: Report) -> None:
         "no link to /settings#ai saying 'Add your AI key', or the page names a job or an environment variable"))
 
     def asking_is_honest():
-        """Asking with no AI is answered, not a server error, and says why."""
+        """Asking with no AI is answered, not a server error, and the
+        answer the POST itself returned says why (tightened 2026-11-23:
+        the page fetched before the post always carries the offer, so it
+        proved nothing)."""
         status, _headers, body = desk.post_json(
             "/assistant/ask", {"question": "What changed since yesterday?"})
-        said = page_text(assistant_html).lower() + " " + body.decode("utf-8", "replace").lower()
+        said = body.decode("utf-8", "replace").lower()
         return status < 500 and "ai key" in said, f"POST /assistant/ask answered {status}"
     report.run(8, "asking without an AI is honest", asking_is_honest)
 

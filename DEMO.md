@@ -29,6 +29,10 @@ I type, and that goes to the AI I choose with my own key."
    merged: your usual checkout). It prints
    `Agent Desk is running: http://127.0.0.1:8765/auth/<one-time-token>` and
    opens the browser itself. The link is the session: there is no sign-in.
+   Before the purge below, copy the whole data folder
+   (`C:\Users\<you>\.agent-desk`) beside itself once: a plain copy named
+   `.agent-desk-backup` is enough. Every step after this one changes that
+   folder, and "Forget everything" cannot be undone.
 2. **Clean the memory.** Rail: Memory. Read "How memory works" once so the
    words are yours tomorrow. Click **Forget everything**, confirm. The page
    should say 0 facts.
@@ -49,6 +53,13 @@ I type, and that goes to the AI I choose with my own key."
 7. **Do not click "Not now" on the Get started strip** during the
    rehearsal. It hides the strip for that browser sitting. If you did, the
    header shows **Finish setup**: one click brings it back.
+
+**If the desk already shows SAMPLE DATA tags** (sample data is on in
+Settings, as it is today): switch it off first, in Settings, Advanced,
+Desk, **Sample data**. That one click removes the sample cards and the
+sample memory facts with them, and the Get started strip comes back with
+"Try it with sample data" for tomorrow's first beat. Then continue at
+step 2. On a desk that has never been shown sample data, skip this.
 
 ### Fresh start (only if you want to open on an empty desk)
 

@@ -32,8 +32,9 @@ const STEPS: SetupStep[] = [
 ];
 
 /** The setup object with the given steps marked done. */
-function setupData(done: boolean[], sample = false): SetupData {
-  return { sample, steps: STEPS.map((step, index) => ({ ...step, done: done[index] })) };
+function setupData(done: boolean[], sample = false,
+                   sampleOffer = !done[1] && !done[2]): SetupData {
+  return { sample, sampleOffer, steps: STEPS.map((step, index) => ({ ...step, done: done[index] })) };
 }
 
 const BASE: DashboardData = {
@@ -164,9 +165,15 @@ describe('the Get started strip (R24)', () => {
     await user.click(screen.getByRole('button', { name: 'Hide sample data' }));
     expect(second.mock.calls[0][0]).toBe('/settings/toggle');
 
-    // Once something real is connected the offer steps aside.
+    // The offer waits for a real source, not for the AI step: with the
+    // key saved and no workbook or calendar it still shows.
     cleanup();
     render(<Dashboard data={desk(setupData([true, false, false]))} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+    expect(screen.getByRole('button', { name: 'Try it with sample data' })).toBeInTheDocument();
+
+    // A real workbook or calendar is what withdraws it.
+    cleanup();
+    render(<Dashboard data={desk(setupData([false, true, false]))} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
     expect(screen.queryByRole('button', { name: 'Try it with sample data' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Hide sample data' })).toBeNull();
   });
