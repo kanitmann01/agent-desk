@@ -444,3 +444,82 @@ def test_the_feeder_path_imports_no_network_or_model_client():
         for banned in ("import socket", "import urllib", "import requests",
                        "http.client", "agentdesk.llm"):
             assert banned not in source, (module.__name__, banned)
+
+
+def test_a_seeded_fetch_status_survives_a_restart(tmp_path):
+    """The runner's status file is passed back at construction, so the
+    Settings card does not read Not run yet after a restart."""
+    case = WatchCase(tmp_path)
+    seeded = {
+        "collector": "notification-store",
+        "platform": "test-os",
+        "lastRunTs": 1700000000.0,
+        "lastResult": "ok",
+        "lastError": "",
+        "written": 2,
+        "coverageFromTs": None,
+        "coverageToTs": None,
+    }
+    watch = MailWatch(
+        inbox=case.inbox,
+        store=case.store,
+        adapters=case.watch.adapters,
+        folder_provider=lambda: str(case.folder),
+        fetch_status=seeded,
+    )
+    assert watch.status()["fetch"] == seeded
+
+
+def test_a_corrupt_feeder_status_file_is_ignored(monkeypatch, tmp_path):
+    from agentdesk.server.app import _read_feeder_status
+
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    assert _read_feeder_status() is None  # no file yet
+    (tmp_path / "outlook-feeder.json").write_text("{not json", encoding="utf-8")
+    assert _read_feeder_status() is None
+
+
+def _fetch_once(tmp_path, result):
+    """One fetch-now before the first poll, with the feeder faked."""
+    case = WatchCase(tmp_path)
+    case.watch.feeder = lambda: dict(result)
+    case.watch.fetch_now()
+    return case
+
+
+def test_an_ok_fetch_is_audited_against_the_resolved_folder(tmp_path):
+    case = _fetch_once(tmp_path, {
+        "lastResult": "ok", "collector": "notification-store",
+        "written": 1, "lastError": "",
+    })
+    # No poll ran yet, so the target comes from the folder provider.
+    assert case.audit == [("mail.fetch", "mail", "ok")]
+
+
+def test_an_error_fetch_is_audited_as_an_error(tmp_path):
+    case = _fetch_once(tmp_path, {
+        "lastResult": "error", "collector": "", "written": 0,
+        "lastError": "The pass failed.",
+    })
+    assert case.audit == [("mail.fetch", "mail", "error")]
+
+
+def test_unavailable_and_busy_fetches_are_not_audited(tmp_path):
+    """Nothing was touched in either outcome, so no audit row claims a touch."""
+    for name, result in (
+        ("unavailable", {"lastResult": "unavailable"}),
+        ("busy", {"lastResult": "busy"}),
+    ):
+        folder = tmp_path / name
+        folder.mkdir()
+        case = _fetch_once(folder, result)
+        assert case.audit == [], result
+
+
+def test_a_fetch_with_no_folder_configures_no_audit_target(monkeypatch, tmp_path):
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    case = WatchCase(tmp_path)
+    case.watch.folder_provider = lambda: ""
+    case.watch.feeder = lambda: {"lastResult": "ok"}
+    case.watch.fetch_now()
+    assert case.audit == []

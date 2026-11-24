@@ -625,9 +625,37 @@ def test_a_busy_fetch_and_the_macos_cause_render_plainly(tmp_path):
         booted.post_json("/settings/mail/fetch-now", {}, auth)
         page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
         assert "Another pass is already running" in page
+        assert "0 alerts" not in page  # a busy pass touched nothing to count
         booted.post_json("/settings/mail/fetch-now", {}, auth)
         page = booted.request("GET", "/settings", auth)[2].decode("utf-8")
         assert "Full Disk Access" in page
         assert "On a Mac the fix is Full Disk Access" in page
     finally:
         booted.close()
+
+
+def test_turning_alerts_on_turns_the_mail_digest_on_and_builds_the_watch(
+        env, auth, monkeypatch, tmp_path):
+    """The feed needs the folder its alerts land in: one switch turns both
+    on, the watcher is constructed and polled, and the feeder is wired."""
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    assert env.server.settings.get("mail_enabled") is False
+    assert env.server.mail is None
+    status, _h, body = env.post_json(
+        "/settings/toggle", {"key": "mail_feeder"}, auth)
+    assert status == 200
+    assert json.loads(body) == {"key": "mail_feeder", "value": True}
+    values = json.loads(env.request("GET", "/widgets/settings", auth)[2])
+    assert values["mail_feeder"] is True
+    assert values["mail_enabled"] is True
+    assert env.server.mail is not None
+    assert env.server.mail.feeder is not None
+    env.server.mail.stop_polling()
+
+
+def test_the_fetch_outlook_alerts_toggle_appears_once(env, auth):
+    page = env.request("GET", "/settings", auth)[2].decode("utf-8")
+    assert page.count("data-setting='mail_feeder'") == 1
+    assert "Fetch Outlook alerts" in page
+    assert "Outlook alerts (not a mailbox)" not in page

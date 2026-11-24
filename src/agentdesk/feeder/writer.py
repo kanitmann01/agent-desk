@@ -171,10 +171,10 @@ def write_mail(messages, folder, *, now: float, window_days: int) -> int:
 def write_status(status: dict, path) -> None:
     """Record one feeder status as JSON at path, atomically.
 
-    The Settings card reads this file directly, so it must never see a
-    half-written document: the temp file plus os.replace gives it the
-    previous status or the new one. Keys stay as given; the runner owns
-    their names and values.
+    The app reads this file when it builds the mail watcher, so it must
+    never see a half-written document: the temp file plus os.replace
+    gives it the previous status or the new one. Keys stay as given; the
+    runner owns their names and values.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
