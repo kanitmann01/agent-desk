@@ -4,8 +4,9 @@ The core never asks what platform it is on; it asks each collector
 whether it is available. This module is where that list is built, so a
 platform import stays out of the contract, the writer and the runner.
 The Windows WPN reader and the macOS Notification Center reader are
-chosen here, and the manual fallback trails every list so a machine
-with no readable alert store still names Save as in its cause.
+chosen here, each alone so its own unavailable cause (no Outlook
+handler, Full Disk Access) reaches the status. Only a platform with no
+reader gets the manual fallback.
 """
 
 import sys
@@ -25,14 +26,14 @@ def default_collectors(platform: str | None = None) -> tuple[MailCollector, ...]
 
     win32 tries the Windows toast reader, darwin tries the macOS
     Notification Center reader, and every other label gets the manual
-    fallback alone. Each reader list ends with the manual collector, so
-    a host whose store is missing or unreadable still has a cause that
-    names Save as instead of no cause at all. The platform parameter is
-    the seam tests use; None means this host.
+    fallback alone. The reader stands alone so its own unavailable cause
+    (no Outlook handler, a missing store, Full Disk Access) is what the
+    status records instead of a generic manual sentence. The platform
+    parameter is the seam tests use; None means this host.
     """
     label = current_platform() if platform is None else platform
     if label == "win32":
-        return (WpnCollector(), UnavailableCollector())
+        return (WpnCollector(),)
     if label == "darwin":
-        return (MacNotificationCollector(), UnavailableCollector())
+        return (MacNotificationCollector(),)
     return (UnavailableCollector(),)

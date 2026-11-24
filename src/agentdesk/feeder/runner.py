@@ -83,7 +83,8 @@ class OutlookFeeder:
         returns "busy" without touching the folder or the status file.
         Every other outcome is persisted atomically and returned: "ok"
         with the written count and the coverage window, "unavailable"
-        with the manual Save as sentence, or "error" with a plain cause.
+        with the most specific unavailable cause and the collector it
+        came from, or "error" with a plain cause.
         """
         now = self.clock()
         try:
@@ -110,10 +111,10 @@ class OutlookFeeder:
         folder_text = str(self.folder_provider() or "").strip()
         if not folder_text:
             return self._record(RESULT_ERROR, "", now, 0, NO_FOLDER)
-        collector = self._first_available()
+        collector, cause = self._first_available()
         if collector is None:
             return self._record(
-                RESULT_UNAVAILABLE, MANUAL_COLLECTOR_NAME, now, 0, MANUAL_CAUSE,
+                RESULT_UNAVAILABLE, self._unavailable_name(), now, 0, cause,
             )
         since = datetime.fromtimestamp(now - self.window_days * DAY_S, tz=timezone.utc)
         try:
@@ -130,16 +131,20 @@ class OutlookFeeder:
             )
         return self._record(RESULT_OK, collector.name, now, written, "", messages)
 
-    def _first_available(self) -> MailCollector | None:
-        """The first collector that says it can run, or None.
+    def _first_available(self) -> tuple[MailCollector | None, str]:
+        """The first collector that says it can run, or None and its cause.
 
         A collector whose availability check itself raises is treated as
         unavailable: the next one is asked, so one broken probe cannot
-        stop the whole feeder.
+        stop the whole feeder. Every reported cause is kept as the list
+        is walked, but the manual fallback's generic sentence never
+        overwrites a platform reader's specific one. MANUAL_CAUSE is the
+        answer only when no collector supplied a cause at all.
         """
+        cause = ""
         for collector in self.collectors:
             try:
-                available, _cause = collector.available()
+                available, reported = collector.available()
             except Exception:  # noqa: BLE001 - one broken probe, not a failed pass
                 LOG.warning(
                     "feeder collector %s could not report availability",
@@ -147,8 +152,26 @@ class OutlookFeeder:
                 )
                 continue
             if available:
-                return collector
-        return None
+                return collector, ""
+            if reported and (
+                collector.name != MANUAL_COLLECTOR_NAME or not cause
+            ):
+                cause = reported
+        return None, cause or MANUAL_CAUSE
+
+    def _unavailable_name(self) -> str:
+        """The collector the unavailable status should name.
+
+        The last collector that is not the manual fallback is the one
+        whose specific cause the pass is showing, so it is named even
+        when a later manual fallback was tried after it. A list that
+        holds only the manual fallback names it.
+        """
+        platform_names = [
+            collector.name for collector in self.collectors
+            if collector.name != MANUAL_COLLECTOR_NAME
+        ]
+        return platform_names[-1] if platform_names else MANUAL_COLLECTOR_NAME
 
     def _record(self, result: str, collector: str, last_run_ts: float | None,
                 written: int, error: str, messages=()) -> dict:

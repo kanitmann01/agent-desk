@@ -22,6 +22,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 
 from agentdesk.feeder.collectors.wpn import NO_HANDLER_CAUSE, WpnCollector
 from agentdesk.feeder.contract import MailCollector
+from agentdesk.feeder.runner import OutlookFeeder
 
 SENTINEL = "BODY-PREVIEW-SENTINEL-9f3c"
 NOW = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
@@ -227,6 +228,34 @@ def test_a_store_with_an_outlook_handler_and_no_toasts_is_available(tmp_path):
     collector = WpnCollector(store_path=path)
     assert collector.available() == (True, "")
     assert collector.collect(NOW - timedelta(days=1), limit=10) == []
+
+
+def test_the_runner_records_the_no_handler_cause_in_its_status(tmp_path, monkeypatch):
+    path = make_store(
+        tmp_path / "wpndatabase.db",
+        [(OTHER, 1, "toast", toast("Other App", "Other subject", "Other preview"), NOW)],
+    )
+    con = sqlite3.connect(path)
+    try:
+        con.execute("DELETE FROM NotificationHandler WHERE PrimaryId = ?", (OUTLOOK,))
+        con.commit()
+    finally:
+        con.close()
+    monkeypatch.setattr(sys, "platform", "win32")
+    feeder = OutlookFeeder(
+        collectors=[WpnCollector(store_path=path)],
+        folder_provider=lambda: str(tmp_path / "mail"),
+        clock=lambda: NOW.timestamp(),
+        status_path=tmp_path / "feeder-status.json",
+        platform="win32",
+    )
+
+    status = feeder.run_once()
+
+    assert status["lastResult"] == "unavailable"
+    assert status["collector"] == "wpn"
+    assert status["lastError"] == NO_HANDLER_CAUSE
+    assert status["written"] == 0
 
 
 def test_available_is_false_off_windows_or_without_the_store(tmp_path, monkeypatch):

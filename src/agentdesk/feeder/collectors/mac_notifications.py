@@ -84,20 +84,41 @@ class MacNotificationCollector:
         self.platform = sys.platform if platform is None else platform
 
     def available(self) -> tuple[bool, str]:
-        """Whether this host can read Outlook alerts, and the cause when not."""
+        """Whether this host can read Outlook alerts, and the cause when not.
+
+        A readable store is available as soon as its app table holds an
+        Outlook row: no alerts yet is an empty collect, not a failure.
+        Only a store with no Outlook row is unavailable, because there
+        is nothing this reader could ever see.
+        """
         if self.platform != "darwin":
             return False, PLATFORM_CAUSE
         if not self.db_path.exists():
             return False, MISSING_CAUSE
         try:
-            rows = self._select(limit=1)
+            if not self._outlook_app_present():
+                return False, NO_OUTLOOK_CAUSE
         except PermissionError:
             return False, FULL_DISK_ACCESS_CAUSE
         except (OSError, sqlite3.Error):
             return False, UNREADABLE_CAUSE
-        if not rows:
-            return False, NO_OUTLOOK_CAUSE
         return True, ""
+
+    def _outlook_app_present(self) -> bool:
+        """Whether a read-only copy of the store registers an Outlook app."""
+        with tempfile.TemporaryDirectory(prefix="agentdesk-mac-alerts-") as tmp:
+            copy = Path(tmp) / "db"
+            self._copy_store(copy)
+            conn = sqlite3.connect(f"{copy.as_uri()}?mode=ro", uri=True)
+            try:
+                row = conn.execute(
+                    "SELECT 1 FROM app WHERE identifier IN"
+                    f" ({','.join('?' * len(OUTLOOK_BUNDLE_IDS))}) LIMIT 1",
+                    OUTLOOK_BUNDLE_IDS,
+                ).fetchone()
+            finally:
+                conn.close()
+        return row is not None
 
     def collect(self, since: datetime, limit: int) -> list[Message]:
         """Outlook alerts delivered since the moment, oldest first, up to limit."""

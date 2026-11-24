@@ -1,10 +1,11 @@
-"""The platform seam: each host gets its reader plus the manual fallback.
+"""The platform seam: each host gets its own reader, or the manual fallback.
 
 The core must import on any machine, so the platform decision is data,
 not an import: default_collectors takes the platform label and returns
-the reader for that label, always trailed by the manual fallback so a
-store-less machine still has a plain Save as cause. Only this module
-names a reader class; the contract, the writer and the runner do not.
+the reader for that label alone, so the reader's own unavailable cause
+survives into the status. Only a platform with no reader gets the manual
+fallback. Only this module names a reader class; the contract, the
+writer and the runner do not.
 """
 
 import ast
@@ -72,26 +73,22 @@ def assert_manual_fallback(collector) -> None:
     assert "Save as" in cause
 
 
-def test_default_collectors_on_win32_tries_the_wpn_reader_then_manual():
+def test_default_collectors_on_win32_is_the_wpn_reader_only():
     collectors = default_collectors("win32")
     assert isinstance(collectors, tuple)
-    assert [collector.name for collector in collectors] == ["wpn", "manual"]
-    wpn, manual = collectors
+    assert [collector.name for collector in collectors] == ["wpn"]
+    (wpn,) = collectors
     assert isinstance(wpn, WpnCollector)
     assert isinstance(wpn, MailCollector)
-    assert_manual_fallback(manual)
 
 
-def test_default_collectors_on_darwin_tries_the_mac_reader_then_manual():
+def test_default_collectors_on_darwin_is_the_mac_reader_only():
     collectors = default_collectors("darwin")
     assert isinstance(collectors, tuple)
-    assert [collector.name for collector in collectors] == [
-        "mac-notifications", "manual",
-    ]
-    mac, manual = collectors
+    assert [collector.name for collector in collectors] == ["mac-notifications"]
+    (mac,) = collectors
     assert isinstance(mac, MacNotificationCollector)
     assert isinstance(mac, MailCollector)
-    assert_manual_fallback(manual)
 
 
 def test_default_collectors_on_other_platforms_is_the_manual_fallback():
@@ -105,14 +102,15 @@ def test_default_collectors_on_other_platforms_is_the_manual_fallback():
 def test_default_collectors_uses_this_host_when_no_label_is_given():
     assert current_platform() == sys.platform
     expected = {
-        "win32": ["wpn", "manual"],
-        "darwin": ["mac-notifications", "manual"],
+        "win32": ["wpn"],
+        "darwin": ["mac-notifications"],
     }.get(sys.platform, ["manual"])
     collectors = default_collectors()
     assert [collector.name for collector in collectors] == expected
     for collector in collectors:
         assert isinstance(collector, MailCollector)
-    assert_manual_fallback(collectors[-1])
+    if sys.platform not in ("win32", "darwin"):
+        assert_manual_fallback(collectors[-1])
 
 
 def test_the_package_reexports_the_public_seam():

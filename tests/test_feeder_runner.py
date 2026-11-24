@@ -190,21 +190,51 @@ def test_no_body_token_reaches_the_folder(tmp_path):
 # -- the honest not-run outcomes ------------------------------------------
 
 
-def test_run_once_falls_back_to_the_manual_path_when_nothing_can_run(tmp_path):
-    unavailable = FakeCollector(name="first", available=False, cause="no index")
-    feeder, folder, status_path = make_feeder(
+def test_run_once_reports_the_platform_collector_cause_when_nothing_can_run(tmp_path):
+    unavailable = FakeCollector(
+        name="mac-notifications",
+        available=False,
+        cause="Give Agent Desk Full Disk Access.",
+    )
+    feeder, folder, status_path = make_feeder(tmp_path, [unavailable])
+
+    status = feeder.run_once()
+
+    assert status["lastResult"] == "unavailable"
+    assert status["collector"] == "mac-notifications"
+    assert status["lastError"] == "Give Agent Desk Full Disk Access."
+    assert status["written"] == 0
+    assert unavailable.calls == []
+    assert not folder.exists()  # nothing was collected, so nothing was written
+    assert status_file(status_path) == status
+
+
+def test_run_once_names_the_platform_cause_ahead_of_a_manual_fallback(tmp_path):
+    unavailable = FakeCollector(
+        name="wpn", available=False,
+        cause="No Outlook notification handler is registered.",
+    )
+    feeder, _, status_path = make_feeder(
         tmp_path, [unavailable, UnavailableCollector()],
     )
 
     status = feeder.run_once()
 
     assert status["lastResult"] == "unavailable"
+    assert status["collector"] == "wpn"
+    assert status["lastError"] == "No Outlook notification handler is registered."
+    assert status_file(status_path) == status
+
+
+def test_run_once_with_only_the_manual_fallback_records_its_own_cause(tmp_path):
+    feeder, _, status_path = make_feeder(tmp_path, [UnavailableCollector()])
+
+    status = feeder.run_once()
+
+    assert status["lastResult"] == "unavailable"
     assert status["collector"] == "manual"
-    assert "Save as" in status["lastError"]
     assert status["lastError"] == MANUAL_CAUSE
-    assert status["written"] == 0
-    assert unavailable.calls == []
-    assert not folder.exists()  # nothing was collected, so nothing was written
+    assert "Save as" in status["lastError"]
     assert status_file(status_path) == status
 
 

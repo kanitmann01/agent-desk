@@ -23,7 +23,10 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from agentdesk.feeder.collectors.mac_notifications import MacNotificationCollector
+from agentdesk.feeder.collectors.mac_notifications import (
+    NO_OUTLOOK_CAUSE,
+    MacNotificationCollector,
+)
 from agentdesk.feeder.writer import write_mail
 
 APPLE_EPOCH_OFFSET_S = 978307200
@@ -250,7 +253,7 @@ def test_permission_denied_names_full_disk_access(tmp_path, monkeypatch):
     assert "Full Disk Access" in cause
 
 
-def test_no_outlook_records_has_its_own_cause(tmp_path):
+def test_a_store_with_no_outlook_app_row_is_unavailable_with_its_own_cause(tmp_path):
     db = build_store(
         tmp_path,
         apps=[(2, CHAT)],
@@ -258,7 +261,17 @@ def test_no_outlook_records_has_its_own_cause(tmp_path):
     )
     available, cause = collector(db).available()
     assert not available
+    assert cause == NO_OUTLOOK_CAUSE
     assert "Outlook" in cause
+
+
+def test_a_store_with_an_outlook_app_row_and_no_records_is_available(tmp_path):
+    db = build_store(tmp_path, apps=[(1, OUTLOOK)], records=[])
+
+    reader = collector(db)
+
+    assert reader.available() == (True, "")
+    assert reader.collect(since(T1), 10) == []
 
 
 def test_outlook_records_make_the_reader_available(tmp_path):
