@@ -8385,6 +8385,11 @@ def default_calendar_hint(explicit: str | None = None) -> Path:
     'OneDrive - Company' glob, macOS CloudStorage); the hint shows the
     first one that exists on this machine, falling back to the first
     default, so it never names a path the reader would ignore.
+
+    An empty AGENTDESK_CALENDAR_FILE pins the reader to no calendar and
+    leaves no candidates at all. The page still needs a place to name, so
+    that boot falls back to the plain OneDrive default; the reader itself
+    keeps answering nothing.
     """
     if explicit:
         return Path(explicit)
@@ -8392,7 +8397,9 @@ def default_calendar_hint(explicit: str | None = None) -> Path:
     for candidate in candidates:
         if candidate.is_file():
             return candidate
-    return candidates[0]
+    if candidates:
+        return candidates[0]
+    return Path.home() / "OneDrive" / "agent-desk" / "calendar_sync.json"
 
 def _default_calendar_bridge(settings_store=None) -> CalendarBridge | None:
     """A real bridge over the persistent store, or None when it cannot open.
