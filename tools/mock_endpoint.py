@@ -25,7 +25,13 @@ import argparse
 import json
 import re
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Milliseconds to wait before answering a chat request. The audit tool sets
+# this in-process so a real model-backed wait can be photographed; the CLI
+# flag exists for a person running the mock by hand.
+DELAY_MS = 0
 
 # The stable markers the reply builder keys on: the extraction system
 # prompt's own first sentence, the agent prompt's instructions label, and
@@ -285,6 +291,8 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
         if self.path.rstrip("/") != "/v1/chat/completions" and self.path.rstrip("/") != "/chat/completions":
             self._send_json(404, {"error": "the mock serves /chat/completions only"})
             return
+        if DELAY_MS > 0:
+            time.sleep(DELAY_MS / 1000.0)
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         SEEN_MODELS.append(str(body.get("model") or ""))
@@ -387,7 +395,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="The desk's local mock BYOK endpoint")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
+    parser.add_argument("--delay-ms", type=int, default=0,
+                        help="sleep this long before answering a chat request (default 0)")
     args = parser.parse_args()
+    global DELAY_MS
+    DELAY_MS = max(0, args.delay_ms)
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         parser.error(f"refusing to bind {args.host}: the mock is loopback only")
     server = ThreadingHTTPServer((args.host, args.port), MockEndpointHandler)
