@@ -4,6 +4,7 @@
 // suite does.
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { FormEvent } from 'react';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,6 +92,30 @@ describe('the button while pending', () => {
     const button = screen.getByRole('button', { name: 'Save' });
     expect(button).toHaveAccessibleName('Save');
     expect(button.querySelectorAll('.btn-label')).toHaveLength(2);
+  });
+
+  it('keeps a submit button submit while pending and refuses a second submit from the field', async () => {
+    const onSubmit = vi.fn((event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+    });
+    const user = userEvent.setup();
+    render(
+      <form onSubmit={onSubmit}>
+        <label>
+          Question
+          <input aria-label="Question" />
+        </label>
+        <Button type="submit" pending pendingLabel="Saving...">Save</Button>
+      </form>,
+    );
+    const button = screen.getByRole('button', { name: 'Saving...' });
+    // The pending state never rewrites the control's type: a form losing
+    // its submit button is a different form.
+    expect(button).toHaveAttribute('type', 'submit');
+    expect(button).toBeDisabled();
+    // Enter in the field cannot reach a disabled submit button.
+    await user.type(screen.getByLabelText('Question'), 'x{Enter}');
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });
 
