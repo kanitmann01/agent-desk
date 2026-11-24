@@ -37,6 +37,7 @@
 #memory-graph-root .mg-step-index{flex:none;color:var(--ink-4);font-size:11px;white-space:nowrap}
 #memory-graph-root .mg-step-name{min-width:0;font-weight:600;color:var(--ink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #memory-graph-root .mg-step-count{display:block;font-size:15px;color:var(--heading);letter-spacing:-.01em;white-space:nowrap;overflow-x:auto;overflow-y:hidden}
+#memory-graph-root .mg-step-count:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 #memory-graph-root .mg-step-text{font-size:12px;line-height:1.45;color:var(--ink-3)}
 
 /* Body: the picture and the provenance panel, 8 and 4. */

@@ -173,6 +173,18 @@ describe('MemoryGraph', () => {
       .toEqual(['Came from', 'Facts', 'Observations', 'Entities']);
   });
 
+  it('makes every pipeline count a keyboard stop with its full value as a title', async () => {
+    serve(bank);
+    const { container } = render(<MemoryGraph initialWidth={1000} />);
+    await screen.findByText('How this memory was made');
+    const counts = [...container.querySelectorAll('.mg-step-count')];
+    expect(counts).toHaveLength(6);
+    for (const count of counts) {
+      expect(count.getAttribute('tabindex')).toBe('0');
+      expect(count.getAttribute('title')).toBe((count.textContent || '').trim());
+    }
+  });
+
   it('says so when the bank is locked', async () => {
     serve({ status: 'locked', error: 'the key file is missing' }, 423);
     render(<MemoryGraph initialWidth={1000} />);
