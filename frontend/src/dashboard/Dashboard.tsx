@@ -628,7 +628,10 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
   }
 
   const renderedEntries = visible.filter((entry) => rendersCard(entry.key));
-  const hiddenEntries = (layoutState ?? []).filter((c) => c.hidden);
+  // A card being restored stays in the strip until its save answers, so the
+  // Restore control can carry its own pending state instead of vanishing.
+  const hiddenEntries = (layoutState ?? []).filter((c) =>
+    c.hidden || (layoutPending?.key === c.key && layoutPending.action === 'restore'));
 
   return (
     <div className="app">
