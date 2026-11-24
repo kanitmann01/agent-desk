@@ -16,19 +16,14 @@ from agentdesk.plugins.vocabulary import (
     SPARKLINE_MIN_POINTS,
 )
 
+from .grammar import (
+    JSON_LIST as _JSON_LIST,
+    JSON_OBJECT as _JSON_OBJECT,
+    PLUGIN_DATA_ROOT,
+    SAFE_NAME as _SAFE_ID,
+    WORKSPACE_ROOT,
+)
 from .model import Failure
-
-_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-# json-watch's deliberately tiny selector grammar: an object path
-# ($.a.b) or a list field ($.a[*].n). Nothing else is executable.
-_JSON_OBJECT = re.compile(r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
-_JSON_LIST = re.compile(
-    r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*)+\[\*\]\.[A-Za-z_][A-Za-z0-9_]*$")
-
-
-WORKSPACE_ROOT = "${workspace}/"
-PLUGIN_DATA_ROOT = "${pluginData}"
 
 # The declarative vocabulary of data source types. The pipeline-backed
 # kinds (calendar-read, mail-digest, research-brief) read the shared

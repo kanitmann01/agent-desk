@@ -29,6 +29,7 @@ from agentdesk.plugins.cards import (
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.registry.install import tree_digest
 from agentdesk.validator.core import validate_plugin
+from agentdesk.validator.grammar import SAFE_NAME as _SAFE_NAME
 
 # The PRD's binding count (R3.7): "a visible 'pilot' badge for the first
 # 5 runs". The test pins this constant against that sentence.
@@ -38,10 +39,6 @@ PILOT_VIEWS = 5
 # HTTP boundary caps compressed bodies; this caps what a small bundle can
 # become in memory when extracted (a peer bundle is another desk's input).
 MAX_ZIP_MEMBER_BYTES = 16 * 1024 * 1024
-
-# Plugin ids and versions become filesystem fragments (install dirs,
-# data dirs, rmtree targets), so they are names, not free text.
-_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _alias_id(name: str) -> str:
