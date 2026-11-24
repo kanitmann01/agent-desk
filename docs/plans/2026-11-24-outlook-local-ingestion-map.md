@@ -17,12 +17,17 @@ A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Win
 
 ## Open tickets
 
-All four decision tickets are resolved. The frontier is now the implementation tickets I1 to I5 in the same folder.
+All four decision tickets are resolved. The frontier is now the implementation tickets.
 
 - [Which local Outlook data sources actually work here?](docs/tickets/2026-11-24/O1-local-outlook-sources.md): resolved.
 - [How does the feeder run without admin?](docs/tickets/2026-11-24/O2-feeder-scheduling.md): resolved.
 - [What is the feeder's privacy, consent and failure contract?](docs/tickets/2026-11-24/O3-feeder-contract.md): resolved.
 - [What is the proof plan?](docs/tickets/2026-11-24/O4-proof-plan.md): resolved.
+- [The feeder core and header-only writer](docs/tickets/2026-11-24/I1-feeder-core.md): writer and contract complete; runner and platform seam in progress.
+- [The Windows notification-store reader](docs/tickets/2026-11-24/I2-windows-wpn-reader.md): in progress.
+- [The macOS Notification Center reader](docs/tickets/2026-11-24/I3-macos-notification-reader.md): in progress.
+- [Watcher, settings, UI and disclosure](docs/tickets/2026-11-24/I4-watcher-settings-ui.md): in progress.
+- [Docs, walkthrough and evidence](docs/tickets/2026-11-24/I5-docs-evidence.md): blocked by I2 to I4.
 
 ## Decisions so far
 
