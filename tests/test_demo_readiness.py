@@ -193,3 +193,32 @@ def test_r29_a_successful_engine_action_passes_both_halves(readiness):
 def test_the_pass_waits_base_on_the_engine_turn_ceiling(readiness):
     """R27 and R29 wait past a real side-car turn, not 30 seconds."""
     assert readiness.READY_PASS_WAIT_S >= 150.0
+
+
+def test_the_sample_tracker_boot_opens_a_dashboard_card(readiness, tmp_path, monkeypatch):
+    """R28's sample boot installs the tracker and opens the sample workbook.
+
+    The card is the thing R28's connect-line half reads; this pins that
+    the boot step really produces one, independently of whether this
+    build carries the connect producer.
+    """
+    for name in readiness.PINNED_EMPTY:
+        monkeypatch.setenv(name, "")
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setenv("AGENTDESK_DATA", str(data))
+    desk = readiness.Desk(data, tmp_path / "keychain.json",
+                          readiness._free_udp_port())
+    try:
+        desk.login()
+        status, _headers, _body = desk.post_json(
+            "/settings/toggle", {"key": "sample_data"})
+        assert status == 200
+        ok, detail = readiness._open_sample_tracker(desk)
+        assert ok, detail
+        cards = ((desk.get_json("/api/dashboard").get("plugins") or {})
+                 .get("cards") or [])
+        assert any(card.get("pluginId") == "excel-report" for card in cards), cards
+    finally:
+        desk.post_json("/settings/toggle", {"key": "sample_data"})
+        desk.close()

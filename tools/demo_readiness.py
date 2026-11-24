@@ -1044,21 +1044,71 @@ def _names_are_held(desk: Desk) -> tuple[bool, str]:
 
 
 def _with_sample_connect_line(desk: Desk, held: set[str]) -> tuple[bool, str]:
-    """Boot the sample desk once, check its connect line, and switch it off.
+    """Boot the sample desk, open its workbook, check the line, switch it off.
 
     The sample workbook's rows carry the names the sample memory holds,
-    so the connect step has something real to say. Nothing is left on:
-    the switch returns off even when the check fails.
+    but no card exists until the Workbook tracker is installed and its
+    sample instance is opened, so this does what a person does: install
+    the tracker, upload the sample workbook through its own setup route,
+    and confirm the tracker. The memory names are re-read after the
+    sample facts land, because the line rightly names the sample
+    entities the desk now holds. Nothing is left on: the switch returns
+    off even when the check fails.
     """
     if not _wait_for_loop_idle(desk):
         return False, "the agent loop was still running when the sample desk was asked"
     desk.post_json("/settings/toggle", {"key": "sample_data"})
     try:
-        _wait_until(lambda: _connect_lines_name_held(desk, held)[0], seconds=15.0)
-        ok, detail = _connect_lines_name_held(desk, held)
+        ready, why = _open_sample_tracker(desk)
+        if not ready:
+            return False, "with the sample desk booted once: " + why
+        status, current = _engine_held_names(desk)
+        if status != 200:
+            return False, (f"with the sample desk booted once: the desk_names "
+                           f"tool answered {status}")
+        names = set(current) | set(held)
+        _wait_until(lambda: _connect_lines_name_held(desk, names)[0], seconds=15.0)
+        ok, detail = _connect_lines_name_held(desk, names)
     finally:
         desk.post_json("/settings/toggle", {"key": "sample_data"})
     return ok, "with the sample desk booted once: " + detail
+
+
+def _open_sample_tracker(desk: Desk) -> tuple[bool, str]:
+    """Install the Workbook tracker and open the sample workbook in it.
+
+    The install is the runtime's own (the registry entry is a verified
+    directory); the setup steps are the browser's: upload the sample
+    copy through the plugin's upload route, then confirm the tracker's
+    columns. A failure names the step rather than raising into the walk.
+    """
+    from agentdesk.server import demo_data
+
+    plugins = getattr(desk.server, "plugins", None)
+    if plugins is None:
+        return False, "the plugin runtime is not available"
+    try:
+        plugins.install(ROOT / "registry" / "plugins" / "excel-report",
+                        source="dir")
+    except Exception as exc:  # noqa: BLE001 - the check reports the cause
+        return False, f"installing the Workbook tracker failed: {exc}"
+    sample = demo_data.sample_workbook_path()
+    if not sample.is_file():
+        return False, f"the sample workbook is not at {sample}"
+    status, _headers, body = desk.post_body(
+        f"/api/plugins/excel-report/instances/main/upload/"
+        f"{urllib.parse.quote(sample.name)}",
+        sample.read_bytes(), "application/octet-stream")
+    if status != 200:
+        return False, (f"uploading the sample workbook answered {status}: "
+                       f"{body[:120]!r}")
+    status, _headers, body = desk.post_json(
+        "/api/plugins/excel-report/instances/main/confirm",
+        {"tracking": {"labelColumn": "Deal", "valueColumn": "Amount",
+                      "aggregate": "sum"}})
+    if status != 200:
+        return False, f"confirming the sample tracker answered {status}: {body[:120]!r}"
+    return True, "the sample workbook is open in the Workbook tracker"
 
 
 def _fact_listed(desk: Desk, fact: str) -> bool:
