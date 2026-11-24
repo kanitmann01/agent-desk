@@ -154,7 +154,7 @@ function Ready({
             <span className="mg-step-top">
               <span className="mg-step-index mono">{String(index + 1).padStart(2, '0')}</span>
               <Glyph kind={STEP_GLYPH[step.step]} />
-              <span className="mg-step-name">{STEP_LABEL[step.step]}</span>
+              <span className="mg-step-name" title={STEP_LABEL[step.step]}>{STEP_LABEL[step.step]}</span>
             </span>
             <span className="mg-step-count mono">{stepUnit(step.step, step.count, step.waiting)}</span>
             <span className="mg-step-text">{step.text}</span>
@@ -188,7 +188,7 @@ function EmptyGraph() {
       <div className="mg-empty-ghost" aria-hidden="true">
         {COLUMNS.map((column) => (
           <div key={column.id} className="mg-empty-col" style={{ flexGrow: column.weight }}>
-            <span className="mg-col-title">{column.title}</span>
+            <span className="mg-col-title" title={column.title}>{column.title}</span>
             <span className="mg-ghost-pill" />
             <span className="mg-ghost-pill short" />
           </div>
@@ -403,7 +403,7 @@ function GraphPicture({
     <div className="mg-picture">
       <div className="mg-cols" aria-hidden="true">
         {layout.columns.map((entry) => (
-          <span key={entry.column.id} className="mg-col-title" style={{ left: entry.x, width: entry.width }}>
+          <span key={entry.column.id} className="mg-col-title" title={entry.column.title} style={{ left: entry.x, width: entry.width }}>
             {entry.column.title}
           </span>
         ))}
