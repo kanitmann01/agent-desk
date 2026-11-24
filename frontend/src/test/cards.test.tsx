@@ -10,7 +10,7 @@ import PluginCardView from '../dashboard/PluginCardView';
 import ResearchCard, { RESEARCH_BUSY } from '../dashboard/ResearchCard';
 import SalesCard from '../dashboard/SalesCard';
 import SkillsCard from '../dashboard/SkillsCard';
-import { CellHead, HealthMatrix, StageChart } from '../dashboard/cells';
+import { CellHead, DigestList, HealthMatrix, StageChart } from '../dashboard/cells';
 import type { SalesStatus } from '../types';
 
 const NOOP_REFETCH = async () => {};
@@ -554,7 +554,8 @@ describe('the cell text-fit markup', () => {
   it('titles every source row and keeps the numbers in their numeric cells', () => {
     render(
       <HealthMatrix
-        rows={[{ name: 'Workbook', live: true, status: 'live', lastRun: '15:05', items: '1,234,567' }]}
+        sources={[{ name: 'Workbook', live: true, status: 'live', lastRun: '15:05', items: '1,234,567' }]}
+        plugins={[]}
       />,
     );
     expect(screen.getAllByRole('columnheader')).toHaveLength(4);
@@ -563,10 +564,41 @@ describe('the cell text-fit markup', () => {
     expect(document.querySelector('.matrix td.num.mono')).toHaveTextContent('15:05');
   });
 
+  it('labels the plugin rows as their own group with their own count', () => {
+    render(
+      <HealthMatrix
+        sources={[
+          { name: 'Workbook', live: true, status: 'live', lastRun: '15:05', items: '101' },
+          { name: 'Calendar', live: false, status: 'off', lastRun: '-', items: '-' },
+        ]}
+        plugins={[
+          { name: 'Competitor Watch', live: false, status: 'attention', lastRun: 'never', items: '0' },
+          { name: 'Workbook tracker', live: true, status: 'live', lastRun: '15:05', items: '-' },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Plugins that feed a tile')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2 live')).toBeInTheDocument();
+    // A plugin that never ran says so instead of borrowing the clock.
+    expect(screen.getByText('never')).toBeInTheDocument();
+  });
+
   it('titles the stage axis labels, so the ellipsis has a reachable value', () => {
     render(<StageChart stages={[{ stage: 'Prospect', deals: 3, net: 4 }]} />);
     const span = document.querySelector('.stage-axis span');
     expect(span).toHaveAttribute('title', 'Prospect');
     expect(span?.querySelector('small')).toHaveAttribute('title', '3 deals');
+  });
+
+  it('renders an untimed digest item instead of throwing on a bad date', () => {
+    expect(() => render(
+      <DigestList
+        items={[{ at: new Date('not-a-date'), source: 'CAL', title: 'Broken meeting', detail: 'Room Beaufort' }]}
+      />,
+    )).not.toThrow();
+    expect(screen.getByText('Broken meeting')).toBeInTheDocument();
+    const time = document.querySelector('.digest-time');
+    expect(time?.textContent).toBe('');
+    expect(time?.getAttribute('datetime')).toBeNull();
   });
 });
