@@ -641,8 +641,9 @@ class PluginRuntime:
         manifest = manifest or self._manifest(plugin_id)
         widgets = manifest.get("contributes", {}).get("widgets", [])
         if not widgets:
-            return {"status": "attention", "cause": "plugin contributes no widget",
-                    "checked_at": self.now}
+            return {"status": "attention",
+                    "cause": "This plugin adds no card to your dashboard.",
+                    "checked_at": ""}
         source = widgets[0].get("dataSource", {})
         pattern = str(source.get("file", "")).replace("${workspace}",
                                                       str(self.workspace_dir))

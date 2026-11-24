@@ -117,9 +117,10 @@ svg{display:block;flex:none}
 .phone-bar{display:none}
 .rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease;min-width:0}
 /* A rail entry's name is an identifier a person matches exactly, so it
-   keeps one line and scrolls inside its own entry rather than breaking;
-   the waiting count stays beside it. */
-.rail .rail-label{min-width:0;max-width:100%;overflow-x:auto;white-space:nowrap}
+   keeps one line and gives way inside the rail rather than breaking; the
+   link's own aria-label is the reachable full name, and the waiting
+   count stays beside it. */
+.rail .rail-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rail a:hover{background:var(--surface-2);color:var(--ink-1);text-decoration:none}
 .rail a[aria-current="page"]{background:var(--surface-2);color:var(--heading);box-shadow:inset 2px 0 0 var(--accent);border-radius:0 var(--r-control) var(--r-control) 0}
 .rail .nav-off{opacity:.45}
@@ -217,18 +218,19 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .setting-row > span{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
 .setting-row > .btn,.setting-row > form{flex:none;max-width:100%}
 .rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline);min-width:0}
-/* The avatar is a 30px mark: its initials stay on one line and scroll
-   inside the circle only if they somehow outgrow it, so the mark never
-   widens and never rides over the name beside it. A flex row lets the
-   text shrink to the mark; a centered grid item would keep its
-   max-content width and spill. */
-.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;min-width:0;max-width:100%;overflow-x:auto;white-space:nowrap;font-weight:800;font-size:12px}
+/* The avatar is a 30px mark: its initials stay on one line and clip
+   inside the circle if they somehow outgrow it, so the mark never widens
+   and never rides over the name beside it. The title carries the full
+   name. A flex row lets the text shrink to the mark; a centered grid item
+   would keep its max-content width and spill. */
+.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;font-weight:800;font-size:12px}
 .rail .user > div{min-width:0}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px}
-/* The toggle's word stays on one line and scrolls inside the control if
-   it cannot fit, so a button label never breaks across lines. */
-.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;min-width:0;max-width:100%;overflow-x:auto;white-space:nowrap;transition:background var(--dur) ease,color var(--dur) ease}
+/* The toggle's word stays on one line and ellipsizes inside the control
+   if it cannot fit, so a button label never breaks across lines. */
+.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;min-width:0;max-width:100%;transition:background var(--dur) ease,color var(--dur) ease}
+.rail-toggle-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rail-toggle:hover{background:var(--surface-2);color:var(--ink-1)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
    drops its text; the column narrows to the mark width. Scoped to the
@@ -274,10 +276,10 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
    its one line inside its own scroller instead of widening the header. */
 .w-head .origin-line{flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
 .origin-line.nowrap{overflow-x:auto}
-.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none;white-space:nowrap;font-size:12px;color:var(--ink-3);font-weight:600}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none;max-width:100%;overflow-x:auto;white-space:nowrap;font-size:12px;color:var(--ink-3);font-weight:600}
 .w-head .badge-pilot,.w-head .icon-btn{flex:none;max-width:100%}
 .w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:12px;font-size:12px;line-height:1.5;color:var(--ink-3)}
-.kpi{display:flex;gap:24px;align-items:flex-start}
+.kpi{display:flex;flex-direction:column;gap:6px;min-width:0}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .kpi .value{font-family:var(--font-mono);font-size:64px;font-weight:500;letter-spacing:-.03em;color:var(--good);margin-top:2px;white-space:nowrap}
 .kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
@@ -305,7 +307,7 @@ table.rows td.neg{color:var(--bad)}
 .check .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-4);display:grid;place-items:center;color:transparent;transition:all var(--dur) ease;margin-top:1px}
 .check[aria-checked="true"] .box{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
 .check[aria-checked="true"] span:not(.box){text-decoration:line-through;color:var(--ink-3)}
-.follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
+.follow{display:inline-flex;align-items:center;gap:8px;max-width:100%;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
 .well{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
 .well .q{flex:1 1 220px;min-width:0;color:var(--ink-3)}
 .well-input{flex:1 1 220px;min-width:0;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
@@ -322,11 +324,11 @@ table.rows td.neg{color:var(--bad)}
 .answer p{margin:0}
 .answer .aq{font-weight:700}
 .answer .well-input{width:100%}
-.src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
+.src{display:inline-flex;align-items:center;gap:6px;max-width:100%;font-family:var(--font-mono);font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
 .tag-sample{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.08em}
 .widget.amber{background:var(--surface);box-shadow:inset 2px 0 0 var(--accent)}
 .alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:14px}
-.badge-pilot{font-size:12px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
+.badge-pilot{flex:none;font-size:12px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
 .decisions{list-style:none;margin:0;padding:0}
@@ -335,7 +337,7 @@ table.rows td.neg{color:var(--bad)}
 .decision-text{display:flex;flex:1 1 220px;flex-direction:column;gap:2px;min-width:0}
 .decision-title{font-weight:600;color:var(--ink-1);font-size:14px}
 .decision-why{font-size:12.5px;color:var(--ink-3);line-height:1.4}
-.decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto}
+.decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;max-width:100%}
 .decision-actions form{margin:0}
 .btn-sm{min-height:28px;padding:4px 10px;font-size:12.5px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
@@ -1018,7 +1020,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/marketplace", "Plugins")}'
         f'{entry("/settings", "Settings")}'
         f'{toggle}'
-        '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
+        '<div class="user"><span class="avatar" aria-hidden="true" title="Agent Desk">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
     )
@@ -1282,7 +1284,7 @@ def render_press_page(
     return page_shell(label, "/", content, version, inbox_count=inbox_count)
 
 
-def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0) -> str:
+def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0, calendar_off: bool = False) -> str:
     """The calendar connection walkthrough: three browser steps, no terminal.
 
     The user creates the Power Automate flow themselves in their browser;
@@ -1291,9 +1293,22 @@ def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_
     days automatic discovery is not enough: pick a file, paste a path,
     upload the JSON by hand, or go back to automatic. The Check-now
     button re-reads, so the moment data arrives, the dashboard confirms.
+
+    `calendar_off` is the boot pinned to no calendar: the page says
+    reading is off and names the path the app will use once reading is
+    turned on, instead of claiming it already watches that file.
     """
     hint = html.escape(watch_hint)
-    if explicit_path:
+    if calendar_off:
+        watch_line = (
+            "<p>Calendar reading is off on this desk, so no calendar file is read "
+            "right now. When reading is turned on, the app will look here:</p>"
+        )
+        reset_html = (
+            '<button class="btn btn-secondary" data-calendar-reset>'
+            "Reset to automatic discovery</button>"
+        )
+    elif explicit_path:
         watch_line = (
             "<p>You chose a specific file, so automatic discovery is set "
             "aside and the app reads exactly:</p>"

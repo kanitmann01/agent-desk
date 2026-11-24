@@ -1156,7 +1156,8 @@ def _aggregate(source, ctx: SourceContext) -> SourceResult:
         widgets = manifest.get("contributes", {}).get("widgets", [])
         if not widgets or not isinstance(widgets[0], dict):
             return _blank("missing-dependency",
-                          f"The installed plugin {dep_id} contributes no widget.",
+                          f"The installed plugin {dep_id} adds no card to your "
+                          "dashboard, so it cannot feed this one.",
                           detail={"missing": dep_id})
         dep_source = widgets[0].get("dataSource")
         if not isinstance(dep_source, dict):
@@ -1316,8 +1317,7 @@ def _http_get(source, ctx: SourceContext) -> SourceResult:
                       f"The plugin has no granted network permission for "
                       f"{parts.hostname}.")
     if ctx.transport is None:
-        return _blank("no-transport",
-                      "The host has no HTTP transport available for this plugin.")
+        return _blank("no-transport", "This desk cannot read web pages yet.")
 
     timeout = _number(source.get("timeoutSeconds"))
     timeout = HTTP_TIMEOUT_DEFAULT if timeout is None else min(
