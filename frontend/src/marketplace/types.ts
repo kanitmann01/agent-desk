@@ -75,6 +75,7 @@ export interface InstalledSummary {
     version: string;
     digest: string;
     widening: string[];
+    dropping: string[];
     scopes: string[];
   } | null;
   pendingConsent: boolean;
