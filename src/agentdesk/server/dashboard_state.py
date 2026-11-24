@@ -219,6 +219,30 @@ def recommendation_payload(card) -> dict:
     }
 
 
+# A plugin with no widget has no card to show. Its install still lists on
+# the marketplace Installed page; only the home screen drops the empty card.
+# Both the old operator text and the reader sentence are matched, so a card
+# recorded before the wording changed cannot slip through.
+NO_WIDGET_CAUSES = (
+    "plugin contributes no widget",
+    "This plugin adds no card to your dashboard.",
+)
+
+
+def dashboard_plugin_cards(cards: list[dict]) -> list[dict]:
+    """The plugin cards the dashboard shows.
+
+    A card that says the plugin contributes no widget is dropped: there is
+    nothing to draw, and the install stays listed on the marketplace
+    Installed page. A setup card is a real next step, so it stays.
+    """
+    return [
+        card for card in cards
+        if card.get("state") != "contributes no widget"
+        and card.get("cause") not in NO_WIDGET_CAUSES
+    ]
+
+
 def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardState:
     """Read the dashboard's sources, plugins and layout exactly once.
 
@@ -266,7 +290,10 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     )
 
     skills = server.skills.active() if server.skills is not None else []
-    plugin_cards = server.plugins.widget_cards() if server.plugins is not None else []
+    plugin_cards = (
+        dashboard_plugin_cards(server.plugins.widget_cards())
+        if server.plugins is not None else []
+    )
     with_insight(server, plugin_cards)
 
     sources = live_sources(server)

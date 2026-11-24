@@ -16,8 +16,10 @@ The rule set, as the spec words it:
 - R7 the server sheet carries the same wrap contract as the SPA sheet.
 """
 
+import json
 import re
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -83,10 +85,13 @@ def test_the_doc_pre_scrolls_a_long_line_instead_of_breaking_it():
 
 # -- R2 and R3: rows that hold text and controls --------------------------
 
-def test_a_rail_entry_name_keeps_one_line_in_its_own_scroller():
+def test_a_rail_entry_name_keeps_one_line_and_ellipsizes_in_the_rail():
+    # The SPA's final rule: the label gives way, not the mark, and the
+    # link's own aria-label is the reachable full name.
     label = rule(".rail .rail-label")
     assert "white-space:nowrap" in label
-    assert "overflow-x:auto" in label
+    assert "overflow:hidden" in label
+    assert "text-overflow:ellipsis" in label
     assert "min-width:0" in label
     count = rule(".rail .count")
     assert "flex:none" in count
@@ -264,3 +269,279 @@ def test_every_server_table_rides_in_a_scroll_wrapper(booted):
 def test_the_touches_badge_phrase_is_rendered_whole(booted):
     page = _get(booted, "/what-this-touches")
     assert '<span class="touch-badge">not observed yet</span>' in page
+
+
+# -- A1: a stamp is a scroller inside its own card ------------------------
+
+def test_the_stamp_scrolls_inside_its_card_instead_of_leaving_it():
+    stamp = rule(".stamp")
+    assert "flex:none" in stamp
+    assert "max-width:100%" in stamp
+    assert "overflow-x:auto" in stamp
+
+
+# -- A2: every table on every rendered page rides in a wrapper -------------
+
+TABLE_PAGES = (
+    "/", "/inbox", "/assistant", "/agents", "/memory", "/mail",
+    "/capabilities", "/peers", "/settings", "/settings/activity",
+    "/walkthrough/calendar", "/what-this-touches", "/wizard",
+)
+
+
+def test_every_rendered_page_wraps_every_rows_table(booted):
+    headers = booted.exchange()
+    status, _headers, _body = booted.post_json(
+        "/settings/toggle", {"key": "sample_data"}, headers
+    )
+    assert status == 200
+    for path in TABLE_PAGES:
+        status, _headers, body = booted.request("GET", path, headers)
+        assert status == 200, path
+        page = body.decode("utf-8")
+        for match in re.finditer(r"<table\b([^>]*)>", page):
+            attrs = match.group(1)
+            if "rows" not in attrs:
+                continue
+            assert page[: match.start()].endswith("<div class='table-scroll'>"), (
+                path,
+                attrs,
+            )
+            close = page.find("</table>", match.end())
+            assert close != -1, (path, attrs)
+            tail = page[close: close + len("</table></div>")]
+            assert tail == "</table></div>", (path, attrs, tail)
+
+
+def test_the_sales_examples_table_rides_in_a_wrapper():
+    from agentdesk.server.sales import render_sales_widget
+
+    widget = render_sales_widget({
+        "state": "healthy",
+        "last_ok_ts": 0.0,
+        "reference_ts": 0.0,
+        "rowsSeen": 1,
+        "delta": {"added": [["Atlas ERP", 2]], "removed": [], "unchanged": 0},
+    })
+    assert "<div class='table-scroll'><table class='rows'>" in widget.body_html
+    assert "</table></div>" in widget.body_html
+
+
+# -- A4: the legacy plugin card offers a re-test only when it can work ----
+
+def test_the_legacy_plugin_card_offers_retest_only_when_it_can_change():
+    from agentdesk.server import app as server_app
+
+    base = {
+        "id": "sample-plugin", "title": "Sample plugin", "version": "1.0.0",
+        "pilot": False, "state": "enabled", "freshness": "attention",
+        "checked_at": "", "pluginId": "sample-plugin", "instanceId": "main",
+        "payload": None,
+    }
+    stuck = dict(base, cause="This desk cannot read web pages yet.")
+    widget = server_app.DashboardHandler._plugin_widget(None, stuck)
+    assert "Re-test" not in widget.body_html
+    assert "Re-test available" not in widget.freshness.stamp
+
+    no_file = dict(base, cause="data source has no file")
+    widget = server_app.DashboardHandler._plugin_widget(None, no_file)
+    assert "Re-test" not in widget.body_html
+    assert "Remove the plugin" in widget.body_html
+
+    transient = dict(base, cause="no file matches ${workspace}/reports/*.xlsx")
+    widget = server_app.DashboardHandler._plugin_widget(None, transient)
+    assert "Re-test" in widget.body_html
+    assert widget.freshness.stamp == "Re-test available"
+
+
+# -- B: the server sheet matches the SPA wrap contract ---------------------
+
+TWINS = (
+    (".rail a,.rail .nav-off", "min-width:0"),
+    (".brand b,.brand-name", "min-width:0"),
+    (".rail .count", "flex:none"),
+    (".rail .user .avatar", "min-width:0"),
+    (".rail .user .avatar", "max-width:100%"),
+    (".rail .user .avatar", "white-space:nowrap"),
+    (".rail .user .avatar", "overflow:hidden"),
+    (".rail .user .avatar", "text-overflow:ellipsis"),
+    (".rail .user .avatar", "text-align:center"),
+    (".rail .rail-label", "min-width:0"),
+    (".rail .rail-label", "white-space:nowrap"),
+    (".rail .rail-label", "overflow:hidden"),
+    (".rail .rail-label", "text-overflow:ellipsis"),
+    (".rail-toggle", "max-width:100%"),
+    (".rail-toggle", "min-width:0"),
+    (".rail-toggle-label", "min-width:0"),
+    (".rail-toggle-label", "white-space:nowrap"),
+    (".rail-toggle-label", "overflow:hidden"),
+    (".rail-toggle-label", "text-overflow:ellipsis"),
+    (".w-head", "flex-wrap:wrap"),
+    (".w-head h2", "flex:1 1 120px"),
+    (".w-head h2", "min-width:0"),
+    (".w-head h2", "overflow-wrap:anywhere"),
+    (".stamp", "flex:none"),
+    (".stamp", "max-width:100%"),
+    (".badge-pilot", "flex:none"),
+    (".btn", "white-space:nowrap"),
+    (".btn", "max-width:100%"),
+    (".decision-actions", "flex-wrap:wrap"),
+    (".decision-actions", "justify-content:flex-end"),
+    (".decision-actions", "max-width:100%"),
+    (".follow", "max-width:100%"),
+    (".src", "max-width:100%"),
+)
+
+
+@pytest.mark.parametrize("selector,declaration", TWINS)
+def test_the_server_sheet_matches_the_spa_wrap_contract(selector, declaration):
+    assert declaration in rule(selector), (selector, declaration)
+
+
+def test_the_legacy_figure_prints_in_full_without_a_scroll_well():
+    # The figure's container takes the full card width (a column), and the
+    # value stays on one line: no break, no cut, no scroll well.
+    assert "flex-direction:column" in rule(".kpi")
+    value = rule(".kpi .value")
+    assert "white-space:nowrap" in value
+    assert "overflow" not in value
+    assert "max-width" not in value
+
+
+# -- C1 and C2: the honest home screen ------------------------------------
+
+def test_a_plugin_with_no_widget_keeps_no_card_but_stays_installed(booted):
+    from plugins_fixtures import valid_zip
+
+    headers = booted.exchange()
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin_zip = valid_zip(
+            Path(tmp) / "no-widget.zip",
+            overrides={
+                "contributes": {"widgets": []},
+                "permissions": {"filesystem": {"read": [], "write": []}},
+            },
+        )
+        status, _headers, out = booted.post_json(
+            "/api/plugins/install",
+            {"zip_path": str(plugin_zip), "source": "zip"},
+            headers,
+        )
+        assert status == 200, out
+    dashboard = json.loads(booted.request("GET", "/api/dashboard", headers)[2])
+    assert dashboard["plugins"]["cards"] == []
+    installed = json.loads(
+        booted.request("GET", "/api/marketplace/installed", headers)[2]
+    )
+    row = next(item for item in installed["plugins"] if item["id"] == "sales-delta-widget")
+    assert row["status"]["cause"] == "This plugin adds no card to your dashboard."
+
+
+def test_the_card_filter_keeps_setup_cards():
+    from agentdesk.server.dashboard_state import dashboard_plugin_cards
+
+    no_widget = {
+        "id": "empty",
+        "cause": "This plugin adds no card to your dashboard.",
+        "state": "enabled",
+    }
+    setup = {
+        "id": "tracker",
+        "cause": "",
+        "state": "enabled",
+        "payload": {"setup": {"step": "columns"}},
+    }
+    assert dashboard_plugin_cards([no_widget, setup]) == [setup]
+
+
+def test_a_runner_that_never_ran_claims_no_checked_at(tmp_path):
+    from agentdesk.plugins.execute import PluginWidgetRunner
+
+    runner = PluginWidgetRunner(tmp_path / "workspace")
+    status = runner.status("never-attached")
+    assert status["cause"] == "data source has not run"
+    assert status["checked_at"] == ""
+
+
+# -- C3: reader language for causes ---------------------------------------
+
+def test_the_no_transport_cause_speaks_reader_language(tmp_path):
+    from agentdesk.plugins.sources import SourceContext, read_source
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ctx = SourceContext(
+        plugin_id="p",
+        workspace_dir=workspace,
+        data_dir=tmp_path / "data",
+        now=datetime(2026, 11, 24, 9, 0),
+        network_allow=("https://api.example.com/*",),
+        transport=None,
+    )
+    result = read_source(
+        {
+            "type": "http-get",
+            "url": "https://api.example.com/data",
+            "allow": ["api.example.com"],
+        },
+        ctx,
+    )
+    assert result.reason == "no-transport"
+    assert result.human == "This desk cannot read web pages yet."
+
+
+def test_a_plugin_with_no_widget_speaks_reader_language(tmp_path):
+    from agentdesk.plugins.execute import PluginWidgetRunner
+
+    runner = PluginWidgetRunner(tmp_path / "workspace")
+    status = runner.attach(
+        "p",
+        {"contributes": {"widgets": []}},
+        tmp_path / "version",
+        tmp_path / "data",
+    )
+    assert status["cause"] == "This plugin adds no card to your dashboard."
+    assert status["checked_at"] == ""
+
+
+# -- C4 and C5: marketplace transport and desk health ---------------------
+
+def test_the_marketplace_payloads_report_the_desk_transport(booted, tmp_path):
+    from agentdesk.plugins.execute import PluginWidgetRunner
+    from agentdesk.plugins.runtime import PluginRuntime
+
+    headers = booted.exchange()
+
+    def payload(path):
+        status, _headers, body = booted.request("GET", path, headers)
+        assert status == 200, (path, body[:120])
+        return json.loads(body)
+
+    catalog = payload("/api/marketplace/catalog")
+    assert catalog["deskNetwork"] is False
+    assert payload("/api/marketplace/installed")["deskNetwork"] is False
+    assert payload("/api/marketplace/packs")["deskNetwork"] is False
+    entry = catalog["entries"][0]
+    detail = payload("/api/marketplace/plugin/" + entry["id"])
+    assert detail["deskNetwork"] is False
+    publisher = payload("/api/marketplace/publisher/" + entry["publisher"])
+    assert publisher["deskNetwork"] is False
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True)
+    booted.server.plugins = PluginRuntime(
+        plugins_dir=workspace.parent / "plugins",
+        data_dir=workspace.parent / "plugin-data",
+        workspace_dir=workspace,
+        runner=PluginWidgetRunner(workspace, http_transport=lambda *args: None),
+    )
+    assert payload("/api/marketplace/catalog")["deskNetwork"] is True
+
+
+def test_desk_health_counts_only_the_three_desk_sources(booted):
+    from agentdesk.server.core import SOURCE_IDS
+
+    headers = booted.exchange()
+    payload = json.loads(booted.request("GET", "/api/dashboard", headers)[2])
+    assert payload["sources"]["total"] == 3
+    assert [item["id"] for item in payload["sources"]["items"]] == list(SOURCE_IDS)

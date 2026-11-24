@@ -146,7 +146,10 @@ def _healthy_body(status: dict) -> str:
     rows_html = "".join(f"<tr><td>{line}</td></tr>" for line in examples)
     if changed > shown:
         rows_html += f'<tr><td class="empty">+ {changed - shown} more row(s) in the full delta</td></tr>'
-    parts.append(f'<table class="rows"><tbody>{rows_html}</tbody></table>')
+    parts.append(
+        "<div class='table-scroll'><table class='rows'><tbody>"
+        f"{rows_html}</tbody></table></div>"
+    )
     return "".join(parts)
 
 

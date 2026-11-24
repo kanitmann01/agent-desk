@@ -126,6 +126,17 @@ class _API:
         """The desk's plugin runtime, or None when the server was built without one."""
         return getattr(self.server, "plugins", None)
 
+    def _desk_network(self) -> bool:
+        """True when this desk's plugin runner can fetch web pages.
+
+        Production builds the runner without an HTTP transport, so the value
+        is computed from the live runner rather than hard-coded; a surface
+        uses it to explain why a web-reading plugin cannot run here.
+        """
+        runtime = self.plugins
+        runner = getattr(runtime, "runner", None)
+        return bool(getattr(runner, "has_network", False))
+
     @property
     def workspace(self) -> Path:
         """The desk's workspace folder; a temp folder when the server has no runtime.
@@ -479,6 +490,7 @@ class _API:
                    for source in ("bundled", "org", "peer", "installed")
                    if counts.get(source)]
         self.send(200, {
+            "deskNetwork": self._desk_network(),
             "entries": [card(entry) for entry in filtered],
             "total": len(filtered),
             "sources": sources,
@@ -525,6 +537,7 @@ class _API:
         else:
             sample = None
         self.send(200, {
+            "deskNetwork": self._desk_network(),
             "plugin": detail(entry),
             "installed": self._installed_summary(record) if record else None,
             "versions": versions,
@@ -565,6 +578,7 @@ class _API:
         policy, _verification = load_effective_policy(self.workspace)
         records = sorted(self.plugins.list_records(), key=lambda item: item.get("id", ""))
         self.send(200, {
+            "deskNetwork": self._desk_network(),
             "plugins": [self._installed_summary(record) for record in records],
             "policy": {"mode": policy.mode, "source": policy.source,
                        "signatureStatus": policy.signatureStatus},
@@ -604,6 +618,7 @@ class _API:
             pack = self._pack_payload(raw, by_id)
             packs.append(pack)
         self.send(200, {
+            "deskNetwork": self._desk_network(),
             "packs": packs,
             "total": len(packs),
             "policy": {"mode": policy.mode, "source": policy.source,
@@ -701,6 +716,7 @@ class _API:
             (entry.get("firstSeen") or entry.get("publishedAt") or "")
             for entry in matches) or ""
         self.send(200, {
+            "deskNetwork": self._desk_network(),
             "publisher": name,
             "verified": verified,
             "proof": proof,

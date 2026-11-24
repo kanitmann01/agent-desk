@@ -131,15 +131,14 @@ class TestHint:
 
         assert default_calendar_hint() == home / "OneDrive" / "agent-desk" / "calendar_sync.json"
 
-    def test_an_empty_pin_still_names_the_plain_default(self, monkeypatch, tmp_path):
+    def test_an_empty_pin_names_no_hint(self, monkeypatch, tmp_path):
         # The empty pin is the documented way to boot a desk that reads
-        # no calendar. The reader answers nothing, but the walkthrough
-        # still needs a path to show, so the hint falls back to the
-        # plain OneDrive default instead of raising.
-        home = fake_home(monkeypatch, tmp_path)
+        # no calendar. There is no path to name: the walkthrough says
+        # reading is off instead of pointing at a file the app ignores.
+        fake_home(monkeypatch, tmp_path)
         monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", "")
 
-        assert default_calendar_hint() == home / "OneDrive" / "agent-desk" / "calendar_sync.json"
+        assert default_calendar_hint() is None
 
     def test_shows_the_env_override_even_before_it_exists(self, monkeypatch, tmp_path):
         fake_home(monkeypatch, tmp_path)
@@ -216,12 +215,13 @@ class TestExplicitPathPrecedence:
         assert default_calendar_hint(str(explicit)) == explicit
 
 
-def test_the_walkthrough_renders_when_the_calendar_is_pinned_off(monkeypatch):
-    """The demo and test boot with an empty pin must still show a page.
+def test_the_walkthrough_says_reading_is_off_when_the_calendar_is_pinned_off(monkeypatch):
+    """The demo and test boot with an empty pin must show the honest page.
 
     The hint used to index the candidate list unconditionally, so this
-    boot answered 500 on the walkthrough. The page now renders and names
-    the plain default it would use once the pin is lifted.
+    boot answered 500. The page now says calendar reading is off on this
+    desk and names the plain path it will use once reading is turned on,
+    instead of claiming the app watches a file the pin ignores.
     """
     monkeypatch.setenv("AGENTDESK_CALENDAR_FILE", "")
     booted = server_harness.Booted()
@@ -231,6 +231,8 @@ def test_the_walkthrough_renders_when_the_calendar_is_pinned_off(monkeypatch):
         page = body.decode("utf-8")
         assert status == 200, (status, page[:200])
         assert "Connect your calendar" in page
+        assert "Calendar reading is off on this desk" in page
+        assert "Once the flow has run, the app finds the file here" not in page
         assert "agent-desk" in page
     finally:
         booted.close()

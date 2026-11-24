@@ -1134,6 +1134,24 @@ def _receipt_line(payload: dict) -> str:
             lines.append('<p class="w-note">' + html.escape(text, quote=False) + "</p>")
     return "".join(lines)
 
+def _plugin_retest_can_change(cause: str) -> bool:
+    """True when a re-test could change an attention card's cause.
+
+    A structural cause does not change by reading again: a build without an
+    HTTP transport can never fetch a page, a manifest that contributes no
+    widget has no source to run, a manifest that names no file reads
+    nothing, and a tampered tree needs a reinstall. A re-test on those
+    would be a button that cannot work, so the card offers removal instead.
+    """
+    if "installed files changed" in cause:
+        return False
+    return cause not in (
+        "This desk cannot read web pages yet.",
+        "This plugin adds no card to your dashboard.",
+        "data source has no file",
+    )
+
+
 def _press_form(card: dict, press: object) -> str:
     """A card's press as a real control: a plain form, no script.
 
@@ -1555,15 +1573,24 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     # -- route handlers the table calls -----------------------------------
 
     def _send_walkthrough_calendar(self) -> None:
-        """Serve the walkthrough page, hinting the calendar it should open."""
+        """Serve the walkthrough page, hinting the calendar it should open.
+
+        A boot pinned to no calendar has no hint. The page still names the
+        plain path it will use once reading is turned on, and says plainly
+        that reading is off on this desk.
+        """
         calendar = self.server.calendar  # type: ignore[attr-defined]
         explicit = calendar.explicit_path() if calendar is not None else None
         hint = default_calendar_hint(explicit)
+        calendar_off = hint is None
+        if hint is None:
+            hint = Path.home() / "OneDrive" / "agent-desk" / "calendar_sync.json"
         self._send_bytes(
             200,
             pages.render_walkthrough(str(hint), explicit_path=explicit or "",
                                     version=agentdesk.__version__,
-                                    inbox_count=self._inbox_waiting_count()).encode("utf-8"),
+                                    inbox_count=self._inbox_waiting_count(),
+                                    calendar_off=calendar_off).encode("utf-8"),
             "text/html; charset=utf-8",
         )
 
@@ -6058,7 +6085,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         body; without one the card falls back to the version line."""
         status = FRESH if card.get("freshness") == "fresh" else ATTENTION
         plugin_id = html.escape(str(card["id"]))
-        cause = html.escape(str(card.get("cause") or "data source has not run"))
+        raw_cause = str(card.get("cause") or "data source has not run")
+        cause = html.escape(raw_cause)
+        retestable = status == ATTENTION and _plugin_retest_can_change(raw_cause)
         file_name = html.escape(str(card.get("file") or "the data source"))
         version = html.escape(str(card["version"]))
         payload = card.get("payload") or {}
@@ -6078,11 +6107,19 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             body = '<p class="w-big">' + version + '</p><p class="w-note">' + cause + "</p>"
             extra = ""
         else:
+            if retestable:
+                offer = (
+                    "<p>Re-test runs the plugin's data source again; the nightly "
+                    "probe does the same for every plugin.</p>"
+                )
+            else:
+                offer = (
+                    "<p>A re-test cannot change this. Remove the plugin on the "
+                    "Plugins page if you do not need it.</p>"
+                )
             body = (
                 '<div class="alert" id="plugin-amber-' + plugin_id + '">'
-                "<p>" + cause + "</p>"
-                "<p>Re-test runs the plugin's data source again; the nightly "
-                "probe does the same for every plugin.</p></div>"
+                "<p>" + cause + "</p>" + offer + "</div>"
             )
             extra = "amber"
         if status == FRESH:
@@ -6093,7 +6130,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             body += _press_form(card, insight.get("press") if isinstance(insight, dict) else None)
         freshness = Freshness(
             status=status,
-            stamp="Re-test available" if status == ATTENTION else "live",
+            stamp=("Re-test available" if retestable
+                   else "Needs attention" if status == ATTENTION else "live"),
             updated_iso=str(card.get("checked_at", "")),
         )
         return Widget(
@@ -8377,7 +8415,7 @@ def _headers_from_input(value) -> tuple[dict | None, str | None]:
     return None, "headers must be name: value lines"
 
 
-def default_calendar_hint(explicit: str | None = None) -> Path:
+def default_calendar_hint(explicit: str | None = None) -> Path | None:
     """The calendar path the walkthrough shows as 'the app watches this'.
 
     An explicitly chosen path is shown as is: that is the file the reader
@@ -8387,9 +8425,8 @@ def default_calendar_hint(explicit: str | None = None) -> Path:
     default, so it never names a path the reader would ignore.
 
     An empty AGENTDESK_CALENDAR_FILE pins the reader to no calendar and
-    leaves no candidates at all. The page still needs a place to name, so
-    that boot falls back to the plain OneDrive default; the reader itself
-    keeps answering nothing.
+    leaves no candidates at all. There is then no path to name, so the
+    hint returns None and the walkthrough says calendar reading is off.
     """
     if explicit:
         return Path(explicit)
@@ -8399,7 +8436,7 @@ def default_calendar_hint(explicit: str | None = None) -> Path:
             return candidate
     if candidates:
         return candidates[0]
-    return Path.home() / "OneDrive" / "agent-desk" / "calendar_sync.json"
+    return None
 
 def _default_calendar_bridge(settings_store=None) -> CalendarBridge | None:
     """A real bridge over the persistent store, or None when it cannot open.
