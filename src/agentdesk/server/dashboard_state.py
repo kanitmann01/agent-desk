@@ -230,18 +230,29 @@ NO_WIDGET_CAUSES = (
     "This plugin adds no card to your dashboard.",
 )
 
+# The source reason code (sources.py) for a build without an HTTP
+# transport. Such a plugin can never read its source here, so a Re-test
+# can never turn its amber card green: the home screen drops the card
+# instead of offering a button that cannot work. This is the code, not
+# the reader sentence, so changing the wording changes nothing.
+UNRUNNABLE_SOURCE_REASONS = ("no-transport",)
+
 
 def dashboard_plugin_cards(cards: list[dict]) -> list[dict]:
     """The plugin cards the dashboard shows.
 
     A card that says the plugin contributes no widget is dropped: there is
     nothing to draw, and the install stays listed on the marketplace
-    Installed page. A setup card is a real next step, so it stays.
+    Installed page. A card whose source cannot run on this desk (its
+    internal reason code says no transport) is dropped for the same reason:
+    it would be a permanent amber tile with a Re-test that cannot succeed.
+    A setup card is a real next step, so it stays.
     """
     return [
         card for card in cards
         if card.get("state") != "contributes no widget"
         and card.get("cause") not in NO_WIDGET_CAUSES
+        and card.get("sourceReason") not in UNRUNNABLE_SOURCE_REASONS
     ]
 
 
