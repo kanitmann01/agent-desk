@@ -23,4 +23,19 @@ Candidates worth ruling in or out, not a complete list:
 
 ## Answer
 
-Pending. Resolve from the swarm research and record the exact mechanism, evidence and limits here, then close this ticket and add a line to the map's Decisions so far.
+Chosen: the operating system notification store as the one automatic source, and the manual `.eml` folder as the history source.
+
+- Windows: `%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db` plus `-wal` and `-shm`. The live probe found 33 toast rows, a 20-toast cap per app, the new Outlook handler `Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows`, and classic Outlook installed with no profile. Both Outlook clients raise new-mail alerts through this store.
+- macOS: `~/Library/Group Containers/group.com.apple.usernoted/db2/db` plus WAL sidecars. `app.identifier` names the source app and `record.data` is a binary property list with title, subtitle and body. Reading it needs Full Disk Access, a per-app user consent, not an admin.
+- History: manual `.eml` export on both platforms. The app already reads that folder and keeps the header-only contract.
+
+Why the history collectors are not v1:
+
+- New Outlook for Mac has no AppleScript support; Microsoft cancelled the roadmap item in August 2026. New Outlook for Mac also uses server-side search and is not indexed by Spotlight. There is no supported local history API for it.
+- Legacy Outlook for Mac still has Spotlight and AppleScript, but support ends in October 2026 and it stops working against Exchange Online mailboxes then.
+- The Windows Search index may cover a classic Outlook mailbox only when the mapi16 handler and the index are healthy, and it does not expose Message-ID.
+- Classic COM is protected by the Object Model Guard; prompt-free operation depends on antivirus health and Trust Center policy, which a non-admin cannot change.
+
+These remain future options for a machine where a read-only probe passes. They are not promises of v1.
+
+Evidence: the WPN probe facts and synthetic-store self-checks on this machine; the macOS findings from Microsoft support and current macOS notification-database research. The macOS reader is verified against a synthetic store and a written manual Mac procedure, not a real Mac used in this session.

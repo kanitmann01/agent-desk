@@ -18,4 +18,14 @@ Settle:
 
 ## Answer
 
-Pending. Resolve with the research answers, the repo's existing mail and calendar states, and the PRD privacy constraints. Record the contract here, then close this ticket and add a line to the map's Decisions so far.
+The contract:
+
+- **Reads:** only the notification record for an Outlook alert. The sender or title line and the subject or subtitle line. The preview line, body, attachments and every other payload key are dropped before anything is written. No mailbox, profile, OST, Olk or Outlook-for-Mac store is opened.
+- **Writes:** one header-only `.eml` per alert in the configured `mail_folder`. CRLF, UTF-8 without BOM, a synthesized Message-ID from the source app and notification id, a date from the OS arrival time, and no bytes after the blank line. Deterministic filenames overwrite on a rerun.
+- **Keeps:** a status dict with the collector, last run, alert count, coverage window and last error. It is read-only state, not a setting, and it never stores message content.
+- **Consent:** the `mail_feeder` toggle is off by default. The Settings copy says "alerts only, not a mailbox" before the user turns it on. On macOS the card explains Full Disk Access and links the manual folder path instead of failing silently.
+- **Honest states:** off; no folder; no OS notification store; no Outlook handler or records; Full Disk Access missing on macOS; store schema changed; no alerts in the window; coverage gap after the store pruned old rows. An attention state never shows a number.
+- **Uninstall:** turning the toggle off stops the reader and leaves the generated files in the folder. The app does not delete user mail files automatically; the user can clear the folder. No OS task, service or autostart entry is created at any point.
+- **Never:** no network, no model, no cloud copy, no send, no body, no attachment, no OS scheduler, no admin.
+
+The exact user-facing copy follows the repo's existing mail and calendar attention states. The card names the collector and its coverage, not a Windows or macOS promise.
