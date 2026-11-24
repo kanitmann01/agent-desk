@@ -25,6 +25,10 @@ export interface MarketCard {
   deprecated: { reason?: string; advisory?: string; replacement?: string | null } | null;
   yanked: boolean;
   sampleAvailable: boolean;
+  // Optional capability summary for a card that must say whether it can run
+  // here. The detail DTO always carries it; a catalog card may omit it, and
+  // an absent block must not be read as "asks for the web".
+  capabilities?: MarketCapabilities;
 }
 
 export interface MarketSignature {

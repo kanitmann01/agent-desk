@@ -299,6 +299,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeError, setPurgeError] = useState('');
   const [confirmAction, setConfirmAction] = useState<null | { action: 'rollback' | 'uninstall'; title: string; body: string }>(null);
+  const [confirmError, setConfirmError] = useState('');
   const confirmFocus = useDialogFocus<HTMLButtonElement>(
     confirmAction !== null,
     () => { if (busy === '') setConfirmAction(null); },
@@ -373,21 +374,32 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
    *
    * The previous note and error are cleared first, so a stale result cannot
    * sit beside a new one, and the action key stays busy until the re-read
-   * finishes so the pressed control can name what it is doing.
+   * finishes so the pressed control can name what it is doing. Returns
+   * whether it succeeded, and hands a failure to `onError` when the caller
+   * keeps it inside a sheet.
    */
-  const run = async (fn: () => Promise<string>, action: string) => {
+  const run = async (
+    fn: () => Promise<string>,
+    action: string,
+    onError?: (message: string) => void,
+  ): Promise<boolean> => {
     setBusy(action);
     setError('');
     setMessage('');
+    let ok = false;
     try {
       const note = await fn();
       setMessage(note);
       await refresh();
+      ok = true;
     } catch (err) {
-      setError(marketErrorText(err));
+      const message = marketErrorText(err);
+      if (onError) onError(message);
+      else setError(message);
     } finally {
       setBusy('');
     }
+    return ok;
   };
 
   if (load.kind === 'loading') {
@@ -512,6 +524,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   ) => {
     if (action === 'rollback') { doRollback(); return; }
     if (action === 'uninstall') {
+      setConfirmError('');
       setConfirmAction({ action: 'uninstall', title: 'Uninstall plugin',
         body: 'The plugin stops running. Its data folder is kept until you purge it.' });
       return;
@@ -526,6 +539,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
 
   /** Open the confirmation dialog for a rollback without performing it. */
   const doRollback = () => {
+    setConfirmError('');
     setConfirmAction({ action: 'rollback', title: 'Roll back plugin',
       body: 'The previous installed version becomes active. The current version stays available in history.' });
   };
@@ -534,24 +548,29 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const confirmRollback = () => run(async () => {
     const res = await postMarket<{ from: string; to: string }>('/api/marketplace/rollback', { id: plugin.id });
     return `Rolled back from ${res.from} to ${res.to}.`;
-  }, 'rollback');
+  }, 'rollback', setConfirmError);
 
   /** Uninstall the plugin and leave for the installed list; the data folder stays until purged. */
   const confirmUninstall = () => run(async () => {
     await postMarket('/api/marketplace/uninstall', { id: plugin.id });
     navigate('/marketplace/installed');
     return 'Uninstalled.';
-  }, 'uninstall');
+  }, 'uninstall', setConfirmError);
 
   /**
    * Run the open confirmation's action, keeping the dialog up with its
-   * button working until the server answers, then close it.
+   * button working until the server answers.
+   *
+   * The dialog closes only on success: a refusal stays in the sheet with the
+   * server's message, so the reader keeps the confirmation they opened.
    */
   const confirmDialogAction = async () => {
     if (!confirmAction) return;
-    if (confirmAction.action === 'rollback') await confirmRollback();
-    else await confirmUninstall();
-    setConfirmAction(null);
+    setConfirmError('');
+    const ok = confirmAction.action === 'rollback'
+      ? await confirmRollback()
+      : await confirmUninstall();
+    if (ok) setConfirmAction(null);
   };
 
   /**
@@ -847,7 +866,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       {data.alternatives.length > 0 && (
         <section className="mkt-panel" aria-labelledby="mkt-alternatives">
           <h2 id="mkt-alternatives">Alternatives in {categoryLabel(plugin.category)}</h2>
-          <MarketGrid cards={data.alternatives} />
+          <MarketGrid cards={data.alternatives} deskNetwork={data.deskNetwork} />
         </section>
       )}
 
@@ -881,6 +900,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         scopes={sheetScopes}
         addedScopes={sheetAdded}
         canNever={never}
+        cannotRun={cannotRun}
         confirmLabel={consent?.kind === 'install' ? 'Install plugin'
           : consent?.kind === 'update' ? 'Update plugin' : 'Accept update'}
         busy={busy !== ''}
@@ -919,7 +939,10 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             <div className="mkt-sheet-head">
               <h2 id="mkt-confirm-title">{confirmAction.title}</h2>
             </div>
-            <div className="mkt-sheet-body"><p>{confirmAction.body}</p></div>
+            <div className="mkt-sheet-body">
+              <p>{confirmAction.body}</p>
+              {confirmError && <p className="mkt-error" role="alert">{confirmError}</p>}
+            </div>
             <div className="mkt-sheet-foot">
               <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary"
                       disabled={busy !== ''} onClick={() => setConfirmAction(null)}>

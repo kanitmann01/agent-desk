@@ -14,6 +14,9 @@ export interface ConsentSheetProps {
   removedScopes?: string[];
   canNever: string[];
   confirmLabel: string;
+  // The plugin needs web access this desk does not have: say so before the
+  // reader approves it, not after it lands on the desk.
+  cannotRun?: boolean;
   busy?: boolean;
   error?: string;
   onCancel: () => void;
@@ -31,7 +34,8 @@ export interface ConsentSheetProps {
  */
 export function ConsentSheet({
   open, title, intro, scopes, addedScopes = [], removedScopes = [],
-  canNever, confirmLabel, busy = false, error = '', onCancel, onConfirm, children,
+  canNever, confirmLabel, cannotRun = false, busy = false, error = '',
+  onCancel, onConfirm, children,
 }: ConsentSheetProps) {
   const { sheetRef, firstRef } = useDialogFocus<HTMLButtonElement>(open, onCancel);
 
@@ -94,6 +98,11 @@ export function ConsentSheet({
             </ul>
           </section>
           {children}
+          {cannotRun && (
+            <p className="mkt-attention">
+              This desk cannot read web pages yet, so this plugin cannot run here.
+            </p>
+          )}
           {error && <p className="mkt-error mkt-error-inline" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">

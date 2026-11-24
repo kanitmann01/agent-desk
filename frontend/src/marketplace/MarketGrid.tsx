@@ -4,6 +4,20 @@
 import type { MarketCard } from './types';
 import { MarketLink } from './context';
 import { PluginIcon } from './icons';
+import { asksForWeb } from './permissions';
+
+const CANNOT_RUN = 'Cannot run on this desk';
+
+/**
+ * True when the card's own capability data asks for web access the desk
+ * does not have.
+ *
+ * Both facts are required: an absent transport field or an absent
+ * capability block claims nothing.
+ */
+function cannotRunHere(card: MarketCard, deskNetwork: boolean | undefined): boolean {
+  return deskNetwork === false && asksForWeb(card.capabilities);
+}
 
 export const CATEGORIES = [
   'finance', 'time', 'communication', 'research',
@@ -60,10 +74,12 @@ export function PublisherMark({ verified }: { verified: boolean }) {
 }
 
 /** Render the shared plugin grid as a list of cards, each linking to its detail page. */
-export function MarketGrid({ cards }: { cards: MarketCard[] }) {
+export function MarketGrid({ cards, deskNetwork }: { cards: MarketCard[]; deskNetwork?: boolean }) {
   return (
     <ul className="mkt-grid" role="list">
-      {cards.map((card) => <li key={card.id}><MarketCardView card={card} /></li>)}
+      {cards.map((card) => (
+        <li key={card.id}><MarketCardView card={card} deskNetwork={deskNetwork} /></li>
+      ))}
     </ul>
   );
 }
@@ -75,13 +91,14 @@ export function MarketGrid({ cards }: { cards: MarketCard[] }) {
  * A blocked plugin keeps its link but carries the first ineligibility reason,
  * so a person can read why before opening it.
  */
-export function MarketCardView({ card }: { card: MarketCard }) {
+export function MarketCardView({ card, deskNetwork }: { card: MarketCard; deskNetwork?: boolean }) {
   const reason = card.ineligibleReasons[0];
+  const cannotRun = cannotRunHere(card, deskNetwork);
   return (
     <MarketLink
       to={`/marketplace/plugin/${encodeURIComponent(card.id)}`}
       className={`mkt-card${card.eligible ? '' : ' mkt-card-blocked'}`}
-      aria-label={`${card.name}, version ${card.version}, ${card.publisher}, ${categoryLabel(card.category)}. View plugin details`}
+      aria-label={`${card.name}, version ${card.version}, ${card.publisher}, ${categoryLabel(card.category)}${cannotRun ? '. Cannot run on this desk' : ''}. View plugin details`}
     >
       <div className="mkt-card-top">
         <span className="mkt-card-icon"><PluginIcon name={card.icon} /></span>
@@ -102,6 +119,7 @@ export function MarketCardView({ card }: { card: MarketCard }) {
           {riskLabel(card.riskTier)}
         </span>
         <span className="mkt-source">{sourceLabel(card.source)}</span>
+        {cannotRun && <span className="mkt-chip">{CANNOT_RUN}</span>}
         {card.sampleAvailable && <span className="mkt-chip">Sample</span>}
         {card.deprecated && <span className="mkt-chip mkt-chip-warn">Deprecated</span>}
         {card.yanked && <span className="mkt-chip mkt-chip-warn">Yanked</span>}
@@ -175,8 +193,11 @@ function Miniature({ id }: { id: string }) {
  * source tags the default implies; everything else adds them. `featured` also
  * prepends the miniature and promotes the row.
  */
-function Row({ card, featured = false }: { card: MarketCard; featured?: boolean }) {
+function Row({ card, featured = false, deskNetwork }: {
+  card: MarketCard; featured?: boolean; deskNetwork?: boolean;
+}) {
   const showMeta = !isHouseDefault(card);
+  const cannotRun = cannotRunHere(card, deskNetwork);
   const extras: string[] = [];
   if (showMeta && card.publisher !== 'agent-desk') extras.push(card.publisher);
   if (showMeta && !card.publisherVerified) extras.push('Unverified publisher');
@@ -189,7 +210,7 @@ function Row({ card, featured = false }: { card: MarketCard; featured?: boolean 
       <MarketLink
         to={`/marketplace/plugin/${encodeURIComponent(card.id)}`}
         className={`mkt-row${featured ? ' mkt-row-featured' : ''}${card.eligible ? '' : ' mkt-card-blocked'}`}
-        aria-label={`${card.name}, version ${card.version}, ${card.publisher}, ${categoryLabel(card.category)}. View plugin details`}
+        aria-label={`${card.name}, version ${card.version}, ${card.publisher}, ${categoryLabel(card.category)}${cannotRun ? '. Cannot run on this desk' : ''}. View plugin details`}
       >
         {featured ? <Miniature id={card.id} /> : null}
         <span className="mkt-row-name">{card.name}</span>
@@ -200,6 +221,7 @@ function Row({ card, featured = false }: { card: MarketCard; featured?: boolean 
         {showMeta && !QUIET_RISK.has(card.riskTier.toLowerCase())
           ? <span className="mkt-row-extra">{riskLabel(card.riskTier)}</span> : null}
         {extras.map((extra) => <span key={extra} className="mkt-row-extra">{extra}</span>)}
+        {cannotRun && <span className="mkt-chip">{CANNOT_RUN}</span>}
         {!card.eligible && reason ? (
           <p className="mkt-ineligible"><span className="mkt-ineligible-label">Not available:</span> {reason.message}</p>
         ) : null}
@@ -209,7 +231,7 @@ function Row({ card, featured = false }: { card: MarketCard; featured?: boolean 
 }
 
 /** Discover list: a few featured rows, then one section per category. */
-export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
+export function MarketCatalog({ cards, deskNetwork }: { cards: MarketCard[]; deskNetwork?: boolean }) {
   const featured = cards.filter((card) => card.eligible).slice(0, 3);
   const featuredIds = new Set(featured.map((card) => card.id));
   const rest = cards.filter((card) => !featuredIds.has(card.id));
@@ -229,7 +251,7 @@ export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
         <section className="mkt-group" aria-label="Featured">
           <h2>Featured</h2>
           <ul className="mkt-rows mkt-featured">
-            {featured.map((card) => <Row key={card.id} card={card} featured />)}
+            {featured.map((card) => <Row key={card.id} card={card} featured deskNetwork={deskNetwork} />)}
           </ul>
         </section>
       ) : null}
@@ -237,7 +259,7 @@ export function MarketCatalog({ cards }: { cards: MarketCard[] }) {
         <section key={category} className="mkt-group" aria-label={categoryLabel(category)}>
           <h2>{categoryLabel(category)}</h2>
           <ul className="mkt-rows">
-            {group.map((card) => <Row key={card.id} card={card} />)}
+            {group.map((card) => <Row key={card.id} card={card} deskNetwork={deskNetwork} />)}
           </ul>
         </section>
       ))}

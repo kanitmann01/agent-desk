@@ -136,10 +136,12 @@ export default function AdminPage() {
   const [applying, setApplying] = useState(false);
   // The 100 ms gate for every control that starts work on this page.
   const busyShown = useBusy(busy !== null);
+  const retryBusy = useBusy(loading);
   const importShown = useBusy(importing);
   const applyShown = useBusy(applying);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await getMarket<AdminSnapshot>('/api/marketplace/admin');
       setSnapshot(data);
@@ -351,7 +353,10 @@ export default function AdminPage() {
         <section className="mkt-error-panel" role="alert">
           <h2>The admin snapshot could not be loaded</h2>
           <p>{error}</p>
-          <Button onClick={() => void load()}>Try again</Button>
+          <Button disabled={loading} pending={retryBusy} pendingLabel="Trying again…"
+                  onClick={() => void load()}>
+            Try again
+          </Button>
         </section>
       )}
 
@@ -485,7 +490,7 @@ export default function AdminPage() {
                     <code className="mkt-fingerprint" tabIndex={0} title={pluginId}>{pluginId}</code>
                     <Button
                       onClick={() => void setKill(pluginId, false)}
-                      disabled={busy?.id === pluginId}
+                      disabled={busy !== null}
                       pending={busyShown && busyIs(pluginId, 'restore')}
                       pendingLabel="Restoring…"
                     >
@@ -512,7 +517,7 @@ export default function AdminPage() {
                   placeholder="sample-plugin"
                 />
               </div>
-              <Button tone="primary" type="submit" disabled={!killId.trim() || busy?.id === killId.trim()}
+              <Button tone="primary" type="submit" disabled={!killId.trim() || busy !== null}
                       pending={busyShown && busyIs(killId.trim(), 'kill')}
                       pendingLabel="Blocking…">
                 Block plugin
@@ -583,7 +588,7 @@ export default function AdminPage() {
                         <Button
                           tone="primary"
                           onClick={() => void decide(item, 'approve')}
-                          disabled={busy?.id === item.id}
+                          disabled={busy !== null}
                           pending={busyShown && busyIs(item.id, 'approve')}
                           pendingLabel="Approving…"
                         >
@@ -591,7 +596,7 @@ export default function AdminPage() {
                         </Button>
                         <Button
                           onClick={() => void decide(item, 'reject')}
-                          disabled={busy?.id === item.id || !reason.trim()}
+                          disabled={busy !== null || !reason.trim()}
                           pending={busyShown && busyIs(item.id, 'reject')}
                           pendingLabel="Rejecting…"
                         >

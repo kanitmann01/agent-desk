@@ -320,7 +320,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
               <span className="w-note mkt-empty-line">Try a category, a shorter search, or allow every source.</span>
             </EmptyState>
           ) : (
-            <MarketCatalog cards={load.data.entries} />
+            <MarketCatalog cards={load.data.entries} deskNetwork={load.data.deskNetwork} />
           )}
         </div>
       )}
