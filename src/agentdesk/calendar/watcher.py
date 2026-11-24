@@ -74,16 +74,19 @@ class Adapters:
 def default_calendar_candidates() -> "list[Path]":
     """Every place the synced calendar file is looked for, in order.
 
-    AGENTDESK_CALENDAR_FILE overrides the whole list. Otherwise the
-    Windows shapes come first (the plain OneDrive folder, then any
-    'OneDrive - Company' folder at the home root), then the macOS sync
-    roots, which mount as ~/Library/CloudStorage/OneDrive-<tenant>; the
-    glob means the exact tenant suffix never matters. The server's
+    AGENTDESK_CALENDAR_FILE overrides the whole list: a path names that one
+    file, and an empty value means no calendar at all, which is how a demo
+    or a test boots a desk that must see none even on a machine with OneDrive
+    syncing. Otherwise the Windows shapes come first (the plain OneDrive
+    folder, then any 'OneDrive - Company' folder at the home root), then the
+    macOS sync roots, which mount as ~/Library/CloudStorage/OneDrive-<tenant>;
+    the glob means the exact tenant suffix never matters. The server's
     walkthrough hint reuses this list so what it shows is what it reads.
     """
     env_path = os.environ.get("AGENTDESK_CALENDAR_FILE")
-    if env_path:
-        return [Path(env_path)]
+    if env_path is not None:
+        text = env_path.strip()
+        return [Path(text)] if text else []
     home = Path.home()
     candidates = [home / "OneDrive" / "agent-desk" / "calendar_sync.json"]
     candidates += sorted(home.glob("OneDrive*/agent-desk/calendar_sync.json"))
