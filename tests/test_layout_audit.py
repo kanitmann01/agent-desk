@@ -224,6 +224,17 @@ def test_pending_verdicts():
     verdict, _ = audit._pending_verdict(control, state, [], [], True)
     assert verdict == "native-dialog"
 
+    wait = dict(state, waitVisible=True)
+    verdict, _ = audit._pending_verdict(
+        control, wait, [{"method": "POST"}], [], False)
+    assert verdict == "meets"
+
+    aria_disabled = {"control": {"disabled": False, "ariaDisabled": "true"},
+                     "indicators": [], "labelChanged": False, "ariaBusy": False}
+    verdict, _ = audit._pending_verdict(
+        control, aria_disabled, [{"method": "POST"}], [], False)
+    assert verdict == "disabled-only"
+
 
 def test_pending_fail_thresholds():
     """Silent is high, disabled-only is medium, the rest never fails."""

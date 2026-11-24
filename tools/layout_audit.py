@@ -78,9 +78,11 @@ PENDING_ENUM_JS = r"""
     ordinals[key] = ordinal + 1;
     return {index:index, ordinal:ordinal, tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
             path:path(el), text:text,
-            disabled:!!el.disabled, ariaBusy:el.getAttribute('aria-busy') || '',
+            disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
+            ariaBusy:el.getAttribute('aria-busy') || '',
             type:el.getAttribute('type') || '',
-            in_form:!!el.form, form_method:el.form ? String(el.form.method || 'get').toLowerCase() : ''};
+            in_form:!!el.form, form_method:el.form ? String(el.form.method || 'get').toLowerCase() : '',
+            wait_target:el.form ? String(el.form.getAttribute('data-wait') || '') : ''};
   });
 }
 """
@@ -107,7 +109,15 @@ PENDING_STATE_JS = r"""
   const el = found[arg.ordinal] || found[0] || null;
   const info = el ? {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
                      path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-                     disabled:!!el.disabled, ariaBusy:el.getAttribute('aria-busy') || ''} : null;
+                     disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
+                     ariaBusy:el.getAttribute('aria-busy') || ''} : null;
+  let waitVisible = false;
+  if (arg.wait_target) {
+    let target = null;
+    try { target = document.querySelector(arg.wait_target); } catch (e) { target = null; }
+    if (!target && arg.wait_target[0] !== '#') target = document.getElementById(arg.wait_target);
+    if (target && visible(target) && (target.textContent || '').trim()) waitVisible = true;
+  }
   const indicators = [];
   const seen = new Set();
   for (const selector of ['[aria-busy="true"]','[role="progressbar"]',
@@ -132,6 +142,7 @@ PENDING_STATE_JS = r"""
   return {control:info,
           labelChanged: !!(info && arg.before && info.text !== arg.before),
           ariaBusy: !!(info && info.ariaBusy === 'true'),
+          waitVisible:waitVisible,
           indicators:indicators.slice(0, 8),
           url:location.pathname + location.search};
 }
@@ -1117,6 +1128,22 @@ body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
 </body></html>
 """
 
+SELFTEST_FORM_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"></head><body>
+<form method="post" action="/mutate">
+  <button type="submit" id="save">Save changes</button>
+</form>
+<script>
+document.querySelector('form').addEventListener('submit', function () {
+  var button = document.getElementById('save');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.textContent = 'Saving';
+});
+</script>
+</body></html>
+"""
+
 SELFTEST_OFFSCREEN_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><style>
 body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
@@ -1131,7 +1158,9 @@ body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
 class _SelftestHandler:
     """Serve the two static selftest pages on loopback only."""
 
-    html = {"/": SELFTEST_HTML, "/offscreen": SELFTEST_OFFSCREEN_HTML}
+    html = {"/": SELFTEST_HTML, "/offscreen": SELFTEST_OFFSCREEN_HTML,
+            "/form": SELFTEST_FORM_HTML}
+    post_count = 0
 
 
 def _selftest_server():
@@ -1155,9 +1184,16 @@ def _selftest_server():
             self.end_headers()
             self.wfile.write(data)
 
+        def do_POST(self):  # noqa: N802 - the stdlib's spelling
+            """Count a mutation attempt and refuse it."""
+            _SelftestHandler.post_count += 1
+            self.send_response(204)
+            self.end_headers()
+
         def log_message(self, fmt, *args):  # noqa: A003 - the stdlib's hook
             """Stay quiet; the selftest prints its own verdict."""
 
+    _SelftestHandler.post_count = 0
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -1222,6 +1258,33 @@ def _selftest() -> int:
             if len(popover_hits) != 1:
                 failures.append(f"w-menu offscreen-content: expected 1, "
                                 f"found {len(popover_hits)}")
+            page.goto(base + "/form", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            held = []
+            page.route("**/mutate", lambda route: held.append(route))
+            page.evaluate(
+                "() => { const el = document.getElementById('save');"
+                " const form = el.form;"
+                " let frame = document.getElementById('layout-pending-frame');"
+                " if (!frame) { frame = document.createElement('iframe');"
+                " frame.id = 'layout-pending-frame'; frame.name = 'layout-pending-frame';"
+                " frame.style.display = 'none'; document.body.appendChild(frame); }"
+                " form.target = 'layout-pending-frame'; el.click(); }")
+            page.wait_for_timeout(700)
+            form_state = page.evaluate(
+                "() => { const el = document.getElementById('save');"
+                " return {disabled: !!el.disabled, busy: el.getAttribute('aria-busy'),"
+                " text: (el.textContent || '').trim()}; }")
+            for route in held:
+                try:
+                    route.abort()
+                except Exception:
+                    pass
+            page.wait_for_timeout(150)
+            if not form_state.get("disabled") or form_state.get("busy") != "true":
+                failures.append(f"form submit busy state: {form_state}")
+            if _SelftestHandler.post_count:
+                failures.append("form submit reached the server after abort")
             browser.close()
     finally:
         try:
@@ -1238,7 +1301,7 @@ def _selftest() -> int:
         for failure in failures:
             print("  " + failure)
         return 1
-    print("SELFTEST PASS 14 detector expectations")
+    print("SELFTEST PASS 15 detector expectations")
     return 0
 
 class AuditError(Exception):
@@ -2299,6 +2362,17 @@ def _pending_click(page, control: dict) -> bool:
           }
           const el = found[arg.ordinal] || found[0];
           if (!el) return false;
+          if (el.form) {
+            let frame = document.getElementById('layout-pending-frame');
+            if (!frame) {
+              frame = document.createElement('iframe');
+              frame.id = 'layout-pending-frame';
+              frame.name = 'layout-pending-frame';
+              frame.style.display = 'none';
+              document.body.appendChild(frame);
+            }
+            el.form.target = 'layout-pending-frame';
+          }
           el.scrollIntoView({block: 'center', inline: 'center'});
           el.click();
           return true;
@@ -2364,12 +2438,15 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
                       if (item.get("path"), item.get("text")) not in before_keys]
     label_changed = bool(state.get("labelChanged"))
     aria_busy = bool(state.get("ariaBusy"))
-    disabled = bool(control_after.get("disabled"))
+    wait_visible = bool(state.get("waitVisible"))
+    disabled = bool(control_after.get("disabled") or
+                    control_after.get("ariaDisabled") == "true")
     evidence = {
         "request_started": bool(started),
         "requests": started[:4],
         "disabled": disabled,
         "aria_busy": aria_busy,
+        "wait_visible": wait_visible,
         "label_changed": label_changed,
         "busy_indicators": new_indicators[:4],
     }
@@ -2382,7 +2459,7 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
     if picker:
         evidence["reason"] = "file-picker request held"
         return "native-dialog", evidence
-    if aria_busy or label_changed or new_indicators:
+    if aria_busy or wait_visible or label_changed or new_indicators:
         return "meets", evidence
     if disabled:
         return "disabled-only", evidence
@@ -2439,13 +2516,6 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             if control.get("disabled"):
                 record["evidence"] = {"reason": "already disabled"}
                 records.append(record)
-                continue
-            if control.get("in_form") and control.get("form_method") == "post":
-                record["evidence"] = {"reason": "form submit navigates; not clicked"}
-                records.append(record)
-                print(f"[{condition}] pending {total} {view.get('state')} "
-                      f"{record.get('control', '')[:40]!r}: skipped form submit",
-                      flush=True)
                 continue
             fresh = context.new_page()
             fresh.set_default_timeout(4000)
@@ -2509,6 +2579,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     "text": control.get("text", ""),
                     "ordinal": control.get("ordinal", 0),
                     "before": control.get("text") or "",
+                    "wait_target": control.get("wait_target", ""),
                 })
                 verdict, evidence = _pending_verdict(
                     control, state, started, before_indicators, file_dialog[0])
