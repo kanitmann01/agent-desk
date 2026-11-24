@@ -378,10 +378,11 @@ def _record_card(audit_entries: list[dict], audit_total: int) -> str:
             for e in audit_entries[:5]
         )
         recent = (
-            "<table class='rows'><thead><tr><th scope='col'>When</th>"
+            "<div class='table-scroll'><table class='rows'>"
+            "<thead><tr><th scope='col'>When</th>"
             "<th scope='col'>Kind</th><th scope='col'>Action</th>"
             "<th scope='col'>Status</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
+            f"<tbody>{rows}</tbody></table></div>"
         )
     else:
         recent = (
@@ -475,9 +476,10 @@ def _agent_steps_table(steps: list[dict]) -> str:
         f"<td>{html.escape(str(step.get('note', '')))}</td></tr>"
         for step in steps
     )
-    return ("<table class='rows'><thead><tr><th scope='col'>Step</th>"
+    return ("<div class='table-scroll'><table class='rows'>"
+            "<thead><tr><th scope='col'>Step</th>"
             "<th scope='col'>Ok</th><th scope='col'>ms</th>"
-            f"<th scope='col'>Note</th></tr></thead><tbody>{rows}</tbody></table>")
+            f"<th scope='col'>Note</th></tr></thead><tbody>{rows}</tbody></table></div>")
 
 
 def _job_choices(connections: list[dict], selected: str) -> str:
@@ -696,11 +698,12 @@ def _connection_rows(connections: list[dict]) -> str:
             "</tr>"
         )
     return (
-        "<table class='rows'><thead><tr><th scope='col'>Connection</th>"
+        "<div class='table-scroll'><table class='rows'>"
+        "<thead><tr><th scope='col'>Connection</th>"
         "<th scope='col'>Preset</th><th scope='col'>Key</th>"
         "<th scope='col'>Base URL</th><th scope='col'>Status</th>"
         "<th scope='col'>Actions</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
     )
 
 

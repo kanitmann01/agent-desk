@@ -117,10 +117,11 @@ def _rows(entries: list[dict]) -> str:
             f"<td>{what}</td><td>{status_html}</td></tr>"
         )
     return (
-        "<table class='rows'><thead><tr><th scope='col'>When</th>"
+        "<div class='table-scroll'><table class='rows'>"
+        "<thead><tr><th scope='col'>When</th>"
         "<th scope='col'>Kind</th><th scope='col'>Action</th>"
         "<th scope='col'>What</th><th scope='col'>Status</th></tr></thead>"
-        f"<tbody>{''.join(body)}</tbody></table>"
+        f"<tbody>{''.join(body)}</tbody></table></div>"
     )
 
 
@@ -143,9 +144,10 @@ def questions_table(questions: list[dict]) -> str:
         for q in reversed(questions)
     )
     return (
-        "<table class='rows'><thead><tr><th scope='col'>When</th>"
+        "<div class='table-scroll'><table class='rows'>"
+        "<thead><tr><th scope='col'>When</th>"
         "<th scope='col'>Kind</th><th scope='col'>What you asked</th></tr></thead>"
-        f"<tbody>{body}</tbody></table>"
+        f"<tbody>{body}</tbody></table></div>"
     )
 
 
@@ -215,8 +217,9 @@ def _ledger_section(ledger_entries: list) -> str:
         "<h2>Changes the desk made by itself</h2>\n"
         "<p>Every change the desk made on its own is listed here, newest "
         "first, with the state it replaced so Undo can put it back.</p>\n"
-        "<table class='rows'><tr><th>When</th><th>What changed</th>"
-        "<th>Undo</th></tr>" + "".join(rows) + "</table>"
+        "<div class='table-scroll'><table class='rows'>"
+        "<tr><th>When</th><th>What changed</th>"
+        "<th>Undo</th></tr>" + "".join(rows) + "</table></div>"
     )
 
 

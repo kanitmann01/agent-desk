@@ -111,7 +111,7 @@ def card_html(card: Card, now_ts: float) -> str:
         f"<article class='widget{expired_class}' id='card-{html.escape(card.id)}' "
         f"data-freshness-status='{'attention' if expired else 'fresh'}'>"
         "<div class='w-head'>"
-        f"<span class='origin-line'>{html.escape(_KIND_LABEL.get(card.kind, card.kind))}</span>"
+        f"<span class='origin-line nowrap'>{html.escape(_KIND_LABEL.get(card.kind, card.kind))}</span>"
         f"{_sample_tag(card)}"
         f"<span class='stamp'><span class='dot{' amber' if expired else ''}' aria-hidden='true'></span>"
         f"{html.escape(age)}</span></div>"
