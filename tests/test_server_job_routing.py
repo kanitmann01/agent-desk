@@ -429,8 +429,13 @@ def test_the_first_delete_of_a_bound_connection_answers_409_naming_the_jobs(
     assert status == 409
     payload = json.loads(body)
     assert payload["boundJobs"] == ["assistant", "memory"]
-    assert "assistant" in payload["error"]
-    assert "memory" in payload["error"]
+    # The whole answer sentence, pinned verbatim: the plain names of what
+    # the AI answers, joined with the "and" join, and the consequence in
+    # words a person reads (spec 022's copy line).
+    assert payload["error"] == (
+        "Work gateway answers Assistant and Memory. Deleting it removes"
+        " its key from this computer, and those stop answering until you"
+        " save another key")
     # named, not deleted: the connection and its key are still in place
     labels = [c["label"] for c in json.loads(
         env.request("GET", "/api/connections", auth)[2])["connections"]]
@@ -460,46 +465,41 @@ def test_a_no_js_delete_post_gets_the_warning_page_and_the_confirmed_post_delete
         env, auth, f"/api/connections/{connection['id']}/delete", {})
     assert status == 200
     page = body.decode("utf-8")
-    assert "is bound to the" in page and "presentations" in page
+    assert "Delete an AI that is in use" in page and "Presentations" in page
     assert f"action='/api/connections/{connection['id']}/delete'" in page
     assert "name='confirm'" in page
     # The whole consequence paragraph, pinned verbatim (spec 019 #258):
     # a refactor that reflows the source fragments and drops one join
-    # space prints run-on words ("job.Deleting", "thosebindings") and
+    # space prints run-on words ("</b>.Deleting", "thiscomputer") and
     # fails here, so the one page that must read as carefully reviewed
     # cannot regress by that class alone.
     assert (
-        "<p><b>Work gateway</b> is bound to the <b>presentations</b> job."
-        " Deleting it removes the connection, its keychain entry and those"
-        " bindings; the jobs fall back to the default binding, the single"
-        " remaining connection, or the environment, and a job with none of"
-        " those answers with a named unbound error instead of a silent"
-        " one.</p>"
+        "<p><b>Work gateway</b> answers <b>Presentations</b>."
+        " Deleting it removes the connection and its key from this"
+        " computer. Those stop answering until you save another key.</p>"
     ) in page
-    for run_on in ("job.Deleting", "thosebindings", "singleremaining",
-                   "thoseanswers"):
+    for run_on in ("</b>.Deleting", "thiscomputer", "anotherkey"):
         assert run_on not in page, run_on
     # The confirm reads as destructive; Keep it stays the quiet secondary.
     assert ("<button class='btn btn-danger' type='submit'>"
-            "Delete Work gateway and unbind presentations</button>") in page
+            "Delete Work gateway anyway</button>") in page
     assert "<a class='btn btn-secondary' href='/settings'>Keep it</a>" in page
     labels = [c["label"] for c in json.loads(
         env.request("GET", "/api/connections", auth)[2])["connections"]]
     assert labels == ["Work gateway"]  # the warning answered, nothing landed
 
-    # The named-jobs sentence keeps its pluralization with two jobs
-    # bound (job_key order names them).
+    # The named sentence keeps its plural shape with two jobs bound
+    # (job_key order names them, the plain labels join with "and").
     assert _bind(env, auth, "memory", connection["id"])[0] == 200
     status, _h, body = _post_form(
         env, auth, f"/api/connections/{connection['id']}/delete", {})
     assert status == 200
     plural_page = body.decode("utf-8")
     assert (
-        "<b>Work gateway</b> is bound to the <b>memory, presentations</b>"
-        " jobs. Deleting it removes"
+        "<b>Work gateway</b> answers <b>Memory and Presentations</b>."
+        " Deleting it removes"
     ) in plural_page
-    for run_on in ("job.Deleting", "thosebindings", "singleremaining",
-                   "thoseanswers"):
+    for run_on in ("</b>.Deleting", "thiscomputer", "anotherkey"):
         assert run_on not in plural_page, run_on
 
     status, headers, _b = _post_form(

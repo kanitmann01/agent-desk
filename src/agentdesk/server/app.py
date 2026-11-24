@@ -203,6 +203,7 @@ from agentdesk.server.research import (
     render_research_widget,
 )
 from agentdesk.server.settings_view import (
+    joined_job_labels,
     mask_llm_key,
     render_connection_delete_warning,
     render_settings_page,
@@ -3692,11 +3693,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _connection_delete(self, connection_id: str) -> None:
         """POST /api/connections/<id>/delete: the row, its secret and its
-        bindings go together, but not before the bound jobs are named
-        (spec 018 story 10): a first post about a connection that serves
-        jobs answers the warning naming them (a no-JS confirmation page
-        for a form post, a 409 carrying them for JSON), and only a
-        confirmed post deletes.
+        bindings go together, but not before what the connection answers
+        is named (spec 018 story 10): a first post about a connection
+        that serves answers the warning naming those in plain words (a
+        no-JS confirmation page for a form post, a 409 carrying them for
+        JSON), and only a confirmed post deletes.
 
         A migrated connection (spec 018 #234) is the one exception: its
         keychain entry survives the delete, because the legacy settings
@@ -3716,19 +3717,19 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         jobs = server.keys.bound_jobs(connection.id)
         confirmed = _flag(self._read_json_body() or {}, "confirm")
         if jobs and not confirmed:
+            names = joined_job_labels(jobs)
             if migrated:
                 sentence = (
-                    f"the {connection.label} connection serves the"
-                    f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
-                    " deleting it unbinds them. It came from the upgrade"
-                    " migration: the key stays in the keychain and the"
-                    " connection comes back with its bindings on the next"
-                    " start, so nothing needs retyping")
+                    f"{connection.label} answers {names}. It came from an"
+                    " older version of the app: deleting it removes the"
+                    " connection, but its key stays in this computer's"
+                    " keychain and the connection comes back the next time"
+                    " the app starts, so nothing needs retyping")
             else:
                 sentence = (
-                    f"the {connection.label} connection serves the"
-                    f" {', '.join(jobs)} job{'s' if len(jobs) != 1 else ''};"
-                    " deleting it unbinds them")
+                    f"{connection.label} answers {names}. Deleting it"
+                    " removes its key from this computer, and those stop"
+                    " answering until you save another key")
             if self._is_form_submit():
                 page = render_connection_delete_warning(
                     _connection_payload(connection), jobs, agentdesk.__version__,
@@ -6336,9 +6337,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if not base_url_problem(saved_base):
                 return ""
         return (
-            "No AI is saved: the wizard asks its "
-            "standard questions and builds the same way. Add an endpoint "
-            "in Settings for questions tailored to your ask."
+            "No AI is saved, so the wizard asks its "
+            "standard questions and builds the same way. Add your AI key "
+            "in Settings and it can tailor its questions to your ask."
         )
 
     def _send_marketplace_shell(self, status: int = 200, notice: str = "") -> None:

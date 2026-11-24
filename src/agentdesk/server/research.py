@@ -76,7 +76,7 @@ def render_research_disabled(now: datetime) -> Widget:
             "Nothing is being asked of your AI right now.</p></div>"
             '<a class="btn btn-primary btn-start" href="/settings">Turn it back on</a>'
         ),
-        foot_html="No endpoint calls while off. Nothing is sent anywhere.",
+        foot_html="Nothing is sent anywhere while it is off.",
     )
 
 
