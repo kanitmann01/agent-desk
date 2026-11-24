@@ -116,9 +116,15 @@ def test_touches_page_is_generated_from_the_vocabulary(env, auth):
     # Observed vocabulary is marked in use; the rest says not observed.
     assert "llm.research" in page and "in use" in page
     assert "not observed yet" in page
-    # The static facts are the same facts the code enforces.
-    assert "Processes started:" in page and "none" in page
+    # The static facts are the same facts the code enforces: the desk
+    # reads local Outlook alerts while it is open and starts nothing that
+    # outlives it.
+    assert "Processes started:" in page
+    assert "local OS notification store for Outlook alerts" in page
+    assert "starts no scheduled task, service or autostart entry" in page
+    assert "starts nothing by itself" not in page
     assert "Persistence:" in page and "No Run key" in page
+    assert "The app, and its local Outlook alert reader, run only while you keep it open." in page
     assert "delete the folder" in page
     # The claim matches THIRD-PARTY-NOTICES.md: the Python runtime
     # carries exactly one dependency (ticket #94), the bundle carries
@@ -141,7 +147,7 @@ def test_the_touches_table_lists_every_action_the_app_can_record():
     for action in ("insight.press", "llm.observe", "memory.capture",
                    "memory.keep", "memory.remove", "memory.undo",
                    "settings.preferences", "settings.hosts",
-                   "agents.download"):
+                   "agents.download", "mail.fetch"):
         assert f"<td class='mono'>{action}</td>" in page
     # The badge tells the truth about the one action this desk ran.
     press_row = page.split("<td class='mono'>insight.press</td>", 1)[1]

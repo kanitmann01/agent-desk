@@ -218,6 +218,63 @@ def test_no_request_when_disabled(overrides, expected):
     assert rank.rank_enabled(_settings(**overrides)) is expected
 
 
+class LatchingCtx(Ctx):
+    """A context that latches exactly like the agent loop's unchanged check."""
+
+    def input_unchanged(self, step, payload):
+        return self.remembered == (step, payload)
+
+
+def test_learned_lines_come_from_the_store_document(tmp_path):
+    from agentdesk.memory.profile import LearnedProfileStore
+
+    store = LearnedProfileStore(
+        tmp_path / "profile.learned.json", clock=lambda: MORNING.astimezone().timestamp())
+    store.add_entry("Prefers short summaries.", {"activity": [1]}, "review")
+    server = _server(_inbox(), Memory([]), _settings())
+    server.learned_profile = store
+    assert rank._learned_lines(server) == ["Prefers short summaries."]
+
+
+def test_an_unusable_reply_does_not_latch_the_next_pass():
+    inbox = _inbox()
+    _card(inbox)
+    ctx = LatchingCtx(MORNING.astimezone())
+    server = _server(inbox, Memory([_fact()]), _settings())
+    prompts = []
+
+    def chat(prompt):
+        prompts.append(prompt)
+        return "[]"
+
+    first = rank.run_rank(server, ctx, chat=chat)
+    assert first["skipped"] == "The endpoint reply had no usable scores."
+    assert ctx.remembered is None
+    second = rank.run_rank(server, ctx, chat=chat)
+    assert second["skipped"] == "The endpoint reply had no usable scores."
+    assert len(prompts) == 2
+
+
+def test_a_snoozed_card_is_ranked_when_it_wakes():
+    inbox = _inbox()
+    card = _card(inbox)
+    inbox.snooze(card.id, datetime.datetime(2026, 11, 21, 8, 0).astimezone().timestamp())
+    ctx = LatchingCtx(MORNING.astimezone())
+    server = _server(inbox, Memory([_fact()]), _settings())
+    prompts = []
+
+    def chat(prompt):
+        prompts.append(prompt)
+        return json.dumps([{"id": "rec-1", "score": 9, "why": "Renewal is close."}])
+
+    assert rank.run_rank(server, ctx, chat=chat) == {"ranked": 0}
+    assert prompts == []
+    inbox.clock = Clock(datetime.datetime(2026, 11, 22, 9, 0))
+    result = rank.run_rank(server, ctx, chat=chat)
+    assert result == {"shown": 1, "snoozed": 0, "ranked": 1}
+    assert len(prompts) == 1
+
+
 def test_audit_has_no_text():
     inbox = _inbox()
     _card(inbox)
