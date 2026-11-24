@@ -1,10 +1,13 @@
 // The marketplace shell. One rail, one main landmark, one polite route
 // announcement. The route parser is pure; this component only chooses a
 // page and moves focus to that page's heading.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Rail from '../dashboard/Rail';
+import Button from '../components/Button';
+import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from '../api';
 import AdminPage from './Admin';
 import { CatalogPage } from './CatalogPage';
+import { onSessionExpired } from './client';
 import { InstalledPage } from './Installed';
 import { MarketLink, MarketplaceNavProvider } from './context';
 import { PackPage } from './PackPage';
@@ -35,6 +38,26 @@ function Tabs({ route }: { route: MarketRoute }) {
       <Tab to="/marketplace" current={find}>Find plugins</Tab>
       <Tab to="/marketplace/installed" current={route.name === 'installed' || route.name === 'manage'}>Installed</Tab>
     </nav>
+  );
+}
+
+/**
+ * Say the session expired, with the same words and the same one action the
+ * dashboard uses: a fresh link from the shortcut is the only fix, so no
+ * page-level retry is offered.
+ */
+function SessionNotice() {
+  const focusHeading = useCallback((node: HTMLHeadingElement | null) => {
+    node?.focus();
+  }, []);
+  return (
+    <div className="mkt-page">
+      <div className="mkt-error-panel" role="alert">
+        <h1 ref={focusHeading} tabIndex={-1}>{SESSION_EXPIRED_TITLE}</h1>
+        <p>{SESSION_EXPIRED_MESSAGE}</p>
+        <Button tone="secondary" onClick={() => window.location.reload()}>Try again</Button>
+      </div>
+    </div>
   );
 }
 
@@ -97,10 +120,15 @@ function Page({ route }: { route: MarketRoute }) {
 export default function MarketplaceApp() {
   const { path, route, navigate } = useMarketplaceRouter();
   const [announcement, setAnnouncement] = useState('');
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
     setAnnouncement(routeTitle(route));
   }, [path, route]);
+
+  // Every marketplace call reports a 401 here. One notice replaces the
+  // page, so no surface keeps a retry that would fail the same way.
+  useEffect(() => onSessionExpired(() => setExpired(true)), []);
 
   return (
     <MarketplaceNavProvider value={{ path, navigate }}>
@@ -110,7 +138,7 @@ export default function MarketplaceApp() {
         <main className="mkt-main" id="marketplace-main" tabIndex={-1}>
           <div className="mkt-sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
           <Tabs route={route} />
-          <Page route={route} />
+          {expired ? <SessionNotice /> : <Page route={route} />}
         </main>
       </div>
     </MarketplaceNavProvider>

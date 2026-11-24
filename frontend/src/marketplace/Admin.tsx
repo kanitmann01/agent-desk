@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import Button from '../components/Button';
+import { useBusy } from '../components/useBusy';
 import { getMarket, MarketApiError, marketErrorText, postMarket } from './client';
+import { SkeletonPanel } from './MarketGrid';
 import type {
   AdminSnapshot,
   PendingPublication,
@@ -47,6 +49,24 @@ function readFileText(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('the file could not be read'));
     reader.readAsText(file);
   });
+}
+
+/**
+ * Render the table-shaped placeholder the import shows while the bundle is
+ * read and verified, so the diff lands in a box that already has its shape.
+ */
+function DiffSkeleton() {
+  return (
+    <div className="mkt-import-skel" aria-hidden="true">
+      {[0, 1, 2].map((row) => (
+        <div className="mkt-import-skel-row" key={row}>
+          <span className="mkt-skel mkt-skel-short" />
+          <span className="mkt-skel" />
+          <span className="mkt-skel" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -106,13 +126,18 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
-  const [busy, setBusy] = useState('');
+  const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [killId, setKillId] = useState('');
   const [bundle, setBundle] = useState<Record<string, unknown> | null>(null);
   const [preview, setPreview] = useState<PolicyImportResult | null>(null);
   const [importError, setImportError] = useState('');
+  const [importing, setImporting] = useState(false);
   const [applying, setApplying] = useState(false);
+  // The 100 ms gate for every control that starts work on this page.
+  const busyShown = useBusy(busy !== null);
+  const importShown = useBusy(importing);
+  const applyShown = useBusy(applying);
 
   const load = useCallback(async () => {
     try {
@@ -136,6 +161,11 @@ export default function AdminPage() {
     void load();
   }, [load]);
 
+  /** True while the named action on the named record is the one in flight. */
+  const busyIs = (id: string, action: string) => (
+    busy !== null && busy.id === id && busy.action === action
+  );
+
   /**
    * Parse a chosen bundle and have the server verify it without applying
    * anything, so the diff can be read first.
@@ -150,26 +180,31 @@ export default function AdminPage() {
     setBundle(null);
     setNotice('');
     if (!file) return;
-    let parsed: unknown;
+    setImporting(true);
     try {
-      parsed = JSON.parse(await readFileText(file));
-    } catch {
-      setImportError('That file is not valid JSON. Export the signed bundle again.');
-      return;
-    }
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      setImportError('The bundle must be a JSON object.');
-      return;
-    }
-    setBundle(parsed as Record<string, unknown>);
-    try {
-      const result = await postMarket<PolicyImportResult>('/api/marketplace/policy/import', {
-        bundle: parsed,
-        confirm: false,
-      });
-      setPreview(result);
-    } catch (err) {
-      setImportError(marketErrorText(err));
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await readFileText(file));
+      } catch {
+        setImportError('That file is not valid JSON. Export the signed bundle again.');
+        return;
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setImportError('The bundle must be a JSON object.');
+        return;
+      }
+      setBundle(parsed as Record<string, unknown>);
+      try {
+        const result = await postMarket<PolicyImportResult>('/api/marketplace/policy/import', {
+          bundle: parsed,
+          confirm: false,
+        });
+        setPreview(result);
+      } catch (err) {
+        setImportError(marketErrorText(err));
+      }
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -210,7 +245,7 @@ export default function AdminPage() {
     const label = pendingLabel(item);
     const reason = (reasons[item.id] ?? '').trim();
     if (action === 'reject' && !reason) return;
-    setBusy(item.id);
+    setBusy({ id: item.id, action });
     setActionError('');
     setNotice('');
     try {
@@ -234,7 +269,7 @@ export default function AdminPage() {
     } catch (err) {
       setActionError(marketErrorText(err));
     } finally {
-      setBusy('');
+      setBusy(null);
     }
   };
 
@@ -246,7 +281,7 @@ export default function AdminPage() {
    * the list of blocked plugins.
    */
   const setKill = async (pluginId: string, enabled: boolean) => {
-    setBusy(`kill:${pluginId}`);
+    setBusy({ id: pluginId, action: enabled ? 'kill' : 'restore' });
     setActionError('');
     setNotice('');
     try {
@@ -261,7 +296,7 @@ export default function AdminPage() {
     } catch (err) {
       setActionError(marketErrorText(err));
     } finally {
-      setBusy('');
+      setBusy(null);
     }
   };
 
@@ -301,10 +336,15 @@ export default function AdminPage() {
         </p>
       </header>
 
-      {loading && !snapshot && (
-        <section className="mkt-panel">
-          <p role="status">Loading the governance snapshot…</p>
-        </section>
+      {loading && !snapshot && !error && (
+        <div className="mkt-skeleton-region" aria-busy="true">
+          <p className="mkt-result-count" role="status">Reading the governance snapshot…</p>
+          <div className="mkt-admin-grid">
+            <SkeletonPanel lines={4} />
+            <SkeletonPanel lines={3} />
+            <SkeletonPanel lines={3} />
+          </div>
+        </div>
       )}
 
       {error && (
@@ -385,7 +425,8 @@ export default function AdminPage() {
             )}
           </section>
 
-          <section className="mkt-panel mkt-admin-wide" aria-labelledby="mkt-import">
+          <section className="mkt-panel mkt-admin-wide" aria-labelledby="mkt-import"
+                   aria-busy={importShown ? 'true' : undefined}>
             <h2 id="mkt-import">Import a signed policy</h2>
             <p>
               Choose the signed JSON bundle. The diff is computed against the policy active right
@@ -397,10 +438,18 @@ export default function AdminPage() {
                 id="mkt-policy-file"
                 type="file"
                 accept="application/json,.json"
+                disabled={importing}
+                aria-busy={importShown ? 'true' : undefined}
                 onChange={(event) => void onFile(event)}
               />
               <small>Verification runs on import. A rejected bundle leaves the curated policy in place.</small>
             </div>
+            {importShown && (
+              <>
+                <p className="mkt-result-count" role="status">Reading and verifying the signed bundle…</p>
+                <DiffSkeleton />
+              </>
+            )}
             {importError && <p className="mkt-error" role="alert">{importError}</p>}
             {preview && (
               <div className="mkt-import-preview">
@@ -415,8 +464,9 @@ export default function AdminPage() {
                   <p className="mkt-policy-warning" role="status">{preview.verification.warning}</p>
                 )}
                 <div className="mkt-actions">
-                  <Button tone="primary" onClick={() => void confirmImport()} disabled={applying}>
-                    {applying ? 'Applying…' : 'Apply signed policy'}
+                  <Button tone="primary" onClick={() => void confirmImport()} disabled={applying}
+                          pending={applyShown} pendingLabel="Applying…">
+                    Apply signed policy
                   </Button>
                 </div>
               </div>
@@ -435,7 +485,9 @@ export default function AdminPage() {
                     <code className="mkt-fingerprint" tabIndex={0} title={pluginId}>{pluginId}</code>
                     <Button
                       onClick={() => void setKill(pluginId, false)}
-                      disabled={busy === `kill:${pluginId}`}
+                      disabled={busy?.id === pluginId}
+                      pending={busyShown && busyIs(pluginId, 'restore')}
+                      pendingLabel="Restoring…"
                     >
                       Restore {pluginId}
                     </Button>
@@ -460,7 +512,9 @@ export default function AdminPage() {
                   placeholder="sample-plugin"
                 />
               </div>
-              <Button tone="primary" type="submit" disabled={!killId.trim() || busy === `kill:${killId.trim()}`}>
+              <Button tone="primary" type="submit" disabled={!killId.trim() || busy?.id === killId.trim()}
+                      pending={busyShown && busyIs(killId.trim(), 'kill')}
+                      pendingLabel="Blocking…">
                 Block plugin
               </Button>
             </form>
@@ -529,13 +583,17 @@ export default function AdminPage() {
                         <Button
                           tone="primary"
                           onClick={() => void decide(item, 'approve')}
-                          disabled={busy === item.id}
+                          disabled={busy?.id === item.id}
+                          pending={busyShown && busyIs(item.id, 'approve')}
+                          pendingLabel="Approving…"
                         >
                           Approve {label}
                         </Button>
                         <Button
                           onClick={() => void decide(item, 'reject')}
-                          disabled={busy === item.id || !reason.trim()}
+                          disabled={busy?.id === item.id || !reason.trim()}
+                          pending={busyShown && busyIs(item.id, 'reject')}
+                          pendingLabel="Rejecting…"
                         >
                           Reject {label}
                         </Button>

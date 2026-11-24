@@ -28,7 +28,7 @@ export function SamplePreview({ sample, title }: { sample: MarketSample | null; 
     <div className="mkt-sample-wrap">
       <div className="mkt-sample-heading">
         <h2>Live sample</h2>
-        <span className="mkt-chip mkt-chip-sample">Sample data</span>
+        <span className="mkt-chip mkt-chip-sample" title="Sample data">Sample data</span>
       </div>
       <p className="mkt-sample-note">
         Rendered from the plugin's bundled sample. No live data was read.

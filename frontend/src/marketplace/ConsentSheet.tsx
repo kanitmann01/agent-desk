@@ -99,7 +99,7 @@ export function ConsentSheet({
         <div className="mkt-sheet-foot">
           <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary"
-                  disabled={busy} onClick={onConfirm}>
+                  disabled={busy} aria-busy={busy ? 'true' : undefined} onClick={onConfirm}>
             {busy ? 'Working…' : confirmLabel}
           </button>
         </div>

@@ -3,9 +3,10 @@
 // the publisher proof endpoint.
 import { useEffect, useState, type FormEvent } from 'react';
 import Button from '../components/Button';
+import { useBusy } from '../components/useBusy';
 import { getMarket, marketErrorText, postMarket } from './client';
 import { MarketLink } from './context';
-import { MarketGrid, PublisherMark, SkeletonGrid } from './MarketGrid';
+import { MarketGrid, PublisherMark, SkeletonGrid, SkeletonPanel } from './MarketGrid';
 import { formatDate } from './permissions';
 import type { CatalogResponse, MarketCard, PublisherResponse } from './types';
 
@@ -51,12 +52,23 @@ export function PublishersPage() {
   const [cards, setCards] = useState<MarketCard[] | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const retryBusy = useBusy(retrying);
 
   useEffect(() => {
     let cancelled = false;
     getMarket<CatalogResponse>('/api/marketplace/catalog')
-      .then((data) => { if (!cancelled) setCards(data.entries); })
-      .catch((err) => { if (!cancelled) setError(marketErrorText(err)); });
+      .then((data) => {
+        if (cancelled) return;
+        setCards(data.entries);
+        setError('');
+        setRetrying(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(marketErrorText(err));
+        setRetrying(false);
+      });
     return () => { cancelled = true; };
   }, [attempt]);
 
@@ -66,7 +78,11 @@ export function PublishersPage() {
         <h1>Publishers</h1>
         <div className="mkt-error-panel" role="alert">
           <p>{error}</p>
-          <Button tone="secondary" onClick={() => { setError(''); setAttempt((n) => n + 1); }}>Try again</Button>
+          <Button tone="secondary" disabled={retrying}
+                  pending={retryBusy} pendingLabel="Trying again…"
+                  onClick={() => { setRetrying(true); setAttempt((n) => n + 1); }}>
+            Try again
+          </Button>
         </div>
       </div>
     );
@@ -235,8 +251,13 @@ export function PublisherPage({ name }: { name: string }) {
   }
   if (!data) {
     return (
-      <div className="mkt-page" aria-busy="true">
-        <p className="mkt-result-count">Loading publisher…</p>
+      <div className="mkt-page mkt-skeleton-region" aria-busy="true">
+        <p className="mkt-result-count" role="status">Reading the publisher…</p>
+        <div className="mkt-page-head">
+          <span className="mkt-skel mkt-skel-title" />
+          <span className="mkt-skel" />
+        </div>
+        <SkeletonPanel lines={2} />
         <SkeletonGrid count={3} />
       </div>
     );

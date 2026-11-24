@@ -19,6 +19,20 @@ export class MarketApiError extends Error {
   }
 }
 
+// A 401 is not a page failure: the session expired and no marketplace
+// request can succeed until the desk is opened from its shortcut. Every
+// call reports it to the shell, which says so once instead of leaving each
+// page with a Try again that cannot work.
+const sessionExpiredListeners = new Set<() => void>();
+
+/** Subscribe to an expired session; the returned function unsubscribes. */
+export function onSessionExpired(listener: () => void): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
+}
+
 /**
  * Turn a failed response into the MarketApiError the surfaces catch.
  *
@@ -27,6 +41,9 @@ export class MarketApiError extends Error {
  * a 401 always carries the session-expired text.
  */
 function unwrap(status: number, data: unknown): never {
+  if (status === 401) {
+    for (const listener of sessionExpiredListeners) listener();
+  }
   const payload = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   const code = typeof payload.error === 'string' ? payload.error : 'marketplace:error';
   const message = status === 401
