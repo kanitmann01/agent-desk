@@ -148,9 +148,9 @@ def run_tool(name: str, payload: dict, root: Path,
     ``root`` is the only folder a deck tool may read or write. Every
     returned path is relative to it, posix-style, so an HTTP caller can
     turn the path into a download URL without learning the filesystem.
-    Every result also names the plugin that declared the tool: when two
-    packs declare one name, the catalog row, not load order, says who
-    answers for the run.
+    Every result also names the plugin whose catalog row answered: when
+    two packs declare one name, the listing and the audit agree on who
+    answers for the run (the catalog keeps the first declaring pack).
     """
     spec = _TOOLS.get(name)
     if spec is None:
