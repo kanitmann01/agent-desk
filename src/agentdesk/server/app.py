@@ -4039,13 +4039,6 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # card reads the folder either.
             if server.plugins is not None:
                 server.plugins.runner.mail = server.mail if value else None
-        if key == "mail_feeder":
-            # The feeder rides the mail watcher: with no watcher there is
-            # nothing to fetch, so the toggle only rewires an existing one.
-            settings = server.settings
-            if server.mail is not None and settings is not None:
-                feeder = _default_outlook_feeder(settings) if value else None
-                server.mail.feeder = feeder.run_once if feeder is not None else None
 
     def _apply_mail_feeder(self, value) -> bool:
         """Apply the Outlook alert switch, turning the mail digest on with it.
