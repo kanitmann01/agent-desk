@@ -125,12 +125,16 @@ body{
   font-size:14px;
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
+  overflow-wrap:anywhere;
   overflow-x:hidden;
 }
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit;touch-action:manipulation}
 button:disabled{opacity:.55;cursor:default}
 a{color:var(--accent-text);text-decoration:none;touch-action:manipulation}
 code{font-family:var(--font-mono);font-size:.92em;background:var(--surface-2);border-radius:5px;padding:1px 5px}
+/* Code that must keep its columns scrolls in place; its words are not
+   prose, so the root break rule is off inside it. */
+pre{overflow-wrap:normal;overflow-x:auto}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 h1:focus,h1:focus-visible,h2:focus,h2:focus-visible{outline:none}
 .skip-link{position:fixed;top:-60px;left:8px;z-index:200;background:var(--accent);color:var(--on-accent);padding:8px 12px;border-radius:var(--r-control);font-size:14px;font-weight:600}
@@ -183,33 +187,40 @@ input[type="text"],input[type="search"],input[type="url"],input:not([type]),text
 }
 .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
 .brand .mark{display:none}
-.brand .brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em;white-space:nowrap}
+.brand .brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em;white-space:normal;min-width:0}
 .rail-mark{display:none;font-family:var(--font-mono);font-weight:600;font-size:14px}
 .phone-bar{display:none}
 .rail a,.rail .nav-off{
   display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);
-  color:var(--text-2);font-weight:600;font-size:14px;text-decoration:none;
+  color:var(--text-2);font-weight:600;font-size:14px;text-decoration:none;min-width:0;
   transition:background var(--dur) ease,color var(--dur) ease;
 }
+/* The label gives way, not the mark: a long entry ellipsizes inside the
+   rail instead of pushing the column past its border. The link's own
+   aria-label is the reachable full name. */
+.rail .rail-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rail a:hover{background:var(--surface-3);color:var(--text)}
 .rail a[aria-current="page"]{background:var(--surface-2);color:var(--heading);box-shadow:inset 2px 0 0 var(--accent);border-radius:0 var(--r-control) var(--r-control) 0}
 .rail .nav-off{opacity:.45}
 .rail .count{
   margin-left:8px;font-family:var(--font-mono);font-size:14px;font-weight:500;
-  background:transparent;color:var(--text);border-radius:0;padding:0;
+  background:transparent;color:var(--text);border-radius:0;padding:0;flex:none;
 }
 .rail .user{display:flex;gap:10px;align-items:center;padding:10px 8px 4px;border-top:1px solid var(--rule)}
 .rail .user .avatar{
   width:30px;height:30px;border-radius:var(--r-pill);display:grid;place-items:center;
   font-weight:800;font-size:14px;color:var(--accent-text);background:var(--accent-tint);
+  min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;
 }
+.rail .user > div{min-width:0}
 .rail .user small{display:block;color:var(--muted);font-weight:400}
 .rail .user .user-name{font-size:14px;font-weight:600}
 .rail-toggle{
   display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);
-  color:var(--muted);font-weight:600;font-size:14px;margin-top:8px;
+  color:var(--muted);font-weight:600;font-size:14px;margin-top:8px;max-width:100%;min-width:0;
   transition:background var(--dur) ease,color var(--dur) ease;
 }
+.rail-toggle-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rail-toggle:hover{background:var(--surface-3);color:var(--text)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
    drops its text; the column narrows to the mark width. Mirrors the
@@ -259,17 +270,17 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   background:var(--surface);border:1px solid var(--rule);box-shadow:none;
 }
 .cmd-inner{
-  display:flex;align-items:flex-end;gap:12px;padding:8px 8px 8px 16px;border-radius:inherit;
+  display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;padding:8px 8px 8px 16px;border-radius:inherit;
 }
 .cmd:focus-within{border-color:var(--rule-strong)}
 .cmd-icon{color:var(--muted);padding-bottom:10px}
 .cmd-field{
-  flex:1;min-width:0;border:none;background:none;color:var(--text);
+  flex:1 1 220px;min-width:0;border:none;background:none;color:var(--text);
   font:400 14px/1.5 var(--font-ui);resize:none;padding:6px 0;
   max-height:9.5em;
 }
 .cmd-field::placeholder{color:var(--muted)}
-.cmd-hint{align-self:center;color:var(--muted);font-size:13px;white-space:nowrap;padding:0 2px}
+.cmd-hint{align-self:center;color:var(--muted);font-size:13px;white-space:normal;min-width:0;flex:0 1 auto;padding:0 2px}
 .cmd-hint kbd{
   font-family:var(--font-mono);font-size:12px;color:var(--text-2);
   background:var(--surface-2);border-radius:var(--r-inner);padding:2px 6px;
@@ -277,10 +288,11 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 }
 .cmd-send{
   display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;
-  min-height:36px;font-weight:600;font-size:14px;white-space:nowrap;
+  min-height:36px;font-weight:600;font-size:14px;white-space:nowrap;max-width:100%;
   background:var(--surface-3);color:var(--heading);box-shadow:inset 0 0 0 1px var(--rule-strong);
   transition:background var(--dur) ease,box-shadow var(--dur) ease;
 }
+.cmd-magnet{flex:none;max-width:100%}
 .cmd-send svg{color:var(--accent-text)}
 .cmd-send:hover:not(:disabled){box-shadow:inset 0 0 0 1px var(--accent)}
 .cmd-send:active:not(:disabled){filter:brightness(.92)}
@@ -302,10 +314,13 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 /* Amber stays a stamp-level treatment (the Manila pair on the freshness
    stamp and the alert block); the card itself stays paper-white. */
 .widget{padding:18px 18px 14px;display:flex;flex-direction:column;gap:12px;height:100%;width:100%;align-self:stretch;color:var(--text);line-height:1.5;text-align:left}
-.w-head{display:flex;align-items:center;gap:12px;min-height:30px;flex:none}
-.w-head h2{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
+.w-head{display:flex;flex-wrap:wrap;position:relative;align-items:center;gap:12px;min-height:30px;flex:none}
+/* The dots sit in their own right-hand gutter, so the title and the chips
+   wrap under it instead of squeezing beside it. */
+.w-head.has-menu{padding-right:40px}
+.w-head h2{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.01em;flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
 .stamp{
-  margin-left:auto;display:inline-flex;align-items:center;gap:7px;flex:none;
+  margin-left:auto;display:inline-flex;align-items:center;gap:7px;flex:none;max-width:100%;overflow-x:auto;
   font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;
 }
 .stamp.amber{
@@ -321,6 +336,7 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 /* 12px of padding plus two 12px lines at 1.5. */
 .w-foot.two-line{min-height:48px}
 .badge-pilot{
+  flex:none;
   font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--accent-text);
   background:var(--surface-2);border-radius:var(--r-pill);padding:3px 10px;
 }
@@ -329,12 +345,11 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
   border-radius:var(--r-inner);color:var(--muted);transition:background var(--dur) ease,color var(--dur) ease;
 }
 .icon-btn:hover{background:var(--surface-3);color:var(--text)}
-/* The overflow menu: a small white sheet under the dots, the paper-lift
-   shadow the only depth, items answering with the hover wash. The
-   stamp keeps its own auto margin, so the dots follow it tightly. */
-.w-menu-wrap{position:relative;flex:none}
+/* The overflow menu: a small white sheet under the dots, anchored in the
+   header's reserved right gutter so it never widens the document. */
+.w-menu-wrap{position:absolute;top:0;right:0;flex:none}
 .w-menu{
-  position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:176px;
+  position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:176px;max-width:calc(100vw - 32px);
   display:flex;flex-direction:column;padding:4px;border-radius:var(--r-control);
   background:var(--surface);box-shadow:var(--shadow-card-hover);
 }
@@ -367,18 +382,11 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
    terracotta speaks through the delta chips and the table rows. */
 .kpi{display:flex;flex-direction:column;gap:6px;padding:6px 0 2px}
 .kpi .label{font-size:12px;font-weight:600;color:var(--muted)}
-.kpi .value{
-  font-family:var(--font-mono);font-size:56px;font-weight:500;line-height:1;
-  letter-spacing:-.01em;color:var(--accent-text);
-  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
-}
-.kpi .value.down{color:var(--text-2)}
-.kpi .value.flat{color:var(--text)}
 .kpi .sub{font-size:12px;color:var(--muted)}
 .kpi-split{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .kpi-chip{
   display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:11.5px;font-weight:600;
-  border-radius:var(--r-pill);padding:3px 10px;
+  border-radius:var(--r-pill);padding:3px 10px;max-width:100%;
 }
 .kpi-chip.up{color:var(--accent-text);background:var(--accent-tint)}
 .kpi-chip.down{color:var(--text-2);background:var(--surface-2)}
@@ -400,6 +408,7 @@ table.rows td.neg{color:var(--text-2)}
 
 .event{display:flex;gap:14px;border-radius:var(--r-inner);padding:12px 14px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--rule)}
 .event .when{font-family:var(--font-mono);font-size:12.5px;font-weight:600;color:var(--accent-text);white-space:nowrap;padding-top:2px}
+.event > div{min-width:0}
 .event b{display:block;font-weight:700;overflow-wrap:anywhere}
 .event small{color:var(--text-2)}
 .w-big{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--text)}
@@ -444,6 +453,7 @@ table.rows td.neg{color:var(--text-2)}
 .follow{
   display:inline-flex;align-items:center;gap:8px;background:var(--surface-2);color:var(--accent-text);
   border-radius:var(--r-pill);padding:5px 12px;font-size:12.5px;font-weight:600;align-self:flex-start;
+  max-width:100%;
 }
 
 .well{
@@ -465,7 +475,7 @@ table.rows td.neg{color:var(--text-2)}
 .src{
   display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-2);
   background:var(--surface);box-shadow:inset 0 0 0 1px var(--rule);
-  border-radius:var(--r-pill);padding:3px 10px;margin:10px 8px 0 0;
+  border-radius:var(--r-pill);padding:3px 10px;margin:10px 8px 0 0;max-width:100%;
 }
 .research-status{display:flex;align-items:center;gap:10px;color:var(--text-2);font-size:13px}
 .command-status{margin:6px 0 0}
@@ -479,7 +489,7 @@ table.rows td.neg{color:var(--text-2)}
 /* Buttons. One solid-green primary per surface, quiet white secondary. */
 .btn{
   display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;
-  min-height:36px;font-weight:700;white-space:nowrap;color:var(--text);
+  min-height:36px;font-weight:700;white-space:nowrap;max-width:100%;overflow-x:auto;color:var(--text);
   transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;
 }
 .btn-primary{
@@ -540,16 +550,26 @@ table.rows td.neg{color:var(--text-2)}
 .brief .span-4{grid-column:span 4}
 .brief .span-6{grid-column:span 6}
 .brief .span-12{grid-column:span 12}
+/* The health matrix is the desk's one data table: four columns and a
+   header cannot share a quarter of the brief without squeezing, so it
+   takes the full row. The plugin cells below it sit two across, which
+   leaves no empty quarter beside a lone pair. */
+.brief .span-4{grid-column:span 6}
+.brief .cell-health{grid-column:1/-1}
 .cell{
   position:relative;display:flex;flex-direction:column;align-items:stretch;gap:12px;min-width:0;
   border:1px solid var(--rule);border-radius:var(--r-card);background:var(--surface);
   background-image:var(--cell-texture);padding:16px 20px 18px;
 }
-.cell-head{display:flex;align-items:center;gap:10px;min-height:20px}
+.cell-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-height:20px}
 .tag{margin:0;font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;color:var(--muted)}
-.cell-meta{margin-left:auto;font-size:12px;color:var(--muted)}
+/* The tag is the cell's heading: it keeps a floor and gives way with the
+   reachable title (CellHead) rather than pushing the meta off the card. */
+.cell-head .tag{flex:1 1 120px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell-meta{flex:none;margin-left:auto;font-size:12px;color:var(--muted)}
 .cell-meta .mono{font-size:12px}
 .sample-tag{
+  flex:none;max-width:100%;
   font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--muted);
   border:1px solid var(--rule-strong);border-radius:var(--r-inner);padding:1px 6px;
 }
@@ -573,6 +593,7 @@ table.rows td.neg{color:var(--text-2)}
 .kpi .value{
   font-family:var(--font-mono);font-size:56px;font-weight:500;line-height:1;letter-spacing:-.03em;
   color:var(--accent-text);font-variant-numeric:tabular-nums;white-space:nowrap;
+  max-width:100%;overflow-x:auto;
 }
 :root[data-theme="momentuum"] .kpi .value,:root[data-theme="coforge"] .kpi .value{color:var(--heading)}
 .kpi .value.down,.kpi .value.flat{color:var(--heading)}
@@ -583,7 +604,7 @@ table.rows td.neg{color:var(--text-2)}
 .hero-stats div{flex:1;padding:10px 0 0;display:flex;flex-direction:column;gap:2px}
 .hero-stats div + div{border-left:1px solid var(--rule);padding-left:14px}
 .hero-stats dt{font-size:12px;color:var(--muted)}
-.hero-stats dd{margin:0;font-family:var(--font-mono);font-size:20px;color:var(--heading);font-variant-numeric:tabular-nums}
+.hero-stats dd{margin:0;font-family:var(--font-mono);font-size:20px;color:var(--heading);font-variant-numeric:tabular-nums;white-space:nowrap}
 
 .stage-chart{margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}
 .chart-cap{margin:0;font-size:12px;color:var(--muted)}
@@ -597,8 +618,8 @@ table.rows td.neg{color:var(--text-2)}
 .stage-val.up{color:var(--text)}
 .stage-val.down{color:var(--muted)}
 .stage-axis{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:12px;border-top:1px solid var(--rule);padding:8px 2px 0}
-.stage-axis span{display:flex;flex-direction:column;align-items:center;text-align:center;font-size:12px;color:var(--text-2);line-height:1.3}
-.stage-axis small{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.stage-axis span{display:flex;flex-direction:column;align-items:center;text-align:center;font-size:12px;color:var(--text-2);line-height:1.3;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stage-axis small{font-family:var(--font-mono);font-size:11px;color:var(--muted);display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Dotted wireframes: what a cell will draw once it has data. */
 .wire-chart{height:96px;display:flex;align-items:flex-end;gap:10px;padding:8px 10px 0;border-bottom:1px dashed var(--rule-strong)}
@@ -615,7 +636,7 @@ table.rows td.neg{color:var(--text-2)}
 .wire-wide .wire-copy{flex-direction:row;align-items:center;justify-content:space-between;flex:1;gap:16px}
 
 /* Moves: one ruled table, figures right-aligned in mono. */
-.table-scroll{overflow-x:auto;margin:0 -4px;padding:0 4px}
+.table-scroll{overflow-x:auto;margin:0;padding:0}
 .moves{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:auto}
 .moves th,.moves td{text-align:left;padding:9px 10px 9px 0;border-bottom:1px solid var(--rule);vertical-align:middle;white-space:nowrap}
 .moves thead th{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--muted);padding-top:0}
@@ -635,15 +656,15 @@ table.rows td.neg{color:var(--text-2)}
 .change-bar span{display:block;height:100%;background:currentColor;margin-left:auto}
 
 /* Decisions: ruled rows, the action right-aligned. */
-.setup-meter{display:flex;align-items:center;gap:4px}
+.setup-meter{display:flex;align-items:center;gap:4px;max-width:100%;overflow-x:auto}
 .setup-meter span:not(.setup-meter-label){flex:1;height:4px;border-radius:2px;background:var(--surface-3)}
 .setup-meter span.on{background:var(--accent)}
-.setup-meter-label{flex:none!important;margin-left:8px;font-size:12px;color:var(--muted)}
+.setup-meter-label{flex:0 1 auto!important;min-width:0;white-space:nowrap;overflow-x:auto;margin-left:8px;font-size:12px;color:var(--muted)}
 .decisions{list-style:none;margin:0;padding:0}
 .decisions li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--rule);flex-wrap:wrap}
 .decisions li:last-child{padding-bottom:0}
 .decision-text{display:flex;flex:1 1 220px;flex-direction:column;gap:2px;min-width:0}
-.decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto}
+.decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;max-width:100%}
 .decision-title{font-weight:600;color:var(--heading);font-size:14px}
 .decision-why{font-size:12.5px;color:var(--muted);line-height:1.4}
 .cell-decisions{flex:0 0 auto!important}
@@ -666,15 +687,15 @@ table.rows td.neg{color:var(--text-2)}
 .gs-mark{
   grid-area:mark;display:inline-grid;place-items:center;width:22px;height:22px;
   border:1px solid var(--rule-strong);border-radius:var(--r-inner);
-  font-family:var(--font-mono);font-size:12px;color:var(--text-2);
+  font-family:var(--font-mono);font-size:12px;color:var(--text-2);white-space:nowrap;overflow-x:auto;
   transition:background var(--dur) ease,border-color var(--dur) ease,color var(--dur) ease;
 }
 .gs-step[aria-current="step"] .gs-mark{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .gs-step.is-done .gs-mark{color:var(--accent-text);border-color:var(--accent)}
 .gs-head{grid-area:head;display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;min-width:0}
-.gs-title{font-weight:600;color:var(--heading);font-size:14px}
+.gs-title{font-weight:600;color:var(--heading);font-size:14px;flex:1 1 120px;min-width:0}
 .gs-why{grid-area:why;font-size:12.5px;color:var(--muted);line-height:1.4}
-.gs-action{flex:none}
+.gs-action{flex:none;max-width:100%}
 .gs-state{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:var(--muted)}
 .gs-foot{
   display:flex;flex-wrap:wrap;align-items:center;gap:0 8px;margin:0;
@@ -682,21 +703,22 @@ table.rows td.neg{color:var(--text-2)}
 }
 
 /* Digest: a timeline. Time, source, what. */
-.digest{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.digest{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;max-width:100%;overflow-x:auto}
 .digest li{display:grid;grid-template-columns:44px 40px minmax(0,1fr);gap:4px 10px;align-items:baseline;padding:10px 0;border-top:1px solid var(--rule)}
 .digest li:first-child{border-top:none;padding-top:2px}
-.digest-time{font-family:var(--font-mono);font-size:12px;color:var(--text);font-variant-numeric:tabular-nums}
-.digest-src{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;color:var(--muted);border:1px solid var(--rule);border-radius:var(--r-inner);padding:0 4px;text-align:center;justify-self:start}
+.digest-time{font-family:var(--font-mono);font-size:12px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow-x:auto}
+.digest-src{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;color:var(--muted);border:1px solid var(--rule);border-radius:var(--r-inner);padding:0 4px;text-align:center;justify-self:start;white-space:nowrap;max-width:100%;overflow-x:auto}
 .digest-text{display:flex;flex-direction:column;min-width:0}
 .digest-title{font-size:13.5px;font-weight:500;color:var(--heading);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .digest-detail{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cell-digest.is-empty{flex:0 0 auto!important}
 .brief-side .cell-digest.is-empty:only-child,.brief-side .cell-digest.is-empty:last-child{flex:1 1 auto!important}
-.moves-wire{flex:1;display:flex;flex-direction:column;justify-content:space-between;min-height:0}
+.moves-wire{flex:1;display:flex;flex-direction:column;justify-content:space-between;min-height:0;max-width:100%;overflow-x:auto}
 .mw-row{display:grid;grid-template-columns:minmax(0,2.4fr) minmax(0,1.2fr) minmax(0,.8fr) minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:center;padding:12px 0;border-bottom:1px dashed var(--rule)}
 .mw-row i{height:10px;border:1px dashed var(--rule-strong);border-radius:2px}
 .mw-row i:nth-child(n+3){justify-self:end}
 .mw-head{padding-top:0;border-bottom:1px solid var(--rule);font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;color:var(--muted)}
+.mw-head span{min-width:0;white-space:nowrap;overflow-x:auto}
 .mw-head span:nth-child(n+3){text-align:right}
 .digest-wire{list-style:none;margin:0;padding:0;flex:1;display:flex;flex-direction:column;justify-content:space-evenly;min-height:0}
 .digest-wire li{display:flex;align-items:center;gap:14px;padding:6px 0}
@@ -705,26 +727,34 @@ table.rows td.neg{color:var(--text-2)}
 .digest-empty{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px dashed var(--rule-strong);border-radius:var(--r-control);padding:10px 12px}
 .digest-empty p{margin:0;font-size:13.5px;color:var(--text-2)}
 
-/* Desk health: a status matrix. */
-.matrix{width:100%;border-collapse:collapse;font-size:13px}
-.matrix th,.matrix td{padding:8px 8px 8px 0;border-bottom:1px solid var(--rule);text-align:left;white-space:nowrap}
+/* Desk health: a status matrix that fits its card. The fixed layout gives
+   every column a share, so no nowrap cell can push the table past the
+   card; words wrap at their spaces and a single long token scrolls inside
+   its own cell. Compared numbers stay on one line. */
+.matrix{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+.matrix th,.matrix td{padding:8px 8px 8px 0;border-bottom:1px solid var(--rule);text-align:left;white-space:normal;overflow-wrap:normal;overflow-x:auto}
 .matrix thead th{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--muted);padding-top:0}
-.matrix tbody th{font-weight:500;color:var(--heading);max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.matrix thead th:nth-child(1){width:30%}
+.matrix thead th:nth-child(2){width:28%}
+.matrix thead th:nth-child(3){width:20%}
+.matrix thead th:nth-child(4){width:22%}
+.matrix tbody th{font-weight:500;color:var(--heading);overflow:hidden;text-overflow:ellipsis}
 .matrix tbody tr:last-child th,.matrix tbody tr:last-child td{border-bottom:none}
 .matrix td{color:var(--text-2)}
+.matrix td.num{white-space:nowrap}
 .matrix .num{text-align:right;padding-right:0;padding-left:14px}
 .sq{display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:1px;background:var(--faint);vertical-align:0}
 .sq.on{background:var(--accent)}
 
 /* Tracker: name, figure, signed change, trend, pace. */
 .tracker,.tracker-card{display:flex;flex-direction:column;gap:10px;min-width:0;flex:1}
-.tracker-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.tracker-title h3{margin:0;font-family:var(--font-heading);font-weight:var(--heading-weight);font-size:15px;color:var(--heading)}
-.tracker-figure{display:flex;align-items:baseline;gap:8px}
-.figure{font-family:var(--font-mono);font-size:36px;font-weight:500;letter-spacing:-.02em;line-height:1.05;color:var(--heading);font-variant-numeric:tabular-nums}
-.figure-unit{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
-.tracker-delta{margin:0;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
-.delta-chip{font-family:var(--font-mono);font-size:12.5px;color:var(--text-2);border:1px solid var(--rule);border-radius:var(--r-inner);padding:1px 6px}
+.tracker-title{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.tracker-title h3{margin:0;font-family:var(--font-heading);font-weight:var(--heading-weight);font-size:15px;color:var(--heading);flex:1 1 120px;min-width:0}
+.tracker-figure{display:flex;align-items:baseline;gap:8px;max-width:100%;overflow-x:auto}
+.figure{font-family:var(--font-mono);font-size:36px;font-weight:500;letter-spacing:-.02em;line-height:1.05;color:var(--heading);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+.figure-unit{font-family:var(--font-mono);font-size:13px;color:var(--muted);white-space:nowrap;flex:none}
+.tracker-delta{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);min-width:0}
+.delta-chip{font-family:var(--font-mono);font-size:12.5px;color:var(--text-2);border:1px solid var(--rule);border-radius:var(--r-inner);padding:1px 6px;white-space:nowrap;flex:none;max-width:100%;overflow-x:auto}
 .delta-chip.up{color:var(--accent-text);background:var(--accent-tint);border-color:transparent}
 .spark{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
 .spark svg{width:100%;height:56px;overflow:visible}
@@ -872,7 +902,7 @@ table.rows td.neg{color:var(--text-2)}
 .theme-tile-text{display:flex;flex-direction:column;padding:0 4px 2px}
 .theme-tile-name{font-weight:600;color:var(--heading)}
 .theme-tile-note{font-size:12px;color:var(--muted)}
-.rail-theme{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 8px;border-top:1px solid var(--rule)}
+.rail-theme{margin-top:auto;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 8px;border-top:1px solid var(--rule)}
 .rail-theme-label{font-size:12px;color:var(--muted)}
 @media (max-width:980px){
   .app{display:block}
