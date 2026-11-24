@@ -227,6 +227,19 @@ from agentdesk.server.core import (
     plain_preview,
 )
 from agentdesk.agentloop import AgentLoop, LoopContext, Step, register_step
+from agentdesk.agentloop.loop import (
+    STEP_ORDER_CURATOR,
+    STEP_ORDER_LEARN_TOPICS,
+    STEP_ORDER_PROFILE_REVIEW,
+    STEP_ORDER_RANK,
+    STEP_ORDER_RECOMMEND,
+    STEP_ORDER_SKILLS,
+    STEP_ORDER_UPDATE,
+    _curator_enabled,
+    _run_curator,
+    _run_skills,
+    _skills_enabled,
+)
 from agentdesk.recommend.rank import rank_enabled, rank_step
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
@@ -7849,27 +7862,26 @@ def _run_recommend(ctx) -> dict:
     return recommender.refresh()
 
 
-# Tickets 05 and 06 append their steps after the desk check, in the order
-# spec 016 section 6.2 gives: a pass heals, recommends, then ranks.
-register_step(Step(name="recommend", enabled=_recommend_enabled,
-                   run=_run_recommend))
-register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
+# Tickets 05 and 06 register their steps with the orders spec 016 section
+# 6.2 gives: a pass heals, recommends, then ranks. The declared order, not
+# this file's position, decides when each runs.
+register_step(Step(name="recommend", order=STEP_ORDER_RECOMMEND,
+                   enabled=_recommend_enabled, run=_run_recommend))
+register_step(Step(name="rank", order=STEP_ORDER_RANK,
+                   enabled=rank_enabled, run=rank_step))
 
 # Ticket 08's learned topics and ticket 09's profile review follow, then
-# ticket 10's skills and curator steps. The definitions stay in
-# agentloop/loop.py beside the desk check's.
-from agentdesk.agentloop.loop import (  # noqa: E402 - position is the order
-    _curator_enabled,
-    _run_curator,
-    _run_skills,
-    _skills_enabled,
-)
-register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
-                   run=_run_learn_topics))
-register_step(Step(name="profile-review", enabled=_profile_review_enabled,
-                   run=_run_profile_review))
-register_step(Step(name="skills", enabled=_skills_enabled, run=_run_skills))
-register_step(Step(name="curator", enabled=_curator_enabled, run=_run_curator))
+# ticket 10's skills and curator steps. The bodies of the last two stay in
+# agentloop/loop.py beside the desk check's until a later wave moves the
+# step bodies together.
+register_step(Step(name="learn-topics", order=STEP_ORDER_LEARN_TOPICS,
+                   enabled=_learn_topics_enabled, run=_run_learn_topics))
+register_step(Step(name="profile-review", order=STEP_ORDER_PROFILE_REVIEW,
+                   enabled=_profile_review_enabled, run=_run_profile_review))
+register_step(Step(name="skills", order=STEP_ORDER_SKILLS,
+                   enabled=_skills_enabled, run=_run_skills))
+register_step(Step(name="curator", order=STEP_ORDER_CURATOR,
+                   enabled=_curator_enabled, run=_run_curator))
 
 
 def _update_enabled(settings) -> bool:
@@ -7887,6 +7899,8 @@ def _run_update_step(ctx) -> dict:
     return run_update(ctx.server)
 
 
-# Ticket 11 appends the update step last: a pass heals, ranks, and then
-# reads the share, which is the only step that can replace the program.
-register_step(Step(name="update", enabled=_update_enabled, run=_run_update_step))
+# Ticket 11 registers the update step with the last order: a pass heals,
+# ranks, and then reads the share, which is the only step that can replace
+# the program.
+register_step(Step(name="update", order=STEP_ORDER_UPDATE,
+                   enabled=_update_enabled, run=_run_update_step))
