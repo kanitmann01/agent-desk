@@ -12,7 +12,9 @@ real side-car.
 import json
 import sys
 import time
+import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,6 +23,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from agentdesk.engine import TurnResult
 from agentdesk.server import app as server_app
 from server_harness import Booted, FakeEngine, _engine_actions
 
@@ -318,16 +321,257 @@ def test_the_first_engine_pass_acts_through_the_tools_route(monkeypatch):
         booted.close()
 
 
-def test_without_a_sidecar_the_pass_is_exactly_todays(monkeypatch):
-    """Side-car absent: no engine step in the pass, nothing new anywhere."""
+def test_without_a_sidecar_the_pass_says_so_and_runs_only_its_fixed_steps(monkeypatch):
+    """Side-car absent: the engine row names the fallback and executes nothing."""
     # Pinned absent: the test must hold on a machine that has the real
     # side-car installed, where the pass would otherwise run an engine turn.
     monkeypatch.setattr(server_app, "engine_available", lambda *a, **k: False)
     booted = Booted()
     try:
-        payload = _wait_for_pass(booted)
+        payload = _wait_for_pass(booted, want_step="engine")
         names = [row.get("name") for row in payload.get("lastSteps") or []]
-        assert "engine" not in names
-        assert names and all(row.get("ok") for row in payload["lastSteps"])
+        assert "engine" in names
+        engine_row = next(row for row in payload["lastSteps"]
+                          if row["name"] == "engine")
+        assert engine_row["ok"] is True
+        assert engine_row["detail"]["backend"] == "fallback"
+        assert engine_row["detail"]["actions"] == 0
+        assert engine_row["detail"]["acted"] == 0
+        assert engine_row["detail"]["refused"] == 0
+        assert "side-car is not installed" in engine_row["detail"]["note"]
+        # Nothing the engine could have run exists: no suggestion card and
+        # no engine-sourced ledger entry.
+        dashboard = _get_json(booted, "/api/dashboard")
+        assert dashboard.get("recommendations") == []
+        subjects = [row.get("subject") or "" for row in _ledger_json(booted)]
+        assert not any(subject.startswith("recommendation/engine:")
+                       for subject in subjects)
+        assert all(row.get("ok") for row in payload["lastSteps"])
+    finally:
+        booted.close()
+
+
+def test_a_non_ascii_token_is_a_plain_refusal():
+    """A Bearer token that is not ASCII answers 403, never a 500."""
+    booted = Booted()
+    try:
+        headers = {"Content-Type": "application/json",
+                   "Authorization": "Bearer tökén-ünicode"}
+        status, _h, body = booted.post_json(
+            "/api/engine/tools", {"tool": "desk_names"}, headers=headers)
+        assert status == 403 and b"token-unknown" in body
+    finally:
+        booted.close()
+
+
+def test_every_tool_call_is_audited_with_its_outcome(monkeypatch):
+    """engine.tool lands after the handler, ok for a read and error for a refusal."""
+    booted = Booted()
+    try:
+        status, _h, _b = _engine_post(booted, {"tool": "desk_names"})
+        assert status == 200
+        status, _h, _b = _engine_post(booted, {"tool": "format_the_disk"})
+        assert status == 400
+        rows = [row for row in _audit_rows(booted)
+                if row.get("action") == "engine.tool"]
+        assert [row["status"] for row in rows[:2]] == ["error", "ok"]
+        refused = next(row for row in rows if row["status"] == "error")
+        assert "unknown tool" in refused["detail"]
+    finally:
+        booted.close()
+
+
+def _audit_rows(booted: Booted) -> list[dict]:
+    """The audit tail's rows, newest first."""
+    return _get_json(booted, "/audit/tail").get("entries") or []
+
+
+def test_add_card_without_a_ledger_is_refused_before_any_write():
+    """No ledger: a plain 409 and no card anywhere."""
+    booted = Booted()
+    try:
+        booted.server.ledger = None
+        status, _h, body = _engine_post(booted, {"tool": "add_card", "args": {
+            "title": CARD_TITLE, "body": "Body.", "why": "Why."}})
+        assert status == 409 and b"ledger is not available" in body
+        assert _get_json(booted, "/api/dashboard").get("recommendations") == []
+        assert _get_json(booted, "/widgets/inbox")["waiting"] == 0
+    finally:
+        booted.close()
+
+
+def test_propose_fact_without_a_ledger_is_refused_before_any_write():
+    """No ledger: a plain 409 and no fact, card or excerpt."""
+    booted = Booted()
+    try:
+        booted.server.ledger = None
+        status, _h, body = _engine_post(
+            booted, {"tool": "propose_fact", "args": {"text": FACT}})
+        assert status == 409 and b"ledger is not available" in body
+        assert booted.server.memory.all() == []
+        assert booted.server.memory.sources() == []
+    finally:
+        booted.close()
+
+
+def _broken_record(**_kwargs):
+    """One ledger record that fails before it can promise an undo."""
+    raise RuntimeError("the ledger is unwritable")
+
+
+def test_add_card_rolls_back_when_the_ledger_record_fails():
+    """A failed record leaves no card, no latch and a 500."""
+    booted = Booted()
+    try:
+        booted.server.ledger.record = _broken_record
+        status, _h, body = _engine_post(booted, {"tool": "add_card", "args": {
+            "title": CARD_TITLE, "body": "Body.", "why": "Why."}})
+        assert status == 500 and b"nothing was added" in body
+        assert _get_json(booted, "/api/dashboard").get("recommendations") == []
+        assert _get_json(booted, "/widgets/inbox")["waiting"] == 0
+        rows = booted.server.ledger.conn.execute("SELECT key FROM latches").fetchall()
+        assert rows == []
+    finally:
+        booted.close()
+
+
+def test_a_stored_fact_rolls_back_when_the_ledger_record_fails():
+    """A failed record removes the stored fact before the 500."""
+    booted = Booted()
+    try:
+        booted.server.ledger.record = _broken_record
+        status, _h, body = _engine_post(
+            booted, {"tool": "propose_fact", "args": {"text": FACT}})
+        assert status == 500 and b"nothing was proposed" in body
+        assert booted.server.memory.all() == []
+    finally:
+        booted.close()
+
+
+def test_a_staged_fact_rolls_back_when_the_ledger_record_fails():
+    """A failed record removes the staged card before the 500."""
+    booted = Booted()
+    try:
+        booted.server.settings.set("memory_auto_approve", False)
+        booted.server.ledger.record = _broken_record
+        status, _h, body = _engine_post(
+            booted, {"tool": "propose_fact", "args": {"text": FACT}})
+        assert status == 500 and b"nothing was proposed" in body
+        assert _get_json(booted, "/widgets/inbox")["waiting"] == 0
+        assert booted.server.memory.sources() == []
+    finally:
+        booted.close()
+
+
+def test_a_staged_fact_creates_its_excerpt_only_on_approval():
+    """Rejecting a staged proposal leaves no source excerpt behind."""
+    booted = Booted()
+    try:
+        booted.server.settings.set("memory_auto_approve", False)
+        status, _h, body = _engine_post(
+            booted, {"tool": "propose_fact", "args": {"text": FACT}})
+        assert status == 201, body
+        loop = _get_json(booted, "/api/memory/loop")
+        assert loop["counts"]["sources"] == 0
+        candidate = loop["candidates"][0]
+        assert candidate["excerpt"]["text"].startswith("The desk proposed:")
+        booted.post_json(f"/inbox/cards/{candidate['cardId']}/dismiss", {},
+                         headers=_headers(booted))
+        assert booted.server.memory.sources() == []
+        assert booted.server.memory.all() == []
+    finally:
+        booted.close()
+
+
+def test_approving_a_staged_fact_creates_the_excerpt_and_the_fact():
+    """Approving writes the fact and the source the card carried as text."""
+    booted = Booted()
+    try:
+        booted.server.settings.set("memory_auto_approve", False)
+        status, _h, body = _engine_post(
+            booted, {"tool": "propose_fact", "args": {"text": FACT}})
+        assert status == 201, body
+        card_id = _get_json(booted, "/api/memory/loop")["candidates"][0]["cardId"]
+        status, _h, _b = booted.post_json(
+            f"/inbox/cards/{card_id}/accept", {}, headers=_headers(booted))
+        assert status in (200, 201)
+        facts = booted.server.memory.all()
+        assert [fact.text for fact in facts] == [FACT]
+        sources = booted.server.memory.sources()
+        assert len(sources) == 1
+        assert sources[0].text.startswith("The desk proposed:")
+        assert facts[0].source_id == sources[0].id
+    finally:
+        booted.close()
+
+
+def test_a_transport_failure_refuses_one_action_and_continues(monkeypatch):
+    """A dead socket counts as refused; the next action still runs."""
+    booted = Booted()
+    try:
+        calls = []
+
+        def flaky(server, payload):
+            """The first call loses its socket; the second answers 200."""
+            calls.append(payload["tool"])
+            if len(calls) == 1:
+                raise urllib.error.URLError("the desk is not answering")
+            return 200, {"tool": payload["tool"]}
+
+        monkeypatch.setattr(server_app, "_engine_tools_post", flaky)
+        acted, refused = server_app.execute_engine_actions(
+            booted.server, _engine_actions(desk_names={}, desk_probes={}))
+        assert calls == ["desk_names", "desk_probes"]
+        assert (acted, refused) == (1, 1)
+    finally:
+        booted.close()
+
+
+class _FailingEngine(FakeEngine):
+    """A turn that reports its own failure and a boundary refusal."""
+
+    def run_turn(self, context: str, *, connection=None, **kwargs) -> TurnResult:
+        """Answer a failed turn carrying one boundary refusal."""
+        self.turns.append({"context": context, "connection": connection})
+        return TurnResult(backend="sidecar", ok=False,
+                          note="The engine side-car turn failed.",
+                          refusals=("refused an unknown tool call: 'rm'",))
+
+
+def test_a_failed_turn_is_a_failed_engine_step_and_audit_row(monkeypatch):
+    """ok False in the turn becomes ok False in lastSteps and an error audit."""
+    monkeypatch.setattr(server_app, "engine_available", lambda *a, **k: True)
+    fake = _FailingEngine()
+    booted = Booted(engine_runner=fake)
+    try:
+        payload = _wait_for_pass(booted, want_step="engine")
+        row = next(row for row in payload["lastSteps"] if row["name"] == "engine")
+        assert row["ok"] is False
+        assert row["detail"]["refused"] == 1
+        assert row["detail"]["ok"] is False
+        passes = [entry for entry in _audit_rows(booted)
+                  if entry.get("action") == "engine.pass"]
+        assert passes and passes[0]["status"] == "error"
+        assert "refused" in passes[0]["detail"]
+    finally:
+        booted.close()
+
+
+def test_the_engine_step_does_not_run_the_fixed_loop(monkeypatch):
+    """Inside a pass the absent side-car is a sentence, never run_pass."""
+    monkeypatch.setattr(server_app, "engine_available", lambda *a, **k: False)
+    booted = Booted()
+    try:
+        calls = []
+        loop = booted.server.agent_loop
+        monkeypatch.setattr(loop, "run_pass", lambda *a, **k: calls.append("pass"))
+        outcome = server_app.engine_step_run(SimpleNamespace(server=booted.server))
+        assert calls == []
+        assert outcome == {
+            "backend": "fallback", "ok": True, "actions": 0, "acted": 0,
+            "refused": 0,
+            "note": ("The side-car is not installed; the pass's fixed steps "
+                     "are the fallback.")}
+        assert _ledger_json(booted) == []
     finally:
         booted.close()
