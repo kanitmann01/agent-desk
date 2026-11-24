@@ -227,6 +227,7 @@ def test_every_reload_is_decided_by_the_response_status():
     assert "causeOf(res)" in apply
     connect = _js_block(source, "var connect = function (path) {")
     assert "shouldReloadAfterPost(res.ok)" in connect
+    assert "causeOf(res)" in connect
     upload = source[source.index("reader.onload = function () {"):]
     upload = upload[:upload.index("reader.readAsText(file);")]
     assert "shouldReloadAfterPost(res.ok)" in upload

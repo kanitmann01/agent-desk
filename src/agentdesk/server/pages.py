@@ -824,12 +824,13 @@ Array.prototype.forEach.call(
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({path: path})})
       .then(function (r) {
-        return r.json().then(function (d) { return {ok: r.ok, data: d}; });
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return {ok: r.ok, data: d}; });
       })
       .then(function (res) {
-        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+        if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
           setButtonBusy(btn, false);
-          show(res.data.error || 'The workbook was not connected; nothing changed.');
+          show(causeOf(res));
           return;
         }
         location.reload();
