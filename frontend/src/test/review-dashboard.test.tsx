@@ -276,6 +276,35 @@ describe('a plugin that cannot run on this desk', () => {
     payload: { elements: [{ kind: 'text', label: 'Reading', text: 'A note.' }] },
   };
 
+  // The tracker's amber card: the workbook moved, locked or is unreadable.
+  // It carries no payload and no setup step, and only its own Set up control
+  // can fix it.
+  const TRACKER_ATTENTION: PluginCard = {
+    id: 'excel-report~moved',
+    title: 'Pipeline tracker',
+    version: '0.1.0',
+    pilot: false,
+    state: 'enabled',
+    freshness: 'attention',
+    cause: 'The workbook moved or is unreadable.',
+    pluginId: 'excel-report',
+    instanceId: 'moved',
+    payload: null,
+  };
+
+  // A non-tracker attention card with no payload for a reason other than
+  // the transport: nothing says it cannot run here, so it must fail open.
+  const NULL_PAYLOAD: PluginCard = {
+    id: 'headcount-digest',
+    title: 'Headcount digest',
+    version: '0.1.0',
+    pilot: false,
+    state: 'enabled',
+    freshness: 'attention',
+    cause: 'The data source did not answer.',
+    payload: null,
+  };
+
   /** The home screen with one plugin card set and no builtin columns. */
   function show(deskNetwork: boolean | undefined, cards: PluginCard[]) {
     const data: DashboardData = {
@@ -299,13 +328,16 @@ describe('a plugin that cannot run on this desk', () => {
   });
 
   it('explains the absence on an older payload with no deskNetwork', () => {
-    show(undefined, [CANNOT_RUN]);
+    show(undefined, [CANNOT_RUN, FRESH_PLUGIN]);
     expect(screen.queryByText('Competitor Watch')).toBeNull();
     expect(
       screen.getByText('No page is being watched. Name one page and see what changed on it.'),
     ).toBeInTheDocument();
     expect(screen.getByText('This desk cannot read web pages yet')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add a page' })).toBeNull();
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).queryByText('Competitor Watch')).toBeNull();
+    expect(within(health).getByText('Notes digester')).toBeInTheDocument();
   });
 
   it('carries the line under the sample watch when the desk cannot read the web', () => {
@@ -321,6 +353,24 @@ describe('a plugin that cannot run on this desk', () => {
     expect(within(watch).getByText('SAMPLE DATA')).toBeInTheDocument();
     expect(within(watch).getByText('This desk cannot read web pages yet')).toBeInTheDocument();
     expect(screen.queryByText('Competitor Watch')).toBeNull();
+  });
+
+  it('keeps a tracker whose workbook moved, with its Set up control', () => {
+    show(false, [TRACKER_ATTENTION]);
+    expect(screen.getAllByText('Pipeline tracker').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).getByText('Pipeline tracker')).toBeInTheDocument();
+    expect(within(health).getByText('0 of 1 live')).toBeInTheDocument();
+  });
+
+  it('keeps a null-payload attention card with no transport reason', () => {
+    show(false, [NULL_PAYLOAD]);
+    expect(screen.getAllByText('Headcount digest').length).toBeGreaterThan(0);
+    expect(screen.getByText('Re-test available')).toBeInTheDocument();
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).getByText('Headcount digest')).toBeInTheDocument();
+    expect(within(health).getByText('0 of 1 live')).toBeInTheDocument();
   });
 
   it('never hides an attention card that carries a setup step', () => {

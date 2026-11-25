@@ -78,27 +78,18 @@ function sourceReason(card: PluginCard): string {
   return typeof payload?.source?.reason === 'string' ? payload.source.reason : '';
 }
 
-/** True when an attention card has nothing to draw: no elements and no facet. */
-function hasNoReading(card: PluginCard): boolean {
-  const payload = card.payload;
-  if (!payload) return true;
-  if (payload.setup || payload.tracker || payload.insight || payload.face) return false;
-  return (payload.elements?.length ?? 0) === 0;
-}
-
 /**
  * True when this card cannot run on this desk, so it gets no home-screen tile.
  *
- * A card with a setup step always stays: a tracker whose workbook moved is
- * attention, but its Set up control can still do something. On a desk with
- * no web transport (deskNetwork false) an attention card with no reading is
- * a dead tile; on an older payload without the flag, the source's own
- * "no-transport" reason names the same refusal.
+ * Only the source's own "no-transport" code says so. The server drops such a
+ * card before it is sent (dashboard_plugin_cards); this is the safety net
+ * behind that filter, so it fails open: a card with no payload for any other
+ * reason (a tracker whose workbook moved) still gets its tile and its Set up.
+ * A tracker reads a workbook, never the web, and is never hidden here.
  */
-function cannotRunHere(card: PluginCard, deskNetwork: boolean | undefined): boolean {
-  if (card.freshness !== 'attention' || card.payload?.setup) return false;
-  if (deskNetwork === false) return hasNoReading(card);
-  return sourceReason(card) === 'no-transport';
+function cannotRunHere(card: PluginCard): boolean {
+  if (isTracker(card)) return false;
+  return card.freshness === 'attention' && sourceReason(card) === 'no-transport';
 }
 
 /** A clock time for an epoch-seconds stamp, or a hyphen when it is absent. */
@@ -185,7 +176,7 @@ export default function Brief({
   const skillsShown = shows('skills') && data.skills.length > 0;
   const columnCount = (salesShown ? 1 : 0) + (commitmentsShown ? 1 : 0);
   const pluginCards = data.plugins.cards
-    .filter((card) => layoutOrder.has(card.id) && !cannotRunHere(card, data.deskNetwork))
+    .filter((card) => layoutOrder.has(card.id) && !cannotRunHere(card))
     .sort((a, b) => (layoutOrder.get(a.id) ?? 0) - (layoutOrder.get(b.id) ?? 0));
   // A structural no-transport reason from any card is the same desk fact
   // the deskNetwork flag names, so an older payload still gets the honest
