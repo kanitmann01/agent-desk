@@ -87,14 +87,25 @@ const plan: RemovalPlan = {
 type Call = { url: string; body: unknown };
 
 // Routes answer by URL; GET /api/memory/loop answers the current state,
-// which a test can swap to show what the page reads after a write.
-function serve(initial: LoopState, extra: Record<string, unknown> = {}) {
+// which a test can swap to show what the page reads after a write. A
+// toggle of memory_auto_approve answers with the flipped value, as the
+// store does; holdToggle defers that answer so a test can look at the
+// segment while the write is still pending.
+function serve(initial: LoopState, extra: Record<string, unknown> = {}, options: { holdToggle?: boolean } = {}) {
   const calls: Call[] = [];
-  let current: unknown = initial;
+  let current: LoopState = initial;
+  let release: () => void = () => {};
+  const held = options.holdToggle ? new Promise<void>((resolve) => { release = resolve; }) : null;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    if (init?.method === 'POST') calls.push({ url, body });
+    if (init?.method === 'POST') {
+      calls.push({ url, body });
+      if (held && url === '/settings/toggle') await held;
+      if (url === '/settings/toggle' && (body as { key?: string })?.key === 'memory_auto_approve') {
+        current = { ...current, capture: { ...current.capture, autoApprove: !current.capture.autoApprove } };
+      }
+    }
     let payload: unknown = { ok: true };
     if (url === '/api/memory/loop') payload = current;
     else if (url === '/api/memory/graph') payload = graph;
@@ -102,7 +113,7 @@ function serve(initial: LoopState, extra: Record<string, unknown> = {}) {
     return { ok: true, status: 200, json: async () => payload } as Response;
   });
   vi.stubGlobal('fetch', fetchMock);
-  return { calls, set: (next: LoopState) => { current = next; } };
+  return { calls, set: (next: LoopState) => { current = next; }, release: () => release() };
 }
 
 afterEach(() => {
@@ -154,19 +165,79 @@ describe('MemoryLoop', () => {
     expect(within(review).getByText('Acme', { selector: '.ml-entity' })).toBeTruthy();
   });
 
-  it('turns capture switches and the review mode through /settings/toggle', async () => {
+  it('turns capture switches and each review segment through /settings/toggle', async () => {
     const { calls } = serve(state());
     const user = userEvent.setup();
     render(<MemoryLoop pollMs={0} />);
     const research = await screen.findByRole('switch', { name: /Research/ });
     expect(research.getAttribute('aria-checked')).toBe('true');
     await user.click(research);
-    await user.click(screen.getByRole('radio', { name: 'Save automatically' }));
-    // Already in review mode: choosing it again posts nothing.
+    await waitFor(() => expect(calls.map((c) => c.body)).toEqual([{ key: 'memory_capture_research' }]));
+
+    // Already in review mode: choosing that segment again posts nothing.
     await user.click(screen.getByRole('radio', { name: 'Ask me first' }));
+    expect(calls.map((c) => c.body)).toEqual([{ key: 'memory_capture_research' }]);
+
+    // The unselected segment saves the other choice.
+    await user.click(screen.getByRole('radio', { name: 'Save automatically' }));
     await waitFor(() => expect(calls.map((c) => c.body)).toEqual([
       { key: 'memory_capture_research' }, { key: 'memory_auto_approve' },
     ]));
+  });
+
+  it('switches automatic capture back to review from the unselected segment', async () => {
+    const auto = state({ capture: { ...state().capture, autoApprove: true } });
+    const { calls, release } = serve(auto, {}, { holdToggle: true });
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} />);
+    const ask = await screen.findByRole('radio', { name: 'Ask me first' });
+    const save = screen.getByRole('radio', { name: 'Save automatically' });
+    expect(ask.getAttribute('aria-checked')).toBe('false');
+    expect(save.getAttribute('aria-checked')).toBe('true');
+
+    await user.click(ask);
+    await waitFor(() => expect(ask).toHaveAttribute('aria-busy', 'true'));
+    expect(save).not.toHaveAttribute('aria-busy');
+    expect(calls).toEqual([{ url: '/settings/toggle', body: { key: 'memory_auto_approve' } }]);
+    expect(await screen.findByText('Saving when facts are reviewed…', {}, { timeout: 2000 })).toBeTruthy();
+
+    release();
+    await waitFor(() => expect(ask.getAttribute('aria-checked')).toBe('true'));
+    expect(save.getAttribute('aria-checked')).toBe('false');
+
+    // The segment that is already on starts nothing.
+    await user.click(ask);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('switches review to automatic capture from the unselected segment', async () => {
+    const { calls, release } = serve(state(), {}, { holdToggle: true });
+    const user = userEvent.setup();
+    render(<MemoryLoop pollMs={0} />);
+    const ask = await screen.findByRole('radio', { name: 'Ask me first' });
+    const save = screen.getByRole('radio', { name: 'Save automatically' });
+    expect(ask.getAttribute('aria-checked')).toBe('true');
+    expect(save.getAttribute('aria-checked')).toBe('false');
+
+    // Review is already on: pressing its segment posts nothing.
+    await user.click(ask);
+    expect(calls).toHaveLength(0);
+
+    await user.click(save);
+    await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'));
+    expect(ask).not.toHaveAttribute('aria-busy');
+    expect(calls).toEqual([{ url: '/settings/toggle', body: { key: 'memory_auto_approve' } }]);
+    // The wait names the direction chosen, not the one left behind.
+    expect(await screen.findByText('Saving facts as they are found…', {}, { timeout: 2000 })).toBeTruthy();
+    expect(screen.queryByText('Saving when facts are reviewed…')).toBeNull();
+
+    release();
+    await waitFor(() => expect(save.getAttribute('aria-checked')).toBe('true'));
+    expect(ask.getAttribute('aria-checked')).toBe('false');
+
+    // The segment that is already on starts nothing.
+    await user.click(save);
+    expect(calls).toHaveLength(1);
   });
 
   it('gives every truncated step and capture label its full text as a title', async () => {
