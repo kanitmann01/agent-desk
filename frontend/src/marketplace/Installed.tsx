@@ -39,7 +39,10 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
 }) {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${record.id}`;
-  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(true, onCancel);
+  // Escape and Cancel both wait while the purge runs, so the reader cannot
+  // close the sheet out from under a failure they would then never see.
+  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(
+    true, () => { if (!busy) onCancel(); });
   return (
     <div className="mkt-scrim" role="presentation">
       <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
@@ -59,7 +62,7 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
           {error && <p className="mkt-error" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={typed !== expected || busy}
                   aria-busy={busy ? 'true' : undefined}
                   onClick={onConfirm}>
@@ -100,12 +103,15 @@ export function InstalledPage() {
   const [purgeRecord, setPurgeRecord] = useState<InstalledSummary | null>(null);
   const [purgeError, setPurgeError] = useState('');
   const [cannotRunIds, setCannotRunIds] = useState<Set<string>>(() => new Set());
-  // What each plugin's detail said about its web use, keyed by plugin id.
-  // The list DTO carries no capability block, so the state is read once for
-  // each id in the installed set and never again for the same id.
+  // What each plugin's detail said about its web use, keyed by plugin id and
+  // pinned version, because capabilities belong to one release. A rollback or
+  // update must not keep the previous version's answer for the rest of the
+  // sitting.
   const webUse = useRef(new Map<string, boolean>());
   const confirmFocus = useDialogFocus<HTMLButtonElement>(confirm !== null, () => setConfirm(null));
-  const installedKey = load.kind === 'ready' ? load.data.plugins.map((record) => record.id).join('\u0000') : '';
+  const installedKey = load.kind === 'ready'
+    ? load.data.plugins.map((record) => `${record.id}\u0000${record.pinned.version}`).join('\u0000')
+    : '';
   const deskNetwork = load.kind === 'ready' ? load.data.deskNetwork : undefined;
 
   const loadList = useCallback(async () => {
@@ -124,33 +130,41 @@ export function InstalledPage() {
   useEffect(() => { void loadList(); }, [loadList, attempt]);
 
   // Decide the cannot-run state from the transport and each plugin's own
-  // capability data. The id set is the input: a list reload after a mutation
-  // with the same ids reuses the cached answer instead of re-reading every
-  // detail. A failed read claims nothing.
+  // capability data. The id and pinned version set is the input: a list
+  // reload after a mutation that keeps the same releases reuses the cached
+  // answer instead of re-reading every detail, while a rollback or update
+  // reaches the new release's capabilities. A failed read claims nothing.
   useEffect(() => {
     if (load.kind !== 'ready' || load.data.deskNetwork !== false) {
       setCannotRunIds((current) => (current.size === 0 ? current : new Set()));
       return undefined;
     }
-    const ids = load.data.plugins.map((record) => record.id);
+    const entries = load.data.plugins.map((record) => ({
+      id: record.id,
+      key: `${record.id}\u0000${record.pinned.version}`,
+    }));
     const cache = webUse.current;
     let cancelled = false;
-    /** Publish the answer for the ids now installed, ignoring a stale run. */
+    /** Publish the answer for the releases now installed, ignoring a stale run. */
     const apply = () => {
-      if (!cancelled) setCannotRunIds(new Set(ids.filter((id) => cache.get(id) === true)));
+      if (!cancelled) {
+        setCannotRunIds(new Set(entries
+          .filter((entry) => cache.get(entry.key) === true)
+          .map((entry) => entry.id)));
+      }
     };
-    const missing = ids.filter((id) => !cache.has(id));
+    const missing = entries.filter((entry) => !cache.has(entry.key));
     if (missing.length === 0) {
       apply();
       return undefined;
     }
-    void Promise.all(missing.map(async (id) => {
+    void Promise.all(missing.map(async (entry) => {
       try {
         const data = await getMarket<DetailResponse>(
-          `/api/marketplace/plugin/${encodeURIComponent(id)}`);
-        cache.set(id, asksForWeb(data.plugin.capabilities));
+          `/api/marketplace/plugin/${encodeURIComponent(entry.id)}`);
+        cache.set(entry.key, asksForWeb(data.plugin.capabilities));
       } catch {
-        cache.set(id, false);
+        cache.set(entry.key, false);
       }
     })).then(apply);
     return () => { cancelled = true; };

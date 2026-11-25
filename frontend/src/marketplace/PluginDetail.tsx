@@ -82,13 +82,19 @@ function Digest({ digest }: { digest: string }) {
   );
 }
 
+// The one honest line a refused install can offer: the policy is a local
+// file, so only its operator can change it, and this page has no control
+// for that.
+const POLICY_HELP = "Only whoever manages this desk's plugin policy can change that; there is no setting for it here.";
+
 /**
  * Render the action row: an install button while the plugin is absent, the
  * lifecycle controls once it is installed.
  *
  * A staged update that widens permissions replaces the update button with a
  * consent review, so no widening runs unread. Every control is disabled while
- * one action is in flight.
+ * one action is in flight. A plugin that cannot run here offers Remove as its
+ * only action, matching the Installed row.
  */
 function PluginActions({
   detail, installed, busy, busyShown, cannotRun = false, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
@@ -109,13 +115,35 @@ function PluginActions({
   const anyBusy = busy !== '';
   /** True while this exact action is the one in flight and past the 100 ms gate. */
   const pendingFor = (action: string) => busyShown && busy === action;
-  if (!installed) {
+  if (installed && cannotRun) {
+    // The Installed row's one action, for the same reason: nothing here can
+    // make this plugin run, so the only honest move is to remove it.
     return (
       <div className="mkt-actions">
-        <Button tone="primary" disabled={anyBusy || !detail.eligible} onClick={onInstall}>
-          Install plugin
-        </Button>
-        {!detail.eligible && <span className="mkt-action-note">This plugin is not available under the current policy.</span>}
+        <Button tone="primary" disabled={anyBusy} onClick={onUninstall}>Remove</Button>
+      </div>
+    );
+  }
+  if (!installed) {
+    return (
+      <div className="mkt-install">
+        <div className="mkt-actions">
+          <Button tone="primary" disabled={anyBusy || !detail.eligible} onClick={onInstall}>
+            Install plugin
+          </Button>
+        </div>
+        {!detail.eligible && (
+          <div className="mkt-install-reasons">
+            {detail.ineligibleReasons.length > 0 ? detail.ineligibleReasons.map((reason) => (
+              <p className="mkt-ineligible" key={reason.code || reason.message}>
+                <span className="mkt-ineligible-label">Not available:</span> {reason.message}
+              </p>
+            )) : (
+              <p className="mkt-action-note">This plugin is not available under the current policy.</p>
+            )}
+            <p className="mkt-action-note">{POLICY_HELP}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -170,7 +198,10 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
 }) {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${id}`;
-  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(true, onCancel);
+  // Escape and Cancel both wait while the purge runs, so the reader cannot
+  // close the sheet out from under a failure they would then never see.
+  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(
+    true, () => { if (!busy) onCancel(); });
   return (
     <div className="mkt-scrim" role="presentation">
       <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
@@ -190,7 +221,7 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
           {error && <p className="mkt-error" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary"
                   disabled={typed !== expected || busy} aria-busy={busy ? 'true' : undefined}
                   onClick={onConfirm}>
