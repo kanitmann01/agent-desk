@@ -180,11 +180,30 @@ def test_the_sheet_carries_the_busy_dot_the_label_stack_and_the_shapes():
     assert "animation:busy-dot" in css
     assert "@keyframes busy-dot" in css
     assert ".wait-ph{" in css
-    for shape in ("answer", "list", "card", "panel"):
+    for shape in ("answer", "list", "card", "panel", "widget"):
         assert f".wait-ph.{shape}" in css, shape
+    # The card sketch: a figure, five bars and two text lines, all dashed.
+    for part in ("wait-figure", "wait-chart", "wait-bar", "wait-text"):
+        assert f".wait-ph.widget .{part}" in css, part
+    assert ".wait-ph.widget .wait-bar:nth-child(5)" in css
     # The motion freezes when reduced motion is asked for.
     reduced = css.split("@media (prefers-reduced-motion:reduce)", 1)[1]
     assert "busy-dot" in reduced and "animation:none" in reduced
+
+
+def test_the_widget_sketch_keeps_the_older_shapes_rows():
+    source = pages.APP_JS
+    assert "function placeholderRows(shape)" in source
+    assert "if (shape === 'answer') return 3;" in source
+    assert "if (shape === 'list') return 4;" in source
+    assert "if (shape === 'card') return 2;" in source
+    assert "if (shape === 'widget') {" in source
+    assert "wait-figure" in source
+    assert "wait-chart" in source
+    assert "wait-bar" in source
+    assert "wait-text wait-text-a" in source
+    assert "wait-text wait-text-b" in source
+    assert "wire.setAttribute('aria-hidden', 'true')" in source
 
 
 # -- S2: every model-backed form names a region that exists --------------
@@ -289,6 +308,8 @@ def test_the_wizard_model_steps_wait_on_its_progress(booted):
         f for f in re.findall(r"<form[^>]*>.*?</form>", page, flags=re.S)
         if 'name="description"' in f)
     assert _attr(describe, "data-wait", "#wizard-progress")
+    assert _attr(describe, "data-wait-shape", wizard_view.CARD_WAIT_SHAPE)
+    assert _attr(describe, "data-wait-label", wizard_view.CARD_WAIT_LABEL)
     assert _attr(page, "id", "wizard-progress")
     headers = booted.exchange()
     status, _h, body = booted.post_json(
@@ -301,7 +322,33 @@ def test_the_wizard_model_steps_wait_on_its_progress(booted):
         f for f in re.findall(r"<form[^>]*>.*?</form>", answered, flags=re.S)
         if "answer" in f and "question" in f and "description" not in f)
     assert _attr(answer_form, "data-wait", "#wizard-progress")
+    # The source question only opens the next question, so it keeps the
+    # plain panel and the old label.
+    assert _attr(answer_form, "data-wait-shape", "panel")
+    assert _attr(answer_form, "data-wait-label", wizard_view.QUESTION_WAIT_LABEL)
     assert _attr(answered, "id", "wizard-progress")
+
+
+def test_a_wizard_answer_that_builds_the_card_draws_the_widget_sketch():
+    from agentdesk.wizard.core import questions_for_answers
+
+    answers = {
+        "source": "An Excel workbook",
+        "show": "The rows behind it",
+        "look": "A table",
+    }
+    page = wizard_view._questions_html({
+        "id": "wiz-demo",
+        "answers": answers,
+        "questions": questions_for_answers(answers),
+    })
+    forms = re.findall(r"<form[^>]*>.*?</form>", page, flags=re.S)
+    update = next(f for f in forms if "When should it update?" in f)
+    assert _attr(update, "data-wait-shape", wizard_view.CARD_WAIT_SHAPE)
+    assert _attr(update, "data-wait-label", wizard_view.CARD_WAIT_LABEL)
+    show = next(f for f in forms if "What should the tile show?" in f)
+    assert _attr(show, "data-wait-shape", "panel")
+    assert _attr(show, "data-wait-label", wizard_view.QUESTION_WAIT_LABEL)
 
 
 # -- F5: the result page says the outcome and holds the heading ----------

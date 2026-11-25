@@ -3,6 +3,7 @@
 // no row changes state before the server answers.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Button from '../components/Button';
+import { announce } from '../components/feedback';
 import { useBusy } from '../components/useBusy';
 import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import { getMarket, marketErrorText, postMarket } from './client';
@@ -10,6 +11,7 @@ import { ConsentSheet } from './ConsentSheet';
 import { MarketLink } from './context';
 import { asksForWeb, canNeverFromScopes, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { StatusChip } from './StatusChip';
+import { BUSY_WATCHDOG_TEXT, useBusyWatchdog } from './useBusyWatchdog';
 import { useDialogFocus } from './useDialogFocus';
 import type { DetailResponse, InstalledResponse, InstalledSummary } from './types';
 
@@ -40,9 +42,11 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${record.id}`;
   // Escape and Cancel both wait while the purge runs, so the reader cannot
-  // close the sheet out from under a failure they would then never see.
+  // close the sheet out from under a failure they would then never see. A
+  // request that never settles unlocks them at the watchdog.
+  const stuck = useBusyWatchdog(busy);
   const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(
-    true, () => { if (!busy) onCancel(); });
+    true, () => { if (!busy || stuck) onCancel(); });
   return (
     <div className="mkt-scrim" role="presentation">
       <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
@@ -59,10 +63,12 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
             <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
+          {stuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
           {error && <p className="mkt-error" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">
-          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary" disabled={busy && !stuck}
+                  onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={typed !== expected || busy}
                   aria-busy={busy ? 'true' : undefined}
                   onClick={onConfirm}>
@@ -108,7 +114,23 @@ export function InstalledPage() {
   // update must not keep the previous version's answer for the rest of the
   // sitting.
   const webUse = useRef(new Map<string, boolean>());
-  const confirmFocus = useDialogFocus<HTMLButtonElement>(confirm !== null, () => setConfirm(null));
+  // Whether a sheet is still on screen when its request settles, so a late
+  // failure can be announced on the page instead of swallowed by a sheet the
+  // reader already left.
+  const confirmOpenRef = useRef(false);
+  confirmOpenRef.current = confirm !== null;
+  const purgeOpenRef = useRef(false);
+  purgeOpenRef.current = purgeRecord !== null;
+  const confirmStuck = useBusyWatchdog(busy !== null);
+  const confirmFocus = useDialogFocus<HTMLButtonElement>(
+    confirm !== null,
+    () => { if (busy === null || confirmStuck) setConfirm(null); },
+  );
+  /** Say a confirm failure in its sheet, or on the page if the reader left it. */
+  const reportConfirmFailure = (text: string) => {
+    if (confirmOpenRef.current) setConfirmError(text);
+    else announce(text);
+  };
   const installedKey = load.kind === 'ready'
     ? load.data.plugins.map((record) => `${record.id}\u0000${record.pinned.version}`).join('\u0000')
     : '';
@@ -327,12 +349,12 @@ export function InstalledPage() {
       ok = await run(record, 'rollback', async () => {
         const res = await postMarket<{ from: string; to: string }>('/api/marketplace/rollback', { id: record.id });
         return `Rolled back ${record.name} from ${res.from} to ${res.to}.`;
-      }, setConfirmError);
+      }, reportConfirmFailure);
     } else {
       ok = await run(record, 'uninstall', async () => {
         await postMarket('/api/marketplace/uninstall', { id: record.id });
         return `${record.name} uninstalled. Its data folder was kept.`;
-      }, setConfirmError);
+      }, reportConfirmFailure);
     }
     if (ok) setConfirm(null);
   };
@@ -341,7 +363,9 @@ export function InstalledPage() {
    * Delete the plugin's data and install record, then close the dialog.
    *
    * The literal `delete-data:<id>` is sent as the confirmation token; a
-   * refusal keeps the dialog open with the server's message.
+   * refusal keeps the dialog open with the server's message. If the watchdog
+   * released the reader and they left, a late refusal is announced on the
+   * page instead, and a late success still refetches the list and says so.
    */
   const doPurge = async () => {
     if (!purgeRecord) return;
@@ -354,7 +378,9 @@ export function InstalledPage() {
       setPurgeRecord(null);
       await loadList();
     } catch (err) {
-      setPurgeError(marketErrorText(err));
+      const text = marketErrorText(err);
+      if (purgeOpenRef.current) setPurgeError(text);
+      else announce(text);
     } finally {
       setBusy(null);
     }
@@ -456,7 +482,11 @@ export function InstalledPage() {
                     <div className="mkt-actions">
                       <Button tone="primary" disabled={anyBusy}
                               onClick={() => { setConfirmError(''); setConfirm({ kind: 'uninstall', record }); }}>
-                        Remove
+                        Uninstall
+                      </Button>
+                      <Button tone="secondary" disabled={anyBusy}
+                              onClick={() => { setPurgeError(''); setPurgeRecord(record); }}>
+                        Purge data
                       </Button>
                     </div>
                   </>
@@ -570,11 +600,12 @@ export function InstalledPage() {
               <p>{confirm.kind === 'rollback'
                 ? 'The previous installed version becomes active. The current version stays in history.'
                 : 'The plugin stops running. Its data folder is kept until you purge it.'}</p>
+              {confirmStuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
               {confirmError && <p className="mkt-error" role="alert">{confirmError}</p>}
             </div>
             <div className="mkt-sheet-foot">
               <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary"
-                      disabled={busy !== null} onClick={() => setConfirm(null)}>
+                      disabled={busy !== null && !confirmStuck} onClick={() => setConfirm(null)}>
                 Cancel
               </button>
               <Button tone="primary" disabled={busy !== null}
