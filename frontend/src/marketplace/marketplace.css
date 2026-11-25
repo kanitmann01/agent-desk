@@ -420,6 +420,11 @@
 .mkt-detail-head { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-start; }
 .mkt-detail-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; max-width: 420px; }
 .mkt-detail-side > * { max-width: 100%; }
+/* A refused install keeps its button and gains every policy reason under it,
+   in the same words the catalog card uses. */
+.mkt-install { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; max-width: 420px; }
+.mkt-install-reasons { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.mkt-install-reasons > * { max-width: 100%; }
 .mkt-detail-title { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
 .mkt-detail-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--accent-text);background:none}
 .mkt-detail-title h1 { margin: 2px 0 4px; font-family: var(--font-display); font-size: 40px; font-weight: 560; line-height: 1.1; letter-spacing: -.03em; }
