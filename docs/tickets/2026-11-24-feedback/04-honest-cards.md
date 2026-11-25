@@ -32,4 +32,5 @@
   - Verified: src/agentdesk/server/dashboard_state.py calls dashboard_plugin_cards once in build_dashboard_state; the API and the server page both read that state.
 - [x] Component and server tests cover the filtered cards, the two health groups, the two counters, the word "never" and the marketplace notice.
   - Verified: tests/test_ui_text_fit.py, test_ui_feedback_review.py and frontend/src/test/brief-decisions.test.tsx, cards.test.tsx, review-dashboard.test.tsx, marketplace-cannot-run.test.tsx.
-- [ ] `python tools/ci_local.py` passes 7/7.
+- [x] `python tools/ci_local.py` passes 7/7.
+  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.

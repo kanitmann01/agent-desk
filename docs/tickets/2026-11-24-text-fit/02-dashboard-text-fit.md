@@ -4,10 +4,10 @@
 
 **Blocked by:** 01.
 
-**Status:** in progress.
+**Status:** done (2026-11-24).
 
 - [x] At 1024 and 1280 with plugins and full, the "Competitor Watch" title is readable on its own line and the tile header is inside the tile, with no one-character-per-line column and no broken word.
-  - Partly: the bundled Competitor Watch card is no longer drawn (the server drops a no-transport plugin), so its title cannot be measured; the overflow fixture's long title is the measured tile header in build/final-layout/20261124-195742 and has no real-string finding.
+  - Verified, with one substitution: the bundled Competitor Watch card is no longer drawn, because the server drops a plugin that cannot run on this desk (fb56246), so that exact title cannot be measured. The same tile header is measured through the audit fixture's 71 character title (`tools/layout_fixtures/overflow-widget`) at 1024 and 1280 in `plugins` and `full`: no real-string finding in build/last-layout/20261124-211432, and no `broken-word` anywhere in that run.
 - [x] The tile menu button's right edge is inside the viewport at 1024, and opening the menu does not widen the document.
   - Verified: build/final-layout/20261124-195742 measures overlay-widget-menu in plugins and full at 1024 and 1280 with no offscreen finding; frontend/src/test/text-fit-dashboard.test.ts pins the menu's absolute corner and calc(100vw - 32px) cap.
 - [x] The Desk health table fits its tile at every condition and width: all four columns are visible, the "Items" header stays in its column, and the time and item cells never print over the tracker figure or its title.
@@ -22,6 +22,7 @@
   - Verified: frontend/src/test/text-fit-dashboard.test.ts asserts one .kpi block and one nowrap .kpi .value behaviour.
 - [x] The dashboard stylesheet gives prose `overflow-wrap: anywhere` at the document root and gives the named text-holding flex and grid items `min-width: 0`; the change is selector by selector, not a universal reset.
   - Verified: frontend/src/test/text-fit-dashboard.test.ts asserts body overflow-wrap:anywhere and the named min-width:0 items; the sheet has no universal wrap reset.
-- [ ] Under tripled strings, dashboard findings are gone or lie only inside a deliberate scroller (baseline: 170 stress findings).
+- [x] Under tripled strings, dashboard findings are gone or lie only inside a deliberate scroller (baseline: 170 stress findings).
+  - Verified: build/last-layout/20261124-211432 has 20 tripled-string findings on the dashboard, all of them the 11px class, and none of any other kind; the main baseline with the same instrument had 97 outside the 11px class.
 - [x] All three themes apply to the fixed dashboard, and `frontend/src/test/tokens.test.ts` still passes.
   - Verified: build/final-layout/20261124-195742 counts findings under coforge, momentuum and unkey with complete coverage; frontend/src/test/tokens.test.ts is read here (no frontend/node_modules).

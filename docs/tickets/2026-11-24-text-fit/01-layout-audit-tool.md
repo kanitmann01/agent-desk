@@ -8,7 +8,8 @@
 
 - [x] The audit boots an isolated desk with a temporary data folder, a file-backed keychain and a loopback mock model, and never touches the real data folder, the real keychain or a real AI.
   - Verified: tools/layout_audit.py (docstring, _pin_environment, FileKeychain, _start_mock) and the final run build/final-layout/20261124-195742.
-- [ ] One unfiltered run plans 816 combinations across the five conditions, four widths, three themes and the tripled-string pass; the baseline measured 812 and skipped the 4 overlay states that need an installed plugin.
+- [x] One unfiltered run plans 816 combinations across the five conditions, four widths, three themes and the tripled-string pass; the baseline measured 812 and skipped the 4 overlay states that need an installed plugin.
+  - Verified, with the plan as it ended: the first tool did plan 816 and the first baseline measured 812. Two conditions were added while the wave ran (long values and the legacy server dashboard) and overlays are now planned in every theme, so the final plan is 1,040 rows. The last run measured 1,028 and skipped 12 (build/last-layout/20261124-211432), all `overlay-widget-menu` in `fresh` and `data`, where nothing overflows.
 - [x] Findings are JSON with the kind, the selector, the text, the measured geometry, the route, condition, width, theme and a crop; the summary groups them by root cause with the worst measurement and a source guess in the app.
   - Verified: tools/layout_audit.py findings carry kind, selector, text, metrics, rect, route, condition, width, theme and crop; build/final-layout/20261124-195742/crops holds the crops.
 - [x] The kinds distinguish squeezed text, broken words, content spill, text overlap, control collision, offscreen content, unreachable ellipsis, type below 11px and runtime console errors, and runtime rows do not count as layout.

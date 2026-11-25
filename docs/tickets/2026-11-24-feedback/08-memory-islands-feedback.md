@@ -24,4 +24,5 @@
   - Verified: frontend/src/test/feedback-memory.test.tsx (the failed switch keeps aria-checked and names the cause; the failed save keeps the typed edit and offers Try again).
 - [x] Component tests cover the busies, the placeholder, the 10-second line, the kept page on a failed refetch and the first-load skeleton.
   - Verified: frontend/src/test/feedback-memory.test.tsx covers the busies, placeholder, ten-second line, kept page and first-load skeleton.
-- [ ] `python tools/ci_local.py` passes 7/7.
+- [x] `python tools/ci_local.py` passes 7/7.
+  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.

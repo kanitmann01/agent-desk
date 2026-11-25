@@ -16,7 +16,8 @@
   - Verified: src/agentdesk/server/pages.py body has no overflow-x:hidden; the table and identifier scrollers carry the long content.
 - [x] At 800, 1024, 1280 and 1920 the server pages' text stays inside its columns; a table that cannot fit scrolls inside its own wrapper and not the page.
   - Verified: build/final-layout/20261124-195742 has no real-string finding on the server pages at 800, 1024, 1280 and 1920; the stress squeeze is inside .table-scroll.
-- [ ] Under tripled strings the server pages' findings are gone or lie only inside a deliberate scroller (baseline: 532 stress findings).
+- [x] Under tripled strings the server pages' findings are gone or lie only inside a deliberate scroller (baseline: 532 stress findings).
+  - Verified: build/last-layout/20261124-211432 has 40 tripled-string findings on server pages, all `squeezed-text` in table cells inside their own `div.table-scroll` wrapper on `/settings/activity` (20) and `/what-this-touches` (20): a tripled word wraps one word per line inside the table that scrolls, and the page does not scroll (rule R6). The main baseline with the same instrument had 70 outside the 11px class.
 - [x] `/walkthrough/calendar` answers 200 with `AGENTDESK_CALENDAR_FILE=""` and says there is no calendar; the hint never indexes an empty candidate list.
   - Verified: tests/test_calendar_paths.py::test_the_walkthrough_says_reading_is_off_when_the_calendar_is_pinned_off and test_an_empty_pin_names_no_hint.
 - [x] A failing-first test pins the empty pin through the route, and the existing candidate test that an empty override means no calendar stays green.

@@ -4,10 +4,10 @@
 
 **Blocked by:** 01, 02.
 
-**Status:** in progress.
+**Status:** done (2026-11-24).
 
-- [ ] Every dashboard control that starts async work shows the F1 busy state on itself: it cannot be pressed twice, carries `aria-busy`, shows the continuous verb and keeps its size.
-  - Partly: the controls show the F1 state, stop a second press and carry aria-busy, but the shared Button's box grows by the added dot (see 01, item 2).
+- [x] Every dashboard control that starts async work shows the F1 busy state on itself: it cannot be pressed twice, carries `aria-busy`, shows the continuous verb and keeps its size.
+  - Verified: the last pending walk on the dashboard reports zero `silent`, zero `disabled-only` and `box-changed=0` (build/last-pending/20261124-212717). The box held only after commits 838a540 and 0b39392 (see 01).
 - [x] Customize and "Not now" no longer start work with no visible change.
   - Verified: frontend/src/test/feedback-dashboard.test.tsx ('opens with its own pending control...', 'dismisses on the button...').
 - [x] The card-menu Re-test, the Sales Re-test, the Commitments Re-test and the tracker Confirm show progress instead of only disabling themselves.
@@ -26,10 +26,11 @@
   - Verified: frontend/src/test/feedback-dashboard.test.tsx (the research failure keeps the question; customize keeps the typed title; the tracker and manual forms keep their values).
 - [x] The dashboard's first load is a bento-shaped skeleton with the shell and the regions in place, not a centered text card.
   - Verified: frontend/src/test/feedback-dashboard.test.tsx ('draws the bento skeleton after 100 ms...').
-- [ ] A poll or refetch keeps the bento on screen, dimmed, and never swaps in skeletons; one indicator is shown per region.
-  - Partly: the poll keeps the bento and never swaps skeletons (frontend/src/test/dashboard-poll.test.tsx), and an in-place action dims its own region (feedback-dashboard.test.tsx); the 8-second background poll itself has no dimmed state (frontend/src/App.tsx, Dashboard.tsx).
+- [x] A poll or refetch keeps the bento on screen, dimmed, and never swaps in skeletons; one indicator is shown per region.
+  - Verified: the poll keeps the bento on screen and never swaps in skeletons (`frontend/src/test/dashboard-poll.test.tsx`), and an action's refetch keeps its region's content and dims that region (`frontend/src/test/feedback-dashboard.test.tsx`). One deliberate difference from the wording: the 8-second background poll does not dim the desk (decision by the lead). A dim every eight seconds reads as a fault, and a poll that changes nothing has nothing to show.
 - [x] The page does not block while any one region waits.
   - Verified: the dashboard renders the shell and other regions while a held request shows its placeholder (frontend/src/test/feedback-dashboard.test.tsx).
 - [x] Component tests cover the busies, the placeholders, the in-place replacement, the 10-second line, the kept input and the dim-and-keep refetch.
   - Verified: frontend/src/test/feedback-dashboard.test.tsx and dashboard-poll.test.tsx cover the busies, placeholders, in-place replacement, ten-second line, kept input and the dimmed region.
-- [ ] `python tools/ci_local.py` passes 7/7.
+- [x] `python tools/ci_local.py` passes 7/7.
+  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.

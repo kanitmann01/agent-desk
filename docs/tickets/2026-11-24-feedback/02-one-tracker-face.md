@@ -26,4 +26,5 @@
   - Verified: frontend/src/dashboard/PluginCardView.tsx keeps the setup, classic tracker and excel-report id branches; frontend/src/test/tracker-cards.test.tsx covers them.
 - [x] Component tests assert the single value, the single reading block, the disclosure and the press.
   - Verified: frontend/src/test/tracker-cards.test.tsx and press.test.tsx cover the single value, the reading block, the disclosure and the press.
-- [ ] `python tools/ci_local.py` passes 7/7.
+- [x] `python tools/ci_local.py` passes 7/7.
+  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.

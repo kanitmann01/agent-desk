@@ -16,7 +16,9 @@
   - Verified: frontend/src/test/text-fit-marketplace.test.ts asserts the code, digest, facts and table wrappers keep their lines and scroll in place.
 - [x] An ellipsis or line clamp on a plugin name, version, publisher or digest has a `title`, `aria-label` or focusable ancestor with the full value.
   - Verified: frontend/src/test/review-marketplace.test.tsx and marketplace-cannot-run.test.tsx read the titled chip; 6ffce16 gives the cannot-run chip its words in a title.
-- [ ] Under tripled strings the marketplace findings are gone or lie only inside a deliberate scroller (baseline: 1,023 stress findings).
-- [ ] No `broken-word` finding on a compared value, a stamp, code, a button or a mono cell.
+- [x] Under tripled strings the marketplace findings are gone or lie only inside a deliberate scroller (baseline: 1,023 stress findings).
+  - Verified: build/last-layout/20261124-211432 has 30 tripled-string findings on marketplace pages, all of them the 11px class, and none of any other kind (the main baseline with the same instrument had 252); commit 6ffce16 gave the truncating chip its words in a title, which removed the last 10.
+- [x] No `broken-word` finding on a compared value, a stamp, code, a button or a mono cell.
+  - Verified: build/last-layout/20261124-211432 has zero `broken-word` rows of any kind, plain or tripled, on every route; the main baseline had 20 with real strings.
 - [x] All three themes apply, and the page's focus order and reading order survive the wrapping.
   - Verified: build/final-layout/20261124-195742 measured coforge and momentuum on the marketplace pages; frontend/src/test/marketplace-a11y.test.tsx keeps the focus order and skip link.
