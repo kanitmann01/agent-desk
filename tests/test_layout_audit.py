@@ -248,6 +248,23 @@ def test_pending_fail_thresholds():
     assert audit._pending_fail(silent, "none") is False
 
 
+def test_overflow_fixture_is_a_local_widget_with_the_planned_overlays():
+    """The overflow fixture is a local manual metric and keeps four rows."""
+    manifest = json.loads((audit.OVERFLOW_FIXTURE / "manifest.json").read_text(
+        encoding="utf-8"))
+    widget = manifest["contributes"]["widgets"][0]
+    assert widget["dataSource"]["type"] == "manual-metric"
+    assert len(manifest["name"]) > 60
+    assert (audit.OVERFLOW_FIXTURE / manifest["sample"]).is_file()
+    assert audit.OVERFLOW_CONDITIONS == ("plugins", "full")
+    args = _args(conditions="plugins,full", widths="1024,1280", themes="unkey")
+    combos = audit.build_combos(args)
+    overlays = [combo for combo in combos
+                if combo["view"].get("state") == "overlay-widget-menu"]
+    assert len(overlays) == 4
+    assert {combo["condition"] for combo in overlays} == {"plugins", "full"}
+
+
 def test_relative_records_drop_the_run_folder_prefix(tmp_path):
     """Evidence paths in findings.json are relative to the run folder."""
     path = tmp_path / "crops" / "a.png"
