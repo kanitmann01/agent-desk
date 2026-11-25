@@ -1,6 +1,6 @@
 # Spec 027: One true home screen, and feedback on every wait
 
-Status: in progress (2026-11-24). Filed as #318. Tickets: #309, #310, #311, #312, #313, #314, #315, #316, #317.
+**Status:** done (2026-11-24); evidence in `docs/evidence/2026-11-24-feedback/EVIDENCE.md`. Filed as #318. Tickets: #309, #310, #311, #312, #313, #314, #315, #316, #317.
 `GLOSSARY.md` is the vocabulary.
 The dashboard payload assembly, the shared `Button`, the one page script and the layout audit's browser probe are the seams; no new product seam.
 
