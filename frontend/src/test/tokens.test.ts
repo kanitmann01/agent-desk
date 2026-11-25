@@ -319,6 +319,12 @@ describe('a pending button keeps its box', () => {
     expect(decl(css, '.text-btn .btn-busy-dot', 'vertical-align')).toBe('middle');
     expect(decl(css, '.text-btn .btn-busy-dot', 'margin-right')).toBe('6px');
   });
+
+  it('keeps a busy text button on one line', () => {
+    // A text button sits inside a sentence. Its label grid must stay
+    // inline, or the dot takes one line and the labels the next.
+    expect(decl(css, '.text-btn .btn-labels', 'display')).toBe('inline-grid');
+  });
 });
 
 describe('the shell rhythm sits on the 4px grid', () => {

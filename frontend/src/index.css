@@ -630,6 +630,9 @@ table.rows td.neg{color:var(--text-2)}
   text-decoration:underline;text-decoration-color:var(--rule-strong);text-underline-offset:4px;
 }
 .text-btn:hover{text-decoration-color:var(--accent)}
+/* A busy text button sits inside a sentence: the dot and the label grid
+   stay on one line, so the button keeps its height and its baseline. */
+.text-btn .btn-labels{display:inline-grid}
 .text-btn .btn-busy-dot{display:inline-block;vertical-align:middle;margin-right:6px}
 
 /* The hero: one figure, its parts, and the stage chart. The radial
