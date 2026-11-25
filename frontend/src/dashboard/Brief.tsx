@@ -47,6 +47,9 @@ import { SAMPLE_TRACKER, sampleDigest, sampleWatch } from './sampleDesk';
 
 const WALKTHROUGH = '/walkthrough/calendar';
 const SAMPLE_FILE = /(^|[\\/])sample[\\/]sample-[^\\/]+$/;
+// The one sentence the Page watch placeholder uses when this desk cannot
+// read the web: the bare line above it no longer invites a page.
+const NO_WEB_WATCH_NOTE = 'This desk cannot read web pages yet, so no page can be watched.';
 
 interface BriefProps {
   data: DashboardData;
@@ -449,7 +452,7 @@ export default function Brief({
           <CellHead tag="PAGE WATCH" sample />
           <WatchDiff view={sampleWatch(now)} />
           {noWebTransport ? (
-            <p className="cell-foot">This desk cannot read web pages yet</p>
+            <p className="cell-foot">{NO_WEB_WATCH_NOTE}</p>
           ) : null}
         </>
       ) : (
@@ -458,9 +461,11 @@ export default function Brief({
           <h3 className="cell-title">Page watch</h3>
           <WireState
             shape="lines"
-            line="No page is being watched. Name one page and see what changed on it."
+            line={noWebTransport
+              ? 'No page is being watched.'
+              : 'No page is being watched. Name one page and see what changed on it.'}
             action={noWebTransport
-              ? <p className="w-note">This desk cannot read web pages yet</p>
+              ? <p className="w-note">{NO_WEB_WATCH_NOTE}</p>
               : <Button tone="secondary" className="btn-sm" href="/marketplace/plugin/competitor-watch">Add a page</Button>}
           />
         </>
