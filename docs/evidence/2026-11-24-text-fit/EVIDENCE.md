@@ -1,10 +1,10 @@
 # Evidence: text that fits every screen (spec 026), 2026-11-24
 
 All readings below were taken with one instrument, `tools/layout_audit.py`,
-at the final tree `261d925`, on the same plan. BEFORE is main at
-`f31582a`, the commit the wave started from. AFTER is `261d925` on
+at the final tree `2d00540`, on the same plan. BEFORE is main at
+`f31582a`, the commit the wave started from. AFTER is `2d00540` on
 `merge/027-feedback`. This branch, `docs/026-027-evidence`, is cut from
-`261d925` and changes documentation and screenshots only.
+`2d00540` and changes documentation and screenshots only.
 
 ## The instrument and the plan
 
@@ -13,8 +13,9 @@ folder, an in-process mock model on `tools/mock_endpoint.py`, and a
 file-backed stand-in keychain. It never reads the real data folder and
 never touches the real keychain. It drives Chromium with Playwright and
 records what the browser actually lays out. The selftest plants 16
-expectations; the tool prints `SELFTEST PASS 16 detector expectations`
-when they hold. Versions on this machine: Playwright 1.65.2, Chromium
+detector expectations and 4 box expectations; the tool prints
+`SELFTEST PASS 16 detector expectations, 4 box expectations` when they
+hold. Versions on this machine: Playwright 1.65.2, Chromium
 1255, Python 3.14.5, Windows 10.0.26300 x64.
 
 One-time browser install, if the Chromium build is not already present:
@@ -50,7 +51,7 @@ network plugin's card, which used to cause that overflow.
 | Run | Run folder | Tree |
 | --- | --- | --- |
 | BEFORE layout | `D:/20-projects/Personal Agents/.scratch/ui-text-overflow/v3-before/before-layout/20261124-194926` | main `f31582a` |
-| AFTER layout | `D:/20-projects/Personal Agents/.worktrees/027-merge/build/final-layout/20261124-195742` | `261d925` |
+| AFTER layout | `D:/20-projects/Personal Agents/.worktrees/027-merge/build/last-layout/20261124-211432` | `2d00540` |
 
 Both full run folders are outside this branch: `build/` is ignored and
 `.scratch` is outside the repository. The numbers and the selected
@@ -60,7 +61,8 @@ screenshots are committed; the run folders are not.
 
 The same plan ran before and after, so the rows compare one for one. The
 two runs used the same instrument and the same conditions, widths, themes
-and states.
+and states. The after run was repeated on the final tree `2d00540` and
+matched the round 3 after reading exactly.
 
 | Reading | Under 11px | Other layout | Runtime | Total |
 | --- | ---: | ---: | ---: | ---: |
@@ -101,6 +103,10 @@ inside `div.table-scroll` on `/settings/activity` (20) and
 The table scrolls inside its own wrapper and the page never scrolls,
 which is rule R6 of `docs/design-language.md`. They are deliberate, not
 outstanding fit defects.
+
+Per area, under tripled strings and outside the 11px class: dashboard 0,
+marketplace 0, memory 0, server pages 40. `broken-word` is 0 in every
+after reading and every condition; it was 20 with real strings before.
 
 The 12 runtime rows after are the same browser console 403 on
 `/marketplace/admin` when no administrator session exists. They were in
@@ -157,21 +163,29 @@ the server sheet.
 Key commits from the true history: `3d942ed` (the audit tool), `56161dc`
 (the rules), `74588ce` (dashboard), `ad59df2` (marketplace), `14b01c4`
 (memory), `aead705` (server sheet), `f134f89` (calendar walkthrough),
-`7c549c7` (first bundle rebuild) and `261d925` (final bundle). The full
-list is `git log --oneline f31582a..261d925`.
+`7c549c7` (the first bundle rebuild), `261d925` (the round 3 bundle),
+`aab0d2b` (the server timeline contract) and `2d00540` (the final
+bundle). The full list is `git log --oneline f31582a..2d00540`.
 
 Two independent reviews of the first build, a fix round, a final
-independent review with 11 findings, and a second fix round led to the
-final bundle. The review contracts are pinned across
-`tests/test_ui_text_fit.py`, `tests/test_ui_feedback_review.py` and the
-`review-*.test.tsx` files.
+independent review with 11 findings, a second fix round, and a third
+from the item by item ticket close-out led to the final bundle. The
+review contracts are pinned across `tests/test_ui_text_fit.py`,
+`tests/test_ui_feedback_review.py` and the `review-*.test.tsx` files.
+
+The final tree `2d00540` passed the local gate 7/7 in 127 s (pytest 3520
+passed, 1 skipped; vitest 596), and the end-to-end readiness walk
+printed `METRIC ready=27` (27 PASS, 0 FAIL). Both were measured by the
+lead.
 
 ## Screenshots
 
-The images are crops of the named full-page PNGs in the run folders. Each
-crop is an ffmpeg `crop=w:h:x:y` that changes no pixel; no other edit was
-made. The four pairs show the largest visible differences and the finding
-each pair closes.
+The images are crops of the named full-page PNGs in the run folders. The
+before crops come from `before-layout/20261124-194926`; the after crops
+come from the final-tree `last-layout/20261124-211432`. Each crop is an
+ffmpeg `crop=w:h:x:y` that changes no pixel; no other edit was made. The
+four pairs show the largest visible differences and the finding each
+pair closes.
 
 **Pair 1. The dashboard at 1280 with plugins.**
 
@@ -207,7 +221,11 @@ reflowed between the runs.
 
 `content-spill` on `div.mg-picture`, route `/memory/graph`, 1280,
 `unkey`, 4px over on each side, closes: the picture stays in its canvas
-and the node labels have room to wrap. Source:
+and the node labels have room to wrap. The ticket's choice is the wide
+document column, not a 720px text column and not a spill:
+`.doc.doc-wide:has(> #memory-graph-root)` has no padding, and
+`#memory-graph-root` is `width:100%` with `max-width:1128px` in
+`frontend/src/memory/memory-graph.css` (commit `406b4ce`). Source:
 `full/1280x800/unkey/memory_graph__memory-graph.png`, crop
 `1040:380:240:420`.
 

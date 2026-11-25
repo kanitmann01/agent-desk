@@ -1,9 +1,9 @@
 # Evidence: one home screen and feedback on every wait (spec 027), 2026-11-24
 
 All readings below are from the same final tree as the text-fit evidence,
-`261d925` on `merge/027-feedback`, with the same instrument and the same
+`2d00540` on `merge/027-feedback`, with the same instrument and the same
 kind of isolated desk. The wave starts at `f31582a`. This branch,
-`docs/026-027-evidence`, is cut from `261d925` and changes documentation
+`docs/026-027-evidence`, is cut from `2d00540` and changes documentation
 and screenshots only. Spec 026's readings are in
 `docs/evidence/2026-11-24-text-fit/EVIDENCE.md`.
 
@@ -57,7 +57,11 @@ The seven feedback rules F1 to F7 are in `docs/design-language.md` under
   `frontend/src/components/feedback.tsx` holds the shared placeholder and
   status pieces. A pending button cannot be pressed again, carries
   `aria-busy="true"`, shows the continuous verb and keeps its box. The
-  dot pulses in colour only and freezes under `prefers-reduced-motion`.
+  box is measured, not only intended: primary, secondary and small
+  buttons measured 63.19 x 39px, 63.19 x 39px and 56.81 x 30px, idle and
+  pending, in the browser measured for `838a540`, and the final pending
+  pass reads `box-changed=0`. The dot pulses in colour only and freezes
+  under `prefers-reduced-motion`.
 - The island surfaces: the dashboard, marketplace, memory and their
   overlays show the wait on the control and a same-shape placeholder in
   the region that will receive the result. A refetch dims what is on
@@ -85,23 +89,41 @@ Key commits from the true history: `a195bc5` (the busy Button),
 `5cac859` (dashboard waits), `cbe83ed` (marketplace waits), `cc63ca1`
 (server waits), `29ebe9c` and `fb56246` (the honest cards), `a4ad9f7`
 (the press guard and the 180 s watchdog), `f4d4a56` and `82aa118` (the
-notice), and `261d925` (the final bundle). The full list is
-`git log --oneline f31582a..261d925`.
+notice), `261d925` (the round 3 bundle) and `2d00540` (the final bundle).
+The full list is `git log --oneline f31582a..2d00540`.
+
+The third round, from the item by item ticket close-out, added
+`838a540` (the pending button keeps its idle box), `0b39392` (a busy
+text button stays on one line), `8e336b8` (the shell's expired notice
+offers no dead reload), `5fc32fb` (the marketplace's session notice
+offers no futile Try again), `aab0d2b` (the server timeline contract),
+`2cbed99` (the memory loop's busy controls keep their box), `b9a25bb`
+(SVG controls and the overflow fixture), `91efea9` (the box fields),
+`63eb05d` (a busy width may follow a longer label), and `ff6e7ac` (the
+gate names failed tests).
 
 Two independent reviews of the first build, a fix round, a final
-independent review with 11 findings, and a second fix round led to the
-final bundle. The review contracts are in
-`tests/test_ui_feedback_review.py` and the `review-*.test.tsx` files.
+independent review with 11 findings, a second fix round, and a third
+from the ticket close-out led to the final bundle. The review contracts
+are in `tests/test_ui_feedback_review.py` and the `review-*.test.tsx`
+files.
+
+The final tree `2d00540` passed the local gate 7/7 in 127 s (pytest 3520
+passed, 1 skipped; vitest 596), and the end-to-end readiness walk
+printed `METRIC ready=27` (27 PASS, 0 FAIL). Both were measured by the
+lead.
 
 ## The pending audit
 
-The pending pass uses `tools/layout_audit.py` at `261d925`. It boots the
+The pending pass uses `tools/layout_audit.py` at `2d00540`. It boots the
 same isolated desk as the layout pass: its own temporary data folder, an
 in-process mock model on `tools/mock_endpoint.py`, and a file-backed
 stand-in keychain. It never reads the real data folder and never touches
-the real keychain. The selftest plants 16 expectations; the tool prints
-`SELFTEST PASS 16 detector expectations` when they hold. Versions:
-Playwright 1.65.2, Chromium 1255, Python 3.14.5, Windows 10.0.26300 x64.
+the real keychain. The selftest plants 16 detector expectations and 4
+box expectations; the tool prints
+`SELFTEST PASS 16 detector expectations, 4 box expectations` when they
+hold. Versions: Playwright 1.65.2, Chromium 1255, Python 3.14.5, Windows
+10.0.26300 x64.
 
 It clicks every visible control and holds the request, then records one
 verdict per control:
@@ -114,6 +136,13 @@ verdict per control:
 | `silent` | A request starts and nothing on the control changes. |
 | `disabled-only` | The control only greys out. |
 | `skipped` | The control is already disabled, so there is nothing to press. |
+
+Each record also carries the control's box before the click and while
+busy, plus its labels. The fields are `boxBefore`, `boxBusy`,
+`boxWidthDelta`, `boxHeightDelta`, `boxChanged`, `labelBefore`,
+`labelBusy` and `labelChanged`, under each record's `evidence`.
+`box-changed` counts a busy control whose height moved by more than 1px,
+or whose width moved by more than 1px while its label stayed the same.
 
 The command, run from Git Bash at the repository root:
 
@@ -132,7 +161,7 @@ overflow trigger). The full walk took about 13 minutes per run.
 | Run | Run folder | Tree |
 | --- | --- | --- |
 | BEFORE pending | `D:/20-projects/Personal Agents/.scratch/ui-text-overflow/v3-before/before-pending/20261124-194926` | main `f31582a` |
-| AFTER pending | `D:/20-projects/Personal Agents/.worktrees/027-merge/build/final-pending/20261124-200831` | `261d925` |
+| AFTER pending | `D:/20-projects/Personal Agents/.worktrees/027-merge/build/last-pending/20261124-212717` | `2d00540` |
 
 Both full run folders are outside this branch: `build/` is ignored and
 `.scratch` is outside the repository. The numbers and selected
@@ -140,16 +169,23 @@ screenshots are committed; the run folders are not.
 
 ## The readings
 
-| Run | Controls | `instant` | `meets` | `native-dialog` | `silent` | `disabled-only` | `skipped` |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| BEFORE | 1,293 | 985 | 0 | 15 | 199 | 74 | 20 |
-| AFTER | 1,245 | 955 | 253 | 17 | 0 | 0 | 20 |
+| Run | Controls | `instant` | `meets` | `native-dialog` | `silent` | `disabled-only` | `skipped` | `box-changed` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| BEFORE | 1,293 | 985 | 0 | 15 | 199 | 74 | 20 | not recorded |
+| AFTER | 1,245 | 955 | 253 | 17 | 0 | 0 | 20 | 0 |
 
 The before walk found 199 silent controls and 74 disabled-only controls.
 The after walk found none of either: every control that can be pressed
 either changes the page at once, shows its busy state on itself, or opens
 a native dialog. The 20 skipped controls are all already disabled in both
 runs. The walk enumerated 48 fewer controls after.
+
+The final run's `box-changed` reading is 0. All 253 `meets` controls
+have both boxes; none moved in height; 96 moved in width only because
+the verb changed (for example `Disable` to `Disabling...`), and none
+moved in width with the same label. There is no before reading for it:
+the baseline was taken before the instrument learned the measure, and on
+main no control showed a proper busy state (`meets=0`).
 
 The 23 controls on `/memory/graph` are all `instant`; that page has no
 silent and no disabled-only control.
@@ -167,9 +203,10 @@ tabulated.
 
 There are no before screenshots of busy states: the before pending run
 kept verdicts, not pictures of a held wait. The images below are after
-states, from the fixers' evidence folders or from the final pending run.
-Each caption says what is visible and which commit or test holds it. All
-images were checked before copying; none shows a wrong state.
+states, from the final layout run, the fixers' evidence folders or the
+final pending run. Each caption says what is visible and which commit or
+test holds it. All images were checked before copying; none shows a
+wrong state.
 
 **The final home screen, after.** `after-home.png` is the final tree at
 1280 with plugins: Desk health lists 1 of 3 desk sources live and a
@@ -213,7 +250,8 @@ while the row is held. The same image shows the honest cards: Competitor
 Watch says "This desk cannot read web pages yet" and Presentation starter
 says "This plugin adds no card to your dashboard."
 `review-marketplace.test.tsx` (M2, "keeps every row inert while any
-installed action is in flight") and `cf5e4ce` hold it.
+installed action is in flight") holds the row behaviour, `cf5e4ce` holds
+the single action, and `838a540` holds the button's idle box.
 
 ![The installed row with a busy Disable control](after-marketplace-disabled.png)
 
@@ -236,13 +274,15 @@ tests in `tests/test_ui_feedback.py` pin it.
 
 The dashboard first-load and Research images come from
 `D:/20-projects/Personal Agents/.worktrees/027-5-dashboard-feedback/build/feedback-evidence/`,
-and the installed-row image comes from
-`D:/20-projects/Personal Agents/.worktrees/027-fix-marketplace/build/evidence-review-marketplace/`;
-both fixer branches predate the final merge. The server image comes from
-the final pending run. The images in `027-fix-server/build/audit-evidence/`
-were inspected: the `r1` and `r2` pictures show result lines after the
-wait, and `s2` to `s4` show post-press states, so none is a held wait.
-They are not used here.
+before the final merge; neither contains a busy button, so neither can be
+read as showing the final button geometry. The busy-state images
+`after-press-wait`, `after-marketplace-disabled` and
+`after-server-working` come from the final pending run at
+`D:/20-projects/Personal Agents/.worktrees/027-merge/build/last-pending/20261124-212717`
+(tree `2d00540`), so they show the final busy geometry. The images in
+`027-fix-server/build/audit-evidence/` were inspected: the `r1` and `r2`
+pictures show result lines after the wait, and `s2` to `s4` show
+post-press states, so none is a held wait. They are not used here.
 
 ## Honest limits
 
@@ -258,9 +298,10 @@ They are not used here.
   deterministic 7/7 gate.
 - The full run folders live outside this branch; the numbers and
   selected screenshots are committed.
-- The dashboard first-load, Research and installed-row images predate
-  the final merge, but the final pending pass re-measured every control
-  and the cited tests pin the behaviour at `261d925`.
+- The dashboard first-load and Research images predate the final merge,
+  but neither shows a busy button. The busy-state images come from the
+  final pending run at `2d00540`, and the cited tests pin the behaviour
+  there.
 - The wave did not wire an HTTP transport for plugins and did not remove
   the wizard's "A web page" choice. That decision stays with the founder.
   It added no runtime dependency and no network path.
