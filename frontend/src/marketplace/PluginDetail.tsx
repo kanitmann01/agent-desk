@@ -53,19 +53,45 @@ function ActionMessage({ error, message }: { error: string; message: string }) {
 /**
  * Show a shortened digest with a button that copies the full value.
  *
- * A clipboard refusal leaves the idle label in place instead of claiming the
- * copy worked, and the copied state clears itself after two seconds.
+ * A successful copy swaps the icon for a check for two seconds. When the
+ * clipboard is missing or refuses, the control says so in the attention
+ * style and leaves the full digest in a focused, selected field, so one key
+ * press copies it.
  */
 function Digest({ digest }: { digest: string }) {
   const [copied, setCopied] = useState(false);
-  /** Copy the full digest, marking the button copied only if the clipboard accepts it. */
+  const [copyFailed, setCopyFailed] = useState(false);
+  const fallbackRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+  }, []);
+
+  // The manual field is focused and selected the moment it appears, and again
+  // if the digest changes under it.
+  useEffect(() => {
+    if (!copyFailed) return;
+    const field = fallbackRef.current;
+    if (!field) return;
+    field.focus();
+    field.select();
+  }, [copyFailed, digest]);
+
+  /** Copy the full digest, or show the manual way when the clipboard cannot. */
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(digest);
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      setCopyFailed(false);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      timerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        timerRef.current = null;
+      }, 2000);
     } catch {
       setCopied(false);
+      setCopyFailed(true);
     }
   };
   return (
@@ -73,13 +99,29 @@ function Digest({ digest }: { digest: string }) {
       <code title={digest} tabIndex={0}>{shortDigest(digest)}</code>
       <button type="button" className="mkt-icon-btn" onClick={copy}
               aria-label={copied ? 'Digest copied' : 'Copy digest'}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             strokeWidth="1.8" aria-hidden="true">
-          <rect x="9" y="9" width="11" height="11" rx="2" />
-          <path d="M5 15H4V4h11v1" />
-        </svg>
+        {copied ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2.2" aria-hidden="true">
+            <path d="m4 12 5 5L20 6" />
+          </svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="1.8" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15H4V4h11v1" />
+          </svg>
+        )}
       </button>
       <span className="mkt-sr-only" role="status">{copied ? 'Digest copied' : ''}</span>
+      {copyFailed && (
+        <span className="mkt-digest-fallback">
+          <span className="mkt-attention" role="status">
+            Could not copy automatically. The full digest is selected below; press Ctrl+C (or Cmd+C on a Mac).
+          </span>
+          <input ref={fallbackRef} readOnly value={digest} aria-label="Full digest"
+                 onFocus={(event) => event.currentTarget.select()} />
+        </span>
+      )}
     </span>
   );
 }

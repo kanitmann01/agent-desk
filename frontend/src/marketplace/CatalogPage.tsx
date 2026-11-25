@@ -147,10 +147,13 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
     event.preventDefault();
     const trimmed = q.trim();
     const target = trimmed ? `/marketplace/search?q=${encodeURIComponent(trimmed)}` : '/marketplace';
-    // A submit that lands on the same address starts no request, so it must
-    // not leave the button waiting either.
-    if (target !== path) setSearching(true);
-    navigate(target);
+    // A submit always runs its search. When it would land on the address
+    // already shown, there is no navigation to start the effect, so bump the
+    // attempt and let the same effect refetch with the current results kept
+    // and dimmed. Either way the button owns the wait.
+    setSearching(true);
+    if (target === path) setAttempt((n) => n + 1);
+    else navigate(target);
   }, [q, navigate, path]);
 
   /**

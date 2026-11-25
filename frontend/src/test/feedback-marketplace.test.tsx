@@ -366,6 +366,82 @@ describe('the marketplace says every wait (spec 027)', () => {
     expect(await screen.findByRole('button', { name: 'Search' })).toBeEnabled();
   });
 
+  it('re-runs the search when the same unchanged query is submitted again', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, '', '/marketplace/search?q=watch');
+    const second = deferred<Response>();
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes('/api/marketplace/catalog')) return jsonResponse({});
+      calls += 1;
+      if (calls === 1) return jsonResponse(catalog([card({ name: 'Competitor Watch' })]));
+      return second.promise;
+    }));
+    render(<MarketplaceApp />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText('Competitor Watch')).toBeInTheDocument();
+    expect(calls).toBe(1);
+
+    const button = screen.getByRole('button', { name: 'Search' });
+    act(() => { fireEvent.submit(button.closest('form') as HTMLFormElement); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    // The same address still starts a second catalog read, with the old
+    // results kept and dimmed.
+    expect(calls).toBe(2);
+    expect(screen.getByText('Competitor Watch')).toBeInTheDocument();
+    const results = document.querySelector('.mkt-results') as HTMLElement;
+    expect(results).toHaveClass('mkt-refetching');
+    expect(results).toHaveAttribute('aria-busy', 'true');
+
+    // Nothing shows before the 100 ms gate, but the press cannot repeat.
+    expect(button).toBeDisabled();
+    expect(button).not.toHaveAttribute('aria-busy');
+    act(() => { vi.advanceTimersByTime(99); });
+    expect(button).not.toHaveAttribute('aria-busy');
+    act(() => { vi.advanceTimersByTime(1); });
+    const pending = screen.getByRole('button', { name: 'Searching…' });
+    expect(pending).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => {
+      second.release(jsonResponse(catalog([card({ name: 'Aging report' })])));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('Aging report')).toBeInTheDocument();
+    expect(screen.queryByText('Competitor Watch')).toBeNull();
+  });
+
+  it('re-runs the unfiltered catalog when Discover is submitted empty', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, '', '/marketplace');
+    const second = deferred<Response>();
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes('/api/marketplace/catalog')) return jsonResponse({});
+      calls += 1;
+      if (calls === 1) return jsonResponse(catalog([card()]));
+      return second.promise;
+    }));
+    render(<MarketplaceApp />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText('AR Aging')).toBeInTheDocument();
+    expect(calls).toBe(1);
+
+    const button = screen.getByRole('button', { name: 'Search' });
+    act(() => { fireEvent.submit(button.closest('form') as HTMLFormElement); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(calls).toBe(2);
+    expect(screen.getByText('AR Aging')).toBeInTheDocument();
+
+    await act(async () => {
+      second.release(jsonResponse(catalog([card({ name: 'Desk snapshot' })])));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('Desk snapshot')).toBeInTheDocument();
+  });
+
   it('names each plugin detail lifecycle action while it runs', async () => {
     window.history.replaceState({}, '', '/marketplace/plugin/ar-aging');
     const enable = deferred<Response>();
