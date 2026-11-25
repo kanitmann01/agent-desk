@@ -403,3 +403,188 @@ describe('the review defects', () => {
     expect(screen.queryByText('Cannot run on this desk')).not.toBeInTheDocument();
   });
 });
+
+// The second review: the detail page and the catalog card must agree on a
+// refused plugin, a detail header must agree with the Installed row for a
+// plugin that cannot run, the web answer must follow the pinned version, and
+// a purge dialog must not let the reader cancel out of its own failure.
+const POLICY_HELP = "Only whoever manages this desk's plugin policy can change that; there is no setting for it here.";
+
+const POLICY_REASONS = [
+  { code: 'policy:network', message: "network host 'example.com' is not on the policy allowlist" },
+  { code: 'policy:risk', message: 'risk tier T2 exceeds the policy ceiling T1' },
+];
+
+/** Escape a literal for use inside a RegExp. */
+function literal(text: string): RegExp {
+  return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+}
+
+describe('the second review defects', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    window.localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('M1: shows every policy reason, in the card words, where install is refused', async () => {
+    window.history.replaceState({}, '', '/marketplace/plugin/competitor-watch');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(detailResponse({
+      plugin: detail({
+        id: 'competitor-watch', name: 'Competitor Watch',
+        capabilities: WEB_CAPABILITIES, eligible: false,
+        ineligibleReasons: POLICY_REASONS,
+      }),
+      deskNetwork: true,
+    }))));
+    render(<MarketplaceApp />);
+
+    await screen.findByRole('heading', { level: 1, name: 'Competitor Watch' });
+    for (const reason of POLICY_REASONS) {
+      expect(screen.getByText(literal(reason.message))).toBeInTheDocument();
+    }
+    expect(screen.getAllByText('Not available:')).toHaveLength(POLICY_REASONS.length);
+    expect(screen.getByText(POLICY_HELP)).toBeInTheDocument();
+    expect(screen.queryByText('This plugin is not available under the current policy.'))
+      .not.toBeInTheDocument();
+  });
+
+  it('M2: a cannot-run installed detail offers the notice and Remove only', async () => {
+    window.history.replaceState({}, '', '/marketplace/plugin/competitor-watch');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(detailResponse({
+      plugin: detail({
+        id: 'competitor-watch', name: 'Competitor Watch', capabilities: WEB_CAPABILITIES,
+      }),
+      installed: installed({ id: 'competitor-watch', name: 'Competitor Watch' }),
+      deskNetwork: false,
+    }))));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Competitor Watch' });
+    const header = heading.closest('header') as HTMLElement;
+    expect(within(header).getByText(NOTICE)).toBeInTheDocument();
+    expect(within(header).getAllByRole('button').map((button) => button.textContent?.trim()))
+      .toEqual(['Remove']);
+
+    await user.click(within(header).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByRole('dialog', { name: 'Uninstall plugin' })).toBeInTheDocument();
+  });
+
+  it('M3: reads the detail again when a rollback changes the pinned version', async () => {
+    window.history.replaceState({}, '', '/marketplace/installed');
+    let pinned = '1.2.0';
+    const detailVersions: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/rollback')) {
+        pinned = '1.1.0';
+        return jsonResponse({ id: 'ar-aging', from: '1.2.0', to: '1.1.0' });
+      }
+      if (url.includes('/api/marketplace/plugin/')) {
+        detailVersions.push(pinned);
+        return jsonResponse(detailResponse({
+          plugin: detail({
+            id: 'ar-aging', name: 'AR Aging',
+            capabilities: pinned === '1.1.0' ? WEB_CAPABILITIES : NONWEB_CAPABILITIES,
+          }),
+          installed: installed({
+            id: 'ar-aging', name: 'AR Aging',
+            pinned: { version: pinned, sha256: 'a'.repeat(64) },
+          }),
+          deskNetwork: false,
+        }));
+      }
+      return jsonResponse(installedResponse([installed({
+        id: 'ar-aging', name: 'AR Aging',
+        pinned: { version: pinned, sha256: 'a'.repeat(64) },
+      })], false));
+    }));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    await screen.findByRole('heading', { level: 2, name: 'AR Aging' });
+    await waitFor(() => expect(detailVersions).toEqual(['1.2.0']));
+
+    await user.click(screen.getByRole('button', { name: 'Roll back' }));
+    const dialog = screen.getByRole('dialog', { name: 'Roll back AR Aging' });
+    await user.click(within(dialog).getByRole('button', { name: 'Roll back' }));
+
+    expect(await screen.findByText('Rolled back AR Aging from 1.2.0 to 1.1.0.')).toBeInTheDocument();
+    // The new pinned version asks for the web, so a fresh capability read
+    // turns the row into the cannot-run state.
+    expect(await screen.findByText('Cannot run on this desk')).toBeInTheDocument();
+    await waitFor(() => expect(detailVersions).toContain('1.1.0'));
+  });
+
+  it('M4: keeps the installed purge dialog through a failure and refuses a cancel in flight', async () => {
+    window.history.replaceState({}, '', '/marketplace/installed');
+    const purge = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/purge-data')) return purge.promise;
+      return jsonResponse(installedResponse([installed()]));
+    }));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    await screen.findByRole('heading', { level: 2, name: 'AR Aging' });
+    await user.click(screen.getByRole('button', { name: 'Purge data' }));
+    const dialog = screen.getByRole('dialog', { name: 'Purge data for AR Aging' });
+    await user.type(
+      within(dialog).getByLabelText(/Type delete-data:ar-aging to confirm/),
+      'delete-data:ar-aging',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Purge data' }));
+
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await act(async () => {
+      purge.release(jsonResponse({
+        error: 'marketplace:refused', message: 'The purge was refused.',
+      }, 400));
+    });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('The purge was refused.');
+    expect(screen.getByRole('dialog', { name: 'Purge data for AR Aging' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
+  it('M4: keeps the detail purge dialog through a failure and refuses a cancel in flight', async () => {
+    window.history.replaceState({}, '', '/marketplace/plugin/ar-aging');
+    const purge = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/purge-data')) return purge.promise;
+      return jsonResponse(detailResponse({ installed: installed() }));
+    }));
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+
+    await screen.findByRole('heading', { level: 1, name: 'AR Aging' });
+    await user.click(screen.getByRole('button', { name: 'Purge data' }));
+    const dialog = screen.getByRole('dialog', { name: 'Purge plugin data' });
+    await user.type(
+      within(dialog).getByLabelText(/Type delete-data:ar-aging to confirm/),
+      'delete-data:ar-aging',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Purge data' }));
+
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await act(async () => {
+      purge.release(jsonResponse({
+        error: 'marketplace:refused', message: 'The purge was refused.',
+      }, 400));
+    });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('The purge was refused.');
+    expect(screen.getByRole('dialog', { name: 'Purge plugin data' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+});
