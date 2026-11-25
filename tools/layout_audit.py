@@ -55,6 +55,8 @@ DEFAULT_OUT = ROOT / "build" / "layout-audit"
 FIXED_TIME = "2026-11-24T12:00:00Z"
 FIXED_EPOCH = 1795521600.0
 LONG_VALUES_FIXTURE = ROOT / "tools" / "layout_fixtures" / "long-values.api.json"
+OVERFLOW_FIXTURE = ROOT / "tools" / "layout_fixtures" / "overflow-widget"
+OVERFLOW_CONDITIONS = ("plugins", "full")
 PENDING_SELECTOR = 'button,[role="button"],input[type="submit"],input[type="button"]'
 PENDING_ENUM_JS = r"""
 (arg) => {
@@ -1125,6 +1127,13 @@ body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
 <span class="selftest-clean-pill">Clean pill</span>
 <button class="selftest-cc-a">First</button>
 <button class="selftest-cc-b">Second</button>
+<svg class="selftest-svg" role="button" tabindex="0" aria-label="Graph node"
+     width="90" height="26"><text x="2" y="18">Graph node</text></svg>
+<script>
+document.querySelector('.selftest-svg').addEventListener('click', function () {
+  this.setAttribute('aria-busy', 'true');
+});
+</script>
 </body></html>
 """
 
@@ -1258,6 +1267,19 @@ def _selftest() -> int:
             if len(popover_hits) != 1:
                 failures.append(f"w-menu offscreen-content: expected 1, "
                                 f"found {len(popover_hits)}")
+            page.goto(base + "/", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            svg_controls = [control for control in _pending_controls(page)
+                            if control.get("path", "").startswith("svg.selftest-svg")]
+            if len(svg_controls) != 1:
+                failures.append(f"svg click control: expected 1, found {len(svg_controls)}")
+            else:
+                clicked = _pending_click(page, svg_controls[0])
+                svg_busy = page.evaluate(
+                    "() => document.querySelector('.selftest-svg')"
+                    ".getAttribute('aria-busy')")
+                if not clicked or svg_busy != "true":
+                    failures.append(f"svg click path: clicked={clicked}, busy={svg_busy!r}")
             page.goto(base + "/form", wait_until="domcontentloaded")
             page.wait_for_timeout(200)
             held = []
@@ -1301,7 +1323,7 @@ def _selftest() -> int:
         for failure in failures:
             print("  " + failure)
         return 1
-    print("SELFTEST PASS 15 detector expectations")
+    print("SELFTEST PASS 16 detector expectations")
     return 0
 
 class AuditError(Exception):
@@ -1557,20 +1579,19 @@ def build_combos(args) -> list[dict]:
                 for view in views:
                     add(condition, width, "unkey", view, False)
     for overlay in build_overlays():
-        condition = args.only_condition or (conditions[0] if conditions else "")
-        if overlay["conditions"] and condition not in overlay["conditions"]:
-            continue
         if not _route_matches(overlay, overlay_filters):
             continue
-        if "unkey" not in themes:
-            continue
-        for width in overlay["widths"]:
-            if width not in widths:
+        for condition in conditions:
+            if overlay["conditions"] and condition not in overlay["conditions"]:
                 continue
-            add(condition, width, "unkey",
-                {"path": overlay["route"], "kind": "overlay",
-                 "state": overlay["state"], "opener": overlay["opener"],
-                 "overlay_key": overlay["key"]}, False)
+            for theme in themes:
+                for width in overlay["widths"]:
+                    if width not in widths:
+                        continue
+                    add(condition, width, theme,
+                        {"path": overlay["route"], "kind": "overlay",
+                         "state": overlay["state"], "opener": overlay["opener"],
+                         "overlay_key": overlay["key"]}, False)
     if not combos:
         raise AuditError(
             "the selected filters produce no combinations: check --conditions, "
@@ -1943,6 +1964,23 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
                 raise AuditError(
                     f"installing {plugin_id} answered {response.status}: {response.text()[:200]}")
         notes.append(f"{len(_plugin_ids())} plugin(s) installed")
+    if condition in OVERFLOW_CONDITIONS:
+        fixture = OVERFLOW_FIXTURE
+        response = _post_json(context, f"{base}/api/plugins/install",
+                              {"zip_path": str(fixture), "source": "dir"})
+        if response.status != 200:
+            raise AuditError(f"installing the overflow fixture answered "
+                             f"{response.status}: {response.text()[:200]}")
+        manual = tmp_root / "data" / "plugin-data" / "audit-overflow" / "manual.json"
+        manual.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(fixture / "manual.json", manual)
+        response = context.request.post(
+            base + "/api/plugins/audit-overflow/retest",
+            data=json.dumps({}), headers={"Content-Type": "application/json"},
+            timeout=60000)
+        if response.status != 200:
+            raise AuditError(f"retesting the overflow fixture answered {response.status}")
+        notes.append("overflow fixture installed")
     if condition in ("full", "long-values", "busy"):
         from agentdesk.server import demo_data
 
@@ -2374,7 +2412,13 @@ def _pending_click(page, control: dict) -> bool:
             el.form.target = 'layout-pending-frame';
           }
           el.scrollIntoView({block: 'center', inline: 'center'});
-          el.click();
+          if (typeof el.click === 'function') {
+            el.click();
+          } else {
+            el.dispatchEvent(new MouseEvent('click', {
+              bubbles: true, cancelable: true, composed: true, view: window
+            }));
+          }
           return true;
         }""", {"selector": PENDING_SELECTOR, "path": control.get("path", ""),
                "text": control.get("text", ""),
