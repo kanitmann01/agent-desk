@@ -460,7 +460,7 @@
   color: var(--text);
   font-weight: 600;
 }
-.mkt-digest { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.mkt-digest { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
 .mkt-digest code {
   flex: 0 1 auto;
   min-width: 0;
@@ -468,6 +468,30 @@
   overflow-x: auto;
   overflow-wrap: normal;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+/* The manual copy line sits under the digest in the same narrow cell and
+   wraps there instead of widening it. */
+.mkt-digest-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mkt-digest-fallback .mkt-attention { display: block; }
+.mkt-digest-fallback input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-inner);
+  background: var(--surface-2);
+  color: var(--text);
   font-family: var(--font-mono);
   font-size: 12px;
 }
