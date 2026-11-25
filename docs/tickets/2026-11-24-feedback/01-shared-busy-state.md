@@ -23,4 +23,4 @@
 - [x] Component tests assert the label swap, the aria attribute, the ignored second press and the unchanged size class.
   - Verified: `frontend/src/test/button-pending.test.tsx` asserts the label stack, the hidden idle label, the aria attribute and the ignored second press; since 838a540 and 0b39392 `frontend/src/test/tokens.test.ts` pins the declarations that hold the box (the out-of-flow dot, the label shift, the text button's one row), and `frontend/src/test/setup-strip.test.tsx` pins the busy text button's markup. jsdom cannot measure layout, so the size itself is proven in the browser, under the item above.
 - [x] `python tools/ci_local.py` passes 7/7 with the new tests.
-  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.
+  - Verified: `python tools/ci_local.py` passed 7/7 on `2d00540` (127 s) and again on the head that was pushed, 7/7 in 117 s (pytest 3520 passed, 1 skipped; vitest 596).

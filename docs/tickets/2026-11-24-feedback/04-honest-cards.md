@@ -33,4 +33,4 @@
 - [x] Component and server tests cover the filtered cards, the two health groups, the two counters, the word "never" and the marketplace notice.
   - Verified: tests/test_ui_text_fit.py, test_ui_feedback_review.py and frontend/src/test/brief-decisions.test.tsx, cards.test.tsx, review-dashboard.test.tsx, marketplace-cannot-run.test.tsx.
 - [x] `python tools/ci_local.py` passes 7/7.
-  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.
+  - Verified: `python tools/ci_local.py` passed 7/7 on `2d00540` (127 s) and again on the head that was pushed, 7/7 in 117 s (pytest 3520 passed, 1 skipped; vitest 596).

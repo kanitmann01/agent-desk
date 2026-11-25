@@ -31,4 +31,4 @@
 - [x] Component and token tests cover the figure, the stage layout, the timeline columns and the scoped meta rule.
   - Verified: frontend/src/test/text-fit-dashboard.test.ts, cards.test.tsx, review-dashboard.test.tsx and tokens.test.ts cover the figure, stage, timeline and scoped meta.
 - [x] `python tools/ci_local.py` passes 7/7.
-  - Verified: `python tools/ci_local.py` on `2d00540`, the last commit that changes code: 7/7 gates passed in 127 s (pytest 3520 passed, 1 skipped; vitest 596). It was run again on the head that was pushed, after the documentation commits.
+  - Verified: `python tools/ci_local.py` passed 7/7 on `2d00540` (127 s) and again on the head that was pushed, 7/7 in 117 s (pytest 3520 passed, 1 skipped; vitest 596).
