@@ -159,8 +159,10 @@ first second; the region that will receive the result owns the rest.
 - **F1. Nothing shows under 100 ms.** From 100 ms to 1 s the control that
   started the work shows it on itself: it cannot be pressed again, it
   carries `aria-busy="true"`, its verb becomes the continuous form
-  ("Saving...", "Asking your AI..."), and its box does not change size. A
-  dot may pulse in colour only, and `prefers-reduced-motion` freezes it.
+  ("Saving...", "Asking your AI..."), and its box holds still: the same
+  height, padding and type, and never narrower. A longer verb may make it
+  wider, by exactly the difference between the two labels. A dot may
+  pulse in colour only, and `prefers-reduced-motion` freezes it.
 - **F2. From 1 s to 30 s the region that will receive the result shows a
   placeholder with the same shape as the incoming content** (a skeleton
   or the app's dotted wireframe) and one plain line naming the phase in
