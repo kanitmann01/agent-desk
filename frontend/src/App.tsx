@@ -129,7 +129,6 @@ function DashboardApp() {
       <Centered role="alert">
         <h1 ref={focusFailure} tabIndex={-1}>{SESSION_EXPIRED_TITLE}</h1>
         <p>{SESSION_EXPIRED_MESSAGE}</p>
-        <Button onClick={() => window.location.reload()}>Try again</Button>
       </Centered>
     );
   }

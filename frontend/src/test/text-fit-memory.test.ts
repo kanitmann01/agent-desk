@@ -123,6 +123,18 @@ describe('memory loop text fit', () => {
     expect(rule(loopCss, '#memory-loop-root .ml-figure')).toContain('white-space:nowrap');
   });
 
+  it('keeps a busy button the same box as its idle self', () => {
+    expect(rule(loopCss, '#memory-loop-root .ml-btn.mem-pending')).toContain('position:relative');
+    const dot = rule(loopCss, '#memory-loop-root .ml-btn.mem-pending .mem-busy-dot');
+    expect(dot).toContain('position:absolute');
+    expect(dot).toContain('left:6px');
+    expect(dot).toContain('top:50%');
+    expect(dot).toContain('margin-top:-4px');
+    const labels = rule(loopCss, '#memory-loop-root .ml-btn.mem-pending .mem-btn-labels');
+    expect(labels).toContain('transform:translateX(8px)');
+    expect(rule(loopCss, '#memory-loop-root .ml-text-btn .mem-btn-labels')).toContain('display:inline-grid');
+  });
+
   it('wraps the four-step strip top row and keeps its labels inside the step', () => {
     expect(rule(loopCss, '#memory-loop-root .ml-step-top')).toContain('flex-wrap:wrap');
     expect(rule(loopCss, '#memory-loop-root .ml-step-index')).toContain('white-space:nowrap');

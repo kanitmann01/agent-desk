@@ -216,6 +216,22 @@ describe('loop feedback', () => {
     expect(within(review).getByRole('status').textContent).toMatch(/Saved\./);
   });
 
+  it('keeps the dot and both labels in a busy button', async () => {
+    serve();
+    render(<MemoryLoop pollMs={0} />);
+    await flush();
+    const review = screen.getByRole('region', { name: 'Review' });
+    const approve = within(review).getAllByRole('button', { name: 'Approve' })[0];
+    fireEvent.click(approve);
+    await flush(100);
+    expect(approve.querySelector('.mem-busy-dot')).toBeTruthy();
+    const labels = approve.querySelectorAll('.mem-btn-labels > .mem-btn-label');
+    expect(labels).toHaveLength(2);
+    expect(labels[0].textContent).toBe('Approve');
+    expect(labels[0].className).toContain('mem-btn-label-hidden');
+    expect(labels[1].textContent).toBe('Saving...');
+  });
+
   it('reports an approve-all partial result honestly', async () => {
     const server = serve();
     render(<MemoryLoop pollMs={0} />);

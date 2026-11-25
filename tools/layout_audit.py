@@ -103,16 +103,24 @@ PENDING_STATE_JS = r"""
     return parts.join('.');
   }
   const found = [];
+  const samePath = [];
   for (const candidate of document.querySelectorAll(arg.selector)) {
     if (!visible(candidate)) continue;
     const text = (candidate.innerText || candidate.value || candidate.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (path(candidate) === arg.path) samePath.push(candidate);
     if (path(candidate) === arg.path && text === arg.text) found.push(candidate);
   }
-  const el = found[arg.ordinal] || found[0] || null;
-  const info = el ? {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
-                     path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-                     disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
-                     ariaBusy:el.getAttribute('aria-busy') || ''} : null;
+  const marked = document.querySelector('[data-layout-pending-target="1"]');
+  const el = (marked && visible(marked)) ? marked
+    : (found[arg.ordinal] || found[0] || samePath[arg.ordinal] || samePath[0] || null);
+  const info = el ? (function () {
+    const box = el.getBoundingClientRect();
+    return {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
+            path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+            disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
+            ariaBusy:el.getAttribute('aria-busy') || '',
+            box:{x:box.x, y:box.y, width:box.width, height:box.height}};
+  })() : null;
   let waitVisible = false;
   if (arg.wait_target) {
     let target = null;
@@ -1127,10 +1135,30 @@ body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
 <span class="selftest-clean-pill">Clean pill</span>
 <button class="selftest-cc-a">First</button>
 <button class="selftest-cc-b">Second</button>
+<button id="grow" type="button">Grow busy<span
+  style="display:none;width:16px;height:8px;background:#111"></span></button>
+<button id="stable" type="button" style="width:180px">Stable busy</button>
+<button id="grow-label" type="button">Run</button>
+<button id="grow-height" type="button" style="width:180px">Height only</button>
 <svg class="selftest-svg" role="button" tabindex="0" aria-label="Graph node"
      width="90" height="26"><text x="2" y="18">Graph node</text></svg>
 <script>
 document.querySelector('.selftest-svg').addEventListener('click', function () {
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('grow').addEventListener('click', function () {
+  this.querySelector('span').style.display = 'inline-block';
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('stable').addEventListener('click', function () {
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('grow-label').addEventListener('click', function () {
+  this.textContent = 'Running longer';
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('grow-height').addEventListener('click', function () {
+  this.style.height = '44px';
   this.setAttribute('aria-busy', 'true');
 });
 </script>
@@ -1278,8 +1306,32 @@ def _selftest() -> int:
                 svg_busy = page.evaluate(
                     "() => document.querySelector('.selftest-svg')"
                     ".getAttribute('aria-busy')")
-                if not clicked or svg_busy != "true":
-                    failures.append(f"svg click path: clicked={clicked}, busy={svg_busy!r}")
+                if not isinstance(clicked, dict) or svg_busy != "true":
+                    failures.append(f"svg click path: clicked={clicked!r}, busy={svg_busy!r}")
+            box_controls = {control.get("text", ""): control
+                            for control in _pending_controls(page)}
+            for label, element_id, should_change in (
+                    ("Grow busy", "grow", True),
+                    ("Stable busy", "stable", False),
+                    ("Run", "grow-label", False),
+                    ("Height only", "grow-height", True)):
+                control = box_controls.get(label)
+                if control is None:
+                    failures.append(f"{label} control: not found")
+                    continue
+                before = _pending_click(page, control)
+                after = page.evaluate(
+                    "(id) => { const el = document.getElementById(id);"
+                    " const r = el.getBoundingClientRect();"
+                    " return {box:{x:r.x, y:r.y, width:r.width, height:r.height},"
+                    r" label:(el.innerText || el.value || el.getAttribute('aria-label') || '')"
+                    r".replace(/\s+/g, ' ').trim()}; }",
+                    element_id)
+                label_changed = after.get("label") != control.get("text")
+                if _box_changed(before, after.get("box"), label_changed) is not should_change:
+                    failures.append(
+                        f"{label} box: before={before!r} after={after!r} "
+                        f"label_changed={label_changed} expected change={should_change}")
             page.goto(base + "/form", wait_until="domcontentloaded")
             page.wait_for_timeout(200)
             held = []
@@ -1323,7 +1375,7 @@ def _selftest() -> int:
         for failure in failures:
             print("  " + failure)
         return 1
-    print("SELFTEST PASS 16 detector expectations")
+    print("SELFTEST PASS 16 detector expectations, 4 box expectations")
     return 0
 
 class AuditError(Exception):
@@ -2371,14 +2423,14 @@ def _pending_controls(page) -> list[dict]:
     return page.evaluate(PENDING_ENUM_JS, {"selector": PENDING_SELECTOR})
 
 
-def _pending_click(page, control: dict) -> bool:
-    """Click the matching visible control by its recorded path and ordinal.
+def _pending_click(page, control: dict) -> dict | None:
+    """Click the matching visible control and return its box before the click.
 
     The index among all matching elements is not the index among visible
     ones, so the match uses the path and text the enumeration recorded,
     then the same ordinal when duplicates share both.
     """
-    return bool(page.evaluate(
+    return page.evaluate(
         r"""(arg) => {
           function visible(el) {
             const s = getComputedStyle(el);
@@ -2412,6 +2464,9 @@ def _pending_click(page, control: dict) -> bool:
             el.form.target = 'layout-pending-frame';
           }
           el.scrollIntoView({block: 'center', inline: 'center'});
+          const box = el.getBoundingClientRect();
+          const before = {x:box.x, y:box.y, width:box.width, height:box.height};
+          el.setAttribute('data-layout-pending-target', '1');
           if (typeof el.click === 'function') {
             el.click();
           } else {
@@ -2419,10 +2474,10 @@ def _pending_click(page, control: dict) -> bool:
               bubbles: true, cancelable: true, composed: true, view: window
             }));
           }
-          return true;
+          return before;
         }""", {"selector": PENDING_SELECTOR, "path": control.get("path", ""),
                "text": control.get("text", ""),
-               "ordinal": control.get("ordinal", 0)}))
+               "ordinal": control.get("ordinal", 0)})
 
 
 def _pending_indicators(page) -> list[dict]:
@@ -2470,6 +2525,35 @@ def _pending_screenshot(run_dir: Path, combo: dict, view: dict, index: int) -> P
             f"__{index:03d}.png")
 
 
+def _box_changed(before: dict | None, busy: dict | None,
+                 label_changed: bool = False) -> bool:
+    """True when a busy box is a defect under the label-difference rule.
+
+    A height change over 1px is always a defect. A width change over 1px is a
+    defect only when the visible label did not change: a longer pending verb
+    is allowed to widen its own control.
+    """
+    if not isinstance(before, dict) or not isinstance(busy, dict):
+        return False
+    try:
+        width = abs(float(busy.get("width", 0)) - float(before.get("width", 0))) > 1
+        height = abs(float(busy.get("height", 0)) - float(before.get("height", 0))) > 1
+    except (TypeError, ValueError):
+        return False
+    return height or (width and not label_changed)
+
+
+def _box_delta(before: dict | None, busy: dict | None) -> tuple[float, float]:
+    """The width and height change between two boxes, or zeros."""
+    if not isinstance(before, dict) or not isinstance(busy, dict):
+        return 0.0, 0.0
+    try:
+        return (float(busy.get("width", 0)) - float(before.get("width", 0)),
+                float(busy.get("height", 0)) - float(before.get("height", 0)))
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+
+
 def _pending_verdict(control: dict, state: dict, started: list[dict],
                      before_indicators: list[dict], file_dialog: bool) -> tuple[str, dict]:
     """Name one control's pending state and the evidence behind it."""
@@ -2491,7 +2575,9 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
         "disabled": disabled,
         "aria_busy": aria_busy,
         "wait_visible": wait_visible,
-        "label_changed": label_changed,
+        "labelChanged": label_changed,
+        "labelBefore": control.get("text", ""),
+        "labelBusy": control_after.get("text", ""),
         "busy_indicators": new_indicators[:4],
     }
     if not started:
@@ -2614,7 +2700,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 fresh.on("dialog", on_dialog)
                 fresh.on("filechooser", on_filechooser)
                 fresh.route("**/*", hold)
-                if not _pending_click(fresh, control):
+                box_before = _pending_click(fresh, control)
+                if not isinstance(box_before, dict):
                     raise RuntimeError("control not found on the fresh page")
                 fresh.wait_for_timeout(700)
                 state = fresh.evaluate(PENDING_STATE_JS, {
@@ -2627,6 +2714,15 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 })
                 verdict, evidence = _pending_verdict(
                     control, state, started, before_indicators, file_dialog[0])
+                box_busy = (state.get("control") or {}).get("box")
+                width_delta, height_delta = _box_delta(box_before, box_busy)
+                evidence["boxBefore"] = box_before
+                evidence["boxBusy"] = box_busy
+                evidence["boxWidthDelta"] = round(width_delta, 2)
+                evidence["boxHeightDelta"] = round(height_delta, 2)
+                evidence["boxChanged"] = (
+                    verdict == "meets" and _box_changed(
+                        box_before, box_busy, bool(evidence.get("labelChanged"))))
                 record["verdict"] = verdict
                 record["evidence"] = evidence
                 if state.get("control"):
@@ -3354,7 +3450,7 @@ def _pending_evidence(record: dict) -> str:
         parts.append("disabled")
     if evidence.get("aria_busy"):
         parts.append("aria-busy")
-    if evidence.get("label_changed"):
+    if evidence.get("labelChanged"):
         parts.append("label changed")
     for item in (evidence.get("busy_indicators") or [])[:2]:
         parts.append("indicator " + str(item.get("path", "")))
@@ -3522,6 +3618,52 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
             control = (record.get("control") or record.get("control_path") or "").replace("|", "/")
             lines.append(f"| {page} | {control[:90]} | {record.get('verdict')} | "
                          f"{_pending_evidence(record)[:160]} |")
+        lines.append("")
+        changed = [record for record in pending
+                   if (record.get("evidence") or {}).get("boxChanged")]
+        lines.append("### Box changes while busy")
+        lines.append("")
+        lines.append(f"Controls that changed box while showing a busy state: {len(changed)}")
+        lines.append("")
+        if changed:
+            def delta(record):
+                """The larger absolute dimension change for sorting."""
+                evidence = record.get("evidence") or {}
+                width, height = _box_delta(evidence.get("boxBefore"),
+                                           evidence.get("boxBusy"))
+                return max(abs(width), abs(height)), width, height
+            worst = sorted(changed, key=delta, reverse=True)[:5]
+            lines.append("| control | route | width delta | height delta |")
+            lines.append("| --- | --- | ---: | ---: |")
+            for record in worst:
+                evidence = record.get("evidence") or {}
+                width, height = _box_delta(evidence.get("boxBefore"),
+                                           evidence.get("boxBusy"))
+                label = (record.get("control") or record.get("control_path") or "").replace("|", "/")
+                page = record.get("state") or record.get("route", "")
+                lines.append(f"| {label[:80]} | {page} | {width:+.1f} | {height:+.1f} |")
+        widened = [record for record in pending
+                   if (record.get("evidence") or {}).get("labelChanged")
+                   and abs(float((record.get("evidence") or {}).get(
+                       "boxWidthDelta", 0) or 0)) > 1]
+        lines.append("")
+        lines.append(f"Information: width changes explained by a changed label: {len(widened)}")
+        lines.append("")
+        if widened:
+            lines.append("| control | route | label before | label busy | width delta |")
+            lines.append("| --- | --- | --- | --- | ---: |")
+            for record in sorted(
+                    widened,
+                    key=lambda item: abs(float((item.get("evidence") or {}).get(
+                        "boxWidthDelta", 0) or 0)), reverse=True):
+                evidence = record.get("evidence") or {}
+                label = (record.get("control") or record.get("control_path") or "").replace("|", "/")
+                page = record.get("state") or record.get("route", "")
+                before = str(evidence.get("labelBefore", "")).replace("|", "/")
+                busy = str(evidence.get("labelBusy", "")).replace("|", "/")
+                lines.append(f"| {label[:80]} | {page} | {before[:60]} | {busy[:60]} | "
+                             f"{float(evidence.get('boxWidthDelta', 0)):+.1f} |")
+        lines.append("")
     lines.append("")
     lines.append("## Runtime findings")
     lines.append("")
@@ -3637,9 +3779,12 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
     _write_summary(run_dir, findings, matrix, groups, args, elapsed, missing,
                    child_failures, pending)
     pages = len([entry for entry in matrix if entry["status"] == "measured"])
+    box_changed = len([record for record in pending
+                       if (record.get("evidence") or {}).get("boxChanged")])
     print(f"OUT {run_dir}")
     print(f"METRIC findings={len(findings)} groups={len(groups)} "
-          f"pages={pages} skipped={len(skipped_entries)}")
+          f"pages={pages} skipped={len(skipped_entries)} "
+          f"box-changed={box_changed}")
     if skipped_entries:
         print(f"SKIPPED {len(skipped_entries)} overlay state(s) listed in summary")
     incomplete = len(missing) + len(failed) + len(child_failures)

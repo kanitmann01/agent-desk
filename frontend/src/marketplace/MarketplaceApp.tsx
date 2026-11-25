@@ -3,7 +3,6 @@
 // page and moves focus to that page's heading.
 import { useCallback, useEffect, useState } from 'react';
 import Rail from '../dashboard/Rail';
-import Button from '../components/Button';
 import { useAnnouncement } from '../components/feedback';
 import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from '../api';
 import AdminPage from './Admin';
@@ -43,9 +42,12 @@ function Tabs({ route }: { route: MarketRoute }) {
 }
 
 /**
- * Say the session expired, with the same words and the same one action the
- * dashboard uses: a fresh link from the shortcut is the only fix, so no
- * page-level retry is offered.
+ * Say the session expired with the main app's words: the heading takes focus
+ * and the message is the next step.
+ *
+ * No retry is offered. A reload after a 401 returns to the same refusal or to
+ * the server's own expired page, so a button here could not succeed; the
+ * only fix is a fresh link from the shortcut.
  */
 function SessionNotice() {
   const focusHeading = useCallback((node: HTMLHeadingElement | null) => {
@@ -56,7 +58,6 @@ function SessionNotice() {
       <div className="mkt-error-panel" role="alert">
         <h1 ref={focusHeading} tabIndex={-1}>{SESSION_EXPIRED_TITLE}</h1>
         <p>{SESSION_EXPIRED_MESSAGE}</p>
-        <Button tone="secondary" onClick={() => window.location.reload()}>Try again</Button>
       </div>
     </div>
   );

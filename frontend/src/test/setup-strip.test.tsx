@@ -185,6 +185,21 @@ describe('the Get started strip (R24)', () => {
     expect(screen.queryByRole('button', { name: 'Hide sample data' })).toBeNull();
   });
 
+  it('keeps the sample switch\'s dot and both labels in one row container', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    render(<Dashboard data={desk(setupData([false, false, false]))} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Try it with sample data' }));
+    const busy = await screen.findByRole('button', { name: 'Turning on the sample data...' });
+    const dot = busy.querySelector(':scope > .btn-busy-dot');
+    const labels = busy.querySelector(':scope > .btn-labels');
+    expect(dot).not.toBeNull();
+    expect(labels).not.toBeNull();
+    expect(labels?.querySelectorAll(':scope > .btn-label')).toHaveLength(2);
+    // The dot and the label grid are siblings, so the inline-grid row
+    // keeps them on the same line with the sentence's baseline.
+    expect(labels?.parentElement).toBe(busy);
+  });
+
   it('says so when the sample switch does not answer', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'settings are not available' }, { status: 503 })));
     const user = userEvent.setup();

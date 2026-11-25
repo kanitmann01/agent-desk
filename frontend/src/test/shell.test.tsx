@@ -304,7 +304,10 @@ describe('the centered app states', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Session required');
     expect(screen.getByRole('heading', { name: 'Session required' })).toHaveFocus();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    // A reload only leads back to the same refusal; the notice names the
+    // next step instead of offering a button that cannot succeed.
+    expect(alert).toHaveTextContent('Open Agent Desk from its shortcut to get a fresh link.');
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
   it('shows the load-failed view when the server is unreachable', async () => {

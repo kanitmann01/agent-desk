@@ -297,6 +297,36 @@ function onGrid(value: string): boolean {
   return pxs.length > 0 && pxs.every((p) => Number.parseFloat(p) % 4 === 0);
 }
 
+describe('a pending button keeps its box', () => {
+  it('takes the busy dot out of flow and shifts the labels under .btn-pending', () => {
+    // The dot is a real control mark, but it must not add 16px to the
+    // button when it appears: absolute placement plus a label shift keeps
+    // the same box and the same visual centre.
+    expect(decl(css, '.btn-pending', 'position')).toBe('relative');
+    expect(decl(css, '.btn-pending .btn-busy-dot', 'position')).toBe('absolute');
+    expect(decl(css, '.btn-pending .btn-busy-dot', 'left')).toBe('6px');
+    expect(decl(css, '.btn-pending .btn-busy-dot', 'top')).toBe('50%');
+    expect(decl(css, '.btn-pending .btn-busy-dot', 'margin-top')).toBe('-4px');
+    expect(decl(css, '.btn-pending .btn-labels', 'transform')).toBe('translateX(8px)');
+  });
+
+  it('nudges the dot into the small button\'s 12px gutter', () => {
+    expect(decl(css, '.btn-sm.btn-pending .btn-busy-dot', 'left')).toBe('4px');
+  });
+
+  it('keeps the text button\'s dot inline', () => {
+    expect(decl(css, '.text-btn .btn-busy-dot', 'display')).toBe('inline-block');
+    expect(decl(css, '.text-btn .btn-busy-dot', 'vertical-align')).toBe('middle');
+    expect(decl(css, '.text-btn .btn-busy-dot', 'margin-right')).toBe('6px');
+  });
+
+  it('keeps a busy text button on one line', () => {
+    // A text button sits inside a sentence. Its label grid must stay
+    // inline, or the dot takes one line and the labels the next.
+    expect(decl(css, '.text-btn .btn-labels', 'display')).toBe('inline-grid');
+  });
+});
+
 describe('the shell rhythm sits on the 4px grid', () => {
   // The named band gaps, exactly as shipped, so a half-step cannot
   // creep back in.

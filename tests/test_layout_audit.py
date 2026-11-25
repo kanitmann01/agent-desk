@@ -236,6 +236,19 @@ def test_pending_verdicts():
     assert verdict == "disabled-only"
 
 
+def test_box_changed_compares_width_and_height_with_one_pixel_noise():
+    """A busy box is flagged only when width or height moves by more than 1px."""
+    before = {"width": 100.0, "height": 24.0}
+    assert audit._box_changed(before, {"width": 102.0, "height": 24.0}) is True
+    assert audit._box_changed(before, {"width": 101.0, "height": 24.0}) is False
+    assert audit._box_changed(before, {"width": 100.0, "height": 26.0}) is True
+    assert audit._box_changed(before, {"width": 100.5, "height": 24.5}) is False
+    assert audit._box_changed(None, before) is False
+    assert audit._box_changed(before, {"width": 120.0, "height": 24.0}, True) is False
+    assert audit._box_changed(before, {"width": 120.0, "height": 30.0}, True) is True
+    assert audit._box_delta(before, {"width": 116.0, "height": 24.0}) == (16.0, 0.0)
+
+
 def test_pending_fail_thresholds():
     """Silent is high, disabled-only is medium, the rest never fails."""
     silent = [{"verdict": "silent"}]

@@ -89,9 +89,13 @@ describe('the marketplace says every wait (spec 027)', () => {
     expect(alert).toHaveTextContent('Open Agent Desk from its shortcut to get a fresh link.');
     expect(screen.getByRole('heading', { level: 1, name: 'Session required' })).toHaveFocus();
     // The page's own "did not load" panel never appears: its Try again would
-    // fail the same way and the only fix is a fresh shortcut.
+    // fail the same way and the only fix is a fresh shortcut. The notice
+    // offers no button at all, because a reload leads back to the same
+    // refusal; the message itself is the next step.
     expect(screen.queryByRole('heading', { name: 'The installed list did not load' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    expect(within(alert).queryByRole('button')).toBeNull();
+    expect(within(alert).getByText('Open Agent Desk from its shortcut to get a fresh link.'))
+      .toBeInTheDocument();
   });
 
   it('holds the describe probe under 100 ms, then shows the control working and ignores a second press', async () => {
