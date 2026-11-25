@@ -199,8 +199,14 @@ def test_pending_verdicts():
     control = {"text": "Save", "tag": "button"}
     state = {"control": {"disabled": False}, "indicators": [],
              "labelChanged": False, "ariaBusy": False}
-    verdict, _ = audit._pending_verdict(control, state, [], [], False)
+    verdict, _ = audit._pending_verdict(
+        control, state, [], [], False, True, ["structure-or-text"])
     assert verdict == "instant"
+
+    verdict, evidence = audit._pending_verdict(
+        control, state, [], [], False, False, [])
+    assert verdict == "dead"
+    assert evidence["signatureChanged"] is False
 
     busy = dict(state, ariaBusy=True)
     verdict, _ = audit._pending_verdict(control, busy, [{"method": "POST"}], [], False)
@@ -236,6 +242,46 @@ def test_pending_verdicts():
     assert verdict == "disabled-only"
 
 
+def _signature(**overrides):
+    """A complete page signature with one field at a time changed."""
+    value = {
+        "html": "<body><p>Before</p><button>Act</button></body>",
+        "htmlAttrs": [["data-theme", "unkey"]],
+        "scroll": [0, 0],
+        "location": "/inbox",
+        "title": "Inbox, Agent Desk",
+    }
+    value.update(overrides)
+    return value
+
+
+def test_signature_sees_each_part_of_the_page():
+    """Structure, document attributes, scroll, path and hash all count."""
+    before = _signature()
+    assert audit._signature_changed(before, before) is False
+    assert audit._signature_changed(
+        before, _signature(html="<body><p>After</p></body>")) is True
+    assert audit._signature_changed(
+        before, _signature(htmlAttrs=[["data-theme", "coforge"]])) is True
+    assert audit._signature_changed(
+        before, _signature(scroll=[0, 240])) is True
+    assert audit._signature_changed(
+        before, _signature(location="/inbox#card-1")) is True
+    assert audit._signature_changed(
+        before, _signature(title="Card, Agent Desk")) is True
+
+
+def test_signature_reasons_name_every_change():
+    """The reasons list is the readable evidence beside a changed signature."""
+    reasons = audit._signature_reasons(_signature(), _signature(
+        html="<body>changed</body>", htmlAttrs=[["data-theme", "coforge"]],
+        scroll=[0, 10], location="/inbox#card-1", title="Card"))
+    assert reasons == ["structure-or-text", "document-attributes", "scroll",
+                       "location", "title"]
+    assert audit._signature_reasons(_signature(), {"unavailable": "gone"}) == [
+        "navigation-or-unavailable"]
+
+
 def test_box_changed_compares_width_and_height_with_one_pixel_noise():
     """A busy box is flagged only when width or height moves by more than 1px."""
     before = {"width": 100.0, "height": 24.0}
@@ -250,15 +296,18 @@ def test_box_changed_compares_width_and_height_with_one_pixel_noise():
 
 
 def test_pending_fail_thresholds():
-    """Silent is high, disabled-only is medium, the rest never fails."""
+    """Silent and dead are high, disabled-only is medium, the rest never fail."""
     silent = [{"verdict": "silent"}]
+    dead = [{"verdict": "dead"}]
     disabled = [{"verdict": "disabled-only"}]
     meets = [{"verdict": "meets"}]
     assert audit._pending_fail(silent, "high") is True
+    assert audit._pending_fail(dead, "high") is True
     assert audit._pending_fail(disabled, "high") is False
     assert audit._pending_fail(disabled, "medium") is True
     assert audit._pending_fail(meets, "any") is False
     assert audit._pending_fail(silent, "none") is False
+    assert audit._pending_fail(dead, "none") is False
 
 
 def test_overflow_fixture_is_a_local_widget_with_the_planned_overlays():
