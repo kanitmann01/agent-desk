@@ -119,7 +119,7 @@ export function MarketCardView({ card, deskNetwork }: { card: MarketCard; deskNe
           {riskLabel(card.riskTier)}
         </span>
         <span className="mkt-source">{sourceLabel(card.source)}</span>
-        {cannotRun && <span className="mkt-chip">{CANNOT_RUN}</span>}
+        {cannotRun && <span className="mkt-chip" title={CANNOT_RUN}>{CANNOT_RUN}</span>}
         {card.sampleAvailable && <span className="mkt-chip">Sample</span>}
         {card.deprecated && <span className="mkt-chip mkt-chip-warn">Deprecated</span>}
         {card.yanked && <span className="mkt-chip mkt-chip-warn">Yanked</span>}
@@ -221,7 +221,7 @@ function Row({ card, featured = false, deskNetwork }: {
         {showMeta && !QUIET_RISK.has(card.riskTier.toLowerCase())
           ? <span className="mkt-row-extra">{riskLabel(card.riskTier)}</span> : null}
         {extras.map((extra) => <span key={extra} className="mkt-row-extra">{extra}</span>)}
-        {cannotRun && <span className="mkt-chip">{CANNOT_RUN}</span>}
+        {cannotRun && <span className="mkt-chip" title={CANNOT_RUN}>{CANNOT_RUN}</span>}
         {!card.eligible && reason ? (
           <p className="mkt-ineligible"><span className="mkt-ineligible-label">Not available:</span> {reason.message}</p>
         ) : null}
