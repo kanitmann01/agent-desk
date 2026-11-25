@@ -29,7 +29,16 @@ than an error:
 
 import html
 
-from agentdesk.server.pages import document_head, page_footer
+from agentdesk.server.pages import document_head, page_footer, status_line
+from agentdesk.wizard.core import resolve_choice
+
+# The two waits the wizard shows. The describe step and the answer that
+# completes the choice are when the card and its chart are decided, so
+# they draw the card sketch; a question that only opens the next one
+# keeps the plain panel.
+CARD_WAIT_SHAPE = "widget"
+CARD_WAIT_LABEL = "Choosing your plugin's card and chart..."
+QUESTION_WAIT_LABEL = "Working out your plugin..."
 
 STATE_DESCRIBING = "describing"
 STATE_QUESTIONS = "questions"
@@ -91,6 +100,28 @@ def _questions_of(session_json: dict) -> list[dict]:
     if not isinstance(questions, list):
         return []
     return [q for q in questions if isinstance(q, dict)]
+
+
+def _answer_reaches_card(question: dict, answers: dict) -> bool:
+    """Whether answering this question completes the choice and builds the card.
+
+    A source answer only opens the next question; it decides no card. A
+    show, look, detail or update answer that leaves no other field open
+    makes the server compose the card and chart, so that is the answer the
+    widget sketch waits on. A free-text answer has no value yet, so any
+    usable value stands in to see whether the rest of the choice resolves.
+    """
+    field = str(question.get("id") or "")
+    if not field:
+        return False
+    candidate = dict(answers or {})
+    options = _string_list(question.get("options"))
+    if options:
+        chosen = str(question.get("default") or "").strip()
+        candidate[field] = chosen if chosen in options else options[0]
+    else:
+        candidate[field] = "a value"
+    return resolve_choice(candidate) is not None
 
 
 def _does_line(draft: dict) -> str:
@@ -240,10 +271,19 @@ def _summary_html(summary: dict) -> str:
 
 
 def _questions_html(session_json: dict) -> str:
-    """One plain form per open question: radios, or a text field."""
+    """One plain form per open question: radios, or a text field.
+
+    The form whose answer completes the choice draws the card sketch; a
+    form that only opens the next question keeps the plain panel.
+    """
     sid = _esc(session_json.get("id"))
+    answers = session_json.get("answers")
+    answers = answers if isinstance(answers, dict) else {}
     blocks: list[str] = []
     for idx, question in enumerate(_questions_of(session_json)):
+        reaches = _answer_reaches_card(question, answers)
+        shape = CARD_WAIT_SHAPE if reaches else "panel"
+        label = CARD_WAIT_LABEL if reaches else QUESTION_WAIT_LABEL
         options = _string_list(question.get("options"))
         default = question.get("default")
         if options and default not in options:
@@ -266,7 +306,9 @@ def _questions_html(session_json: dict) -> str:
                 f'aria-label="{_esc(question.get("question"))}">'
             )
         blocks.append(
-            f'<form class="answer" method="post" action="/wizard/{sid}/answer">'
+            f'<form class="answer" method="post" action="/wizard/{sid}/answer" '
+            f'data-wait="#wizard-progress" data-wait-shape="{shape}" '
+            f'data-wait-label="{label}" data-busy="Working...">'
             f'<input type="hidden" name="question" value="{idx}">'
             f'<p class="aq">{_esc(question.get("question"))}</p>'
             f"{inputs_html}"
@@ -310,7 +352,9 @@ def _conversation_html(session_json: dict) -> str:
     parts.append(_questions_html(session_json))
     if not description.strip() and not _questions_of(session_json):
         parts.append(
-            f'<form class="answer" method="post" action="/wizard/{sid}/answer">'
+            f'<form class="answer" method="post" action="/wizard/{sid}/answer" '
+            f'data-wait="#wizard-progress" data-wait-shape="{CARD_WAIT_SHAPE}" '
+            f'data-wait-label="{CARD_WAIT_LABEL}" data-busy="Working...">'
             '<p class="aq">What should the plugin do?</p>'
             "<label for=\"wizard-description\">Describe it in one or two "
             "sentences.</label>"
@@ -341,6 +385,7 @@ def _preview_html(session_json: dict) -> str:
         )
     return (
         "<h1>Preview</h1>"
+        f"{status_line('Your preview is below.')}"
         "<p>This is what you would see every morning. Nothing is added "
         "until you approve it.</p>"
         f"{fill_note}"
@@ -411,6 +456,7 @@ def _approved_html(session_json: dict) -> str:
         )
     return (
         "<h1>Added</h1>"
+        f"{status_line('The widget is added and on your dashboard now.')}"
         "<p>The widget is on your dashboard now.</p>"
         f"{installed_line}"
         f"{_summary_html(approval_summary(draft))}"
@@ -433,9 +479,22 @@ def _escalated_html(session_json: dict) -> str:
         request_html = f"<pre>{_esc(request)}</pre>"
     else:
         request_html = '<p class="empty">No request text was captured.</p>'
+    answers = session_json.get("answers")
+    answers_html = ""
+    if isinstance(answers, dict) and answers:
+        lines = "".join(
+            f"<li>{_esc(value)}</li>" for value in answers.values()
+            if isinstance(value, str) and value.strip()
+        )
+        if lines:
+            answers_html = (
+                "<p>You chose:</p>"
+                f"<ul aria-label='The answers you gave'>{lines}</ul>"
+            )
     return (
         "<h1>Not buildable yet</h1>"
         f"<p>{_esc(reason)}</p>"
+        f"{answers_html}"
         "<p>I can't build this automatically yet. Your words went to the "
         "technical owner as a feature request, unchanged:</p>"
         f"{request_html}"
@@ -450,11 +509,14 @@ def _page_shell(title: str, body: str, version: str) -> str:
     breadcrumb so the way back is never a mystery."""
     esc_title = html.escape(title)
     return f"""{document_head(f"{title}, Agent Desk")}
-<div class="doc">
+<main id="main" class="doc">
+<p class="page-status" id="page-note" role="status" hidden></p>
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {body}
+<div id="wizard-progress"></div>
 {page_footer(version, note="Local only: nothing here reaches the internet.", touches=False)}
-</div>
+</main>
+<script src="/static/app.js"></script>
 </body>
 </html>
 """

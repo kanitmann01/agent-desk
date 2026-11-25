@@ -20,7 +20,12 @@ import { knownKind } from '../plugins/vocabulary';
 import WidgetCard, { type CardMenuItem } from '../components/WidgetCard';
 import TrackerCard from './TrackerCard';
 import Button from '../components/Button';
+import { PhaseLine, usePhase } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
+import { useFaceActions } from '../face/FaceProvider';
+import { useFaceActivity } from '../face/useFaceActivity';
 import { WireState } from './cells';
+import { PendingBody } from './pending';
 
 interface PluginCardViewProps {
   card: PluginCard;
@@ -210,10 +215,29 @@ interface PressOfferProps {
  */
 export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
   const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<'press' | 'stage' | null>(null);
   const [answer, setAnswer] = useState<Partial<InsightAnswer> | null>(null);
   const [refusal, setRefusal] = useState('');
   const [staged, setStaged] = useState<'' | 'staged' | 'existing'>('');
   const [stagedCard, setStagedCard] = useState('');
+  const pressPhase = press.kind === 'reply-draft' ? 'Drafting the reply' : 'Explaining this range';
+  // Nothing shows under 100 ms on either the control or its placeholder,
+  // and the answer replaces the placeholder in place.
+  const busyShown = useBusy(busy);
+  const placeholder = usePhase(busy && action === 'press', pressPhase);
+  const faceActions = useFaceActions();
+
+  useFaceActivity({
+    mood: 'thinking',
+    source: 'request',
+    label: action === 'stage' ? 'Staging reply card' : pressPhase,
+    active: busy,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: refusal || undefined,
+    active: Boolean(refusal),
+  });
 
   /**
    * Spend the press: post it once and keep whichever of the answer, the
@@ -222,6 +246,7 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
    */
   async function send(stage: boolean) {
     setBusy(true);
+    setAction(stage ? 'stage' : 'press');
     setRefusal('');
     if (!stage) {
       setAnswer(null);
@@ -238,37 +263,56 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
       result = await pressReading(press.route, body);
     } catch {
       setBusy(false);
-      setRefusal('The dashboard could not reach its own server; nothing was drafted.');
+      setAction(null);
+      setRefusal('The dashboard could not reach its own server; nothing was drafted. Try again.');
       return;
     }
     setBusy(false);
+    setAction(null);
     if (result.status === 401) {
       onExpired();
       return;
     }
     if (!result.ok) {
-      setRefusal(result.data.error || `The desk answered ${result.status} without a sentence; nothing was drafted.`);
+      setRefusal(result.data.error || `The desk answered ${result.status} without a sentence; nothing was drafted. Try again.`);
       return;
     }
     if (stage) {
       setStaged(result.data.staged === false ? 'existing' : 'staged');
       setStagedCard(result.data.cardId ?? '');
       await onRefetch();
+      faceActions?.notifyDone(result.data.staged === false ? 'Already staged' : 'Reply staged');
       return;
     }
     setStaged('');
     setAnswer(result.data);
+    faceActions?.notifyDone(press.kind === 'reply-draft' ? 'Reply drafted' : 'Range explained');
   }
 
   const disclosure = answer?.disclosure ?? [];
   const stageOffered = press.kind === 'reply-draft' && answer?.status === 'draft' && !staged;
 
   return (
-    <div className="w-body-inner">
-      <Button tone="secondary" className="btn-sm" disabled={busy} onClick={() => send(false)}>
+    <div className="w-body-inner" aria-busy={busy ? 'true' : undefined}>
+      <Button
+        tone="secondary"
+        className="btn-sm"
+        disabled={busy}
+        pending={busyShown && action === 'press'}
+        pendingLabel={press.kind === 'reply-draft' ? 'Drafting the reply...' : 'Explaining this range...'}
+        onClick={() => send(false)}
+      >
         {press.label}
       </Button>
       {refusal ? <div className="alert" role="alert">{refusal}</div> : null}
+      {placeholder.shown ? (
+        <PendingBody
+          phase={pressPhase}
+          slow={placeholder.slow}
+          lines={press.kind === 'reply-draft' ? 5 : 3}
+          className="w-note press-placeholder"
+        />
+      ) : null}
       {disclosure.length ? (
         <ul className="w-list" aria-label="What this press sends">
           {disclosure.map((line, i) => (
@@ -291,15 +335,22 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
         </p>
       ) : null}
       {stageOffered ? (
-        <Button tone="secondary" className="btn-sm" disabled={busy} onClick={() => send(true)}>
+        <Button
+          tone="secondary"
+          className="btn-sm"
+          disabled={busy}
+          pending={busyShown && action === 'stage'}
+          pendingLabel="Staging..."
+          onClick={() => send(true)}
+        >
           Stage as a reply card
         </Button>
       ) : null}
       {staged === 'staged' ? (
-        <p className="w-note">{`Staged as a card: ${stagedCard}. Open the inbox to accept or edit it.`}</p>
+        <p className="w-note" role="status">{`Staged as a card: ${stagedCard}. Open the inbox to accept or edit it.`}</p>
       ) : null}
       {staged === 'existing' ? (
-        <p className="w-note">
+        <p className="w-note" role="status">
           {`This reply was already staged as a card${stagedCard ? `: ${stagedCard}` : ''}. Open the inbox to accept or edit it.`}
         </p>
       ) : null}
@@ -315,6 +366,19 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const faceActions = useFaceActions();
+
+  useFaceActivity({
+    mood: 'reading',
+    source: 'request',
+    label: 'Re-testing the data source',
+    active: busy,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: note || undefined,
+    active: Boolean(note),
+  });
   // The wizard asks what a tile should show, so a workbook tile may carry a
   // face other than the classic one. It draws those elements like any other
   // card; the classic tracker card is what a tile without a chosen face gets.
@@ -349,17 +413,26 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
    */
   async function retest() {
     setBusy(true);
+    setNote('');
     let res;
     try {
       res = await postJson('/api/marketplace/retest', { id: card.id });
     } catch {
       setBusy(false);
-      setNote('The dashboard could not reach its own server; the re-test did not run.');
+      setNote('The dashboard could not reach its own server; the re-test did not run. Try again.');
       return;
     }
-    setBusy(false);
-    if (res.status === 401) { onExpired(); return; }
+    if (res.status === 401) { setBusy(false); onExpired(); return; }
+    if (!res.ok) {
+      setBusy(false);
+      setNote('The re-test did not run; try again in a moment.');
+      return;
+    }
+    // The dim and the phase line hold until the fresh payload lands, so
+    // the reader never sees the old card as if the re-test had finished.
     await onRefetch();
+    setBusy(false);
+    faceActions?.notifyDone('Re-test complete');
   }
 
   const menuItems: CardMenuItem[] = fresh
@@ -379,33 +452,36 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
       menuItems={menuItems}
       foot={`plugin v${card.version}`}
     >
-      {fresh && elements.length > 0 ? (
-        elements.map((element, i) => <ElementView key={i} element={element} />)
-      ) : fresh ? (
-        <>
-          <p className="w-big">{card.version}</p>
-          <p className="w-note">reading the data source</p>
-        </>
-      ) : (
-        <>
-          <div className="alert" role="status">
-            <p>{card.cause || 'data source has not run'}</p>
-            <p>
-              Re-test runs the plugin's data source again; the nightly probe
-              does the same for every plugin.
-            </p>
-          </div>
-          {note ? <div className="alert" role="status">{note}</div> : null}
-        </>
-      )}
-      {blocks.map((block, i) => (
-        <p className="w-note" key={i}>
-          {block.text}
-        </p>
-      ))}
-      {card.manualMetric ? (
-        <ManualValueForm pluginId={card.manualMetric} onRefetch={onRefetch} onExpired={onExpired} />
-      ) : null}
+      {busy ? <PhaseLine active text="Re-testing the data source" /> : null}
+      <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+        {fresh && elements.length > 0 ? (
+          elements.map((element, i) => <ElementView key={i} element={element} />)
+        ) : fresh ? (
+          <>
+            <p className="w-big">{card.version}</p>
+            <p className="w-note">reading the data source</p>
+          </>
+        ) : (
+          <>
+            <div className="alert" role="status">
+              <p>{card.cause || 'data source has not run'}</p>
+              <p>
+                Re-test runs the plugin's data source again; the nightly probe
+                does the same for every plugin.
+              </p>
+            </div>
+            {note ? <div className="alert" role="alert">{note}</div> : null}
+          </>
+        )}
+        {blocks.map((block, i) => (
+          <p className="w-note" key={i}>
+            {block.text}
+          </p>
+        ))}
+        {card.manualMetric ? (
+          <ManualValueForm pluginId={card.manualMetric} onRefetch={onRefetch} onExpired={onExpired} />
+        ) : null}
+      </div>
       {insight?.press ? (
         <PressOffer press={insight.press} onRefetch={onRefetch} onExpired={onExpired} />
       ) : null}
@@ -430,10 +506,15 @@ function ManualValueForm({ pluginId, onRefetch, onExpired }: {
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const [failed, setFailed] = useState(false);
+  const busyShown = useBusy(busy);
 
   /** Save the typed value, then refresh so the tile shows it. */
   async function save() {
-    if (!value.trim()) return;    setBusy(true);
+    if (!value.trim()) return;
+    setBusy(true);
+    setNote('');
+    setFailed(false);
     let res;
     try {
       res = await postJson('/api/marketplace/manual-value', {
@@ -441,23 +522,26 @@ function ManualValueForm({ pluginId, onRefetch, onExpired }: {
       });
     } catch {
       setBusy(false);
-      setNote('The desk could not reach its server; the value was not saved.');
+      setFailed(true);
+      setNote('The desk could not reach its server; the value was not saved. Try again.');
       return;
     }
-    setBusy(false);
-    if (res.status === 401) { onExpired(); return; }
+    if (res.status === 401) { setBusy(false); onExpired(); return; }
     if (!res.ok) {
+      setBusy(false);
+      setFailed(true);
       const body = res.data as { message?: string } | null;
-      setNote(body?.message || 'The value was not saved.');
+      setNote(body?.message || 'The value was not saved. Check the value and try again.');
       return;
     }
     setValue('');
-    setNote('Saved.');
     await onRefetch();
+    setBusy(false);
+    setNote('Saved.');
   }
 
   return (
-    <form className="manual-value" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+    <form className="manual-value" aria-busy={busy ? 'true' : undefined} onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <label className="w-note" htmlFor={`manual-${pluginId}`}>Set the value</label>
       <input id={`manual-${pluginId}`} type="number" inputMode="decimal" value={value}
              onChange={(event) => setValue(event.target.value)} required />
@@ -465,8 +549,9 @@ function ManualValueForm({ pluginId, onRefetch, onExpired }: {
              onChange={(event) => setUnit(event.target.value)} />
       <input type="number" inputMode="decimal" value={target} placeholder="Target"
              aria-label="Target" onChange={(event) => setTarget(event.target.value)} />
-      <Button tone="secondary" type="submit" disabled={busy}>Save</Button>
-      {note ? <p className="w-note" role="status">{note}</p> : null}
+      <Button tone="secondary" type="submit" disabled={busy} pending={busyShown} pendingLabel="Saving...">Save</Button>
+      <PhaseLine active={busy} text="Saving the value" className="w-note" />
+      {note ? <p className={failed ? 'w-note alert' : 'w-note'} role={failed ? 'alert' : 'status'}>{note}</p> : null}
     </form>
   );
 }

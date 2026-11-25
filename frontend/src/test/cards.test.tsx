@@ -10,6 +10,7 @@ import PluginCardView from '../dashboard/PluginCardView';
 import ResearchCard, { RESEARCH_BUSY } from '../dashboard/ResearchCard';
 import SalesCard from '../dashboard/SalesCard';
 import SkillsCard from '../dashboard/SkillsCard';
+import { CellHead, DigestList, HealthMatrix, StageChart } from '../dashboard/cells';
 import type { SalesStatus } from '../types';
 
 const NOOP_REFETCH = async () => {};
@@ -152,7 +153,7 @@ describe('the sales card', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Re-test now' }));
     expect(
-      await screen.findByText('The dashboard could not reach its own server; the re-test did not run.'),
+      await screen.findByText('The dashboard could not reach its own server; the re-test did not run. Try again.'),
     ).toBeInTheDocument();
     expect(onRefetch).not.toHaveBeenCalled();
   });
@@ -245,7 +246,6 @@ describe('the research card', () => {
         lastAnsweredTs={null}
         answer={{ question: 'Who sells to Meridian?', summary: 'Two reps named Meridian.', sources: ['crm', 'notes'] }}
         answerSeq={1}
-        statusText=""
       />,
     );
     expect(screen.getByText('Who sells to Meridian?')).toBeInTheDocument();
@@ -254,7 +254,7 @@ describe('the research card', () => {
     expect(document.querySelector('.card canvas')).toBeNull();
   });
 
-  it('states the busy status as honest text', () => {
+  it('states the busy phase as honest text and shows the answer-shaped placeholder', async () => {
     render(
       <ResearchCard
         span="span-8"
@@ -262,10 +262,13 @@ describe('the research card', () => {
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
-        statusText={RESEARCH_BUSY}
+        busy
+        busyPhase={RESEARCH_BUSY}
       />,
     );
-    expect(screen.getByRole('status')).toHaveTextContent(RESEARCH_BUSY);
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent(RESEARCH_BUSY);
+    expect(document.querySelector('.answer-pending')).not.toBeNull();
     expect(document.querySelector('.card canvas')).toBeNull();
   });
 
@@ -277,7 +280,6 @@ describe('the research card', () => {
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
-        statusText=""
       />,
     );
     expect(screen.getByText('Paused')).toBeInTheDocument();
@@ -525,7 +527,6 @@ describe('the card overflow menus', () => {
         lastAnsweredTs={null}
         answer={null}
         answerSeq={0}
-        statusText=""
       />,
     );
     await user.click(screen.getByRole('button', { name: /^Widget options/ }));
@@ -543,3 +544,61 @@ describe('the card overflow menus', () => {
   });
 });
 
+describe('the cell text-fit markup', () => {
+  it('gives a cell tag a title so a clipped tag stays reachable', () => {
+    render(<CellHead tag="DESK HEALTH" meta={<span className="mono">2/3 live</span>} />);
+    expect(screen.getByRole('heading', { name: 'DESK HEALTH' }))
+      .toHaveAttribute('title', 'DESK HEALTH');
+  });
+
+  it('titles every source row and keeps the numbers in their numeric cells', () => {
+    render(
+      <HealthMatrix
+        sources={[{ name: 'Workbook', live: true, status: 'live', lastRun: '15:05', items: '1,234,567' }]}
+        plugins={[]}
+      />,
+    );
+    expect(screen.getAllByRole('columnheader')).toHaveLength(4);
+    expect(screen.getByRole('rowheader', { name: 'Workbook' }))
+      .toHaveAttribute('title', 'Workbook');
+    expect(document.querySelector('.matrix td.num.mono')).toHaveTextContent('15:05');
+  });
+
+  it('labels the plugin rows as their own group with their own count', () => {
+    render(
+      <HealthMatrix
+        sources={[
+          { name: 'Workbook', live: true, status: 'live', lastRun: '15:05', items: '101' },
+          { name: 'Calendar', live: false, status: 'off', lastRun: '-', items: '-' },
+        ]}
+        plugins={[
+          { name: 'Competitor Watch', live: false, status: 'attention', lastRun: 'never', items: '0' },
+          { name: 'Workbook tracker', live: true, status: 'live', lastRun: '15:05', items: '-' },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Plugins that feed a tile')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2 live')).toBeInTheDocument();
+    // A plugin that never ran says so instead of borrowing the clock.
+    expect(screen.getByText('never')).toBeInTheDocument();
+  });
+
+  it('titles the stage axis labels, so the ellipsis has a reachable value', () => {
+    render(<StageChart stages={[{ stage: 'Prospect', deals: 3, net: 4 }]} />);
+    const span = document.querySelector('.stage-axis span');
+    expect(span).toHaveAttribute('title', 'Prospect');
+    expect(span?.querySelector('small')).toHaveAttribute('title', '3 deals');
+  });
+
+  it('renders an untimed digest item instead of throwing on a bad date', () => {
+    expect(() => render(
+      <DigestList
+        items={[{ at: new Date('not-a-date'), source: 'CAL', title: 'Broken meeting', detail: 'Room Beaufort' }]}
+      />,
+    )).not.toThrow();
+    expect(screen.getByText('Broken meeting')).toBeInTheDocument();
+    const time = document.querySelector('.digest-time');
+    expect(time?.textContent).toBe('');
+    expect(time?.getAttribute('datetime')).toBeNull();
+  });
+});

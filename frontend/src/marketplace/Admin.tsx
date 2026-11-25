@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import Button from '../components/Button';
+import { useBusy } from '../components/useBusy';
 import { getMarket, MarketApiError, marketErrorText, postMarket } from './client';
+import { SkeletonPanel } from './MarketGrid';
 import type {
   AdminSnapshot,
   PendingPublication,
@@ -50,6 +52,24 @@ function readFileText(file: File): Promise<string> {
 }
 
 /**
+ * Render the table-shaped placeholder the import shows while the bundle is
+ * read and verified, so the diff lands in a box that already has its shape.
+ */
+function DiffSkeleton() {
+  return (
+    <div className="mkt-import-skel" aria-hidden="true">
+      {[0, 1, 2].map((row) => (
+        <div className="mkt-import-skel-row" key={row}>
+          <span className="mkt-skel mkt-skel-short" />
+          <span className="mkt-skel" />
+          <span className="mkt-skel" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Render the field-by-field difference a signed bundle would make.
  *
  * An empty diff is not the same as no effect: confirming still pins the
@@ -66,25 +86,27 @@ function DiffTable({ rows }: { rows: PolicyDiffEntry[] }) {
     );
   }
   return (
-    <table className="mkt-diff">
-      <caption className="mkt-sr-only">Policy fields changed by this signed bundle</caption>
-      <thead>
-        <tr>
-          <th scope="col">Field</th>
-          <th scope="col">Active policy</th>
-          <th scope="col">Imported bundle</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.field}>
-            <th scope="row">{row.field}</th>
-            <td><code>{valueText(row.before)}</code></td>
-            <td><code>{valueText(row.after)}</code></td>
+    <div className="mkt-table-wrap">
+      <table className="mkt-diff">
+        <caption className="mkt-sr-only">Policy fields changed by this signed bundle</caption>
+        <thead>
+          <tr>
+            <th scope="col">Field</th>
+            <th scope="col">Active policy</th>
+            <th scope="col">Imported bundle</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.field}>
+              <th scope="row">{row.field}</th>
+              <td><code tabIndex={0} title={valueText(row.before)}>{valueText(row.before)}</code></td>
+              <td><code tabIndex={0} title={valueText(row.after)}>{valueText(row.after)}</code></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -104,15 +126,22 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
-  const [busy, setBusy] = useState('');
+  const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [killId, setKillId] = useState('');
   const [bundle, setBundle] = useState<Record<string, unknown> | null>(null);
   const [preview, setPreview] = useState<PolicyImportResult | null>(null);
   const [importError, setImportError] = useState('');
+  const [importing, setImporting] = useState(false);
   const [applying, setApplying] = useState(false);
+  // The 100 ms gate for every control that starts work on this page.
+  const busyShown = useBusy(busy !== null);
+  const retryBusy = useBusy(loading);
+  const importShown = useBusy(importing);
+  const applyShown = useBusy(applying);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await getMarket<AdminSnapshot>('/api/marketplace/admin');
       setSnapshot(data);
@@ -134,6 +163,11 @@ export default function AdminPage() {
     void load();
   }, [load]);
 
+  /** True while the named action on the named record is the one in flight. */
+  const busyIs = (id: string, action: string) => (
+    busy !== null && busy.id === id && busy.action === action
+  );
+
   /**
    * Parse a chosen bundle and have the server verify it without applying
    * anything, so the diff can be read first.
@@ -148,26 +182,31 @@ export default function AdminPage() {
     setBundle(null);
     setNotice('');
     if (!file) return;
-    let parsed: unknown;
+    setImporting(true);
     try {
-      parsed = JSON.parse(await readFileText(file));
-    } catch {
-      setImportError('That file is not valid JSON. Export the signed bundle again.');
-      return;
-    }
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      setImportError('The bundle must be a JSON object.');
-      return;
-    }
-    setBundle(parsed as Record<string, unknown>);
-    try {
-      const result = await postMarket<PolicyImportResult>('/api/marketplace/policy/import', {
-        bundle: parsed,
-        confirm: false,
-      });
-      setPreview(result);
-    } catch (err) {
-      setImportError(marketErrorText(err));
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await readFileText(file));
+      } catch {
+        setImportError('That file is not valid JSON. Export the signed bundle again.');
+        return;
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setImportError('The bundle must be a JSON object.');
+        return;
+      }
+      setBundle(parsed as Record<string, unknown>);
+      try {
+        const result = await postMarket<PolicyImportResult>('/api/marketplace/policy/import', {
+          bundle: parsed,
+          confirm: false,
+        });
+        setPreview(result);
+      } catch (err) {
+        setImportError(marketErrorText(err));
+      }
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -208,7 +247,7 @@ export default function AdminPage() {
     const label = pendingLabel(item);
     const reason = (reasons[item.id] ?? '').trim();
     if (action === 'reject' && !reason) return;
-    setBusy(item.id);
+    setBusy({ id: item.id, action });
     setActionError('');
     setNotice('');
     try {
@@ -232,7 +271,7 @@ export default function AdminPage() {
     } catch (err) {
       setActionError(marketErrorText(err));
     } finally {
-      setBusy('');
+      setBusy(null);
     }
   };
 
@@ -244,7 +283,7 @@ export default function AdminPage() {
    * the list of blocked plugins.
    */
   const setKill = async (pluginId: string, enabled: boolean) => {
-    setBusy(`kill:${pluginId}`);
+    setBusy({ id: pluginId, action: enabled ? 'kill' : 'restore' });
     setActionError('');
     setNotice('');
     try {
@@ -259,7 +298,7 @@ export default function AdminPage() {
     } catch (err) {
       setActionError(marketErrorText(err));
     } finally {
-      setBusy('');
+      setBusy(null);
     }
   };
 
@@ -276,7 +315,7 @@ export default function AdminPage() {
         <section className="mkt-panel" aria-labelledby="mkt-admin-off">
           <h2 id="mkt-admin-off">Admin mode is off</h2>
           <p>
-            The admin surface is disabled on this desk. Set <code>AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
+            The admin surface is disabled on this desk. Set <code tabIndex={0} title="AGENTDESK_MARKETPLACE_ADMIN=1">AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
             in the environment that starts Agent Desk, then reload this page.
           </p>
           <p className="w-note">
@@ -299,17 +338,25 @@ export default function AdminPage() {
         </p>
       </header>
 
-      {loading && !snapshot && (
-        <section className="mkt-panel">
-          <p role="status">Loading the governance snapshot…</p>
-        </section>
+      {loading && !snapshot && !error && (
+        <div className="mkt-skeleton-region" aria-busy="true">
+          <p className="mkt-result-count" role="status">Reading the governance snapshot…</p>
+          <div className="mkt-admin-grid">
+            <SkeletonPanel lines={4} />
+            <SkeletonPanel lines={3} />
+            <SkeletonPanel lines={3} />
+          </div>
+        </div>
       )}
 
       {error && (
         <section className="mkt-error-panel" role="alert">
           <h2>The admin snapshot could not be loaded</h2>
           <p>{error}</p>
-          <Button onClick={() => void load()}>Try again</Button>
+          <Button disabled={loading} pending={retryBusy} pendingLabel="Trying again…"
+                  onClick={() => void load()}>
+            Try again
+          </Button>
         </section>
       )}
 
@@ -321,30 +368,30 @@ export default function AdminPage() {
           <section className="mkt-panel" aria-labelledby="mkt-posture">
             <h2 id="mkt-posture">Posture</h2>
             <dl className="mkt-facts">
-              <div><span>Mode</span><strong>{snapshot.posture.mode}</strong></div>
-              <div><span>Risk ceiling</span><strong>{snapshot.posture.riskCeiling}</strong></div>
+              <div><span>Mode</span><strong tabIndex={0} title={snapshot.posture.mode}>{snapshot.posture.mode}</strong></div>
+              <div><span>Risk ceiling</span><strong tabIndex={0} title={snapshot.posture.riskCeiling}>{snapshot.posture.riskCeiling}</strong></div>
               <div>
                 <span>Signatures required</span>
-                <strong>{snapshot.posture.requireSignatures ? 'Yes' : 'No'}</strong>
+                <strong tabIndex={0} title={snapshot.posture.requireSignatures ? 'Yes' : 'No'}>{snapshot.posture.requireSignatures ? 'Yes' : 'No'}</strong>
               </div>
               <div>
                 <span>Allowed publishers</span>
-                <strong>{listText(snapshot.posture.allowedPublishers)}</strong>
+                <strong tabIndex={0} title={listText(snapshot.posture.allowedPublishers)}>{listText(snapshot.posture.allowedPublishers)}</strong>
               </div>
               <div>
                 <span>Allowed categories</span>
-                <strong>{listText(snapshot.posture.allowedCategories)}</strong>
+                <strong tabIndex={0} title={listText(snapshot.posture.allowedCategories)}>{listText(snapshot.posture.allowedCategories)}</strong>
               </div>
               <div>
                 <span>Network allowlist</span>
-                <strong>{listText(snapshot.posture.networkAllowlist)}</strong>
+                <strong tabIndex={0} title={listText(snapshot.posture.networkAllowlist)}>{listText(snapshot.posture.networkAllowlist)}</strong>
               </div>
               <div>
                 <span>Enabled sources</span>
-                <strong>{snapshot.posture.enabledSources.length} sources</strong>
+                <strong tabIndex={0} title={`${snapshot.posture.enabledSources.length} sources`}>{snapshot.posture.enabledSources.length} sources</strong>
               </div>
-              <div><span>Catalog source</span><strong>{snapshot.catalogSource}</strong></div>
-              <div><span>Audit events</span><strong>{snapshot.auditEvents}</strong></div>
+              <div><span>Catalog source</span><strong tabIndex={0} title={snapshot.catalogSource}>{snapshot.catalogSource}</strong></div>
+              <div><span>Audit events</span><strong tabIndex={0} title={String(snapshot.auditEvents)}>{snapshot.auditEvents}</strong></div>
             </dl>
           </section>
 
@@ -359,7 +406,7 @@ export default function AdminPage() {
                   'No signing key is pinned yet'
                 ) : (
                   snapshot.anchor.fingerprints.map((fingerprint) => (
-                    <code className="mkt-fingerprint" key={fingerprint}>{fingerprint}</code>
+                    <code className="mkt-fingerprint" key={fingerprint} tabIndex={0} title={fingerprint}>{fingerprint}</code>
                   ))
                 )}
               </dd>
@@ -368,7 +415,7 @@ export default function AdminPage() {
               <dt>Signer fingerprint</dt>
               <dd>
                 {snapshot.policy.signerFingerprint ? (
-                  <code className="mkt-fingerprint">{snapshot.policy.signerFingerprint}</code>
+                  <code className="mkt-fingerprint" tabIndex={0} title={snapshot.policy.signerFingerprint}>{snapshot.policy.signerFingerprint}</code>
                 ) : (
                   'Unsigned local policy'
                 )}
@@ -383,7 +430,8 @@ export default function AdminPage() {
             )}
           </section>
 
-          <section className="mkt-panel mkt-admin-wide" aria-labelledby="mkt-import">
+          <section className="mkt-panel mkt-admin-wide" aria-labelledby="mkt-import"
+                   aria-busy={importShown ? 'true' : undefined}>
             <h2 id="mkt-import">Import a signed policy</h2>
             <p>
               Choose the signed JSON bundle. The diff is computed against the policy active right
@@ -395,10 +443,18 @@ export default function AdminPage() {
                 id="mkt-policy-file"
                 type="file"
                 accept="application/json,.json"
+                disabled={importing}
+                aria-busy={importShown ? 'true' : undefined}
                 onChange={(event) => void onFile(event)}
               />
               <small>Verification runs on import. A rejected bundle leaves the curated policy in place.</small>
             </div>
+            {importShown && (
+              <>
+                <p className="mkt-result-count" role="status">Reading and verifying the signed bundle…</p>
+                <DiffSkeleton />
+              </>
+            )}
             {importError && <p className="mkt-error" role="alert">{importError}</p>}
             {preview && (
               <div className="mkt-import-preview">
@@ -413,8 +469,9 @@ export default function AdminPage() {
                   <p className="mkt-policy-warning" role="status">{preview.verification.warning}</p>
                 )}
                 <div className="mkt-actions">
-                  <Button tone="primary" onClick={() => void confirmImport()} disabled={applying}>
-                    {applying ? 'Applying…' : 'Apply signed policy'}
+                  <Button tone="primary" onClick={() => void confirmImport()} disabled={applying}
+                          pending={applyShown} pendingLabel="Applying…">
+                    Apply signed policy
                   </Button>
                 </div>
               </div>
@@ -430,10 +487,12 @@ export default function AdminPage() {
               ) : (
                 snapshot.posture.killSwitch.map((pluginId) => (
                   <li key={pluginId} className="mkt-admin-row">
-                    <code className="mkt-fingerprint">{pluginId}</code>
+                    <code className="mkt-fingerprint" tabIndex={0} title={pluginId}>{pluginId}</code>
                     <Button
                       onClick={() => void setKill(pluginId, false)}
-                      disabled={busy === `kill:${pluginId}`}
+                      disabled={busy !== null}
+                      pending={busyShown && busyIs(pluginId, 'restore')}
+                      pendingLabel="Restoring…"
                     >
                       Restore {pluginId}
                     </Button>
@@ -458,7 +517,9 @@ export default function AdminPage() {
                   placeholder="sample-plugin"
                 />
               </div>
-              <Button tone="primary" type="submit" disabled={!killId.trim() || busy === `kill:${killId.trim()}`}>
+              <Button tone="primary" type="submit" disabled={!killId.trim() || busy !== null}
+                      pending={busyShown && busyIs(killId.trim(), 'kill')}
+                      pendingLabel="Blocking…">
                 Block plugin
               </Button>
             </form>
@@ -527,13 +588,17 @@ export default function AdminPage() {
                         <Button
                           tone="primary"
                           onClick={() => void decide(item, 'approve')}
-                          disabled={busy === item.id}
+                          disabled={busy !== null}
+                          pending={busyShown && busyIs(item.id, 'approve')}
+                          pendingLabel="Approving…"
                         >
                           Approve {label}
                         </Button>
                         <Button
                           onClick={() => void decide(item, 'reject')}
-                          disabled={busy === item.id || !reason.trim()}
+                          disabled={busy !== null || !reason.trim()}
+                          pending={busyShown && busyIs(item.id, 'reject')}
+                          pendingLabel="Rejecting…"
                         >
                           Reject {label}
                         </Button>
@@ -569,7 +634,7 @@ export default function AdminPage() {
                         <th scope="row">{item.id}</th>
                         <td>{item.version}</td>
                         <td>{item.publisher}</td>
-                        <td><code title={item.digest}>{item.digest ? item.digest.slice(0, 12) : 'none'}</code></td>
+                        <td><code title={item.digest} tabIndex={0}>{item.digest ? item.digest.slice(0, 12) : 'none'}</code></td>
                         <td>{item.enabled ? 'Yes' : 'No'}</td>
                         <td>
                           {item.eligible

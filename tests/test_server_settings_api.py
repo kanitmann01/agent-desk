@@ -166,7 +166,7 @@ def test_the_presentation_timeout_remains_settable_through_the_reduced_save(env,
     status, headers, _b = _post_form(
         env, "/settings/endpoint/save", {"presentationTimeout": "60"}, auth)
     assert status == 303
-    assert headers["Location"] == "/settings"
+    assert headers["Location"].split("?", 1)[0] == "/settings"
     assert env.server.settings.get("presentation_timeout_s") == "60"
 
 
@@ -315,7 +315,7 @@ def test_extra_allowed_hosts_form_round_trip_and_live_guard_effect(env, auth):
     status, headers, _b = _post_form(
         env, "/settings/hosts/save", {"hosts": "deskpc:8765 192.168.1.20:8765"}, auth)
     assert status == 303
-    assert headers["Location"] == "/settings"
+    assert headers["Location"].split("?", 1)[0] == "/settings"
     assert env.server.settings.get("extra_allowed_hosts") == (
         "deskpc:8765 192.168.1.20:8765")
     values = json.loads(env.request("GET", "/widgets/settings", auth)[2])

@@ -38,7 +38,7 @@ import html
 
 from agentdesk.server.core import count_noun
 from agentdesk.server.memory_loop_api import _card_for, origin_of
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 from datetime import datetime
 
 from agentdesk.memory.core import (
@@ -100,7 +100,10 @@ def _forget_section(facts: list[Fact], confirming: bool) -> str:
         return (
             '<section id="forget-everything" class="ml-maint" '
             'aria-labelledby="forget-everything-h">\n'
-            '<form method="post" action="/memory/forget-all" class="ml-maint-row">\n'
+            '<form method="post" action="/memory/forget-all" class="ml-maint-row" '
+            'data-wait="#forget-wait" data-wait-shape="panel" '
+            'data-wait-label="Forgetting every fact. This cannot be undone." '
+            'data-busy="Forgetting...">\n'
             '<input type="hidden" name="confirm" value="yes">\n'
             "<div class='ml-maint-copy'>"
             "<b id='forget-everything-h'>Forget every fact?</b>"
@@ -109,7 +112,7 @@ def _forget_section(facts: list[Fact], confirming: bool) -> str:
             "<div class='ml-maint-act'>"
             "<a class='btn btn-secondary' href='/memory' autofocus>Keep my facts</a>"
             "<button class='btn btn-danger' type='submit'>Forget everything</button>"
-            "</div></form></section>"
+            "</div></form><div id='forget-wait'></div></section>"
         )
     return (
         '<section id="forget-everything" class="ml-maint" '
@@ -119,9 +122,12 @@ def _forget_section(facts: list[Fact], confirming: bool) -> str:
         "<p>Removes every fact memory has learned. You will be asked first, "
         "and your settings are kept.</p></div>\n"
         "<div class='ml-maint-act'>"
-        '<form method="post" action="/memory/forget-all">'
+        '<form method="post" action="/memory/forget-all" '
+        'data-wait="#forget-wait" data-wait-shape="panel" '
+        'data-wait-label="Checking what would be forgotten..." '
+        'data-busy="Checking...">'
         "<button class='btn btn-danger' type='submit'>Forget everything</button>"
-        "</form></div></div></section>"
+        "</form></div></div><div id='forget-wait'></div></section>"
     )
 
 
@@ -212,7 +218,10 @@ def _maintenance_tile(
     row(
         "Check what the assistant would recall",
         "Type a question to see which saved facts the assistant would read when answering it.",
-        "<form method='post' action='/memory/recall' class='ml-maint-form'>"
+        "<form method='post' action='/memory/recall' class='ml-maint-form' "
+        "data-wait='#recall-result' data-wait-shape='list' "
+        "data-wait-label='Checking what the assistant would recall...' "
+        "data-busy='Checking...'>"
         "<label class='sr-only' for='recall-query'>Recall preview</label>"
         "<input id='recall-query' type='text' name='query' "
         f"value='{html.escape(query, quote=True)}' "
@@ -221,6 +230,8 @@ def _maintenance_tile(
     )
     if answer:
         result(answer)
+    else:
+        result("<div id='recall-result'></div>")
     if embeddings is not None:
         total = embeddings["embedded"] + embeddings["remaining"]
         ready = (
@@ -228,7 +239,10 @@ def _maintenance_tile(
             f"{count_noun(total, 'fact')} ready</span>"
         )
         button = (
-            "<form method='post' action='/memory/embeddings/backfill' class='ml-maint-form'>"
+            "<form method='post' action='/memory/embeddings/backfill' class='ml-maint-form' "
+            "data-wait='#memory-maintenance' data-wait-shape='list' "
+            "data-wait-label='Preparing the rest of your facts. This asks your AI for one vector per fact.' "
+            "data-busy='Preparing...'>"
             "<button class='btn btn-secondary' type='submit' id='backfill-embeddings'>"
             "Prepare the rest</button></form>"
             if embeddings["remaining"] else ""
@@ -262,7 +276,10 @@ def _maintenance_tile(
         row(
             "Encrypt memory on this computer",
             summary,
-            "<form method='post' action='/memory/encrypt' class='inlineform'>"
+            "<form method='post' action='/memory/encrypt' class='inlineform' "
+            "data-wait='#memory-maintenance' data-wait-shape='panel' "
+            "data-wait-label='Encrypting your memory. This rewrites every stored text.' "
+            "data-busy='Encrypting...'>"
             "<label for='encrypt-confirm'>Confirm</label> "
             "<input id='encrypt-confirm' type='checkbox' name='confirm' value='on'> "
             "<button class='btn btn-primary' type='submit'>Encrypt memory</button></form>",
@@ -419,7 +436,10 @@ def _observations_section(
     cards that stage a new observation land in the inbox; the section
     only ever shows what acceptance wrote."""
     form = (
-        '<form method="post" action="/memory/reflect" class="cardform">'
+        '<form method="post" action="/memory/reflect" class="cardform" '
+        'data-wait="#observations" data-wait-shape="list" '
+        'data-wait-label="Asking your AI for observations from your saved facts..." '
+        'data-busy="Asking...">'
         '<label class="empty" for="reflect-topic">Reflect: derive '
         "observations from the saved facts. Optional topic or entity "
         "name; the cards land in your inbox to accept.</label>"
@@ -455,10 +475,10 @@ def _observations_section(
             " reflect derives them from the facts above, and one card per"
             " observation waits in your inbox.</p>"
         )
-        return f"<h2>Observations</h2>{form}{empty}"
+        return f"<div id='observations'><h2>Observations</h2>{form}{empty}</div>"
     return (
-        "<h2>Observations</h2>"
-        f"{form}<ul id='observations-list'>{''.join(rows)}</ul>"
+        "<div id='observations'><h2>Observations</h2>"
+        f"{form}<ul id='observations-list'>{''.join(rows)}</ul></div>"
     )
 
 
@@ -479,6 +499,9 @@ def render_memory_page(
     confirm_forget_all: bool = False,
     inbox=None,
     sources=(),
+    notice_kind: str = "status",
+    add_error: str = "",
+    add_value: str = "",
 ) -> str:
     """The full memory document. It opens with the explanation (ticket
     #283), then the facts with where each came from and its own edit and
@@ -489,23 +512,34 @@ def render_memory_page(
     The plain page also carries the add form, the entities with their
     merge form (ticket #92) and the observations with their reflect form
     (ticket #93); with the build present the island replaces that part.
-    Locked: the banner alone."""
+    Locked: the banner alone. `notice` is the outcome line a form post
+    lands on, `add_error` a refusal over the add form with the typed
+    `add_value` kept in its field.
+    """
     if locked is not None:
         content = f"""<h1>Memory</h1>
 {_locked_banner(locked)}
 """
         return page_shell("Memory", "/memory", content, version, inbox_count=inbox_count)
-    notice_row = f'<p id="memory-notice">{html.escape(notice)}</p>\n' if notice else ""
+    if notice:
+        kind = "alert" if notice_kind == "alert" else "status"
+        notice_row = (
+            f'<p class="page-status" id="memory-notice" role="{kind}">'
+            f"{html.escape(notice)}</p>\n"
+        )
+    else:
+        notice_row = ""
     entities_row = _entities_section(entities) if entities is not None else ""
     observations_row = (
         _observations_section(observations, facts)
         if observations is not None else ""
     )
     tile = _maintenance_tile(encrypt, embeddings, recall=recall, query=query, sweep=sweep)
-    add_form = """<h2>Add a fact</h2>
+    add_form = f"""<h2>Add a fact</h2>
+{status_line(add_error, "alert")}
 <form method="post" action="/memory/add" class="cardform">
 <label class="empty" for="new-fact">Fact</label>
-<input id="new-fact" type="text" name="text" placeholder="The revenue total is 220.">
+<input id="new-fact" type="text" name="text" value="{html.escape(add_value, quote=True)}" placeholder="The revenue total is 220.">
 <button class="btn btn-primary" type="submit">Save fact</button>
 </form>"""
     forget = _forget_section(facts, confirm_forget_all)

@@ -249,7 +249,9 @@ def widget_card(plugin_id: str, instance_id: str, *, title: str, version: str,
 
     ``data`` is the probe-shaped status (fresh or attention with a cause,
     and when it was checked); ``payload`` is the bound ui-schema render
-    model or None when nothing bound.
+    model or None when nothing bound. The source's stable reason code rides
+    along as sourceReason, so a surface can decide on the code (no-transport)
+    rather than decoding the reader sentence; card_to_api does not serve it.
     """
     card = _card(plugin_id, instance_id, card_id=plugin_id, title=title,
                  version=version, pilot=pilot, state=state,
@@ -257,6 +259,7 @@ def widget_card(plugin_id: str, instance_id: str, *, title: str, version: str,
                  cause=data.get("cause", ""),
                  checked_at=data.get("checked_at", ""),
                  payload=payload, manifest=manifest)
+    card["sourceReason"] = str(data.get("reason") or "")
     # A hand-kept number can only be supplied by the manager, so its tile
     # carries the form that supplies it.
     source = (((manifest or {}).get("contributes") or {}).get("widgets") or [{}])[0]

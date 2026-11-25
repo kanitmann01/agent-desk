@@ -133,7 +133,8 @@ def render_commitments_widget(status: dict, now: datetime) -> Widget | None:
     elif state == STATE_EMPTY:
         body = (
             '<div class="well"><p class="q">No calendar data yet. Agent Desk watches '
-            "<code>agent-desk/calendar_sync.json</code> in your OneDrive. A 3-step "
+            '<span class="id-scroll"><code class="nowrap">agent-desk/calendar_sync.json'
+            "</code></span> in your OneDrive. A 3-step "
             "browser walkthrough creates the flow that writes it.</p></div>"
             f'<a class="btn btn-primary btn-start" href="{WALKTHROUGH_PATH}">Connect your calendar</a>'
         )

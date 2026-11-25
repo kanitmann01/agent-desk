@@ -168,9 +168,10 @@ def _render_table(element: dict) -> str:
         body.append("<tr>" + "".join("<td>" + _escape(cell) + "</td>" for cell in cells) + "</tr>")
     return (
         _title_line(element)
-        + '<table class="w-table"><thead><tr>' + head + "</tr></thead><tbody>"
+        + '<div class="table-scroll"><table class="w-table"><thead><tr>' + head
+        + "</tr></thead><tbody>"
         + "".join(body)
-        + "</tbody></table>"
+        + "</tbody></table></div>"
     )
 
 

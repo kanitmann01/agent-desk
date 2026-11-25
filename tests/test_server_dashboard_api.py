@@ -113,10 +113,13 @@ def test_first_run_payload_has_every_section_in_the_honest_states(booted, auth):
     payload = get_dashboard(booted, auth)
     # The whole contract: nothing missing, nothing extra.
     assert sorted(payload) == [
-        "agentLoop", "commitments", "deskCheck", "flags", "inbox", "layout",
-        "plugins", "recommendations", "research", "sales", "sample", "setup",
-        "skills", "sources", "update", "version",
+        "agentLoop", "commitments", "deskCheck", "deskNetwork", "flags",
+        "inbox", "layout", "plugins", "recommendations", "research", "sales",
+        "sample", "setup", "skills", "sources", "update", "version",
     ]
+    # The marketplace's fact, reported on the dashboard too: production
+    # builds the runner without a transport.
+    assert payload["deskNetwork"] is False
     # Setup (spec 022): three steps in the order a person takes them, none
     # done on a first run, and the sample flag mirroring the payload's.
     assert [step["id"] for step in payload["setup"]["steps"]] == [

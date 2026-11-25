@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import EmptyState, { ICON_SEARCH } from '../components/EmptyState';
 import Button from '../components/Button';
+import { useBusy } from '../components/useBusy';
 import DescribePlugin from './DescribePlugin';
 import { getMarket, marketErrorText } from './client';
 import { useMarketplaceNav } from './context';
@@ -13,7 +14,15 @@ import type { CatalogResponse } from './types';
 type Load =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; data: CatalogResponse; offline?: string };
+  | {
+    kind: 'ready';
+    data: CatalogResponse;
+    offline?: string;
+    // A refetch keeps the previous results on screen, dimmed, until the new
+    // ones replace them in place.
+    fetching?: boolean;
+    error?: string;
+  };
 
 const SOURCES = ['bundled', 'org', 'peer', 'installed'];
 const RISKS = ['low', 'medium', 'high'];
@@ -81,7 +90,7 @@ function savedLabel(savedAt: string): string {
  * fetch fails so the page can say it is showing something older.
  */
 export function CatalogPage({ route }: { route: { name: string; params: Record<string, string> } }) {
-  const { navigate } = useMarketplaceNav();
+  const { navigate, path } = useMarketplaceNav();
   const onSearch = route.name === 'search';
   const category = route.name === 'category' ? route.params.category : '';
   const committedQ = onSearch ? route.params.q : '';
@@ -91,12 +100,18 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
   const [eligibleOnly, setEligibleOnly] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
+  // The Search button owns the wait its submit starts; a filter change dims
+  // the results instead of replacing them.
+  const [searching, setSearching] = useState(false);
+  const searchBusy = useBusy(searching);
 
   useEffect(() => { setQ(committedQ); }, [committedQ]);
 
   useEffect(() => {
     const controller = { cancelled: false };
-    setLoad({ kind: 'loading' });
+    setLoad((current) => current.kind === 'ready'
+      ? { ...current, fetching: true, error: undefined }
+      : { kind: 'loading' });
     const params = new URLSearchParams();
     if (committedQ) params.set('q', committedQ);
     if (category) params.set('category', category);
@@ -104,24 +119,26 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
     if (risk) params.set('risk', risk);
     if (eligibleOnly) params.set('eligible', '1');
     const query = params.toString();
+    const unfiltered = !committedQ && !category && !source && !risk && !eligibleOnly;
     getMarket<CatalogResponse>(`/api/marketplace/catalog${query ? `?${query}` : ''}`)
       .then((data) => {
         if (controller.cancelled) return;
-        setLoad({ kind: 'ready', data });
-        if (!committedQ && !category && !source && !risk && !eligibleOnly) {
-          saveCatalogCache(data);
-        }
+        setLoad({ kind: 'ready', data, fetching: false });
+        if (unfiltered) saveCatalogCache(data);
       })
       .catch((err) => {
         if (controller.cancelled) return;
-        const cached = !committedQ && !category && !source && !risk && !eligibleOnly
-          ? readCatalogCache()
-          : null;
+        const cached = unfiltered ? readCatalogCache() : null;
         if (cached) {
-          setLoad({ kind: 'ready', data: cached.data, offline: cached.savedAt });
+          setLoad({ kind: 'ready', data: cached.data, offline: cached.savedAt, fetching: false });
         } else {
-          setLoad({ kind: 'error', message: marketErrorText(err) });
+          setLoad((current) => current.kind === 'ready'
+            ? { ...current, fetching: false, error: marketErrorText(err) }
+            : { kind: 'error', message: marketErrorText(err) });
         }
+      })
+      .finally(() => {
+        if (!controller.cancelled) setSearching(false);
       });
     return () => { controller.cancelled = true; };
   }, [committedQ, category, source, risk, eligibleOnly, attempt]);
@@ -129,8 +146,15 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
   const submit = useCallback((event: FormEvent) => {
     event.preventDefault();
     const trimmed = q.trim();
-    navigate(trimmed ? `/marketplace/search?q=${encodeURIComponent(trimmed)}` : '/marketplace');
-  }, [q, navigate]);
+    const target = trimmed ? `/marketplace/search?q=${encodeURIComponent(trimmed)}` : '/marketplace';
+    // A submit always runs its search. When it would land on the address
+    // already shown, there is no navigation to start the effect, so bump the
+    // attempt and let the same effect refetch with the current results kept
+    // and dimmed. Either way the button owns the wait.
+    setSearching(true);
+    if (target === path) setAttempt((n) => n + 1);
+    else navigate(target);
+  }, [q, navigate, path]);
 
   /**
    * Reset the local filters, and leave a category or search route for the
@@ -190,7 +214,10 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
             autoComplete="off"
           />
         </div>
-        <Button tone="primary" type="submit">Search</Button>
+        <Button tone="primary" type="submit" disabled={searching}
+                pending={searchBusy} pendingLabel="Searching…">
+          Search
+        </Button>
       </form>
 
       <div className="mkt-filters">
@@ -260,7 +287,19 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
       )}
 
       {load.kind === 'ready' && (
-        <div className="mkt-results">
+        <div className={`mkt-results${load.fetching ? ' mkt-refetching' : ''}`}
+             aria-busy={load.fetching ? 'true' : undefined}>
+          {load.fetching && (
+            <p className="mkt-result-count" role="status">Updating the results…</p>
+          )}
+          {load.error && (
+            <div className="mkt-error-panel" role="alert">
+              <h2>The catalog did not load</h2>
+              <p>{load.error}</p>
+              <p className="w-note">The results above are from before this change; try again to read the new ones.</p>
+              <Button tone="secondary" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
+            </div>
+          )}
           {load.offline && (
             <div className="mkt-offline" role="status">
               <strong>Offline</strong>
@@ -284,7 +323,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
               <span className="w-note mkt-empty-line">Try a category, a shorter search, or allow every source.</span>
             </EmptyState>
           ) : (
-            <MarketCatalog cards={load.data.entries} />
+            <MarketCatalog cards={load.data.entries} deskNetwork={load.data.deskNetwork} />
           )}
         </div>
       )}

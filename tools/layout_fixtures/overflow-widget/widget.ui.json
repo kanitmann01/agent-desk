@@ -1,0 +1,7 @@
+{
+  "type": "card",
+  "elements": [
+    {"type": "metric", "binding": "value", "label": "Consolidated net pipeline value across every region and stage"},
+    {"type": "text", "binding": "file", "label": "Source file"}
+  ]
+}

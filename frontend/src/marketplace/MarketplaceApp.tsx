@@ -1,10 +1,13 @@
 // The marketplace shell. One rail, one main landmark, one polite route
 // announcement. The route parser is pure; this component only chooses a
 // page and moves focus to that page's heading.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Rail from '../dashboard/Rail';
+import { useAnnouncement } from '../components/feedback';
+import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from '../api';
 import AdminPage from './Admin';
 import { CatalogPage } from './CatalogPage';
+import { onSessionExpired } from './client';
 import { InstalledPage } from './Installed';
 import { MarketLink, MarketplaceNavProvider } from './context';
 import { PackPage } from './PackPage';
@@ -35,6 +38,28 @@ function Tabs({ route }: { route: MarketRoute }) {
       <Tab to="/marketplace" current={find}>Find plugins</Tab>
       <Tab to="/marketplace/installed" current={route.name === 'installed' || route.name === 'manage'}>Installed</Tab>
     </nav>
+  );
+}
+
+/**
+ * Say the session expired with the main app's words: the heading takes focus
+ * and the message is the next step.
+ *
+ * No retry is offered. A reload after a 401 returns to the same refusal or to
+ * the server's own expired page, so a button here could not succeed; the
+ * only fix is a fresh link from the shortcut.
+ */
+function SessionNotice() {
+  const focusHeading = useCallback((node: HTMLHeadingElement | null) => {
+    node?.focus();
+  }, []);
+  return (
+    <div className="mkt-page">
+      <div className="mkt-error-panel" role="alert">
+        <h1 ref={focusHeading} tabIndex={-1}>{SESSION_EXPIRED_TITLE}</h1>
+        <p>{SESSION_EXPIRED_MESSAGE}</p>
+      </div>
+    </div>
   );
 }
 
@@ -92,15 +117,23 @@ function Page({ route }: { route: MarketRoute }) {
  * route, and a polite announcement of that route's title.
  *
  * The announcement is what tells a screen reader that navigation happened;
- * the document itself is never reloaded.
+ * the document itself is never reloaded. The shell also owns the outcome
+ * channel a sheet reports through when it closed before its request
+ * answered, so a setup that finished after the reader left still says so.
  */
 export default function MarketplaceApp() {
   const { path, route, navigate } = useMarketplaceRouter();
   const [announcement, setAnnouncement] = useState('');
+  const [expired, setExpired] = useState(false);
+  const liveOutcome = useAnnouncement();
 
   useEffect(() => {
     setAnnouncement(routeTitle(route));
   }, [path, route]);
+
+  // Every marketplace call reports a 401 here. One notice replaces the
+  // page, so no surface keeps a retry that would fail the same way.
+  useEffect(() => onSessionExpired(() => setExpired(true)), []);
 
   return (
     <MarketplaceNavProvider value={{ path, navigate }}>
@@ -110,7 +143,8 @@ export default function MarketplaceApp() {
         <main className="mkt-main" id="marketplace-main" tabIndex={-1}>
           <div className="mkt-sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
           <Tabs route={route} />
-          <Page route={route} />
+          {liveOutcome && <p className="mkt-success" role="status">{liveOutcome}</p>}
+          {expired ? <SessionNotice /> : <Page route={route} />}
         </main>
       </div>
     </MarketplaceNavProvider>

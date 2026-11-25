@@ -12,7 +12,7 @@ from agentdesk.inbox.core import STATUS_DISMISSED, Card
 from agentdesk.server.core import ATTENTION, FRESH, Freshness
 from agentdesk.server.demo import Widget  # noqa: F401  (contract reference)
 from agentdesk.server.demo_data import is_sample_card
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 
 _KIND_LABEL = {
     "suggestion": "Suggestion",
@@ -111,7 +111,7 @@ def card_html(card: Card, now_ts: float) -> str:
         f"<article class='widget{expired_class}' id='card-{html.escape(card.id)}' "
         f"data-freshness-status='{'attention' if expired else 'fresh'}'>"
         "<div class='w-head'>"
-        f"<span class='origin-line'>{html.escape(_KIND_LABEL.get(card.kind, card.kind))}</span>"
+        f"<span class='origin-line nowrap'>{html.escape(_KIND_LABEL.get(card.kind, card.kind))}</span>"
         f"{_sample_tag(card)}"
         f"<span class='stamp'><span class='dot{' amber' if expired else ''}' aria-hidden='true'></span>"
         f"{html.escape(age)}</span></div>"
@@ -133,8 +133,15 @@ def render_inbox_page(
     version: str,
     now_ts: float,
     sample_data_on: bool = False,
+    notice: str = "",
+    notice_kind: str = "status",
 ) -> str:
-    """The full inbox document, with the good empty and the recovery shelf."""
+    """The full inbox document, with the good empty and the recovery shelf.
+
+    `notice` names the outcome of an inbox decision or of a save-to-memory
+    post where the reader is looking; the dismissed shelf below is the
+    restore the line promises.
+    """
     if waiting:
         # The spaced stack: the audit measured 0px between consecutive
         # cards, so they read as one merged block.
@@ -183,6 +190,7 @@ def render_inbox_page(
     else:
         shelf = "<p class='empty'>Dismissed cards stay recoverable here for 30 days. Nothing expires silently.</p>"
     content = f"""<h1>Inbox</h1>
+{status_line(notice, notice_kind)}
 <p>Everything the agent initiates waits here under your interruption
 budget: quiet hours 18:00-08:00, at most three notifications a day.</p>
 {empty}

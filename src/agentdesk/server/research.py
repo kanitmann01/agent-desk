@@ -9,7 +9,7 @@ import html
 from datetime import datetime
 
 from agentdesk.server.core import ATTENTION, FRESH, Freshness
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 from agentdesk.server.demo import Widget
 
 RESEARCH_BUSY = "Asking your AI for a sourced summary"
@@ -89,13 +89,17 @@ NO_AI_NOTICE = (
 
 def render_assistant_page(
     turns: list, version: str, inbox_count: int = 0, retain_error: str = "",
-    ai_connected: bool = True,
+    ai_connected: bool = True, notice: str = "", notice_kind: str = "status",
+    question: str = "",
 ) -> str:
     """The assistant page: the thread so far, one input, one button,
     and the save-to-memory action (ticket #91). `retain_error` is the
     plain-language cause a failed retain shows on its re-render. With no
     AI connection (`ai_connected` False) the page leads with the one
-    sentence and the one button that fix it (spec 022)."""
+    sentence and the one button that fix it (spec 022). `notice` is the
+    outcome line the page that arrives after a form post says, and
+    `question` pre-fills the ask box when a refusal kept the typed words.
+    """
     # No scripting is needed for the one action that matters here.
     ai_notice = "" if ai_connected else (
         '<div class="answer" role="status"><p>'
@@ -125,25 +129,31 @@ def render_assistant_page(
     if turns:
         excerpt = html.escape(_retain_excerpt(turns), quote=True)
         retain_form = (
-            '<form class="cardrow" method="post" action="/memory/retain">'
+            '<form class="cardrow" method="post" action="/memory/retain" '
+            'data-wait="#retain-result" data-wait-shape="list" '
+            'data-wait-label="Saving the conversation to memory..." data-busy="Saving...">'
             f'<input type="hidden" name="excerpt" value="{excerpt}">'
             '<button class="btn btn-secondary" type="submit">Save to memory</button>'
             "</form>"
+            '<div id="retain-result"></div>'
             '<p class="empty">Saving sends the visible conversation to the '
             "endpoint to be turned into candidate facts. Nothing is written "
             "until you accept a card in the inbox.</p>"
         )
     content = f"""<h1>Assistant</h1>
+{status_line(notice, notice_kind)}
 <p>One conversation about your numbers and your day, with your dashboard
 as context. Every call is logged.</p>
 {ai_notice}
-<div class="thread" aria-label="Conversation">
+<div class="thread" id="assistant-thread" aria-label="Conversation">
 {thread}
 </div>
 {error_line}
-<form class="cardrow" method="post" action="/assistant/ask">
+<form class="cardrow" method="post" action="/assistant/ask"
+ data-wait="#assistant-thread" data-wait-shape="answer"
+ data-wait-label="Asking your AI..." data-busy="Asking...">
 <textarea class="well-input grow" name="question" rows="2" required
- aria-label="Ask the assistant" placeholder="What changed, and what should I do about it?"></textarea>
+ aria-label="Ask the assistant" placeholder="What changed, and what should I do about it?">{html.escape(question)}</textarea>
 <button class="btn btn-primary" type="submit">Ask</button>
 </form>
 {retain_form}

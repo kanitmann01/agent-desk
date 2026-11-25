@@ -280,13 +280,16 @@ def main() -> int:
             step += 1
             # competitor-watch is honestly tiered T2 now the sync reads
             # optionalPermissions (spec 017 6d), so the default ceiling
-            # refuses it; the admin raises the ceiling the documented way,
-            # the local policy file, before the desk installs the network
-            # plugin.
+            # refuses it; the admin raises the ceiling and names the one
+            # host the plugin declares on the network allowlist, the
+            # documented way (the local policy file), before the desk
+            # installs the network plugin.
             policy_dir = workspace / "marketplace"
             policy_dir.mkdir(parents=True, exist_ok=True)
             (policy_dir / "policy.json").write_text(
-                json.dumps({"riskCeiling": "T2"}), encoding="utf-8")
+                json.dumps({"riskCeiling": "T2",
+                            "networkAllowlist": ["example.com"]}),
+                encoding="utf-8")
             desk_plugins = ("excel-report", "competitor-watch")
             installed_ids = []
             for plugin_id in desk_plugins:

@@ -69,22 +69,34 @@ def _risk_label(value) -> str:
     return RISK_LABELS.get(text.lower(), "")
 
 
+# The permission paths a plugin can actually hold. Anything else in the
+# block is metadata (network.userPrompt) or a posture (shell: none), not a
+# scope a person grants.
+SCOPE_PREFIXES = ("filesystem.read", "filesystem.write", "network.allow",
+                  "llm.allow")
+
+
 def _scope_items(permissions) -> set[str]:
-    """Serialize a permission block into comparable leaf scopes."""
+    """Serialize a permission block into its real leaf scopes.
+
+    A list reuses its key as the prefix, so several values for one permission
+    become several comparable scopes. Only known power paths are kept, and a
+    false, empty or none grant is a refusal rather than a scope, so the list
+    matches the grants the registry path carries.
+    """
     items: set[str] = set()
 
     def walk(prefix: str, node) -> None:
-        """Flatten one permission node into 'path: value' leaves.
-
-        A list reuses its key as the prefix, so several values for one permission
-        become several comparable scopes."""
+        """Flatten one permission node into 'path: value' leaves."""
         if isinstance(node, dict):
             for key, value in node.items():
                 walk(f"{prefix}.{key}" if prefix else key, value)
         elif isinstance(node, list):
             for value in node:
                 walk(prefix, value)
-        else:
+        elif (prefix in SCOPE_PREFIXES and node is not None
+              and node is not False and node != ""
+              and str(node).lower() != "none"):
             items.add(f"{prefix}: {node}")
 
     walk("", permissions or {})
@@ -166,6 +178,40 @@ def _capabilities(raw) -> dict:
         "filesystem": _strings(existing.get("filesystem")) or filesystem,
         "network": _strings(existing.get("network")) or deduped_network,
     }
+
+
+CAPABILITY_KEYS = ("sources", "permissions", "elementKinds", "filesystem",
+                   "network")
+
+
+def capability_block(entry: dict) -> dict:
+    """The capabilities block every card and detail carries.
+
+    All five lists are always present, so a client can test network and
+    sources without guarding for a missing key. The values are the entry's
+    already normalized facts; nothing is read from a manifest here.
+    """
+    capabilities = entry.get("capabilities")
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    return {key: _strings(capabilities.get(key)) for key in CAPABILITY_KEYS}
+
+
+def _with_manifest_capabilities(entry: dict, manifest: dict) -> dict:
+    """Merge a pinned entry's capability facts with its own manifest.
+
+    The committed bundled catalog pins the release identity but carries no
+    permission trees, so the capabilities a client reads must be derived
+    from the manifest that shipped with the tree. The manifest facts are
+    unioned with whatever the pin already holds, never replacing them.
+    """
+    derived = _capabilities(manifest)
+    current = capability_block(entry)
+    merged = dict(entry)
+    merged["capabilities"] = {
+        key: list(dict.fromkeys(current[key] + derived[key]))
+        for key in CAPABILITY_KEYS
+    }
+    return merged
 
 
 def _changelog(raw, version: str) -> dict:
@@ -366,6 +412,8 @@ def build_bundled_catalog(registry_root) -> dict:
                             for key in ("summary", "description", "highlights"):
                                 if not enriched.get(key) and manifest.get(key):
                                     enriched[key] = manifest[key]
+                            enriched = _with_manifest_capabilities(
+                                enriched, manifest)
                         entries.append(enriched)
                         continue
                     manifest = read_json(root / "plugins" / plugin_id / "manifest.json", None)
@@ -465,6 +513,9 @@ def card(entry: dict) -> dict:
         "deprecated": entry.get("deprecated"),
         "yanked": bool(entry.get("yanked")),
         "sampleAvailable": bool(entry.get("sampleAvailable")),
+        # The client decides whether a plugin can run here from the same
+        # facts the detail page shows, so the card carries them too.
+        "capabilities": capability_block(entry),
     }
 
 
@@ -481,13 +532,7 @@ def detail(entry: dict) -> dict:
         "digest": entry.get("digest", ""),
         "signature": dict(entry.get("signature") or {}),
         "provenance": dict(entry.get("provenance") or {}),
-        "capabilities": {
-            "sources": list((entry.get("capabilities") or {}).get("sources") or []),
-            "permissions": list((entry.get("capabilities") or {}).get("permissions") or []),
-            "elementKinds": list((entry.get("capabilities") or {}).get("elementKinds") or []),
-            "filesystem": list((entry.get("capabilities") or {}).get("filesystem") or []),
-            "network": list((entry.get("capabilities") or {}).get("network") or []),
-        },
+        "capabilities": capability_block(entry),
         "changelog": dict(entry.get("changelog") or {}),
         "publishedAt": entry.get("publishedAt", ""),
         "validation": {

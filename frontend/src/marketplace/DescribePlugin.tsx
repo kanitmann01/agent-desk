@@ -7,6 +7,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import Button from '../components/Button';
 import ModalSheet from '../components/ModalSheet';
+import { useBusy } from '../components/useBusy';
 import { getJson, postJson } from '../api';
 
 /** One row of the fill: the field, its chosen label, and the why. */
@@ -55,8 +56,12 @@ type Phase =
 export default function DescribePlugin() {
   const [phase, setPhase] = useState<Phase>({ kind: 'closed' });
   const [description, setDescription] = useState('');
+  const [probing, setProbing] = useState(false);
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  // The probe is the first wait: the door disables at once and says it is
+  // checking only after 100 ms, so a fast answer never flashes.
+  const probeBusy = useBusy(probing);
 
   /**
    * Ask whether a fill is possible, then open the dialog or submit the form.
@@ -66,6 +71,8 @@ export default function DescribePlugin() {
    */
   async function onClick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (probing) return;
+    setProbing(true);
     let autofill = false;
     try {
       const probe = await getJson('/api/wizard/availability');
@@ -74,9 +81,11 @@ export default function DescribePlugin() {
       autofill = false;
     }
     if (!autofill) {
+      // The navigation replaces the page; the busy door goes with it.
       formRef.current?.submit();
       return;
     }
+    setProbing(false);
     setPhase({ kind: 'writing' });
   }
 
@@ -118,7 +127,10 @@ export default function DescribePlugin() {
     <>
       <form ref={formRef} method="post" action="/wizard/start" className="mkt-describe"
             onSubmit={onClick}>
-        <Button tone="secondary" type="submit">Describe a plugin in plain English</Button>
+        <Button tone="secondary" type="submit" disabled={probing}
+                pending={probeBusy} pendingLabel="Checking the AI connection…">
+          Describe a plugin in plain English
+        </Button>
       </form>
 
       <ModalSheet

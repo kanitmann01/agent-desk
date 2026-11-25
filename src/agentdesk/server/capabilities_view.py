@@ -15,7 +15,7 @@ names its error, it never reads green.
 import html
 from datetime import datetime
 
-from agentdesk.server.pages import page_shell
+from agentdesk.server.pages import page_shell, status_line
 from agentdesk.calendar.watcher import (
     STATE_CLEAR as CALENDAR_CLEAR,
     STATE_HEALTHY as CALENDAR_HEALTHY,
@@ -121,7 +121,10 @@ def _gate_cards(cached: dict[str, CachedGate | None], now_ts: float) -> str:
             f"<article class='widget' id='gate-{esc_key}'>"
             f"<div class='w-head'><h2>Gate {number}: {html.escape(title)}</h2></div>"
             f"{body}"
-            f"<form method='post' action='/capabilities/{esc_key}/retest' class='cardform'>"
+            f"<form method='post' action='/capabilities/{esc_key}/retest' class='cardform' "
+            f"data-wait='#gate-{esc_key}' data-wait-shape='card' "
+            f"data-wait-label='Running gate {number}. The probe reads this machine once.' "
+            f"data-busy='Testing...'>"
             f"<button class='btn btn-secondary' type='submit'>Re-test gate {number}</button>"
             "</form>"
             "</article>"
@@ -233,13 +236,17 @@ def render_capabilities_page(
     now_ts: float,
     mail: dict | None = None,
     inbox_count: int = 0,
+    notice: str = "",
+    notice_kind: str = "status",
 ) -> str:
     """The full capabilities document: gate cards from the cache, the
     endpoint card and source cards from the live table, and the mail
     card when the mail toggle exists. Rendering probes nothing; the
-    re-test forms are the only probing path."""
+    re-test forms are the only probing path. `notice` names the outcome
+    of the last re-test on the page that arrives after it."""
     mail_html = _mail_card(mail) if mail is not None else ""
     content = f"""<h1>Capabilities</h1>
+{status_line(notice, notice_kind)}
 <p class='empty'><a href="/settings">Back to settings</a></p>
 <p>What this laptop offers the agent: the five environment gates the
 probe checks, the company endpoint, and the data sources. Gate results

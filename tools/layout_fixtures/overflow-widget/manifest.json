@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 2,
+  "id": "audit-overflow",
+  "name": "Regional Pipeline Operations Console with Quarterly Forecast and Review",
+  "version": "0.1.0",
+  "publisher": "agent-desk",
+  "class": "declarative",
+  "engines": {
+    "dashboardHost": ">=0.1.0 <2.0.0"
+  },
+  "license": "MIT",
+  "category": "reference",
+  "tags": [
+    "audit",
+    "overflow",
+    "pipeline"
+  ],
+  "icon": "chart",
+  "summary": "A local audit fixture with a long title and value, no network and no model.",
+  "description": "A local manual metric read from the plugin's own data folder. It has no network permission, no model permission and no filesystem access outside its data folder. The audit installs it only to keep the widget overflow menu reachable while the bundled network plugin cannot run on this host.",
+  "highlights": [
+    "Reads a local manual.json only",
+    "No network and no model",
+    "Deterministic title and value for the layout audit"
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allow": []
+    },
+    "llm": {
+      "allow": false
+    },
+    "shell": "none"
+  },
+  "activationEvents": [
+    "onWidget:audit-overflow"
+  ],
+  "contributes": {
+    "widgets": [
+      {
+        "id": "audit-overflow",
+        "size": "1x1",
+        "dataSource": {
+          "type": "manual-metric",
+          "file": "${pluginData}/manual.json",
+          "cadence": "1h"
+        },
+        "render": {
+          "type": "ui-schema",
+          "file": "widget.ui.json"
+        }
+      }
+    ]
+  },
+  "minHost": ">=0.1.0",
+  "sample": "sample.json"
+}

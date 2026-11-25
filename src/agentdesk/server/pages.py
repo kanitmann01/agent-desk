@@ -74,7 +74,26 @@ STYLES = """
   --font-mono:"Geist Mono","Consolas",monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* Text fits its box (spec 026). Prose breaks rather than overflows: a
+   word only breaks when it would by itself leave the box it is in. The
+   one-line helper and the two deliberate scrollers are below; a value a
+   person compares, a stamp, a button label and the code in a pre keep
+   their own line instead. */
+body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+.nowrap{white-space:nowrap}
+/* An identifier that must stay whole, on a line that scrolls when the
+   identifier is longer than the card (the calendar file name). */
+.id-scroll{display:inline-block;max-width:100%;overflow-x:auto;vertical-align:bottom}
+/* One table per wrapper: the table may be wider than the reading column,
+   so it scrolls inside its own box; the page never scrolls sideways. */
+.table-scroll{max-width:100%;overflow-x:auto}
+/* A plugin's authored table (plugins/html.py) breaks only a word that
+   cannot fit its cell; the wrapper above scrolls a table that still
+   cannot fit the card. */
+.w-table{width:100%;border-collapse:collapse;font-size:13px}
+.w-table th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+.w-table td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+.w-table tr:last-child td{border-bottom:none}
 /* The static memory graph (/memory/graph without JavaScript). */
 .graph-static{overflow-x:auto;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);padding:8px}
 .graph-edge{stroke:var(--ink-4)}
@@ -97,17 +116,22 @@ a:hover{text-decoration:underline}
 svg{display:block;flex:none}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .app{display:grid;grid-template-columns:200px 1fr;min-height:calc(100vh - 32px);margin:16px;background:var(--bg);border:1px solid var(--hairline);border-radius:var(--r-card);box-shadow:none}
-.rail{border-right:1px solid var(--hairline);background:transparent;padding:20px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100%}
-.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px}
+.rail{border-right:1px solid var(--hairline);background:transparent;padding:20px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100%;min-width:0}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px;min-width:0}
 .brand .mark{display:none}
-.brand b,.brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em}
+.brand b,.brand-name{font-family:var(--font-display);font-size:20px;font-weight:560;letter-spacing:-.02em;min-width:0}
 .rail-mark{display:none;font-family:var(--font-mono);font-weight:600}
 .phone-bar{display:none}
-.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease}
+.rail a,.rail .nav-off{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-2);text-decoration:none;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease;min-width:0}
+/* A rail entry's name is an identifier a person matches exactly, so it
+   keeps one line and gives way inside the rail rather than breaking; the
+   link's own aria-label is the reachable full name, and the waiting
+   count stays beside it. */
+.rail .rail-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rail a:hover{background:var(--surface-2);color:var(--ink-1);text-decoration:none}
 .rail a[aria-current="page"]{background:var(--surface-2);color:var(--heading);box-shadow:inset 2px 0 0 var(--accent);border-radius:0 var(--r-control) var(--r-control) 0}
 .rail .nav-off{opacity:.45}
-.rail .count{margin-left:8px;font-family:var(--font-mono);font-size:14px;font-weight:500;background:transparent;color:var(--ink-1);border-radius:0;padding:0}
+.rail .count{margin-left:8px;flex:none;white-space:nowrap;font-family:var(--font-mono);font-size:14px;font-weight:500;background:transparent;color:var(--ink-1);border-radius:0;padding:0}
 .origin-line{font-size:12px;font-weight:700;color:var(--primary);letter-spacing:.06em}
 .origin-why{color:var(--ink-2);font-size:13px;border-top:1px solid var(--hairline);padding-top:8px}
 .widget h3{font-size:16px;font-weight:800;letter-spacing:-.01em}
@@ -115,6 +139,14 @@ svg{display:block;flex:none}
 .addplugin-form{display:inline-flex;margin:0}
 .w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12px;color:var(--ink-3)}
+/* A plugin's timeline (plugins/html.py): an unmarked list whose rows are a
+   nowrap time column and a wrapping title/meta column, the same grid the
+   SPA sheet uses. The meta rule stays scoped to the timeline. */
+.w-timeline{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
+.w-timeline li{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:1px 8px}
+.w-timeline .w-list-meta{grid-column:1;grid-row:1;white-space:nowrap;font-size:11px;color:var(--ink-3)}
+.w-list-primary{font-size:12px;line-height:1.35;color:var(--ink-2);overflow-wrap:anywhere}
+.w-timeline .w-list-secondary{grid-column:2;font-size:11.5px;color:var(--ink-3);overflow-wrap:anywhere}
 .settings-skill{margin-bottom:12px}
 .skill-name{font-size:14.5px}
 .skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
@@ -186,19 +218,34 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .doc .widget p{margin:0}
 .doc .widget .cardform{margin:0}
 .reg-origin{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--ink-3);margin:4px 0 0}
-.crumbs{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:12px}
+.crumbs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;font-size:12px;font-weight:600;color:var(--ink-3);margin-bottom:12px}
+.crumbs a,.crumbs span{min-width:0;overflow-wrap:anywhere}
 .crumbs a{color:var(--ink-3);font-weight:600}
 .crumbs a:hover{color:var(--primary)}
 .crumbs .crumb-sep{color:var(--ink-4)}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
 .field input{font:inherit;font-size:14px;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px}
 .field input:focus{outline:2px solid var(--primary);outline-offset:1px}
-.setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--surface);border-radius:var(--r-control);box-shadow:var(--shadow-card);padding:10px 14px;font-weight:600;font-size:14px}
-.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline)}
-.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;min-width:0;background:var(--surface);border-radius:var(--r-control);box-shadow:var(--shadow-card);padding:10px 14px;font-weight:600;font-size:14px}
+/* The label (or state, or folder path) takes the row's text column; the
+   control keeps its natural size and drops below it before the text is
+   squeezed. */
+.setting-row > span{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
+.setting-row > .btn,.setting-row > form{flex:none;max-width:100%}
+.rail .user{margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px;border-top:1px solid var(--hairline);min-width:0}
+/* The avatar is a 30px mark: its initials stay on one line and clip
+   inside the circle if they somehow outgrow it, so the mark never widens
+   and never rides over the name beside it. The title carries the full
+   name. A flex row lets the text shrink to the mark; a centered grid item
+   would keep its max-content width and spill. */
+.rail .user .avatar{width:30px;height:30px;border-radius:999px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;font-weight:800;font-size:12px}
+.rail .user > div{min-width:0}
 .rail .user small{display:block;color:var(--ink-3);font-weight:400}
 .rail .user .user-name{font-size:13px}
-.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;transition:background var(--dur) ease,color var(--dur) ease}
+/* The toggle's word stays on one line and ellipsizes inside the control
+   if it cannot fit, so a button label never breaks across lines. */
+.rail-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-control);color:var(--ink-3);font-weight:600;font-size:12px;margin-top:8px;min-width:0;max-width:100%;transition:background var(--dur) ease,color var(--dur) ease}
+.rail-toggle-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rail-toggle:hover{background:var(--surface-2);color:var(--ink-1)}
 /* Collapsed: the rail keeps its marks (icons, count badge, avatar) and
    drops its text; the column narrows to the mark width. Scoped to the
@@ -218,14 +265,65 @@ fieldset:disabled,.presentation-form :disabled{opacity:.55}
 .rail-collapsed .rail .user{justify-content:center;padding:10px 0}
 .rail-collapsed .rail .user > div{display:none}
 }
-main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
-.topbar h1{font-family:var(--font-display);font-size:40px;font-weight:560;letter-spacing:-.03em}
+main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 auto}
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.topbar h1{font-family:var(--font-display);font-size:40px;font-weight:560;letter-spacing:-.03em;min-width:0;overflow-wrap:anywhere}
 .topbar .sub{color:var(--ink-2);margin-top:2px;display:flex;align-items:center;gap:8px}
 .dot{width:7px;height:7px;border-radius:999px;background:var(--good);display:inline-block}
 .dot.amber{background:var(--attention-ink)}
 .dot.sample{background:var(--ink-4)}
-.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r-control);padding:8px 14px;font-weight:700;white-space:nowrap;max-width:100%;overflow-x:auto;transition:background var(--dur) ease,box-shadow var(--dur) ease,color var(--dur) ease;min-height:36px}
+/* F1, the server pages: a pressed submit button keeps its box and says
+   what it is doing. The idle and busy labels sit in one grid cell, and
+   the busy label is in the layout from load, so the box is the same
+   before and during the wait. The dot pulses in colour only; the
+   reduced-motion rule freezes it. */
+.btn-stack{display:inline-grid;align-items:center;justify-items:center}
+.btn-stack .btn-label{grid-area:1/1;white-space:nowrap;min-width:0}
+.btn-label-busy{visibility:hidden}
+.btn-stack.is-busy .btn-label-idle{visibility:hidden}
+.btn-stack.is-busy .btn-label-busy{visibility:visible}
+.btn-label-busy::before{content:"";display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--accent-text);opacity:.35;margin-right:8px;vertical-align:middle}
+.btn-stack.is-busy .btn-label-busy::before{animation:busy-dot .9s ease-in-out infinite}
+@keyframes busy-dot{0%,100%{background:var(--ink-4);opacity:.55}50%{background:var(--accent-text);opacity:1}}
+/* F2: the region that will receive the result shows a dotted wireframe
+   with the incoming shape and one plain phase line. No spinner, no
+   shadow, no gradient: a dashed rule and the surface token. */
+.wait-ph{display:flex;flex-direction:column;gap:10px;margin-top:16px;padding:12px;border:1px dashed var(--hairline);border-radius:var(--r-card);background:var(--surface)}
+.wait-line{margin:0;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.wait-ph[data-long="1"] .wait-line{color:var(--attention-ink)}
+.wait-wire{display:flex;flex-direction:column;gap:8px}
+.wait-row{display:block;height:12px;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.answer .wait-row:nth-child(1){width:60%}
+.wait-ph.answer .wait-row:nth-child(2){width:100%;height:44px}
+.wait-ph.answer .wait-row:nth-child(3){width:80%}
+.wait-ph.list .wait-row:nth-child(odd){width:88%}
+.wait-ph.list .wait-row:nth-child(even){width:64%;margin-left:24px}
+.wait-ph.card .wait-row:nth-child(1){width:48%;height:16px}
+.wait-ph.card .wait-row:nth-child(2){width:100%;height:56px}
+.wait-ph.panel .wait-row:nth-child(1){width:36%;height:14px}
+.wait-ph.panel .wait-row:nth-child(2){width:100%;height:36px}
+.wait-ph.panel .wait-row:nth-child(3){width:72%}
+/* The card being decided: a wide short figure, five bars of different
+   heights and two text lines, all dashed on the 4px grid. */
+.wait-ph.widget .wait-wire{gap:8px}
+.wait-ph.widget .wait-figure{display:block;height:24px;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.widget .wait-chart{display:flex;align-items:flex-end;gap:8px;height:40px}
+.wait-ph.widget .wait-bar{flex:1;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.widget .wait-bar:nth-child(1){height:12px}
+.wait-ph.widget .wait-bar:nth-child(2){height:24px}
+.wait-ph.widget .wait-bar:nth-child(3){height:16px}
+.wait-ph.widget .wait-bar:nth-child(4){height:32px}
+.wait-ph.widget .wait-bar:nth-child(5){height:20px}
+.wait-ph.widget .wait-text{display:block;height:12px;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.widget .wait-text-a{width:88%}
+.wait-ph.widget .wait-text-b{width:64%}
+/* One skip link, first in the body, off screen until it takes focus. */
+.skip-link{position:absolute;left:8px;top:-56px;z-index:30;background:var(--accent);color:var(--on-accent);padding:10px 14px;border-radius:var(--r-control);font-weight:700;transition:top var(--dur) ease}
+.skip-link:focus{top:8px}
+/* The outcome line F5 asks for, where the reader is already looking. */
+.page-status{margin:0 0 16px;padding:10px 14px;border:1px solid var(--hairline);border-left:3px solid var(--accent);border-radius:var(--r-control);background:var(--surface);color:var(--ink-1);font-size:14px}
+.page-status.alert{border-left-color:var(--bad)}
 .btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:none;border:1px solid var(--accent)}
 .btn-secondary{background:var(--surface);color:var(--ink-1);box-shadow:inset 0 0 0 1px var(--hairline)}
 .btn-secondary:hover:not(:disabled){background:var(--surface-2)}
@@ -237,21 +335,31 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;margin:0 auto}
 .widget{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:18px 18px 14px;transition:box-shadow 200ms ease;display:flex;flex-direction:column;gap:12px}
 .widget:hover{box-shadow:var(--shadow-card-hover)}
 .col-7{grid-column:span 7}.col-5{grid-column:span 5}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
-.w-head{display:flex;align-items:center;gap:12px}
-.w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em}
-.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.w-head h2{font-size:16px;font-weight:700;letter-spacing:-.01em;flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
+/* The thread name in a mail card is the header's text beside its stamp,
+   so it takes the title's flexible column. The inbox kind label keeps
+   its one line inside its own scroller instead of widening the header. */
+.w-head .origin-line{flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
+.origin-line.nowrap{overflow-x:auto}
+.stamp{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none;max-width:100%;overflow-x:auto;white-space:nowrap;font-size:12px;color:var(--ink-3);font-weight:600}
+.w-head .badge-pilot,.w-head .icon-btn{flex:none;max-width:100%}
 .w-foot{display:flex;align-items:flex-start;gap:10px;border-top:1px solid var(--hairline);padding-top:12px;font-size:12px;line-height:1.5;color:var(--ink-3)}
-.kpi{display:flex;gap:24px;align-items:flex-start}
+.kpi{display:flex;flex-direction:column;gap:6px;min-width:0}
 .kpi .label{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em}
-.kpi .value{font-family:var(--font-mono);font-size:64px;font-weight:500;letter-spacing:-.03em;color:var(--good);margin-top:2px;overflow-wrap:anywhere}
+.kpi .value{font-family:var(--font-mono);font-size:64px;font-weight:500;letter-spacing:-.03em;color:var(--good);margin-top:2px;white-space:nowrap}
 .kpi .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
 .spark{margin-left:auto;text-align:right}
 .spark figcaption{font-size:12px;color:var(--ink-4);margin-top:4px}
 table.rows{width:100%;border-collapse:collapse;font-size:13px}
-table.rows th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline)}
-table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline)}
+table.rows th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+/* A cell breaks only a word that cannot fit its column. The floor stays
+   the word's own width (unlike anywhere, which lets the auto layout
+   crush a column to one character and break every word in it); a table
+   whose words still cannot fit scrolls inside .table-scroll. */
+table.rows td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
 table.rows tr:last-child td{border-bottom:none}
-table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+table.rows .num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 table.rows td.neg{color:var(--bad)}
 .delta{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:12px;font-weight:600}
 .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
@@ -265,10 +373,11 @@ table.rows td.neg{color:var(--bad)}
 .check .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-4);display:grid;place-items:center;color:transparent;transition:all var(--dur) ease;margin-top:1px}
 .check[aria-checked="true"] .box{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
 .check[aria-checked="true"] span:not(.box){text-decoration:line-through;color:var(--ink-3)}
-.follow{display:inline-flex;align-items:center;gap:8px;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
-.well{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
-.well .q{flex:1;color:var(--ink-3)}
-.well-input{flex:1;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
+.follow{display:inline-flex;align-items:center;gap:8px;max-width:100%;background:var(--attention-bg);color:var(--attention-ink);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
+.well{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px}
+.well .q{flex:1 1 220px;min-width:0;color:var(--ink-3)}
+.well-input{flex:1 1 220px;min-width:0;font:inherit;color:var(--ink-1);background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-inner);padding:8px 10px;resize:vertical}
+.well > .btn{flex:none;max-width:100%}
 .well-input:focus{outline:2px solid var(--primary);outline-offset:1px}
 .grow{flex:1}
 .thread{display:flex;flex-direction:column;gap:12px;margin:14px 0}
@@ -281,20 +390,20 @@ table.rows td.neg{color:var(--bad)}
 .answer p{margin:0}
 .answer .aq{font-weight:700}
 .answer .well-input{width:100%}
-.src{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
+.src{display:inline-flex;align-items:center;gap:6px;max-width:100%;font-family:var(--font-mono);font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--hairline);border-radius:999px;padding:3px 10px;margin:10px 8px 0 0}
 .tag-sample{font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.08em}
 .widget.amber{background:var(--surface);box-shadow:inset 2px 0 0 var(--accent)}
 .alert{display:flex;gap:10px;align-items:flex-start;color:var(--attention-ink);font-size:14px}
-.badge-pilot{font-size:12px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
+.badge-pilot{flex:none;font-size:12px;font-weight:700;color:var(--attention-ink);background:var(--attention-bg);border-radius:999px;padding:2px 9px}
 .btn-start{align-self:flex-start}
 .empty{color:var(--ink-3);font-size:13px}
 .decisions{list-style:none;margin:0;padding:0}
-.decisions li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--hairline)}
+.decisions li{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--hairline)}
 .decisions li:first-child{border-top:none;padding-top:0}
-.decision-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.decision-text{display:flex;flex:1 1 220px;flex-direction:column;gap:2px;min-width:0}
 .decision-title{font-weight:600;color:var(--ink-1);font-size:14px}
 .decision-why{font-size:12.5px;color:var(--ink-3);line-height:1.4}
-.decision-actions{display:flex;align-items:center;gap:8px;flex:none}
+.decision-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;max-width:100%}
 .decision-actions form{margin:0}
 .btn-sm{min-height:28px;padding:4px 10px;font-size:12.5px}
 .doc{max-width:720px;margin:32px auto;padding:0 16px}
@@ -303,14 +412,16 @@ table.rows td.neg{color:var(--bad)}
 .doc > h2{font-size:16px;font-weight:700;margin:24px 0 0;letter-spacing:-.01em}
 .doc p{color:var(--ink-2);font-size:14px;margin:8px 0}
 .doc ol{margin:12px 0;padding-left:20px;color:var(--ink-2);font-size:14px;display:flex;flex-direction:column;gap:8px}
-.doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre-wrap;color:var(--ink-1)}
+/* A long line in a pre scrolls inside the block instead of breaking a
+   path or a JSON token across lines. */
+.doc pre{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-control);padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;white-space:pre;overflow-wrap:normal;color:var(--ink-1)}
 .doc .cardrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .doc a.btn{text-decoration:none}
 .page-foot{margin-top:48px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap}
 .page-foot a{color:var(--primary);font-weight:700;text-decoration:none}
 .page-foot a:hover{text-decoration:underline}
 .touches td{vertical-align:top;font-size:13px}
-.touch-badge{display:inline-flex;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.touch-badge{display:inline-flex;max-width:100%;white-space:nowrap;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
 .touch-badge.on{background:var(--primary-soft);color:var(--primary);border-color:transparent}
 .error-card{max-width:460px;margin:18vh auto 0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:28px;display:flex;flex-direction:column;gap:8px}
 .error-card h1{font-size:20px;font-weight:800}
@@ -340,6 +451,8 @@ table.rows td.neg{color:var(--bad)}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition-duration:0.01ms!important}
+  /* The busy-dot pulse and every placeholder freeze to a still state. */
+  .btn-stack.is-busy .btn-label-busy::before{animation:none;background:var(--accent-text);opacity:1}
 }
 
 /* Appearance: three theme tiles. Each swatch is drawn from the tile's
@@ -404,10 +517,10 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
    and needs no rules of its own. */
 .inlineform{display:inline-block;margin:0 0 0 6px}
 /* A row scans one line tall (spec 019): the base URL wraps anywhere so
-   a mono URL cannot dictate the column widths, and the three actions
-   hold one line per row. */
+   a mono URL cannot dictate the column widths. The three actions wrap
+   together inside their cell when the table is narrow, so the buttons
+   are never squeezed and the page never scrolls sideways. */
 .conn-url{overflow-wrap:anywhere}
-.conn-actions{white-space:nowrap}
 /* The health badge (spec 018): one pill per state, colored like the
    delta arrows (good, bad) with unknown in the quiet ink; the inline
    cause under it is plain text, not part of the pill. The failure
@@ -415,6 +528,9 @@ input[type="radio"]:checked::after{content:"";width:8px;height:8px;border-radius
    its theme and 4.5:1 on the surface, so error, unknown and ok read
    as three colors in all three themes (spec 019). */
 .conn-status{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);color:var(--ink-3)}
+/* The status cell's lines stay whole; the table scrolls inside its own
+   wrapper when the columns cannot share the reading width. */
+.conn-state,.conn-state span{white-space:nowrap}
 .conn-ok{color:var(--good)}
 .conn-error{color:var(--bad)}
 """
@@ -450,6 +566,360 @@ function post(url, body) {
     body: body ? JSON.stringify(body) : '{}'});
 }
 
+// F1 to F5 on the server pages, one set of helpers. Nothing shows under
+// 100 ms. A busy control keeps its box (both labels share one grid cell)
+// and cannot be pressed again. A model-backed form writes a same-shape
+// placeholder into the region that will receive the result. A fetch that
+// then reloads reloads only after a success; a failure is said in the
+// page's own note.
+var BUSY_DELAY_MS = 100;
+var TAKING_LONGER_MS = 10000;
+var BUSY_WATCHDOG_MS = 180000;
+
+// A notice is said once. Once the page has drawn the sentence, take it out
+// of the address bar, so a later fetch-driven reload does not say it again.
+function clearNoticeFromAddress() {
+  try {
+    var url = new URL(window.location.href);
+    if (!url.searchParams.has('notice') && !url.searchParams.has('notice_kind')) return;
+    url.searchParams.delete('notice');
+    url.searchParams.delete('notice_kind');
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch (e) {
+    // An address the parser cannot read keeps its words; nothing else changes.
+  }
+}
+clearNoticeFromAddress();
+
+function shouldReloadAfterPost(ok) {
+  return ok === true;
+}
+
+function stackButton(btn) {
+  if (!btn || btn.getAttribute('data-stacked') === '1') return;
+  var idle = document.createElement('span');
+  idle.className = 'btn-label btn-label-idle';
+  while (btn.firstChild) idle.appendChild(btn.firstChild);
+  var busy = document.createElement('span');
+  busy.className = 'btn-label btn-label-busy';
+  busy.textContent = controlLabel(btn);
+  btn.appendChild(idle);
+  btn.appendChild(busy);
+  btn.classList.add('btn-stack');
+  btn.setAttribute('data-stacked', '1');
+}
+
+function setButtonBusy(btn, on, label) {
+  if (!btn) return;
+  if (!on) {
+    // A resting control cancels the delayed busy mark and its watchdog: a
+    // fast answer must not be followed by a timer that locks it after it
+    // is done, and the synchronous press flag goes with them.
+    if (btn._busyTimer) {
+      window.clearTimeout(btn._busyTimer);
+      btn._busyTimer = null;
+    }
+    if (btn._busyWatchdog) {
+      window.clearTimeout(btn._busyWatchdog);
+      btn._busyWatchdog = null;
+    }
+    if (btn._busyVisibility) {
+      document.removeEventListener('visibilitychange', btn._busyVisibility);
+      btn._busyVisibility = null;
+    }
+    btn.removeAttribute('data-press-busy');
+  }
+  stackButton(btn);
+  var busy = btn.querySelector('.btn-label-busy');
+  if (on && label && busy) busy.textContent = label;
+  if (on) {
+    btn.classList.add('is-busy');
+    btn.setAttribute('aria-busy', 'true');
+    btn.setAttribute('aria-disabled', 'true');
+  } else {
+    btn.classList.remove('is-busy');
+    btn.removeAttribute('aria-busy');
+    btn.removeAttribute('aria-disabled');
+  }
+}
+
+function controlLabel(btn) {
+  if (!btn) return 'Working...';
+  return btn.getAttribute('data-busy')
+    || (btn.form && btn.form.getAttribute('data-busy'))
+    || (btn.form && btn.form.getAttribute('data-wait-label'))
+    || 'Working...';
+}
+
+function beginControl(btn) {
+  if (!btn) return;
+  // Flag the press now: the visual busy state waits 100 ms, but a second
+  // click inside that window must not run the handler again.
+  btn.setAttribute('data-press-busy', '1');
+  if (btn._busyTimer) window.clearTimeout(btn._busyTimer);
+  if (btn._busyWatchdog) window.clearTimeout(btn._busyWatchdog);
+  if (btn._busyVisibility) {
+    document.removeEventListener('visibilitychange', btn._busyVisibility);
+    btn._busyVisibility = null;
+  }
+  // The timer lives on the element, so setButtonBusy(false) can cancel
+  // it from anywhere: no caller has to keep the returned cancel.
+  btn._busyTimer = window.setTimeout(function () {
+    btn._busyTimer = null;
+    setButtonBusy(btn, true, controlLabel(btn));
+  }, BUSY_DELAY_MS);
+  // A fetch that never settles must not keep the control disabled. After
+  // the same generous limit as a form, a visible page unlocks it.
+  btn._busyDeadline = Date.now() + BUSY_WATCHDOG_MS;
+  btn._busyWatchdog = window.setTimeout(function () {
+    btn._busyWatchdog = null;
+    if (document.visibilityState === 'visible') {
+      unlockStuckControl(btn);
+      return;
+    }
+    btn._busyVisibility = function () {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() < btn._busyDeadline) return;
+      unlockStuckControl(btn);
+    };
+    document.addEventListener('visibilitychange', btn._busyVisibility);
+  }, BUSY_WATCHDOG_MS);
+}
+
+function unlockStuckControl(btn) {
+  if (!btn) return;
+  setButtonBusy(btn, false);
+  if (btn.form) removeWaitPlaceholder(btn.form.getAttribute('data-wait'));
+  showNote('This is taking too long. Check that the desk is still running, then try again.');
+}
+
+// One click guard for every click control: the synchronous flag above
+// stops the second click, and a form already posting stops its controls.
+function onControlClick(event) {
+  var target = event.target;
+  if (!target || !target.closest) return;
+  if (!target.closest('[data-press-busy="1"]')
+      && !target.closest("form[data-busy-form='1']")) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+document.addEventListener('click', onControlClick, true);
+
+function noteRegion() {
+  return document.getElementById('page-note')
+    || document.getElementById('pick-note')
+    || document.getElementById('calendar-note')
+    || document.getElementById('inbox-note')
+    || document.getElementById('memory-notice');
+}
+
+function showNote(text) {
+  var note = noteRegion();
+  if (!note) return;
+  note.hidden = false;
+  note.textContent = text;
+  note.setAttribute('role', 'alert');
+}
+
+function clearNote() {
+  var note = noteRegion();
+  if (!note) return;
+  note.textContent = '';
+  note.hidden = true;
+}
+
+function causeOf(res) {
+  var data = res && res.data ? res.data : {};
+  return data.error || data.cause || data.message
+    || 'That did not work; nothing changed.';
+}
+
+function postResult(url, body) {
+  return post(url, body).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      return {ok: r.ok, data: d};
+    });
+  });
+}
+
+function finishFetch(btn, res, reloadLabel) {
+  setButtonBusy(btn, false);
+  if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+    showNote(causeOf(res));
+    return false;
+  }
+  location.assign(reloadLabel || location.href);
+  return true;
+}
+
+function placeholderRows(shape) {
+  if (shape === 'answer') return 3;
+  if (shape === 'list') return 4;
+  if (shape === 'card') return 2;
+  return 3;
+}
+
+function showWaitPlaceholder(form, selector) {
+  var region = document.querySelector(selector);
+  if (!region || region.querySelector('[data-wait-ph]')) return;
+  var shape = form.getAttribute('data-wait-shape') || 'panel';
+  var label = form.getAttribute('data-wait-label') || 'Working...';
+  var box = document.createElement('div');
+  box.className = 'wait-ph ' + shape;
+  box.setAttribute('data-wait-ph', '1');
+  var line = document.createElement('p');
+  line.className = 'wait-line';
+  line.textContent = label;
+  var wire = document.createElement('div');
+  wire.className = 'wait-wire';
+  wire.setAttribute('aria-hidden', 'true');
+  if (shape === 'widget') {
+    // The card being decided: a figure, five bars and two text lines,
+    // all dashed outlines, no invented numbers or words.
+    var figure = document.createElement('span');
+    figure.className = 'wait-figure';
+    wire.appendChild(figure);
+    var chart = document.createElement('span');
+    chart.className = 'wait-chart';
+    for (var barIndex = 0; barIndex < 5; barIndex += 1) {
+      var bar = document.createElement('span');
+      bar.className = 'wait-bar';
+      chart.appendChild(bar);
+    }
+    wire.appendChild(chart);
+    var first = document.createElement('span');
+    first.className = 'wait-text wait-text-a';
+    wire.appendChild(first);
+    var second = document.createElement('span');
+    second.className = 'wait-text wait-text-b';
+    wire.appendChild(second);
+  } else {
+    for (var i = 0; i < placeholderRows(shape); i += 1) {
+      var row = document.createElement('span');
+      row.className = 'wait-row';
+      wire.appendChild(row);
+    }
+  }
+  box.appendChild(line);
+  box.appendChild(wire);
+  region.appendChild(box);
+  region.setAttribute('aria-busy', 'true');
+  window.setTimeout(function () {
+    if (box.parentNode && !box.getAttribute('data-long')) {
+      box.setAttribute('data-long', '1');
+      line.textContent = label + ' This is taking longer than usual; you may leave this page.';
+    }
+  }, TAKING_LONGER_MS);
+}
+
+function onSubmit(event) {
+  var form = event.target;
+  if (!form || form.tagName !== 'FORM') return;
+  if ((form.getAttribute('method') || '').toLowerCase() !== 'post') return;
+  if (form.getAttribute('data-busy-form') === '1') {
+    // A duplicate submit must reach no listener at all: the fetch-backed
+    // forms would post twice, because aria-disabled arrives 100 ms late.
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  form.setAttribute('data-busy-form', '1');
+  var btn = event.submitter
+    || form.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
+  if (btn) stackButton(btn);
+  var wait = form.getAttribute('data-wait');
+  form._busyTimer = window.setTimeout(function () {
+    setButtonBusy(btn, true, controlLabel(btn));
+    if (wait) showWaitPlaceholder(form, wait);
+  }, BUSY_DELAY_MS);
+  // A native post can lose its navigation (Escape stops the load) and
+  // leave the form flagged busy forever. After a generous limit, while
+  // the page is still visible, the form unlocks itself and says so.
+  form._busyDeadline = Date.now() + BUSY_WATCHDOG_MS;
+  form._busyWatchdog = window.setTimeout(function () {
+    form._busyWatchdog = null;
+    if (document.visibilityState === 'visible') {
+      unlockStuckForm(form);
+      return;
+    }
+    form._busyVisibility = function () {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() < form._busyDeadline) return;
+      unlockStuckForm(form);
+    };
+    document.addEventListener('visibilitychange', form._busyVisibility);
+  }, BUSY_WATCHDOG_MS);
+}
+
+function unlockStuckForm(form) {
+  if (!form || form.getAttribute('data-busy-form') !== '1') return;
+  cancelFormBusy(form);
+  Array.prototype.forEach.call(
+    form.querySelectorAll('[data-stacked="1"]'), function (btn) {
+      setButtonBusy(btn, false);
+    });
+  removeWaitPlaceholder(form.getAttribute('data-wait'));
+  showNote('This is taking too long. Check that the desk is still running, then try again.');
+}
+
+function removeWaitPlaceholder(selector) {
+  if (!selector) return;
+  var region = document.querySelector(selector);
+  if (!region) return;
+  var placeholder = region.querySelector('[data-wait-ph]');
+  if (placeholder) placeholder.remove();
+  region.removeAttribute('aria-busy');
+}
+
+function cancelFormBusy(form) {
+  if (form && form._busyTimer) {
+    window.clearTimeout(form._busyTimer);
+    form._busyTimer = null;
+  }
+  if (form && form._busyWatchdog) {
+    window.clearTimeout(form._busyWatchdog);
+    form._busyWatchdog = null;
+  }
+  if (form && form._busyVisibility) {
+    document.removeEventListener('visibilitychange', form._busyVisibility);
+    form._busyVisibility = null;
+  }
+  if (form) form.removeAttribute('data-busy-form');
+}
+
+function restoreAfterBack() {
+  Array.prototype.forEach.call(document.querySelectorAll('form[data-busy-form]'), function (form) {
+    cancelFormBusy(form);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stacked="1"]'), function (btn) {
+    setButtonBusy(btn, false);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-wait]'), function (form) {
+    removeWaitPlaceholder(form.getAttribute('data-wait'));
+  });
+}
+
+// S1: one delegated listener covers every form post on every server page.
+document.addEventListener('submit', onSubmit, true);
+window.addEventListener('pageshow', restoreAfterBack);
+
+// Reserve every submit button's busy label at load, so the box is the
+// same before the press and during the wait.
+Array.prototype.forEach.call(
+  document.querySelectorAll('form button[type="submit"]'), stackButton);
+
+// A navigation lands on the page's main heading, so the next Tab starts
+// in the content rather than the browser chrome. A hash keeps its own
+// destination.
+(function () {
+  if (window.location.hash) return;
+  var main = document.getElementById('main') || document.querySelector('main');
+  var heading = main && main.querySelector('h1');
+  if (!heading) return;
+  heading.setAttribute('tabindex', '-1');
+  heading.focus();
+})();
+
 // Workbook connect: the app opens the native file dialog, the chosen
 // path registers the watch, and the dashboard reloads with real data.
 // The picker is the only connect path (never a typed one); a cancelled
@@ -468,45 +938,67 @@ function post(url, body) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({path: path})})
       .then(function (r) {
-        return r.json().then(function (d) { return {ok: r.ok, data: d}; });
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return {ok: r.ok, data: d}; });
       })
       .then(function (res) {
-        if (!res.ok || res.data.error) {
-          show(res.data.error || 'The workbook was not connected; nothing changed.');
+        if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+          setButtonBusy(btn, false);
+          show(causeOf(res));
           return;
         }
         location.reload();
       })
       .catch(function () {
+        setButtonBusy(btn, false);
         show('The dashboard could not reach its own server; nothing was connected.');
       });
   };
   btn.addEventListener('click', function () {
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
     post('/sources/excel-watch/pick').then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.path) {
+          setButtonBusy(btn, false);
           show('The file dialog did not open. Try Connect a workbook again; if it keeps failing, restart the app.');
           return;
         }
         connect(d.path);
       })
       .catch(function () {
+        setButtonBusy(btn, false);
         show('The dashboard could not reach its own server; the file dialog was not opened.');
       });
   });
 })();
 
-// Live Re-test: one poll right now, then the fresh state renders.
+// Live Re-test: one poll right now, then the fresh state renders. A
+// refused poll says why on the page and changes nothing.
 document.querySelectorAll('[data-retest]').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    post('/sources/excel-watch/retest').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult('/sources/excel-watch/retest')
+      .then(function (res) { finishFetch(btn, res); })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
 // Calendar Re-test: re-read the OneDrive file right now.
 document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    post('/sources/calendar-bridge/retest').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult('/sources/calendar-bridge/retest')
+      .then(function (res) { finishFetch(btn, res); })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
@@ -518,77 +1010,158 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   if (!note) return;
   var show = function (text) { note.hidden = false; note.textContent = text; };
   var couldNotReach = 'The dashboard could not reach its own server; nothing changed.';
-  var apply = function (url, body) {
-    post(url, body).then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { show(d.error); return; }
+  var apply = function (url, body, btn) {
+    post(url, body).then(function (r) {
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return {ok: r.ok, data: d}; });
+      })
+      .then(function (res) {
+        if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+          setButtonBusy(btn, false);
+          show(causeOf(res));
+          return;
+        }
         location.reload();
       })
-      .catch(function () { show(couldNotReach); });
+      .catch(function () {
+        setButtonBusy(btn, false);
+        show(couldNotReach);
+      });
   };
   var pick = document.querySelector('[data-calendar-pick]');
   if (pick) pick.addEventListener('click', function () {
+    if (pick.getAttribute('aria-disabled') === 'true') return;
+    beginControl(pick);
     post('/sources/calendar-bridge/pick').then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.path) { show('The file dialog did not open. Paste the path below instead.'); return; }
-        apply('/sources/calendar-bridge/path', {path: d.path});
+        if (!d.path) {
+          setButtonBusy(pick, false);
+          show('The file dialog did not open. Paste the path below instead.');
+          return;
+        }
+        apply('/sources/calendar-bridge/path', {path: d.path}, pick);
       })
-      .catch(function () { show(couldNotReach); });
+      .catch(function () {
+        setButtonBusy(pick, false);
+        show(couldNotReach);
+      });
   });
   var usePath = document.querySelector('[data-calendar-path]');
   if (usePath) usePath.addEventListener('click', function () {
+    if (usePath.getAttribute('aria-disabled') === 'true') return;
     var input = document.getElementById('calendar-path');
     var path = input ? input.value.trim() : '';
     if (!path) { show('Paste the full path to the calendar file first.'); return; }
-    apply('/sources/calendar-bridge/path', {path: path});
+    beginControl(usePath);
+    apply('/sources/calendar-bridge/path', {path: path}, usePath);
   });
   var upload = document.querySelector('[data-calendar-upload]');
   if (upload) upload.addEventListener('click', function () {
+    if (upload.getAttribute('aria-disabled') === 'true') return;
     var input = document.getElementById('calendar-file');
     var file = input && input.files && input.files[0];
     if (!file) { show('Choose the calendar JSON file first.'); return; }
+    beginControl(upload);
     var reader = new FileReader();
     reader.onload = function () {
       fetch('/sources/calendar-bridge/upload', {method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: reader.result})
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.error) { show(d.error); return; }
+        .then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (d) { return {ok: r.ok, data: d}; });
+        })
+        .then(function (res) {
+          if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+            setButtonBusy(upload, false);
+            show(causeOf(res));
+            return;
+          }
           location.reload();
         })
-        .catch(function () { show('The dashboard could not reach its own server; nothing was uploaded.'); });
+        .catch(function () {
+          setButtonBusy(upload, false);
+          show('The dashboard could not reach its own server; nothing was uploaded.');
+        });
     };
-    reader.onerror = function () { show('The browser could not read that file.'); };
+    reader.onerror = function () {
+      setButtonBusy(upload, false);
+      show('The browser could not read that file.');
+    };
     reader.readAsText(file);
   });
   var reset = document.querySelector('[data-calendar-reset]');
   if (reset) reset.addEventListener('click', function () {
-    apply('/sources/calendar-bridge/reset');
+    if (reset.getAttribute('aria-disabled') === 'true') return;
+    beginControl(reset);
+    apply('/sources/calendar-bridge/reset', null, reset);
   });
 })();
 
 // Inbox decisions: dismiss is immediate and reversible, accept consumes.
-document.querySelectorAll('[data-accept]').forEach(function (btn) {
+// A success lands on the inbox with the outcome in its status line; a
+// refusal keeps the page and says why.
+function inboxDecision(btn, url, message) {
   btn.addEventListener('click', function () {
-    post('/inbox/cards/' + btn.dataset.accept + '/accept').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult(url)
+      .then(function (res) {
+        setButtonBusy(btn, false);
+        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+          showNote(causeOf(res));
+          return;
+        }
+        location.assign('/inbox?notice=' + encodeURIComponent(message));
+      })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
+}
+document.querySelectorAll('[data-accept]').forEach(function (btn) {
+  inboxDecision(btn, '/inbox/cards/' + btn.dataset.accept + '/accept',
+    'The card was accepted.');
 });
 document.querySelectorAll('[data-dismiss]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    post('/inbox/cards/' + btn.dataset.dismiss + '/dismiss').then(function () { location.reload(); });
-  });
+  inboxDecision(btn, '/inbox/cards/' + btn.dataset.dismiss + '/dismiss',
+    'The card moved to Dismissed at the bottom of the inbox. Restore it there for 30 days.');
 });
 document.querySelectorAll('[data-restore]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    post('/inbox/dismissed/' + btn.dataset.restore + '/restore').then(function () { location.reload(); });
-  });
+  inboxDecision(btn, '/inbox/dismissed/' + btn.dataset.restore + '/restore',
+    'The card is back in your inbox.');
 });
 
-// Settings: one click flips a toggle or cycles a choice; nothing to type.
+// Settings switches are forms (so they work with no script). With script
+// the same form stays on the page: the flip posts, a success reloads onto
+// the section it came from, and a refusal is said in the page's note.
 document.querySelectorAll('[data-setting]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    post('/settings/toggle', {key: btn.dataset.setting}).then(function () { location.reload(); });
+  var form = btn.form;
+  if (!form) return;
+  form.className += ' setting-form';
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    var fields = {key: btn.dataset.setting};
+    var back = form.querySelector("input[name='return_to']");
+    if (back) fields.return_to = back.value;
+    postResult('/settings/toggle', fields)
+      .then(function (res) {
+        cancelFormBusy(form);
+        setButtonBusy(btn, false);
+        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+          showNote(causeOf(res));
+          return;
+        }
+        location.reload();
+      })
+      .catch(function () {
+        cancelFormBusy(form);
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
@@ -705,13 +1278,20 @@ document.querySelectorAll('[data-setting]').forEach(function (btn) {
 // Skills: one click re-runs the saved ask; undo is on the settings page.
 document.querySelectorAll('[data-skill-run]').forEach(function (btn) {
   btn.addEventListener('click', function () {
+    if (btn.getAttribute('aria-disabled') === 'true') return;
     var answerBox = document.getElementById('research-answer');
     var status = document.getElementById('research-status');
+    beginControl(btn);
     if (status) status.textContent = 'Running the saved ask';
     post('/skills/' + btn.dataset.skillRun + '/run').then(function (r) { return r.json(); })
       .then(function (d) {
+        setButtonBusy(btn, false);
         if (status) status.textContent = '';
-        if (!answerBox) return;
+        var failed = d.status === 'degraded' || d.error;
+        if (!answerBox) {
+          if (failed) showNote(d.cause || d.error || 'The saved ask could not run.');
+          return;
+        }
         answerBox.hidden = false;
         answerBox.innerHTML = '';
         var head = document.createElement('div');
@@ -719,13 +1299,25 @@ document.querySelectorAll('[data-skill-run]').forEach(function (btn) {
         head.textContent = d.status === 'ok' ? 'Skill result' : 'Skill unavailable';
         answerBox.appendChild(head);
         answerBox.appendChild(document.createTextNode(
-          d.status === 'ok' ? (d.summary || d.reply || '') : (d.cause || '')));
+          d.status === 'ok' ? (d.summary || d.reply || '') : (d.cause || d.error || '')));
+      })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        if (status) status.textContent = '';
+        showNote('The dashboard could not reach its own server; nothing was sent.');
       });
   });
 });
 document.querySelectorAll('[data-skill-undo]').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    post('/skills/' + btn.dataset.skillUndo + '/undo').then(function () { location.reload(); });
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
+    postResult('/skills/' + btn.dataset.skillUndo + '/undo')
+      .then(function (res) { finishFetch(btn, res); })
+      .catch(function () {
+        setButtonBusy(btn, false);
+        showNote('The dashboard could not reach its own server; nothing changed.');
+      });
   });
 });
 
@@ -757,11 +1349,12 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
   btn.addEventListener('click', function () {
     var question = input.value.trim();
     if (!question) { input.focus(); return; }
-    btn.disabled = true;
+    if (btn.getAttribute('aria-disabled') === 'true') return;
+    beginControl(btn);
     status.textContent = status.dataset.busyText;
     post('/research', {question: question}).then(function (r) { return r.json(); })
       .then(function (d) {
-        btn.disabled = false;
+        setButtonBusy(btn, false);
         if (d.status === 'degraded') {
           answerBox.hidden = true;
           status.textContent = d.cause;
@@ -785,7 +1378,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
         answerBox.appendChild(chips);
       })
       .catch(function () {
-        btn.disabled = false;
+        setButtonBusy(btn, false);
         status.textContent = 'The dashboard could not reach its own server; nothing was sent.';
       });
   });
@@ -808,6 +1401,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     app.classList.toggle('rail-collapsed', collapsed);
     btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    btn.setAttribute('title', collapsed ? 'Expand navigation' : 'Collapse navigation');
     var label = btn.querySelector('.rail-toggle-label');
     if (label) label.textContent = collapsed ? 'Expand' : 'Collapse';
   };
@@ -907,7 +1501,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
     toggle = (
         '<button type="button" class="rail-toggle" aria-expanded="true" '
-        'aria-label="Collapse navigation">'
+        'aria-label="Collapse navigation" title="Collapse navigation">'
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
         '<path d="M14.5 6.5 8 12l6.5 5.5"/></svg>'
@@ -932,8 +1526,11 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         if href == "/inbox" and inbox_count:
             name = f"{label}, {inbox_count} waiting"
         mark = label[:1]
+        # The CSS cuts a label that cannot fit; the title is the full
+        # word, the same one the SPA rail offers.
         return (
-            f'<a href="{href}"{current} aria-label="{name}">'
+            f'<a href="{href}"{current} aria-label="{name}" '
+            f'title="{html.escape(label)}">'
             f'<span class="rail-mark" aria-hidden="true">{mark}</span>'
             f'<span class="rail-label">{label}</span>{extra}</a>'
         )
@@ -975,7 +1572,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/marketplace", "Plugins")}'
         f'{entry("/settings", "Settings")}'
         f'{toggle}'
-        '<div class="user"><span class="avatar" aria-hidden="true">AD</span>'
+        '<div class="user"><span class="avatar" aria-hidden="true" title="Agent Desk">AD</span>'
         '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
         "</nav>"
     )
@@ -998,7 +1595,8 @@ def document_head(title: str) -> str:
 <script src="/static/theme-boot.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>"""
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>"""
 
 
 def page_footer(version: str, note: str = "", touches: bool = True) -> str:
@@ -1013,6 +1611,28 @@ def page_footer(version: str, note: str = "", touches: bool = True) -> str:
         f'<span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span>'
         f"{note_html}{link}</footer>"
     )
+
+
+NOTICE_MAX_CHARS = 300
+
+
+def status_line(text: str, kind: str = "status") -> str:
+    """The one line that names an outcome where the reader is looking.
+
+    `kind` is "status" for a success and "alert" for a failure. The role
+    is chosen from an allow-list, never taken from the caller's string,
+    because a handler forwards `notice_kind` straight from the URL: a
+    crafted link must not close the attribute and inject markup. The line
+    is escaped here and omitted when `text` is empty; a notice longer
+    than NOTICE_MAX_CHARS is cut, so a URL cannot paste a wall of text.
+    """
+    if not text:
+        return ""
+    text = str(text)
+    if len(text) > NOTICE_MAX_CHARS:
+        text = text[:NOTICE_MAX_CHARS].rstrip()
+    role = "alert" if kind == "alert" else "status"
+    return f'<p class="page-status" role="{role}">{html.escape(text)}</p>'
 
 
 def page_shell(
@@ -1032,12 +1652,14 @@ def page_shell(
     `content_html` is authored by the caller (each view escapes its own
     dynamic values) and sits inside the .doc column; the app.js actions
     script ships with every page. `wide` widens the column for a page
-    laid out as a grid of tiles (the Memory page).
+    laid out as a grid of tiles (the Memory page). The page script makes
+    the first h1 in the main region the focus target after a navigation,
+    so the reader lands at the result without a jump in the markup.
     """
     esc_title = html.escape(title)
     return f"""{document_head(f"{title}, Agent Desk")}
 <div class="app">{_rail(active, inbox_count)}
-<main><div class="{'doc doc-wide' if wide else 'doc'}">
+<main id="main"><p class="page-status" id="page-note" role="status" hidden></p><div class="{'doc doc-wide' if wide else 'doc'}">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
 {page_footer(version)}
@@ -1151,7 +1773,8 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
     return f"""{document_head("Agent Desk")}
 <div class="app">
 {_rail("/", inbox_count)}
-<main>
+<main id="main">
+<p class="page-status" id="page-note" role="status" hidden></p>
 <div class="topbar">
   <div>
     <h1>{html.escape(greeting)}</h1>
@@ -1173,12 +1796,16 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
 
 
 def render_error_page(title: str, message: str) -> str:
-    """The minimal same-language page for 401/403/404 answers."""
+    """The minimal same-language page for 401/403/404 answers.
+
+    The skip link still reaches a main region, so the error page obeys the
+    same keyboard contract as every other page.
+    """
     return f"""{document_head(f"{title}, Agent Desk")}
-<div class="error-card">
+<main id="main" class="error-card">
 <h1>{html.escape(title)}</h1>
 <p>{html.escape(message)}</p>
-</div>
+</main>
 </body>
 </html>
 """
@@ -1239,7 +1866,7 @@ def render_press_page(
     return page_shell(label, "/", content, version, inbox_count=inbox_count)
 
 
-def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0) -> str:
+def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_count: int = 0, calendar_off: bool = False) -> str:
     """The calendar connection walkthrough: three browser steps, no terminal.
 
     The user creates the Power Automate flow themselves in their browser;
@@ -1248,9 +1875,22 @@ def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_
     days automatic discovery is not enough: pick a file, paste a path,
     upload the JSON by hand, or go back to automatic. The Check-now
     button re-reads, so the moment data arrives, the dashboard confirms.
+
+    `calendar_off` is the boot pinned to no calendar: the page says
+    reading is off and names the path the app will use once reading is
+    turned on, instead of claiming it already watches that file.
     """
     hint = html.escape(watch_hint)
-    if explicit_path:
+    if calendar_off:
+        watch_line = (
+            "<p>Calendar reading is off on this desk, so no calendar file is read "
+            "right now. When reading is turned on, the app will look here:</p>"
+        )
+        reset_html = (
+            '<button class="btn btn-secondary" data-calendar-reset>'
+            "Reset to automatic discovery</button>"
+        )
+    elif explicit_path:
         watch_line = (
             "<p>You chose a specific file, so automatic discovery is set "
             "aside and the app reads exactly:</p>"

@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { getJson, postJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
 import type { DashboardData } from './types';
 import Dashboard from './dashboard/Dashboard';
+import DashboardSkeleton from './dashboard/DashboardSkeleton';
 import MarketplaceApp from './marketplace/MarketplaceApp';
 import Button from './components/Button';
+import { FaceProvider } from './face/FaceProvider';
 
 // The centered card every non-dashboard state shares. Loading is a polite
 // status; a failure is an alert so the recovery is announced.
@@ -61,6 +63,9 @@ function DashboardApp() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [expired, setExpired] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  // A failed tick after the first payload is quiet, not a failure card:
+  // the last reading stays up and one muted line says why (F6).
+  const [pollFailed, setPollFailed] = useState(false);
   // The view report is a POST, so it must fire once per mount, after the
   // first successful load, and never make rendering wait for it.
   const reportedView = useRef(false);
@@ -87,17 +92,22 @@ function DashboardApp() {
       }
       if (!res.ok) {
         setLoadFailed(true);
+        setPollFailed(true);
         return;
       }
       setData(res.data as DashboardData);
+      setLoadFailed(false);
+      setPollFailed(false);
       if (!reportedView.current) {
         reportedView.current = true;
         void postJson('/api/dashboard/view').catch(() => {});
       }
     } catch {
       // A tick that cannot reach the server (offline, a dropped
-      // connection) is not a user action: the last good screen stays up
-      // and the console stays quiet. The next tick tries again.
+      // connection) is not a user action: the last good screen stays up,
+      // and one quiet line says the reading is the last one. The next
+      // tick tries again.
+      setPollFailed(true);
     }
   }, []);
 
@@ -120,7 +130,6 @@ function DashboardApp() {
       <Centered role="alert">
         <h1 ref={focusFailure} tabIndex={-1}>{SESSION_EXPIRED_TITLE}</h1>
         <p>{SESSION_EXPIRED_MESSAGE}</p>
-        <Button onClick={() => window.location.reload()}>Try again</Button>
       </Centered>
     );
   }
@@ -135,12 +144,7 @@ function DashboardApp() {
         </Centered>
       );
     }
-    return (
-      <Centered role="status" busy>
-        <h1>Loading</h1>
-        <p className="center-loader">Reading the dashboard…</p>
-      </Centered>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
@@ -148,6 +152,9 @@ function DashboardApp() {
       data={data}
       onRefetch={refetch}
       onExpired={() => setExpired(true)}
+      pollNote={pollFailed
+        ? 'The desk could not be reached just now. Showing the last reading; the next check tries again.'
+        : ''}
     />
   );
 }
@@ -164,6 +171,9 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
-  if (isMarketplacePath(pathname)) return <MarketplaceApp />;
-  return <DashboardApp />;
+  return (
+    <FaceProvider>
+      {isMarketplacePath(pathname) ? <MarketplaceApp /> : <DashboardApp />}
+    </FaceProvider>
+  );
 }

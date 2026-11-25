@@ -1,16 +1,19 @@
 // Plugin detail: the fixed content contract from T05, plus the manage
 // actions T06 puts on the same page. Every action re-reads the server
 // after it finishes; nothing is shown as done before the server says so.
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import Button from '../components/Button';
+import { announce } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
 import { MarketApiError, getInstances, getMarket, marketErrorText, postMarket } from './client';
 import { ConsentSheet } from './ConsentSheet';
 import { InstanceSetupSheet, instanceFileName } from './InstanceSetupSheet';
 import { MarketLink, useMarketplaceNav } from './context';
 import { MarketGrid, PublisherMark, SkeletonGrid, categoryLabel, riskLabel } from './MarketGrid';
-import { canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
+import { asksForWeb, canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { SamplePreview } from './Sample';
 import { SignatureChip, StatusChip } from './StatusChip';
+import { BUSY_WATCHDOG_TEXT, useBusyWatchdog } from './useBusyWatchdog';
 import { useDialogFocus } from './useDialogFocus';
 import type { DetailResponse, InstanceDocument, InstancesResponse, MarketDetail, InstalledSummary } from './types';
 
@@ -50,36 +53,83 @@ function ActionMessage({ error, message }: { error: string; message: string }) {
 /**
  * Show a shortened digest with a button that copies the full value.
  *
- * A clipboard refusal leaves the idle label in place instead of claiming the
- * copy worked, and the copied state clears itself after two seconds.
+ * A successful copy swaps the icon for a check for two seconds. When the
+ * clipboard is missing or refuses, the control says so in the attention
+ * style and leaves the full digest in a focused, selected field, so one key
+ * press copies it.
  */
 function Digest({ digest }: { digest: string }) {
   const [copied, setCopied] = useState(false);
-  /** Copy the full digest, marking the button copied only if the clipboard accepts it. */
+  const [copyFailed, setCopyFailed] = useState(false);
+  const fallbackRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+  }, []);
+
+  // The manual field is focused and selected the moment it appears, and again
+  // if the digest changes under it.
+  useEffect(() => {
+    if (!copyFailed) return;
+    const field = fallbackRef.current;
+    if (!field) return;
+    field.focus();
+    field.select();
+  }, [copyFailed, digest]);
+
+  /** Copy the full digest, or show the manual way when the clipboard cannot. */
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(digest);
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      setCopyFailed(false);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      timerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        timerRef.current = null;
+      }, 2000);
     } catch {
       setCopied(false);
+      setCopyFailed(true);
     }
   };
   return (
     <span className="mkt-digest">
-      <code title={digest}>{shortDigest(digest)}</code>
+      <code title={digest} tabIndex={0}>{shortDigest(digest)}</code>
       <button type="button" className="mkt-icon-btn" onClick={copy}
               aria-label={copied ? 'Digest copied' : 'Copy digest'}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             strokeWidth="1.8" aria-hidden="true">
-          <rect x="9" y="9" width="11" height="11" rx="2" />
-          <path d="M5 15H4V4h11v1" />
-        </svg>
+        {copied ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2.2" aria-hidden="true">
+            <path d="m4 12 5 5L20 6" />
+          </svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="1.8" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15H4V4h11v1" />
+          </svg>
+        )}
       </button>
       <span className="mkt-sr-only" role="status">{copied ? 'Digest copied' : ''}</span>
+      {copyFailed && (
+        <span className="mkt-digest-fallback">
+          <span className="mkt-attention" role="status">
+            Could not copy automatically. The full digest is selected below; press Ctrl+C (or Cmd+C on a Mac).
+          </span>
+          <input ref={fallbackRef} readOnly value={digest} aria-label="Full digest"
+                 onFocus={(event) => event.currentTarget.select()} />
+        </span>
+      )}
     </span>
   );
 }
+
+// The one honest line a refused install can offer: the policy is a local
+// file, so only its operator can change it, and this page has no control
+// for that.
+const POLICY_HELP = "Only whoever manages this desk's plugin policy can change that; there is no setting for it here.";
 
 /**
  * Render the action row: an install button while the plugin is absent, the
@@ -87,14 +137,17 @@ function Digest({ digest }: { digest: string }) {
  *
  * A staged update that widens permissions replaces the update button with a
  * consent review, so no widening runs unread. Every control is disabled while
- * one action is in flight.
+ * one action is in flight. A plugin that cannot run here offers Uninstall and
+ * Purge data, matching the Installed row.
  */
 function PluginActions({
-  detail, installed, busy, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
+  detail, installed, busy, busyShown, cannotRun = false, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
 }: {
   detail: MarketDetail;
   installed: InstalledSummary | null;
-  busy: boolean;
+  busy: string;
+  busyShown: boolean;
+  cannotRun?: boolean;
   onInstall: () => void;
   onUpdate: () => void;
   onConsent: () => void;
@@ -103,13 +156,40 @@ function PluginActions({
   onRevert: () => void;
   onUninstall: () => void;
 }) {
-  if (!installed) {
+  const anyBusy = busy !== '';
+  /** True while this exact action is the one in flight and past the 100 ms gate. */
+  const pendingFor = (action: string) => busyShown && busy === action;
+  if (installed && cannotRun) {
+    // The Installed row's two actions, for the same reason: Uninstall stops
+    // it and keeps the folder, Purge deletes the folder. Nothing that cannot
+    // make it run comes back.
     return (
       <div className="mkt-actions">
-        <Button tone="primary" disabled={busy || !detail.eligible} onClick={onInstall}>
-          Install plugin
-        </Button>
-        {!detail.eligible && <span className="mkt-action-note">This plugin is not available under the current policy.</span>}
+        <Button tone="primary" disabled={anyBusy} onClick={onUninstall}>Uninstall</Button>
+        <Button tone="secondary" disabled={anyBusy} onClick={onPurge}>Purge data</Button>
+      </div>
+    );
+  }
+  if (!installed) {
+    return (
+      <div className="mkt-install">
+        <div className="mkt-actions">
+          <Button tone="primary" disabled={anyBusy || !detail.eligible} onClick={onInstall}>
+            Install plugin
+          </Button>
+        </div>
+        {!detail.eligible && (
+          <div className="mkt-install-reasons">
+            {detail.ineligibleReasons.length > 0 ? detail.ineligibleReasons.map((reason) => (
+              <p className="mkt-ineligible" key={reason.code || reason.message}>
+                <span className="mkt-ineligible-label">Not available:</span> {reason.message}
+              </p>
+            )) : (
+              <p className="mkt-action-note">This plugin is not available under the current policy.</p>
+            )}
+            <p className="mkt-action-note">{POLICY_HELP}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -117,23 +197,34 @@ function PluginActions({
     <div className="mkt-actions">
       {installed.pendingConsent ? (
         <>
-          <Button tone="primary" disabled={busy} onClick={onConsent}>Review permission change</Button>
-          <Button tone="secondary" disabled={busy} onClick={onRevert}>Decline update</Button>
+          <Button tone="primary" disabled={anyBusy} onClick={onConsent}>Review permission change</Button>
+          <Button tone="secondary" disabled={anyBusy} onClick={onRevert}
+                  pending={pendingFor('decline')} pendingLabel="Declining…">
+            Decline update
+          </Button>
         </>
       ) : installed.update ? (
-        <Button tone="primary" disabled={busy} onClick={onUpdate}>
+        <Button tone="primary" disabled={anyBusy} onClick={onUpdate}>
           Update to {installed.update.version}
         </Button>
       ) : (
         <span className="mkt-status mkt-tone-good"><span className="mkt-dot" aria-hidden="true" />Up to date</span>
       )}
-      <Button tone="secondary" disabled={busy} onClick={() => onAction(installed.enabled ? 'disable' : 'enable')}>
+      <Button tone="secondary" disabled={anyBusy}
+              onClick={() => onAction(installed.enabled ? 'disable' : 'enable')}
+              pending={pendingFor(installed.enabled ? 'disable' : 'enable')}
+              pendingLabel={installed.enabled ? 'Disabling…' : 'Enabling…'}>
         {installed.enabled ? 'Disable' : 'Enable'}
       </Button>
-      <Button tone="secondary" disabled={busy} onClick={() => onAction('retest')}>Re-test</Button>
-      <Button tone="secondary" disabled={busy} onClick={() => onAction('rollback')}>Roll back</Button>
-      <Button tone="secondary" disabled={busy} onClick={onPurge}>Purge data</Button>
-      <Button tone="secondary" disabled={busy} onClick={onUninstall}>Uninstall</Button>
+      {!cannotRun && (
+        <Button tone="secondary" disabled={anyBusy} onClick={() => onAction('retest')}
+                pending={pendingFor('retest')} pendingLabel="Re-testing…">
+          Re-test
+        </Button>
+      )}
+      <Button tone="secondary" disabled={anyBusy} onClick={() => onAction('rollback')}>Roll back</Button>
+      <Button tone="secondary" disabled={anyBusy} onClick={onPurge}>Purge data</Button>
+      <Button tone="secondary" disabled={anyBusy} onClick={onUninstall}>Uninstall</Button>
     </div>
   );
 }
@@ -153,7 +244,12 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
 }) {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${id}`;
-  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(true, onCancel);
+  // Escape and Cancel both wait while the purge runs, so the reader cannot
+  // close the sheet out from under a failure they would then never see. A
+  // request that never settles unlocks them at the watchdog.
+  const stuck = useBusyWatchdog(busy);
+  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(
+    true, () => { if (!busy || stuck) onCancel(); });
   return (
     <div className="mkt-scrim" role="presentation">
       <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
@@ -166,16 +262,19 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
         <div className="mkt-sheet-body">
           <p>This deletes the plugin's data folder and its install record. There is no undo.</p>
           <label className="mkt-field">
-            <span>Type <code>{expected}</code> to confirm</span>
+            <span>Type <code tabIndex={0} title={expected}>{expected}</code> to confirm</span>
             <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
+          {stuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
           {error && <p className="mkt-error" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary" disabled={busy && !stuck}
+                  onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary"
-                  disabled={typed !== expected || busy} onClick={onConfirm}>
+                  disabled={typed !== expected || busy} aria-busy={busy ? 'true' : undefined}
+                  onClick={onConfirm}>
             {busy ? 'Purging…' : 'Purge data'}
           </button>
         </div>
@@ -237,6 +336,27 @@ function ReportForm({ id, onDone }: { id: string; onDone: (message: string) => v
 }
 
 /**
+ * Render the table-shaped placeholder the manage view shows while the
+ * plugin's instances are read, so the panel never pops in from nothing.
+ */
+function InstanceRowsSkeleton() {
+  return (
+    <div className="mkt-table-wrap" aria-hidden="true">
+      <div className="mkt-rows-skel">
+        {[0, 1].map((row) => (
+          <div className="mkt-rows-skel-row" key={row}>
+            <span className="mkt-skel mkt-skel-short" />
+            <span className="mkt-skel" />
+            <span className="mkt-skel mkt-skel-short" />
+            <span className="mkt-skel mkt-skel-short" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Render one plugin's detail page, plus its actions and instances when the
  * manage view is asked for.
  *
@@ -250,14 +370,34 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [consent, setConsent] = useState<Consent>(null);
-  const [busy, setBusy] = useState(false);
+  // The action key that is in flight ('' when idle), so the control that
+  // started the work names it and the rest wait disabled.
+  const [busy, setBusy] = useState('');
+  const busyShown = useBusy(busy !== '');
   const [sheetError, setSheetError] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeError, setPurgeError] = useState('');
   const [confirmAction, setConfirmAction] = useState<null | { action: 'rollback' | 'uninstall'; title: string; body: string }>(null);
-  const confirmFocus = useDialogFocus<HTMLButtonElement>(confirmAction !== null, () => setConfirmAction(null));
+  const [confirmError, setConfirmError] = useState('');
+  // Whether a sheet is still on screen when its request settles, so a late
+  // failure can be announced on the page instead of swallowed by a sheet the
+  // reader already left.
+  const confirmOpenRef = useRef(false);
+  confirmOpenRef.current = confirmAction !== null;
+  const purgeOpenRef = useRef(false);
+  purgeOpenRef.current = purgeOpen;
+  const confirmStuck = useBusyWatchdog(busy !== '');
+  const confirmFocus = useDialogFocus<HTMLButtonElement>(
+    confirmAction !== null,
+    () => { if (busy === '' || confirmStuck) setConfirmAction(null); },
+  );
+  /** Say a confirm failure in its sheet, or on the page if the reader left it. */
+  const reportConfirmFailure = (text: string) => {
+    if (confirmOpenRef.current) setConfirmError(text);
+    else announce(text);
+  };
   // The manage view's instance setup (T5): the list, its load error, and
   // which sheet is open. instanceAttempt re-reads after a sheet finishes.
   const [instances, setInstances] = useState<InstancesResponse | null>(null);
@@ -296,7 +436,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   }, [id, attempt]);
 
   useEffect(() => {
-    const current = load.kind === 'ready' ? load.data.installed : null;
+    if (load.kind !== 'ready') {
+      // A new id or a first load: the panel shows its own placeholder until
+      // the list lands instead of appearing from nothing.
+      setInstances(null);
+      setInstancesError('');
+      return undefined;
+    }
+    const current = load.data.installed;
     if (!manage || !current) {
       setInstances(null);
       return undefined;
@@ -320,21 +467,33 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
    * on failure, then re-read the record.
    *
    * The previous note and error are cleared first, so a stale result cannot
-   * sit beside a new one, and busy stays set until the re-read finishes.
+   * sit beside a new one, and the action key stays busy until the re-read
+   * finishes so the pressed control can name what it is doing. Returns
+   * whether it succeeded, and hands a failure to `onError` when the caller
+   * keeps it inside a sheet.
    */
-  const run = async (fn: () => Promise<string>) => {
-    setBusy(true);
+  const run = async (
+    fn: () => Promise<string>,
+    action: string,
+    onError?: (message: string) => void,
+  ): Promise<boolean> => {
+    setBusy(action);
     setError('');
     setMessage('');
+    let ok = false;
     try {
       const note = await fn();
       setMessage(note);
       await refresh();
+      ok = true;
     } catch (err) {
-      setError(marketErrorText(err));
+      const message = marketErrorText(err);
+      if (onError) onError(message);
+      else setError(message);
     } finally {
-      setBusy(false);
+      setBusy('');
     }
+    return ok;
   };
 
   if (load.kind === 'loading') {
@@ -370,6 +529,10 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const scopes = plugin.capabilities.permissions;
   const never = canNever(plugin.capabilities);
   const title = manage ? `Manage ${plugin.name}` : plugin.name;
+  const cannotRun = data.deskNetwork === false && asksForWeb(plugin.capabilities);
+  // The instances panel keeps its shape from the first render in the manage
+  // view; only a plugin that is not config-backed drops it once that is known.
+  const instancesLoading = manage && installed !== null && instances === null && !instancesError;
 
   /** Open the consent sheet for a first install, dropping the previous sheet's error. */
   const openInstall = () => { setSheetError(''); setConsent({ kind: 'install' }); };
@@ -402,7 +565,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     const kind = consent.kind;
     const action = kind === 'install' ? 'install'
       : kind === 'update' ? 'update' : 'consent';
-    setBusy(true);
+    setBusy(action);
     setSheetError('');
     try {
       if (action === 'install') {
@@ -429,7 +592,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     } catch (err) {
       setSheetError(marketErrorText(err));
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   };
 
@@ -438,18 +601,24 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     const res = await postMarket<{ version: string }>('/api/marketplace/consent',
       { id: plugin.id, decision: 'reject' });
     return `Update declined. Still on ${res.version}.`;
-  });
+  }, 'decline');
 
   /**
    * Dispatch one lifecycle action.
    *
    * Enable, disable and re-test run immediately and report the resulting
    * state; rollback and uninstall only open their confirmation dialog, so
-   * nothing irreversible happens from a single click.
+   * nothing irreversible happens from a single click. The optional key lets
+   * the validator panel's own button show its wait without lighting a second
+   * control for the same call.
    */
-  const lifecycle = (action: 'enable' | 'disable' | 'retest' | 'rollback' | 'uninstall') => {
+  const lifecycle = (
+    action: 'enable' | 'disable' | 'retest' | 'rollback' | 'uninstall',
+    key: string = action,
+  ) => {
     if (action === 'rollback') { doRollback(); return; }
     if (action === 'uninstall') {
+      setConfirmError('');
       setConfirmAction({ action: 'uninstall', title: 'Uninstall plugin',
         body: 'The plugin stops running. Its data folder is kept until you purge it.' });
       return;
@@ -459,11 +628,12 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         `/api/marketplace/${action}`, { id: plugin.id });
       if (action === 'retest') return 'Re-test finished. Validation status refreshed.';
       return `${plugin.name} is now ${res.state ?? (action === 'enable' ? 'enabled' : 'disabled')}.`;
-    });
+    }, key);
   };
 
   /** Open the confirmation dialog for a rollback without performing it. */
   const doRollback = () => {
+    setConfirmError('');
     setConfirmAction({ action: 'rollback', title: 'Roll back plugin',
       body: 'The previous installed version becomes active. The current version stays available in history.' });
   };
@@ -472,36 +642,74 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const confirmRollback = () => run(async () => {
     const res = await postMarket<{ from: string; to: string }>('/api/marketplace/rollback', { id: plugin.id });
     return `Rolled back from ${res.from} to ${res.to}.`;
-  });
+  }, 'rollback', reportConfirmFailure);
 
   /** Uninstall the plugin and leave for the installed list; the data folder stays until purged. */
   const confirmUninstall = () => run(async () => {
     await postMarket('/api/marketplace/uninstall', { id: plugin.id });
     navigate('/marketplace/installed');
     return 'Uninstalled.';
-  });
+  }, 'uninstall', reportConfirmFailure);
+
+  /**
+   * Run the open confirmation's action, keeping the dialog up with its
+   * button working until the server answers.
+   *
+   * The dialog closes only on success: a refusal stays in the sheet with the
+   * server's message, so the reader keeps the confirmation they opened.
+   */
+  const confirmDialogAction = async () => {
+    if (!confirmAction) return;
+    setConfirmError('');
+    const ok = confirmAction.action === 'rollback'
+      ? await confirmRollback()
+      : await confirmUninstall();
+    if (ok) setConfirmAction(null);
+  };
 
   /**
    * Delete the plugin's data folder and install record, then leave for the
    * installed list.
    *
    * A refusal keeps the dialog open with the server's message, since closing
-   * it would throw away the typed confirmation.
+   * it would throw away the typed confirmation. If the watchdog released the
+   * reader and they left, a late refusal is announced, and a late success is
+   * announced on the installed list it reaches.
    */
   const confirmPurge = async () => {
-    setBusy(true);
+    setBusy('purge');
     setPurgeError('');
     try {
       await postMarket('/api/marketplace/purge-data',
         { id: plugin.id, confirm: `delete-data:${plugin.id}` });
+      announce(`${plugin.name} data purged.`);
       setPurgeOpen(false);
       navigate('/marketplace/installed');
     } catch (err) {
-      setPurgeError(marketErrorText(err));
+      const text = marketErrorText(err);
+      if (purgeOpenRef.current) setPurgeError(text);
+      else announce(text);
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   };
+
+  const actions = (
+    <PluginActions
+      detail={plugin}
+      installed={installed}
+      busy={busy}
+      busyShown={busyShown}
+      cannotRun={cannotRun}
+      onInstall={openInstall}
+      onUpdate={openUpdate}
+      onConsent={openConsent}
+      onAction={lifecycle}
+      onPurge={() => { setPurgeError(''); setPurgeOpen(true); }}
+      onRevert={declineUpdate}
+      onUninstall={() => lifecycle('uninstall')}
+    />
+  );
 
   return (
     <div className="mkt-page mkt-detail">
@@ -531,18 +739,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             </p>
           </div>
         </div>
-        <PluginActions
-          detail={plugin}
-          installed={installed}
-          busy={busy}
-          onInstall={openInstall}
-          onUpdate={openUpdate}
-          onConsent={openConsent}
-          onAction={lifecycle}
-          onPurge={() => { setPurgeError(''); setPurgeOpen(true); }}
-          onRevert={declineUpdate}
-          onUninstall={() => lifecycle('uninstall')}
-        />
+        {cannotRun ? (
+          <div className="mkt-detail-side">
+            <p className="mkt-attention">
+              This desk cannot read web pages yet, so this plugin cannot run here.
+            </p>
+            {actions}
+          </div>
+        ) : actions}
       </header>
 
       <ActionMessage error={error} message={message} />
@@ -555,20 +759,24 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       <p className="mkt-detail-summary">{plugin.summary}</p>
 
       <section className="mkt-facts" aria-label="Plugin facts">
-        <div><span>Publisher</span><strong>{plugin.publisher}</strong></div>
-        <div><span>Version</span><strong className="mkt-mono">v{plugin.version}</strong></div>
-        <div><span>Minimum host</span><strong>{plugin.minHost || 'not stated'}</strong></div>
-        <div><span>License</span><strong>{plugin.license || 'not stated'}</strong></div>
-        <div><span>Digest</span><strong><Digest digest={plugin.digest} /></strong></div>
-        <div><span>Signature</span><strong><SignatureChip status={plugin.signature.status} /></strong></div>
-        <div><span>Risk tier</span><strong>{riskLabel(plugin.riskTier)}</strong></div>
-        <div><span>Published</span><strong>{formatDate(plugin.publishedAt)}</strong></div>
+        <div><span>Publisher</span><strong tabIndex={0} title={plugin.publisher}>{plugin.publisher}</strong></div>
+        <div><span>Version</span><strong className="mkt-mono" tabIndex={0} title={`v${plugin.version}`}>v{plugin.version}</strong></div>
+        <div><span>Minimum host</span><strong tabIndex={0} title={plugin.minHost || 'not stated'}>{plugin.minHost || 'not stated'}</strong></div>
+        <div><span>License</span><strong tabIndex={0} title={plugin.license || 'not stated'}>{plugin.license || 'not stated'}</strong></div>
+        <div><span>Digest</span><strong tabIndex={0}><Digest digest={plugin.digest} /></strong></div>
+        <div><span>Signature</span><strong tabIndex={0} title={plugin.signature.status || 'missing'}><SignatureChip status={plugin.signature.status} /></strong></div>
+        <div><span>Risk tier</span><strong tabIndex={0} title={riskLabel(plugin.riskTier)}>{riskLabel(plugin.riskTier)}</strong></div>
+        <div><span>Published</span><strong tabIndex={0} title={formatDate(plugin.publishedAt)}>{formatDate(plugin.publishedAt)}</strong></div>
       </section>
 
-      {manage && installed && instances?.configBacked && (
-        <section className="mkt-panel" aria-labelledby="mkt-instances">
+      {manage && installed && (instances === null || instances.configBacked || Boolean(instancesError)) && (
+        <section className="mkt-panel" aria-labelledby="mkt-instances"
+                 aria-busy={instancesLoading ? 'true' : undefined}>
           <h2 id="mkt-instances">Instances</h2>
-          {instances.aliasOf && (
+          {instancesLoading && (
+            <p className="mkt-result-count" role="status">Reading this plugin's instances…</p>
+          )}
+          {instances?.aliasOf && (
             <p className="w-note">
               {plugin.name} runs as the {instances.instances[0]?.name ?? 'named'} instance
               of {instances.setupPluginName}; its setup lives with that plugin, so there is
@@ -576,66 +784,74 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             </p>
           )}
           {instancesError && <p className="mkt-error" role="alert">{instancesError}</p>}
-          {!instances.aliasOf && instances.instances.length === 0 && (
-            // The finish line of the wizard walk (T6): a just-installed
-            // config-backed plugin has zero instances, so Set up leads
-            // the panel as the visible primary, above the empty table.
-            <div className="mkt-actions">
-              <Button tone="primary" onClick={() => {
-                setError('');
-                setSheetError('');
-                setSetupSheet({ kind: 'create' });
-              }}>
-                Set up a new instance
-              </Button>
-            </div>
+          {instancesLoading && <InstanceRowsSkeleton />}
+          {instances && !instances.configBacked && instancesError && (
+            <p className="w-note">The instance list could not be read. Try again from this page.</p>
           )}
-          <div className="mkt-table-wrap">
-            <table className="rows">
-              <caption className="mkt-sr-only">Instances of {plugin.name}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Instance</th>
-                  <th scope="col">File</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Setup</th>
-                </tr>
-              </thead>
-              <tbody>
-                {instances.instances.map((item) => (
-                  <tr key={item.instanceId}>
-                    <th scope="row">{item.name}</th>
-                    <td className="mkt-mono">{instanceFileName(item)}</td>
-                    <td>{item.confirmedAt ? 'Confirmed' : 'Needs setup'}</td>
-                    <td>
-                      <Button tone="secondary" onClick={() => {
-                        setError('');
-                        setSheetError('');
-                        setSetupSheet({ kind: 'edit', instance: item });
-                      }}>
-                        Edit {item.name}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-                {instances.instances.length === 0 && (
-                  <tr>
-                    <td colSpan={4}>No instances yet. Set one up to point {plugin.name} at its data.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {!instances.aliasOf && instances.instances.length > 0 && (
-            <div className="mkt-actions">
-              <Button tone="primary" onClick={() => {
-                setError('');
-                setSheetError('');
-                setSetupSheet({ kind: 'create' });
-              }}>
-                Set up a new instance
-              </Button>
-            </div>
+          {instances && instances.configBacked && (
+            <>
+              {!instances.aliasOf && instances.instances.length === 0 && (
+                // The finish line of the wizard walk (T6): a just-installed
+                // config-backed plugin has zero instances, so Set up leads
+                // the panel as the visible primary, above the empty table.
+                <div className="mkt-actions">
+                  <Button tone="primary" onClick={() => {
+                    setError('');
+                    setSheetError('');
+                    setSetupSheet({ kind: 'create' });
+                  }}>
+                    Set up a new instance
+                  </Button>
+                </div>
+              )}
+              <div className="mkt-table-wrap">
+                <table className="rows">
+                  <caption className="mkt-sr-only">Instances of {plugin.name}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Instance</th>
+                      <th scope="col">File</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Setup</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {instances.instances.map((item) => (
+                      <tr key={item.instanceId}>
+                        <th scope="row">{item.name}</th>
+                        <td className="mkt-mono">{instanceFileName(item)}</td>
+                        <td>{item.confirmedAt ? 'Confirmed' : 'Needs setup'}</td>
+                        <td>
+                          <Button tone="secondary" onClick={() => {
+                            setError('');
+                            setSheetError('');
+                            setSetupSheet({ kind: 'edit', instance: item });
+                          }}>
+                            Edit {item.name}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {instances.instances.length === 0 && (
+                      <tr>
+                        <td colSpan={4}>No instances yet. Set one up to point {plugin.name} at its data.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!instances.aliasOf && instances.instances.length > 0 && (
+                <div className="mkt-actions">
+                  <Button tone="primary" onClick={() => {
+                    setError('');
+                    setSheetError('');
+                    setSetupSheet({ kind: 'create' });
+                  }}>
+                    Set up a new instance
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -705,7 +921,12 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             {plugin.validation.ok === true ? 'Passed' : plugin.validation.ok === false ? 'Failed' : 'Not checked'}
           </span>
           <span className="w-note">Checked {formatDate(plugin.validation.checkedAt)}</span>
-          {installed && <Button tone="secondary" disabled={busy} onClick={() => lifecycle('retest')}>Re-run validator</Button>}
+          {installed && <Button tone="secondary" disabled={busy !== ''}
+                               onClick={() => lifecycle('retest', 'validate')}
+                               pending={busyShown && busy === 'validate'}
+                               pendingLabel="Re-testing…">
+            Re-run validator
+          </Button>}
         </div>
         {plugin.validation.failures.length > 0 && (
           <ul className="mkt-failures">
@@ -744,7 +965,7 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       {data.alternatives.length > 0 && (
         <section className="mkt-panel" aria-labelledby="mkt-alternatives">
           <h2 id="mkt-alternatives">Alternatives in {categoryLabel(plugin.category)}</h2>
-          <MarketGrid cards={data.alternatives} />
+          <MarketGrid cards={data.alternatives} deskNetwork={data.deskNetwork} />
         </section>
       )}
 
@@ -752,14 +973,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         <section className="mkt-panel" aria-labelledby="mkt-install-state">
           <h2 id="mkt-install-state">Installed state</h2>
           <div className="mkt-facts">
-            <div><span>Status</span><strong><StatusChip status={installed.status.status} /></strong></div>
-            <div><span>Pinned version</span><strong className="mkt-mono">v{installed.pinned.version}</strong></div>
-            <div><span>Pinned digest</span><strong className="mkt-mono">{shortDigest(installed.pinned.sha256)}</strong></div>
-            <div><span>Pilot</span><strong>{pilotBudget(installed.pilot)}</strong></div>
-            <div><span>Data folder</span><strong>{formatBytes(installed.dataDirSize)}</strong></div>
-            <div><span>Shared with peers</span><strong>{installed.shared ? 'Yes' : 'No'}</strong></div>
+            <div><span>Status</span><strong tabIndex={0} title={installed.status.status}><StatusChip status={installed.status.status} /></strong></div>
+            <div><span>Pinned version</span><strong className="mkt-mono" tabIndex={0} title={`v${installed.pinned.version}`}>v{installed.pinned.version}</strong></div>
+            <div><span>Pinned digest</span><strong className="mkt-mono" tabIndex={0} title={installed.pinned.sha256}>{shortDigest(installed.pinned.sha256)}</strong></div>
+            <div><span>Pilot</span><strong tabIndex={0} title={pilotBudget(installed.pilot)}>{pilotBudget(installed.pilot)}</strong></div>
+            <div><span>Data folder</span><strong tabIndex={0} title={formatBytes(installed.dataDirSize)}>{formatBytes(installed.dataDirSize)}</strong></div>
+            <div><span>Shared with peers</span><strong tabIndex={0} title={installed.shared ? 'Yes' : 'No'}>{installed.shared ? 'Yes' : 'No'}</strong></div>
           </div>
-          {installed.status.cause && <p className="mkt-attention">{installed.status.cause}</p>}
+          {installed.status.cause && !cannotRun && <p className="mkt-attention">{installed.status.cause}</p>}
         </section>
       )}
 
@@ -778,11 +999,12 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
         scopes={sheetScopes}
         addedScopes={sheetAdded}
         canNever={never}
+        cannotRun={cannotRun}
         confirmLabel={consent?.kind === 'install' ? 'Install plugin'
           : consent?.kind === 'update' ? 'Update plugin' : 'Accept update'}
-        busy={busy}
+        busy={busy !== ''}
         error={sheetError}
-        onCancel={() => { if (!busy) setConsent(null); }}
+        onCancel={() => { if (busy === '') setConsent(null); }}
         onConfirm={confirmConsent}
       />
 
@@ -805,29 +1027,33 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
       )}
 
       {purgeOpen && (
-        <PurgeDialog id={plugin.id} busy={busy} error={purgeError}
+        <PurgeDialog id={plugin.id} busy={busy === 'purge'} error={purgeError}
                      onCancel={() => setPurgeOpen(false)} onConfirm={confirmPurge} />
       )}
 
       {confirmAction && (
         <div className="mkt-scrim" role="presentation">
           <div ref={confirmFocus.sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true"
-               aria-labelledby="mkt-confirm-title" tabIndex={-1}>
+               aria-labelledby="mkt-confirm-title" aria-busy={busy !== '' ? 'true' : undefined} tabIndex={-1}>
             <div className="mkt-sheet-head">
               <h2 id="mkt-confirm-title">{confirmAction.title}</h2>
             </div>
-            <div className="mkt-sheet-body"><p>{confirmAction.body}</p></div>
+            <div className="mkt-sheet-body">
+              <p>{confirmAction.body}</p>
+              {confirmStuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
+              {confirmError && <p className="mkt-error" role="alert">{confirmError}</p>}
+            </div>
             <div className="mkt-sheet-foot">
-              <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary" onClick={() => setConfirmAction(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={busy}
-                      onClick={() => {
-                        const action = confirmAction.action;
-                        setConfirmAction(null);
-                        if (action === 'rollback') confirmRollback();
-                        else confirmUninstall();
-                      }}>
-                {busy ? 'Working…' : confirmAction.action === 'rollback' ? 'Roll back' : 'Uninstall'}
+              <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary"
+                      disabled={busy !== '' && !confirmStuck} onClick={() => setConfirmAction(null)}>
+                Cancel
               </button>
+              <Button tone="primary" disabled={busy !== ''}
+                      pending={busyShown && (busy === 'rollback' || busy === 'uninstall')}
+                      pendingLabel={confirmAction.action === 'rollback' ? 'Rolling back…' : 'Uninstalling…'}
+                      onClick={() => void confirmDialogAction()}>
+                {confirmAction.action === 'rollback' ? 'Roll back' : 'Uninstall'}
+              </Button>
             </div>
           </div>
         </div>

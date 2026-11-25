@@ -25,7 +25,15 @@ import argparse
 import json
 import re
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Milliseconds to wait before the chat answer's content lands. The mock
+# sends the response headers first and keeps the body alive while it waits,
+# so the desk's idle read cap sees a slow answer, not a dead socket. The
+# audit tools set this in-process so a real model-backed wait can be
+# photographed; the CLI flag exists for a person running the mock by hand.
+DELAY_MS = 0
 
 # The stable markers the reply builder keys on: the extraction system
 # prompt's own first sentence, the agent prompt's instructions label, and
@@ -281,7 +289,14 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
         A body that asks to stream (the side-car engines do; the desk's
         own client never sets stream) gets the same reply as an OpenAI
         SSE chunk sequence, so a streaming consumer reads a complete
-        turn with a finish reason instead of an empty stream."""
+        turn with a finish reason instead of an empty stream.
+
+        A delayed ordinary answer sends its headers at once and keeps
+        the connection alive one whitespace byte at a time. The desk
+        caps an idle socket read, not the whole turn, so a slow
+        endpoint that has accepted the call must not look like one that
+        never answered. The reply content still arrives after the full
+        delay, and JSON ignores the leading spaces."""
         if self.path.rstrip("/") != "/v1/chat/completions" and self.path.rstrip("/") != "/chat/completions":
             self._send_json(404, {"error": "the mock serves /chat/completions only"})
             return
@@ -310,11 +325,13 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
             f"mock endpoint: {len(prompt)}-char prompt -> {len(reply)}-char reply\n")
         sys.stdout.flush()
         if body.get("stream"):
+            if DELAY_MS > 0:
+                time.sleep(DELAY_MS / 1000.0)
             self._send_stream(str(body.get("model") or "mock-chat"), reply)
             return
         self._send_json(200, {
             "choices": [{"message": {"role": "assistant", "content": reply}}],
-        })
+        }, delay_ms=DELAY_MS)
 
     def _send_stream(self, model: str, reply: str) -> None:
         """The reply as OpenAI SSE chunks: role, the words, stop, [DONE].
@@ -364,14 +381,37 @@ class MockEndpointHandler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {"error": "the mock speaks to POST /chat/completions and GET /models"})
 
-    def _send_json(self, status: int, payload: dict) -> None:
-        """One JSON answer with the right length header."""
+    def _send_json(self, status: int, payload: dict, delay_ms: int = 0) -> None:
+        """One JSON answer with the right length header.
+
+        A positive delay keeps the response open with one whitespace
+        byte per slice before the body. Those bytes are legal JSON
+        whitespace, so the caller parses the same document after the
+        full wait while its idle read timeout keeps resetting.
+        """
         data = json.dumps(payload).encode("utf-8")
+        delay_ms = max(0, int(delay_ms))
+        slices = max(1, round(delay_ms / 1000.0)) if delay_ms else 0
+        body = (b" " * slices) + data if slices else data
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(data)
+        if not slices:
+            self.wfile.write(body)
+            return
+        pause = delay_ms / 1000.0 / slices
+        try:
+            for index in range(slices):
+                self.wfile.write(b" ")
+                self.wfile.flush()
+                if index < slices - 1:
+                    time.sleep(pause)
+            time.sleep(pause)
+            self.wfile.write(data)
+            self.wfile.flush()
+        except OSError:
+            pass  # the reader went away; the turn has no one to answer
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: A003 - the stdlib's hook
         """Stay quiet; the one-line print per request is the whole log."""
@@ -387,7 +427,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="The desk's local mock BYOK endpoint")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
+    parser.add_argument("--delay-ms", type=int, default=0,
+                        help="delay the chat answer this long, keeping the body alive (default 0)")
     args = parser.parse_args()
+    global DELAY_MS
+    DELAY_MS = max(0, args.delay_ms)
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         parser.error(f"refusing to bind {args.host}: the mock is loopback only")
     server = ThreadingHTTPServer((args.host, args.port), MockEndpointHandler)

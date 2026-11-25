@@ -199,6 +199,9 @@ export interface PluginCard {
     // bar, a table), so the elements are drawn instead of TrackerCard.
     face?: 'ui-schema';
     asOf?: string;
+    // The runner's source read when it produced no elements: reason is a
+    // structural code such as "no-transport", never display copy.
+    source?: { reason?: string };
   } | null;
   // Set on a hand-kept number tile, whose value only the manager can supply.
   manualMetric?: string;
@@ -306,6 +309,9 @@ export interface SetupData {
 
 export interface DashboardData {
   sample?: boolean;
+  /** False when this desk's plugin runner cannot fetch web pages. Absent
+   *  on servers older than the network flag. */
+  deskNetwork?: boolean;
   /** Absent only on a server older than spec 022. */
   setup?: SetupData;
   version: string;

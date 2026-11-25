@@ -91,6 +91,15 @@ describe('the rail', () => {
     expect(document.querySelector('.rail .count')).toBeNull();
   });
 
+  it('keeps every entry label in its own span and names the avatar', () => {
+    render(<Rail inboxWaiting={2} />);
+    expect(document.querySelectorAll('.rail-label')).toHaveLength(8);
+    // The avatar is a 30px square: its initials can be elided, so the
+    // same name the user line carries is the reachable title.
+    expect(document.querySelector('.rail .user .avatar'))
+      .toHaveAttribute('title', 'Agent Desk');
+  });
+
   it('keeps Memory and Mail on the rail', () => {
     render(<Rail inboxWaiting={0} />);
     const nav = screen.getByRole('navigation', { name: 'Main' });
@@ -211,6 +220,53 @@ describe('the hero band', () => {
 });
 
 describe('the research command bar', () => {
+  it('disables Research until the question has a word', async () => {
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={vi.fn().mockResolvedValue(true)} />);
+    const field = screen.getByLabelText('Research question');
+    const send = screen.getByRole('button', { name: 'Research' });
+    // An empty question has nothing to send, so the control says so
+    // before it is pressed, not after a press that goes nowhere.
+    expect(send).toBeDisabled();
+    await user.type(field, '   ');
+    expect(send).toBeDisabled();
+    await user.type(field, 'Who sells to Meridian?');
+    expect(send).toBeEnabled();
+    await user.clear(field);
+    expect(send).toBeDisabled();
+  });
+
+  it('sends nothing when Enter is pressed in a blank field', async () => {
+    const onAsk = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={onAsk} />);
+    const field = screen.getByLabelText('Research question');
+    await user.type(field, '   {Enter}');
+    expect(onAsk).not.toHaveBeenCalled();
+    expect(field).toHaveValue('   ');
+  });
+
+  it('keeps the accessible name Research in both states', async () => {
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={vi.fn().mockResolvedValue(true)} />);
+    const field = screen.getByLabelText('Research question');
+    const send = screen.getByRole('button', { name: 'Research' });
+    expect(send).toHaveAccessibleName('Research');
+    await user.type(field, 'What changed this week?');
+    expect(send).toBeEnabled();
+    expect(send).toHaveAccessibleName('Research');
+  });
+
+  it('asks from a typed question when Research is pressed', async () => {
+    const onAsk = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={onAsk} />);
+    const field = screen.getByLabelText('Research question');
+    await user.type(field, 'What changed this week?');
+    await user.click(screen.getByRole('button', { name: 'Research' }));
+    expect(onAsk).toHaveBeenCalledWith('What changed this week?');
+  });
+
   it('asks on Enter and clears only when answered', async () => {
     const onAsk = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
@@ -269,7 +325,7 @@ describe('the research command bar', () => {
 });
 
 describe('the centered app states', () => {
-  it('holds a quiet loading line while the payload arrives', async () => {
+  it('holds the bento skeleton and a quiet loading line while the payload arrives', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),
@@ -278,6 +334,12 @@ describe('the centered app states', () => {
     const status = await screen.findByRole('status');
     expect(status).toHaveTextContent('Reading the dashboard…');
     expect(status).toHaveAttribute('aria-busy', 'true');
+    // The shell and the brief's geometry, not a centered text card.
+    const main = document.getElementById('dashboard-main');
+    expect(main).toHaveAttribute('aria-busy', 'true');
+    expect(document.querySelector('.brief')).not.toBeNull();
+    expect(document.querySelector('.cell-hero')).not.toBeNull();
+    expect(document.querySelector('.center-card')).toBeNull();
   });
 
   it('shows the session-expired view on a 401', async () => {
@@ -289,7 +351,10 @@ describe('the centered app states', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Session required');
     expect(screen.getByRole('heading', { name: 'Session required' })).toHaveFocus();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    // A reload only leads back to the same refusal; the notice names the
+    // next step instead of offering a button that cannot succeed.
+    expect(alert).toHaveTextContent('Open Agent Desk from its shortcut to get a fresh link.');
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
   it('shows the load-failed view when the server is unreachable', async () => {

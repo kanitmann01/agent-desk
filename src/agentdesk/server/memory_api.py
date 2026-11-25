@@ -14,6 +14,7 @@ from dataclasses import replace
 import json
 import logging
 import time
+from urllib.parse import quote
 
 import agentdesk
 
@@ -242,13 +243,18 @@ class MemoryApiMixin:
         sweep: list | None = None,
         notice: str | None = None,
         confirm_forget_all: bool = False,
+        notice_kind: str = "status",
+        add_error: str = "",
+        add_value: str = "",
     ) -> None:
         """The memory page; with a recall preview when a query came in,
         the encryption state alongside the facts, the entities with
         their merge form (ticket #92), the junk-sweep preview when
         asked, the locked banner alone when the store is locked, and the
         "Forget everything" question (ticket #283) in place of its
-        control when `confirm_forget_all` is set."""
+        control when `confirm_forget_all` is set. `notice` is the
+        outcome line, and `add_error` re-renders the add form with its
+        cause and the typed `add_value`."""
         memory = self.server.memory  # type: ignore[attr-defined]
         if memory is None:
             self._send_json(503, {"error": "the memory store is not available"})
@@ -271,6 +277,9 @@ class MemoryApiMixin:
                 confirm_forget_all=confirm_forget_all,
                 inbox=self.server.inbox,  # type: ignore[attr-defined]
                 sources=memory.sources(),
+                notice_kind=notice_kind,
+                add_error=add_error,
+                add_value=add_value,
             )
         self._send_bytes(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -309,7 +318,11 @@ class MemoryApiMixin:
             with memory.exclusive():
                 _source_ids, anything = self._forget_all_pending(memory)
             if not anything:
-                self._respond_form_or_json("/memory", {"status": "ok", "forgot": 0})
+                if self._is_form_submit():
+                    self._send_redirect(
+                        "/memory?notice=" + quote("Nothing was left to forget."))
+                    return
+                self._send_json(200, {"status": "ok", "forgot": 0})
                 return
             self._send_memory_page(confirm_forget_all=True)
             return
@@ -323,7 +336,11 @@ class MemoryApiMixin:
         with memory.exclusive():
             source_ids, anything = self._forget_all_pending(memory)
             if not anything:
-                self._respond_form_or_json("/memory", {"status": "ok", "forgot": 0})
+                if self._is_form_submit():
+                    self._send_redirect(
+                        "/memory?notice=" + quote("Nothing was left to forget."))
+                    return
+                self._send_json(200, {"status": "ok", "forgot": 0})
                 return
             rejected = self._reject_cards_waiting_on(source_ids)
             rejected += self._reject_reflection_cards()
@@ -339,12 +356,18 @@ class MemoryApiMixin:
                     f"{len(result.sources_removed)} excerpts forgotten; "
                     f"{memory_loop.counted(rejected, 'review card')} rejected"),
         )
-        self._respond_form_or_json("/memory", {
+        payload = {
             "status": "ok",
             "forgot": len(result.fact_ids),
             "excerpts": len(result.sources_removed),
             "cards": rejected,
-        })
+        }
+        if self._is_form_submit():
+            self._send_redirect(
+                "/memory?notice=" + quote(
+                    f"Forgot {memory_loop.counted(len(result.fact_ids), 'fact')}."))
+            return
+        self._send_json(200, payload)
 
     def _forget_all_pending(self, memory) -> tuple[set[int], bool]:
         """The bank's excerpt ids and whether anything remains for Forget
@@ -417,6 +440,12 @@ class MemoryApiMixin:
         body = self._read_json_body() or {}
         text = body.get("text")
         if not isinstance(text, str) or not text.strip():
+            if self._is_form_submit():
+                self._send_memory_page(
+                    add_error="Type a fact first: the box was empty, so nothing was saved.",
+                    add_value=text if isinstance(text, str) else "",
+                )
+                return
             self._send_json(400, {"error": 'expected {"text": "..."}'})
             return
         # Typed facts keep the user's words; the names they mention link
@@ -426,7 +455,10 @@ class MemoryApiMixin:
         )
         self._schedule_observation_pass()
         self._after_memory_change()
-        self._respond_form_or_json("/memory", _fact_json(outcome.fact), 201)
+        if self._is_form_submit():
+            self._send_redirect("/memory?notice=" + quote("The fact is saved."))
+            return
+        self._send_json(201, _fact_json(outcome.fact))
 
     def _memory_edit(self, fact_id: int | None) -> None:
         """Rewrite one fact's text.
@@ -1143,10 +1175,20 @@ class MemoryApiMixin:
         body = self._read_json_body() or {}
         query = body.get("query")
         if not isinstance(query, str) or not query.strip():
+            if self._is_form_submit():
+                self._send_memory_page(
+                    notice="Type a question first: the box was empty, so "
+                           "nothing was checked.",
+                    notice_kind="alert",
+                    query=query if isinstance(query, str) else "",
+                )
+                return
             self._send_json(400, {"error": 'expected {"query": "..."}'})
             return
         query = query.strip()
-        self._send_memory_page(recall=memory.recall(query), query=query)
+        self._send_memory_page(
+            recall=memory.recall(query), query=query,
+            notice="Here is what the assistant would recall, best match first.")
 
     def _memory_encrypt_page(self) -> None:
         """The dry run: the memory page with the conversion form and the
@@ -1213,7 +1255,13 @@ class MemoryApiMixin:
                 detail=("memory.sqlite3 encrypted at rest; the key stays"
                         " in memory.key"),
             )
-        self._respond_form_or_json("/memory", {"status": "ok", "fields": result["fields"]})
+        if self._is_form_submit():
+            self._send_redirect(
+                "/memory?notice=" + quote(
+                    f"Memory is encrypted: {result['fields']} fields are sealed "
+                    "under this computer's key file."))
+            return
+        self._send_json(200, {"status": "ok", "fields": result["fields"]})
 
     def _memory_error_response(self, status: int, cause: str) -> None:
         """A refused memory action: the error page for a form post, the
@@ -1349,12 +1397,24 @@ class MemoryApiMixin:
         if not kept:
             # Nothing survived the donor's filters: no source row, no
             # cards, no writes at all.
-            self._respond_form_or_json("/inbox", {"status": "ok", "cards": [], "sourceId": None})
+            if self._is_form_submit():
+                self._send_redirect(
+                    "/inbox?notice=" + quote(
+                        "The conversation had no fact worth saving; nothing "
+                        "was written."))
+                return
+            self._send_json(200, {"status": "ok", "cards": [], "sourceId": None})
             return
         source_id = memory.add_source(excerpt)
         cards = [self._memory_draft_card(candidate, source_id) for candidate in kept]
         self._evaluate_inbox(server.inbox)
-        self._respond_form_or_json("/inbox", {
+        if self._is_form_submit():
+            self._send_redirect(
+                "/inbox?notice=" + quote(
+                    f"Saved to memory as {memory_loop.counted(len(cards), 'card')} "
+                    "for review."))
+            return
+        self._send_json(200, {
             "status": "ok",
             "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
             "sourceId": source_id,
@@ -1494,7 +1554,13 @@ class MemoryApiMixin:
             for draft in survivors
         ]
         self._evaluate_inbox(server.inbox)
-        self._respond_form_or_json("/inbox", {
+        if self._is_form_submit():
+            self._send_redirect(
+                "/inbox?notice=" + quote(
+                    f"Staged {memory_loop.counted(len(cards), 'observation card')} "
+                    "for review."))
+            return
+        self._send_json(200, {
             "status": "ok",
             "cards": [card.to_json(server.inbox.now_ts()) for card in cards],
             "rejected": len(drafts) - len(survivors),

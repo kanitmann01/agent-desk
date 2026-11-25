@@ -186,6 +186,14 @@ function postsOf(fetchMock: ReturnType<typeof vi.fn>) {
     }));
 }
 
+
+/** The Instances panel once its list has landed; it is a placeholder first. */
+async function loadedInstances(): Promise<HTMLElement> {
+  const section = await screen.findByRole('region', { name: 'Instances' });
+  await waitFor(() => expect(section).not.toHaveAttribute('aria-busy'));
+  return section;
+}
+
 describe('the manage view configures a config-backed plugin', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/marketplace/plugin/qbr-pack/manage');
@@ -201,7 +209,7 @@ describe('the manage view configures a config-backed plugin', () => {
     render(<MarketplaceApp />);
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Manage QBR pack' })).toBeInTheDocument();
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
     expect(within(section).getByRole('rowheader', { name: 'Pipeline' })).toBeInTheDocument();
     expect(within(section).getByText('q4.xlsx')).toBeInTheDocument();
     expect(within(section).queryByText('q4.xlsx (not confirmed)')).not.toBeInTheDocument();
@@ -215,7 +223,7 @@ describe('the manage view configures a config-backed plugin', () => {
   it('leads a zero-instance panel with the Set up primary (the wizard walk lands here)', async () => {
     stubFetch(listing({ instances: [] }));
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     // The only instance row is the honest empty line; Set up comes
     // before it in the DOM, as the panel's leading primary action.
@@ -230,7 +238,7 @@ describe('the manage view configures a config-backed plugin', () => {
     const { fetchMock } = stubFetch(listing({ instances: [] }));
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
     const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
@@ -242,7 +250,7 @@ describe('the manage view configures a config-backed plugin', () => {
       && post.body.name === 'Watch two')).toBe(true);
     expect(await within(dialog).findByRole('button', { name: 'Open a workbook' })).toBeInTheDocument();
     // The list behind the sheet re-reads and shows the new instance.
-    const refreshed = await screen.findByRole('region', { name: 'Instances' });
+    const refreshed = await loadedInstances();
     expect(within(refreshed).getByRole('rowheader', { name: 'Watch two' })).toBeInTheDocument();
   });
 
@@ -250,7 +258,7 @@ describe('the manage view configures a config-backed plugin', () => {
     const { fetchMock } = stubFetch(listing({ instances: [] }));
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
     const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
@@ -297,7 +305,7 @@ describe('the manage view configures a config-backed plugin', () => {
     });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
     const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
@@ -317,7 +325,7 @@ describe('the manage view configures a config-backed plugin', () => {
     });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
@@ -341,7 +349,7 @@ describe('the manage view configures a config-backed plugin', () => {
     });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
@@ -370,7 +378,7 @@ describe('the manage view configures a config-backed plugin', () => {
     const { fetchMock } = stubFetch(listing());
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
@@ -391,7 +399,9 @@ describe('the manage view configures a config-backed plugin', () => {
     render(<MarketplaceApp />);
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Manage QBR pack' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Instances' })).not.toBeInTheDocument();
+    // The panel keeps a placeholder while the list is read; once the server
+    // says this plugin is not config-backed it drops away.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Instances' })).not.toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Set up a new instance' })).not.toBeInTheDocument();
     // The lifecycle actions render exactly as before.
     expect(screen.getByRole('button', { name: 'Re-test' })).toBeInTheDocument();
@@ -414,7 +424,7 @@ describe('the manage view configures a config-backed plugin', () => {
     }));
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     expect(within(section).getByText(/runs as the Sales instance of Workbook tracker/)).toBeInTheDocument();
     expect(within(section).queryByRole('button', { name: 'Set up a new instance' })).not.toBeInTheDocument();
@@ -434,7 +444,7 @@ describe('the manage view configures a config-backed plugin', () => {
     stubFetch(listing({ instances: [] }), undefined, { pick: { status: 503, body: UNAVAILABLE } });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
     const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
@@ -463,7 +473,7 @@ describe('the manage view configures a config-backed plugin', () => {
     stubFetch(listing(), undefined, { pick: { status: 503, body: UNAVAILABLE } });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
@@ -484,7 +494,7 @@ describe('the manage view configures a config-backed plugin', () => {
     });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Set up a new instance' }));
     const dialog = screen.getByRole('dialog', { name: 'Set up an instance' });
@@ -512,7 +522,7 @@ describe('the manage view configures a config-backed plugin', () => {
     const { fetchMock } = stubFetch(listing());
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });
@@ -542,7 +552,7 @@ describe('the manage view configures a config-backed plugin', () => {
     });
     const user = userEvent.setup();
     render(<MarketplaceApp />);
-    const section = await screen.findByRole('region', { name: 'Instances' });
+    const section = await loadedInstances();
 
     await user.click(within(section).getByRole('button', { name: 'Edit Board pack' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Board pack' });

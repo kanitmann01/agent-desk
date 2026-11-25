@@ -20,7 +20,14 @@ const DATA: DashboardData = {
   inbox: { waiting: 0 },
   agentLoop: { lastRunTs: null, nextRunTs: null, enabled: true },
   skills: [],
-  layout: { cards: [] },
+  layout: {
+    cards: [
+      { key: 'sales', title: null },
+      { key: 'commitments', title: null },
+      { key: 'research', title: null },
+      { key: 'skills', title: null },
+    ],
+  },
   plugins: { cards: [] },
 };
 

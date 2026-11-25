@@ -44,6 +44,8 @@ describe('installed plugins', () => {
     expect(screen.getByText('v1.2.0')).toBeInTheDocument();
     expect(screen.getByText('sha256:aaaaaaaaaaaa')).toBeInTheDocument();
     expect(screen.getByText('Pilot: 2 of 3 views left')).toBeInTheDocument();
+    expect(screen.getByText('Pilot: 2 of 3 views left'))
+      .toHaveAttribute('title', 'Pilot: 2 of 3 views left');
     expect(screen.getByText('Shared')).toBeInTheDocument();
     expect(screen.getByText(/2\.0 KB/)).toBeInTheDocument();
 
@@ -120,6 +122,10 @@ describe('installed plugins', () => {
     const dialog = screen.getByRole('dialog', { name: 'Purge data for AR Aging' });
     const confirm = within(dialog).getByRole('button', { name: 'Purge data' });
     const field = within(dialog).getByLabelText(/Type delete-data:ar-aging to confirm/);
+    const phrase = within(dialog).getByText('delete-data:ar-aging');
+    expect(phrase.tagName).toBe('CODE');
+    expect(phrase).toHaveAttribute('tabindex', '0');
+    expect(phrase).toHaveAttribute('title', 'delete-data:ar-aging');
     expect(confirm).toBeDisabled();
 
     await user.type(field, 'delete-data:ar-agin');

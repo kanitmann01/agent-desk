@@ -16,7 +16,11 @@ export interface StampProps {
  */
 export default function Stamp({ fresh, text }: StampProps) {
   return (
-    <span className={fresh ? 'stamp' : 'stamp amber'}>
+    <span
+      className={fresh ? 'stamp' : 'stamp amber'}
+      title={text || undefined}
+      tabIndex={0}
+    >
       <span className={fresh ? 'dot' : 'dot amber'} aria-hidden="true" />
       {text}
     </span>

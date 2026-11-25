@@ -2,6 +2,7 @@
 // and a publish that ends in "pending review" rather than a fake install.
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import Button from '../components/Button';
+import { useBusy } from '../components/useBusy';
 import { getMarket, marketErrorText, postMarket } from './client';
 import { CATEGORIES, categoryLabel } from './MarketGrid';
 import { SamplePreview } from './Sample';
@@ -137,6 +138,8 @@ export function StudioPage() {
   const [installed, setInstalled] = useState<InstalledResponse['plugins']>([]);
   const [installedNote, setInstalledNote] = useState('');
   const [loadingFrom, setLoadingFrom] = useState(false);
+  const [loadingFromName, setLoadingFromName] = useState('');
+  const loadingFromShown = useBusy(loadingFrom);
   const [validation, setValidation] = useState<Verdict | null>(null);
   const [validating, setValidating] = useState(false);
   const [validationError, setValidationError] = useState('');
@@ -182,6 +185,8 @@ export function StudioPage() {
       setDraft(BLANK);
       return;
     }
+    const source = installed.find((record) => record.id === id);
+    setLoadingFromName(source?.name ?? 'the chosen plugin');
     setLoadingFrom(true);
     setInstalledNote('');
     try {
@@ -324,7 +329,7 @@ export function StudioPage() {
         <section className="mkt-panel mkt-pending" aria-labelledby="mkt-pending-title" role="status">
           <h2 id="mkt-pending-title">Pending review</h2>
           <p>
-            Submitted as <code>{pending.pendingId}</code>. An operator reviews it before it can appear
+            Submitted as <code tabIndex={0} title={pending.pendingId}>{pending.pendingId}</code>. An operator reviews it before it can appear
             in the catalog. This review does not change the copy already installed on this desk.
           </p>
           <p className="w-note">
@@ -343,6 +348,7 @@ export function StudioPage() {
             <label className="mkt-field">
               <span>Installed plugin or blank template</span>
               <select defaultValue="" disabled={loadingFrom}
+                      aria-busy={loadingFromShown ? 'true' : undefined}
                       onChange={(event) => void startFrom(event.target.value)}>
                 <option value="">Blank template</option>
                 {installed.map((record) => (
@@ -350,6 +356,9 @@ export function StudioPage() {
                 ))}
               </select>
             </label>
+            {loadingFromShown && (
+              <p className="w-note" role="status">Copying the fields from {loadingFromName}…</p>
+            )}
             {installedNote && <p className="w-note">{installedNote}</p>}
           </section>
 

@@ -23,15 +23,22 @@ import CommitmentsCard from './CommitmentsCard';
 import ResearchCard, { RESEARCH_BUSY, UNREACHABLE_SEND, type ResearchAnswer } from './ResearchCard';
 import PluginCardView from './PluginCardView';
 import SkillsCard from './SkillsCard';
-import CustomizeCell from './CustomizeCell';
+import CustomizeCell, { type CustomizePending } from './CustomizeCell';
 import Brief from './Brief';
 import CommandBar from '../components/CommandBar';
 import Button from '../components/Button';
+import { PhaseText, useAnnouncement, usePhase } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
+import { useFaceActions } from '../face/FaceProvider';
+import { useFaceActivity } from '../face/useFaceActivity';
+import { PendingBody } from './pending';
 
 interface DashboardProps {
   data: DashboardData;
   onRefetch: () => Promise<void>;
   onExpired: () => void;
+  /** A quiet line for a poll that could not reach the desk. */
+  pollNote?: string;
 }
 
 interface SkillResponse {
@@ -44,6 +51,7 @@ interface SkillResponse {
 interface ResearchResponse {
   status?: string;
   cause?: string;
+  error?: string;
   summary?: string;
   sources?: string[];
 }
@@ -57,9 +65,21 @@ const DEFAULT_CARD_TITLES: Record<string, string> = {
   skills: 'Your skills',
 };
 
-const SAVE_UNREACHABLE = 'The dashboard could not reach its own server; the layout was not saved.';
-const SAVE_REFUSED = 'The layout was not saved; the dashboard re-read the saved layout.';
+const SAVE_UNREACHABLE = 'The dashboard could not reach its own server; the layout was not saved. Try again.';
+const SAVE_REFUSED = 'The layout was not saved; the dashboard re-read the saved layout. Try again.';
 const SETUP_DISMISSED_KEY = 'agentdesk.setupDismissed';
+
+// The one layout save in flight, and the control that started it, so the
+// control carries its own continuous verb while the panel holds the rest.
+type LayoutAction = 'move-up' | 'move-down' | 'move' | 'hide' | 'restore' | 'rename';
+interface LayoutPending {
+  key: string;
+  action: LayoutAction;
+  pendingNote: string;
+  doneNote: string;
+  // The typed title to restore when a rename save failed (F5).
+  renameValue?: string;
+}
 
 /** True when the Get started strip was hidden earlier in this sitting. */
 function storedSetupDismissed(): boolean {
@@ -78,23 +98,66 @@ function storedSetupDismissed(): boolean {
  * happens, so leaving the mode loses nothing. onRefetch reloads the payload; onExpired
  * hands a 401 back to the caller.
  */
-export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps) {
+export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }: DashboardProps) {
   // The skills strip and the research bar share one answer area and one
-  // status line, exactly as the server-rendered page does.
+  // failure line, exactly as the server-rendered page does.
   const [answer, setAnswer] = useState<ResearchAnswer | null>(null);
   const [answerSeq, setAnswerSeq] = useState(0);
-  const [statusText, setStatusText] = useState('');
+  const [answerError, setAnswerError] = useState('');
   const [skillBusyId, setSkillBusyId] = useState<number | null>(null);
   const [researchBusy, setResearchBusy] = useState(false);
+  const answerBusy = researchBusy || skillBusyId !== null;
+  const answerPhase = researchBusy ? RESEARCH_BUSY : 'Running the saved ask';
+  // The answer's own box is reserved while the placeholder is up, so the
+  // real answer replaces it in place. Nothing shows under 100 ms.
+  const answerPending = usePhase(answerBusy, answerPhase);
+  // A sheet that closed mid-request still reports its outcome here.
+  const liveOutcome = useAnnouncement();
+  const faceActions = useFaceActions();
+
+  useFaceActivity({
+    mood: 'thinking',
+    source: 'request',
+    label: researchBusy ? RESEARCH_BUSY : 'Running the saved ask',
+    active: answerBusy,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: answerError || undefined,
+    active: Boolean(answerError),
+  });
+  useFaceActivity({
+    mood: 'waiting',
+    label: `${data.inbox.waiting} waiting in Inbox`,
+    active: data.inbox.waiting > 0,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: 'The desk could not be reached',
+    active: Boolean(pollNote),
+  });
 
   // Customize mode: the full layout (hidden cards included) lives here,
   // read from /api/layout on entering and kept in step with every save.
   const [customizing, setCustomizing] = useState(false);
   const [layoutState, setLayoutState] = useState<LayoutCardState[] | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const [customizeNote, setCustomizeNote] = useState('');
+  const [customizeBusy, setCustomizeBusy] = useState(false);
+  const [openingCustomize, setOpeningCustomize] = useState(false);
+  const [layoutBusy, setLayoutBusy] = useState(false);
+  const [layoutPending, setLayoutPending] = useState<{ key: string; action: CustomizePending } | null>(null);
+  // The control that started a layout save is inert at once; its pending
+  // verb and aria-busy wait out the 100 ms gate (F1), and its phase line
+  // owns the ten-second honesty rule (F4) on a slow disk.
+  const layoutPendingShown = useBusy(layoutBusy);
+  const layoutPhase = usePhase(layoutBusy, customizeNote);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  // Nothing shows under 100 ms: the Customize control and the panel both
+  // wait out the same gate before they show the opening.
+  const customizeOpening = usePhase(customizeBusy, 'customize-open');
   // The Get started strip: "Not now" hides it for this sitting only (the
   // key lives in session storage), so the desk asks again tomorrow until
   // the three steps are done.
@@ -209,29 +272,37 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
    */
   async function ask(question: string): Promise<boolean> {
     setResearchBusy(true);
-    setStatusText(RESEARCH_BUSY);
+    setAnswerError('');
     let res;
     try {
       res = await postJson('/research', { question });
     } catch {
       setResearchBusy(false);
-      setStatusText(UNREACHABLE_SEND);
+      setAnswerError(`${UNREACHABLE_SEND} Try again.`);
       return false;
     }
     setResearchBusy(false);
     if (res.status === 401) { onExpired(); return false; }
     const d = (res.data ?? {}) as ResearchResponse;
-    if (d.status === 'degraded') {
+    if (!res.ok) {
+      // A refused request is not an empty answer: say the server's
+      // sentence in the answer area and keep the question.
       showAnswer(null);
-      setStatusText(d.cause || 'Your AI did not answer.');
+      setAnswerError(d.error || 'Your AI did not answer. Try again in a moment.');
       return false;
     }
-    setStatusText('');
+    if (d.status === 'degraded') {
+      showAnswer(null);
+      setAnswerError(d.cause || 'Your AI did not answer. Try again in a moment.');
+      return false;
+    }
+    setAnswerError('');
     showAnswer({
       question,
       summary: d.summary || '',
       sources: d.sources || [],
     });
+    faceActions?.notifyDone('Answered');
     void onRefetch(); // the stamp moves to Answered HH:MM
     return true;
   }
@@ -239,24 +310,30 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   /** Run a saved ask and show its result in the shared answer area. */
   async function runSkill(id: number) {
     setSkillBusyId(id);
-    setStatusText('Running the saved ask');
+    setAnswerError('');
     let res;
     try {
       res = await postJson(`/skills/${id}/run`);
     } catch {
       setSkillBusyId(null);
-      setStatusText('The dashboard could not reach its own server; nothing was sent.');
+      setAnswerError('The dashboard could not reach its own server; nothing was sent. Try again.');
       return;
     }
     setSkillBusyId(null);
     if (res.status === 401) { onExpired(); return; }
-    setStatusText('');
     const d = (res.data ?? {}) as SkillResponse;
-    showAnswer({
-      question: d.status === 'ok' ? 'Skill result' : 'Skill unavailable',
-      summary: d.status === 'ok' ? (d.summary || d.reply || '') : (d.cause || ''),
-      sources: [],
-    });
+    if (d.status === 'ok') {
+      setAnswerError('');
+      showAnswer({
+        question: 'Skill result',
+        summary: d.summary || d.reply || '',
+        sources: [],
+      });
+      faceActions?.notifyDone('Saved ask finished');
+      return;
+    }
+    showAnswer(null);
+    setAnswerError(d.cause || 'The saved ask did not finish. Try again in a moment.');
   }
 
   // -- customize mode ---------------------------------------------------
@@ -277,21 +354,33 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
 
   /** Open customize mode on the full saved layout, hidden cards included. */
   async function enterCustomize() {
+    setCustomizeBusy(true);
+    setOpeningCustomize(true);
+    setCustomizeNote('');
     const res = await readLayout();
-    if (res !== null && res.status === 401) { onExpired(); return; }
+    setCustomizeBusy(false);
+    if (res !== null && res.status === 401) {
+      setOpeningCustomize(false);
+      onExpired();
+      return;
+    }
     if (res === null) {
-      setCustomizeNote('The dashboard could not reach its own server; customize did not open.');
+      setOpeningCustomize(false);
+      setCustomizeNote('The dashboard could not reach its own server; customize did not open. Try again.');
       return;
     }
     if (!res.ok) {
-      setCustomizeNote('The dashboard could not read the layout; customize did not open.');
+      setOpeningCustomize(false);
+      setCustomizeNote('The dashboard could not read the layout; customize did not open. Try again.');
       return;
     }
     const d = (res.data ?? {}) as { cards?: LayoutCardState[] };
     setLayoutState(Array.isArray(d.cards) ? d.cards : []);
     setCustomizeNote('');
     setRenaming(null);
+    setRenameDraft(null);
     setCustomizing(true);
+    setOpeningCustomize(false);
   }
 
   /**
@@ -300,7 +389,9 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
    */
   function leaveCustomize() {
     setCustomizing(false);
+    setOpeningCustomize(false);
     setRenaming(null);
+    setRenameDraft(null);
     setDragKey(null);
     setDragOverKey(null);
     setCustomizeNote('');
@@ -328,27 +419,45 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
    * instead.
    *
    * The arrangement is applied before the POST, so the screen answers the click at
-   * once, and it is replaced by the saved one when the POST fails.
+   * once, and it is replaced by the saved one when the POST fails. The control that
+   * started the save carries its pending verb until the fresh payload lands, and a
+   * failed rename reopens its editor with the typed title.
    */
-  async function saveLayout(next: LayoutCardState[], note: string) {
+  async function saveLayout(next: LayoutCardState[], pending: LayoutPending): Promise<boolean> {
     setLayoutState(next);
-    setCustomizeNote(note);
+    setLayoutBusy(true);
+    setLayoutPending({ key: pending.key, action: pending.action });
+    setCustomizeNote(pending.pendingNote);
     let res;
     try {
       res = await postJson('/api/layout', { cards: next });
     } catch {
       res = null;
     }
-    if (res !== null && res.status === 401) { onExpired(); return; }
+    if (res !== null && res.status === 401) {
+      setLayoutBusy(false);
+      setLayoutPending(null);
+      onExpired();
+      return false;
+    }
     if (res === null || !res.ok) {
       setCustomizeNote(res === null ? SAVE_UNREACHABLE : SAVE_REFUSED);
+      if (pending.action === 'rename') {
+        setRenameDraft(pending.renameValue ?? '');
+        setRenaming(pending.key);
+      }
+      setLayoutBusy(false);
+      setLayoutPending(null);
       await resyncLayout();
-      return;
+      return false;
     }
     const d = (res.data ?? {}) as { cards?: LayoutCardState[] };
     setLayoutState(Array.isArray(d.cards) ? d.cards : next);
-    setCustomizeNote(note);
     await onRefetch();
+    setLayoutBusy(false);
+    setLayoutPending(null);
+    setCustomizeNote(pending.doneNote);
+    return true;
   }
 
   // Reorder within the sequence of cards that actually render; hidden
@@ -379,45 +488,66 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
 
   /** Move a rendered card one place up or down and save the layout. */
   function moveCard(key: string, direction: -1 | 1) {
-    if (layoutState === null) return;
+    if (layoutState === null || layoutBusy) return;
     const movable = layoutState
       .filter((c) => !c.hidden && rendersCard(c.key)).map((c) => c.key);
     const from = movable.indexOf(key);
     const next = moveRendered(key, from + direction);
     if (next === undefined) return;
     const verb = direction === -1 ? 'up' : 'down';
-    void saveLayout(next, `${cardName(key)} moved ${verb}`);
+    void saveLayout(next, {
+      key,
+      action: direction === -1 ? 'move-up' : 'move-down',
+      pendingNote: `Moving ${cardName(key)} ${verb}...`,
+      doneNote: `${cardName(key)} moved ${verb}`,
+    });
   }
 
   /** Move the dragged card onto a target card and save the layout. */
   function dropCard(targetKey: string) {
-    if (layoutState === null || dragKey === null || dragKey === targetKey) return;
+    if (layoutState === null || dragKey === null || dragKey === targetKey || layoutBusy) return;
+    const moving = dragKey;
     const movable = layoutState
       .filter((c) => !c.hidden && rendersCard(c.key)).map((c) => c.key);
-    const next = moveRendered(dragKey, movable.indexOf(targetKey));
+    const next = moveRendered(moving, movable.indexOf(targetKey));
     setDragKey(null);
     setDragOverKey(null);
     if (next === undefined) return;
-    void saveLayout(next, `${cardName(dragKey)} moved`);
+    void saveLayout(next, {
+      key: moving,
+      action: 'move',
+      pendingNote: `Moving ${cardName(moving)}...`,
+      doneNote: `${cardName(moving)} moved`,
+    });
   }
 
   /** Hide a card and save the layout, aiming focus at its Restore button. */
   function hideCard(key: string) {
-    if (layoutState === null) return;
+    if (layoutState === null || layoutBusy) return;
     focusPending.current = { kind: 'restore', key };
     void saveLayout(
       layoutState.map((c) => (c.key === key ? { ...c, hidden: true } : { ...c })),
-      `${cardName(key)} hidden`,
+      {
+        key,
+        action: 'hide',
+        pendingNote: `Hiding ${cardName(key)}...`,
+        doneNote: `${cardName(key)} hidden`,
+      },
     );
   }
 
   /** Restore a hidden card and save the layout, aiming focus at its grip. */
   function restoreCard(key: string) {
-    if (layoutState === null) return;
+    if (layoutState === null || layoutBusy) return;
     focusPending.current = { kind: 'grip', key };
     void saveLayout(
       layoutState.map((c) => (c.key === key ? { ...c, hidden: false } : { ...c })),
-      `${cardName(key)} restored`,
+      {
+        key,
+        action: 'restore',
+        pendingNote: `Restoring ${cardName(key)}...`,
+        doneNote: `${cardName(key)} restored`,
+      },
     );
   }
 
@@ -426,14 +556,26 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
    * default name.
    */
   function renameCard(key: string, value: string) {
-    if (layoutState === null) return;
+    if (layoutState === null || layoutBusy) return;
     const title = value || null; // blank means back to the default name
-    focusPending.current = { kind: 'grip', key };
-    setRenaming(null);
-    void saveLayout(
-      layoutState.map((c) => (c.key === key ? { ...c, title } : { ...c })),
-      title ? `Renamed to ${title}` : `${cardName(key)} back to its default title`,
-    );
+    void (async () => {
+      const saved = await saveLayout(
+        layoutState.map((c) => (c.key === key ? { ...c, title } : { ...c })),
+        {
+          key,
+          action: 'rename',
+          pendingNote: title ? `Saving the new title for ${cardName(key)}...` : `Saving ${cardName(key)}'s default title...`,
+          doneNote: title ? `Renamed to ${title}` : `${cardName(key)} back to its default title`,
+          renameValue: value,
+        },
+      );
+      if (!saved) return;
+      // The editor stays open while the save runs (the Save title control
+      // carries the wait); it closes only once the new title is on disk.
+      setRenaming(null);
+      setRenameDraft(null);
+      document.querySelector<HTMLElement>(`[data-grip-key="${key}"]`)?.focus();
+    })();
   }
 
   // Focus lands where the last action pointed it, once the element it
@@ -494,7 +636,9 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             lastAnsweredTs={data.research.lastAnsweredTs}
             answer={answer}
             answerSeq={answerSeq}
-            statusText={statusText}
+            busy={answerBusy}
+            busyPhase={answerPhase}
+            error={answerError}
           />
         );
       case 'skills':
@@ -505,6 +649,7 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
             skills={data.skills}
             title={title}
             busy={skillBusyId !== null}
+            busyId={skillBusyId}
             onRun={(id) => void runSkill(id)}
           />
         );
@@ -524,7 +669,10 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
   }
 
   const renderedEntries = visible.filter((entry) => rendersCard(entry.key));
-  const hiddenEntries = (layoutState ?? []).filter((c) => c.hidden);
+  // A card being restored stays in the strip until its save answers, so the
+  // Restore control can carry its own pending state instead of vanishing.
+  const hiddenEntries = (layoutState ?? []).filter((c) =>
+    c.hidden || (layoutPending?.key === c.key && layoutPending.action === 'restore'));
 
   return (
     <div className="app">
@@ -565,27 +713,63 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
                     Finish setup
                   </button>
                 ) : null}
-                <Button tone="secondary" onClick={() => void enterCustomize()}>Customize</Button>
+                <Button
+                  tone="secondary"
+                  onClick={() => void enterCustomize()}
+                  disabled={customizeBusy}
+                  pending={customizeOpening.shown}
+                  pendingLabel="Opening..."
+                >
+                  Customize
+                </Button>
               </>
             )}
           </div>
         </header>
+        {liveOutcome ? (
+          <p className="page-status" role="status">{liveOutcome}</p>
+        ) : null}
+        {pollNote ? (
+          <p className="poll-note" role="status">{pollNote}</p>
+        ) : null}
         {!customizing && customizeNote ? (
           <p className="cust-note" role="status">{customizeNote}</p>
         ) : null}
-        {customizing ? (
-          <section className="cust-panel" aria-label="Customize dashboard">
-            <p className="cust-hint">
-              Drag a card's handle onto another card, or use the Move buttons, to
-              reorder. Rename or hide from each card. Every change saves itself.
-            </p>
-            <p className="cust-note" role="status">{customizeNote}</p>
+        {(customizing || (openingCustomize && customizeOpening.shown)) ? (
+          <section
+            className="cust-panel"
+            aria-label="Customize dashboard"
+            aria-busy={customizing ? undefined : 'true'}
+          >
+            {customizing ? (
+              <>
+                <p className="cust-hint">
+                  Drag a card's handle onto another card, or use the Move buttons, to
+                  reorder. Rename or hide from each card. Every change saves itself.
+                </p>
+                <p className="cust-note" role="status">
+                  {layoutBusy
+                    ? (layoutPhase.shown ? <PhaseText text={customizeNote} slow={layoutPhase.slow} /> : null)
+                    : customizeNote}
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="wire-lines cust-panel-wire" aria-hidden="true">
+                  <span style={{ width: '92%' }} />
+                  <span style={{ width: '64%' }} />
+                </div>
+                <p className="phase-line" role="status">
+                  <span className="btn-busy-dot" aria-hidden="true" />
+                  <span>
+                    <PhaseText text="Reading your saved layout" slow={customizeOpening.slow} />
+                  </span>
+                </p>
+              </>
+            )}
           </section>
         ) : null}
         <CommandBar busy={researchBusy} disabled={!data.research.enabled} needsAi={!aiConnected} onAsk={ask} />
-        {!customizing && statusText ? (
-          <p className="research-status command-status" role="status">{statusText}</p>
-        ) : null}
         {!customizing ? (
           <>
             <Brief
@@ -594,11 +778,24 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
               onExpired={onExpired}
               setupDismissed={setupDismissed}
               onDismissSetup={dismissSetup}
+              skillBusyId={skillBusyId}
+              onRunSkill={(id) => void runSkill(id)}
             />
-            {answer ? (
+            {answer || answerPending.shown || answerError ? (
               <section className="brief-answer" aria-label="Research answer">
-                <h2>Research</h2>
-                <p>{answer.summary}</p>
+                <h2>{layoutTitle('research') ?? 'Research'}</h2>
+                {answerPending.shown ? (
+                  <PendingBody
+                    phase={answerPhase}
+                    slow={answerPending.slow}
+                    lines={4}
+                    className="brief-answer-copy"
+                  />
+                ) : answerError ? (
+                  <p className="alert" role="alert">{answerError}</p>
+                ) : (
+                  <p className="brief-answer-copy" role="status">{answer?.summary}</p>
+                )}
               </section>
             ) : null}
           </>
@@ -617,9 +814,16 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
                 first={index === 0}
                 last={index === renderedEntries.length - 1}
                 renaming={renaming === entry.key}
+                renameValue={renaming === entry.key ? renameDraft : null}
                 dragging={dragKey === entry.key}
                 dragOver={dragOverKey === entry.key}
-                onRenaming={setRenaming}
+                busy={layoutBusy}
+                pending={layoutPending?.key === entry.key ? layoutPending.action : null}
+                pendingShown={layoutPending?.key === entry.key && layoutPendingShown}
+                onRenaming={(key) => {
+                  setRenameDraft(null);
+                  setRenaming(key);
+                }}
                 onMove={moveCard}
                 onRename={renameCard}
                 onHide={hideCard}
@@ -638,20 +842,59 @@ export default function Dashboard({ data, onRefetch, onExpired }: DashboardProps
           <section className="cust-hidden" aria-label="Hidden cards">
             <div className="subhead">Hidden cards</div>
             <ul>
-              {hiddenEntries.map((entry) => (
-                <li key={entry.key}>
-                  <span>{cardName(entry.key)}</span>
-                  <button
-                    type="button"
-                    className="cust-btn"
-                    aria-label={`Restore ${cardName(entry.key)}`}
-                    data-restore-key={entry.key}
-                    onClick={() => restoreCard(entry.key)}
-                  >
-                    Restore
-                  </button>
-                </li>
-              ))}
+              {hiddenEntries.map((entry) => {
+                const restoring = layoutPending?.key === entry.key && layoutPending.action === 'restore';
+                // The control is inert at once; its pending verb and
+                // aria-busy wait out the 100 ms gate.
+                const restoringShown = restoring && layoutPendingShown;
+                return (
+                  <li key={entry.key}>
+                    <span>{cardName(entry.key)}</span>
+                    {restoring ? (
+                      <button
+                        type="button"
+                        className="cust-btn"
+                        disabled
+                        aria-busy={restoringShown ? 'true' : undefined}
+                        aria-label={restoringShown
+                          ? `Restoring ${cardName(entry.key)}...`
+                          : `Restore ${cardName(entry.key)}`}
+                        data-restore-key={entry.key}
+                      >
+                        <span
+                          className={restoringShown ? 'btn-busy-dot' : 'btn-busy-dot busy-hidden'}
+                          aria-hidden="true"
+                        />
+                        <span className="btn-labels">
+                          <span
+                            className={restoringShown ? 'btn-label btn-label-hidden' : 'btn-label'}
+                            aria-hidden={restoringShown ? 'true' : undefined}
+                          >
+                            Restore
+                          </span>
+                          <span
+                            className={restoringShown ? 'btn-label' : 'btn-label btn-label-hidden'}
+                            aria-hidden={restoringShown ? undefined : 'true'}
+                          >
+                            Restoring...
+                          </span>
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="cust-btn"
+                        aria-label={`Restore ${cardName(entry.key)}`}
+                        data-restore-key={entry.key}
+                        disabled={layoutBusy}
+                        onClick={() => restoreCard(entry.key)}
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ) : null}

@@ -30,7 +30,9 @@ def _pair_form(address: str = "", code: str = "") -> str:
     Both values are escaped into their inputs and the form posts to /peers/pair.
     """
     return (
-        '<form method="post" action="/peers/pair" class="cardform">'
+        '<form method="post" action="/peers/pair" class="cardform" '
+        'data-wait="#peers-result" data-wait-shape="card" '
+        'data-wait-label="Pairing with that desk..." data-busy="Pairing...">'
         f'<label for="pair-address">Desk address</label>'
         '<input id="pair-address" type="text" name="address" '
         f'placeholder="127.0.0.1:8765" value="{_e(address)}" '
@@ -154,7 +156,9 @@ def _plugin_row(peer_id: str, plugin: dict) -> str:
         state = "not installed here"
     if plugin.get("installed_here"):
         action = (
-            f"<form method='post' action='/peers/update' class='inlineform'>"
+            f"<form method='post' action='/peers/update' class='inlineform' "
+            "data-wait='#peers-result' data-wait-shape='card' "
+            "data-wait-label='Updating the plugin from that desk...' data-busy='Updating...'>"
             f"<input type='hidden' name='peer_id' value='{_e(peer_id)}'>"
             f"<input type='hidden' name='plugin_id' value='{plugin_id}'>"
             "<button class='btn btn-primary' type='submit'>Update</button>"
@@ -164,7 +168,9 @@ def _plugin_row(peer_id: str, plugin: dict) -> str:
         )
     else:
         action = (
-            f"<form method='post' action='/peers/install' class='inlineform'>"
+            f"<form method='post' action='/peers/install' class='inlineform' "
+            "data-wait='#peers-result' data-wait-shape='card' "
+            "data-wait-label='Installing the plugin from that desk...' data-busy='Installing...'>"
             f"<input type='hidden' name='peer_id' value='{_e(peer_id)}'>"
             f"<input type='hidden' name='plugin_id' value='{plugin_id}'>"
             "<button class='btn btn-primary' type='submit'>Install</button>"
@@ -221,7 +227,9 @@ def _paired_section(catalog: dict) -> str:
             f"<p class='empty mono'>{_e(peer.get('base_url'))}</p>"
             f"{state_line}"
             f"<div class='cardrow'>"
-            "<form method='post' action='/peers/refresh' class='inlineform'>"
+            "<form method='post' action='/peers/refresh' class='inlineform' "
+            "data-wait='#peers-result' data-wait-shape='card' "
+            "data-wait-label='Refreshing paired desks...' data-busy='Refreshing...'>"
             "<button class='btn btn-secondary' type='submit'>Refresh</button>"
             "</form></div>"
             f"{plugin_cards}"
@@ -231,13 +239,19 @@ def _paired_section(catalog: dict) -> str:
 
 
 def render_peers_page(catalog: dict, version: str, notice: str = "",
-                      inbox_count: int = 0) -> str:
-    """The whole peers page from the catalog the server assembles."""
+                      inbox_count: int = 0, pair_address: str = "",
+                      pair_code: str = "") -> str:
+    """The whole peers page from the catalog the server assembles.
+
+    `pair_address` and `pair_code` keep the typed words after a refused
+    pairing, in the manual form that posted them.
+    """
     if not catalog.get("ok"):
         notice = str(catalog.get("message", "Peers are unavailable."))
     notice_html = f"<div class='alert'><p>{_e(notice)}</p></div>" if notice else ""
     content = (
         "<h1>Peers</h1>"
+        "<div id='peers-result'></div>"
         "<p>Share plugins between desks with nothing centralized. A "
         "paired desk can read only the plugins you mark shared, over "
         "plain HTTP on this network, after entering a pairing code; "
@@ -253,7 +267,7 @@ def render_peers_page(catalog: dict, version: str, notice: str = "",
         "<p class='empty'>Type the other desk's address and pairing "
         "code yourself; discovery is a convenience, not a "
         "requirement.</p>"
-        + _pair_form()
+        + _pair_form(address=pair_address, code=pair_code)
     )
     return pages.page_shell("Peers", "/peers", content, version,
                             inbox_count=inbox_count)

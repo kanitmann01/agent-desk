@@ -5,7 +5,7 @@
 // /api/layout immediately and the dashboard refetches; there is no
 // separate Save step. Reordering is instant (no motion), so the suite
 // drives it through the keyboard buttons and through HTML5 drag events.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -24,7 +24,14 @@ const BASE: DashboardData = {
   research: { enabled: true, lastAnsweredTs: null },
   inbox: { waiting: 0 },
   skills: [],
-  layout: { cards: [] },
+  layout: {
+    cards: [
+      { key: 'sales', title: null },
+      { key: 'commitments', title: null },
+      { key: 'research', title: null },
+      { key: 'skills', title: null },
+    ],
+  },
   plugins: {
     cards: [{
       id: 'p1', title: 'Invoice tracker', version: '1.2.0', pilot: true,
@@ -161,7 +168,7 @@ describe('entering and leaving customize', () => {
     // rejection, no half-open mode.
     expect(
       await screen.findByText(
-        'The dashboard could not reach its own server; customize did not open.'),
+        'The dashboard could not reach its own server; customize did not open. Try again.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Done customizing' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument();
@@ -349,7 +356,7 @@ describe('the save model', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: `Move ${SALES} down` }));
     expect(
-      await screen.findByText('The dashboard could not reach its own server; the layout was not saved.'),
+      await screen.findByText('The dashboard could not reach its own server; the layout was not saved. Try again.'),
     ).toBeInTheDocument();
     // The optimistic move is reverted to the server's truth.
     await vi.waitFor(() => {
@@ -423,10 +430,92 @@ describe('the normal view follows the layout', () => {
     // order (the lower row's direct children, the health cell excluded).
     const cells = briefCellTexts();
     expect(cells.some((text) => text.includes('Invoice tracker'))).toBe(false);
-    const pluginCells = Array.from(document.querySelectorAll('.brief > .cell-digest, .brief > .cell-watch'));
+    const pluginCells = Array.from(document.querySelectorAll('.brief > .cell-digest, .brief > .cell-watch, .brief > .cell-plugin'));
     expect(pluginCells.map((cell) => cell.textContent)).toEqual([
       expect.stringContaining('Notes digester'),
       expect.stringContaining('Competitor watch'),
     ]);
+  });
+
+  it('hides a built-in card\'s cells and keeps its source in Desk health', async () => {
+    bootLayoutServer();
+    await renderDashboard();
+    await enterCustomize();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: `Hide ${SALES}` }));
+    await screen.findByRole('region', { name: 'Hidden cards' });
+    await user.click(screen.getByRole('button', { name: 'Done customizing' }));
+
+    // The pipeline and the moves table belong to the sales card; hiding it
+    // takes both cells off the home screen.
+    expect(document.querySelector('.cell-hero')).toBeNull();
+    expect(document.querySelector('.cell-moves')).toBeNull();
+    // Desk health is always present and still names the workbook source.
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).getByText('Workbook')).toBeInTheDocument();
+  });
+
+  it('shows a renamed built-in card\'s title on its cells, with its kind tags fixed', async () => {
+    bootLayoutServer();
+    await renderDashboard();
+    await enterCustomize();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: `Rename ${SALES}` }));
+    const field = screen.getByLabelText(`Title for ${SALES}`);
+    await user.clear(field);
+    await user.type(field, 'Pipeline this week');
+    await user.click(screen.getByRole('button', { name: 'Save title' }));
+    await screen.findByRole('button', { name: 'Hide Pipeline this week' });
+    await user.click(screen.getByRole('button', { name: 'Done customizing' }));
+
+    const hero = document.querySelector('.cell-hero') as HTMLElement;
+    const moves = document.querySelector('.cell-moves') as HTMLElement;
+    expect(within(hero).getByText('Pipeline this week')).toBeInTheDocument();
+    expect(within(moves).getByText('Pipeline this week')).toBeInTheDocument();
+    expect(hero.querySelector('h2.tag')).toHaveTextContent('PIPELINE');
+    expect(moves.querySelector('h2.tag')).toHaveTextContent('MOVES');
+  });
+
+  it('puts the built-in columns in the saved layout order', async () => {
+    // Commitments before sales: the decisions and digest column comes first
+    // in the flow, then the pipeline and moves column.
+    bootLayoutServer([
+      { key: 'commitments', hidden: false, title: null },
+      { key: 'sales', hidden: false, title: null },
+      { key: 'research', hidden: false, title: null },
+      { key: 'skills', hidden: false, title: null },
+      { key: 'p1', hidden: false, title: null },
+    ]);
+    await renderDashboard();
+    const columns = Array.from(document.querySelectorAll('.brief > .brief-col'));
+    expect(columns).toHaveLength(2);
+    expect(columns[0]).toHaveClass('brief-side');
+    expect(columns[0]).toHaveTextContent('DECISIONS');
+    expect(columns[1]).toHaveClass('brief-main');
+    expect(columns[1]).toHaveTextContent('PIPELINE');
+  });
+
+  it('orders the skills card among the lower cells by the saved layout', async () => {
+    const skillBase: DashboardData = {
+      ...BASE,
+      skills: [{ id: 1, name: 'Monday numbers', description: 'Summarize the sheet' }],
+      plugins: { cards: [BASE.plugins.cards[0]] },
+    };
+    bootLayoutServer([
+      { key: 'sales', hidden: false, title: null },
+      { key: 'commitments', hidden: false, title: null },
+      { key: 'research', hidden: false, title: null },
+      { key: 'p1', hidden: false, title: null },
+      { key: 'skills', hidden: false, title: null },
+    ], skillBase);
+    await renderDashboard();
+    const cells = Array.from(
+      document.querySelectorAll('.brief > .cell-plugin, .brief > .cell-skills'),
+    );
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toHaveClass('cell-plugin');
+    expect(cells[0]).toHaveTextContent('Invoice tracker');
+    expect(cells[1]).toHaveClass('cell-skills');
+    expect(cells[1]).toHaveTextContent('Monday numbers');
   });
 });

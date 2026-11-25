@@ -25,6 +25,10 @@ export interface MarketCard {
   deprecated: { reason?: string; advisory?: string; replacement?: string | null } | null;
   yanked: boolean;
   sampleAvailable: boolean;
+  // Optional capability summary for a card that must say whether it can run
+  // here. The detail DTO always carries it; a catalog card may omit it, and
+  // an absent block must not be read as "asks for the web".
+  capabilities?: MarketCapabilities;
 }
 
 export interface MarketSignature {
@@ -94,6 +98,9 @@ export interface CatalogResponse {
   total: number;
   sources: { source: string; count: number }[];
   policy: MarketPolicy;
+  // True only when the plugin runner carries an HTTP transport. Absent on
+  // older servers, which must not be read as false.
+  deskNetwork?: boolean;
 }
 
 export interface MarketVersion {
@@ -115,11 +122,13 @@ export interface DetailResponse {
   versions: MarketVersion[];
   alternatives: MarketCard[];
   sample: MarketSample | null;
+  deskNetwork?: boolean;
 }
 
 export interface InstalledResponse {
   plugins: InstalledSummary[];
   policy: MarketPolicy;
+  deskNetwork?: boolean;
 }
 
 // -- per-instance setup (T5) ----------------------------------------------
@@ -160,6 +169,7 @@ export interface PublisherResponse {
   proof: unknown;
   plugins: MarketCard[];
   firstSeen: string;
+  deskNetwork?: boolean;
 }
 
 // Every slot DTO the host renderer can emit. The detail sample draws

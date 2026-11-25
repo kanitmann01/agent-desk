@@ -8,10 +8,12 @@
 // The app-specific requests arrive as an adapter: each call returns the
 // walk's answer shape, so the walk never knows which transport (or
 // which app) is behind it.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Button from './Button';
 import ModalSheet from './ModalSheet';
 import RowSelectGrid, { type GridPreview } from './RowSelectGrid';
+import { announce } from './feedback';
+import { useBusy } from './useBusy';
 
 /** One of the three ways a workbook gets opened. */
 export type OpenWay =
@@ -54,6 +56,10 @@ export type WalkTry = <T>(request: () => Promise<T>) => Promise<T | undefined>;
 /** What the choose step's footer may drive. */
 export interface ChooseCtx {
   busy: boolean;
+  // The 100 ms gate: false before the wait has visibly lasted.
+  busyShown: boolean;
+  // The request that started the wait, so one control can say so on itself.
+  action: WalkAction;
   /** Both columns are assigned and at least one row is picked. */
   ready: boolean;
   /** The preview grid the step is showing. */
@@ -71,6 +77,8 @@ export interface ChooseCtx {
 /** What the confirm step's body may drive. */
 export interface ConfirmCtx {
   busy: boolean;
+  busyShown: boolean;
+  action: WalkAction;
   columns: WalkChoice;
   /** The outside-workspace acceptance block, placed where the caller wants it. */
   outside: ReactNode;
@@ -81,6 +89,8 @@ export interface ConfirmCtx {
 /** What an optional first phase (the marketplace's create step) may drive. */
 export interface LeadCtx {
   busy: boolean;
+  busyShown: boolean;
+  action: WalkAction;
   ask: WalkAsk;
   /** Leave the lead phase and start the walk's open step. */
   next: () => void;
@@ -120,6 +130,9 @@ interface InstanceWalkProps {
 
 type Phase = 'lead' | 'open' | 'choose' | 'confirm';
 
+/** The one request in flight, so its own control carries the pending verb. */
+export type WalkAction = 'pick' | 'stage' | 'upload' | 'confirm' | 'accept' | 'ask' | null;
+
 /**
  * Render the workbook walk inside the desk's modal shell.
  *
@@ -139,7 +152,22 @@ export default function InstanceWalk({
   const [valueColumn, setValueColumn] = useState('');
   const [picked, setPicked] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<WalkAction>(null);
+  // The shared 100 ms gate, so a fast request never flashes a busy label.
+  const busyShown = useBusy(busy);
   const [error, setError] = useState('');
+  // A request that answers after the reader closed the sheet reports its
+  // outcome on the page they returned to (spec 027, F5).
+  const mounted = useRef(true);
+  useEffect(() => {
+    // StrictMode runs the cleanup once on mount and keeps the same ref,
+    // so the body must re-arm it; otherwise a development failure is
+    // announced away instead of shown inline.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   // The opened file is outside the workspace folder: the confirm was
   // refused, and the honest inline choice (accept once, retry) is up.
   const [outside, setOutside] = useState(false);
@@ -157,8 +185,9 @@ export default function InstanceWalk({
    * Run one request under the walk's guard; a rejection becomes the
    * caller's unreachable sentence instead of an escaped promise.
    */
-  async function tryRun<T>(request: () => Promise<T>): Promise<T | undefined> {
+  async function tryRun<T>(name: WalkAction, request: () => Promise<T>): Promise<T | undefined> {
     setBusy(true);
+    setAction(name);
     setError('');
     try {
       return await request();
@@ -166,12 +195,13 @@ export default function InstanceWalk({
       return undefined;
     } finally {
       setBusy(false);
+      setAction(null);
     }
   }
 
   /** A guarded request whose failure lands in the shared error slot. */
   async function ask(request: () => Promise<WalkSave>): Promise<WalkSave | undefined> {
-    const answer = await tryRun(request);
+    const answer = await tryRun('ask', request);
     if (answer !== undefined && !answer.ok && answer.message) setError(answer.message);
     return answer;
   }
@@ -182,6 +212,7 @@ export default function InstanceWalk({
    */
   async function runOpen(way: OpenWay) {
     setBusy(true);
+    setAction(way.kind);
     setError('');
     let answer: WalkOpen;
     try {
@@ -190,6 +221,7 @@ export default function InstanceWalk({
       answer = { ok: false, message: unreachable };
     }
     setBusy(false);
+    setAction(null);
     if (answer.ok) {
       setPreview(answer.preview);
       setPicked(answer.preview.rows.map((_row, index) => index));
@@ -215,6 +247,7 @@ export default function InstanceWalk({
    */
   async function runConfirm() {
     setBusy(true);
+    setAction('confirm');
     setError('');
     let answer: WalkSave;
     try {
@@ -223,8 +256,18 @@ export default function InstanceWalk({
       answer = { ok: false, message: unreachable };
     }
     setBusy(false);
+    setAction(null);
     if (answer.ok) {
+      // The card (or the marketplace list) is the result; this line says
+      // it worked even if the reader left the sheet before it landed.
+      announce('The tracker was saved. It is on the desk now.');
       onDone(choice);
+      return;
+    }
+    if (!mounted.current) {
+      announce(answer.message
+        ? `The tracker was not saved: ${answer.message}`
+        : 'The tracker was not saved. Open the sheet again and try again.');
       return;
     }
     if (answer.outside) {
@@ -240,6 +283,7 @@ export default function InstanceWalk({
    */
   async function runAcceptOutside() {
     setBusy(true);
+    setAction('accept');
     setError('');
     let answer: WalkSave;
     try {
@@ -253,6 +297,13 @@ export default function InstanceWalk({
       return;
     }
     setBusy(false);
+    setAction(null);
+    if (!mounted.current) {
+      announce(answer.message
+        ? `The tracker was not saved: ${answer.message}`
+        : 'The tracker was not saved. Open the sheet again and try again.');
+      return;
+    }
     if (answer.message) setError(answer.message);
   }
 
@@ -290,6 +341,8 @@ export default function InstanceWalk({
     confirm: stepNumber.confirm,
   };
   const ready = Boolean(labelColumn) && Boolean(valueColumn) && (allowEmptyRows || picked.length > 0);
+  // The generic guarded request: the suggestion is its one caller today.
+  const tryRequest: WalkTry = <T,>(request: () => Promise<T>) => tryRun('ask', request);
 
   return (
     <ModalSheet open title={title} onClose={onClose} busy={busy} error={error}>
@@ -307,6 +360,8 @@ export default function InstanceWalk({
 
       {phase === 'lead' && lead ? lead({
         busy,
+        busyShown,
+        action,
         ask,
         next: () => setPhase('open'),
       }) : null}
@@ -315,8 +370,14 @@ export default function InstanceWalk({
         <section className="setup-open">
           <div className="setup-open-copy">
             {openLead?.(pickerDown)}
-            <Button tone="primary" onClick={() => void runOpen({ kind: 'pick' })} disabled={busy}>
-              {busy ? 'Opening…' : 'Open a workbook'}
+            <Button
+              tone="primary"
+              onClick={() => void runOpen({ kind: 'pick' })}
+              disabled={busy}
+              pending={busyShown && action === 'pick'}
+              pendingLabel="Opening..."
+            >
+              Open a workbook
             </Button>
             <Button
               aria-expanded={recoveryOpen}
@@ -340,6 +401,8 @@ export default function InstanceWalk({
                   <Button
                     onClick={() => void runOpen({ kind: 'stage', path: typedPath.trim() })}
                     disabled={busy || typedPath.trim() === ''}
+                    pending={busyShown && action === 'stage'}
+                    pendingLabel="Opening..."
                   >
                     Use this path
                   </Button>
@@ -361,6 +424,8 @@ export default function InstanceWalk({
                       if (file) void runOpen({ kind: 'upload', file });
                     }}
                     disabled={busy || fileToUpload === null}
+                    pending={busyShown && action === 'upload'}
+                    pendingLabel="Uploading..."
                   >
                     Upload this file
                   </Button>
@@ -375,7 +440,7 @@ export default function InstanceWalk({
       {phase === 'choose' && preview ? (
         <section className="setup-choose">
           {chooseLead?.({
-            busy, ready, preview, choice, toConfirm: () => setPhase('confirm'), adopt, ask, try: tryRun,
+            busy, busyShown, action, ready, preview, choice, toConfirm: () => setPhase('confirm'), adopt, ask, try: tryRequest,
           })}
           <div className="setup-toolbar">
             <div className="seg" role="radiogroup" aria-label="A click on a column header assigns">
@@ -398,13 +463,15 @@ export default function InstanceWalk({
           />
           {chooseFooter({
             busy,
+            busyShown,
+            action,
             ready,
             preview,
             choice,
             toConfirm: () => setPhase('confirm'),
             adopt,
             ask,
-            try: tryRun,
+            try: tryRequest,
           })}
         </section>
       ) : null}
@@ -413,6 +480,8 @@ export default function InstanceWalk({
         <section className="setup-name">
           {confirmBody({
             busy,
+            busyShown,
+            action,
             columns: choice,
             outside: outside ? (
               <div className="setup-proposal" role="status">
@@ -421,8 +490,14 @@ export default function InstanceWalk({
                   once and this {outsideNoun} can read it.
                 </p>
                 <div className="setup-actions">
-                  <Button tone="primary" onClick={() => void runAcceptOutside()} disabled={busy}>
-                    {busy ? 'Accepting…' : 'Use it anyway'}
+                  <Button
+                    tone="primary"
+                    onClick={() => void runAcceptOutside()}
+                    disabled={busy}
+                    pending={busyShown && action === 'accept'}
+                    pendingLabel="Accepting..."
+                  >
+                    Use it anyway
                   </Button>
                 </div>
               </div>

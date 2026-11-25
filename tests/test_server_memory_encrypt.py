@@ -189,7 +189,7 @@ def test_encrypt_with_confirm_converts_and_the_page_says_so(tmp_path):
         status, headers, _b = _form_post(booted, auth, "/memory/encrypt",
                                          {"confirm": "on"})
         assert status == 303
-        assert headers["Location"] == "/memory"
+        assert headers["Location"].split("?", 1)[0] == "/memory"
         # The key file exists and the marker is set.
         assert key_path.exists()
         assert len(key_path.read_bytes()) == 32

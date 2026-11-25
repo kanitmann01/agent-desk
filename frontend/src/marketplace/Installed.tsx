@@ -1,16 +1,19 @@
 // Installed plugins: what is running, what is pinned, what needs a
 // decision. Every control posts once and then re-reads the installed list;
 // no row changes state before the server answers.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Button from '../components/Button';
+import { announce } from '../components/feedback';
+import { useBusy } from '../components/useBusy';
 import EmptyState, { ICON_SHEET } from '../components/EmptyState';
 import { getMarket, marketErrorText, postMarket } from './client';
 import { ConsentSheet } from './ConsentSheet';
 import { MarketLink } from './context';
-import { canNeverFromScopes, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
+import { asksForWeb, canNeverFromScopes, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { StatusChip } from './StatusChip';
+import { BUSY_WATCHDOG_TEXT, useBusyWatchdog } from './useBusyWatchdog';
 import { useDialogFocus } from './useDialogFocus';
-import type { InstalledResponse, InstalledSummary } from './types';
+import type { DetailResponse, InstalledResponse, InstalledSummary } from './types';
 
 type Load =
   | { kind: 'loading' }
@@ -38,7 +41,12 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
 }) {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${record.id}`;
-  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(true, onCancel);
+  // Escape and Cancel both wait while the purge runs, so the reader cannot
+  // close the sheet out from under a failure they would then never see. A
+  // request that never settles unlocks them at the watchdog.
+  const stuck = useBusyWatchdog(busy);
+  const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(
+    true, () => { if (!busy || stuck) onCancel(); });
   return (
     <div className="mkt-scrim" role="presentation">
       <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
@@ -51,15 +59,18 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
         <div className="mkt-sheet-body">
           <p>This deletes {formatBytes(record.dataDirSize)} of plugin data and its install record. There is no undo.</p>
           <label className="mkt-field">
-            <span>Type <code>{expected}</code> to confirm</span>
+            <span>Type <code tabIndex={0} title={expected}>{expected}</code> to confirm</span>
             <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
+          {stuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
           {error && <p className="mkt-error" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary" disabled={busy && !stuck}
+                  onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={typed !== expected || busy}
+                  aria-busy={busy ? 'true' : undefined}
                   onClick={onConfirm}>
             {busy ? 'Purging…' : 'Purge data'}
           </button>
@@ -81,15 +92,49 @@ function PurgeDialog({ record, busy, error, onCancel, onConfirm }: {
 export function InstalledPage() {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const [busyId, setBusyId] = useState('');
+  // The record and action in flight, so the pressed control names the work
+  // and its own row carries aria-busy. One action at a time: every row
+  // control is inert while this is set, so a second press cannot replace
+  // the first row's pending state.
+  const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
+  const busyShown = useBusy(busy !== null);
+  const [retrying, setRetrying] = useState(false);
+  const retryBusy = useBusy(retrying);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [consentRecord, setConsentRecord] = useState<InstalledSummary | null>(null);
   const [sheetError, setSheetError] = useState('');
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [confirmError, setConfirmError] = useState('');
   const [purgeRecord, setPurgeRecord] = useState<InstalledSummary | null>(null);
   const [purgeError, setPurgeError] = useState('');
-  const confirmFocus = useDialogFocus<HTMLButtonElement>(confirm !== null, () => setConfirm(null));
+  const [cannotRunIds, setCannotRunIds] = useState<Set<string>>(() => new Set());
+  // What each plugin's detail said about its web use, keyed by plugin id and
+  // pinned version, because capabilities belong to one release. A rollback or
+  // update must not keep the previous version's answer for the rest of the
+  // sitting.
+  const webUse = useRef(new Map<string, boolean>());
+  // Whether a sheet is still on screen when its request settles, so a late
+  // failure can be announced on the page instead of swallowed by a sheet the
+  // reader already left.
+  const confirmOpenRef = useRef(false);
+  confirmOpenRef.current = confirm !== null;
+  const purgeOpenRef = useRef(false);
+  purgeOpenRef.current = purgeRecord !== null;
+  const confirmStuck = useBusyWatchdog(busy !== null);
+  const confirmFocus = useDialogFocus<HTMLButtonElement>(
+    confirm !== null,
+    () => { if (busy === null || confirmStuck) setConfirm(null); },
+  );
+  /** Say a confirm failure in its sheet, or on the page if the reader left it. */
+  const reportConfirmFailure = (text: string) => {
+    if (confirmOpenRef.current) setConfirmError(text);
+    else announce(text);
+  };
+  const installedKey = load.kind === 'ready'
+    ? load.data.plugins.map((record) => `${record.id}\u0000${record.pinned.version}`).join('\u0000')
+    : '';
+  const deskNetwork = load.kind === 'ready' ? load.data.deskNetwork : undefined;
 
   const loadList = useCallback(async () => {
     try {
@@ -99,39 +144,99 @@ export function InstalledPage() {
     } catch (err) {
       setLoad({ kind: 'error', message: marketErrorText(err) });
       return null;
+    } finally {
+      setRetrying(false);
     }
   }, []);
 
   useEffect(() => { void loadList(); }, [loadList, attempt]);
 
+  // Decide the cannot-run state from the transport and each plugin's own
+  // capability data. The id and pinned version set is the input: a list
+  // reload after a mutation that keeps the same releases reuses the cached
+  // answer instead of re-reading every detail, while a rollback or update
+  // reaches the new release's capabilities. A failed read claims nothing.
+  useEffect(() => {
+    if (load.kind !== 'ready' || load.data.deskNetwork !== false) {
+      setCannotRunIds((current) => (current.size === 0 ? current : new Set()));
+      return undefined;
+    }
+    const entries = load.data.plugins.map((record) => ({
+      id: record.id,
+      key: `${record.id}\u0000${record.pinned.version}`,
+    }));
+    const cache = webUse.current;
+    let cancelled = false;
+    /** Publish the answer for the releases now installed, ignoring a stale run. */
+    const apply = () => {
+      if (!cancelled) {
+        setCannotRunIds(new Set(entries
+          .filter((entry) => cache.get(entry.key) === true)
+          .map((entry) => entry.id)));
+      }
+    };
+    const missing = entries.filter((entry) => !cache.has(entry.key));
+    if (missing.length === 0) {
+      apply();
+      return undefined;
+    }
+    void Promise.all(missing.map(async (entry) => {
+      try {
+        const data = await getMarket<DetailResponse>(
+          `/api/marketplace/plugin/${encodeURIComponent(entry.id)}`);
+        cache.set(entry.key, asksForWeb(data.plugin.capabilities));
+      } catch {
+        cache.set(entry.key, false);
+      }
+    })).then(apply);
+    return () => { cancelled = true; };
+    // `installedKey` and `deskNetwork` are the whole input; `load` itself is
+    // a fresh object on every reload and must not re-run this effect.
+  }, [installedKey, deskNetwork]);
+
   /**
    * Run one mutation for a record, show the note it returns, then re-read the
    * list.
    *
-   * The record's id stays busy for the duration, and a failure replaces the
-   * note with the server's message; nothing is re-read in that case.
+   * The record and action stay busy for the duration, so the pressed control
+   * can carry the continuous verb, and a failure replaces the note with the
+   * server's message; nothing is re-read in that case. Returns whether the
+   * action succeeded, and hands a failure to `onError` when a caller keeps it
+   * inside its own sheet.
    */
-  const run = async (record: InstalledSummary, fn: () => Promise<string>) => {
-    setBusyId(record.id);
+  const run = async (
+    record: InstalledSummary,
+    action: string,
+    fn: () => Promise<string>,
+    onError?: (message: string) => void,
+  ): Promise<boolean> => {
+    setBusy({ id: record.id, action });
     setError('');
     setMessage('');
+    let ok = false;
     try {
       const note = await fn();
       setMessage(note);
       await loadList();
+      ok = true;
     } catch (err) {
-      setError(marketErrorText(err));
+      const message = marketErrorText(err);
+      if (onError) onError(message);
+      else setError(message);
     } finally {
-      setBusyId('');
+      setBusy(null);
     }
+    return ok;
   };
 
   /** Enable or disable one plugin, reporting the state the server settled on. */
-  const toggle = (record: InstalledSummary) => run(record, async () => {
+  const toggle = (record: InstalledSummary) => {
     const action = record.enabled ? 'disable' : 'enable';
-    const res = await postMarket<{ state?: string }>(`/api/marketplace/${action}`, { id: record.id });
-    return `${record.name} is now ${res.state ?? (record.enabled ? 'disabled' : 'enabled')}.`;
-  });
+    return run(record, action, async () => {
+      const res = await postMarket<{ state?: string }>(`/api/marketplace/${action}`, { id: record.id });
+      return `${record.name} is now ${res.state ?? (record.enabled ? 'disabled' : 'enabled')}.`;
+    });
+  };
 
   /**
    * Share one plugin with paired desks, or stop sharing it.
@@ -140,15 +245,17 @@ export function InstalledPage() {
    * shared before any peer exists, and the note points at where pairing
    * happens.
    */
-  const toggleShare = (record: InstalledSummary) => run(record, async () => {
+  const toggleShare = (record: InstalledSummary) => {
     const sharing = !record.shared;
-    const res = await postMarket<{ paired?: number }>(
-      `/api/marketplace/${sharing ? 'share' : 'unshare'}`, { id: record.id });
-    if (!sharing) return `${record.name} is no longer shared.`;
-    return res.paired
-      ? `${record.name} is now shared with paired desks.`
-      : `${record.name} is shared, but no desks are paired yet. Pair a desk under Peers.`;
-  });
+    return run(record, sharing ? 'share' : 'unshare', async () => {
+      const res = await postMarket<{ paired?: number }>(
+        `/api/marketplace/${sharing ? 'share' : 'unshare'}`, { id: record.id });
+      if (!sharing) return `${record.name} is no longer shared.`;
+      return res.paired
+        ? `${record.name} is now shared with paired desks.`
+        : `${record.name} is shared, but no desks are paired yet. Pair a desk under Peers.`;
+    });
+  };
 
   /**
    * Apply the staged update, then open the permission review when the new
@@ -158,7 +265,7 @@ export function InstalledPage() {
    * scopes the server staged.
    */
   const reviewUpdate = async (record: InstalledSummary) => {
-    setBusyId(record.id);
+    setBusy({ id: record.id, action: 'update' });
     setError('');
     setMessage('');
     try {
@@ -176,7 +283,7 @@ export function InstalledPage() {
     } catch (err) {
       setError(marketErrorText(err));
     } finally {
-      setBusyId('');
+      setBusy(null);
     }
   };
 
@@ -188,7 +295,7 @@ export function InstalledPage() {
    */
   const acceptConsent = async () => {
     if (!consentRecord) return;
-    setBusyId(consentRecord.id);
+    setBusy({ id: consentRecord.id, action: 'consent' });
     setSheetError('');
     try {
       const res = await postMarket<{ version: string }>('/api/marketplace/consent',
@@ -199,7 +306,7 @@ export function InstalledPage() {
     } catch (err) {
       setSheetError(marketErrorText(err));
     } finally {
-      setBusyId('');
+      setBusy(null);
     }
   };
 
@@ -210,7 +317,7 @@ export function InstalledPage() {
    * The note names the version the plugin stays on.
    */
   const declineConsent = async (record: InstalledSummary) => {
-    setBusyId(record.id);
+    setBusy({ id: record.id, action: 'decline' });
     setSheetError('');
     try {
       const res = await postMarket<{ version: string }>('/api/marketplace/consent',
@@ -221,41 +328,48 @@ export function InstalledPage() {
     } catch (err) {
       setSheetError(marketErrorText(err));
     } finally {
-      setBusyId('');
+      setBusy(null);
     }
   };
 
   /**
-   * Close the pending confirmation and run the action it named.
+   * Run the action the open confirmation named, keeping the dialog up with
+   * its button working until the server answers.
    *
-   * Uninstall keeps the plugin's data folder; only a purge deletes it.
+   * The dialog closes only on success: a refusal stays in the sheet with the
+   * server's message, so the reader does not lose the confirmation they
+   * opened. Uninstall keeps the plugin's data folder; only a purge deletes it.
    */
-  const doConfirm = () => {
+  const doConfirm = async () => {
     if (!confirm) return;
     const { kind, record } = confirm;
-    setConfirm(null);
+    setConfirmError('');
+    let ok: boolean;
     if (kind === 'rollback') {
-      void run(record, async () => {
+      ok = await run(record, 'rollback', async () => {
         const res = await postMarket<{ from: string; to: string }>('/api/marketplace/rollback', { id: record.id });
         return `Rolled back ${record.name} from ${res.from} to ${res.to}.`;
-      });
+      }, reportConfirmFailure);
     } else {
-      void run(record, async () => {
+      ok = await run(record, 'uninstall', async () => {
         await postMarket('/api/marketplace/uninstall', { id: record.id });
         return `${record.name} uninstalled. Its data folder was kept.`;
-      });
+      }, reportConfirmFailure);
     }
+    if (ok) setConfirm(null);
   };
 
   /**
    * Delete the plugin's data and install record, then close the dialog.
    *
    * The literal `delete-data:<id>` is sent as the confirmation token; a
-   * refusal keeps the dialog open with the server's message.
+   * refusal keeps the dialog open with the server's message. If the watchdog
+   * released the reader and they left, a late refusal is announced on the
+   * page instead, and a late success still refetches the list and says so.
    */
   const doPurge = async () => {
     if (!purgeRecord) return;
-    setBusyId(purgeRecord.id);
+    setBusy({ id: purgeRecord.id, action: 'purge' });
     setPurgeError('');
     try {
       await postMarket('/api/marketplace/purge-data',
@@ -264,9 +378,11 @@ export function InstalledPage() {
       setPurgeRecord(null);
       await loadList();
     } catch (err) {
-      setPurgeError(marketErrorText(err));
+      const text = marketErrorText(err);
+      if (purgeOpenRef.current) setPurgeError(text);
+      else announce(text);
     } finally {
-      setBusyId('');
+      setBusy(null);
     }
   };
 
@@ -283,12 +399,31 @@ export function InstalledPage() {
       {error && <p className="mkt-error" role="alert">{error}</p>}
       {message && <p className="mkt-success" role="status">{message}</p>}
 
-      {load.kind === 'loading' && <p className="mkt-result-count" aria-busy="true">Loading installed plugins…</p>}
+      {load.kind === 'loading' && (
+        <div className="mkt-installed-skeleton" aria-busy="true">
+          <p className="mkt-result-count" role="status">Reading installed plugins…</p>
+          <ul className="mkt-installed" role="list" aria-hidden="true">
+            {[0, 1].map((n) => (
+              <li key={n}>
+                <div className="mkt-installed-card mkt-installed-skel">
+                  <span className="mkt-skel mkt-skel-title" />
+                  <span className="mkt-skel" />
+                  <span className="mkt-skel mkt-skel-short" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {load.kind === 'error' && (
         <div className="mkt-error-panel" role="alert">
           <h2>The installed list did not load</h2>
           <p>{load.message}</p>
-          <Button tone="secondary" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
+          <Button tone="secondary" disabled={retrying}
+                  pending={retryBusy} pendingLabel="Trying again…"
+                  onClick={() => { setRetrying(true); setAttempt((n) => n + 1); }}>
+            Try again
+          </Button>
         </div>
       )}
       {load.kind === 'ready' && load.data.plugins.length === 0 && (
@@ -302,9 +437,18 @@ export function InstalledPage() {
       )}
       {load.kind === 'ready' && load.data.plugins.length > 0 && (
         <ul className="mkt-installed" role="list">
-          {load.data.plugins.map((record) => (
+          {load.data.plugins.map((record) => {
+            const cannotRun = cannotRunIds.has(record.id);
+            const anyBusy = busy !== null;
+            const rowBusy = busy?.id === record.id;
+            /** True while this record's exact action is past the 100 ms gate. */
+            const pendingFor = (action: string) => (
+              busyShown && busy !== null && busy.id === record.id && busy.action === action
+            );
+            return (
             <li key={record.id}>
-              <article className="mkt-installed-card" aria-labelledby={`inst-${record.id}`}>
+              <article className="mkt-installed-card" aria-labelledby={`inst-${record.id}`}
+                       aria-busy={rowBusy ? 'true' : undefined}>
                 <div className="mkt-installed-head">
                   <div>
                     <h2 id={`inst-${record.id}`}>
@@ -320,15 +464,35 @@ export function InstalledPage() {
                     </p>
                   </div>
                   <div className="mkt-installed-flags">
-                    <span className="mkt-chip">Pilot: {pilotBudget(record.pilot)}</span>
+                    {cannotRun && <span className="mkt-chip" title="Cannot run on this desk">Cannot run on this desk</span>}
+                    <span className="mkt-chip" title={`Pilot: ${pilotBudget(record.pilot)}`}>Pilot: {pilotBudget(record.pilot)}</span>
                     <span className="w-note">Data {formatBytes(record.dataDirSize)}</span>
                     <span className="w-note">Validated {formatDate(record.status.checked_at)}</span>
                   </div>
                 </div>
 
-                {record.status.cause && <p className="mkt-attention">{record.status.cause}</p>}
+                {record.status.cause && !cannotRun && <p className="mkt-attention">{record.status.cause}</p>}
 
-                {record.pendingConsent ? (
+                {cannotRun && (
+                  <>
+                    <div className="mkt-attention">
+                      <strong>Cannot run on this desk.</strong>{' '}
+                      <span>This desk cannot read web pages yet, so this plugin cannot run here.</span>
+                    </div>
+                    <div className="mkt-actions">
+                      <Button tone="primary" disabled={anyBusy}
+                              onClick={() => { setConfirmError(''); setConfirm({ kind: 'uninstall', record }); }}>
+                        Uninstall
+                      </Button>
+                      <Button tone="secondary" disabled={anyBusy}
+                              onClick={() => { setPurgeError(''); setPurgeRecord(record); }}>
+                        Purge data
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {!cannotRun && (record.pendingConsent ? (
                   <div className="mkt-update-row">
                     <p>
                       <strong>Permission change needs review.</strong>{' '}
@@ -337,11 +501,12 @@ export function InstalledPage() {
                         : 'Open the review to see the staged scopes.'}
                     </p>
                     <div className="mkt-actions">
-                      <Button tone="primary" disabled={busyId === record.id}
+                      <Button tone="primary" disabled={anyBusy}
                               onClick={() => { setSheetError(''); setConsentRecord(record); }}>
                         Review update
                       </Button>
-                      <Button tone="secondary" disabled={busyId === record.id}
+                      <Button tone="secondary" disabled={anyBusy}
+                              pending={pendingFor('decline')} pendingLabel="Declining…"
                               onClick={() => void declineConsent(record)}>
                         Decline
                       </Button>
@@ -355,39 +520,47 @@ export function InstalledPage() {
                         ? `It adds ${record.update.widening.length} permission scope${record.update.widening.length === 1 ? '' : 's'}.`
                         : 'It asks for no new permissions.'}
                     </p>
-                    <Button tone="primary" disabled={busyId === record.id}
+                    <Button tone="primary" disabled={anyBusy}
+                            pending={pendingFor('update')} pendingLabel="Reviewing the update…"
                             onClick={() => void reviewUpdate(record)}>
                       Review and update
                     </Button>
                   </div>
                 ) : (
                   <p className="w-note">Up to date. No update is waiting.</p>
-                )}
+                ))}
 
-                <div className="mkt-actions mkt-installed-actions">
-                  <Button tone="secondary" disabled={busyId === record.id} onClick={() => void toggle(record)}>
-                    {record.enabled ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button tone="secondary" disabled={busyId === record.id}
-                          onClick={() => void toggleShare(record)}>
-                    {record.shared ? 'Stop sharing' : 'Share with peers'}
-                  </Button>
-                  <Button tone="secondary" disabled={busyId === record.id}
-                          onClick={() => setConfirm({ kind: 'rollback', record })}>
-                    Roll back
-                  </Button>
-                  <Button tone="secondary" disabled={busyId === record.id}
-                          onClick={() => { setPurgeError(''); setPurgeRecord(record); }}>
-                    Purge data
-                  </Button>
-                  <Button tone="secondary" disabled={busyId === record.id}
-                          onClick={() => setConfirm({ kind: 'uninstall', record })}>
-                    Uninstall
-                  </Button>
-                </div>
+                {!cannotRun && (
+                  <div className="mkt-actions mkt-installed-actions">
+                    <Button tone="secondary" disabled={anyBusy} onClick={() => void toggle(record)}
+                            pending={pendingFor(record.enabled ? 'disable' : 'enable')}
+                            pendingLabel={record.enabled ? 'Disabling…' : 'Enabling…'}>
+                      {record.enabled ? 'Disable' : 'Enable'}
+                    </Button>
+                    <Button tone="secondary" disabled={anyBusy}
+                            pending={pendingFor(record.shared ? 'unshare' : 'share')}
+                            pendingLabel={record.shared ? 'Stopping sharing…' : 'Sharing…'}
+                            onClick={() => void toggleShare(record)}>
+                      {record.shared ? 'Stop sharing' : 'Share with peers'}
+                    </Button>
+                    <Button tone="secondary" disabled={anyBusy}
+                            onClick={() => { setConfirmError(''); setConfirm({ kind: 'rollback', record }); }}>
+                      Roll back
+                    </Button>
+                    <Button tone="secondary" disabled={anyBusy}
+                            onClick={() => { setPurgeError(''); setPurgeRecord(record); }}>
+                      Purge data
+                    </Button>
+                    <Button tone="secondary" disabled={anyBusy}
+                            onClick={() => { setConfirmError(''); setConfirm({ kind: 'uninstall', record }); }}>
+                      Uninstall
+                    </Button>
+                  </div>
+                )}
               </article>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 
@@ -399,9 +572,9 @@ export function InstalledPage() {
         addedScopes={consentRecord?.update?.widening ?? []}
         canNever={canNeverFromScopes(consentRecord?.update?.scopes ?? [])}
         confirmLabel="Accept update"
-        busy={busyId === consentRecord?.id}
+        busy={busy?.id === consentRecord?.id}
         error={sheetError}
-        onCancel={() => { if (!busyId) setConsentRecord(null); }}
+        onCancel={() => { if (busy === null) setConsentRecord(null); }}
         onConfirm={() => void acceptConsent()}
       >
         {consentRecord && visibleScopes(consentRecord.update?.scopes ?? []).length === 0 && (
@@ -410,13 +583,14 @@ export function InstalledPage() {
       </ConsentSheet>
 
       {purgeRecord && (
-        <PurgeDialog record={purgeRecord} busy={busyId === purgeRecord.id} error={purgeError}
+        <PurgeDialog record={purgeRecord} busy={busy?.id === purgeRecord.id} error={purgeError}
                      onCancel={() => setPurgeRecord(null)} onConfirm={() => void doPurge()} />
       )}
 
       {confirm && (
         <div className="mkt-scrim" role="presentation">
-          <div ref={confirmFocus.sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-confirm-title" tabIndex={-1}>
+          <div ref={confirmFocus.sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true"
+               aria-labelledby="mkt-confirm-title" aria-busy={busy !== null ? 'true' : undefined} tabIndex={-1}>
             <div className="mkt-sheet-head">
               <h2 id="mkt-confirm-title">
                 {confirm.kind === 'rollback' ? `Roll back ${confirm.record.name}` : `Uninstall ${confirm.record.name}`}
@@ -426,12 +600,20 @@ export function InstalledPage() {
               <p>{confirm.kind === 'rollback'
                 ? 'The previous installed version becomes active. The current version stays in history.'
                 : 'The plugin stops running. Its data folder is kept until you purge it.'}</p>
+              {confirmStuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
+              {confirmError && <p className="mkt-error" role="alert">{confirmError}</p>}
             </div>
             <div className="mkt-sheet-foot">
-              <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary" onClick={() => setConfirm(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={doConfirm}>
-                {confirm.kind === 'rollback' ? 'Roll back' : 'Uninstall'}
+              <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary"
+                      disabled={busy !== null && !confirmStuck} onClick={() => setConfirm(null)}>
+                Cancel
               </button>
+              <Button tone="primary" disabled={busy !== null}
+                      pending={busyShown}
+                      pendingLabel={confirm.kind === 'rollback' ? 'Rolling back…' : 'Uninstalling…'}
+                      onClick={() => void doConfirm()}>
+                {confirm.kind === 'rollback' ? 'Roll back' : 'Uninstall'}
+              </Button>
             </div>
           </div>
         </div>

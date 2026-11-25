@@ -330,7 +330,7 @@ class PluginWidgetRunner:
                     "state": "setup",
                 }
         if not widgets:
-            return self._attention("plugin contributes no widget")
+            return self._attention("This plugin adds no card to your dashboard.")
         source = widgets[0].get("dataSource", {}) if isinstance(widgets[0], dict) else {}
         source_type = str(source.get("type", ""))
         if source_type in PIPELINE_TYPES:
@@ -395,6 +395,16 @@ class PluginWidgetRunner:
         return ExcelWatch(conn, source=f"plugin:{plugin_id}")
 
     # ---- observation ----
+
+    @property
+    def has_network(self) -> bool:
+        """True when this runner carries an HTTP transport for plugin sources.
+
+        Production builds the runner without one, so a plugin that reads the
+        web is honestly unrunnable here; the marketplace reports the same
+        fact so a surface never offers a path that cannot work.
+        """
+        return self._http_transport is not None
 
     def attached(self, plugin_id: str) -> bool:
         """Report whether the runner holds any state for the plugin.
@@ -1335,6 +1345,7 @@ class PluginWidgetRunner:
         """Build a not-yet-run status whose ``cause`` is the reason the user is shown.
 
         No ``state`` is reported: this describes the runner's own refusal, not a state
-        the data source produced.
+        the data source produced. ``checked_at`` stays empty because nothing ran, so
+        the card cannot show the page load time as the plugin's last run.
         """
-        return {"status": "attention", "cause": cause, "checked_at": _iso(None)}
+        return {"status": "attention", "cause": cause, "checked_at": ""}

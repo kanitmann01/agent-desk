@@ -13,6 +13,7 @@
 // selects, Escape clears. Below 560px the picture becomes a list.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { getJson } from '../api';
+import { SkeletonLine, useBusy, useWaitPhase } from './feedback';
 import { Glyph, GlyphShape } from './Glyph';
 import { STEP_GLYPH, STEP_LABEL, glyphFor, kindWord, relation, stepUnit, when } from './copy';
 import { COLUMNS, GAP, PILL, fitLabel, layoutGraph, lineage, neighbourFor, type Layout, type Placed } from './layout';
@@ -45,9 +46,9 @@ export interface MemoryGraphProps {
 /**
  * The provenance graph: read the store's rows, then draw them or say why not.
  *
- * One read per endpoint and reloadKey; loading and failure each replace the
- * picture with a single quiet line, so the section always has something to
- * show.
+ * One read per endpoint and reloadKey. Once a picture exists a re-read keeps
+ * it on screen (dimmed, one line) instead of replacing it; a failed re-read
+ * says the picture is the previous one and offers another try.
  */
 export default function MemoryGraph({
   endpoint = '/api/memory/graph',
@@ -59,6 +60,10 @@ export default function MemoryGraph({
   onRemove,
 }: MemoryGraphProps) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
+  const loadRef = useRef<Load>({ state: 'loading' });
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,28 +72,50 @@ export default function MemoryGraph({
 
   useEffect(() => {
     let live = true;
+    const initial = loadRef.current.state !== 'ready';
+    if (!initial) setRefreshing(true);
     getJson(endpoint)
       .then((res) => {
         if (!live) return;
-        if (res.ok) setLoad({ state: 'ready', data: res.data as MemoryGraphData });
-        else if (res.status === 401) setLoad({ state: 'failed', message: 'Your session ended. Open the app from its shortcut to get a fresh link.' });
-        else {
-          const error = (res.data as { error?: string }).error;
-          setLoad({ state: 'failed', message: error ? `The graph could not be read: ${error}` : 'The graph could not be read.' });
+        if (res.ok) {
+          const next: Load = { state: 'ready', data: res.data as MemoryGraphData };
+          loadRef.current = next;
+          setLoad(next);
+          setRefreshError(null);
+        } else {
+          const message = res.status === 401
+            ? 'Your session ended. Open the app from its shortcut to get a fresh link.'
+            : ((res.data as { error?: string }).error
+              ? `The graph could not be read: ${(res.data as { error?: string }).error}`
+              : 'The graph could not be read.');
+          if (initial) {
+            const next: Load = { state: 'failed', message };
+            loadRef.current = next;
+            setLoad(next);
+          } else {
+            setRefreshError(`${message} You are looking at the previous picture.`);
+          }
         }
       })
-      .catch(() => live && setLoad({ state: 'failed', message: 'The graph could not reach its own server.' }));
+      .catch(() => {
+        if (!live) return;
+        const message = 'The graph could not reach its own server.';
+        if (initial) {
+          const next: Load = { state: 'failed', message };
+          loadRef.current = next;
+          setLoad(next);
+        } else {
+          setRefreshError(`${message} You are looking at the previous picture.`);
+        }
+      })
+      .finally(() => live && setRefreshing(false));
     return () => {
       live = false;
     };
-  }, [endpoint, reloadKey]);
+  }, [endpoint, reloadKey, retryKey]);
 
   if (load.state === 'loading') {
-    return (
-      <section className="mg" aria-busy="true" aria-label="Memory graph">
-        <p className="mg-quiet" role="status">Reading memory…</p>
-      </section>
-    );
+    return <GraphLoading />;
   }
   if (load.state === 'failed') {
     return (
@@ -99,7 +126,73 @@ export default function MemoryGraph({
   }
   return (
     <Ready data={load.data} mode={mode} selected={selected} onSelect={setSelected}
-      initialWidth={initialWidth} chrome={chrome} onRemove={onRemove} />
+      initialWidth={initialWidth} chrome={chrome} onRemove={onRemove}
+      refreshing={refreshing} refreshError={refreshError}
+      onRetry={() => { setRefreshError(null); setRetryKey((n) => n + 1); }} />
+  );
+}
+
+/** One quiet refresh line, never a wipe of the picture that is already there. */
+function GraphRefreshLine({ active, error, onRetry }: { active: boolean; error: string | null; onRetry: () => void }) {
+  const busy = useBusy(active);
+  if (error) {
+    return (
+      <p className="mg-refresh-line" role="alert">
+        {error}
+        <button type="button" className="mg-retry" onClick={onRetry}>Try again</button>
+      </p>
+    );
+  }
+  if (!busy) return null;
+  return (
+    <p className="mg-refresh-line" role="status">
+      <span className="mem-busy-dot" aria-hidden="true" />
+      Refreshing the graph…
+    </p>
+  );
+}
+
+/** The first wait, shaped like the graph it will become. */
+function GraphLoading() {
+  const phase = useWaitPhase(true);
+  return (
+    <section className={`mg${phase === 'idle' ? '' : ' mg-skeleton'}`} aria-busy="true" aria-label="Memory graph">
+      {phase !== 'idle' && (
+        <>
+          <p className="mg-feedback-phase" role="status">Reading the graph…</p>
+          <header className="mg-head" aria-hidden="true">
+            <div>
+              <SkeletonLine className="mem-skeleton-title" />
+              <SkeletonLine />
+            </div>
+          </header>
+          <ol className="mg-pipeline" aria-hidden="true">
+            {[0, 1, 2, 3, 4, 5].map((index) => (
+              <li className="mg-step" key={index}>
+                <SkeletonLine className="mem-skeleton-short" />
+                <SkeletonLine className="mem-skeleton-block" />
+                <SkeletonLine />
+              </li>
+            ))}
+          </ol>
+          <div className="mg-body" aria-hidden="true">
+            <div className="mg-canvas">
+              <div className="mg-picture">
+                <SkeletonLine className="mem-skeleton-title" />
+                <SkeletonLine />
+                <SkeletonLine />
+                <SkeletonLine className="mem-skeleton-short" />
+              </div>
+            </div>
+            <aside className="mg-detail">
+              <SkeletonLine className="mem-skeleton-short" />
+              <SkeletonLine />
+              <SkeletonLine />
+            </aside>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -117,6 +210,9 @@ function Ready({
   initialWidth,
   chrome = true,
   onRemove,
+  refreshing,
+  refreshError,
+  onRetry,
 }: {
   data: MemoryGraphData;
   mode: 'page' | 'full';
@@ -125,6 +221,9 @@ function Ready({
   initialWidth?: number;
   chrome?: boolean;
   onRemove?: (node: GraphNode) => void;
+  refreshing: boolean;
+  refreshError: string | null;
+  onRetry: () => void;
 }) {
   const facts = data.nodes.filter((node) => node.kind === 'fact');
   const entities = data.nodes.filter((node) => node.kind === 'entity');
@@ -134,7 +233,10 @@ function Ready({
   const chosen = selected ? byId.get(selected) ?? null : null;
 
   return (
-    <section className={`mg mg-${mode}${chrome ? '' : ' mg-bare'}`} aria-label={chrome ? undefined : 'Provenance graph'} aria-labelledby={chrome ? 'mg-title' : undefined}>
+    <section className={`mg mg-${mode}${chrome ? '' : ' mg-bare'}${refreshing ? ' is-refreshing' : ''}`}
+      aria-busy={refreshing || undefined}
+      aria-label={chrome ? undefined : 'Provenance graph'} aria-labelledby={chrome ? 'mg-title' : undefined}>
+      <GraphRefreshLine active={refreshing} error={refreshError} onRetry={onRetry} />
       {chrome && (<>
       <header className="mg-head">
         <div>
@@ -149,17 +251,20 @@ function Ready({
       </header>
 
       <ol className="mg-pipeline" aria-label="How a knowledge point is made">
-        {data.pipeline.map((step, index) => (
-          <li key={step.step} className="mg-step">
-            <span className="mg-step-top">
-              <span className="mg-step-index mono">{String(index + 1).padStart(2, '0')}</span>
-              <Glyph kind={STEP_GLYPH[step.step]} />
-              <span className="mg-step-name">{STEP_LABEL[step.step]}</span>
-            </span>
-            <span className="mg-step-count mono">{stepUnit(step.step, step.count, step.waiting)}</span>
-            <span className="mg-step-text">{step.text}</span>
-          </li>
-        ))}
+        {data.pipeline.map((step, index) => {
+          const unit = stepUnit(step.step, step.count, step.waiting);
+          return (
+            <li key={step.step} className="mg-step">
+              <span className="mg-step-top">
+                <span className="mg-step-index mono">{String(index + 1).padStart(2, '0')}</span>
+                <Glyph kind={STEP_GLYPH[step.step]} />
+                <span className="mg-step-name" title={STEP_LABEL[step.step]}>{STEP_LABEL[step.step]}</span>
+              </span>
+              <span className="mg-step-count mono" tabIndex={0} title={unit}>{unit}</span>
+              <span className="mg-step-text">{step.text}</span>
+            </li>
+          );
+        })}
       </ol>
       </>)}
 
@@ -188,7 +293,7 @@ function EmptyGraph() {
       <div className="mg-empty-ghost" aria-hidden="true">
         {COLUMNS.map((column) => (
           <div key={column.id} className="mg-empty-col" style={{ flexGrow: column.weight }}>
-            <span className="mg-col-title">{column.title}</span>
+            <span className="mg-col-title" title={column.title}>{column.title}</span>
             <span className="mg-ghost-pill" />
             <span className="mg-ghost-pill short" />
           </div>
@@ -403,7 +508,7 @@ function GraphPicture({
     <div className="mg-picture">
       <div className="mg-cols" aria-hidden="true">
         {layout.columns.map((entry) => (
-          <span key={entry.column.id} className="mg-col-title" style={{ left: entry.x, width: entry.width }}>
+          <span key={entry.column.id} className="mg-col-title" title={entry.column.title} style={{ left: entry.x, width: entry.width }}>
             {entry.column.title}
           </span>
         ))}

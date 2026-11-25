@@ -14,8 +14,9 @@
 // routes: /settings/toggle, /memory/add, /memory/<id>/edit, the inbox
 // card routes for review, /api/memory/remove(/preview),
 // /api/memory/undo and /api/memory/facts/<id>/keep.
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { getJson, postJson } from '../../api';
+import { SkeletonLine, WaitButton, WaitLine, useBusy, useWaitPhase } from '../feedback';
 import {
   CHANNEL_HINT, channelList, count, LIST_CAP, methodLabel, observationWriter, removeLabel, removedSummary, stamp, TARGET_NOUN,
 } from './copy';
@@ -27,6 +28,9 @@ type Load =
   | { state: 'loading' }
   | { state: 'ready'; data: LoopState }
   | { state: 'failed'; message: string };
+
+type Outcome = { ok: true; data: unknown } | { ok: false; message: string };
+type Ack = { ok: boolean; message?: string };
 
 type Tab = 'facts' | 'entities' | 'sources' | 'observations';
 
@@ -65,20 +69,47 @@ async function errorOf(res: { status: number; data: unknown }, fallback: string)
  */
 export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 8000 }: MemoryLoopProps) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
+  const loadRef = useRef<Load>({ state: 'loading' });
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [plan, setPlan] = useState<RemovalPlan | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [undo, setUndo] = useState<Undo | null>(null);
   const [removedCount, setRemovedCount] = useState(0);
   const [tab, setTab] = useState<Tab>('facts');
   const [filter, setFilter] = useState('');
 
   const refresh = useCallback(async () => {
+    const initial = loadRef.current.state !== 'ready';
+    if (!initial) setRefreshing(true);
     try {
       const res = await getJson(endpoint);
-      if (res.ok) setLoad({ state: 'ready', data: res.data as LoopState });
-      else setLoad({ state: 'failed', message: await errorOf(res, 'Memory could not be read.') });
+      if (res.ok) {
+        const next: Load = { state: 'ready', data: res.data as LoopState };
+        loadRef.current = next;
+        setLoad(next);
+        setRefreshError(null);
+      } else {
+        const message = await errorOf(res, 'Memory could not be read.');
+        if (initial) {
+          const next: Load = { state: 'failed', message };
+          loadRef.current = next;
+          setLoad(next);
+        } else {
+          setRefreshError(`${message} You are looking at the previous content.`);
+        }
+      }
     } catch {
-      setLoad({ state: 'failed', message: 'The page could not reach its own server.' });
+      if (initial) {
+        const next: Load = { state: 'failed', message: 'The page could not reach its own server.' };
+        loadRef.current = next;
+        setLoad(next);
+      } else {
+        setRefreshError('The page could not reach its own server. You are looking at the previous content.');
+      }
+    } finally {
+      setRefreshing(false);
     }
   }, [endpoint]);
 
@@ -94,55 +125,58 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
     return () => window.clearInterval(timer);
   }, [pollMs, refresh]);
 
-  const act = useCallback(async (url: string, body: unknown, failure: string): Promise<unknown | null> => {
+  /** One write, with its failure message kept for the place that asks. */
+  const actOutcome = useCallback(async (url: string, body: unknown, failure: string): Promise<Outcome> => {
     try {
       const res = await postJson(url, body);
-      if (!res.ok) {
-        setNotice(await errorOf(res, failure));
-        return null;
-      }
-      return res.data;
+      if (res.ok) return { ok: true, data: res.data };
+      return { ok: false, message: await errorOf(res, failure) };
     } catch {
-      setNotice('The page could not reach its own server; nothing changed.');
-      return null;
+      return { ok: false, message: 'The page could not reach its own server; nothing changed.' };
     }
   }, []);
 
-  const askRemoval = useCallback(async (type: TargetType, id: number) => {
-    const data = await act('/api/memory/remove/preview', { target: { type, id } }, 'That could not be checked.');
-    if (data) setPlan((data as { plan: RemovalPlan }).plan);
-  }, [act]);
+  const askRemoval = useCallback(async (type: TargetType, id: number): Promise<Ack> => {
+    setPreviewing(true);
+    const outcome = await actOutcome('/api/memory/remove/preview', { target: { type, id } }, 'That could not be checked.');
+    setPreviewing(false);
+    if (!outcome.ok) return { ok: false, message: outcome.message };
+    setPlan((outcome.data as { plan: RemovalPlan }).plan);
+    return { ok: true };
+  }, [actOutcome]);
 
-  const confirmRemoval = useCallback(async () => {
-    if (!plan) return;
-    const data = await act('/api/memory/remove', { target: { type: plan.target.type, id: plan.target.id } }, 'Nothing was removed.');
+  const confirmRemoval = useCallback(async (): Promise<Ack> => {
+    if (!plan) return { ok: false, message: 'Nothing was removed.' };
+    const outcome = await actOutcome('/api/memory/remove', { target: { type: plan.target.type, id: plan.target.id } }, 'Nothing was removed.');
+    if (!outcome.ok) return { ok: false, message: outcome.message };
     setPlan(null);
-    if (!data) return;
-    const answer = data as { removed: RemovalDone; undo: { token: string; expiresTs: number } };
+    const answer = outcome.data as { removed: RemovalDone; undo: { token: string; expiresTs: number } };
+    const ready = loadRef.current;
     setUndo({
       token: answer.undo.token, expiresTs: answer.undo.expiresTs,
-      windowS: load.state === 'ready' ? load.data.undoWindowS : 30, summary: removedSummary(answer.removed),
+      windowS: ready.state === 'ready' ? ready.data.undoWindowS : 30, summary: removedSummary(answer.removed),
     });
     setRemovedCount((n) => n + (answer.removed.facts.length || 1));
     await refresh();
-  }, [act, plan, refresh, load]);
+    return { ok: true };
+  }, [actOutcome, plan, refresh]);
 
-  const runUndo = useCallback(async () => {
-    if (!undo) return;
-    const data = await act('/api/memory/undo', { token: undo.token }, 'The removal could not be undone.');
+  const runUndo = useCallback(async (): Promise<Ack> => {
+    if (!undo) return { ok: false, message: 'The removal could not be undone.' };
+    const outcome = await actOutcome('/api/memory/undo', { token: undo.token }, 'The removal could not be undone.');
+    if (!outcome.ok) return { ok: false, message: outcome.message };
     setUndo(null);
-    if (data) {
-      setRemovedCount(0);
-      setNotice('Removal undone. Everything it touched is back.');
-    }
+    setRemovedCount(0);
+    setNotice('Removal undone. Everything it touched is back.');
     await refresh();
-  }, [act, undo, refresh]);
+    return { ok: true };
+  }, [actOutcome, undo, refresh]);
 
   const closePlan = useCallback(() => setPlan(null), []);
   const dropUndo = useCallback(() => setUndo(null), []);
 
   if (load.state === 'loading') {
-    return <div className="ml"><p className="ml-quiet" role="status">Reading memory…</p></div>;
+    return <LoopLoading />;
   }
   if (load.state === 'failed') {
     return (
@@ -154,9 +188,10 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
   const data = load.data;
 
   return (
-    <div className="ml">
+    <div className={`ml${refreshing ? ' ml-is-refreshing' : ''}`} aria-busy={refreshing || undefined}>
       <Header data={data} />
       <Flow data={data} removedCount={removedCount} />
+      <RefreshLine active={refreshing} error={refreshError} onRetry={() => { setRefreshError(null); void refresh(); }} />
       {notice && (
         <p className="ml-notice" role="status">
           {notice}
@@ -164,10 +199,10 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
         </p>
       )}
       <div className="ml-grid">
-        <Review data={data} act={act} onChanged={() => refresh()} />
+        <Review data={data} actOutcome={actOutcome} onChanged={() => refresh()} />
         <div className="ml-side">
-          <CaptureSettings data={data} act={act} onChanged={() => refresh()} />
-          <AddFact act={act} onChanged={() => refresh()} />
+          <CaptureSettings data={data} actOutcome={actOutcome} onChanged={() => refresh()} />
+          <AddFact actOutcome={actOutcome} onChanged={() => refresh()} />
         </div>
         <Knowledge
           data={data}
@@ -177,31 +212,113 @@ export default function MemoryLoop({ endpoint = '/api/memory/loop', pollMs = 800
           onFilter={setFilter}
           onRemove={askRemoval}
           onKeep={async (id) => {
-            if (await act(`/api/memory/facts/${id}/keep`, {}, 'That fact could not be kept.')) await refresh();
+            const outcome = await actOutcome(`/api/memory/facts/${id}/keep`, {}, 'That fact could not be kept.');
+            if (!outcome.ok) return outcome;
+            await refresh();
+            return { ok: true };
           }}
           onEdit={async (id, text) => {
-            const data = await act(`/memory/${id}/edit`, { text }, 'The edit was not saved.');
-            if (data && (data as { mergedIntoExisting?: boolean }).mergedIntoExisting) {
-              setNotice('That edit matched a fact already saved with the same words, so the two were merged into one.');
-            }
-            if (data) await refresh();
-            return data !== null;
+            const outcome = await actOutcome(`/memory/${id}/edit`, { text }, 'The edit was not saved.');
+            if (!outcome.ok) return outcome;
+            const merged = Boolean((outcome.data as { mergedIntoExisting?: boolean }).mergedIntoExisting);
+            if (merged) setNotice('That edit matched a fact already saved with the same words, so the two were merged into one.');
+            await refresh();
+            return { ok: true, merged };
           }}
           onReflect={async () => {
-            const res = await act('/memory/reflect', {}, 'Observations could not be derived.');
-            if (res && (res as { status?: string }).status === 'degraded') setNotice((res as { cause: string }).cause);
-            else if (res) setNotice('The AI proposed observations; they are waiting in the review queue.');
+            const outcome = await actOutcome('/memory/reflect', {}, 'Observations could not be derived.');
+            if (!outcome.ok) return outcome;
             await refresh();
+            return { ok: true, data: outcome.data };
           }}
         />
       </div>
+      {previewing && <RemovePreviewSkeleton />}
       {plan && <RemoveDialog plan={plan} onCancel={closePlan} onConfirm={confirmRemoval} />}
       {undo && <UndoBar undo={undo} onUndo={runUndo} onExpire={dropUndo} />}
     </div>
   );
 }
 
-type Act = (url: string, body: unknown, failure: string) => Promise<unknown | null>;
+type ActOutcome = (url: string, body: unknown, failure: string) => Promise<Outcome>;
+
+/** One place for the quiet refresh line and its failure, never a wipe. */
+function RefreshLine({ active, error, onRetry }: { active: boolean; error: string | null; onRetry: () => void }) {
+  const busy = useBusy(active);
+  if (error) {
+    return (
+      <p className="ml-refresh-line" role="alert">
+        {error}
+        <button type="button" className="ml-text-btn" onClick={onRetry}>Try again</button>
+      </p>
+    );
+  }
+  if (!busy) return null;
+  return (
+    <p className="ml-refresh-line" role="status">
+      <span className="mem-busy-dot" aria-hidden="true" />
+      Refreshing memory…
+    </p>
+  );
+}
+
+/** The first wait, shaped like the page it will become. */
+function LoopLoading() {
+  const phase = useWaitPhase(true);
+  return (
+    <div className={`ml${phase === 'idle' ? '' : ' ml-skeleton'}`} aria-busy="true">
+      {phase !== 'idle' && (
+        <>
+          <p className="ml-feedback-phase" role="status">Reading your memory…</p>
+          <div className="ml-head" aria-hidden="true"><SkeletonLine className="mem-skeleton-title" /></div>
+          <div className="ml-flow" aria-hidden="true">
+            {[0, 1, 2, 3].map((index) => (
+              <div className="ml-step" key={index}>
+                <div className="ml-step-link">
+                  <SkeletonLine className="mem-skeleton-short" />
+                  <SkeletonLine className="mem-skeleton-block" />
+                  <SkeletonLine />
+                  <SkeletonLine className="mem-skeleton-short" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="ml-grid" aria-hidden="true">
+            <section className="ml-tile ml-span-8">
+              <SkeletonLine className="mem-skeleton-title" />
+              <SkeletonLine />
+              <SkeletonLine />
+            </section>
+            <div className="ml-side">
+              <section className="ml-tile">
+                <SkeletonLine className="mem-skeleton-short" />
+                <SkeletonLine />
+                <SkeletonLine />
+              </section>
+              <section className="ml-tile">
+                <SkeletonLine className="mem-skeleton-short" />
+                <SkeletonLine className="mem-skeleton-block" />
+              </section>
+            </div>
+            <section className="ml-tile ml-span-12">
+              <SkeletonLine className="mem-skeleton-title" />
+              <div className="ml-rows">
+                {[0, 1].map((index) => (
+                  <div className="ml-row" key={index}>
+                    <div className="ml-row-main">
+                      <SkeletonLine />
+                      <SkeletonLine className="mem-skeleton-short" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /**
  * The page's state line. The page title is the server's, rendered above
@@ -270,7 +387,7 @@ function Flow({ data, removedCount }: { data: LoopState; removedCount: number })
               {step.mark && <span className="ml-chip-quiet">{step.mark}</span>}
             </span>
             <span className="ml-figure">{step.figure}</span>
-            <span className="ml-step-unit">{step.unit}</span>
+            <span className="ml-step-unit" title={step.unit}>{step.unit}</span>
             <span className="ml-step-line">{step.line}</span>
           </a>
         </li>
@@ -282,35 +399,64 @@ function Flow({ data, removedCount }: { data: LoopState; removedCount: number })
 /**
  * The review queue, with "Approve all" once there is more than one candidate.
  *
- * Approve-all accepts the candidates in order and stays disabled while any
- * decision is in flight.
+ * Each decision holds its own button, one at a time; approve-all walks the
+ * queue and reports the honest count where the queue is.
  */
-function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
+function Review({ data, actOutcome, onChanged }: { data: LoopState; actOutcome: ActOutcome; onChanged: () => void }) {
+  const [pending, setPending] = useState<{ cardId: string; decision: 'accept' | 'dismiss' } | null>(null);
+  const [all, setAll] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
+  const [error, setError] = useState<{ cardId: string; decision: 'accept' | 'dismiss'; message: string } | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const blocked = pending !== null || all;
+
   /**
    * Approve or reject one candidate, saving an edited text first.
    *
-   * A text that differs from the candidate's own is written through the card's
-   * edit route before the decision; a failed edit leaves the candidate undecided
-   * and the queue unchanged.
+   * A failed edit or decision stays on the card, with what was typed kept;
+   * the next attempt starts from the same text.
    */
   const decide = async (candidate: Candidate, decision: 'accept' | 'dismiss', text?: string) => {
-    setBusy(candidate.cardId);
+    if (blocked) return;
+    setPending({ cardId: candidate.cardId, decision });
+    setError(null);
+    setResult(null);
     if (decision === 'accept' && text !== undefined && text.trim() && text.trim() !== candidate.text) {
-      const edited = await act(`/inbox/cards/${candidate.cardId}/edit`, { draft: text.trim() }, 'The edit was not saved.');
-      if (!edited) { setBusy(null); return; }
+      const edited = await actOutcome(`/inbox/cards/${candidate.cardId}/edit`, { draft: text.trim() }, 'The edit was not saved.');
+      if (!edited.ok) {
+        setPending(null);
+        setError({ cardId: candidate.cardId, decision, message: edited.message });
+        return;
+      }
     }
-    await act(`/inbox/cards/${candidate.cardId}/${decision}`, {}, decision === 'accept' ? 'It was not saved.' : 'It was not rejected.');
-    setBusy(null);
+    const saved = await actOutcome(`/inbox/cards/${candidate.cardId}/${decision}`, {},
+      decision === 'accept' ? 'It was not saved.' : 'It was not rejected.');
+    setPending(null);
+    if (!saved.ok) {
+      setError({ cardId: candidate.cardId, decision, message: saved.message });
+      return;
+    }
+    setResult(decision === 'accept' ? 'Saved. The fact is now in stored knowledge.' : 'Rejected. The candidate was dismissed.');
     onChanged();
   };
-  /** Accept every candidate in order, going on past one that fails. */
+  /** Accept every candidate in order, counting the ones that fail. */
   const approveAll = async () => {
-    setBusy('all');
+    if (blocked) return;
+    const total = data.candidates.length;
+    setAll(true);
+    setProgress({ done: 0, total, failed: 0 });
+    setError(null);
+    setResult(null);
+    let failed = 0;
+    let processed = 0;
     for (const candidate of data.candidates) {
-      await act(`/inbox/cards/${candidate.cardId}/accept`, {}, 'One candidate was not saved.');
+      const saved = await actOutcome(`/inbox/cards/${candidate.cardId}/accept`, {}, 'One candidate was not saved.');
+      if (!saved.ok) failed += 1;
+      processed += 1;
+      setProgress({ done: processed, total, failed });
     }
-    setBusy(null);
+    setAll(false);
+    setResult(`Approved ${total - failed} of ${total}. ${failed ? `${failed} could not be saved.` : 'All were saved.'}`);
     onChanged();
   };
   return (
@@ -319,9 +465,16 @@ function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged
         <h2 className="ml-tag" id="ml-review-h">Review</h2>
         <span className="ml-tile-count">{count(data.candidates.length, 'candidate')}</span>
         {data.candidates.length > 1 && (
-          <button type="button" className="ml-btn" disabled={busy !== null} onClick={approveAll}>Approve all</button>
+          <WaitButton className="ml-btn" active={all} disabled={pending !== null} idle="Approve all"
+            working={`Approving ${progress.done} of ${progress.total}...`} onClick={approveAll} />
         )}
       </div>
+      {result && <p className="ml-feedback-result" role="status">{result}</p>}
+      {all && (
+        <WaitLine active working={`Approving ${progress.done} of ${progress.total} candidates…`}
+          slow="Still approving candidates… This is taking longer than usual. You can leave this page."
+          className="ml-feedback-phase" />
+      )}
       {data.candidates.length === 0 ? (
         <div className="ml-empty">
           <p className="ml-empty-title">Nothing to review</p>
@@ -336,7 +489,11 @@ function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged
       ) : (
         <ul className="ml-cands">
           {data.candidates.map((candidate) => (
-            <CandidateItem key={candidate.cardId} candidate={candidate} busy={busy !== null} onDecide={decide} />
+            <CandidateItem key={candidate.cardId} candidate={candidate}
+              pending={pending?.cardId === candidate.cardId ? pending.decision : null}
+              blocked={blocked}
+              error={error?.cardId === candidate.cardId ? error : null}
+              onDecide={decide} />
           ))}
         </ul>
       )}
@@ -350,14 +507,17 @@ function Review({ data, act, onChanged }: { data: LoopState; act: Act; onChanged
  * Only facts can be edited, and an edited text travels with the approval. The
  * excerpt and the cited facts open in place.
  */
-function CandidateItem({ candidate, busy, onDecide }: {
+function CandidateItem({ candidate, pending, blocked, error, onDecide }: {
   candidate: Candidate;
-  busy: boolean;
+  pending: 'accept' | 'dismiss' | null;
+  blocked: boolean;
+  error: { decision: 'accept' | 'dismiss'; message: string } | null;
   onDecide: (candidate: Candidate, decision: 'accept' | 'dismiss', text?: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(candidate.text);
   const id = `ml-cand-${candidate.cardId}`;
+  const edited = editing ? text : undefined;
   return (
     <li className="ml-cand" aria-labelledby={`${id}-text`}>
       <div className="ml-cand-meta">
@@ -391,18 +551,31 @@ function CandidateItem({ candidate, busy, onDecide }: {
         </details>
       )}
       <div className="ml-actions">
-        <button type="button" className="ml-btn ml-btn-primary" disabled={busy}
-          onClick={() => onDecide(candidate, 'accept', editing ? text : undefined)}>
-          {editing ? 'Save edited' : 'Approve'}
-        </button>
+        <WaitButton className="ml-btn ml-btn-primary" active={pending === 'accept'} disabled={blocked}
+          idle={editing ? 'Save edited' : 'Approve'} working="Saving..."
+          onClick={() => onDecide(candidate, 'accept', editing ? text : undefined)} />
         {!editing && candidate.type === 'fact' && (
-          <button type="button" className="ml-btn" disabled={busy} onClick={() => setEditing(true)}>Edit</button>
+          <button type="button" className="ml-btn" disabled={blocked} onClick={() => setEditing(true)}>Edit</button>
         )}
         {editing && (
-          <button type="button" className="ml-btn" onClick={() => { setEditing(false); setText(candidate.text); }}>Cancel edit</button>
+          <button type="button" className="ml-btn" disabled={pending !== null}
+            onClick={() => { setEditing(false); setText(candidate.text); }}>Cancel edit</button>
         )}
-        <button type="button" className="ml-btn" disabled={busy} onClick={() => onDecide(candidate, 'dismiss')}>Reject</button>
+        <WaitButton className="ml-btn" active={pending === 'dismiss'} disabled={blocked}
+          idle="Reject" working="Rejecting..." onClick={() => onDecide(candidate, 'dismiss')} />
       </div>
+      {pending && (
+        <WaitLine active working={pending === 'dismiss' ? 'Rejecting this candidate…' : 'Saving this fact…'}
+          slow="Still saving… This is taking longer than usual. You can leave this page."
+          className="ml-feedback-phase" />
+      )}
+      {error && (
+        <p className="ml-feedback-error" role="alert">
+          {error.message}
+          <button type="button" className="ml-text-btn"
+            onClick={() => onDecide(candidate, error.decision, edited)}>Try again</button>
+        </p>
+      )}
     </li>
   );
 }
@@ -411,11 +584,13 @@ function CandidateItem({ candidate, busy, onDecide }: {
  * A labelled on/off row: the label and optional hint, then the switch.
  *
  * The visible label is the button's accessible name; disabled marks the row as
- * well as the button.
+ * well as the button. A pending switch says so at 100 ms and names the wait
+ * under the row from one second.
  */
-function Switch({ id, label, hint, on, disabled, onToggle }: {
-  id: string; label: string; hint?: string; on: boolean; disabled?: boolean; onToggle: () => void;
+function Switch({ id, label, hint, on, disabled, pending = false, onToggle }: {
+  id: string; label: string; hint?: string; on: boolean; disabled?: boolean; pending?: boolean; onToggle: () => void;
 }) {
+  const busy = useBusy(pending);
   return (
     <div className={`ml-switch-row${disabled ? ' is-disabled' : ''}`}>
       <span className="ml-switch-label" id={`${id}-label`}>
@@ -423,9 +598,14 @@ function Switch({ id, label, hint, on, disabled, onToggle }: {
         {hint && <span className="ml-switch-hint">{hint}</span>}
       </span>
       <button type="button" role="switch" aria-checked={on} aria-labelledby={`${id}-label`}
-        className="ml-switch" disabled={disabled} onClick={onToggle}>
+        className="ml-switch" disabled={disabled || pending} aria-busy={busy || undefined} onClick={onToggle}>
         <span className="ml-switch-knob" />
       </button>
+      {pending && (
+        <WaitLine active working={`Saving ${label}…`}
+          slow="Still saving this setting… This is taking longer than usual. You can leave this page."
+          className="ml-feedback-phase ml-switch-wait" />
+      )}
     </div>
   );
 }
@@ -433,13 +613,38 @@ function Switch({ id, label, hint, on, disabled, onToggle }: {
 /**
  * Learning settings: what is read from, and whether a found fact waits.
  *
- * Each switch writes one setting and re-reads the page. The channel list and
- * the review choice are disabled while capture itself is off.
+ * Each switch writes one setting and re-reads the page. One setting at a
+ * time: the switch holds until the store answers, and a refusal stays in
+ * the tile with the switch unchanged.
  */
-function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; onChanged: () => void }) {
+function CaptureSettings({ data, actOutcome, onChanged }: { data: LoopState; actOutcome: ActOutcome; onChanged: () => void }) {
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [pendingAuto, setPendingAuto] = useState<'ask' | 'auto' | null>(null);
+  const [error, setError] = useState<{ key: string; message: string } | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const askBusy = useBusy(pendingKey === 'memory_auto_approve' && pendingAuto === 'ask');
+  const autoBusy = useBusy(pendingKey === 'memory_auto_approve' && pendingAuto === 'auto');
   /** Flip one setting, then re-read so the switches show the stored value. */
   const toggle = async (key: string) => {
-    if (await act('/settings/toggle', { key }, 'The setting was not changed.')) onChanged();
+    if (pendingKey) return;
+    setPendingKey(key);
+    setError(null);
+    setResult(null);
+    const outcome = await actOutcome('/settings/toggle', { key }, 'The setting was not changed.');
+    setPendingKey(null);
+    setPendingAuto(null);
+    if (!outcome.ok) {
+      setError({ key, message: outcome.message });
+      return;
+    }
+    setResult('Setting saved.');
+    onChanged();
+  };
+  /** Save automatic capture on or off; a second choice waits for the first. */
+  const chooseAuto = (auto: boolean) => {
+    if (pendingKey) return;
+    setPendingAuto(auto ? 'auto' : 'ask');
+    void toggle('memory_auto_approve');
   };
   const capture = data.capture;
   return (
@@ -448,27 +653,51 @@ function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; 
         <h2 className="ml-tag" id="ml-capture-h">Learning settings</h2>
       </div>
       <Switch id="ml-sw-capture" label="Learn facts as you work" on={capture.enabled}
+        pending={pendingKey === 'memory_capture'}
+        disabled={pendingKey !== null && pendingKey !== 'memory_capture'}
         onToggle={() => toggle('memory_capture')} />
-      <fieldset className="ml-fieldset" disabled={!capture.enabled}>
+      <fieldset className="ml-fieldset" disabled={!capture.enabled || pendingKey !== null}>
         <legend>Read from</legend>
         {capture.channels.map((channel) => (
           <Switch key={channel.id} id={`ml-sw-${channel.id}`} label={channel.label}
             hint={CHANNEL_HINT[channel.id]}
-            on={channel.on} disabled={!capture.enabled} onToggle={() => toggle(channel.setting)} />
+            on={channel.on} disabled={!capture.enabled}
+            pending={pendingKey === channel.setting}
+            onToggle={() => toggle(channel.setting)} />
         ))}
       </fieldset>
-      <fieldset className="ml-fieldset" disabled={!capture.enabled}>
+      <fieldset className="ml-fieldset" disabled={!capture.enabled || pendingKey !== null}>
         <legend>When a fact is found</legend>
         <div className="ml-segment" role="radiogroup" aria-label="When a fact is found">
           <button type="button" role="radio" aria-checked={!capture.autoApprove}
-            onClick={() => capture.autoApprove && toggle('memory_auto_approve')}>Ask me first</button>
+            aria-busy={askBusy || undefined}
+            title="Ask me first"
+            disabled={pendingKey !== null}
+            onClick={() => capture.autoApprove && chooseAuto(false)}>Ask me first</button>
           <button type="button" role="radio" aria-checked={capture.autoApprove}
-            onClick={() => !capture.autoApprove && toggle('memory_auto_approve')}>Save automatically</button>
+            aria-busy={autoBusy || undefined}
+            title="Save automatically"
+            disabled={pendingKey !== null}
+            onClick={() => !capture.autoApprove && chooseAuto(true)}>Save automatically</button>
         </div>
+        {pendingKey === 'memory_auto_approve' && (
+          <WaitLine active working={pendingAuto === 'auto' ? 'Saving facts as they are found…' : 'Saving when facts are reviewed…'}
+            slow={pendingAuto === 'auto'
+              ? 'Still saving facts as they are found… This is taking longer than usual. You can leave this page.'
+              : 'Still saving this setting… This is taking longer than usual. You can leave this page.'}
+            className="ml-feedback-phase" />
+        )}
       </fieldset>
       <p className="ml-note">{data.extractor.detail}</p>
       {data.lastCapture?.cause && (
         <p className="ml-note">Last error: {data.lastCapture.cause}</p>
+      )}
+      {result && <p className="ml-feedback-result" role="status">{result}</p>}
+      {error && (
+        <p className="ml-feedback-error" role="alert">
+          {error.message}
+          <button type="button" className="ml-text-btn" onClick={() => toggle(error.key)}>Try again</button>
+        </p>
       )}
     </section>
   );
@@ -477,29 +706,38 @@ function CaptureSettings({ data, act, onChanged }: { data: LoopState; act: Act; 
 /**
  * The "add a fact" form: one typed sentence, saved as written.
  *
- * An empty submit is refused in place and focuses the field; a saved fact
- * clears the field and re-reads the page.
+ * An empty submit is refused in place and focuses the field; a failed save
+ * keeps what was typed and says so under the box; a saved fact clears the
+ * field and re-reads the page.
  */
-function AddFact({ act, onChanged }: { act: Act; onChanged: () => void }) {
+function AddFact({ actOutcome, onChanged }: { actOutcome: ActOutcome; onChanged: () => void }) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [empty, setEmpty] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   /** Save the typed sentence, or mark the field when it is blank. */
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
+    if (saving) return;
     if (!text.trim()) {
       setEmpty(true);
       inputRef.current?.focus();
       return;
     }
     setSaving(true);
-    const ok = await act('/memory/add', { text: text.trim() }, 'The fact was not saved.');
+    setError(null);
+    setResult(null);
+    const outcome = await actOutcome('/memory/add', { text: text.trim() }, 'The fact was not saved.');
     setSaving(false);
-    if (ok) {
-      setText('');
-      onChanged();
+    if (!outcome.ok) {
+      setError(outcome.message);
+      return;
     }
+    setText('');
+    setResult('Saved. The fact is now in stored knowledge.');
+    onChanged();
   };
   return (
     <section className="ml-tile" aria-labelledby="ml-add-h">
@@ -509,9 +747,22 @@ function AddFact({ act, onChanged }: { act: Act; onChanged: () => void }) {
         <textarea id="ml-add-input" name="fact" ref={inputRef} rows={2} value={text} autoComplete="off"
           placeholder="The Acme renewal is due December 15…" aria-invalid={empty || undefined}
           aria-describedby={empty ? 'ml-add-error' : undefined}
-          onChange={(e) => { setText(e.target.value); setEmpty(false); }} />
+          onChange={(e) => { setText(e.target.value); setEmpty(false); setError(null); }} />
         {empty && <p className="ml-field-error" id="ml-add-error">Type the fact first, in one sentence.</p>}
-        <button type="submit" className="ml-btn ml-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save fact'}</button>
+        <WaitButton className="ml-btn ml-btn-primary" type="submit" active={saving}
+          idle="Save fact" working="Saving..." />
+        {error && (
+          <p className="ml-feedback-error" role="alert">
+            {error}
+            <button type="button" className="ml-text-btn" onClick={submit}>Try again</button>
+          </p>
+        )}
+        {result && <p className="ml-feedback-result" role="status">{result}</p>}
+        {saving && (
+          <WaitLine active working="Saving your fact…"
+            slow="Still saving your fact… This is taking longer than usual. You can leave this page."
+            className="ml-feedback-phase" />
+        )}
       </form>
       <p className="ml-note">Saved as typed. If it states a new value for something already known, the older fact is marked replaced.</p>
     </section>
@@ -543,11 +794,32 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onKeep, onRef
   onTab: (tab: Tab) => void;
   filter: string;
   onFilter: (value: string) => void;
-  onRemove: (type: TargetType, id: number) => void;
-  onKeep: (id: number) => void;
-  onReflect: () => void;
-  onEdit: (id: number, text: string) => Promise<boolean>;
+  onRemove: (type: TargetType, id: number) => Promise<Ack>;
+  onKeep: (id: number) => Promise<Ack>;
+  onReflect: () => Promise<Outcome>;
+  onEdit: (id: number, text: string) => Promise<Ack & { merged?: boolean }>;
 }) {
+  const [reflectActive, setReflectActive] = useState(false);
+  const [reflectError, setReflectError] = useState<string | null>(null);
+  const [reflectResult, setReflectResult] = useState<string | null>(null);
+  const reflectPhase = useWaitPhase(reflectActive);
+  /** Run one reflection on the AI; the result or its cause is said in place. */
+  const askAi = async () => {
+    if (reflectActive) return;
+    setReflectActive(true);
+    setReflectError(null);
+    setReflectResult(null);
+    const outcome = await onReflect();
+    setReflectActive(false);
+    if (!outcome.ok) {
+      setReflectError(outcome.message);
+      return;
+    }
+    const answer = outcome.data as { status?: string; cause?: string };
+    setReflectResult(answer.status === 'degraded'
+      ? (answer.cause || 'The AI could not run; the built-in rules took over.')
+      : 'The AI proposed observations; they are waiting in the review queue.');
+  };
   const sizes: Record<Tab, number> = {
     facts: data.facts.length,
     entities: data.entities.length,
@@ -609,11 +881,33 @@ function Knowledge({ data, tab, onTab, filter, onFilter, onRemove, onKeep, onRef
           <p className="ml-note">
             Each entity with two or more facts gets one short observation, rewritten whenever those facts change. Reflected ones come from the AI and stay until you remove them.
           </p>
-          <button type="button" className="ml-btn" onClick={onReflect} disabled={data.extractor.mode !== 'model'}
-            title={data.extractor.mode !== 'model' ? 'Needs a working AI connection' : undefined}>
-            Ask your AI for observations
-          </button>
+          <WaitButton className="ml-btn" active={reflectActive} disabled={data.extractor.mode !== 'model'}
+            idle="Ask your AI for observations" working="Asking your AI..."
+            title={data.extractor.mode !== 'model' ? 'Needs a working AI connection' : undefined}
+            onClick={() => void askAi()} />
         </div>
+        {reflectError && (
+          <p className="ml-feedback-error" role="alert">
+            {reflectError}
+            <button type="button" className="ml-text-btn" onClick={() => void askAi()}>Try again</button>
+          </p>
+        )}
+        {reflectResult && <p className="ml-feedback-result" role="status">{reflectResult}</p>}
+        {reflectPhase !== 'idle' && (
+          <ul className="ml-rows">
+            <li className="ml-row ml-feedback-placeholder">
+              <div className="ml-row-main">
+                <SkeletonLine className="mem-skeleton-short" />
+                <SkeletonLine className="mem-skeleton-block" />
+                <p className="ml-feedback-phase" role="status">
+                  {reflectPhase === 'slow'
+                    ? 'Still asking your AI… This is taking longer than usual. You can leave this page.'
+                    : 'Asking your AI for observations…'}
+                </p>
+              </div>
+            </li>
+          </ul>
+        )}
         {rows.length === 0 ? <Empty filter={filter} noun="observations" /> : (
           <ul className="ml-rows">
             {cap(rows).map((obs) => <ObservationItem key={obs.id} obs={obs} factsById={factsById} onRemove={onRemove} />)}
@@ -663,12 +957,32 @@ function Empty({ filter, noun }: { filter: string; noun: string }) {
 
 /** A row's actions: its removal, and for a fact the edit beside it. */
 function RowActions({ onRemove, removeText, onEdit }: {
-  onRemove: () => void; removeText: string; onEdit?: () => void;
+  onRemove: () => Promise<Ack>; removeText: string; onEdit?: () => void;
 }) {
+  const [active, setActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** Check what a removal touches, with the row saying why it could not. */
+  const forget = async () => {
+    if (active) return;
+    setActive(true);
+    setError(null);
+    const outcome = await onRemove();
+    setActive(false);
+    if (!outcome.ok) setError(outcome.message ?? 'That could not be checked.');
+  };
   return (
     <div className="ml-row-actions">
-      {onEdit && <button type="button" className="ml-btn" onClick={onEdit}>Edit</button>}
-      <button type="button" className="ml-btn ml-btn-remove" onClick={onRemove}>{removeText}</button>
+      <div className="ml-row-buttons">
+        {onEdit && <button type="button" className="ml-btn" onClick={onEdit}>Edit</button>}
+        <WaitButton className="ml-btn ml-btn-remove" active={active} idle={removeText}
+          working="Checking..." onClick={() => void forget()} />
+      </div>
+      {error && (
+        <p className="ml-feedback-error" role="alert">
+          {error}
+          <button type="button" className="ml-text-btn" onClick={() => void forget()}>Try again</button>
+        </p>
+      )}
     </div>
   );
 }
@@ -683,24 +997,48 @@ function RowActions({ onRemove, removeText, onEdit }: {
 function FactItem({ fact, factsById, onRemove, onKeep, onEntity, onEdit }: {
   fact: FactRow;
   factsById: Map<number, FactRow>;
-  onRemove: (type: TargetType, id: number) => void;
-  onKeep: (id: number) => void;
+  onRemove: (type: TargetType, id: number) => Promise<Ack>;
+  onKeep: (id: number) => Promise<Ack>;
   onEntity: (name: string) => void;
-  onEdit: (id: number, text: string) => Promise<boolean>;
+  onEdit: (id: number, text: string) => Promise<Ack & { merged?: boolean }>;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(fact.text);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [keeping, setKeeping] = useState(false);
+  const [keepError, setKeepError] = useState<string | null>(null);
+  const [keepResult, setKeepResult] = useState<string | null>(null);
   const newer = fact.replacedBy !== null ? factsById.get(fact.replacedBy) : undefined;
-  /** Save the edited text; the page re-reads, so the row shows what was stored. */
+  /** Save the edited text; a failure keeps the box and says why under it. */
   const save = async () => {
+    if (saving) return;
     setSaving(true);
+    setError(null);
+    setResult(null);
     const saved = await onEdit(fact.id, text.trim());
     setSaving(false);
-    if (saved) setEditing(false);
+    if (!saved.ok) {
+      setError(saved.message ?? 'The edit was not saved.');
+      return;
+    }
+    setEditing(false);
+    setResult(saved.merged ? 'Saved and merged with a matching fact.' : 'Saved. The stored fact now reads this way.');
   };
   /** Put the edit away and forget what was typed. */
   const cancel = () => { setEditing(false); setText(fact.text); };
+  /** Put a replaced fact back in recall without leaving the list. */
+  const keep = async () => {
+    if (keeping) return;
+    setKeeping(true);
+    setKeepError(null);
+    setKeepResult(null);
+    const outcome = await onKeep(fact.id);
+    setKeeping(false);
+    if (!outcome.ok) setKeepError(outcome.message ?? 'That fact could not be kept.');
+    else setKeepResult('Both facts are kept.');
+  };
   return (
     <li className={`ml-row${fact.replacedBy !== null ? ' is-replaced' : ''}`} id={`ml-fact-${fact.id}`}>
       <div className="ml-row-main">
@@ -712,6 +1050,13 @@ function FactItem({ fact, factsById, onRemove, onKeep, onEntity, onEdit }: {
         ) : (
           <p className="ml-row-text">{fact.text}</p>
         )}
+        {error && (
+          <p className="ml-feedback-error" role="alert">
+            {error}
+            <button type="button" className="ml-text-btn" onClick={() => void save()}>Try again</button>
+          </p>
+        )}
+        {result && <p className="ml-feedback-result" role="status">{result}</p>}
         <p className="ml-row-meta">
           <span>{fact.origin.label}</span>
           {fact.origin.how && <span>{fact.origin.how}</span>}
@@ -729,7 +1074,15 @@ function FactItem({ fact, factsById, onRemove, onKeep, onEntity, onEdit }: {
         {fact.replacedBy !== null && (
           <p className="ml-flag">
             Recall skips this one: {newer ? <>“{newer.text}” replaced it</> : 'a newer value replaced it'}.
-            <button type="button" className="ml-text-btn" onClick={() => onKeep(fact.id)}>Keep both</button>
+            <WaitButton className="ml-text-btn" active={keeping} idle="Keep both" working="Keeping both..."
+              onClick={() => void keep()} />
+          </p>
+        )}
+        {keepResult && <p className="ml-feedback-result" role="status">{keepResult}</p>}
+        {keepError && (
+          <p className="ml-feedback-error" role="alert">
+            {keepError}
+            <button type="button" className="ml-text-btn" onClick={() => void keep()}>Try again</button>
           </p>
         )}
         {fact.replaces.length > 0 && (
@@ -738,8 +1091,16 @@ function FactItem({ fact, factsById, onRemove, onKeep, onEntity, onEdit }: {
       </div>
       {editing ? (
         <div className="ml-row-actions">
-          <button type="button" className="ml-btn" disabled={saving} onClick={cancel}>Cancel</button>
-          <button type="button" className="ml-btn ml-btn-primary" disabled={saving || !text.trim()} onClick={save}>Save</button>
+          <div className="ml-row-buttons">
+            <button type="button" className="ml-btn" disabled={saving} onClick={cancel}>Cancel</button>
+            <WaitButton className="ml-btn ml-btn-primary" active={saving} disabled={!text.trim()}
+              idle="Save" working="Saving..." onClick={() => void save()} />
+          </div>
+          {saving && (
+            <WaitLine active working="Saving your edit…"
+              slow="Still saving your edit… This is taking longer than usual. You can leave this page."
+              className="ml-feedback-phase" />
+          )}
         </div>
       ) : (
         <RowActions onRemove={() => onRemove('fact', fact.id)}
@@ -751,7 +1112,7 @@ function FactItem({ fact, factsById, onRemove, onKeep, onEntity, onEdit }: {
 
 /** One entity row: its name, type, aliases and how many facts mention it. */
 function EntityItem({ entity, onRemove }: {
-  entity: EntityRow; onRemove: (type: TargetType, id: number) => void;
+  entity: EntityRow; onRemove: (type: TargetType, id: number) => Promise<Ack>;
 }) {
   return (
     <li className="ml-row">
@@ -770,7 +1131,7 @@ function EntityItem({ entity, onRemove }: {
 
 /** One retained excerpt, quoted, with how many facts were taken from it. */
 function SourceItem({ source, onRemove }: {
-  source: SourceRow; onRemove: (type: TargetType, id: number) => void;
+  source: SourceRow; onRemove: (type: TargetType, id: number) => Promise<Ack>;
 }) {
   return (
     <li className="ml-row">
@@ -794,7 +1155,7 @@ function SourceItem({ source, onRemove }: {
  * and asks to be checked rather than being hidden.
  */
 function ObservationItem({ obs, factsById, onRemove }: {
-  obs: ObservationRow; factsById: Map<number, FactRow>; onRemove: (type: TargetType, id: number) => void;
+  obs: ObservationRow; factsById: Map<number, FactRow>; onRemove: (type: TargetType, id: number) => Promise<Ack>;
 }) {
   return (
     <li className={`ml-row${obs.staleTs ? ' is-flagged' : ''}`}>
@@ -869,21 +1230,50 @@ function RewriteList({ rows }: { rows: RemovalPlan['observationsUpdated'] }) {
 }
 
 /**
+ * The placeholder for a removal check that is taking over a second: the
+ * dialog's own shape, one phase line, no blocked page beyond the scrim.
+ */
+function RemovePreviewSkeleton() {
+  const phase = useWaitPhase(true);
+  if (phase === 'idle') return null;
+  return (
+    <div className="ml-scrim">
+      <div className="ml-dialog" role="dialog" aria-modal="true" aria-busy="true" aria-label="Checking the removal">
+        <p className="ml-tag">Checking the removal</p>
+        <h2 className="ml-dialog-title">Checking what else changes…</h2>
+        <div className="ml-plan-group" aria-hidden="true">
+          <SkeletonLine className="mem-skeleton-short" />
+          <SkeletonLine />
+          <SkeletonLine />
+        </div>
+        <WaitLine active working="Checking what else changes…"
+          slow="Still checking… This is taking longer than usual. You can leave this page."
+          className="ml-feedback-phase" />
+      </div>
+    </div>
+  );
+}
+
+/**
  * The confirmation a removal opens: what goes, and what else changes.
  *
- * Escape and a click on the scrim cancel; Tab stays inside the dialog, and
- * focus returns to whatever held it when the dialog opened.
+ * Escape and a click on the scrim cancel while the plan is shown; Tab stays
+ * inside the dialog, and focus returns to whatever held it when it opened.
+ * A failed removal keeps the dialog and the plan on screen with the reason.
  */
-function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCancel: () => void; onConfirm: () => void }) {
+function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCancel: () => void; onConfirm: () => Promise<Ack> }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [working, setWorking] = useState(false);
+  const workingRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+  workingRef.current = working;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     cancelRef.current?.focus();
     /** Close on Escape, and keep Tab inside the dialog's buttons. */
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Escape' && !workingRef.current) onCancel();
       if (event.key !== 'Tab' || !dialogRef.current) return;
       const stops = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not(:disabled)'));
       if (stops.length === 0) return;
@@ -901,8 +1291,17 @@ function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCanc
   const noun = TARGET_NOUN[plan.target.type];
   const nothingElse = !plan.observationsRemoved.length && !plan.observationsUpdated.length && !plan.observationsFlagged.length
     && !plan.entitiesRemoved.length && !plan.factsRestored.length && !plan.sourcesRemoved.length;
+  /** Run the removal; a refusal stays here with the plan intact. */
+  const confirm = async () => {
+    if (working) return;
+    setWorking(true);
+    setError(null);
+    const outcome = await onConfirm();
+    setWorking(false);
+    if (!outcome.ok) setError(outcome.message ?? 'Nothing was removed.');
+  };
   return (
-    <div className="ml-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="ml-scrim" onMouseDown={(e) => { if (!working && e.target === e.currentTarget) onCancel(); }}>
       <div className="ml-dialog" role="dialog" aria-modal="true" aria-labelledby="ml-dialog-h" ref={dialogRef}>
         <p className="ml-tag">Remove {noun}</p>
         <h2 id="ml-dialog-h" className="ml-dialog-title">{plan.target.label}</h2>
@@ -918,10 +1317,21 @@ function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCanc
           <p className="ml-note">{count(plan.sourcesRemoved.length, 'excerpt')} of the original conversation will be deleted too.</p>
         )}
         {nothingElse && plan.target.type !== 'observation' && <p className="ml-note">Nothing else changes.</p>}
+        {working && (
+          <WaitLine active working={`Removing ${noun}…`}
+            slow="Still removing… This is taking longer than usual. You can leave this page."
+            className="ml-feedback-phase" />
+        )}
+        {error && (
+          <p className="ml-feedback-error" role="alert">
+            {error}
+            <button type="button" className="ml-text-btn" onClick={() => void confirm()}>Try again</button>
+          </p>
+        )}
         <div className="ml-actions ml-dialog-actions">
-          <button type="button" className="ml-btn" ref={cancelRef} onClick={onCancel}>Cancel</button>
-          <button type="button" className="ml-btn ml-btn-danger" disabled={working}
-            onClick={() => { setWorking(true); onConfirm(); }}>{removeLabel(plan)}</button>
+          <button type="button" className="ml-btn" ref={cancelRef} disabled={working} onClick={onCancel}>Cancel</button>
+          <WaitButton className="ml-btn ml-btn-danger" active={working} idle={removeLabel(plan)}
+            working="Removing..." onClick={() => void confirm()} />
         </div>
       </div>
     </div>
@@ -932,23 +1342,49 @@ function RemoveDialog({ plan, onCancel, onConfirm }: { plan: RemovalPlan; onCanc
  * The undo bar: what went, the window, and a countdown that expires it.
  *
  * The countdown reads the expiry against the wall clock once a second and calls
- * onExpire at zero, so the bar goes away even if the tab slept.
+ * onExpire at zero, so the bar goes away even if the tab slept. A pending undo
+ * holds the bar open; a refusal stays in the bar with the next step.
  */
-function UndoBar({ undo, onUndo, onExpire }: { undo: Undo; onUndo: () => void; onExpire: () => void }) {
+function UndoBar({ undo, onUndo, onExpire }: { undo: Undo; onUndo: () => Promise<Ack>; onExpire: () => void }) {
   const [left, setLeft] = useState(() => Math.max(0, Math.round(undo.expiresTs - Date.now() / 1000)));
+  const [active, setActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const activeRef = useRef(false);
+  activeRef.current = active;
   useEffect(() => {
     const timer = window.setInterval(() => {
       const remaining = Math.max(0, Math.round(undo.expiresTs - Date.now() / 1000));
       setLeft(remaining);
-      if (remaining <= 0) onExpire();
+      if (remaining <= 0 && !activeRef.current) onExpire();
     }, 1000);
     return () => window.clearInterval(timer);
   }, [undo, onExpire]);
+  /** Undo the removal; a failure keeps the bar for another try. */
+  const run = async () => {
+    if (active) return;
+    setActive(true);
+    setError(null);
+    const outcome = await onUndo();
+    setActive(false);
+    if (!outcome.ok) setError(outcome.message ?? 'The removal could not be undone.');
+  };
   return (
     <div className="ml-undo">
       <span role="status">{undo.summary}. You have {undo.windowS} seconds to undo.</span>
-      <button type="button" className="ml-btn ml-btn-primary" onClick={onUndo}>Undo</button>
+      <WaitButton className="ml-btn ml-btn-primary" active={active} idle="Undo" working="Undoing..."
+        onClick={() => void run()} />
       <span className="ml-mono ml-undo-left" aria-hidden="true">{left}s</span>
+      {active && (
+        <WaitLine active working="Undoing the removal…"
+          slow="Still undoing… This is taking longer than usual. You can leave this page."
+          className="ml-feedback-phase" />
+      )}
+      {error && (
+        <p className="ml-feedback-error" role="alert">
+          {error}
+          <button type="button" className="ml-text-btn" onClick={() => void run()}>Try again</button>
+        </p>
+      )}
     </div>
   );
 }

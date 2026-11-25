@@ -208,7 +208,7 @@ def test_not_now_removes_the_card_and_it_stays_gone_across_a_restart(desk, tmp_p
     rec, _recs = _halvorsen(desk, auth)
     status, headers, _body = _dismiss(desk, auth, rec["cardId"])
     assert status == 303
-    assert headers.get("Location") == "/inbox"
+    assert headers.get("Location").split("?", 1)[0] == "/inbox"
     assert all(r["cardId"] != rec["cardId"] for r in _recommendations(desk, auth))
     card = desk.server.inbox.get(rec["cardId"])
     assert card.status == "dismissed"

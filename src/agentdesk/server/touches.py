@@ -49,10 +49,10 @@ def render_touches(observed: set[str], version: str, now: datetime, inbox_count:
 touch the app can make, and the badge says whether it has actually
 happened on this machine. Generated {html.escape(generated)}, version
 <span class="mono">{esc_version}</span>.</p>
-<table class="rows touches">
+<div class='table-scroll'><table class='rows touches'>
 <thead><tr><th scope="col">Action</th><th scope="col">Kind</th><th scope="col">What it means</th><th scope="col">Status</th></tr></thead>
 <tbody>{table}</tbody>
-</table>
+</table></div>
 <h2>The facts</h2>
 <ul>
 <li><b>Processes started:</b> the desk starts nothing by itself. When an update is staged with Install updates on, it runs the staged program's own <span class="mono">--self-check</span> against a copy of the data before pointing at it; nothing else is launched.</li>

@@ -123,8 +123,26 @@ def _pytest_args(parallel: bool) -> list[str]:
     return args
 
 
+def failed_test_lines(output: str, limit: int = 3) -> list[str]:
+    """The `FAILED` and `ERROR` summary lines of a pytest run, newest last.
+
+    pytest ends its output with one such line per failed test in both the
+    serial and the xdist invocation, so the gate reads them without adding a
+    report flag to the command. A count alone sends the reader back into a
+    hundred-second run to learn which test to look at; on a load flake the
+    name is the only thing that cannot be recovered afterwards. At most
+    `limit` lines are returned, each cut to one readable length.
+    """
+    lines = [line.strip() for line in output.splitlines()
+             if line.startswith(("FAILED ", "ERROR "))]
+    return [line[:200] for line in lines[:limit]]
+
+
 def _pytest_gate(env: dict) -> tuple[bool, str]:
-    """The full suite over the pinned fresh data dir."""
+    """The full suite over the pinned fresh data dir.
+
+    A failing run names its failed tests after the summary line.
+    """
     parallel = _xdist_available()
     proc = subprocess.run(
         _pytest_args(parallel),
@@ -132,6 +150,10 @@ def _pytest_gate(env: dict) -> tuple[bool, str]:
     )
     tail = (proc.stdout or "").strip().splitlines()
     summary = tail[-1] if tail else "(no output)"
+    if proc.returncode != 0:
+        failed = failed_test_lines(proc.stdout or "")
+        if failed:
+            summary += " | " + "; ".join(failed)
     workers = _pytest_args(True)[-1]
     mode = f"parallel -n {workers}" if parallel else "serial (xdist not installed)"
     return proc.returncode == 0, f"{mode}: {summary}"
