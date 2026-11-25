@@ -20,8 +20,8 @@
   - Verified: commit 5fc32fb removes the button from `SessionNotice` in `frontend/src/marketplace/MarketplaceApp.tsx`: the heading takes focus and the message names the next step. The main app's own notice carried the same dead button and got the same fix in 8e336b8.
 - [x] Any other catalog failure still offers a Try again that can succeed and keeps the chosen filters.
   - Verified: frontend/src/marketplace/CatalogPage.tsx keeps its filter state and retries with the same filters; frontend/src/test/marketplace-discover.test.tsx ('shows the error, then recovers on retry').
-- [x] The "cannot run on this desk" notice appears before install and on the Installed page, and Remove is the offered action.
-  - Verified: frontend/src/test/review-marketplace.test.tsx (detail and consent notice) and marketplace-cannot-run.test.tsx (Installed Remove only).
+- [x] The "cannot run on this desk" notice appears before install and on the Installed page, and Uninstall and Purge data are the offered actions.
+  - Verified: frontend/src/test/review-marketplace.test.tsx (detail and consent notice) and marketplace-cannot-run.test.tsx (Installed: Uninstall and Purge data, and no Disable, Roll back or Share).
 - [x] No marketplace page blocks while a detail, pack or catalog request is in flight.
   - Verified: each page renders its shell and a shaped placeholder while a request is held (frontend/src/test/feedback-marketplace.test.tsx).
 - [x] Component tests cover the busy states, the dim-and-keep filter change, the 401 session notice and the absent Try again on 401.

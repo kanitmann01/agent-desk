@@ -169,8 +169,12 @@ first second; the region that will receive the result owns the rest.
   the reader's words. Never a spinner over an empty panel; never a
   blocked page.
 - **F3. While the agent chooses between outcomes, the region shows a
-  mock-up of the outcome** (the dashed chart sketches) with a status
-  line, and the real result replaces it in place without a jump.
+  mock-up of the outcome** with a status line, and the real result
+  replaces it in place without a jump: the dashed chart sketches while
+  the tracker's columns and chart are being picked, and on the server
+  pages the dashed card sketch (a figure, five bars, two lines) while
+  the plugin wizard fills the choices in from a description or writes
+  the card.
 - **F4. Labels are honest.** A phase is named only while it is really
   happening. After 10 seconds without a change the line says it is taking
   longer than usual and that the reader may leave this page.
