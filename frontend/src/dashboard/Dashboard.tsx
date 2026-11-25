@@ -754,8 +754,7 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
               skillBusyId={skillBusyId}
               onRunSkill={(id) => void runSkill(id)}
             />
-            {visible.some((card) => card.key === 'research')
-              && (answer || answerPending.shown || answerError) ? (
+            {answer || answerPending.shown || answerError ? (
               <section className="brief-answer" aria-label="Research answer">
                 <h2>{layoutTitle('research') ?? 'Research'}</h2>
                 {answerPending.shown ? (

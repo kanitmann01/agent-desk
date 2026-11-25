@@ -208,7 +208,34 @@ describe('the research answer card follows the layout', () => {
     expect(within(region).getByRole('heading', { name: 'Digging' })).toBeInTheDocument();
   });
 
-  it('renders no answer region when the layout hides the research card', async () => {
+  it('lands the wait and the answer with the research card hidden', async () => {
+    vi.useFakeTimers();
+    const gate = deferred<Response>();
+    const data: DashboardData = {
+      ...DATA,
+      layout: { cards: DATA.layout.cards.filter((card) => card.key !== 'research') },
+    };
+    vi.stubGlobal('fetch', vi.fn(() => gate.promise));
+    render(<Dashboard data={data} onRefetch={NOOP_REFETCH} onExpired={NOOP} />);
+    fireEvent.change(screen.getByLabelText('Research question'), { target: { value: 'What changed?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }));
+    // Hiding the card hides the idle card only; the bar still answers.
+    expect(screen.queryByRole('region', { name: 'Research answer' })).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const region = screen.getByRole('region', { name: 'Research answer' });
+    expect(within(region).getByRole('status')).toHaveTextContent(
+      'Asking your AI for a sourced summary',
+    );
+    await act(async () => {
+      gate.resolve(jsonResponse({ status: 'ok', summary: 'An answer.', sources: [] }));
+    });
+    expect(screen.getByRole('region', { name: 'Research answer' })).toBe(region);
+    expect(region.querySelector('.brief-answer-copy')).toHaveTextContent('An answer.');
+  });
+
+  it('shows a failure alert with the research card hidden', async () => {
     const gate = deferred<Response>();
     const data: DashboardData = {
       ...DATA,
@@ -219,11 +246,56 @@ describe('the research answer card follows the layout', () => {
     fireEvent.change(screen.getByLabelText('Research question'), { target: { value: 'What changed?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Research' }));
     await act(async () => {
-      gate.resolve(jsonResponse({ status: 'ok', summary: 'An answer.', sources: [] }));
+      gate.resolve(jsonResponse({ error: 'The AI answered without a summary.' }, 500));
     });
-    expect(screen.queryByRole('region', { name: 'Research answer' })).toBeNull();
-    // The command bar is always present, even when its card is hidden.
-    expect(screen.getByLabelText('Research question')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Research answer' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The AI answered without a summary.');
+  });
+});
+
+describe('a plugin card the server dropped', () => {
+  const LIVE: PluginCard = {
+    id: 'notes-live',
+    title: 'Notes digester',
+    version: '1.0.0',
+    pilot: false,
+    state: 'enabled',
+    freshness: 'fresh',
+    cause: '',
+    payload: { elements: [{ kind: 'text', label: 'Reading', text: 'A note.' }] },
+  };
+  const LAYOUT = [
+    { key: 'sales', title: null },
+    { key: 'commitments', title: null },
+    { key: 'research', title: null },
+    { key: LIVE.id, title: null },
+    { key: 'gone-plugin', title: null },
+  ];
+  const data: DashboardData = {
+    ...DATA,
+    layout: { cards: LAYOUT },
+    plugins: { cards: [LIVE] },
+  };
+
+  it('leaves no gap in the grid and no Customize entry', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => (
+      String(url) === '/api/layout'
+        ? jsonResponse({ cards: LAYOUT.map((card) => ({ ...card, hidden: false })) })
+        : jsonResponse({})
+    )));
+    render(<Dashboard data={data} onRefetch={NOOP_REFETCH} onExpired={NOOP} />);
+
+    // One plugin tile remains, so it takes the full row; a dropped key
+    // that still counted as a slot would split the row in two.
+    const pluginCells = document.querySelectorAll('.brief > .cell-plugin');
+    expect(pluginCells).toHaveLength(1);
+    expect(pluginCells[0]).toHaveClass('span-12');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
+    await screen.findByRole('button', { name: 'Done customizing' });
+    expect(document.querySelectorAll('.cust-cell')).toHaveLength(4);
+    expect(document.querySelector('[data-grip-key="gone-plugin"]')).toBeNull();
+    expect(screen.queryByText(/gone-plugin/)).toBeNull();
   });
 });
 
@@ -321,9 +393,11 @@ describe('a plugin that cannot run on this desk', () => {
     expect(screen.queryByText('Competitor Watch')).toBeNull();
     expect(screen.queryByText('Re-test available')).toBeNull();
     expect(
-      screen.getByText('No page is being watched. Name one page and see what changed on it.'),
+      screen.getByText('No page is being watched.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('This desk cannot read web pages yet')).toBeInTheDocument();
+    expect(
+      screen.getByText('This desk cannot read web pages yet, so no page can be watched.'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add a page' })).toBeNull();
   });
 
@@ -331,9 +405,11 @@ describe('a plugin that cannot run on this desk', () => {
     show(undefined, [CANNOT_RUN, FRESH_PLUGIN]);
     expect(screen.queryByText('Competitor Watch')).toBeNull();
     expect(
-      screen.getByText('No page is being watched. Name one page and see what changed on it.'),
+      screen.getByText('No page is being watched.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('This desk cannot read web pages yet')).toBeInTheDocument();
+    expect(
+      screen.getByText('This desk cannot read web pages yet, so no page can be watched.'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add a page' })).toBeNull();
     const health = document.querySelector('.cell-health') as HTMLElement;
     expect(within(health).queryByText('Competitor Watch')).toBeNull();
@@ -351,7 +427,9 @@ describe('a plugin that cannot run on this desk', () => {
     render(<Brief data={data} onRefetch={NOOP_REFETCH} onExpired={NOOP} />);
     const watch = document.querySelector('.cell-watch') as HTMLElement;
     expect(within(watch).getByText('SAMPLE DATA')).toBeInTheDocument();
-    expect(within(watch).getByText('This desk cannot read web pages yet')).toBeInTheDocument();
+    expect(
+      within(watch).getByText('This desk cannot read web pages yet, so no page can be watched.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Competitor Watch')).toBeNull();
   });
 
@@ -410,24 +488,34 @@ describe('the Page watch offer on a desk without the network', () => {
     render(<Brief data={data} onRefetch={NOOP_REFETCH} onExpired={NOOP} />);
   }
 
-  it('offers no dead link when the desk cannot read web pages', () => {
+  it('does not invite a page the desk cannot watch', () => {
     show(false);
+    expect(screen.getByText('No page is being watched.')).toBeInTheDocument();
+    expect(screen.queryByText(/Name one page/)).toBeNull();
+    expect(
+      screen.getByText('This desk cannot read web pages yet, so no page can be watched.'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add a page' })).toBeNull();
-    expect(screen.getByText('This desk cannot read web pages yet')).toBeInTheDocument();
   });
 
-  it('keeps the offer when the desk can read web pages', () => {
+  it('invites a page when the desk can watch one', () => {
     show(true);
+    expect(
+      screen.getByText('No page is being watched. Name one page and see what changed on it.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Add a page' })).toHaveAttribute(
       'href',
       '/marketplace/plugin/competitor-watch',
     );
-    expect(screen.queryByText('This desk cannot read web pages yet')).toBeNull();
+    expect(screen.queryByText(/so no page can be watched/)).toBeNull();
   });
 
   it('keeps today\'s behaviour when the field is absent', () => {
     show(undefined);
+    expect(
+      screen.getByText('No page is being watched. Name one page and see what changed on it.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Add a page' })).toBeInTheDocument();
-    expect(screen.queryByText('This desk cannot read web pages yet')).toBeNull();
+    expect(screen.queryByText(/so no page can be watched/)).toBeNull();
   });
 });
