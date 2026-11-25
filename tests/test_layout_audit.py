@@ -244,6 +244,8 @@ def test_box_changed_compares_width_and_height_with_one_pixel_noise():
     assert audit._box_changed(before, {"width": 100.0, "height": 26.0}) is True
     assert audit._box_changed(before, {"width": 100.5, "height": 24.5}) is False
     assert audit._box_changed(None, before) is False
+    assert audit._box_changed(before, {"width": 120.0, "height": 24.0}, True) is False
+    assert audit._box_changed(before, {"width": 120.0, "height": 30.0}, True) is True
     assert audit._box_delta(before, {"width": 116.0, "height": 24.0}) == (16.0, 0.0)
 
 
