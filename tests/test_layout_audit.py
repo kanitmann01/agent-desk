@@ -9,6 +9,7 @@ verdict rules that can be checked without a browser.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -312,6 +313,53 @@ def test_late_signature_reason_names_the_millisecond():
     assert "structure-or-text" in reasons
     assert audit._late_signature_reasons(before, before, 900) == []
     assert audit.SIGNATURE_LATE_MS == 1500
+
+
+def test_drag_handles_are_recognized_by_name_or_role_description():
+    """A drag grip is skipped before its click can be mistaken for a no-op."""
+    assert audit._pending_drag_handle(
+        {"text": "Drag to reorder Sales"}) is True
+    assert audit._pending_drag_handle(
+        {"text": "Handle", "roleDescription": "drag handle"}) is True
+    assert audit._pending_drag_handle({"text": "Move up"}) is False
+
+
+def test_covered_control_uses_element_from_point():
+    """The cover check asks the point at the visible box centre."""
+    assert "elementFromPoint" in audit.PENDING_COVER_JS
+    assert "hit.contains(el)" in audit.PENDING_COVER_JS
+
+
+def test_native_validation_names_the_field_and_never_checks_it():
+    """An invalid event with no request is the browser's own refusal."""
+    control = {"text": "Save", "tag": "button"}
+    invalid = {"tag": "input", "id": "title", "name": "title",
+               "label": "Planted required field"}
+    verdict, evidence = audit._pending_verdict(
+        control, {}, [], [], False, False, [], False, invalid)
+    assert verdict == "native-validation"
+    assert evidence["reason"] == (
+        "the browser's own message on Planted required field")
+    assert evidence["invalidControl"] == invalid
+    assert "addEventListener('invalid'" in audit.PENDING_INVALID_JS
+    verdict, _ = audit._pending_verdict(
+        control, {}, [{"method": "POST"}], [], False, False, [], False, invalid)
+    assert verdict != "native-validation"
+
+
+def test_fieldset_disabled_controls_read_as_disabled():
+    """The listing uses the browser's own disabled match."""
+    assert "el.matches(':disabled')" in audit.PENDING_ENUM_JS
+
+
+def test_pending_fresh_pages_repin_the_requested_theme():
+    """Every fresh page sets the requested theme before its scripts run."""
+    script = audit._theme_init_script("momentuum")
+    assert "agentdesk.theme" in script
+    assert '"momentuum"' in script or "'momentuum'" in script
+    assert script.rstrip().endswith("})();")
+    source = inspect.getsource(audit._run_pending_audit)
+    assert "add_init_script(script=_theme_init_script(combo[\"theme\"]))" in source
 
 
 def test_box_changed_compares_width_and_height_with_one_pixel_noise():

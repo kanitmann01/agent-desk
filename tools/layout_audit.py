@@ -103,9 +103,11 @@ PENDING_ENUM_JS = r"""
     const selected = selectedAttr(el);
     return {index:index, ordinal:ordinal, tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
             path:path(el), text:text,
-            disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
+            disabled:!!el.disabled || el.matches(':disabled'),
+            ariaDisabled:el.getAttribute('aria-disabled') || '',
             ariaBusy:el.getAttribute('aria-busy') || '',
             alreadySelected:!!selected, selectedAttr:selected,
+            roleDescription:el.getAttribute('aria-roledescription') || '',
             type:el.getAttribute('type') || '',
             in_form:!!el.form, form_method:el.form ? String(el.form.method || 'get').toLowerCase() : '',
             wait_target:el.form ? String(el.form.getAttribute('data-wait') || '') : ''};
@@ -141,7 +143,8 @@ PENDING_STATE_JS = r"""
     const box = el.getBoundingClientRect();
     return {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
             path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-            disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
+            disabled:!!el.disabled || el.matches(':disabled'),
+            ariaDisabled:el.getAttribute('aria-disabled') || '',
             ariaBusy:el.getAttribute('aria-busy') || '',
             box:{x:box.x, y:box.y, width:box.width, height:box.height}};
   })() : null;
@@ -179,6 +182,46 @@ PENDING_STATE_JS = r"""
           waitVisible:waitVisible,
           indicators:indicators.slice(0, 8),
           url:location.pathname + location.search};
+}
+"""
+PENDING_COVER_JS = r"""
+() => {
+  const el = document.querySelector('[data-layout-pending-target="1"]');
+  if (!el) return {covered: false, descriptor: ''};
+  const rect = el.getBoundingClientRect();
+  const left = Math.max(0, rect.left);
+  const top = Math.max(0, rect.top);
+  const right = Math.min(window.innerWidth, rect.right);
+  const bottom = Math.min(window.innerHeight, rect.bottom);
+  if (right <= left || bottom <= top) return {covered: false, descriptor: ''};
+  const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+  if (!hit || hit === el || el.contains(hit) || hit.contains(el)) {
+    return {covered: false, descriptor: ''};
+  }
+  let name = hit.tagName.toLowerCase();
+  if (hit.id) name += '#' + hit.id;
+  else if (hit.classList && hit.classList.length) {
+    name += '.' + Array.from(hit.classList).slice(0, 2).join('.');
+  }
+  const label = (hit.getAttribute('aria-label') || hit.innerText || '')
+    .replace(/\s+/g, ' ').trim().slice(0, 80);
+  return {covered: true, descriptor: name + (label ? ' "' + label + '"' : '')};
+}
+"""
+PENDING_INVALID_JS = r"""
+() => {
+  window.__layoutInvalid = null;
+  document.addEventListener('invalid', (event) => {
+    if (window.__layoutInvalid) return;
+    const el = event.target;
+    if (!el || !el.tagName) return;
+    window.__layoutInvalid = {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      name: el.getAttribute('name') || '',
+      label: el.getAttribute('aria-label') || el.getAttribute('placeholder') || '',
+    };
+  }, true);
 }
 """
 PENDING_SIGNATURE_JS = r"""
@@ -1214,6 +1257,21 @@ body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
 <button id="selftest-query" type="button">Change the query</button>
 <p id="selftest-late-text">The late paragraph waits.</p>
 <button id="selftest-late" type="button">Change the paragraph later</button>
+<button id="selftest-drag" type="button" aria-label="Drag to reorder the planted card"
+        aria-roledescription="drag handle">Drag to reorder the planted card</button>
+<div style="position:relative;width:220px;height:40px">
+  <button id="selftest-covered" type="button"
+          style="position:absolute;inset:0">Covered by a sheet</button>
+  <div id="selftest-scrim" style="position:absolute;inset:0;z-index:2;
+       background:rgba(120,120,120,.5)"></div>
+</div>
+<form id="selftest-validation" method="post" action="/never">
+  <input name="planted-required" required aria-label="Planted required field">
+  <button id="selftest-validation-submit" type="submit">Submit the planted form</button>
+</form>
+<fieldset disabled>
+  <button id="selftest-fieldset" type="submit">Disabled by a fieldset</button>
+</fieldset>
 <svg class="selftest-svg" role="button" tabindex="0" aria-label="Graph node"
      width="90" height="26"><text x="2" y="18">Graph node</text></svg>
 <script>
@@ -1514,6 +1572,50 @@ def _selftest() -> int:
                     late_control, {}, [], [], False, True, late_reasons)
                 if verdict != "instant":
                     failures.append(f"late verdict: expected instant, found {verdict}")
+            for label, check in (
+                    ("Drag to reorder the planted card", "drag"),
+                    ("Covered by a sheet", "covered"),
+                    ("Submit the planted form", "validation"),
+                    ("Disabled by a fieldset", "fieldset")):
+                page.goto(base + "/", wait_until="domcontentloaded")
+                page.wait_for_timeout(200)
+                page.evaluate("() => window.scrollTo(0, 0)")
+                control = next((item for item in _pending_controls(page)
+                                if item.get("text") == label), None)
+                if control is None:
+                    failures.append(f"{label} pending control: not found")
+                    continue
+                if check == "drag":
+                    if not _pending_drag_handle(control):
+                        failures.append(f"{label}: not seen as a drag handle")
+                elif check == "covered":
+                    _pending_click(page, control, activate=False)
+                    covered = _pending_covered_by(page)
+                    if "selftest-scrim" not in covered:
+                        failures.append(f"{label}: covered by {covered!r}")
+                elif check == "validation":
+                    _pending_click(page, control, activate=False)
+                    _pending_watch_invalid(page)
+                    _pending_activate(page)
+                    page.wait_for_timeout(400)
+                    invalid = _pending_invalid(page)
+                    verdict, evidence = _pending_verdict(
+                        control, {}, [], [], False, False, [], False, invalid)
+                    if verdict != "native-validation":
+                        failures.append(
+                            f"{label}: expected native-validation, found "
+                            f"{verdict} {invalid!r}")
+                    elif invalid.get("label") != "Planted required field":
+                        failures.append(f"{label}: invalid control {invalid!r}")
+                    else:
+                        expected = "the browser's own message on Planted required field"
+                        if evidence.get("reason") != expected:
+                            failures.append(f"{label}: reason {evidence.get('reason')!r}")
+                elif check == "fieldset":
+                    if not control.get("disabled"):
+                        failures.append(f"{label}: still reads enabled")
+                    if _pending_skip(control) != "already disabled":
+                        failures.append(f"{label}: skip {_pending_skip(control)!r}")
             page.goto(base + "/form", wait_until="domcontentloaded")
             page.wait_for_timeout(200)
             held = []
@@ -1558,7 +1660,7 @@ def _selftest() -> int:
             print("  " + failure)
         return 1
     print("SELFTEST PASS 16 detector expectations, 4 box expectations, "
-          "6 pending expectations")
+          "10 pending expectations")
     return 0
 
 class AuditError(Exception):
@@ -2685,6 +2787,40 @@ def _pending_activate(page) -> None:
         }""")
 
 
+def _pending_covered_by(page) -> str:
+    """The descriptor of the element covering the marked control, or ""."""
+    try:
+        answer = page.evaluate(PENDING_COVER_JS)
+    except Exception:  # noqa: BLE001 - a missing control is not a covered one
+        return ""
+    if isinstance(answer, dict) and answer.get("covered"):
+        return str(answer.get("descriptor") or "an element above it")
+    return ""
+
+
+def _pending_watch_invalid(page) -> None:
+    """Install the capture-phase invalid listener before a control is pressed."""
+    page.evaluate(PENDING_INVALID_JS)
+
+
+def _pending_invalid(page) -> dict | None:
+    """The first control the browser itself refused, or None."""
+    try:
+        answer = page.evaluate("() => window.__layoutInvalid || null")
+    except Exception:  # noqa: BLE001 - a navigation clears the page
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+def _invalid_field(info: dict) -> str:
+    """The short field name a native-validation reason names."""
+    for key in ("label", "name", "id", "tag"):
+        value = str(info.get(key) or "").strip()
+        if value:
+            return value
+    return "a required field"
+
+
 def _pending_signature(page) -> dict:
     """The page's structure, text, scroll and location as one signature."""
     try:
@@ -2786,6 +2922,16 @@ def _pending_indicators(page) -> list[dict]:
         }""", PENDING_SELECTOR)
 
 
+def _theme_init_script(theme: str) -> str:
+    """The script that pins one requested theme before a pending page loads.
+
+    A plain script, not a function expression: Playwright evaluates an init
+    script as written, and an arrow function would only be defined.
+    """
+    return ("(() => { try { window.localStorage.setItem('agentdesk.theme', "
+            + json.dumps(str(theme)) + "); } catch (error) {} })();")
+
+
 def _pending_screenshot(run_dir: Path, combo: dict, view: dict, index: int) -> Path:
     """The screenshot path for one pending control."""
     route = view.get("path", "/").split("#")[0].lstrip("/") or "root"
@@ -2832,11 +2978,19 @@ def _pending_skip(control: dict) -> str:
     return ""
 
 
+def _pending_drag_handle(control: dict) -> bool:
+    """True for a control whose activation is a drag, not a click."""
+    text = str(control.get("text") or "").strip().lower()
+    role_description = str(control.get("roleDescription") or "").lower()
+    return text.startswith("drag to") or "drag" in role_description
+
+
 def _pending_verdict(control: dict, state: dict, started: list[dict],
                      before_indicators: list[dict], native_dialog: bool,
                      page_changed: bool = False,
                      signature_reasons: list[str] | None = None,
-                     already_selected: bool = False) -> tuple[str, dict]:
+                     already_selected: bool = False,
+                     invalid_control: dict | None = None) -> tuple[str, dict]:
     """Name one control's pending state and the evidence behind it.
 
     A control that starts no request is ``instant`` only when its page
@@ -2850,6 +3004,12 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
                            "alreadySelected": True}
     if native_dialog:
         return "native-dialog", {"reason": "native dialog opened"}
+    if invalid_control and not started:
+        return "native-validation", {
+            "reason": "the browser's own message on "
+                      + _invalid_field(invalid_control),
+            "invalidControl": invalid_control,
+        }
     control_after = state.get("control") or {}
     indicators_after = state.get("indicators") or []
     before_keys = {(item.get("path"), item.get("text")) for item in before_indicators}
@@ -2910,6 +3070,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
         except Exception:
             pass
         try:
+            page.add_init_script(script=_theme_init_script(combo["theme"]))
             page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
             _wait_for_view(page, view)
             try:
@@ -2941,18 +3102,26 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 "control": control["text"] or control["path"],
                 "control_path": control["path"], "control_tag": control["tag"],
                 "alreadySelected": bool(control.get("alreadySelected")),
+                "dragHandle": bool(_pending_drag_handle(control)),
+                "coveredBy": "",
+                "invalidControl": None,
                 "verdict": "skipped", "evidence": {}, "screenshot": "",
             }
             skip_reason = _pending_skip(control)
+            if not skip_reason and record["dragHandle"]:
+                skip_reason = "drag handle"
             if skip_reason:
                 record["evidence"] = {"reason": skip_reason}
                 if record["alreadySelected"]:
                     record["evidence"]["alreadySelected"] = True
                     record["evidence"]["selectedAttr"] = control.get("selectedAttr", "")
+                if record["dragHandle"]:
+                    record["evidence"]["dragHandle"] = True
                 records.append(record)
                 continue
             fresh = context.new_page()
             fresh.set_default_timeout(4000)
+            fresh.add_init_script(script=_theme_init_script(combo["theme"]))
             started: list[dict] = []
             held: list = []
             file_dialog = [False]
@@ -3013,6 +3182,17 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 box_before = _pending_click(fresh, control, activate=False)
                 if not isinstance(box_before, dict):
                     raise RuntimeError("control not found on the fresh page")
+                covered_by = _pending_covered_by(fresh)
+                if covered_by:
+                    record["verdict"] = "skipped"
+                    record["coveredBy"] = covered_by
+                    record["evidence"] = {
+                        "reason": "covered by " + covered_by,
+                        "coveredBy": covered_by,
+                    }
+                    records.append(record)
+                    continue
+                _pending_watch_invalid(fresh)
                 signature_before = _pending_signature(fresh)
                 started_at = time.monotonic()
                 _pending_activate(fresh)
@@ -3039,10 +3219,14 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                         reasons = late_reasons
                         page_changed = True
                     window_ms = SIGNATURE_LATE_MS
+                invalid_control = _pending_invalid(fresh)
                 verdict, evidence = _pending_verdict(
                     control, state, started, before_indicators,
                     file_dialog[0] or native_dialog[0],
-                    page_changed, reasons)
+                    page_changed, reasons,
+                    invalid_control=invalid_control)
+                if invalid_control and not started:
+                    record["invalidControl"] = invalid_control
                 box_busy = (state.get("control") or {}).get("box")
                 width_delta, height_delta = _box_delta(box_before, box_busy)
                 evidence["signatureChanged"] = page_changed
