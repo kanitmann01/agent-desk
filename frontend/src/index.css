@@ -526,6 +526,14 @@ table.rows td.neg{color:var(--text-2)}
 .btn-labels{display:grid;min-width:0}
 .btn-label{grid-area:1/1;min-width:0;white-space:nowrap}
 .btn-label-hidden{visibility:hidden}
+/* The dot is out of flow, so the pending box keeps the idle box's width
+   and height. The label shift re-centres the visible content between equal
+   margins; the shift is static (no transition), so the pulse is still the
+   only movement. */
+.btn-pending{position:relative}
+.btn-pending .btn-busy-dot{position:absolute;left:6px;top:50%;margin-top:-4px}
+.btn-sm.btn-pending .btn-busy-dot{left:4px}
+.btn-pending .btn-labels{transform:translateX(8px)}
 /* A control in its 100 ms hold keeps the busy dot's space without
    showing it, so the box is stable when the verb arrives. */
 .busy-hidden{visibility:hidden}
