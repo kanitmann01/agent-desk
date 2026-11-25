@@ -1,8 +1,9 @@
 // Plugin detail: the fixed content contract from T05, plus the manage
 // actions T06 puts on the same page. Every action re-reads the server
 // after it finishes; nothing is shown as done before the server says so.
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import Button from '../components/Button';
+import { announce } from '../components/feedback';
 import { useBusy } from '../components/useBusy';
 import { MarketApiError, getInstances, getMarket, marketErrorText, postMarket } from './client';
 import { ConsentSheet } from './ConsentSheet';
@@ -12,6 +13,7 @@ import { MarketGrid, PublisherMark, SkeletonGrid, categoryLabel, riskLabel } fro
 import { asksForWeb, canNever, describeScope, formatBytes, formatDate, pilotBudget, shortDigest, visibleScopes } from './permissions';
 import { SamplePreview } from './Sample';
 import { SignatureChip, StatusChip } from './StatusChip';
+import { BUSY_WATCHDOG_TEXT, useBusyWatchdog } from './useBusyWatchdog';
 import { useDialogFocus } from './useDialogFocus';
 import type { DetailResponse, InstanceDocument, InstancesResponse, MarketDetail, InstalledSummary } from './types';
 
@@ -116,11 +118,13 @@ function PluginActions({
   /** True while this exact action is the one in flight and past the 100 ms gate. */
   const pendingFor = (action: string) => busyShown && busy === action;
   if (installed && cannotRun) {
-    // The Installed row's one action, for the same reason: nothing here can
-    // make this plugin run, so the only honest move is to remove it.
+    // The Installed row's two actions, for the same reason: Remove stops it
+    // and keeps the folder, Purge deletes the folder. Nothing that cannot
+    // make it run comes back.
     return (
       <div className="mkt-actions">
         <Button tone="primary" disabled={anyBusy} onClick={onUninstall}>Remove</Button>
+        <Button tone="secondary" disabled={anyBusy} onClick={onPurge}>Purge data</Button>
       </div>
     );
   }
@@ -199,9 +203,11 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
   const [typed, setTyped] = useState('');
   const expected = `delete-data:${id}`;
   // Escape and Cancel both wait while the purge runs, so the reader cannot
-  // close the sheet out from under a failure they would then never see.
+  // close the sheet out from under a failure they would then never see. A
+  // request that never settles unlocks them at the watchdog.
+  const stuck = useBusyWatchdog(busy);
   const { sheetRef, firstRef } = useDialogFocus<HTMLInputElement>(
-    true, () => { if (!busy) onCancel(); });
+    true, () => { if (!busy || stuck) onCancel(); });
   return (
     <div className="mkt-scrim" role="presentation">
       <div ref={sheetRef} className="mkt-sheet mkt-sheet-small" role="dialog" aria-modal="true" aria-labelledby="mkt-purge-title" tabIndex={-1}>
@@ -218,10 +224,12 @@ function PurgeDialog({ id, busy, error, onCancel, onConfirm }: {
             <input ref={firstRef} value={typed} onChange={(event) => setTyped(event.target.value)}
                    autoComplete="off" spellCheck={false} />
           </label>
+          {stuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
           {error && <p className="mkt-error" role="alert">{error}</p>}
         </div>
         <div className="mkt-sheet-foot">
-          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary" disabled={busy && !stuck}
+                  onClick={onCancel}>Cancel</button>
           <button type="button" className="btn btn-primary"
                   disabled={typed !== expected || busy} aria-busy={busy ? 'true' : undefined}
                   onClick={onConfirm}>
@@ -331,10 +339,23 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const [purgeError, setPurgeError] = useState('');
   const [confirmAction, setConfirmAction] = useState<null | { action: 'rollback' | 'uninstall'; title: string; body: string }>(null);
   const [confirmError, setConfirmError] = useState('');
+  // Whether a sheet is still on screen when its request settles, so a late
+  // failure can be announced on the page instead of swallowed by a sheet the
+  // reader already left.
+  const confirmOpenRef = useRef(false);
+  confirmOpenRef.current = confirmAction !== null;
+  const purgeOpenRef = useRef(false);
+  purgeOpenRef.current = purgeOpen;
+  const confirmStuck = useBusyWatchdog(busy !== '');
   const confirmFocus = useDialogFocus<HTMLButtonElement>(
     confirmAction !== null,
-    () => { if (busy === '') setConfirmAction(null); },
+    () => { if (busy === '' || confirmStuck) setConfirmAction(null); },
   );
+  /** Say a confirm failure in its sheet, or on the page if the reader left it. */
+  const reportConfirmFailure = (text: string) => {
+    if (confirmOpenRef.current) setConfirmError(text);
+    else announce(text);
+  };
   // The manage view's instance setup (T5): the list, its load error, and
   // which sheet is open. instanceAttempt re-reads after a sheet finishes.
   const [instances, setInstances] = useState<InstancesResponse | null>(null);
@@ -579,14 +600,14 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
   const confirmRollback = () => run(async () => {
     const res = await postMarket<{ from: string; to: string }>('/api/marketplace/rollback', { id: plugin.id });
     return `Rolled back from ${res.from} to ${res.to}.`;
-  }, 'rollback', setConfirmError);
+  }, 'rollback', reportConfirmFailure);
 
   /** Uninstall the plugin and leave for the installed list; the data folder stays until purged. */
   const confirmUninstall = () => run(async () => {
     await postMarket('/api/marketplace/uninstall', { id: plugin.id });
     navigate('/marketplace/installed');
     return 'Uninstalled.';
-  }, 'uninstall', setConfirmError);
+  }, 'uninstall', reportConfirmFailure);
 
   /**
    * Run the open confirmation's action, keeping the dialog up with its
@@ -609,7 +630,9 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
    * installed list.
    *
    * A refusal keeps the dialog open with the server's message, since closing
-   * it would throw away the typed confirmation.
+   * it would throw away the typed confirmation. If the watchdog released the
+   * reader and they left, a late refusal is announced, and a late success is
+   * announced on the installed list it reaches.
    */
   const confirmPurge = async () => {
     setBusy('purge');
@@ -617,10 +640,13 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
     try {
       await postMarket('/api/marketplace/purge-data',
         { id: plugin.id, confirm: `delete-data:${plugin.id}` });
+      announce(`${plugin.name} data purged.`);
       setPurgeOpen(false);
       navigate('/marketplace/installed');
     } catch (err) {
-      setPurgeError(marketErrorText(err));
+      const text = marketErrorText(err);
+      if (purgeOpenRef.current) setPurgeError(text);
+      else announce(text);
     } finally {
       setBusy('');
     }
@@ -972,11 +998,12 @@ export function PluginDetailPage({ id, manage = false }: { id: string; manage?: 
             </div>
             <div className="mkt-sheet-body">
               <p>{confirmAction.body}</p>
+              {confirmStuck && <p className="mkt-attention" role="status">{BUSY_WATCHDOG_TEXT}</p>}
               {confirmError && <p className="mkt-error" role="alert">{confirmError}</p>}
             </div>
             <div className="mkt-sheet-foot">
               <button ref={confirmFocus.firstRef} type="button" className="btn btn-secondary"
-                      disabled={busy !== ''} onClick={() => setConfirmAction(null)}>
+                      disabled={busy !== '' && !confirmStuck} onClick={() => setConfirmAction(null)}>
                 Cancel
               </button>
               <Button tone="primary" disabled={busy !== ''}
