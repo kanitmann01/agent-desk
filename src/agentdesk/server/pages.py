@@ -87,6 +87,13 @@ body{font-family:var(--font-ui);background:var(--bg);color:var(--ink-1);font-siz
 /* One table per wrapper: the table may be wider than the reading column,
    so it scrolls inside its own box; the page never scrolls sideways. */
 .table-scroll{max-width:100%;overflow-x:auto}
+/* A plugin's authored table (plugins/html.py) breaks only a word that
+   cannot fit its cell; the wrapper above scrolls a table that still
+   cannot fit the card. */
+.w-table{width:100%;border-collapse:collapse;font-size:13px}
+.w-table th{text-align:left;font-size:12px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;padding:4px 8px 8px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+.w-table td{padding:9px 8px 9px 0;border-bottom:1px solid var(--hairline);overflow-wrap:break-word}
+.w-table tr:last-child td{border-bottom:none}
 /* The static memory graph (/memory/graph without JavaScript). */
 .graph-static{overflow-x:auto;border:1px solid var(--hairline);border-radius:var(--r-card);background:var(--surface);padding:8px}
 .graph-edge{stroke:var(--ink-4)}
@@ -545,6 +552,7 @@ function post(url, body) {
 // page's own note.
 var BUSY_DELAY_MS = 100;
 var TAKING_LONGER_MS = 10000;
+var BUSY_WATCHDOG_MS = 180000;
 
 function shouldReloadAfterPost(ok) {
   return ok === true;
@@ -566,6 +574,12 @@ function stackButton(btn) {
 
 function setButtonBusy(btn, on, label) {
   if (!btn) return;
+  // A resting control cancels the delayed busy mark: a fast answer must
+  // not be followed by a timer that locks the control after it is done.
+  if (!on && btn._busyTimer) {
+    window.clearTimeout(btn._busyTimer);
+    btn._busyTimer = null;
+  }
   stackButton(btn);
   var busy = btn.querySelector('.btn-label-busy');
   if (on && label && busy) busy.textContent = label;
@@ -589,10 +603,14 @@ function controlLabel(btn) {
 }
 
 function beginControl(btn) {
-  var timer = window.setTimeout(function () {
+  if (!btn) return;
+  if (btn._busyTimer) window.clearTimeout(btn._busyTimer);
+  // The timer lives on the element, so setButtonBusy(false) can cancel
+  // it from anywhere: no caller has to keep the returned cancel.
+  btn._busyTimer = window.setTimeout(function () {
+    btn._busyTimer = null;
     setButtonBusy(btn, true, controlLabel(btn));
   }, BUSY_DELAY_MS);
-  return function cancel() { window.clearTimeout(timer); };
 }
 
 function noteRegion() {
@@ -685,7 +703,10 @@ function onSubmit(event) {
   if (!form || form.tagName !== 'FORM') return;
   if ((form.getAttribute('method') || '').toLowerCase() !== 'post') return;
   if (form.getAttribute('data-busy-form') === '1') {
+    // A duplicate submit must reach no listener at all: the fetch-backed
+    // forms would post twice, because aria-disabled arrives 100 ms late.
     event.preventDefault();
+    event.stopPropagation();
     return;
   }
   form.setAttribute('data-busy-form', '1');
@@ -697,12 +718,57 @@ function onSubmit(event) {
     setButtonBusy(btn, true, controlLabel(btn));
     if (wait) showWaitPlaceholder(form, wait);
   }, BUSY_DELAY_MS);
+  // A native post can lose its navigation (Escape stops the load) and
+  // leave the form flagged busy forever. After a generous limit, while
+  // the page is still visible, the form unlocks itself and says so.
+  form._busyDeadline = Date.now() + BUSY_WATCHDOG_MS;
+  form._busyWatchdog = window.setTimeout(function () {
+    form._busyWatchdog = null;
+    if (document.visibilityState === 'visible') {
+      unlockStuckForm(form);
+      return;
+    }
+    form._busyVisibility = function () {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() < form._busyDeadline) return;
+      unlockStuckForm(form);
+    };
+    document.addEventListener('visibilitychange', form._busyVisibility);
+  }, BUSY_WATCHDOG_MS);
+}
+
+function unlockStuckForm(form) {
+  if (!form || form.getAttribute('data-busy-form') !== '1') return;
+  cancelFormBusy(form);
+  Array.prototype.forEach.call(
+    form.querySelectorAll('[data-stacked="1"]'), function (btn) {
+      setButtonBusy(btn, false);
+    });
+  removeWaitPlaceholder(form.getAttribute('data-wait'));
+  showNote('This is taking too long. Check that the desk is still running, then try again.');
+}
+
+function removeWaitPlaceholder(selector) {
+  if (!selector) return;
+  var region = document.querySelector(selector);
+  if (!region) return;
+  var placeholder = region.querySelector('[data-wait-ph]');
+  if (placeholder) placeholder.remove();
+  region.removeAttribute('aria-busy');
 }
 
 function cancelFormBusy(form) {
   if (form && form._busyTimer) {
     window.clearTimeout(form._busyTimer);
     form._busyTimer = null;
+  }
+  if (form && form._busyWatchdog) {
+    window.clearTimeout(form._busyWatchdog);
+    form._busyWatchdog = null;
+  }
+  if (form && form._busyVisibility) {
+    document.removeEventListener('visibilitychange', form._busyVisibility);
+    form._busyVisibility = null;
   }
   if (form) form.removeAttribute('data-busy-form');
 }
@@ -714,10 +780,8 @@ function restoreAfterBack() {
   Array.prototype.forEach.call(document.querySelectorAll('[data-stacked="1"]'), function (btn) {
     setButtonBusy(btn, false);
   });
-  Array.prototype.forEach.call(document.querySelectorAll('[data-wait-ph]'), function (ph) {
-    var region = ph.parentNode;
-    ph.remove();
-    if (region) region.removeAttribute('aria-busy');
+  Array.prototype.forEach.call(document.querySelectorAll('[data-wait]'), function (form) {
+    removeWaitPlaceholder(form.getAttribute('data-wait'));
   });
 }
 
@@ -760,12 +824,13 @@ Array.prototype.forEach.call(
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({path: path})})
       .then(function (r) {
-        return r.json().then(function (d) { return {ok: r.ok, data: d}; });
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return {ok: r.ok, data: d}; });
       })
       .then(function (res) {
-        if (!shouldReloadAfterPost(res.ok) || res.data.error) {
+        if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
           setButtonBusy(btn, false);
-          show(res.data.error || 'The workbook was not connected; nothing changed.');
+          show(causeOf(res));
           return;
         }
         location.reload();
@@ -832,9 +897,16 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
   var show = function (text) { note.hidden = false; note.textContent = text; };
   var couldNotReach = 'The dashboard could not reach its own server; nothing changed.';
   var apply = function (url, body, btn) {
-    post(url, body).then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.error) { setButtonBusy(btn, false); show(d.error); return; }
+    post(url, body).then(function (r) {
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return {ok: r.ok, data: d}; });
+      })
+      .then(function (res) {
+        if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+          setButtonBusy(btn, false);
+          show(causeOf(res));
+          return;
+        }
         location.reload();
       })
       .catch(function () {
@@ -881,9 +953,16 @@ document.querySelectorAll('[data-calendar-retest]').forEach(function (btn) {
       fetch('/sources/calendar-bridge/upload', {method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: reader.result})
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.error) { setButtonBusy(upload, false); show(d.error); return; }
+        .then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (d) { return {ok: r.ok, data: d}; });
+        })
+        .then(function (res) {
+          if (!shouldReloadAfterPost(res.ok) || (res.data && res.data.error)) {
+            setButtonBusy(upload, false);
+            show(causeOf(res));
+            return;
+          }
           location.reload();
         })
         .catch(function () {
@@ -1208,6 +1287,7 @@ document.querySelectorAll('[data-check]').forEach(function (el) {
     app.classList.toggle('rail-collapsed', collapsed);
     btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    btn.setAttribute('title', collapsed ? 'Expand navigation' : 'Collapse navigation');
     var label = btn.querySelector('.rail-toggle-label');
     if (label) label.textContent = collapsed ? 'Expand' : 'Collapse';
   };
@@ -1307,7 +1387,7 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
     badge = f'<span class="count">{inbox_count}</span>' if inbox_count else ""
     toggle = (
         '<button type="button" class="rail-toggle" aria-expanded="true" '
-        'aria-label="Collapse navigation">'
+        'aria-label="Collapse navigation" title="Collapse navigation">'
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
         '<path d="M14.5 6.5 8 12l6.5 5.5"/></svg>'
@@ -1332,8 +1412,11 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         if href == "/inbox" and inbox_count:
             name = f"{label}, {inbox_count} waiting"
         mark = label[:1]
+        # The CSS cuts a label that cannot fit; the title is the full
+        # word, the same one the SPA rail offers.
         return (
-            f'<a href="{href}"{current} aria-label="{name}">'
+            f'<a href="{href}"{current} aria-label="{name}" '
+            f'title="{html.escape(label)}">'
             f'<span class="rail-mark" aria-hidden="true">{mark}</span>'
             f'<span class="rail-label">{label}</span>{extra}</a>'
         )
@@ -1416,15 +1499,26 @@ def page_footer(version: str, note: str = "", touches: bool = True) -> str:
     )
 
 
+NOTICE_MAX_CHARS = 300
+
+
 def status_line(text: str, kind: str = "status") -> str:
     """The one line that names an outcome where the reader is looking.
 
-    `kind` is "status" for a success and "alert" for a failure; the line
-    is escaped here and omitted when `text` is empty.
+    `kind` is "status" for a success and "alert" for a failure. The role
+    is chosen from an allow-list, never taken from the caller's string,
+    because a handler forwards `notice_kind` straight from the URL: a
+    crafted link must not close the attribute and inject markup. The line
+    is escaped here and omitted when `text` is empty; a notice longer
+    than NOTICE_MAX_CHARS is cut, so a URL cannot paste a wall of text.
     """
     if not text:
         return ""
-    return f'<p class="page-status" role="{kind}">{html.escape(text)}</p>'
+    text = str(text)
+    if len(text) > NOTICE_MAX_CHARS:
+        text = text[:NOTICE_MAX_CHARS].rstrip()
+    role = "alert" if kind == "alert" else "status"
+    return f'<p class="page-status" role="{role}">{html.escape(text)}</p>'
 
 
 def page_shell(

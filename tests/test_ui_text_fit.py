@@ -227,6 +227,21 @@ def test_the_table_cell_breaks_only_a_word_that_cannot_fit():
     assert "overflow-wrap:break-word" in rule("table.rows th")
 
 
+def test_a_plugin_table_rides_in_a_scroller_with_breaking_cells():
+    from agentdesk.plugins.html import element_html
+
+    markup = element_html({
+        "kind": "table",
+        "columns": ["Deal", "Owner"],
+        "rows": [["A word too long for any column", "Priya"]],
+    })
+    assert '<div class="table-scroll"><table class="w-table">' in markup
+    assert markup.endswith("</table></div>")
+    assert "overflow-x:auto" in rule(".table-scroll")
+    assert "overflow-wrap:break-word" in rule(".w-table td")
+    assert "overflow-wrap:break-word" in rule(".w-table th")
+
+
 # -- The markup the probe measured ---------------------------------------
 
 class _LedgerEntry:

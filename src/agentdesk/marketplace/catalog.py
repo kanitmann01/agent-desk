@@ -168,6 +168,40 @@ def _capabilities(raw) -> dict:
     }
 
 
+CAPABILITY_KEYS = ("sources", "permissions", "elementKinds", "filesystem",
+                   "network")
+
+
+def capability_block(entry: dict) -> dict:
+    """The capabilities block every card and detail carries.
+
+    All five lists are always present, so a client can test network and
+    sources without guarding for a missing key. The values are the entry's
+    already normalized facts; nothing is read from a manifest here.
+    """
+    capabilities = entry.get("capabilities")
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    return {key: _strings(capabilities.get(key)) for key in CAPABILITY_KEYS}
+
+
+def _with_manifest_capabilities(entry: dict, manifest: dict) -> dict:
+    """Merge a pinned entry's capability facts with its own manifest.
+
+    The committed bundled catalog pins the release identity but carries no
+    permission trees, so the capabilities a client reads must be derived
+    from the manifest that shipped with the tree. The manifest facts are
+    unioned with whatever the pin already holds, never replacing them.
+    """
+    derived = _capabilities(manifest)
+    current = capability_block(entry)
+    merged = dict(entry)
+    merged["capabilities"] = {
+        key: list(dict.fromkeys(current[key] + derived[key]))
+        for key in CAPABILITY_KEYS
+    }
+    return merged
+
+
 def _changelog(raw, version: str) -> dict:
     """Normalize a changelog entry from either a string or an object.
 
@@ -366,6 +400,8 @@ def build_bundled_catalog(registry_root) -> dict:
                             for key in ("summary", "description", "highlights"):
                                 if not enriched.get(key) and manifest.get(key):
                                     enriched[key] = manifest[key]
+                            enriched = _with_manifest_capabilities(
+                                enriched, manifest)
                         entries.append(enriched)
                         continue
                     manifest = read_json(root / "plugins" / plugin_id / "manifest.json", None)
@@ -465,6 +501,9 @@ def card(entry: dict) -> dict:
         "deprecated": entry.get("deprecated"),
         "yanked": bool(entry.get("yanked")),
         "sampleAvailable": bool(entry.get("sampleAvailable")),
+        # The client decides whether a plugin can run here from the same
+        # facts the detail page shows, so the card carries them too.
+        "capabilities": capability_block(entry),
     }
 
 
@@ -481,13 +520,7 @@ def detail(entry: dict) -> dict:
         "digest": entry.get("digest", ""),
         "signature": dict(entry.get("signature") or {}),
         "provenance": dict(entry.get("provenance") or {}),
-        "capabilities": {
-            "sources": list((entry.get("capabilities") or {}).get("sources") or []),
-            "permissions": list((entry.get("capabilities") or {}).get("permissions") or []),
-            "elementKinds": list((entry.get("capabilities") or {}).get("elementKinds") or []),
-            "filesystem": list((entry.get("capabilities") or {}).get("filesystem") or []),
-            "network": list((entry.get("capabilities") or {}).get("network") or []),
-        },
+        "capabilities": capability_block(entry),
         "changelog": dict(entry.get("changelog") or {}),
         "publishedAt": entry.get("publishedAt", ""),
         "validation": {

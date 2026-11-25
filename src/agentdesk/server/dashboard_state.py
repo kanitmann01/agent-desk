@@ -117,6 +117,7 @@ class DashboardState:
 
     version: str
     sample: bool
+    desk_network: bool
     flags: dict[str, bool]
     sales: SourceState
     commitments: SourceState
@@ -138,14 +139,15 @@ class DashboardState:
     def payload(self) -> dict:
         """Return the GET /api/dashboard JSON body for this state.
 
-        The key set is part of the API contract: version, sample, flags,
-        sources, sales, commitments, research, inbox, deskCheck, skills,
-        layout, plugins, recommendations, update and setup, each with the
-        nested shape the SPA reads.
+        The key set is part of the API contract: version, sample,
+        deskNetwork, flags, sources, sales, commitments, research, inbox,
+        deskCheck, skills, layout, plugins, recommendations, update and
+        setup, each with the nested shape the SPA reads.
         """
         return {
             "version": self.version,
             "sample": self.sample,
+            "deskNetwork": self.desk_network,
             "flags": dict(self.flags),
             "sources": {
                 "connected": self.sources_connected,
@@ -228,18 +230,29 @@ NO_WIDGET_CAUSES = (
     "This plugin adds no card to your dashboard.",
 )
 
+# The source reason code (sources.py) for a build without an HTTP
+# transport. Such a plugin can never read its source here, so a Re-test
+# can never turn its amber card green: the home screen drops the card
+# instead of offering a button that cannot work. This is the code, not
+# the reader sentence, so changing the wording changes nothing.
+UNRUNNABLE_SOURCE_REASONS = ("no-transport",)
+
 
 def dashboard_plugin_cards(cards: list[dict]) -> list[dict]:
     """The plugin cards the dashboard shows.
 
     A card that says the plugin contributes no widget is dropped: there is
     nothing to draw, and the install stays listed on the marketplace
-    Installed page. A setup card is a real next step, so it stays.
+    Installed page. A card whose source cannot run on this desk (its
+    internal reason code says no transport) is dropped for the same reason:
+    it would be a permanent amber tile with a Re-test that cannot succeed.
+    A setup card is a real next step, so it stays.
     """
     return [
         card for card in cards
         if card.get("state") != "contributes no widget"
         and card.get("cause") not in NO_WIDGET_CAUSES
+        and card.get("sourceReason") not in UNRUNNABLE_SOURCE_REASONS
     ]
 
 
@@ -255,6 +268,12 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     # Imported here because app.py imports this module; the reverse import at
     # call time keeps the dependency acyclic.
     from agentdesk.server.app import enabled_plugin_ids, live_sources, with_insight
+
+    # The same fact the marketplace reports: the live runner decides,
+    # never a constant, because production builds it without a transport.
+    plugin_runtime = getattr(server, "plugins", None)
+    plugin_runner = getattr(plugin_runtime, "runner", None)
+    desk_network = bool(getattr(plugin_runner, "has_network", False))
 
     settings = server.settings
 
@@ -356,6 +375,7 @@ def build_dashboard_state(server, now: dt.datetime | None = None) -> DashboardSt
     return DashboardState(
         version=agentdesk.__version__,
         sample=sample,
+        desk_network=desk_network,
         flags={
             "excelEnabled": excel_enabled,
             "calendarEnabled": calendar_enabled,

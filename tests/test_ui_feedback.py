@@ -311,8 +311,11 @@ def test_the_assistant_result_page_has_a_status_line_and_a_focusable_heading(boo
     status, out, page = _post_form(
         booted, "/assistant/ask", {"question": "what changed?"}, follow=True)
     assert status == 200
-    assert 'role="status"' in page
-    assert "Your answer is below." in page
+    # The sentence itself, in the one line status_line renders: the shell
+    # always carries a hidden role="status" note, so matching the role
+    # alone would pass with the notice deleted.
+    assert ('<p class="page-status" role="status">Your answer is below.</p>'
+            in page)
     assert "<h1>" in page or "<h1 " in page
     assert "heading.setAttribute('tabindex', '-1')" in pages.APP_JS
     assert "heading.focus()" in pages.APP_JS
@@ -323,8 +326,8 @@ def test_the_agents_result_page_has_a_status_line_and_a_focusable_heading(booted
         booted, "/agents/run",
         {"agent": "worksheet-brief", "brief": "the Q3 review"}, follow=True)
     assert status == 200
-    assert 'role="status"' in page
-    assert "run history" in page
+    assert ('<p class="page-status" role="status">Ran Worksheet brief. '
+            "Its receipt is at the top of the run history.</p>") in page
     assert "<h1>" in page or "<h1 " in page
 
 
@@ -333,8 +336,12 @@ def test_the_memory_result_page_has_a_status_line_and_a_focusable_heading(booted
     status, out, page = _post_form(
         booted, "/memory/recall", {"query": "Acme renewal"}, follow=True)
     assert status == 200
-    assert 'role="status"' in page
-    assert "would recall" in page
+    # The notice element itself, not the maintenance button's words.
+    assert re.search(
+        r'<p class="page-status"(?: id="memory-notice")? role="status">'
+        r"Here is what the assistant would recall, best match first\.</p>",
+        page,
+    ), page
     assert "<h1>" in page or "<h1 " in page
 
 

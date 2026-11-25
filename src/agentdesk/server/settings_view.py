@@ -451,7 +451,11 @@ def _agent_section(settings_values: dict, agent_loop: dict | None) -> str:
 <div class='settings-block'>
 {_toggle_button("autonomy", on, label="Act on its own")}
 <div class='setting-row'><span>Check every</span>
-<button class='btn btn-secondary' data-setting='agent_loop_minutes'>{interval}</button></div>
+<form method='post' action='/settings/toggle' class='setting-form'>
+<input type='hidden' name='key' value='agent_loop_minutes'>
+<input type='hidden' name='return_to' value='/settings#agent'>
+<button class='btn btn-secondary' type='submit' data-setting='agent_loop_minutes'>{interval}</button>
+</form></div>
 </div>
 {cadence}
 <form method="post" action="/api/agent-loop/run" class="cardform">
