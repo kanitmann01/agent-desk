@@ -220,6 +220,53 @@ describe('the hero band', () => {
 });
 
 describe('the research command bar', () => {
+  it('disables Research until the question has a word', async () => {
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={vi.fn().mockResolvedValue(true)} />);
+    const field = screen.getByLabelText('Research question');
+    const send = screen.getByRole('button', { name: 'Research' });
+    // An empty question has nothing to send, so the control says so
+    // before it is pressed, not after a press that goes nowhere.
+    expect(send).toBeDisabled();
+    await user.type(field, '   ');
+    expect(send).toBeDisabled();
+    await user.type(field, 'Who sells to Meridian?');
+    expect(send).toBeEnabled();
+    await user.clear(field);
+    expect(send).toBeDisabled();
+  });
+
+  it('sends nothing when Enter is pressed in a blank field', async () => {
+    const onAsk = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={onAsk} />);
+    const field = screen.getByLabelText('Research question');
+    await user.type(field, '   {Enter}');
+    expect(onAsk).not.toHaveBeenCalled();
+    expect(field).toHaveValue('   ');
+  });
+
+  it('keeps the accessible name Research in both states', async () => {
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={vi.fn().mockResolvedValue(true)} />);
+    const field = screen.getByLabelText('Research question');
+    const send = screen.getByRole('button', { name: 'Research' });
+    expect(send).toHaveAccessibleName('Research');
+    await user.type(field, 'What changed this week?');
+    expect(send).toBeEnabled();
+    expect(send).toHaveAccessibleName('Research');
+  });
+
+  it('asks from a typed question when Research is pressed', async () => {
+    const onAsk = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(<CommandBar busy={false} onAsk={onAsk} />);
+    const field = screen.getByLabelText('Research question');
+    await user.type(field, 'What changed this week?');
+    await user.click(screen.getByRole('button', { name: 'Research' }));
+    expect(onAsk).toHaveBeenCalledWith('What changed this week?');
+  });
+
   it('asks on Enter and clears only when answered', async () => {
     const onAsk = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
