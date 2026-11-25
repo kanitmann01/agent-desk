@@ -28,12 +28,16 @@ Honest gaps in the marketplace branch as of 2026-11-24. Each item is verified in
 - The audit log keeps the last 1000 events in `audit.json` and does not rotate. The NDJSON export at `GET /api/marketplace/audit/export` includes only `at`, `action`, `pluginId`, `actor` and `outcome`; it drops the internal detail field, so changelog text, rejection reasons and report notes are not exportable. There is no SIEM forwarding.
 - Reports from plugin and publisher pages are stored locally in `reports.json`. The Admin page has no report queue, and the Trust Center displays `reportPath` as `/marketplace/report` even though the SPA has no route at that path; it renders the marketplace 404.
 - The Trust Center says nothing has been validated until a validator run is recorded, and a bundled registry release with no recorded run shows as not checked.
-- competitor-watch is the only plugin that uses `http-get`, and it requests `example.com`. The default policy has an empty `networkAllowlist`, so it is refused with `policy:network-not-allowed` until an operator adds the host. Even after the host is allowed, the production runner has no HTTP transport, so the source still cannot run (see Plugins and the network).
+- competitor-watch is the only plugin that uses `http-get`, and it requests `example.com`. The default policy has an empty `networkAllowlist` and a T1 ceiling, so the plugin is refused on both counts until an operator raises the ceiling and adds the host. Even after both, the production runner has no HTTP transport, so the source still cannot run (see Plugins and the network).
 - There are no ratings, reviews, download counts or usage telemetry, by design. There is also no way to see which other desks use a plugin.
+- `/marketplace/admin` logs a 403 in the browser console when no administrator session exists. The audit reports it as `runtime`; it was there before this wave.
 
 ## Plugins and the network
 
-- No plugin can reach the network on this desk. The production runner is built without an HTTP transport (`src/agentdesk/server/app.py:7782-7783`; the default at `src/agentdesk/plugins/runtime.py:189`), no setting turns it on, and an `http-get` source answers "The host has no HTTP transport available for this plugin." (`src/agentdesk/plugins/sources.py:1318-1320`) even when its optional host grant was accepted. The shipped `competitor-watch` (Page watch) therefore cannot run even with its `example.com` grant (`registry/plugins/competitor-watch/manifest.json:39-46`), and the wizard still offers "A web page" (`src/agentdesk/wizard/vocabulary.py:66`). Spec 015's promise that the Page watch card works on a fresh desk (`specs/015-retire-the-plugin-set.md:66-68`) is retracted until a transport exists.
+- No plugin can reach the network on this desk. The plugin runner is built without an HTTP transport (`src/agentdesk/plugins/execute.py`, `has_network`), and no setting turns it on. Page watch cannot run anywhere, yet the executive plugin wizard still offers "A web page" as a source (`src/agentdesk/wizard/vocabulary.py:66`). Wiring a transport, and removing or keeping that wizard choice, is the founder's decision.
+- A plugin that cannot run here gets no home-screen tile: the server drops its card (`dashboard_plugin_cards` in `src/agentdesk/server/dashboard_state.py`), and the marketplace says why: "Cannot run on this desk" on the Installed page and on the plugin's page, where Remove is the only action. The installed plugin is therefore invisible on the home screen.
+- Competitor Watch is refused for its network host. The bundled plugins carry truthful capabilities (sources, permissions, network), so the policy check that always existed now fires for them: with the risk tier raised to T2 the plugin is still refused until `example.com` is on `networkAllowlist` in the local policy file (`docs/ops/marketplace-operator.md` explains it). The detail page names every reason and says that only whoever manages the policy can change it.
+- Those capabilities are read from the registry checkout in the tree (`registry/plugins/<id>/manifest.json`). Without a checkout the bundled pins carry no capability facts, so the cannot-run notice disappears.
 
 ## Studio and publishing
 
@@ -50,8 +54,6 @@ Honest gaps in the marketplace branch as of 2026-11-24. Each item is verified in
 - A workbook reading looks only at the rows the tracker already selected: at most 10 columns and 60 rows, and only the first five suggested row indices are exposed. It names a chart shape; it does not draw one.
 - Digest readings and reply drafts work from message headers and the first line only. No message body is read, so a thread that buried its question is not recognised.
 - A drafted reply is a skeleton or a single model output. It is never sent, never saved to the draft folder, and it carries no recipient, so the user must open it in the reply writer.
-- The press button is drawn on the SPA's tracker and plugin cards. Its explanation and its reply draft have no placeholder while the model works; the answer or the staged card simply appears when it arrives.
-- The built SPA's tracker card draws its own figure and then every appended element, so a live tracker repeats its value, change, workbook, pace and history on one tile.
 - Research suggestions are keyword-anchored: a focus topic named once in the stored answer counts as covered. The reading cannot judge depth, so it says "not named" rather than "not answered".
 - The insight readings never write memory. Recall is read-only and a sealed or empty bank degrades to one sentence naming what was not consulted.
 - The next meeting's reading knows its title, time and prep items, not its attendees, so no prompt names a person.
@@ -60,7 +62,11 @@ Honest gaps in the marketplace branch as of 2026-11-24. Each item is verified in
 
 - The consent sheet traps Tab and Shift+Tab, closes on Escape and restores focus to its trigger. Initial focus lands on the close button, not the confirm button, so the first keypress cannot accidentally accept a widening.
 - The source filter is supplied as described above, so one visible option can never produce results.
-- Server-rendered pages navigate on submit. A model-backed action can show a busy button and a same-shape placeholder in the outgoing page, but its result arrives as a new page, not in place. The page script binds its controls once at load (`src/agentdesk/server/pages.py:488` onward), so a fetch-based swap would leave the new markup unbound.
+- Server-rendered pages navigate on submit: a result is a new page, not an in-place swap. The outcome is a status line on the new page, said once (it is removed from the address bar after it is drawn). The page script binds its controls once at load, so a fetch-based swap would leave the new markup unbound.
+- No request has a timeout. On server pages a form or a click control that is still waiting after 180 seconds unlocks itself and says "This is taking too long...". If the first request is still running on the server, a second press runs the action again. In the single page app, a request that never settles keeps its control busy and its dialog open until the page is reloaded (for example the purge dialog, which cannot be closed while the purge runs).
+- A fast double press is stopped on server pages (a synchronous guard) and in the app's own forms.
+- Text under 11px: the type scale has small labels the audit reports as `tiny-type`; they are left for a next wave. The evidence document has the count.
+- Under tripled strings, table cells inside their scroll wrappers wrap to one word per line (`/settings/activity`, `/what-this-touches`): the table scrolls, the page never does.
 
 ## Keys, connections and the legacy upgrade (spec 018)
 
@@ -75,5 +81,7 @@ Honest gaps in the marketplace branch as of 2026-11-24. Each item is verified in
 - No autostart, no Windows service, no scheduled task and no tray helper. The app starts when the user launches it.
 - Updates install only from the share path you set, only when Install updates is on (off by default), and roll back automatically. The launcher stub that switches to a staged version is still pending Security; until it ships, a staged version waits and the shortcut keeps the current one.
 - No telemetry, no crash reporting and no remote diagnostics. Support depends on the local data folder and the audit export.
+- `tools/layout_audit.py` is not part of `tools/ci_local.py`, on purpose: the browser is not pinned, server pages use the operating system's fonts (so Windows and macOS differ), and there is no committed baseline to compare against.
+- `tools/demo_walkthrough.py` is stale: on main it stops at step 4 of 20. `tools/demo_readiness.py` is the current end-to-end net and prints `METRIC ready=27`.
 
 The operator procedures that work around several of these gaps are in `docs/ops/marketplace-operator.md`.

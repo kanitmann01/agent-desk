@@ -184,9 +184,11 @@ def test_the_pytest_gate_names_the_tests_that_failed(monkeypatch):
         ci_local, "subprocess", types.SimpleNamespace(run=lambda args, **_kw: _Failed()))
     ok, detail = ci_local._pytest_gate({})
     # the counts stay first, the names follow, and the list is capped so one
-    # line still holds the verdict
+    # line still holds the verdict; the worker count is the machine's own (a
+    # hosted runner has fewer cores than a desk), so it is not pinned here
     assert ok is False
-    assert detail.startswith("parallel -n 8: 1 failed, 3507 passed")
+    assert detail.startswith("parallel -n ")
+    assert ": 1 failed, 3507 passed" in detail
     assert "FAILED tests/test_a.py::test_a - assert 1 == 2" in detail
     assert "FAILED tests/test_b.py::test_b" in detail
     assert "ERROR tests/test_c.py" in detail

@@ -1,6 +1,6 @@
 # Spec 026: Text that fits every screen
 
-Status: in progress (2026-11-24). Filed as #303. Tickets: #304, #305, #306, #307, #308.
+**Status:** done (2026-11-24); evidence in `docs/evidence/2026-11-24-text-fit/EVIDENCE.md`. Filed as #303. Tickets: #304, #305, #306, #307, #308.
 Ticket 01 landed at `3d942ed` and has no issue.
 `GLOSSARY.md` is the vocabulary.
 The layout audit's browser probe and the two stylesheets are the seams; no new product seam.
