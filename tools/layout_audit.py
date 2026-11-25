@@ -3860,7 +3860,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--api-fixture", default="",
                         help="fulfil matching GET /api requests from this JSON map")
     parser.add_argument("--mock-delay-ms", type=int, default=0,
-                        help="sleep this long in the in-process mock model")
+                        help="delay the in-process mock model's answer this long")
     parser.add_argument("--slow-ms", type=int, default=0,
                         help="delay every document and /api response this many ms")
     parser.add_argument("--pending-audit", action="store_true",
