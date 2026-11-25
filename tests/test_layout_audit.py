@@ -282,6 +282,38 @@ def test_signature_reasons_name_every_change():
         "navigation-or-unavailable"]
 
 
+def test_already_selected_control_is_skipped():
+    """A radio, tab or current control is skipped before any click."""
+    selected = {"text": "Unkey", "alreadySelected": True,
+                "selectedAttr": "aria-checked"}
+    assert audit._pending_skip(selected) == "already selected"
+    verdict, evidence = audit._pending_verdict(
+        selected, {}, [], [], False, False, [], True)
+    assert verdict == "skipped"
+    assert evidence == {"reason": "already selected", "alreadySelected": True}
+    assert audit._pending_skip({"disabled": True}) == "already disabled"
+    assert audit._pending_skip({}) == ""
+
+
+def test_signature_includes_the_query_string():
+    """The query string is part of the location a signature compares."""
+    assert "location.search" in audit.PENDING_SIGNATURE_JS
+    before = _signature(location="/marketplace/search?q=watch")
+    after = _signature(location="/marketplace/search?q=forecast")
+    assert audit._signature_reasons(before, after) == ["location"]
+
+
+def test_late_signature_reason_names_the_millisecond():
+    """A change first seen after the early window names when it landed."""
+    before = _signature()
+    after = _signature(html="<body><p>Late</p></body>")
+    reasons = audit._late_signature_reasons(before, after, 812)
+    assert reasons[0] == "changed late at 812 ms"
+    assert "structure-or-text" in reasons
+    assert audit._late_signature_reasons(before, before, 900) == []
+    assert audit.SIGNATURE_LATE_MS == 1500
+
+
 def test_box_changed_compares_width_and_height_with_one_pixel_noise():
     """A busy box is flagged only when width or height moves by more than 1px."""
     before = {"width": 100.0, "height": 24.0}
