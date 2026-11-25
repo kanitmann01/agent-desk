@@ -154,14 +154,23 @@ describe('an installed plugin that cannot run', () => {
     const remove = screen.getByRole('button', { name: 'Remove' });
     expect(remove).toHaveClass('btn-primary');
     expect(screen.queryByRole('button', { name: /Re-test/ })).not.toBeInTheDocument();
-    // Remove is the only action: a plugin that cannot run has nothing else
-    // to do here.
+    // Remove and Purge data are the two honest actions: one stops the plugin
+    // and keeps its folder, the other deletes the folder. Nothing that cannot
+    // make it run comes back.
     const article = screen.getByRole('heading', { level: 2, name: 'Competitor Watch' })
       .closest('article') as HTMLElement;
     expect(within(article).getAllByRole('button').map((button) => button.textContent?.trim()))
-      .toEqual(['Remove']);
+      .toEqual(['Remove', 'Purge data']);
+    expect(within(article).queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
+    expect(within(article).queryByRole('button', { name: 'Roll back' })).not.toBeInTheDocument();
+    expect(within(article).queryByRole('button', { name: /share/i })).not.toBeInTheDocument();
 
     const user = userEvent.setup();
+    await user.click(within(article).getByRole('button', { name: 'Purge data' }));
+    const purge = await screen.findByRole('dialog', { name: 'Purge data for Competitor Watch' });
+    expect(within(purge).getByRole('button', { name: 'Purge data' })).toBeDisabled();
+    await user.click(within(purge).getByRole('button', { name: 'Cancel' }));
+
     await user.click(remove);
     expect(await screen.findByRole('dialog', { name: 'Uninstall Competitor Watch' })).toBeInTheDocument();
   });

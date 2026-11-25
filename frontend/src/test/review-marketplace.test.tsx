@@ -3,10 +3,11 @@
 // inside the sheet, retries that show their own wait, an outcome announced
 // after a sheet closed mid-request, and the cannot-run notice where the
 // decision is made.
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MarketplaceApp from '../marketplace/MarketplaceApp';
+import { BUSY_WATCHDOG_MS, BUSY_WATCHDOG_TEXT } from '../marketplace/useBusyWatchdog';
 import { card, catalog, detail, detailResponse, installed, installedResponse } from './marketplace-fixtures';
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -470,7 +471,14 @@ describe('the second review defects', () => {
     const header = heading.closest('header') as HTMLElement;
     expect(within(header).getByText(NOTICE)).toBeInTheDocument();
     expect(within(header).getAllByRole('button').map((button) => button.textContent?.trim()))
-      .toEqual(['Remove']);
+      .toEqual(['Remove', 'Purge data']);
+    expect(within(header).queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
+    expect(within(header).queryByRole('button', { name: 'Roll back' })).not.toBeInTheDocument();
+
+    await user.click(within(header).getByRole('button', { name: 'Purge data' }));
+    const purge = await screen.findByRole('dialog', { name: 'Purge plugin data' });
+    expect(within(purge).getByRole('button', { name: 'Purge data' })).toBeDisabled();
+    await user.click(within(purge).getByRole('button', { name: 'Cancel' }));
 
     await user.click(within(header).getByRole('button', { name: 'Remove' }));
     expect(await screen.findByRole('dialog', { name: 'Uninstall plugin' })).toBeInTheDocument();
@@ -586,5 +594,171 @@ describe('the second review defects', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('The purge was refused.');
     expect(screen.getByRole('dialog', { name: 'Purge plugin data' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+});
+
+// The fifth review: a stuck request must not lock a sheet forever, and a late
+// answer must still be said on the page the reader returned to.
+describe('the fifth review defects', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    window.localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  /** Let pending promises and effects settle under fake timers. */
+  async function settle(): Promise<void> {
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  }
+
+  it('M8: releases the installed purge dialog after the watchdog and announces a late failure', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, '', '/marketplace/installed');
+    const purge = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/purge-data')) return purge.promise;
+      return jsonResponse(installedResponse([installed()]));
+    }));
+    render(<MarketplaceApp />);
+    await settle();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purge data' }));
+    const dialog = screen.getByRole('dialog', { name: 'Purge data for AR Aging' });
+    fireEvent.change(
+      within(dialog).getByLabelText(/Type delete-data:ar-aging to confirm/),
+      { target: { value: 'delete-data:ar-aging' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Purge data' }));
+
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(BUSY_WATCHDOG_MS - 1); });
+    expect(cancel).toBeDisabled();
+    expect(within(dialog).queryByText(BUSY_WATCHDOG_TEXT)).toBeNull();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(within(dialog).getByText(BUSY_WATCHDOG_TEXT)).toBeInTheDocument();
+    expect(cancel).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Purging…' })).toBeDisabled();
+
+    fireEvent.click(cancel);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await act(async () => {
+      purge.release(jsonResponse({
+        error: 'marketplace:refused', message: 'The purge was refused.',
+      }, 400));
+    });
+    await settle();
+    expect(screen.getByText('The purge was refused.')).toBeInTheDocument();
+  });
+
+  it('M8: a late purge success still refetches the list and says so', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, '', '/marketplace/installed');
+    const purge = deferred<Response>();
+    let purged = false;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/purge-data')) return purge.promise;
+      return jsonResponse(installedResponse(purged ? [] : [installed()]));
+    }));
+    render(<MarketplaceApp />);
+    await settle();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purge data' }));
+    const dialog = screen.getByRole('dialog', { name: 'Purge data for AR Aging' });
+    fireEvent.change(
+      within(dialog).getByLabelText(/Type delete-data:ar-aging to confirm/),
+      { target: { value: 'delete-data:ar-aging' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Purge data' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(BUSY_WATCHDOG_MS); });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    purged = true;
+    await act(async () => { purge.release(jsonResponse({ ok: true, purged: 'ar-aging' })); });
+    await settle();
+    await settle();
+    expect(screen.getByText('AR Aging data purged.')).toBeInTheDocument();
+    expect(screen.getByText('Nothing is installed yet.')).toBeInTheDocument();
+  });
+
+  it('M8: releases the detail purge dialog after the watchdog and announces a late failure', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, '', '/marketplace/plugin/ar-aging');
+    const purge = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/purge-data')) return purge.promise;
+      return jsonResponse(detailResponse({ installed: installed() }));
+    }));
+    render(<MarketplaceApp />);
+    await settle();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purge data' }));
+    const dialog = screen.getByRole('dialog', { name: 'Purge plugin data' });
+    fireEvent.change(
+      within(dialog).getByLabelText(/Type delete-data:ar-aging to confirm/),
+      { target: { value: 'delete-data:ar-aging' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Purge data' }));
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeDisabled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(BUSY_WATCHDOG_MS); });
+    expect(within(dialog).getByText(BUSY_WATCHDOG_TEXT)).toBeInTheDocument();
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await act(async () => {
+      purge.release(jsonResponse({
+        error: 'marketplace:refused', message: 'The purge was refused.',
+      }, 400));
+    });
+    await settle();
+    expect(screen.getByText('The purge was refused.')).toBeInTheDocument();
+  });
+
+  it('M8: releases the installed confirm dialog after the watchdog and announces a late failure', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState({}, '', '/marketplace/installed');
+    const rollback = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/rollback')) return rollback.promise;
+      return jsonResponse(installedResponse([installed()]));
+    }));
+    render(<MarketplaceApp />);
+    await settle();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Roll back' }));
+    const dialog = screen.getByRole('dialog', { name: 'Roll back AR Aging' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Roll back' }));
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeDisabled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(BUSY_WATCHDOG_MS); });
+    expect(within(dialog).getByText(BUSY_WATCHDOG_TEXT)).toBeInTheDocument();
+    expect(cancel).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Rolling back…' })).toBeDisabled();
+    fireEvent.click(cancel);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await act(async () => {
+      rollback.release(jsonResponse({
+        error: 'marketplace:refused', message: 'The rollback was refused.',
+      }, 400));
+    });
+    await settle();
+    expect(screen.getByText('The rollback was refused.')).toBeInTheDocument();
   });
 });
