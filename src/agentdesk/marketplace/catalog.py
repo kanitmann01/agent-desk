@@ -69,22 +69,34 @@ def _risk_label(value) -> str:
     return RISK_LABELS.get(text.lower(), "")
 
 
+# The permission paths a plugin can actually hold. Anything else in the
+# block is metadata (network.userPrompt) or a posture (shell: none), not a
+# scope a person grants.
+SCOPE_PREFIXES = ("filesystem.read", "filesystem.write", "network.allow",
+                  "llm.allow")
+
+
 def _scope_items(permissions) -> set[str]:
-    """Serialize a permission block into comparable leaf scopes."""
+    """Serialize a permission block into its real leaf scopes.
+
+    A list reuses its key as the prefix, so several values for one permission
+    become several comparable scopes. Only known power paths are kept, and a
+    false, empty or none grant is a refusal rather than a scope, so the list
+    matches the grants the registry path carries.
+    """
     items: set[str] = set()
 
     def walk(prefix: str, node) -> None:
-        """Flatten one permission node into 'path: value' leaves.
-
-        A list reuses its key as the prefix, so several values for one permission
-        become several comparable scopes."""
+        """Flatten one permission node into 'path: value' leaves."""
         if isinstance(node, dict):
             for key, value in node.items():
                 walk(f"{prefix}.{key}" if prefix else key, value)
         elif isinstance(node, list):
             for value in node:
                 walk(prefix, value)
-        else:
+        elif (prefix in SCOPE_PREFIXES and node is not None
+              and node is not False and node != ""
+              and str(node).lower() != "none"):
             items.add(f"{prefix}: {node}")
 
     walk("", permissions or {})
