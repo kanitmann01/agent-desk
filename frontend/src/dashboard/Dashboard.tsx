@@ -29,6 +29,8 @@ import CommandBar from '../components/CommandBar';
 import Button from '../components/Button';
 import { PhaseText, useAnnouncement, usePhase } from '../components/feedback';
 import { useBusy } from '../components/useBusy';
+import { useFaceActions } from '../face/FaceProvider';
+import { useFaceActivity } from '../face/useFaceActivity';
 import { PendingBody } from './pending';
 
 interface DashboardProps {
@@ -111,6 +113,29 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
   const answerPending = usePhase(answerBusy, answerPhase);
   // A sheet that closed mid-request still reports its outcome here.
   const liveOutcome = useAnnouncement();
+  const faceActions = useFaceActions();
+
+  useFaceActivity({
+    mood: 'thinking',
+    source: 'request',
+    label: researchBusy ? RESEARCH_BUSY : 'Running the saved ask',
+    active: answerBusy,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: answerError || undefined,
+    active: Boolean(answerError),
+  });
+  useFaceActivity({
+    mood: 'waiting',
+    label: `${data.inbox.waiting} waiting in Inbox`,
+    active: data.inbox.waiting > 0,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: 'The desk could not be reached',
+    active: Boolean(pollNote),
+  });
 
   // Customize mode: the full layout (hidden cards included) lives here,
   // read from /api/layout on entering and kept in step with every save.
@@ -277,6 +302,7 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
       summary: d.summary || '',
       sources: d.sources || [],
     });
+    faceActions?.notifyDone('Answered');
     void onRefetch(); // the stamp moves to Answered HH:MM
     return true;
   }
@@ -303,6 +329,7 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
         summary: d.summary || d.reply || '',
         sources: [],
       });
+      faceActions?.notifyDone('Saved ask finished');
       return;
     }
     showAnswer(null);

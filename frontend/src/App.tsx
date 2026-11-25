@@ -9,6 +9,7 @@ import Dashboard from './dashboard/Dashboard';
 import DashboardSkeleton from './dashboard/DashboardSkeleton';
 import MarketplaceApp from './marketplace/MarketplaceApp';
 import Button from './components/Button';
+import { FaceProvider } from './face/FaceProvider';
 
 // The centered card every non-dashboard state shares. Loading is a polite
 // status; a failure is an alert so the recovery is announced.
@@ -170,6 +171,9 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
-  if (isMarketplacePath(pathname)) return <MarketplaceApp />;
-  return <DashboardApp />;
+  return (
+    <FaceProvider>
+      {isMarketplacePath(pathname) ? <MarketplaceApp /> : <DashboardApp />}
+    </FaceProvider>
+  );
 }
