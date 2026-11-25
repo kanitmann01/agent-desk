@@ -99,7 +99,8 @@ SNAPSHOT_JS = r"""
     : null;
   const rows = pending
     ? pending.querySelectorAll(
-        '.wait-row,.wait-wire > *,.wire-lines span,.wire-chart span').length
+        '.wait-row,.wait-wire > *,.wait-card,.wait-widget,.wait-sketch,'
+        + '.wire-lines span,.wire-chart span').length
     : 0;
   const answer = region && arg.answer
     ? Array.from(region.querySelectorAll(arg.answer))
