@@ -52,14 +52,29 @@ def _snapshot(**overrides) -> dict:
     return snapshot
 
 
-def test_the_plan_has_six_named_actions():
-    """The walk plans the six promised actions, four of them required."""
+def test_the_plan_has_seven_named_actions():
+    """The walk plans seven actions; four of them are required."""
     assert [action.id for action in walk.ACTIONS] == [
         "dashboard-research", "dashboard-explain", "dashboard-reply",
-        "assistant-ask", "agents-presentation", "inbox-draft",
+        "assistant-ask", "agents-presentation", "wizard-describe", "inbox-draft",
     ]
     required = [action.id for action in walk.ACTIONS if action.required]
-    assert required == ["dashboard-research", "assistant-ask", "agents-presentation"]
+    assert required == ["dashboard-research", "assistant-ask",
+                        "agents-presentation", "wizard-describe"]
+
+
+def test_wizard_action_uses_the_describe_form_and_records_the_shape():
+    """The wizard action reads the shape and phase facts, not a fixed label."""
+    action = next(item for item in walk.ACTIONS if item.id == "wizard-describe")
+    assert action.route == "/wizard"
+    assert action.mode == "server"
+    assert action.fill_selector == "#wizard-description"
+    assert 'form[action="/wizard/new/answer"]' in action.trigger
+    assert action.region == "main#main"
+    assert action.answer == ".aq"
+    assert action.result_control == 'form.answer button[type="submit"]'
+    assert "data-wait-shape" in walk.SNAPSHOT_JS
+    assert "wait_shape" in walk.SNAPSHOT_JS
 
 
 def test_verdict_met_when_every_rule_holds():

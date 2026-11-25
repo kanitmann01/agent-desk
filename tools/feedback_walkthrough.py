@@ -3,7 +3,7 @@
 The walk boots the same isolated desk as ``tools/layout_audit.py``: a
 temporary data folder, a file-backed fake keychain, a loopback mock model,
 and no real ``~/.agent-desk``. It seeds the ``full`` condition, saves a
-connection to the mock, and then exercises up to six actions. Each action
+connection to the mock, and then exercises up to seven actions. Each action
 gets three photographs (early wait, after ten seconds, and result) plus the
 facts the feedback rules depend on.
 
@@ -55,6 +55,9 @@ ASSISTANT_QUESTION = (
     "What should I do about the pipeline this week, and what can wait?"
 )
 PRESENTATION_TOPIC = "Q4 pipeline review for the regional leadership team"
+WIZARD_DESCRIPTION = (
+    "Show me the open pipeline deals by stage with the amount still at risk."
+)
 
 BLOCK_SUBMIT_JS = """() => {
   window.__feedbackWalkBlock = (event) => { event.preventDefault(); };
@@ -95,7 +98,8 @@ SNAPSHOT_JS = r"""
     ? (pending.querySelector('.wait-line,.phase-line') || pending)
     : null;
   const rows = pending
-    ? pending.querySelectorAll('.wait-row,.wire-lines span,.wire-chart span').length
+    ? pending.querySelectorAll(
+        '.wait-row,.wait-wire > *,.wire-lines span,.wire-chart span').length
     : 0;
   const answer = region && arg.answer
     ? Array.from(region.querySelectorAll(arg.answer))
@@ -106,8 +110,11 @@ SNAPSHOT_JS = r"""
         .map((node) => text(node)).filter(Boolean).slice(0, 4)
     : [];
   const controlBox = control ? control.getBoundingClientRect() : null;
+  const waitForm = control && control.form ? control.form : null;
   return {
     url: location.pathname + location.search,
+    wait_shape: waitForm ? (waitForm.getAttribute('data-wait-shape') || '') : '',
+    wait_label: waitForm ? (waitForm.getAttribute('data-wait-label') || '') : '',
     control: control ? {
       tag: control.tagName.toLowerCase(),
       path: path(control),
@@ -160,6 +167,7 @@ class Action:
     region: str = ""
     answer: str = ""
     absent_reason: str = "the control is not on this desk"
+    result_control: str = ""
 
 
 ACTIONS = (
@@ -231,6 +239,21 @@ ACTIONS = (
         absent_reason="the presentation form is not available",
     ),
     Action(
+        id="wizard-describe",
+        title="Wizard: describe a plugin",
+        route="/wizard",
+        mode="server",
+        required=True,
+        trigger='form[action="/wizard/new/answer"] button[type="submit"]',
+        trigger_text="Ask",
+        fill_selector="#wizard-description",
+        fill_text=WIZARD_DESCRIPTION,
+        region="main#main",
+        answer=".aq",
+        absent_reason="the wizard describe form is not available",
+        result_control='form.answer button[type="submit"]',
+    ),
+    Action(
         id="inbox-draft",
         title="Inbox waiting card: Draft a reply",
         route="/inbox",
@@ -300,6 +323,9 @@ def _element_facts(locator) -> dict:
                 text: (el.innerText || el.value || el.getAttribute('aria-label') || '')
                   .replace(/\\s+/g, ' ').trim().slice(0, 160),
                 rect: {x: box.x, y: box.y, width: box.width, height: box.height},
+                formShape: el.form ? (el.form.getAttribute('data-wait-shape') || '') : '',
+                formWaitLabel: el.form
+                  ? (el.form.getAttribute('data-wait-label') || '') : '',
               };
             }""")
     except Exception:  # noqa: BLE001 - evidence may be gone after navigation
@@ -330,7 +356,7 @@ def _snapshot(page, action: Action) -> dict:
     """The control, region, pending state and result text on the page now."""
     argument = {
         "control": f'[data-feedback-walkthrough="{action.id}"]',
-        "fallback_control": action.trigger,
+        "fallback_control": action.result_control or action.trigger,
         "region": ("" if action.mode == "server"
                    else f'[data-feedback-region="{action.id}"]'),
         "fallback_region": action.region,
@@ -364,6 +390,8 @@ def _facts(snapshot: dict) -> dict:
     """The JSON-safe facts one photograph is paired with."""
     return {
         "url": snapshot.get("url", ""),
+        "waitShape": str(snapshot.get("wait_shape") or ""),
+        "waitLabel": str(snapshot.get("wait_label") or ""),
         "control": snapshot.get("control"),
         "region": snapshot.get("region"),
         "busy": _is_busy(snapshot),
@@ -689,7 +717,10 @@ def _walk(args, run_dir: Path) -> tuple[list[dict], dict]:
             meta["notes"].extend(notes)
             _save_mock_connection(context, desk["base"], mock_port)
             meta["notes"].append("mock connection saved")
+            wanted = str(getattr(args, "only", "") or "")
             for action in ACTIONS:
+                if wanted and action.id != wanted:
+                    continue
                 record = _run_action(page, desk["base"], action, run_dir)
                 records.append(record)
                 print(f"[{record['status']}] {action.id}: {action.title}", flush=True)
@@ -730,7 +761,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="output base directory")
     parser.add_argument("--mock-delay-ms", type=int, default=DEFAULT_DELAY_MS,
                         help="the mock model's delay (default 12000)")
+    parser.add_argument("--only", default="",
+                        help="run one action id from the plan")
     args = parser.parse_args(argv)
+    if args.only and args.only not in {action.id for action in ACTIONS}:
+        parser.error(f"unknown action id: {args.only}")
     if audit.sync_playwright is None:
         print(audit.PLAYWRIGHT_HELP)
         return 2
