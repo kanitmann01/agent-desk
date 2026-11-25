@@ -1777,9 +1777,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             else:
                 notice = (f"That finding was not fixed: {payload.get('cause') or 'nothing changed'}")
                 kind_word = "alert"
-            self._send_redirect(
-                "/settings?notice_kind=" + kind_word + "&notice=" + quote(notice)
-                + "#desk-check")
+            self._send_notice_redirect("/settings#desk-check", notice, kind_word)
             return
         self._send_json(200, payload)
 
@@ -2104,12 +2102,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         result = run_update(server)
         if self._is_form_submit():
             body = self._read_json_body() or {}
-            target = self._form_return_to(body, "/settings#updates")
-            sep = "&" if "?" in target else "?"
-            self._send_redirect(
-                target + sep + "notice=" + quote(
-                    "The update share was checked; the card above shows what "
-                    "it found."))
+            self._send_notice_redirect(
+                self._form_return_to(body, "/settings#updates"),
+                "The update share was checked; the card above shows what "
+                "it found.")
             return
         payload = update_payload(server)
         payload.update({key: value for key, value in result.items() if key not in payload})
@@ -2135,10 +2131,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         settings = self.server.settings  # type: ignore[attr-defined]
         settings.set("update_channel", path)
         if self._is_form_submit():
-            target = self._form_return_to(body, "/settings#updates")
-            sep = "&" if "?" in target else "?"
-            self._send_redirect(
-                target + sep + "notice=" + quote("The update share is saved."))
+            self._send_notice_redirect(
+                self._form_return_to(body, "/settings#updates"),
+                "The update share is saved.")
             return
         self._send_json(200, {"saved": True, "path": path})
 
@@ -2166,10 +2161,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             body = self._read_json_body() or {}
             target = self._form_return_to(body, "/settings#agent")
             if started:
-                sep = "&" if "?" in target else "?"
-                target = target + sep + "notice=" + quote(
+                self._send_notice_redirect(
+                    target,
                     "One pass started; its steps appear under Agent shortly.")
-            self._send_redirect(target)
+            else:
+                self._send_redirect(target)
             return
         if not started:
             self._send_json(409, {"error": "A pass is already running."})
@@ -2541,14 +2537,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             threadlog.append(self.server.audit_conn, "assistant", text)  # type: ignore[attr-defined]
         if self._is_form_submit():
             if answer.status == "ok":
-                self._send_redirect(
-                    "/assistant?notice=" + quote("Your answer is below."))
+                self._send_notice_redirect("/assistant", "Your answer is below.")
             else:
-                self._send_redirect(
-                    "/assistant?notice_kind=alert&notice="
-                    + quote(f"The AI could not answer: {answer.cause} Your "
-                            "question is kept in the conversation below; try "
-                            "again when the endpoint is back."))
+                self._send_notice_redirect(
+                    "/assistant",
+                    f"The AI could not answer: {answer.cause} Your "
+                    "question is kept in the conversation below; try "
+                    "again when the endpoint is back.",
+                    "alert")
             return
         self._send_json(200, answer.to_json())
 
@@ -3069,8 +3065,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                           f"{result.cause} Its row is at the top of the run "
                           "history.")
                 kind_word = "alert"
-            self._send_redirect(
-                "/agents?notice_kind=" + kind_word + "&notice=" + quote(notice))
+            self._send_notice_redirect("/agents", notice, kind_word)
             return
         self._send_json(200, payload)
 
@@ -3487,8 +3482,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 notice = (f"The run came back degraded: {cause} Its row is at "
                           "the top of the run history.")
                 kind_word = "alert"
-            self._send_redirect(
-                "/agents?notice_kind=" + kind_word + "&notice=" + quote(notice))
+            self._send_notice_redirect("/agents", notice, kind_word)
             return
         self._send_json(200, {
             "id": run_id,
@@ -4061,9 +4055,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 return
             settings.set("presentation_timeout_s", timeout_raw)
         if self._is_form_submit():
-            self._send_redirect(
-                "/settings?notice=" + quote("The presentation timeout is saved.")
-                + "#endpoint")
+            self._send_notice_redirect(
+                "/settings#endpoint", "The presentation timeout is saved.")
             return
         self._send_json(200, {
             "ok": True,
@@ -4172,9 +4165,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._audit("keys.create", target=connection.id,
                     detail=f"{connection.label} ({preset.name})")
         if self._is_form_submit():
-            self._send_redirect(
-                "/settings?notice=" + quote("Saved. The connection is live.")
-                + "#connections")
+            self._send_notice_redirect(
+                "/settings#connections", "Saved. The connection is live.")
             return
         self._send_json(201, _connection_payload(connection))
 
@@ -4267,9 +4259,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     "/settings?connections_error=" + quote(clear_notice)
                     + "#connections")
             else:
-                self._send_redirect(
-                    "/settings?notice=" + quote("Saved. The connection is live.")
-                    + "#connections")
+                self._send_notice_redirect(
+                    "/settings#connections", "Saved. The connection is live.")
             return
         payload = _connection_payload(connection)
         if clear_notice:
@@ -4332,9 +4323,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             detail += "; the keychain entry stayed (it comes back on restart)"
         self._audit("keys.delete", target=connection.id, detail=detail)
         if self._is_form_submit():
-            self._send_redirect(
-                "/settings?notice=" + quote("The connection was deleted.")
-                + "#connections")
+            self._send_notice_redirect(
+                "/settings#connections", "The connection was deleted.")
             return
         self._send_json(200, {"ok": True, "id": connection.id})
 
@@ -4375,9 +4365,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             else:
                 notice = "The check passed. The badge above is fresh."
                 kind_word = "status"
-            self._send_redirect(
-                "/settings?notice_kind=" + kind_word + "&notice=" + quote(notice)
-                + "#connections")
+            self._send_notice_redirect(
+                "/settings#connections", notice, kind_word)
             return
         self._send_json(200, _connection_payload(connection))
 
@@ -4424,9 +4413,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             else:
                 notice = "The deeper check passed: one token came back."
                 kind_word = "status"
-            self._send_redirect(
-                "/settings?notice_kind=" + kind_word + "&notice=" + quote(notice)
-                + "#connections")
+            self._send_notice_redirect(
+                "/settings#connections", notice, kind_word)
             return
         self._send_json(200, _connection_payload(connection))
 
@@ -5097,7 +5085,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             else:
                 notice = ("The card moved to Dismissed at the bottom of the "
                           "inbox. Restore it there for 30 days.")
-            self._send_redirect("/inbox?notice=" + quote(notice))
+            self._send_notice_redirect("/inbox", notice)
             return
         self._send_json(200, card.to_json(inbox.now_ts()))
 
@@ -5347,10 +5335,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         cached = cache.save_result(runner())
         if self._is_form_submit():
-            self._send_redirect(
-                "/capabilities?notice=" + quote(
-                    f"Gate re-tested: {cached.result.title} is "
-                    f"{cached.result.status}."))
+            self._send_notice_redirect(
+                "/capabilities",
+                f"Gate re-tested: {cached.result.title} is "
+                f"{cached.result.status}.")
             return
         self._send_json(200, cached.to_json())
 
@@ -5524,7 +5512,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if server.inbox is not None:
             self._evaluate_inbox(server.inbox)
         if self._is_form_submit():
-            self._send_redirect("/mail?notice=" + quote("The folder was read again."))
+            self._send_notice_redirect("/mail", "The folder was read again.")
             return
         self._send_json(200, status)
 
@@ -5605,10 +5593,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._audit("mail.draft", target=message.id, detail=f"To: {recipients}")
         self._evaluate_inbox(server.inbox)
         if self._is_form_submit():
-            self._send_redirect(
-                "/mail?notice=" + quote(
-                    "The reply draft is in your inbox for review; accepting "
-                    "it writes the file to your local outbox."))
+            self._send_notice_redirect(
+                "/mail",
+                "The reply draft is in your inbox for review; accepting "
+                "it writes the file to your local outbox.")
             return
         self._send_json(201, card.to_json(server.inbox.now_ts()))
 
@@ -5670,9 +5658,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if server.mail is not None and folder.strip():
             server.mail.retest()
         if self._is_form_submit():
-            self._send_redirect(
-                "/settings?notice=" + quote("The mail folder is saved.")
-                + "#tools")
+            self._send_notice_redirect("/settings#tools", "The mail folder is saved.")
             return
         self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
 
@@ -5700,9 +5686,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if server.mail is not None and address.strip():
             server.mail.retest()
         if self._is_form_submit():
-            self._send_redirect(
-                "/settings?notice=" + quote("Your mail address is saved.")
-                + "#tools")
+            self._send_notice_redirect("/settings#tools", "Your mail address is saved.")
             return
         self._send_json(200, {"key": "mail_self_address", "value": address.strip()})
 
@@ -6521,7 +6505,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         try:
             actions[action]()
         except PluginError as exc:
-            self._send_redirect(f"/plugins?notice={quote(str(exc))}")
+            self._send_notice_redirect("/plugins", str(exc))
             return
         self._audit(f"plugin.{action}", target=plugin_id,
                     detail=f"page action {action}")
@@ -6541,21 +6525,20 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         try:
             record = plugins.record(plugin_id)
         except PluginError as exc:
-            self._send_redirect(f"/plugins?notice={quote(str(exc))}")
+            self._send_notice_redirect("/plugins", str(exc))
             return
         if record.get("state") == "uninstalled" or not record.get("versions"):
-            self._send_redirect(
-                "/plugins?notice=" + quote(
-                    f"Only an installed plugin can be shared; "
-                    f"{plugin_id} has no installed files."))
+            self._send_notice_redirect(
+                "/plugins",
+                f"Only an installed plugin can be shared; "
+                f"{plugin_id} has no installed files.")
             return
         store.set_shared(plugin_id, shared)
         self._audit("peer.share", target=plugin_id,
                     detail="shared with paired desks" if shared
                     else "sharing stopped")
         verb = "shared with paired desks" if shared else "no longer shared"
-        self._send_redirect(
-            "/plugins?notice=" + quote(f"{plugin_id} is now {verb}."))
+        self._send_notice_redirect("/plugins", f"{plugin_id} is now {verb}.")
 
     def _registry_install(self) -> None:
         """Install one pinned release from the registry checkout.
@@ -6632,12 +6615,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     else f"registry v{result.get('version', '')} pinned install"))
         if self._is_form_submit():
             if isinstance(result, dict) and result.get("status") == "pending-consent":
-                self._send_redirect(f"/plugins?notice={quote(
+                self._send_notice_redirect(
+                    "/plugins",
                     plugin_id + "'s new release is waiting for your decision; "
-                    "it adds: " + '; '.join(result.get('added_scopes', [])) + '.')}")
+                    "it adds: " + '; '.join(result.get('added_scopes', [])) + '.')
                 return
-            self._send_redirect(f"/plugins?notice={quote(
-                'Installed ' + plugin_id + ' v' + str(result.get('version', '')) + '.')}")
+            self._send_notice_redirect(
+                "/plugins",
+                'Installed ' + plugin_id + ' v' + str(result.get('version', '')) + '.')
             return
         self._send_json(200, result)
 
@@ -6702,10 +6687,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         body = self._read_json_body() or {}
         chosen = str(body.get("path", "")).strip()
         if chosen and not (Path(chosen) / "index.json").is_file():
-            self._send_redirect(
-                "/plugins?notice=" + quote(
-                    "That folder has no registry index (index.json). "
-                    "Nothing was saved."))
+            self._send_notice_redirect(
+                "/plugins",
+                "That folder has no registry index (index.json). "
+                "Nothing was saved.")
             return
         settings.set(registry_source.SETTINGS_KEY, chosen)
         self._audit("settings.registry", target="registry_path",
@@ -7147,6 +7132,24 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         self._common_headers()
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def _send_notice_redirect(self, target: str, notice: str,
+                              kind: str = "status") -> None:
+        """Redirect to `target` with an outcome notice in its query.
+
+        The query goes before any fragment: `/settings#updates?notice=x`
+        never sends the query at all, so the sentence is lost. The target's
+        own query, if any, is kept, and its fragment is put back last.
+        """
+        base, hash_sep, fragment = target.partition("#")
+        joiner = "&" if "?" in base else "?"
+        query = "notice=" + quote(notice)
+        if kind == "alert":
+            query = "notice_kind=alert&" + query
+        location = base + joiner + query
+        if hash_sep:
+            location += "#" + fragment
+        self._send_redirect(location)
 
     def _send_health(self) -> None:
         """The health payload as indented JSON.

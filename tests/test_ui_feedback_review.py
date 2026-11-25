@@ -190,7 +190,7 @@ def test_the_busy_timer_is_cleared_when_the_control_rests():
     begin = _js_block(source, "function beginControl(btn) {")
     assert "btn._busyTimer = window.setTimeout" in begin
     rest = _js_block(source, "function setButtonBusy(btn, on, label) {")
-    assert "if (!on && btn._busyTimer)" in rest
+    assert "if (!on) {" in rest
     assert "window.clearTimeout(btn._busyTimer)" in rest
     assert "btn._busyTimer = null" in rest
     assert "return function cancel()" not in source
@@ -226,6 +226,55 @@ def test_a_stuck_form_unlocks_after_the_watchdog_limit():
     assert "clearTimeout(form._busyWatchdog)" in rest
     assert "form._busyWatchdog = null" in rest
     assert "removeEventListener('visibilitychange'" in rest
+
+
+# -- R1: a click control is flagged before its 100 ms busy mark -----------
+
+
+def test_a_click_control_is_flagged_at_once_and_a_second_click_is_stopped():
+    source = pages.APP_JS
+    begin = _js_block(source, "function beginControl(btn) {")
+    assert "btn.setAttribute('data-press-busy', '1')" in begin
+    assert "document.addEventListener('click', onControlClick, true)" in source
+    guard = _js_block(source, "function onControlClick(event) {")
+    assert "data-press-busy" in guard
+    assert "form[data-busy-form='1']" in guard
+    assert "event.preventDefault();" in guard
+    assert "event.stopPropagation();" in guard
+    rest = _js_block(source, "function setButtonBusy(btn, on, label) {")
+    assert "btn.removeAttribute('data-press-busy')" in rest
+
+
+# -- R2: a click control unlocks itself after three minutes ---------------
+
+
+def test_a_stuck_click_control_unlocks_after_the_watchdog_limit():
+    source = pages.APP_JS
+    begin = _js_block(source, "function beginControl(btn) {")
+    assert "btn._busyWatchdog = window.setTimeout" in begin
+    watch = begin[begin.index("btn._busyWatchdog = window.setTimeout"):]
+    watch = watch[:watch.index("}, BUSY_WATCHDOG_MS);")]
+    assert "document.visibilityState === 'visible'" in watch
+    assert "unlockStuckControl(btn)" in watch
+    unlock = _js_block(source, "function unlockStuckControl(btn) {")
+    assert "setButtonBusy(btn, false)" in unlock
+    assert "removeWaitPlaceholder(" in unlock
+    assert "taking too long" in unlock
+    assert "still running" in unlock
+
+
+# -- R4: a notice is said once, not again after a reload ------------------
+
+
+def test_the_script_takes_a_shown_notice_out_of_the_address():
+    source = pages.APP_JS
+    block = source[source.index("function clearNoticeFromAddress() {"):]
+    block = block[:block.index("\n}\n")]
+    assert "searchParams.delete('notice')" in block
+    assert "searchParams.delete('notice_kind')" in block
+    assert "history.replaceState" in block
+    assert "url.pathname + url.search + url.hash" in block
+    assert "clearNoticeFromAddress()" in source
 
 
 # -- S10: a non-ok JSON answer is a failure whatever its body says --------
@@ -305,11 +354,15 @@ def test_the_shipped_competitor_watch_carries_network_and_its_source(
     capabilities = payload["plugin"]["capabilities"]
     assert "example.com" in capabilities["network"]
     assert "http-get" in capabilities["sources"]
+    # Only real permission scopes: the optional permission's userPrompt is
+    # a prompt, not a power, and a false or none grant is not a scope.
+    assert capabilities["permissions"] == ["network.allow: example.com"]
     catalog = _marketplace(registry_desk, "/api/marketplace/catalog")
     card = next(entry for entry in catalog["entries"]
                 if entry["id"] == "competitor-watch")
     assert card["capabilities"]["network"] == capabilities["network"]
     assert card["capabilities"]["sources"] == capabilities["sources"]
+    assert card["capabilities"]["permissions"] == capabilities["permissions"]
 
 
 def test_every_bundled_dto_carries_a_capabilities_block(registry_desk):
@@ -324,9 +377,11 @@ def test_every_bundled_dto_carries_a_capabilities_block(registry_desk):
                  if entry["id"] == "excel-report")
     assert "excel-watch" in excel["capabilities"]["sources"]
     assert excel["capabilities"]["network"] == []
+    assert excel["capabilities"]["permissions"] == []
     starter = next(entry for entry in catalog["entries"]
                    if entry["id"] == "presentation-starter")
     assert starter["capabilities"]["network"] == []
+    assert starter["capabilities"]["permissions"] == []
     for plugin_id in ("excel-report", "presentation-starter"):
         detail_payload = _marketplace(
             registry_desk, f"/api/marketplace/plugin/{plugin_id}")
@@ -420,14 +475,21 @@ def test_every_rail_label_carries_its_full_text_as_a_title(booted):
 
 
 def _notice(location):
-    """The decoded notice value a redirect carries, if any."""
-    query = location.partition("?")[2].partition("#")[0]
+    """The decoded notice value a redirect carries, if any.
+
+    The fragment comes off first, the way a browser reads an address: a
+    query written after the fragment is not sent to the server and is not
+    a notice at all, so this helper must not find one there.
+    """
+    path = location.partition("#")[0]
+    query = path.partition("?")[2]
     return parse_qs(query).get("notice", [""])[0]
 
 
 def _notice_kind(location):
     """The decoded notice_kind value a redirect carries, if any."""
-    query = location.partition("?")[2].partition("#")[0]
+    path = location.partition("#")[0]
+    query = path.partition("?")[2]
     return parse_qs(query).get("notice_kind", [""])[0]
 
 
@@ -484,6 +546,39 @@ def test_the_endpoint_save_redirect_names_the_outcome(booted):
         booted, "/settings/endpoint/save", {"presentationTimeout": "60"})
     assert status == 303
     assert _notice(headers["Location"]) == "The presentation timeout is saved."
+
+
+def test_the_update_check_redirect_puts_the_query_before_the_fragment(booted):
+    status, headers, _body = _post_form(
+        booted, "/api/update/check", {"return_to": "/settings#updates"})
+    assert status == 303
+    location = headers["Location"]
+    assert _notice(location) == (
+        "The update share was checked; the card above shows what it found.")
+    assert location.index("?") < location.index("#")
+    assert location.endswith("#updates")
+
+
+def test_the_update_share_redirect_puts_the_query_before_the_fragment(booted):
+    status, headers, _body = _post_form(
+        booted, "/settings/update/channel",
+        {"path": "C:/share", "return_to": "/settings#updates"})
+    assert status == 303
+    location = headers["Location"]
+    assert _notice(location) == "The update share is saved."
+    assert location.index("?") < location.index("#")
+    assert location.endswith("#updates")
+
+
+def test_the_run_now_redirect_puts_the_query_before_the_fragment(booted):
+    status, headers, _body = _post_form(
+        booted, "/api/agent-loop/run", {"return_to": "/settings#agent"})
+    assert status == 303
+    location = headers["Location"]
+    assert _notice(location) == (
+        "One pass started; its steps appear under Agent shortly.")
+    assert location.index("?") < location.index("#")
+    assert location.endswith("#agent")
 
 
 def test_the_inbox_accept_redirect_names_the_outcome(booted):
