@@ -197,6 +197,16 @@
 #memory-loop-root .mem-btn-label{grid-area:1/1;min-width:0;white-space:nowrap}
 #memory-loop-root .mem-btn-label-hidden{visibility:hidden}
 #memory-loop-root .mem-busy-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none;animation:mem-busy-pulse .9s ease-in-out infinite}
+/* The dot is out of flow, so the pending box keeps the idle box's width
+   and height. The label shift re-centres the visible content between equal
+   margins; the shift is static (no transition), so the pulse is still the
+   only movement. */
+#memory-loop-root .ml-btn.mem-pending{position:relative}
+#memory-loop-root .ml-btn.mem-pending .mem-busy-dot{position:absolute;left:6px;top:50%;margin-top:-4px}
+#memory-loop-root .ml-btn.mem-pending .mem-btn-labels{transform:translateX(8px)}
+/* A busy text button sits inside a sentence: the dot and the label grid
+   stay on one line, so the button keeps its height and its baseline. */
+#memory-loop-root .ml-text-btn .mem-btn-labels{display:inline-grid}
 #memory-loop-root .ml-btn.mem-pending:disabled{cursor:progress;opacity:.55}
 #memory-loop-root .ml-btn-primary.mem-pending:disabled{opacity:1}
 @keyframes mem-busy-pulse{0%,100%{opacity:1}50%{opacity:.35}}

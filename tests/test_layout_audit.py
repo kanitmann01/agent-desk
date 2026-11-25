@@ -199,8 +199,14 @@ def test_pending_verdicts():
     control = {"text": "Save", "tag": "button"}
     state = {"control": {"disabled": False}, "indicators": [],
              "labelChanged": False, "ariaBusy": False}
-    verdict, _ = audit._pending_verdict(control, state, [], [], False)
+    verdict, _ = audit._pending_verdict(
+        control, state, [], [], False, True, ["structure-or-text"])
     assert verdict == "instant"
+
+    verdict, evidence = audit._pending_verdict(
+        control, state, [], [], False, False, [])
+    assert verdict == "dead"
+    assert evidence["signatureChanged"] is False
 
     busy = dict(state, ariaBusy=True)
     verdict, _ = audit._pending_verdict(control, busy, [{"method": "POST"}], [], False)
@@ -236,16 +242,104 @@ def test_pending_verdicts():
     assert verdict == "disabled-only"
 
 
+def _signature(**overrides):
+    """A complete page signature with one field at a time changed."""
+    value = {
+        "html": "<body><p>Before</p><button>Act</button></body>",
+        "htmlAttrs": [["data-theme", "unkey"]],
+        "scroll": [0, 0],
+        "location": "/inbox",
+        "title": "Inbox, Agent Desk",
+    }
+    value.update(overrides)
+    return value
+
+
+def test_signature_sees_each_part_of_the_page():
+    """Structure, document attributes, scroll, path and hash all count."""
+    before = _signature()
+    assert audit._signature_changed(before, before) is False
+    assert audit._signature_changed(
+        before, _signature(html="<body><p>After</p></body>")) is True
+    assert audit._signature_changed(
+        before, _signature(htmlAttrs=[["data-theme", "coforge"]])) is True
+    assert audit._signature_changed(
+        before, _signature(scroll=[0, 240])) is True
+    assert audit._signature_changed(
+        before, _signature(location="/inbox#card-1")) is True
+    assert audit._signature_changed(
+        before, _signature(title="Card, Agent Desk")) is True
+
+
+def test_signature_reasons_name_every_change():
+    """The reasons list is the readable evidence beside a changed signature."""
+    reasons = audit._signature_reasons(_signature(), _signature(
+        html="<body>changed</body>", htmlAttrs=[["data-theme", "coforge"]],
+        scroll=[0, 10], location="/inbox#card-1", title="Card"))
+    assert reasons == ["structure-or-text", "document-attributes", "scroll",
+                       "location", "title"]
+    assert audit._signature_reasons(_signature(), {"unavailable": "gone"}) == [
+        "navigation-or-unavailable"]
+
+
+def test_already_selected_control_is_skipped():
+    """A radio, tab or current control is skipped before any click."""
+    selected = {"text": "Unkey", "alreadySelected": True,
+                "selectedAttr": "aria-checked"}
+    assert audit._pending_skip(selected) == "already selected"
+    verdict, evidence = audit._pending_verdict(
+        selected, {}, [], [], False, False, [], True)
+    assert verdict == "skipped"
+    assert evidence == {"reason": "already selected", "alreadySelected": True}
+    assert audit._pending_skip({"disabled": True}) == "already disabled"
+    assert audit._pending_skip({}) == ""
+
+
+def test_signature_includes_the_query_string():
+    """The query string is part of the location a signature compares."""
+    assert "location.search" in audit.PENDING_SIGNATURE_JS
+    before = _signature(location="/marketplace/search?q=watch")
+    after = _signature(location="/marketplace/search?q=forecast")
+    assert audit._signature_reasons(before, after) == ["location"]
+
+
+def test_late_signature_reason_names_the_millisecond():
+    """A change first seen after the early window names when it landed."""
+    before = _signature()
+    after = _signature(html="<body><p>Late</p></body>")
+    reasons = audit._late_signature_reasons(before, after, 812)
+    assert reasons[0] == "changed late at 812 ms"
+    assert "structure-or-text" in reasons
+    assert audit._late_signature_reasons(before, before, 900) == []
+    assert audit.SIGNATURE_LATE_MS == 1500
+
+
+def test_box_changed_compares_width_and_height_with_one_pixel_noise():
+    """A busy box is flagged only when width or height moves by more than 1px."""
+    before = {"width": 100.0, "height": 24.0}
+    assert audit._box_changed(before, {"width": 102.0, "height": 24.0}) is True
+    assert audit._box_changed(before, {"width": 101.0, "height": 24.0}) is False
+    assert audit._box_changed(before, {"width": 100.0, "height": 26.0}) is True
+    assert audit._box_changed(before, {"width": 100.5, "height": 24.5}) is False
+    assert audit._box_changed(None, before) is False
+    assert audit._box_changed(before, {"width": 120.0, "height": 24.0}, True) is False
+    assert audit._box_changed(before, {"width": 120.0, "height": 30.0}, True) is True
+    assert audit._box_delta(before, {"width": 116.0, "height": 24.0}) == (16.0, 0.0)
+
+
 def test_pending_fail_thresholds():
-    """Silent is high, disabled-only is medium, the rest never fails."""
+    """Silent and dead are high, disabled-only is medium, the rest never fail."""
     silent = [{"verdict": "silent"}]
+    dead = [{"verdict": "dead"}]
     disabled = [{"verdict": "disabled-only"}]
     meets = [{"verdict": "meets"}]
     assert audit._pending_fail(silent, "high") is True
+    assert audit._pending_fail(dead, "high") is True
     assert audit._pending_fail(disabled, "high") is False
     assert audit._pending_fail(disabled, "medium") is True
     assert audit._pending_fail(meets, "any") is False
     assert audit._pending_fail(silent, "none") is False
+    assert audit._pending_fail(dead, "none") is False
 
 
 def test_overflow_fixture_is_a_local_widget_with_the_planned_overlays():

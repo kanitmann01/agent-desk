@@ -72,16 +72,40 @@ PENDING_ENUM_JS = r"""
     if (cls.length) parts[0] += '.' + cls.join('.');
     return parts.join('.');
   }
+  function selectedAttr(el) {
+    function carries(node) {
+      for (const name of ['aria-checked', 'aria-pressed', 'aria-selected']) {
+        if (node.getAttribute(name) === 'true') return name;
+      }
+      const current = node.getAttribute('aria-current');
+      if (current && current !== 'false') return 'aria-current';
+      return '';
+    }
+    let hit = carries(el);
+    if (hit) return hit;
+    let node = el.parentElement;
+    let hops = 0;
+    while (node && node !== document.body && hops < 8) {
+      hit = carries(node);
+      if (hit) return hit;
+      if (node.hasAttribute('role')) return '';
+      node = node.parentElement;
+      hops += 1;
+    }
+    return '';
+  }
   const ordinals = {};
   return Array.from(document.querySelectorAll(arg.selector)).filter(visible).map(function(el, index) {
     const text = (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160);
     const key = path(el) + '|' + text;
     const ordinal = ordinals[key] || 0;
     ordinals[key] = ordinal + 1;
+    const selected = selectedAttr(el);
     return {index:index, ordinal:ordinal, tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
             path:path(el), text:text,
             disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
             ariaBusy:el.getAttribute('aria-busy') || '',
+            alreadySelected:!!selected, selectedAttr:selected,
             type:el.getAttribute('type') || '',
             in_form:!!el.form, form_method:el.form ? String(el.form.method || 'get').toLowerCase() : '',
             wait_target:el.form ? String(el.form.getAttribute('data-wait') || '') : ''};
@@ -103,16 +127,24 @@ PENDING_STATE_JS = r"""
     return parts.join('.');
   }
   const found = [];
+  const samePath = [];
   for (const candidate of document.querySelectorAll(arg.selector)) {
     if (!visible(candidate)) continue;
     const text = (candidate.innerText || candidate.value || candidate.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (path(candidate) === arg.path) samePath.push(candidate);
     if (path(candidate) === arg.path && text === arg.text) found.push(candidate);
   }
-  const el = found[arg.ordinal] || found[0] || null;
-  const info = el ? {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
-                     path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-                     disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
-                     ariaBusy:el.getAttribute('aria-busy') || ''} : null;
+  const marked = document.querySelector('[data-layout-pending-target="1"]');
+  const el = (marked && visible(marked)) ? marked
+    : (found[arg.ordinal] || found[0] || samePath[arg.ordinal] || samePath[0] || null);
+  const info = el ? (function () {
+    const box = el.getBoundingClientRect();
+    return {tag:el.tagName.toLowerCase(), classes:String(el.className || ''),
+            path:path(el), text:(el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+            disabled:!!el.disabled, ariaDisabled:el.getAttribute('aria-disabled') || '',
+            ariaBusy:el.getAttribute('aria-busy') || '',
+            box:{x:box.x, y:box.y, width:box.width, height:box.height}};
+  })() : null;
   let waitVisible = false;
   if (arg.wait_target) {
     let target = null;
@@ -149,8 +181,47 @@ PENDING_STATE_JS = r"""
           url:location.pathname + location.search};
 }
 """
+PENDING_SIGNATURE_JS = r"""
+() => {
+  const target = document.querySelector('[data-layout-pending-target="1"]');
+  const form = target && target.form;
+  if (form) form.setAttribute('data-layout-signature-form', '1');
+  const clone = document.body.cloneNode(true);
+  if (form) form.removeAttribute('data-layout-signature-form');
+  const cloneTarget = clone.querySelector('[data-layout-pending-target="1"]');
+  const cloneForm = clone.querySelector('[data-layout-signature-form]');
+  const own = [
+    'aria-busy', 'data-press-busy', 'data-busy-form',
+    'autofocus', 'data-focus', 'data-focus-visible',
+    'data-focus-visible-added', 'data-has-focus',
+  ];
+  for (const node of [cloneTarget, cloneForm]) {
+    if (!node) continue;
+    for (const name of own) node.removeAttribute(name);
+  }
+  if (cloneForm) cloneForm.removeAttribute('data-layout-signature-form');
+  const htmlAttrs = Array.from(document.documentElement.attributes)
+    .map((attr) => [attr.name, attr.value])
+    .sort((left, right) => left[0].localeCompare(right[0]));
+  const scroll = [window.scrollX, window.scrollY];
+  for (const node of document.querySelectorAll('*')) {
+    if (node.scrollTop || node.scrollLeft) {
+      scroll.push(node.scrollTop, node.scrollLeft);
+    }
+  }
+  return {
+    html: clone.outerHTML,
+    htmlAttrs: htmlAttrs,
+    scroll: scroll,
+    location: location.pathname + location.search + location.hash,
+    title: document.title,
+  };
+}
+"""
 
 VIEWPORT_HEIGHT = 800
+SIGNATURE_EARLY_MS = 400
+SIGNATURE_LATE_MS = 1500
 BASE_WIDTHS = (1024, 1280)
 THEME_WIDTHS = (1024, 1280)
 EXTREME_WIDTHS = (800, 1920)
@@ -1127,11 +1198,55 @@ body { margin: 0; font: 14px Arial, sans-serif; background: #fff; color: #111; }
 <span class="selftest-clean-pill">Clean pill</span>
 <button class="selftest-cc-a">First</button>
 <button class="selftest-cc-b">Second</button>
+<button id="grow" type="button">Grow busy<span
+  style="display:none;width:16px;height:8px;background:#111"></span></button>
+<button id="stable" type="button" style="width:180px">Stable busy</button>
+<button id="grow-label" type="button">Run</button>
+<button id="grow-height" type="button" style="width:180px">Height only</button>
+<p id="selftest-planted-text">The planted paragraph starts here.</p>
+<button id="selftest-change" type="button">Change the planted paragraph</button>
+<button id="selftest-dead" type="button">Do nothing at all</button>
+<button id="selftest-selected" type="button" role="radio" aria-checked="true">
+  Chosen already</button>
+<div role="tab" aria-selected="true">
+  <button id="selftest-selected-child" type="button">Selected tab child</button>
+</div>
+<button id="selftest-query" type="button">Change the query</button>
+<p id="selftest-late-text">The late paragraph waits.</p>
+<button id="selftest-late" type="button">Change the paragraph later</button>
 <svg class="selftest-svg" role="button" tabindex="0" aria-label="Graph node"
      width="90" height="26"><text x="2" y="18">Graph node</text></svg>
 <script>
 document.querySelector('.selftest-svg').addEventListener('click', function () {
   this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('grow').addEventListener('click', function () {
+  this.querySelector('span').style.display = 'inline-block';
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('stable').addEventListener('click', function () {
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('grow-label').addEventListener('click', function () {
+  this.textContent = 'Running longer';
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('grow-height').addEventListener('click', function () {
+  this.style.height = '44px';
+  this.setAttribute('aria-busy', 'true');
+});
+document.getElementById('selftest-change').addEventListener('click', function () {
+  document.getElementById('selftest-planted-text').textContent =
+    'The planted paragraph changed.';
+});
+document.getElementById('selftest-query').addEventListener('click', function () {
+  window.history.pushState({}, '', '?selftest-query=1');
+});
+document.getElementById('selftest-late').addEventListener('click', function () {
+  window.setTimeout(function () {
+    document.getElementById('selftest-late-text').textContent =
+      'The late paragraph changed.';
+  }, 700);
 });
 </script>
 </body></html>
@@ -1278,8 +1393,127 @@ def _selftest() -> int:
                 svg_busy = page.evaluate(
                     "() => document.querySelector('.selftest-svg')"
                     ".getAttribute('aria-busy')")
-                if not clicked or svg_busy != "true":
-                    failures.append(f"svg click path: clicked={clicked}, busy={svg_busy!r}")
+                if not isinstance(clicked, dict) or svg_busy != "true":
+                    failures.append(f"svg click path: clicked={clicked!r}, busy={svg_busy!r}")
+            box_controls = {control.get("text", ""): control
+                            for control in _pending_controls(page)}
+            for label, element_id, should_change in (
+                    ("Grow busy", "grow", True),
+                    ("Stable busy", "stable", False),
+                    ("Run", "grow-label", False),
+                    ("Height only", "grow-height", True)):
+                control = box_controls.get(label)
+                if control is None:
+                    failures.append(f"{label} control: not found")
+                    continue
+                before = _pending_click(page, control)
+                after = page.evaluate(
+                    "(id) => { const el = document.getElementById(id);"
+                    " const r = el.getBoundingClientRect();"
+                    " return {box:{x:r.x, y:r.y, width:r.width, height:r.height},"
+                    r" label:(el.innerText || el.value || el.getAttribute('aria-label') || '')"
+                    r".replace(/\s+/g, ' ').trim()}; }",
+                    element_id)
+                label_changed = after.get("label") != control.get("text")
+                if _box_changed(before, after.get("box"), label_changed) is not should_change:
+                    failures.append(
+                        f"{label} box: before={before!r} after={after!r} "
+                        f"label_changed={label_changed} expected change={should_change}")
+            for label, expected in (
+                    ("Change the planted paragraph", "instant"),
+                    ("Do nothing at all", "dead")):
+                page.goto(base + "/", wait_until="domcontentloaded")
+                page.wait_for_timeout(200)
+                page.evaluate("() => window.scrollTo(0, 0)")
+                control = next((item for item in _pending_controls(page)
+                                if item.get("text") == label), None)
+                if control is None:
+                    failures.append(f"{label} signature control: not found")
+                    continue
+                box = _pending_click(page, control, activate=False)
+                if not isinstance(box, dict):
+                    failures.append(f"{label} signature control: not clickable")
+                    continue
+                before_signature = _pending_signature(page)
+                _pending_activate(page)
+                page.wait_for_timeout(450)
+                after_signature = _pending_signature(page)
+                reasons = _signature_reasons(before_signature, after_signature)
+                verdict, _evidence = _pending_verdict(
+                    control, {}, [], [], False, bool(reasons), reasons)
+                if verdict != expected:
+                    failures.append(
+                        f"{label} signature verdict: expected {expected}, "
+                        f"found {verdict} ({reasons})")
+            page.goto(base + "/", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            selected_controls = {item.get("text", ""): item
+                                 for item in _pending_controls(page)}
+            for label, attr in (
+                    ("Chosen already", "aria-checked"),
+                    ("Selected tab child", "aria-selected")):
+                control = selected_controls.get(label)
+                if control is None:
+                    failures.append(f"{label} selected control: not found")
+                    continue
+                if _pending_skip(control) != "already selected":
+                    failures.append(
+                        f"{label} selected skip: {control.get('selectedAttr')!r}")
+                if control.get("selectedAttr") != attr:
+                    failures.append(
+                        f"{label} selected attr: expected {attr}, "
+                        f"found {control.get('selectedAttr')!r}")
+                verdict, evidence = _pending_verdict(
+                    control, {}, [], [], False, False, [], True)
+                if verdict != "skipped" or not evidence.get("alreadySelected"):
+                    failures.append(f"{label} selected verdict: {verdict} {evidence!r}")
+            page.goto(base + "/", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            page.evaluate("() => window.scrollTo(0, 0)")
+            query_control = next((item for item in _pending_controls(page)
+                                  if item.get("text") == "Change the query"), None)
+            if query_control is None:
+                failures.append("query control: not found")
+            else:
+                _pending_click(page, query_control, activate=False)
+                query_before = _pending_signature(page)
+                _pending_activate(page)
+                page.wait_for_timeout(450)
+                query_reasons = _signature_reasons(
+                    query_before, _pending_signature(page))
+                if "location" not in query_reasons:
+                    failures.append(
+                        f"query signature: expected location, found {query_reasons!r}")
+            page.goto(base + "/", wait_until="domcontentloaded")
+            page.wait_for_timeout(200)
+            page.evaluate("() => window.scrollTo(0, 0)")
+            late_control = next((item for item in _pending_controls(page)
+                                 if item.get("text") == "Change the paragraph later"), None)
+            if late_control is None:
+                failures.append("late control: not found")
+            else:
+                _pending_click(page, late_control, activate=False)
+                late_before = _pending_signature(page)
+                late_started = time.monotonic()
+                _pending_activate(page)
+                page.wait_for_timeout(SIGNATURE_EARLY_MS)
+                early_reasons = _signature_reasons(
+                    late_before, _pending_signature(page))
+                _late_signature, late_reasons, elapsed = _pending_late_signature(
+                    page, late_before, late_started)
+                if early_reasons:
+                    failures.append(
+                        f"late control changed before the late window: {early_reasons!r}")
+                if not any(str(reason).startswith("changed late at ")
+                           for reason in late_reasons):
+                    failures.append(
+                        f"late signature: expected a late reason, found {late_reasons!r}")
+                if not 400 <= elapsed <= SIGNATURE_LATE_MS:
+                    failures.append(f"late signature elapsed: {elapsed}")
+                verdict, _evidence = _pending_verdict(
+                    late_control, {}, [], [], False, True, late_reasons)
+                if verdict != "instant":
+                    failures.append(f"late verdict: expected instant, found {verdict}")
             page.goto(base + "/form", wait_until="domcontentloaded")
             page.wait_for_timeout(200)
             held = []
@@ -1323,7 +1557,8 @@ def _selftest() -> int:
         for failure in failures:
             print("  " + failure)
         return 1
-    print("SELFTEST PASS 16 detector expectations")
+    print("SELFTEST PASS 16 detector expectations, 4 box expectations, "
+          "6 pending expectations")
     return 0
 
 class AuditError(Exception):
@@ -2371,14 +2606,17 @@ def _pending_controls(page) -> list[dict]:
     return page.evaluate(PENDING_ENUM_JS, {"selector": PENDING_SELECTOR})
 
 
-def _pending_click(page, control: dict) -> bool:
-    """Click the matching visible control by its recorded path and ordinal.
+def _pending_click(page, control: dict, activate: bool = True) -> dict | None:
+    """Find the matching visible control and return its box before the click.
 
+    With ``activate`` false the control is scrolled into view, marked and
+    given a form target, but not clicked. That lets the caller take a
+    signature while the page is still exactly as the action found it.
     The index among all matching elements is not the index among visible
     ones, so the match uses the path and text the enumeration recorded,
     then the same ordinal when duplicates share both.
     """
-    return bool(page.evaluate(
+    return page.evaluate(
         r"""(arg) => {
           function visible(el) {
             const s = getComputedStyle(el);
@@ -2412,6 +2650,31 @@ def _pending_click(page, control: dict) -> bool:
             el.form.target = 'layout-pending-frame';
           }
           el.scrollIntoView({block: 'center', inline: 'center'});
+          const box = el.getBoundingClientRect();
+          const before = {x:box.x, y:box.y, width:box.width, height:box.height};
+          el.setAttribute('data-layout-pending-target', '1');
+          if (arg.activate !== false) {
+            if (typeof el.click === 'function') {
+              el.click();
+            } else {
+              el.dispatchEvent(new MouseEvent('click', {
+                bubbles: true, cancelable: true, composed: true, view: window
+              }));
+            }
+          }
+          return before;
+        }""", {"selector": PENDING_SELECTOR, "path": control.get("path", ""),
+               "text": control.get("text", ""),
+               "ordinal": control.get("ordinal", 0),
+               "activate": bool(activate)})
+
+
+def _pending_activate(page) -> None:
+    """Click the control the last target call marked, without moving it."""
+    page.evaluate(
+        """() => {
+          const el = document.querySelector('[data-layout-pending-target="1"]');
+          if (!el) return;
           if (typeof el.click === 'function') {
             el.click();
           } else {
@@ -2419,10 +2682,71 @@ def _pending_click(page, control: dict) -> bool:
               bubbles: true, cancelable: true, composed: true, view: window
             }));
           }
-          return true;
-        }""", {"selector": PENDING_SELECTOR, "path": control.get("path", ""),
-               "text": control.get("text", ""),
-               "ordinal": control.get("ordinal", 0)}))
+        }""")
+
+
+def _pending_signature(page) -> dict:
+    """The page's structure, text, scroll and location as one signature."""
+    try:
+        return page.evaluate(PENDING_SIGNATURE_JS)
+    except Exception as exc:  # noqa: BLE001 - a navigation can remove the context
+        return {"unavailable": f"{type(exc).__name__}: {exc}"[:200]}
+
+
+def _signature_reasons(before: dict, after: dict) -> list[str]:
+    """Name every part of a signature that changed between two reads."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return ["signature-unavailable"]
+    if after.get("unavailable"):
+        return ["navigation-or-unavailable"]
+    reasons = []
+    if before.get("html") != after.get("html"):
+        reasons.append("structure-or-text")
+    if before.get("htmlAttrs") != after.get("htmlAttrs"):
+        reasons.append("document-attributes")
+    if before.get("scroll") != after.get("scroll"):
+        reasons.append("scroll")
+    if before.get("location") != after.get("location"):
+        reasons.append("location")
+    if before.get("title") != after.get("title"):
+        reasons.append("title")
+    return reasons
+
+
+def _signature_changed(before: dict, after: dict) -> bool:
+    """True when any part of the page signature changed."""
+    return bool(_signature_reasons(before, after))
+
+
+def _late_signature_reasons(before: dict, after: dict, elapsed_ms: int) -> list[str]:
+    """The late-change reason plus the signature parts that moved."""
+    reasons = _signature_reasons(before, after)
+    if not reasons:
+        return []
+    return [f"changed late at {int(elapsed_ms)} ms"] + reasons
+
+
+def _pending_late_signature(page, before: dict, started: float,
+                            deadline_ms: int = SIGNATURE_LATE_MS,
+                            step_ms: int = 100) -> tuple[dict, list[str], int]:
+    """Watch a no-request control's page until the late deadline.
+
+    Returns the last signature, the reasons (a late change names the
+    millisecond it was seen), and the elapsed milliseconds. A page that
+    never changes returns an empty reason list at the deadline.
+    """
+    last = before
+    while True:
+        elapsed = int((time.monotonic() - started) * 1000)
+        if elapsed >= deadline_ms:
+            return last, [], deadline_ms
+        page.wait_for_timeout(min(step_ms, deadline_ms - elapsed))
+        current = _pending_signature(page)
+        elapsed = int((time.monotonic() - started) * 1000)
+        reasons = _late_signature_reasons(before, current, elapsed)
+        if reasons:
+            return current, reasons, elapsed
+        last = current
 
 
 def _pending_indicators(page) -> list[dict]:
@@ -2470,11 +2794,62 @@ def _pending_screenshot(run_dir: Path, combo: dict, view: dict, index: int) -> P
             f"__{index:03d}.png")
 
 
+def _box_changed(before: dict | None, busy: dict | None,
+                 label_changed: bool = False) -> bool:
+    """True when a busy box is a defect under the label-difference rule.
+
+    A height change over 1px is always a defect. A width change over 1px is a
+    defect only when the visible label did not change: a longer pending verb
+    is allowed to widen its own control.
+    """
+    if not isinstance(before, dict) or not isinstance(busy, dict):
+        return False
+    try:
+        width = abs(float(busy.get("width", 0)) - float(before.get("width", 0))) > 1
+        height = abs(float(busy.get("height", 0)) - float(before.get("height", 0))) > 1
+    except (TypeError, ValueError):
+        return False
+    return height or (width and not label_changed)
+
+
+def _box_delta(before: dict | None, busy: dict | None) -> tuple[float, float]:
+    """The width and height change between two boxes, or zeros."""
+    if not isinstance(before, dict) or not isinstance(busy, dict):
+        return 0.0, 0.0
+    try:
+        return (float(busy.get("width", 0)) - float(before.get("width", 0)),
+                float(busy.get("height", 0)) - float(before.get("height", 0)))
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+
+
+def _pending_skip(control: dict) -> str:
+    """The reason a control cannot be pressed at all, or the empty string."""
+    if control.get("alreadySelected") or control.get("already_selected"):
+        return "already selected"
+    if control.get("disabled"):
+        return "already disabled"
+    return ""
+
+
 def _pending_verdict(control: dict, state: dict, started: list[dict],
-                     before_indicators: list[dict], file_dialog: bool) -> tuple[str, dict]:
-    """Name one control's pending state and the evidence behind it."""
-    if file_dialog:
-        return "native-dialog", {"reason": "file chooser opened"}
+                     before_indicators: list[dict], native_dialog: bool,
+                     page_changed: bool = False,
+                     signature_reasons: list[str] | None = None,
+                     already_selected: bool = False) -> tuple[str, dict]:
+    """Name one control's pending state and the evidence behind it.
+
+    A control that starts no request is ``instant`` only when its page
+    signature changed. No request and no signature change is ``dead``:
+    the control did nothing at all. An already-selected control is
+    skipped before this runs; the parameter keeps the verdict reachable
+    for a direct caller and its tests.
+    """
+    if already_selected:
+        return "skipped", {"reason": "already selected",
+                           "alreadySelected": True}
+    if native_dialog:
+        return "native-dialog", {"reason": "native dialog opened"}
     control_after = state.get("control") or {}
     indicators_after = state.get("indicators") or []
     before_keys = {(item.get("path"), item.get("text")) for item in before_indicators}
@@ -2491,10 +2866,16 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
         "disabled": disabled,
         "aria_busy": aria_busy,
         "wait_visible": wait_visible,
-        "label_changed": label_changed,
+        "labelChanged": label_changed,
+        "labelBefore": control.get("text", ""),
+        "labelBusy": control_after.get("text", ""),
         "busy_indicators": new_indicators[:4],
+        "signatureChanged": bool(page_changed),
+        "signatureReasons": list(signature_reasons or []),
     }
     if not started:
+        if not page_changed:
+            return "dead", evidence
         return "instant", evidence
     picker = any(
         marker in str(request.get("url", ""))
@@ -2531,6 +2912,10 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
         try:
             page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
             _wait_for_view(page, view)
+            try:
+                page.wait_for_load_state("load", timeout=15000)
+            except Exception:  # noqa: BLE001 - a slow asset still leaves the page usable
+                pass
             page.wait_for_timeout(300)
             if view.get("kind") == "overlay":
                 reason = _open_overlay(page, combo)
@@ -2555,10 +2940,15 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 "route": view["path"], "state": view.get("state", ""),
                 "control": control["text"] or control["path"],
                 "control_path": control["path"], "control_tag": control["tag"],
+                "alreadySelected": bool(control.get("alreadySelected")),
                 "verdict": "skipped", "evidence": {}, "screenshot": "",
             }
-            if control.get("disabled"):
-                record["evidence"] = {"reason": "already disabled"}
+            skip_reason = _pending_skip(control)
+            if skip_reason:
+                record["evidence"] = {"reason": skip_reason}
+                if record["alreadySelected"]:
+                    record["evidence"]["alreadySelected"] = True
+                    record["evidence"]["selectedAttr"] = control.get("selectedAttr", "")
                 records.append(record)
                 continue
             fresh = context.new_page()
@@ -2566,6 +2956,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             started: list[dict] = []
             held: list = []
             file_dialog = [False]
+            native_dialog = [False]
 
             def hold(route):
                 """Hold every non-GET request; let GETs through."""
@@ -2578,7 +2969,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     return
 
             def on_dialog(dialog):
-                """Dismiss a JS alert or confirm so the page can continue."""
+                """Record and dismiss a JS alert or confirm."""
+                native_dialog[0] = True
                 try:
                     dialog.dismiss()
                 except Exception:
@@ -2600,6 +2992,10 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             try:
                 fresh.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
                 _wait_for_view(fresh, view)
+                try:
+                    fresh.wait_for_load_state("load", timeout=15000)
+                except Exception:  # noqa: BLE001 - a slow asset still leaves the page usable
+                    pass
                 fresh.wait_for_timeout(300)
                 if view.get("kind") == "overlay":
                     reason = _open_overlay(fresh, combo)
@@ -2614,9 +3010,17 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 fresh.on("dialog", on_dialog)
                 fresh.on("filechooser", on_filechooser)
                 fresh.route("**/*", hold)
-                if not _pending_click(fresh, control):
+                box_before = _pending_click(fresh, control, activate=False)
+                if not isinstance(box_before, dict):
                     raise RuntimeError("control not found on the fresh page")
-                fresh.wait_for_timeout(700)
+                signature_before = _pending_signature(fresh)
+                started_at = time.monotonic()
+                _pending_activate(fresh)
+                fresh.wait_for_timeout(SIGNATURE_EARLY_MS)
+                signature_after = _pending_signature(fresh)
+                reasons = _signature_reasons(signature_before, signature_after)
+                page_changed = bool(reasons)
+                fresh.wait_for_timeout(300)
                 state = fresh.evaluate(PENDING_STATE_JS, {
                     "selector": PENDING_SELECTOR,
                     "path": control.get("path", ""),
@@ -2625,8 +3029,32 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     "before": control.get("text") or "",
                     "wait_target": control.get("wait_target", ""),
                 })
+                window_ms = SIGNATURE_EARLY_MS
+                if (not started and not reasons
+                        and not file_dialog[0] and not native_dialog[0]):
+                    signature_late, late_reasons, _elapsed = _pending_late_signature(
+                        fresh, signature_before, started_at)
+                    if late_reasons:
+                        signature_after = signature_late
+                        reasons = late_reasons
+                        page_changed = True
+                    window_ms = SIGNATURE_LATE_MS
                 verdict, evidence = _pending_verdict(
-                    control, state, started, before_indicators, file_dialog[0])
+                    control, state, started, before_indicators,
+                    file_dialog[0] or native_dialog[0],
+                    page_changed, reasons)
+                box_busy = (state.get("control") or {}).get("box")
+                width_delta, height_delta = _box_delta(box_before, box_busy)
+                evidence["signatureChanged"] = page_changed
+                evidence["signatureReasons"] = reasons
+                evidence["signatureWindowMs"] = window_ms
+                evidence["boxBefore"] = box_before
+                evidence["boxBusy"] = box_busy
+                evidence["boxWidthDelta"] = round(width_delta, 2)
+                evidence["boxHeightDelta"] = round(height_delta, 2)
+                evidence["boxChanged"] = (
+                    verdict == "meets" and _box_changed(
+                        box_before, box_busy, bool(evidence.get("labelChanged"))))
                 record["verdict"] = verdict
                 record["evidence"] = evidence
                 if state.get("control"):
@@ -3354,12 +3782,21 @@ def _pending_evidence(record: dict) -> str:
         parts.append("disabled")
     if evidence.get("aria_busy"):
         parts.append("aria-busy")
-    if evidence.get("label_changed"):
+    if evidence.get("labelChanged"):
         parts.append("label changed")
     for item in (evidence.get("busy_indicators") or [])[:2]:
         parts.append("indicator " + str(item.get("path", "")))
     if evidence.get("reason"):
         parts.append(str(evidence["reason"]))
+    late = next((str(reason) for reason in evidence.get("signatureReasons") or []
+                 if str(reason).startswith("changed late at ")), "")
+    if late:
+        parts.append(late)
+    elif evidence.get("signatureChanged"):
+        parts.append("page changed")
+    elif "signatureChanged" in evidence:
+        parts.append(
+            f"no page change in {evidence.get('signatureWindowMs', SIGNATURE_LATE_MS)} ms")
     return "; ".join(parts) or "no visible change"
 
 
@@ -3370,7 +3807,7 @@ def _pending_fail(records: list[dict], threshold: str) -> bool:
     wanted = {"any": 0, "low": 2, "medium": 1, "high": 0}.get(threshold, 3)
     for record in records:
         verdict = record.get("verdict")
-        if verdict == "silent":
+        if verdict in ("silent", "dead"):
             rank = 0
         elif verdict == "disabled-only":
             rank = 1
@@ -3515,6 +3952,27 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
         for verdict in sorted(counts):
             lines.append(f"| {verdict} | {counts[verdict]} |")
         lines.append("")
+        dead = [record for record in pending if record.get("verdict") == "dead"]
+        lines.append("### Dead controls")
+        lines.append("")
+        lines.append("Dead means no request started and the page signature "
+                     "(body structure and text, document attributes, scroll "
+                     "position, path, query and hash) did not change by 1,500 ms. "
+                     "A change first seen after 400 ms names the millisecond it "
+                     "was caught.")
+        lines.append("")
+        if not dead:
+            lines.append("No dead controls.")
+        else:
+            lines.append("| route | page | control | screenshot |")
+            lines.append("| --- | --- | --- | --- |")
+            for record in dead:
+                route = str(record.get("route", "")).replace("|", "/")
+                page_name = str(record.get("state") or record.get("route", "")).replace("|", "/")
+                label = (record.get("control") or record.get("control_path") or "").replace("|", "/")
+                shot = _public_path(str(record.get("screenshot") or ""), run_dir)
+                lines.append(f"| {route} | {page_name} | {label[:90]} | `{shot}` |")
+        lines.append("")
         lines.append("| page | control | verdict | evidence |")
         lines.append("| --- | --- | --- | --- |")
         for record in pending:
@@ -3522,6 +3980,52 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
             control = (record.get("control") or record.get("control_path") or "").replace("|", "/")
             lines.append(f"| {page} | {control[:90]} | {record.get('verdict')} | "
                          f"{_pending_evidence(record)[:160]} |")
+        lines.append("")
+        changed = [record for record in pending
+                   if (record.get("evidence") or {}).get("boxChanged")]
+        lines.append("### Box changes while busy")
+        lines.append("")
+        lines.append(f"Controls that changed box while showing a busy state: {len(changed)}")
+        lines.append("")
+        if changed:
+            def delta(record):
+                """The larger absolute dimension change for sorting."""
+                evidence = record.get("evidence") or {}
+                width, height = _box_delta(evidence.get("boxBefore"),
+                                           evidence.get("boxBusy"))
+                return max(abs(width), abs(height)), width, height
+            worst = sorted(changed, key=delta, reverse=True)[:5]
+            lines.append("| control | route | width delta | height delta |")
+            lines.append("| --- | --- | ---: | ---: |")
+            for record in worst:
+                evidence = record.get("evidence") or {}
+                width, height = _box_delta(evidence.get("boxBefore"),
+                                           evidence.get("boxBusy"))
+                label = (record.get("control") or record.get("control_path") or "").replace("|", "/")
+                page = record.get("state") or record.get("route", "")
+                lines.append(f"| {label[:80]} | {page} | {width:+.1f} | {height:+.1f} |")
+        widened = [record for record in pending
+                   if (record.get("evidence") or {}).get("labelChanged")
+                   and abs(float((record.get("evidence") or {}).get(
+                       "boxWidthDelta", 0) or 0)) > 1]
+        lines.append("")
+        lines.append(f"Information: width changes explained by a changed label: {len(widened)}")
+        lines.append("")
+        if widened:
+            lines.append("| control | route | label before | label busy | width delta |")
+            lines.append("| --- | --- | --- | --- | ---: |")
+            for record in sorted(
+                    widened,
+                    key=lambda item: abs(float((item.get("evidence") or {}).get(
+                        "boxWidthDelta", 0) or 0)), reverse=True):
+                evidence = record.get("evidence") or {}
+                label = (record.get("control") or record.get("control_path") or "").replace("|", "/")
+                page = record.get("state") or record.get("route", "")
+                before = str(evidence.get("labelBefore", "")).replace("|", "/")
+                busy = str(evidence.get("labelBusy", "")).replace("|", "/")
+                lines.append(f"| {label[:80]} | {page} | {before[:60]} | {busy[:60]} | "
+                             f"{float(evidence.get('boxWidthDelta', 0)):+.1f} |")
+        lines.append("")
     lines.append("")
     lines.append("## Runtime findings")
     lines.append("")
@@ -3637,9 +4141,13 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
     _write_summary(run_dir, findings, matrix, groups, args, elapsed, missing,
                    child_failures, pending)
     pages = len([entry for entry in matrix if entry["status"] == "measured"])
+    box_changed = len([record for record in pending
+                       if (record.get("evidence") or {}).get("boxChanged")])
+    dead = len([record for record in pending if record.get("verdict") == "dead"])
     print(f"OUT {run_dir}")
     print(f"METRIC findings={len(findings)} groups={len(groups)} "
-          f"pages={pages} skipped={len(skipped_entries)}")
+          f"pages={pages} skipped={len(skipped_entries)} "
+          f"box-changed={box_changed} dead={dead}")
     if skipped_entries:
         print(f"SKIPPED {len(skipped_entries)} overlay state(s) listed in summary")
     incomplete = len(missing) + len(failed) + len(child_failures)
@@ -3715,7 +4223,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--api-fixture", default="",
                         help="fulfil matching GET /api requests from this JSON map")
     parser.add_argument("--mock-delay-ms", type=int, default=0,
-                        help="sleep this long in the in-process mock model")
+                        help="delay the in-process mock model's answer this long")
     parser.add_argument("--slow-ms", type=int, default=0,
                         help="delay every document and /api response this many ms")
     parser.add_argument("--pending-audit", action="store_true",

@@ -139,6 +139,14 @@ svg{display:block;flex:none}
 .addplugin-form{display:inline-flex;margin:0}
 .w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12px;color:var(--ink-3)}
+/* A plugin's timeline (plugins/html.py): an unmarked list whose rows are a
+   nowrap time column and a wrapping title/meta column, the same grid the
+   SPA sheet uses. The meta rule stays scoped to the timeline. */
+.w-timeline{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
+.w-timeline li{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:1px 8px}
+.w-timeline .w-list-meta{grid-column:1;grid-row:1;white-space:nowrap;font-size:11px;color:var(--ink-3)}
+.w-list-primary{font-size:12px;line-height:1.35;color:var(--ink-2);overflow-wrap:anywhere}
+.w-timeline .w-list-secondary{grid-column:2;font-size:11.5px;color:var(--ink-3);overflow-wrap:anywhere}
 .settings-skill{margin-bottom:12px}
 .skill-name{font-size:14.5px}
 .skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
@@ -296,6 +304,20 @@ main{padding:28px 36px 60px;max-width:1200px;width:100%;min-width:0;margin:0 aut
 .wait-ph.panel .wait-row:nth-child(1){width:36%;height:14px}
 .wait-ph.panel .wait-row:nth-child(2){width:100%;height:36px}
 .wait-ph.panel .wait-row:nth-child(3){width:72%}
+/* The card being decided: a wide short figure, five bars of different
+   heights and two text lines, all dashed on the 4px grid. */
+.wait-ph.widget .wait-wire{gap:8px}
+.wait-ph.widget .wait-figure{display:block;height:24px;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.widget .wait-chart{display:flex;align-items:flex-end;gap:8px;height:40px}
+.wait-ph.widget .wait-bar{flex:1;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.widget .wait-bar:nth-child(1){height:12px}
+.wait-ph.widget .wait-bar:nth-child(2){height:24px}
+.wait-ph.widget .wait-bar:nth-child(3){height:16px}
+.wait-ph.widget .wait-bar:nth-child(4){height:32px}
+.wait-ph.widget .wait-bar:nth-child(5){height:20px}
+.wait-ph.widget .wait-text{display:block;height:12px;border:1px dashed var(--ink-4);border-radius:var(--r-inner);background:transparent}
+.wait-ph.widget .wait-text-a{width:88%}
+.wait-ph.widget .wait-text-b{width:64%}
 /* One skip link, first in the body, off screen until it takes focus. */
 .skip-link{position:absolute;left:8px;top:-56px;z-index:30;background:var(--accent);color:var(--on-accent);padding:10px 14px;border-radius:var(--r-control);font-weight:700;transition:top var(--dur) ease}
 .skip-link:focus{top:8px}
@@ -751,10 +773,32 @@ function showWaitPlaceholder(form, selector) {
   var wire = document.createElement('div');
   wire.className = 'wait-wire';
   wire.setAttribute('aria-hidden', 'true');
-  for (var i = 0; i < placeholderRows(shape); i += 1) {
-    var row = document.createElement('span');
-    row.className = 'wait-row';
-    wire.appendChild(row);
+  if (shape === 'widget') {
+    // The card being decided: a figure, five bars and two text lines,
+    // all dashed outlines, no invented numbers or words.
+    var figure = document.createElement('span');
+    figure.className = 'wait-figure';
+    wire.appendChild(figure);
+    var chart = document.createElement('span');
+    chart.className = 'wait-chart';
+    for (var barIndex = 0; barIndex < 5; barIndex += 1) {
+      var bar = document.createElement('span');
+      bar.className = 'wait-bar';
+      chart.appendChild(bar);
+    }
+    wire.appendChild(chart);
+    var first = document.createElement('span');
+    first.className = 'wait-text wait-text-a';
+    wire.appendChild(first);
+    var second = document.createElement('span');
+    second.className = 'wait-text wait-text-b';
+    wire.appendChild(second);
+  } else {
+    for (var i = 0; i < placeholderRows(shape); i += 1) {
+      var row = document.createElement('span');
+      row.className = 'wait-row';
+      wire.appendChild(row);
+    }
   }
   box.appendChild(line);
   box.appendChild(wire);
