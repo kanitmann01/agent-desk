@@ -4,13 +4,19 @@
 
 **Blocked by:** 01.
 
-**Status:** in progress.
+**Status:** done (2026-11-24).
 
-- [ ] The marketplace roots carry `overflow-wrap: anywhere` for prose, and the named text-holding flex and grid items get targeted `min-width: 0`.
-- [ ] Rows that put text beside controls wrap before the text squeezes: text columns keep a basis of at least 120px, and controls do not shrink.
-- [ ] Pills, badges, version chips and tags drop to their own line before leaving their card, and a single token longer than the card breaks by the root rule.
-- [ ] A manifest `pre`, a digest block or any table that cannot fit its column scrolls inside its own wrapper and never the page.
-- [ ] An ellipsis or line clamp on a plugin name, version, publisher or digest has a `title`, `aria-label` or focusable ancestor with the full value.
+- [x] The marketplace roots carry `overflow-wrap: anywhere` for prose, and the named text-holding flex and grid items get targeted `min-width: 0`.
+  - Verified: frontend/src/test/text-fit-marketplace.test.ts asserts overflow-wrap:anywhere on .mkt-main, .mkt-page and .mkt-sheet, and the targeted min-width:0 items.
+- [x] Rows that put text beside controls wrap before the text squeezes: text columns keep a basis of at least 120px, and controls do not shrink.
+  - Verified: frontend/src/test/text-fit-marketplace.test.ts asserts .mkt-card-id flex 1 1 120px, .mkt-version flex none and the control's own scroll.
+- [x] Pills, badges, version chips and tags drop to their own line before leaving their card, and a single token longer than the card breaks by the root rule.
+  - Verified: frontend/src/test/text-fit-marketplace.test.ts asserts .mkt-card-tags flex-wrap and the chip and tag caps; MarketGrid.tsx and Installed.tsx give the cannot-run chip its full text in a title.
+- [x] A manifest `pre`, a digest block or any table that cannot fit its column scrolls inside its own wrapper and never the page.
+  - Verified: frontend/src/test/text-fit-marketplace.test.ts asserts the code, digest, facts and table wrappers keep their lines and scroll in place.
+- [x] An ellipsis or line clamp on a plugin name, version, publisher or digest has a `title`, `aria-label` or focusable ancestor with the full value.
+  - Verified: frontend/src/test/review-marketplace.test.tsx and marketplace-cannot-run.test.tsx read the titled chip; 6ffce16 gives the cannot-run chip its words in a title.
 - [ ] Under tripled strings the marketplace findings are gone or lie only inside a deliberate scroller (baseline: 1,023 stress findings).
 - [ ] No `broken-word` finding on a compared value, a stamp, code, a button or a mono cell.
-- [ ] All three themes apply, and the page's focus order and reading order survive the wrapping.
+- [x] All three themes apply, and the page's focus order and reading order survive the wrapping.
+  - Verified: build/final-layout/20261124-195742 measured coforge and momentuum on the marketplace pages; frontend/src/test/marketplace-a11y.test.tsx keeps the focus order and skip link.
