@@ -125,6 +125,37 @@ describe('the command bar wraps before it squeezes', () => {
   });
 });
 
+describe('the send control keeps its box when the question is blank', () => {
+  it('pins the box the disabled form must keep', () => {
+    // Research is disabled until the question has a word. These are the
+    // declarations that decide the box, so the same label occupies the
+    // same space in both states.
+    expect(decl(css, '.cmd-send', 'display')).toBe('inline-flex');
+    expect(decl(css, '.cmd-send', 'align-items')).toBe('center');
+    expect(decl(css, '.cmd-send', 'gap')).toBe('8px');
+    expect(decl(css, '.cmd-send', 'padding')).toBe('8px 14px');
+    expect(decl(css, '.cmd-send', 'min-height')).toBe('36px');
+    expect(decl(css, '.cmd-send', 'font-weight')).toBe('600');
+    expect(decl(css, '.cmd-send', 'font-size')).toBe('14px');
+    expect(decl(css, '.cmd-send', 'border-radius')).toBe('var(--r-control)');
+    expect(decl(css, '.cmd-send', 'white-space')).toBe('nowrap');
+  });
+
+  it('lets a disabled button change colour and opacity only', () => {
+    // The one rule that styles every disabled button may dim it and
+    // change the cursor, never a size, a padding, a type or a radius.
+    const box = /(?:^|;)\s*(?:width|height|min-width|min-height|max-width|max-height|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|font(?:-size|-weight|-family|-style)?|line-height|letter-spacing|gap|border(?:-width|-style|-radius)?)\s*:/;
+    expect(decl(css, 'button:disabled', 'opacity')).toBe('.55');
+    expect(block(css, 'button:disabled')).not.toMatch(box);
+    // A later :disabled rule that targets the send control obeys the same
+    // rule; hover and active guards are inert while disabled.
+    for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!selector.includes('.cmd-send') || !selector.includes(':disabled')) continue;
+      expect(body, selector.trim()).not.toMatch(box);
+    }
+  });
+});
+
 describe('the cell header wraps and the tag stays reachable', () => {
   it('wraps the header and gives the tag a floor', () => {
     expect(decl(css, '.cell-head', 'flex-wrap')).toBe('wrap');

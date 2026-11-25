@@ -1,8 +1,8 @@
 // The research command bar: the centerpiece. One white well holding the
 // question input and the surface's one solid-green send control. Enter
-// asks, Shift+Enter gives a new line. Behavior mirrors the old ask well
-// exactly; the sweep, the magnet pull, the click burst and the entrance
-// motion are gone.
+// asks, Shift+Enter gives a new line; the send control stays disabled
+// until the trimmed question has a word. The sweep, the magnet pull, the
+// click burst and the entrance motion are gone.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ICON_SEARCH } from './EmptyState';
 import { useBusy } from './useBusy';
@@ -33,10 +33,12 @@ const ICON_SEND = (
  * Research command bar: the question field with the one send control.
  *
  * Enter asks and Shift+Enter inserts a newline; `onAsk` resolves true when
- * the question was answered, which is what clears the field. A paused
- * research source disables the bar instead of accepting a question. With no
- * AI key saved (`needsAi`) the control is the link that adds one (spec 022):
- * nothing is sent until the desk can answer.
+ * the question was answered, which is what clears the field. The send
+ * control is disabled while the trimmed question is empty, so the button
+ * never offers an ask that has nothing to send. A paused research source
+ * disables the bar instead of accepting a question. With no AI key saved
+ * (`needsAi`) the control is the link that adds one (spec 022): nothing is
+ * sent until the desk can answer.
  */
 export default function CommandBar({ busy, disabled = false, needsAi = false, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
@@ -46,6 +48,7 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
   // press cannot start a second ask.
   const pending = useBusy(busy);
   const sendLabel = pending ? 'Asking your AI...' : 'Research';
+  const empty = question.trim() === '';
 
   // One-row by default, growing with the question up to five rows.
   useEffect(() => {
@@ -58,7 +61,9 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
   /**
    * Ask the trimmed question and clear the field when it was answered.
    *
-   * A blank field or a busy bar does nothing.
+   * The control is already disabled while the question is blank, so this
+   * guard covers what the button cannot: Enter in the field, and a press
+   * that lands after the bar turned busy or paused.
    */
   async function ask() {
     const trimmed = question.trim();
@@ -107,7 +112,7 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
               aria-label={sendLabel}
               aria-busy={pending ? 'true' : undefined}
               onClick={() => void ask()}
-              disabled={busy || disabled}
+              disabled={busy || disabled || empty}
             >
               {pending ? <span className="btn-busy-dot" aria-hidden="true" /> : null}
               <span className="btn-labels cmd-send-label">
