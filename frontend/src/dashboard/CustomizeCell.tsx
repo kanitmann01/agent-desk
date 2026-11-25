@@ -26,6 +26,10 @@ interface ControlProps {
   idle: string;
   pendingLabel: string;
   pending: boolean;
+  // True once the save has lasted 100 ms: only then does the control show
+  // its busy dot, aria-busy and continuous verb. While pending it is
+  // already inert, so a fast save never flashes.
+  pendingShown: boolean;
   disabled?: boolean;
   // The card name behind a bare verb; omitted when the visible label is
   // already the whole name.
@@ -36,7 +40,7 @@ interface ControlProps {
 
 /** One customize control: the shared pending contract on the flat chip. */
 function Control({
-  idle, pendingLabel, pending, disabled = false, ariaLabel, pendingAriaLabel, onActivate,
+  idle, pendingLabel, pending, pendingShown, disabled = false, ariaLabel, pendingAriaLabel, onActivate,
 }: ControlProps) {
   if (pending) {
     return (
@@ -44,13 +48,26 @@ function Control({
         type="button"
         className="cust-btn"
         disabled
-        aria-busy="true"
-        aria-label={pendingAriaLabel}
+        aria-busy={pendingShown ? 'true' : undefined}
+        aria-label={pendingShown ? pendingAriaLabel : ariaLabel}
       >
-        <span className="btn-busy-dot" aria-hidden="true" />
+        <span
+          className={pendingShown ? 'btn-busy-dot' : 'btn-busy-dot busy-hidden'}
+          aria-hidden="true"
+        />
         <span className="btn-labels">
-          <span className="btn-label btn-label-hidden" aria-hidden="true">{idle}</span>
-          <span className="btn-label">{pendingLabel}</span>
+          <span
+            className={pendingShown ? 'btn-label btn-label-hidden' : 'btn-label'}
+            aria-hidden={pendingShown ? 'true' : undefined}
+          >
+            {idle}
+          </span>
+          <span
+            className={pendingShown ? 'btn-label' : 'btn-label btn-label-hidden'}
+            aria-hidden={pendingShown ? undefined : 'true'}
+          >
+            {pendingLabel}
+          </span>
         </span>
       </button>
     );
@@ -84,6 +101,8 @@ export interface CustomizeCellProps {
   busy?: boolean;
   // This card's control that started the save, if any.
   pending?: CustomizePending;
+  // True once that save has lasted 100 ms, so the pending verb shows.
+  pendingShown?: boolean;
   // The typed title to restore when a rename save failed.
   renameValue?: string | null;
   onRenaming: (key: string | null) => void;
@@ -106,7 +125,7 @@ export interface CustomizeCellProps {
  */
 export default function CustomizeCell({
   cardKey, name, first, last, renaming, dragging, dragOver,
-  busy = false, pending = null, renameValue = null,
+  busy = false, pending = null, pendingShown = false, renameValue = null,
   onRenaming, onMove, onRename, onHide, onDragCard, onDragOverCard, onDropCard, onDragEnd,
   children,
 }: CustomizeCellProps) {
@@ -195,6 +214,7 @@ export default function CustomizeCell({
               idle="Save title"
               pendingLabel="Saving..."
               pending={pending === 'rename'}
+              pendingShown={pendingShown}
               disabled={busy}
               onActivate={submitRename}
             />
@@ -208,6 +228,7 @@ export default function CustomizeCell({
               idle="Move up"
               pendingLabel="Moving up..."
               pending={pending === 'move-up' || pending === 'move'}
+              pendingShown={pendingShown}
               disabled={busy || first}
               ariaLabel={`Move ${name} up`}
               pendingAriaLabel={`Moving ${name} up...`}
@@ -217,6 +238,7 @@ export default function CustomizeCell({
               idle="Move down"
               pendingLabel="Moving down..."
               pending={pending === 'move-down'}
+              pendingShown={pendingShown}
               disabled={busy || last}
               ariaLabel={`Move ${name} down`}
               pendingAriaLabel={`Moving ${name} down...`}
@@ -237,6 +259,7 @@ export default function CustomizeCell({
           idle="Hide"
           pendingLabel="Hiding..."
           pending={pending === 'hide'}
+          pendingShown={pendingShown}
           disabled={busy}
           ariaLabel={`Hide ${name}`}
           pendingAriaLabel={`Hiding ${name}...`}

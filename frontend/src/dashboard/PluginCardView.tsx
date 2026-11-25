@@ -519,6 +519,7 @@ function ManualValueForm({ pluginId, onRefetch, onExpired }: {
       <input type="number" inputMode="decimal" value={target} placeholder="Target"
              aria-label="Target" onChange={(event) => setTarget(event.target.value)} />
       <Button tone="secondary" type="submit" disabled={busy} pending={busyShown} pendingLabel="Saving...">Save</Button>
+      <PhaseLine active={busy} text="Saving the value" className="w-note" />
       {note ? <p className={failed ? 'w-note alert' : 'w-note'} role={failed ? 'alert' : 'status'}>{note}</p> : null}
     </form>
   );

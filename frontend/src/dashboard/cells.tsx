@@ -21,15 +21,19 @@ export function clock(at: Date): string {
  * A cell's header line: the tag as the cell's heading, an optional meta set to
  * its right, and the sample-data tag once the cell is showing sample data.
  */
-export function CellHead({ tag, sample = false, meta, id }: {
+export function CellHead({ tag, sample = false, meta, id, label }: {
   tag: string;
   sample?: boolean;
   meta?: ReactNode;
   id?: string;
+  // The layout's custom title, when the reader renamed the card. The
+  // fixed kind tag stays beside it.
+  label?: string | null;
 }) {
   return (
     <header className="cell-head">
       <h2 className="tag" id={id} title={tag}>{tag}</h2>
+      {label ? <span className="cell-title cell-name">{label}</span> : null}
       {meta != null ? <span className="cell-meta">{meta}</span> : null}
       {sample ? <span className="sample-tag">SAMPLE DATA</span> : null}
     </header>
@@ -73,6 +77,7 @@ export function StageChart({ stages }: { stages: StageNet[] }) {
               />
               <span
                 className={isUp ? 'stage-val up' : 'stage-val down'}
+                title={`${s.stage}: ${formatSigned(s.net)}`}
                 style={isUp
                   ? { bottom: `calc(${100 - zero + height}% + 4px)` }
                   : { top: `calc(${zero + height}% + 4px)` }}

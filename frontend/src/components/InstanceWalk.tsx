@@ -159,8 +159,14 @@ export default function InstanceWalk({
   // A request that answers after the reader closed the sheet reports its
   // outcome on the page they returned to (spec 027, F5).
   const mounted = useRef(true);
-  useEffect(() => () => {
-    mounted.current = false;
+  useEffect(() => {
+    // StrictMode runs the cleanup once on mount and keeps the same ref,
+    // so the body must re-arm it; otherwise a development failure is
+    // announced away instead of shown inline.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
   }, []);
   // The opened file is outside the workspace folder: the confirm was
   // refused, and the honest inline choice (accept once, retry) is up.

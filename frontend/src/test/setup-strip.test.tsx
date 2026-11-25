@@ -46,7 +46,14 @@ const BASE: DashboardData = {
   research: { enabled: true, lastAnsweredTs: null },
   inbox: { waiting: 0 },
   skills: [],
-  layout: { cards: [] },
+  layout: {
+    cards: [
+      { key: 'sales', title: null },
+      { key: 'commitments', title: null },
+      { key: 'research', title: null },
+      { key: 'skills', title: null },
+    ],
+  },
   plugins: { cards: [] },
 };
 
