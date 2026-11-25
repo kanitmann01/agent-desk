@@ -66,6 +66,28 @@ def rule(selector):
     raise AssertionError(f"no {selector} rule in the server sheet")
 
 
+def sheet_rule(css, selector):
+    """The declarations for one selector in any stylesheet.
+
+    Unlike rule(), this splits a selector list, so `.w-timeline` is found
+    in the SPA's `.w-timeline,.w-checklist` rule too."""
+    for match in re.finditer(r"([^{}]+)\{([^}]*)\}", css):
+        selector_text = re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.S)
+        selectors = [part.strip() for part in selector_text.split(",")]
+        if selector in selectors:
+            return match.group(2)
+    raise AssertionError(f"no {selector} rule in the sheet")
+
+
+def css_value(declarations, prop):
+    """One property's value in a declaration block, stripped."""
+    for part in declarations.split(";"):
+        name, _sep, value = part.partition(":")
+        if name.strip() == prop:
+            return value.strip()
+    raise AssertionError(f"no {prop} in {declarations}")
+
+
 # -- R1: the root rule ----------------------------------------------------
 
 def test_the_body_breaks_a_word_that_would_overflow():
@@ -225,6 +247,55 @@ def test_the_table_cell_breaks_only_a_word_that_cannot_fit():
     # table instead of breaking every word inside it.
     assert "overflow-wrap:break-word" in rule("table.rows td")
     assert "overflow-wrap:break-word" in rule("table.rows th")
+
+
+def test_the_server_sheet_mirrors_the_spa_timeline_contract():
+    spa = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+    timeline = sheet_rule(pages.STYLES, ".w-timeline")
+    assert "display:flex" in timeline
+    assert "flex-direction:column" in timeline
+    assert "list-style:none" in timeline
+    assert css_value(timeline, "padding") == "0"
+    assert (css_value(sheet_rule(pages.STYLES, ".w-timeline li"),
+                      "grid-template-columns")
+            == css_value(sheet_rule(spa, ".w-timeline li"),
+                         "grid-template-columns")
+            == "max-content minmax(0,1fr)")
+    server_meta = sheet_rule(pages.STYLES, ".w-timeline .w-list-meta")
+    spa_meta = sheet_rule(spa, ".w-timeline .w-list-meta")
+    for prop in ("grid-column", "grid-row", "white-space"):
+        assert css_value(server_meta, prop) == css_value(spa_meta, prop), prop
+    assert ("overflow-wrap:anywhere"
+            in sheet_rule(pages.STYLES, ".w-list-primary"))
+    server_secondary = sheet_rule(
+        pages.STYLES, ".w-timeline .w-list-secondary")
+    assert css_value(server_secondary, "grid-column") == "2"
+    assert "overflow-wrap:anywhere" in server_secondary
+
+
+def test_a_fresh_plugin_card_draws_the_timeline_classes():
+    from agentdesk.server.app import DashboardHandler
+
+    card = {
+        "id": "timeline-plugin",
+        "title": "Timeline plugin",
+        "version": "1.0.0",
+        "pilot": False,
+        "freshness": "fresh",
+        "checked_at": "2026-11-24T09:00:00",
+        "payload": {"elements": [{
+            "kind": "timeline",
+            "items": [{
+                "time": "2026-11-24 09:00",
+                "title": "A title long enough to wrap",
+                "meta": "A meta line long enough to wrap",
+            }],
+        }]},
+    }
+    widget = DashboardHandler._plugin_widget(None, card)
+    assert '<ol class="w-timeline">' in widget.body_html
+    for css_class in ("w-list-meta", "w-list-primary", "w-list-secondary"):
+        assert f'class="{css_class}"' in widget.body_html, css_class
 
 
 def test_a_plugin_table_rides_in_a_scroller_with_breaking_cells():
