@@ -139,6 +139,14 @@ svg{display:block;flex:none}
 .addplugin-form{display:inline-flex;margin:0}
 .w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12px;color:var(--ink-3)}
+/* A plugin's timeline (plugins/html.py): an unmarked list whose rows are a
+   nowrap time column and a wrapping title/meta column, the same grid the
+   SPA sheet uses. The meta rule stays scoped to the timeline. */
+.w-timeline{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
+.w-timeline li{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:1px 8px}
+.w-timeline .w-list-meta{grid-column:1;grid-row:1;white-space:nowrap;font-size:11px;color:var(--ink-3)}
+.w-list-primary{font-size:12px;line-height:1.35;color:var(--ink-2);overflow-wrap:anywhere}
+.w-timeline .w-list-secondary{grid-column:2;font-size:11.5px;color:var(--ink-3);overflow-wrap:anywhere}
 .settings-skill{margin-bottom:12px}
 .skill-name{font-size:14.5px}
 .skills-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
