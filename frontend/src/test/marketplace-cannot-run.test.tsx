@@ -144,23 +144,23 @@ describe('an installed plugin that cannot run', () => {
     return urls;
   }
 
-  it('shows the state with Remove as the primary action and no Re-test', async () => {
+  it('shows the state with Uninstall as the primary action and no Re-test', async () => {
     stubInstalled(false);
     render(<MarketplaceApp />);
 
     await screen.findByRole('heading', { level: 2, name: 'Competitor Watch' });
     expect(await screen.findByText('Cannot run on this desk')).toBeInTheDocument();
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
-    const remove = screen.getByRole('button', { name: 'Remove' });
-    expect(remove).toHaveClass('btn-primary');
+    const uninstall = screen.getByRole('button', { name: 'Uninstall' });
+    expect(uninstall).toHaveClass('btn-primary');
     expect(screen.queryByRole('button', { name: /Re-test/ })).not.toBeInTheDocument();
-    // Remove and Purge data are the two honest actions: one stops the plugin
-    // and keeps its folder, the other deletes the folder. Nothing that cannot
-    // make it run comes back.
+    // Uninstall and Purge data are the two honest actions: one stops the
+    // plugin and keeps its folder, the other deletes the folder. Nothing that
+    // cannot make it run comes back.
     const article = screen.getByRole('heading', { level: 2, name: 'Competitor Watch' })
       .closest('article') as HTMLElement;
     expect(within(article).getAllByRole('button').map((button) => button.textContent?.trim()))
-      .toEqual(['Remove', 'Purge data']);
+      .toEqual(['Uninstall', 'Purge data']);
     expect(within(article).queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
     expect(within(article).queryByRole('button', { name: 'Roll back' })).not.toBeInTheDocument();
     expect(within(article).queryByRole('button', { name: /share/i })).not.toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('an installed plugin that cannot run', () => {
     expect(within(purge).getByRole('button', { name: 'Purge data' })).toBeDisabled();
     await user.click(within(purge).getByRole('button', { name: 'Cancel' }));
 
-    await user.click(remove);
+    await user.click(uninstall);
     expect(await screen.findByRole('dialog', { name: 'Uninstall Competitor Watch' })).toBeInTheDocument();
   });
 

@@ -95,8 +95,8 @@ const POLICY_HELP = "Only whoever manages this desk's plugin policy can change t
  *
  * A staged update that widens permissions replaces the update button with a
  * consent review, so no widening runs unread. Every control is disabled while
- * one action is in flight. A plugin that cannot run here offers Remove as its
- * only action, matching the Installed row.
+ * one action is in flight. A plugin that cannot run here offers Uninstall and
+ * Purge data, matching the Installed row.
  */
 function PluginActions({
   detail, installed, busy, busyShown, cannotRun = false, onInstall, onUpdate, onConsent, onAction, onPurge, onRevert, onUninstall,
@@ -118,12 +118,12 @@ function PluginActions({
   /** True while this exact action is the one in flight and past the 100 ms gate. */
   const pendingFor = (action: string) => busyShown && busy === action;
   if (installed && cannotRun) {
-    // The Installed row's two actions, for the same reason: Remove stops it
-    // and keeps the folder, Purge deletes the folder. Nothing that cannot
+    // The Installed row's two actions, for the same reason: Uninstall stops
+    // it and keeps the folder, Purge deletes the folder. Nothing that cannot
     // make it run comes back.
     return (
       <div className="mkt-actions">
-        <Button tone="primary" disabled={anyBusy} onClick={onUninstall}>Remove</Button>
+        <Button tone="primary" disabled={anyBusy} onClick={onUninstall}>Uninstall</Button>
         <Button tone="secondary" disabled={anyBusy} onClick={onPurge}>Purge data</Button>
       </div>
     );

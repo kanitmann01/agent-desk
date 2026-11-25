@@ -455,7 +455,7 @@ describe('the second review defects', () => {
       .not.toBeInTheDocument();
   });
 
-  it('M2: a cannot-run installed detail offers the notice and Remove only', async () => {
+  it('M2: a cannot-run installed detail offers the notice with Uninstall and Purge data', async () => {
     window.history.replaceState({}, '', '/marketplace/plugin/competitor-watch');
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(detailResponse({
       plugin: detail({
@@ -471,7 +471,7 @@ describe('the second review defects', () => {
     const header = heading.closest('header') as HTMLElement;
     expect(within(header).getByText(NOTICE)).toBeInTheDocument();
     expect(within(header).getAllByRole('button').map((button) => button.textContent?.trim()))
-      .toEqual(['Remove', 'Purge data']);
+      .toEqual(['Uninstall', 'Purge data']);
     expect(within(header).queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
     expect(within(header).queryByRole('button', { name: 'Roll back' })).not.toBeInTheDocument();
 
@@ -480,7 +480,7 @@ describe('the second review defects', () => {
     expect(within(purge).getByRole('button', { name: 'Purge data' })).toBeDisabled();
     await user.click(within(purge).getByRole('button', { name: 'Cancel' }));
 
-    await user.click(within(header).getByRole('button', { name: 'Remove' }));
+    await user.click(within(header).getByRole('button', { name: 'Uninstall' }));
     expect(await screen.findByRole('dialog', { name: 'Uninstall plugin' })).toBeInTheDocument();
   });
 

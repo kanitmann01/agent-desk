@@ -482,7 +482,7 @@ export function InstalledPage() {
                     <div className="mkt-actions">
                       <Button tone="primary" disabled={anyBusy}
                               onClick={() => { setConfirmError(''); setConfirm({ kind: 'uninstall', record }); }}>
-                        Remove
+                        Uninstall
                       </Button>
                       <Button tone="secondary" disabled={anyBusy}
                               onClick={() => { setPurgeError(''); setPurgeRecord(record); }}>
