@@ -554,6 +554,21 @@ var BUSY_DELAY_MS = 100;
 var TAKING_LONGER_MS = 10000;
 var BUSY_WATCHDOG_MS = 180000;
 
+// A notice is said once. Once the page has drawn the sentence, take it out
+// of the address bar, so a later fetch-driven reload does not say it again.
+function clearNoticeFromAddress() {
+  try {
+    var url = new URL(window.location.href);
+    if (!url.searchParams.has('notice') && !url.searchParams.has('notice_kind')) return;
+    url.searchParams.delete('notice');
+    url.searchParams.delete('notice_kind');
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch (e) {
+    // An address the parser cannot read keeps its words; nothing else changes.
+  }
+}
+clearNoticeFromAddress();
+
 function shouldReloadAfterPost(ok) {
   return ok === true;
 }
