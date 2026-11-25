@@ -589,11 +589,23 @@ function stackButton(btn) {
 
 function setButtonBusy(btn, on, label) {
   if (!btn) return;
-  // A resting control cancels the delayed busy mark: a fast answer must
-  // not be followed by a timer that locks the control after it is done.
-  if (!on && btn._busyTimer) {
-    window.clearTimeout(btn._busyTimer);
-    btn._busyTimer = null;
+  if (!on) {
+    // A resting control cancels the delayed busy mark and its watchdog: a
+    // fast answer must not be followed by a timer that locks it after it
+    // is done, and the synchronous press flag goes with them.
+    if (btn._busyTimer) {
+      window.clearTimeout(btn._busyTimer);
+      btn._busyTimer = null;
+    }
+    if (btn._busyWatchdog) {
+      window.clearTimeout(btn._busyWatchdog);
+      btn._busyWatchdog = null;
+    }
+    if (btn._busyVisibility) {
+      document.removeEventListener('visibilitychange', btn._busyVisibility);
+      btn._busyVisibility = null;
+    }
+    btn.removeAttribute('data-press-busy');
   }
   stackButton(btn);
   var busy = btn.querySelector('.btn-label-busy');
@@ -619,14 +631,57 @@ function controlLabel(btn) {
 
 function beginControl(btn) {
   if (!btn) return;
+  // Flag the press now: the visual busy state waits 100 ms, but a second
+  // click inside that window must not run the handler again.
+  btn.setAttribute('data-press-busy', '1');
   if (btn._busyTimer) window.clearTimeout(btn._busyTimer);
+  if (btn._busyWatchdog) window.clearTimeout(btn._busyWatchdog);
+  if (btn._busyVisibility) {
+    document.removeEventListener('visibilitychange', btn._busyVisibility);
+    btn._busyVisibility = null;
+  }
   // The timer lives on the element, so setButtonBusy(false) can cancel
   // it from anywhere: no caller has to keep the returned cancel.
   btn._busyTimer = window.setTimeout(function () {
     btn._busyTimer = null;
     setButtonBusy(btn, true, controlLabel(btn));
   }, BUSY_DELAY_MS);
+  // A fetch that never settles must not keep the control disabled. After
+  // the same generous limit as a form, a visible page unlocks it.
+  btn._busyDeadline = Date.now() + BUSY_WATCHDOG_MS;
+  btn._busyWatchdog = window.setTimeout(function () {
+    btn._busyWatchdog = null;
+    if (document.visibilityState === 'visible') {
+      unlockStuckControl(btn);
+      return;
+    }
+    btn._busyVisibility = function () {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() < btn._busyDeadline) return;
+      unlockStuckControl(btn);
+    };
+    document.addEventListener('visibilitychange', btn._busyVisibility);
+  }, BUSY_WATCHDOG_MS);
 }
+
+function unlockStuckControl(btn) {
+  if (!btn) return;
+  setButtonBusy(btn, false);
+  if (btn.form) removeWaitPlaceholder(btn.form.getAttribute('data-wait'));
+  showNote('This is taking too long. Check that the desk is still running, then try again.');
+}
+
+// One click guard for every click control: the synchronous flag above
+// stops the second click, and a form already posting stops its controls.
+function onControlClick(event) {
+  var target = event.target;
+  if (!target || !target.closest) return;
+  if (!target.closest('[data-press-busy="1"]')
+      && !target.closest("form[data-busy-form='1']")) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+document.addEventListener('click', onControlClick, true);
 
 function noteRegion() {
   return document.getElementById('page-note')
