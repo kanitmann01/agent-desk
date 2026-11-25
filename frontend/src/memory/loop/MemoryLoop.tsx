@@ -673,16 +673,18 @@ function CaptureSettings({ data, actOutcome, onChanged }: { data: LoopState; act
             aria-busy={askBusy || undefined}
             title="Ask me first"
             disabled={pendingKey !== null}
-            onClick={() => !capture.autoApprove && chooseAuto(false)}>Ask me first</button>
+            onClick={() => capture.autoApprove && chooseAuto(false)}>Ask me first</button>
           <button type="button" role="radio" aria-checked={capture.autoApprove}
             aria-busy={autoBusy || undefined}
             title="Save automatically"
             disabled={pendingKey !== null}
-            onClick={() => capture.autoApprove && chooseAuto(true)}>Save automatically</button>
+            onClick={() => !capture.autoApprove && chooseAuto(true)}>Save automatically</button>
         </div>
         {pendingKey === 'memory_auto_approve' && (
-          <WaitLine active working="Saving when facts are reviewed…"
-            slow="Still saving this setting… This is taking longer than usual. You can leave this page."
+          <WaitLine active working={pendingAuto === 'auto' ? 'Saving facts as they are found…' : 'Saving when facts are reviewed…'}
+            slow={pendingAuto === 'auto'
+              ? 'Still saving facts as they are found… This is taking longer than usual. You can leave this page.'
+              : 'Still saving this setting… This is taking longer than usual. You can leave this page.'}
             className="ml-feedback-phase" />
         )}
       </fieldset>
