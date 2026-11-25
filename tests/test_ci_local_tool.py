@@ -160,3 +160,49 @@ def test_the_pytest_gate_reports_which_mode_it_chose(monkeypatch):
         assert ok is True
         assert expect_mode in detail, detail
         assert ("-n" in seen[-1]) is parallel
+
+
+def test_the_pytest_gate_names_the_tests_that_failed(monkeypatch):
+    ci_local = _gate()
+
+    class _Failed:
+        returncode = 1
+        stdout = (
+            "_____ test_a _____\n"
+            "E   assert 1 == 2\n"
+            "=========================== short test summary info "
+            "===========================\n"
+            "FAILED tests/test_a.py::test_a - assert 1 == 2\n"
+            "FAILED tests/test_b.py::test_b\n"
+            "ERROR tests/test_c.py\n"
+            "FAILED tests/test_d.py::test_d\n"
+            "1 failed, 3507 passed, 1 skipped, 13 warnings in 101.73s\n"
+        )
+
+    monkeypatch.setattr(ci_local, "_xdist_available", lambda: True)
+    monkeypatch.setattr(
+        ci_local, "subprocess", types.SimpleNamespace(run=lambda args, **_kw: _Failed()))
+    ok, detail = ci_local._pytest_gate({})
+    # the counts stay first, the names follow, and the list is capped so one
+    # line still holds the verdict
+    assert ok is False
+    assert detail.startswith("parallel -n 8: 1 failed, 3507 passed")
+    assert "FAILED tests/test_a.py::test_a - assert 1 == 2" in detail
+    assert "FAILED tests/test_b.py::test_b" in detail
+    assert "ERROR tests/test_c.py" in detail
+    assert "test_d" not in detail
+
+
+def test_the_pytest_gate_keeps_its_summary_when_no_test_line_exists(monkeypatch):
+    ci_local = _gate()
+
+    class _Crashed:
+        returncode = 2
+        stdout = "ERROR: not found: /no/such/dir\n(no match)\n"
+
+    monkeypatch.setattr(
+        ci_local, "subprocess", types.SimpleNamespace(run=lambda args, **_kw: _Crashed()))
+    ok, detail = ci_local._pytest_gate({})
+    assert ok is False
+    assert detail.endswith("(no match)")
+    assert "|" not in detail
