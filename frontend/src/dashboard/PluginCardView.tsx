@@ -22,6 +22,8 @@ import TrackerCard from './TrackerCard';
 import Button from '../components/Button';
 import { PhaseLine, usePhase } from '../components/feedback';
 import { useBusy } from '../components/useBusy';
+import { useFaceActions } from '../face/FaceProvider';
+import { useFaceActivity } from '../face/useFaceActivity';
 import { WireState } from './cells';
 import { PendingBody } from './pending';
 
@@ -223,6 +225,19 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
   // and the answer replaces the placeholder in place.
   const busyShown = useBusy(busy);
   const placeholder = usePhase(busy && action === 'press', pressPhase);
+  const faceActions = useFaceActions();
+
+  useFaceActivity({
+    mood: 'thinking',
+    source: 'request',
+    label: action === 'stage' ? 'Staging reply card' : pressPhase,
+    active: busy,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: refusal || undefined,
+    active: Boolean(refusal),
+  });
 
   /**
    * Spend the press: post it once and keep whichever of the answer, the
@@ -266,10 +281,12 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
       setStaged(result.data.staged === false ? 'existing' : 'staged');
       setStagedCard(result.data.cardId ?? '');
       await onRefetch();
+      faceActions?.notifyDone(result.data.staged === false ? 'Already staged' : 'Reply staged');
       return;
     }
     setStaged('');
     setAnswer(result.data);
+    faceActions?.notifyDone(press.kind === 'reply-draft' ? 'Reply drafted' : 'Range explained');
   }
 
   const disclosure = answer?.disclosure ?? [];
@@ -349,6 +366,19 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
 export default function PluginCardView({ card, onRefetch, onExpired }: PluginCardViewProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const faceActions = useFaceActions();
+
+  useFaceActivity({
+    mood: 'reading',
+    source: 'request',
+    label: 'Re-testing the data source',
+    active: busy,
+  });
+  useFaceActivity({
+    mood: 'blocked',
+    label: note || undefined,
+    active: Boolean(note),
+  });
   // The wizard asks what a tile should show, so a workbook tile may carry a
   // face other than the classic one. It draws those elements like any other
   // card; the classic tracker card is what a tile without a chosen face gets.
@@ -402,6 +432,7 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
     // the reader never sees the old card as if the re-test had finished.
     await onRefetch();
     setBusy(false);
+    faceActions?.notifyDone('Re-test complete');
   }
 
   const menuItems: CardMenuItem[] = fresh

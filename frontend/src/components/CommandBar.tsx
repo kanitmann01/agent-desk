@@ -3,7 +3,9 @@
 // asks, Shift+Enter gives a new line; the send control stays disabled
 // until the trimmed question has a word. The sweep, the magnet pull, the
 // click burst and the entrance motion are gone.
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useFaceActions } from '../face/FaceProvider';
+import { useFaceActivity } from '../face/useFaceActivity';
 import { ICON_SEARCH } from './EmptyState';
 import { useBusy } from './useBusy';
 
@@ -42,7 +44,37 @@ const ICON_SEND = (
  */
 export default function CommandBar({ busy, disabled = false, needsAi = false, onAsk }: CommandBarProps) {
   const [question, setQuestion] = useState('');
+  const [focused, setFocused] = useState(false);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const faceActions = useFaceActions();
+  const setLookTarget = faceActions?.setLookTarget;
+  const isListening = focused && !disabled;
+
+  useFaceActivity({
+    mood: 'listening',
+    label: 'Listening to your question',
+    active: isListening,
+  });
+
+  useEffect(() => {
+    if (disabled) setFocused(false);
+  }, [disabled]);
+
+  /** Aim the face toward the center of the question field. */
+  const updateLookTarget = useCallback(() => {
+    if (!setLookTarget) return;
+    const field = fieldRef.current;
+    if (!field) {
+      setLookTarget(null);
+      return;
+    }
+    const rect = field.getBoundingClientRect();
+    setLookTarget({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    });
+  }, [setLookTarget]);
+
   // The 100 ms gate: a fast model call never flashes a busy label. The
   // send control is disabled from the first millisecond, so a second
   // press cannot start a second ask.
@@ -57,6 +89,27 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
     field.style.height = 'auto';
     field.style.height = `${Math.min(field.scrollHeight, MAX_FIELD_HEIGHT)}px`;
   }, [question]);
+
+  // Keep the face aimed at the active field across focus, blur, resize, and unmount.
+  useEffect(() => {
+    if (!setLookTarget) return undefined;
+    if (!isListening) {
+      setLookTarget(null);
+      return undefined;
+    }
+    updateLookTarget();
+    window.addEventListener('resize', updateLookTarget);
+    return () => {
+      window.removeEventListener('resize', updateLookTarget);
+      setLookTarget(null);
+    };
+  }, [isListening, setLookTarget, updateLookTarget]);
+
+  // Refresh the target center after the field resizes with typed input.
+  useEffect(() => {
+    if (!isListening) return;
+    updateLookTarget();
+  }, [isListening, question, updateLookTarget]);
 
   /**
    * Ask the trimmed question and clear the field when it was answered.
@@ -95,6 +148,8 @@ export default function CommandBar({ busy, disabled = false, needsAi = false, on
           value={question}
           disabled={disabled}
           onChange={(e) => setQuestion(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onKeyDown={onInputKey}
         />
         <span className="cmd-hint" aria-hidden="true">

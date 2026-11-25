@@ -10,6 +10,7 @@
 // The collapsed state persists in localStorage and mirrors the
 // server-rendered pages' toggle (key: agentdesk.railCollapsed).
 import { useEffect, useState } from 'react';
+import FaceSlot from '../face/FaceSlot';
 import ThemePicker from '../theme/ThemePicker';
 
 interface RailProps {
@@ -90,6 +91,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
         </button>
       </div>
       <div className="brand">
+        <FaceSlot slot="rail" />
         <span className="brand-name">Agent Desk</span>
       </div>
       <a href="/" title="Dashboard" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
