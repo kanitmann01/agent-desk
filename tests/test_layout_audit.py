@@ -330,6 +330,20 @@ def test_pending_new_scoped_indicator_earns_meets():
     assert len(evidence["busy_indicators"]) == 1
 
 
+def test_pending_pre_existing_scoped_indicator_cannot_earn_meets():
+    """An in-scope busy indicator that existed before the click is stale."""
+    control = {"text": "Ask", "tag": "button", "wait_target": "#assistant-thread"}
+    state = {"control": {"disabled": False}, "indicators": [{
+        "path": "div.scoped-busy", "text": "Refreshing",
+        "inScope": True, "appearedAfterClick": False,
+    }], "labelChanged": False, "ariaBusy": False,
+        "waitVisible": True, "waitChanged": False}
+    verdict, evidence = audit._pending_verdict(
+        control, state, [{"method": "POST", "url": "/assistant/ask"}], [], False)
+    assert verdict == "silent"
+    assert evidence["busy_indicators"] == []
+
+
 def test_pending_pre_existing_aria_busy_cannot_earn_meets():
     """ARIA busy that was already present before activation is stale evidence."""
     control = {"text": "Ask", "tag": "button", "ariaBusy": "true"}
