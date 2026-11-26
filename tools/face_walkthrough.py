@@ -359,17 +359,23 @@ def _install_sheet_deny(target, proxied: tuple[str, ...] | None = None) -> tuple
 
 
 def _install_real_guard(target, started: list[dict], held: list) -> None:
-    """Install the layout audit's guard before the real app's first navigation.
+    """Install the layout audit's guard in its holding mode before navigation.
 
-    The guard records every non-GET and lets the isolated desk answer it:
-    the research action must reach the mock, and the two requests the walk
-    answers or holds are intercepted by the walk's own later routes.
+    Every non-GET is held and never reaches the desk. Exactly one kind of
+    request may pass: the research request in the thinking and the done
+    captures, and the walk's own research route continues that request
+    explicitly. Every other non-GET stays in ``held`` until cleanup aborts it.
     """
-    audit._install_request_guard(target, started, held, answered=True)
+    audit._install_request_guard(target, started, held, answered=False)
 
 
 def _research_handler(route, config: RouteConfig) -> None:
-    """Answer the research request with a 500 for the blocked mood, or pass."""
+    """Answer the research request with a 500, or continue it to the desk.
+
+    This is the walk's one explicit exception to the holding guard: the
+    thinking and done captures need the isolated desk to answer Research, so
+    the request is continued here rather than falling back to the hold.
+    """
     if urllib.parse.urlsplit(route.request.url).path != "/research":
         route.fallback()
         return
@@ -378,7 +384,7 @@ def _research_handler(route, config: RouteConfig) -> None:
             status=500, content_type="application/json",
             body=json.dumps({"error": RESEARCH_REFUSAL}))
         return
-    route.fallback()
+    route.continue_()
 
 
 def _retest_handler(route, config: RouteConfig, held: list) -> None:

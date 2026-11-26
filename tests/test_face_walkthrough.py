@@ -257,7 +257,7 @@ def test_both_walk_routes_answer_or_hold_their_request():
     config.research = "pass"
     passed = _FakeRoute("POST", "http://127.0.0.1:43123/research")
     research(passed)
-    assert passed.calls == ["fallback"]
+    assert passed.calls == ["continue"]
 
     config.retest = "hold"
     hold = _FakeRoute("POST", "http://127.0.0.1:43123/api/marketplace/retest")
@@ -274,6 +274,102 @@ def test_both_walk_routes_answer_or_hold_their_request():
     research(other)
     retest(other)
     assert other.calls == ["fallback", "fallback"]
+
+
+class _ChainRoute:
+    """A route that walks back through the handlers a target registered.
+
+    Playwright calls the most recently registered handler first, and
+    ``fallback`` moves to the previous one, so this fake resolves the same
+    way the browser does.
+    """
+
+    def __init__(self, handlers, method, url):
+        self.handlers = handlers
+        self.request = SimpleNamespace(method=method, url=url)
+        self.calls = []
+        self.index = len(handlers) - 1
+
+    def fallback(self):
+        self.index -= 1
+        if self.index >= 0:
+            self.handlers[self.index](self)
+        else:
+            self.calls.append("network")
+
+    def continue_(self):
+        self.calls.append("continue")
+
+    def abort(self):
+        self.calls.append("abort")
+
+    def fulfill(self, **kwargs):
+        self.calls.append(("fulfill", kwargs))
+
+
+class _ChainTarget:
+    """A route target that records handlers and resolves them in order."""
+
+    def __init__(self):
+        self.handlers = []
+
+    def route(self, _pattern, handler):
+        self.handlers.append(handler)
+
+    def resolve(self, method, url):
+        route = _ChainRoute(self.handlers, method, url)
+        self.handlers[-1](route)
+        return route
+
+
+def test_the_guard_holds_every_non_get_it_sees():
+    """With the guard in holding mode, a stray non-GET never reaches the desk."""
+    started = []
+    held = []
+    target = _ChainTarget()
+    face._install_real_guard(target, started, held)
+    route = target.resolve("POST", "http://127.0.0.1:43123/wizard/start")
+    assert route.calls == []
+    assert held == [route]
+    assert started == [{"method": "POST",
+                        "url": "http://127.0.0.1:43123/wizard/start"}]
+    get = target.resolve("GET", "http://127.0.0.1:43123/api/dashboard")
+    assert get.calls == ["network"]
+    assert held == [route]
+
+
+def test_only_the_research_request_passes_the_guard():
+    """Research passes by its own route; every other non-GET stays held."""
+    started = []
+    held = []
+    target = _ChainTarget()
+    face._install_real_guard(target, started, held)
+    config = face.RouteConfig()
+    face._install_real_routes(target, config, held)
+
+    research = target.resolve("POST", "http://127.0.0.1:43123/research")
+    assert research.calls == ["continue"]
+    assert held == []
+
+    config.research = "fail"
+    refused = target.resolve("POST", "http://127.0.0.1:43123/research")
+    assert refused.calls[0][0] == "fulfill"
+    assert refused.calls[0][1]["status"] == 500
+
+    config.retest = "hold"
+    retest = target.resolve(
+        "POST", "http://127.0.0.1:43123/api/marketplace/retest")
+    assert retest.calls == []
+    assert retest in held
+
+    stray = target.resolve("POST", "http://127.0.0.1:43123/wizard/start")
+    assert stray.calls == []
+    assert stray in held
+    assert {"method": "POST", "url": "http://127.0.0.1:43123/wizard/start"} \
+        in started
+
+    get = target.resolve("GET", "http://127.0.0.1:43123/api/dashboard")
+    assert get.calls == ["network"]
 
 
 def test_a_failed_check_is_still_photographed_and_the_run_continues(tmp_path):
