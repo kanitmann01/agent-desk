@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="20" role="img" aria-labelledby="title">
+  <title id="title">Network loopback only</title>
+  <rect width="58" height="20" rx="3" fill="#16161A"/>
+  <rect x="58" width="102" height="20" rx="3" fill="#26272A"/>
+  <rect x="55" width="3" height="20" fill="#26272A"/>
+  <g fill="#FBFBFB" font-family="Verdana, Geneva, sans-serif" font-size="10">
+    <text x="7" y="14" font-weight="600">NETWORK</text>
+    <text x="66" y="14">LOOPBACK ONLY</text>
+  </g>
+</svg>

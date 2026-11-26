@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="110" height="20" role="img" aria-labelledby="title">
+  <title id="title">React 19</title>
+  <rect width="44" height="20" rx="3" fill="#16161A"/>
+  <rect x="44" width="66" height="20" rx="3" fill="#26272A"/>
+  <rect x="41" width="3" height="20" fill="#26272A"/>
+  <g fill="#FBFBFB" font-family="Verdana, Geneva, sans-serif" font-size="10">
+    <text x="7" y="14" font-weight="600">REACT</text>
+    <text x="52" y="14">19</text>
+  </g>
+</svg>

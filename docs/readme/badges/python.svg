@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="132" height="20" role="img" aria-labelledby="title">
+  <title id="title">Python 3.10+</title>
+  <rect width="52" height="20" rx="3" fill="#16161A"/>
+  <rect x="52" width="80" height="20" rx="3" fill="#26272A"/>
+  <rect x="49" width="3" height="20" fill="#26272A"/>
+  <g fill="#FBFBFB" font-family="Verdana, Geneva, sans-serif" font-size="10">
+    <text x="7" y="14" font-weight="600">PYTHON</text>
+    <text x="60" y="14">3.10+</text>
+  </g>
+</svg>
