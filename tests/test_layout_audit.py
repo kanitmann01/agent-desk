@@ -474,11 +474,21 @@ def test_box_changed_compares_width_and_height_with_one_pixel_noise():
 
 
 class _PendingPage:
-    """A minimal page stand-in for pending enumeration and activation failures."""
+    """A minimal page stand-in for pending enumeration and activation failures.
 
-    def __init__(self, controls=None, navigation_error=None):
+    It can replay a held request when an overlay trigger is clicked, so a
+    test can prove what the instrument does with a page-initiated POST.
+    """
+
+    def __init__(self, controls=None, navigation_error=None, trigger_present=True,
+                 dialog_timeout=False, held_request=None):
         self.controls = controls or []
         self.navigation_error = navigation_error
+        self.trigger_present = trigger_present
+        self.dialog_timeout = dialog_timeout
+        self.held_request = held_request
+        self.routes = []
+        self.fired = []
         self.clock = SimpleNamespace(install=lambda **_kwargs: None,
                                      set_fixed_time=lambda *_args: None)
 
@@ -510,8 +520,45 @@ class _PendingPage:
     def on(self, *_args):
         return None
 
-    def route(self, *_args):
-        return None
+    def route(self, _pattern, handler):
+        self.routes.append(handler)
+
+    def locator(self, _selector, **_kwargs):
+        page = self
+
+        def _fire():
+            if page.held_request is not None:
+                for handler in page.routes:
+                    fired = _FakeRoute(*page.held_request)
+                    page.fired.append(fired)
+                    handler(fired)
+
+        if "tracker-card" in _selector:
+            class _Buttons:
+                def count(self_inner):
+                    return 1 if page.trigger_present else 0
+
+                def nth(self_inner, _index):
+                    return SimpleNamespace(
+                        inner_text=lambda: "Set up", click=_fire)
+            return _Buttons()
+
+        class _Trigger:
+            def count(self_inner):
+                return 1 if page.trigger_present else 0
+
+            def click(self_inner):
+                _fire()
+
+        class _Locator:
+            @property
+            def first(self_inner):
+                return _Trigger()
+        return _Locator()
+
+    def wait_for_selector(self, _selector, timeout=None):
+        if self.dialog_timeout:
+            raise audit.PlaywrightTimeoutError("dialog never appeared")
 
     def close(self):
         return None
@@ -578,6 +625,121 @@ def test_pending_activation_failure_is_an_error_not_a_skip(monkeypatch):
     assert len(records) == 1
     assert records[0]["verdict"] == "error"
     assert "control vanished" in records[0]["evidence"]["reason"]
+
+
+class _FakeRoute:
+    """A route stand-in that records how the instrument resolved it."""
+
+    def __init__(self, method, url):
+        self.request = SimpleNamespace(method=method, url=url)
+        self.calls = []
+
+    def fallback(self):
+        self.calls.append("fallback")
+
+    def continue_(self):
+        self.calls.append("continue")
+
+    def abort(self):
+        self.calls.append("abort")
+
+
+_OVERLAY_COMBO = {"condition": "fresh", "width": 1024, "theme": "unkey",
+                  "view": {"path": "/marketplace", "state": "overlay-describe",
+                           "kind": "overlay", "opener": "describe"}}
+
+
+def test_absent_overlay_triggers_stay_allowed_skips():
+    """A missing trigger is an intentional skip for every opener."""
+    for opener in ("describe", "tracker-setup", "widget-menu"):
+        page = _PendingPage(trigger_present=False)
+        reason, failed = audit._open_overlay(
+            page, {"view": {"opener": opener}})
+        assert reason
+        assert failed is False
+
+
+def test_present_overlay_trigger_without_dialog_is_an_error():
+    """A present trigger whose dialog never opens is a finding."""
+    for opener in ("describe", "tracker-setup", "widget-menu"):
+        page = _PendingPage(dialog_timeout=True)
+        reason, failed = audit._open_overlay(
+            page, {"view": {"opener": opener}})
+        assert failed is True
+        assert reason
+
+
+def test_describe_timeout_with_a_held_wizard_submit_is_a_verified_skip():
+    """A held plain wizard submit is the documented no-autofill fallback."""
+    page = _PendingPage(dialog_timeout=True)
+    held = [{"method": "POST", "url": "http://127.0.0.1:43123/wizard/start"}]
+    reason, failed = audit._open_overlay(
+        page, {"view": {"opener": "describe"}}, held)
+    assert failed is False
+    assert "/wizard/start" in reason
+
+
+def test_pending_overlay_page_failure_is_recorded_as_an_error():
+    """An overlay page whose present trigger opens nothing stays in coverage."""
+    page = _PendingPage(dialog_timeout=True)
+    records = audit._run_pending_audit(
+        _PendingContext([page]), "http://127.0.0.1:43123",
+        [_OVERLAY_COMBO], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "error"
+    assert records[0]["page_index"] == 1
+    assert records[0]["page_total"] == 1
+
+
+class _MatrixPage:
+    """A page that answers one navigation and reports the asked theme."""
+
+    def __init__(self):
+        self.url = "http://127.0.0.1:43123/marketplace"
+
+    def goto(self, _url, **_kwargs):
+        return SimpleNamespace(status=200)
+
+    def evaluate(self, script, *_args, **_kwargs):
+        if "tripled" in script:
+            return {"theme": "unkey", "tripled": False}
+        if "dataset.theme" in script:
+            return "unkey"
+        return None
+
+
+def test_matrix_maps_a_failed_opener_to_an_error_row(monkeypatch, tmp_path):
+    """A present trigger whose overlay broke is an error row, not a skip."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "stress": False,
+             "view": {"path": "/marketplace", "state": "overlay-describe",
+                      "kind": "overlay", "opener": "describe"}}
+    monkeypatch.setattr(audit, "_wait_for_view", lambda *_args: None)
+    monkeypatch.setattr(audit, "_settle_page", lambda *_args: None)
+    monkeypatch.setattr(audit, "_open_overlay",
+                        lambda *_args, **_kwargs: ("broken control", True))
+    result = audit._measure_combo(
+        _MatrixPage(), combo, audit._runtime_events(_MatrixPage()), tmp_path,
+        tmp_path / "cal.json", {}, "http://127.0.0.1:43123")
+    assert result["entry"]["status"] == "error"
+    assert result["entry"]["note"] == "broken control"
+
+
+def test_matrix_maps_a_legitimate_opener_reason_to_a_skip_row(monkeypatch, tmp_path):
+    """An absent trigger remains an allowed skip row."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "stress": False,
+             "view": {"path": "/marketplace", "state": "overlay-describe",
+                      "kind": "overlay", "opener": "describe"}}
+    monkeypatch.setattr(audit, "_wait_for_view", lambda *_args: None)
+    monkeypatch.setattr(audit, "_settle_page", lambda *_args: None)
+    monkeypatch.setattr(
+        audit, "_open_overlay",
+        lambda *_args, **_kwargs: ("no describe-a-plugin control", False))
+    result = audit._measure_combo(
+        _MatrixPage(), combo, audit._runtime_events(_MatrixPage()), tmp_path,
+        tmp_path / "cal.json", {}, "http://127.0.0.1:43123")
+    assert result["entry"]["status"] == "skipped"
 
 
 def test_pending_fail_thresholds():

@@ -3190,12 +3190,13 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 pass
             page.wait_for_timeout(300)
             if view.get("kind") == "overlay":
-                reason = _open_overlay(page, combo)
+                reason, failed = _open_overlay(page, combo)
                 if reason:
                     print(f"[{condition}] pending {view.get('state')}: {reason}",
                           flush=True)
                     records.append(_pending_page_record(
-                        combo, page_index, page_total, "skipped", reason))
+                        combo, page_index, page_total,
+                        "error" if failed else "skipped", reason))
                     page.close()
                     continue
                 page.wait_for_timeout(250)
@@ -3291,8 +3292,9 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     pass
                 fresh.wait_for_timeout(300)
                 if view.get("kind") == "overlay":
-                    reason = _open_overlay(fresh, combo)
+                    reason, failed = _open_overlay(fresh, combo)
                     if reason:
+                        record["verdict"] = "error" if failed else "skipped"
                         record["evidence"] = {"reason": reason}
                         records.append(record)
                         fresh.close()
@@ -3483,16 +3485,27 @@ def _runtime_findings(store: dict, combo: dict) -> list[dict]:
     return out
 
 
-def _open_overlay(page, combo: dict) -> str:
-    """Open the overlay the combo names; return '' on success or a reason."""
+def _open_overlay(page, combo: dict,
+                  held_requests: list[dict] | None = None) -> tuple[str, bool]:
+    """Open the overlay the combo names.
+
+    Returns (reason, failed). An empty reason is success. A reason with
+    failed=False is an intentional skip: the trigger is absent, or the walk
+    can show a legitimate fallback ran. A reason with failed=True is a
+    present trigger whose expected overlay did not open, which is failed
+    coverage, never a skip.
+    """
     opener = combo["view"].get("opener", "")
     if opener == "widget-menu":
         trigger = page.locator('button[aria-label^="Widget options"]').first
         if trigger.count() == 0:
-            return "no widget overflow trigger on this dashboard"
+            return "no widget overflow trigger on this dashboard", False
         trigger.click()
-        page.wait_for_selector('[role="menu"]', timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector('[role="menu"]', timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the widget menu did not open after its trigger was clicked", True
+        return "", False
     if opener == "tracker-setup":
         buttons = page.locator(".tracker-card button")
         target = None
@@ -3502,51 +3515,72 @@ def _open_overlay(page, combo: dict) -> str:
                 target = buttons.nth(index)
                 break
         if target is None:
-            return "no Set up or Edit control on the tracker card"
+            return "no Set up or Edit control on the tracker card", False
         target.click()
-        page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the tracker setup sheet did not open after its trigger was clicked", True
+        return "", False
     if opener == "customize":
         trigger = page.locator("button", has_text="Customize").first
         if trigger.count() == 0:
-            return "no Customize control on the dashboard"
+            return "no Customize control on the dashboard", False
         trigger.click()
-        page.wait_for_selector(".cust-panel", timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector(".cust-panel", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the customize panel did not open after its trigger was clicked", True
+        return "", False
     if opener == "consent":
         trigger = page.locator("button", has_text="Install plugin").first
         if trigger.count() == 0:
-            return "no Install plugin control (plugin may already be installed)"
+            return "no Install plugin control (plugin may already be installed)", False
         trigger.click()
-        page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the install sheet did not open after its trigger was clicked", True
+        return "", False
     if opener == "instance-setup":
         trigger = page.locator("button", has_text="Set up a new instance").first
         if trigger.count() == 0:
             trigger = page.locator("button", has_text="Edit ").first
         if trigger.count() == 0:
-            return "no instance setup control on the manage page"
-        trigger.click()
-        page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
-    if opener == "purge":
-        trigger = page.locator("button", has_text="Purge data").first
-        if trigger.count() == 0:
-            return "no Purge data control on the installed page"
-        trigger.click()
-        page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
-    if opener == "describe":
-        trigger = page.locator("button", has_text="Describe a plugin in plain English").first
-        if trigger.count() == 0:
-            return "no describe-a-plugin control on the catalog page"
+            return "no instance setup control on the manage page", False
         trigger.click()
         try:
             page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
         except PlaywrightTimeoutError:
-            return "the describe control submitted the walk instead of opening a dialog"
-        return ""
-    return f"unknown overlay opener {opener!r}"
+            return "the instance sheet did not open after its trigger was clicked", True
+        return "", False
+    if opener == "purge":
+        trigger = page.locator("button", has_text="Purge data").first
+        if trigger.count() == 0:
+            return "no Purge data control on the installed page", False
+        trigger.click()
+        try:
+            page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the purge sheet did not open after its trigger was clicked", True
+        return "", False
+    if opener == "describe":
+        trigger = page.locator("button", has_text="Describe a plugin in plain English").first
+        if trigger.count() == 0:
+            return "no describe-a-plugin control on the catalog page", False
+        trigger.click()
+        try:
+            page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
+            return "", False
+        except PlaywrightTimeoutError:
+            held = [item for item in (held_requests or [])
+                    if "/wizard" in str(item.get("url", ""))]
+            if held:
+                return ("the describe walk fell back to a plain wizard submit "
+                        f"({held[0]['method']} {held[0]['url'][:120]})", False)
+            return ("the describe control opened no dialog and sent no wizard "
+                    "request", True)
+    return f"unknown overlay opener {opener!r}", True
 
 
 def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
@@ -3610,9 +3644,9 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
             entry["ms"] = int((time.monotonic() - started) * 1000)
             return {"entry": entry, "findings": findings}
         if view.get("kind") == "overlay":
-            reason = _open_overlay(page, combo)
+            reason, failed = _open_overlay(page, combo)
             if reason:
-                entry["status"] = "skipped"
+                entry["status"] = "error" if failed else "skipped"
                 entry["note"] = reason
                 entry["ms"] = int((time.monotonic() - started) * 1000)
                 return {"entry": entry, "findings": findings}
