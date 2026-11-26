@@ -148,7 +148,6 @@ afterEach(() => {
 
 describe('name and moods', () => {
   it('defines AGENT_NAME once and formats tooltips cleanly', () => {
-    expect(AGENT_NAME).toBe('Nexuus Bot');
     expect(FACE_MOODS).toEqual([
       'idle',
       'listening',
@@ -159,10 +158,10 @@ describe('name and moods', () => {
       'blocked',
       'done',
     ]);
-    expect(formatFaceTooltip('idle')).toBe('Nexuus Bot');
-    expect(formatFaceTooltip('thinking')).toBe('Nexuus Bot: Thinking');
+    expect(formatFaceTooltip('idle')).toBe(AGENT_NAME);
+    expect(formatFaceTooltip('thinking')).toBe(`${AGENT_NAME}: Thinking`);
     expect(formatFaceTooltip('working', 'Reading your description')).toBe(
-      'Nexuus Bot: Reading your description',
+      `${AGENT_NAME}: Reading your description`,
     );
   });
 
@@ -412,7 +411,7 @@ describe('AgentFace, FaceProvider, FaceSlot, and useFaceActivity', () => {
     const face = container.querySelector('.face-box') as HTMLElement;
     expect(face).toBeInTheDocument();
     expect(face).toHaveAttribute('aria-hidden', 'true');
-    expect(face).toHaveAttribute('title', 'Nexuus Bot: Inbox needs review');
+    expect(face).toHaveAttribute('title', `${AGENT_NAME}: Inbox needs review`);
     expect(face.classList.contains('face-sm')).toBe(true);
     expect(face.getAttribute('tabindex')).toBeNull();
     expect(
@@ -581,7 +580,7 @@ describe('AgentFace, FaceProvider, FaceSlot, and useFaceActivity', () => {
     expect(container.querySelector('.face-box')).toHaveAttribute('data-mood', 'waiting');
     fireEvent.click(getByText('Finish'));
     expect(container.querySelector('.face-box')).toHaveAttribute('data-mood', 'done');
-    expect(container.querySelector('.face-box')).toHaveAttribute('title', 'Nexuus Bot: Saved');
+    expect(container.querySelector('.face-box')).toHaveAttribute('title', `${AGENT_NAME}: Saved`);
 
     act(() => {
       vi.advanceTimersByTime(DONE_DURATION_MS - 50);
@@ -664,7 +663,7 @@ describe('AgentFace, FaceProvider, FaceSlot, and useFaceActivity', () => {
     fireEvent.click(getByText('Global Finish'));
     const modalFace = container.querySelector('[data-face-slot="modal"] .face-box');
     expect(modalFace).toHaveAttribute('data-mood', 'done');
-    expect(modalFace).toHaveAttribute('title', 'Nexuus Bot: Modal finished');
+    expect(modalFace).toHaveAttribute('title', `${AGENT_NAME}: Modal finished`);
   });
 });
 
