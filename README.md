@@ -3,10 +3,10 @@
 Nexuus Bot is a local-first web workspace for your workbook, calendar, exported mail, memory, agents, and plugins. It shows what changed, answers work questions, records facts with sources, and keeps plugin actions behind visible controls.
 
 [![CI](https://github.com/kanitmann01/agent-desk/actions/workflows/enterprise.yml/badge.svg?branch=main)](https://github.com/kanitmann01/agent-desk/actions/workflows/enterprise.yml)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-26272A?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
-[![React](https://img.shields.io/badge/React-19-26272A?style=flat-square&logo=react&logoColor=61DAFB)](frontend/package.json)
-[![Network](https://img.shields.io/badge/Network-Loopback%20only-26272A?style=flat-square)](docs/PRD.md)
-[![License](https://img.shields.io/badge/License-Proprietary-26272A?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-26272A.svg?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![React](https://img.shields.io/badge/React-19-26272A.svg?style=flat-square&logo=react&logoColor=61DAFB)](frontend/package.json)
+[![Network](https://img.shields.io/badge/Network-Loopback%20only-26272A.svg?style=flat-square)](docs/PRD.md)
+[![License](https://img.shields.io/badge/License-Proprietary-26272A.svg?style=flat-square)](LICENSE)
 
 **Status:** Single-user evaluation software. The core uses a proprietary draft license. No signed installer or released distribution exists.
 
