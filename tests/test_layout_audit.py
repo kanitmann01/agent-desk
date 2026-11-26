@@ -918,6 +918,7 @@ class _WalkRecorder:
         self.requests = []
         self.cached = []
         self.guard_events = []
+        self.held_seen = []
         self.base = "http://127.0.0.1:43123"
 
     def create_server(self, **kwargs):
@@ -1091,6 +1092,10 @@ def _drive_layout_worker(monkeypatch, tmp_path, recorder, pending=False):
 
     def measure(_page, combo, _runtime, _run_dir, _calendar, _crops, _base,
                 _record_dir=None, _held_requests=None):
+        recorder.held_seen.append(list(_held_requests or ()))
+        if _held_requests is not None:
+            _held_requests.append(
+                {"method": "POST", "url": recorder.base + "/wizard/start"})
         return {"entry": {
             "condition": combo["condition"], "width": combo["width"],
             "theme": combo["theme"], "route": combo["view"]["path"],
@@ -1189,6 +1194,8 @@ def test_every_walk_entry_point_injects_inert_gate_runners(monkeypatch, tmp_path
             assert (recorder.guard_events.index("page-route")
                     < recorder.guard_events.index("page-goto")), (
                 f"{entry} page navigated before its non-GET guard")
+            assert all(snapshot == [] for snapshot in recorder.held_seen), (
+                f"{entry} carried held requests across combos")
 
 
 def test_busy_seeding_never_sends_a_capability_request(monkeypatch, tmp_path):

@@ -3856,6 +3856,7 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                     if notes:
                         print(f"[{condition}] seeded: {', '.join(notes)}", flush=True)
                     for combo in combos:
+                        guard_started.clear()
                         if combo["width"] != current_width:
                             page.set_viewport_size(
                                 {"width": combo["width"], "height": VIEWPORT_HEIGHT})
