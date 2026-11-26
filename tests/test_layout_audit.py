@@ -225,7 +225,10 @@ def test_pending_verdicts():
         control, state, [{"method": "POST"}], [], False)
     assert verdict == "silent"
 
-    indicator = dict(state, indicators=[{"path": "div.skel", "text": ""}])
+    indicator = dict(state, indicators=[{
+        "path": "div.skel", "text": "", "inScope": True,
+        "appearedAfterClick": True,
+    }])
     verdict, _ = audit._pending_verdict(
         control, indicator, [{"method": "POST"}], [], False)
     assert verdict == "meets"
@@ -233,7 +236,7 @@ def test_pending_verdicts():
     verdict, _ = audit._pending_verdict(control, state, [], [], True)
     assert verdict == "native-dialog"
 
-    wait = dict(state, waitVisible=True)
+    wait = dict(state, waitVisible=True, waitChanged=True)
     verdict, _ = audit._pending_verdict(
         control, wait, [{"method": "POST"}], [], False)
     assert verdict == "meets"
@@ -243,6 +246,59 @@ def test_pending_verdicts():
     verdict, _ = audit._pending_verdict(
         control, aria_disabled, [{"method": "POST"}], [], False)
     assert verdict == "disabled-only"
+
+
+def test_pending_stale_wait_text_cannot_earn_meets():
+    """A populated result region from before the click is not feedback."""
+    control = {"text": "Ask", "tag": "button", "wait_target": "#assistant-thread"}
+    state = {"control": {"disabled": False}, "indicators": [],
+             "labelChanged": False, "ariaBusy": False,
+             "waitVisible": True, "waitChanged": False}
+    verdict, evidence = audit._pending_verdict(
+        control, state, [{"method": "POST", "url": "/assistant/ask"}], [], False)
+    assert verdict == "silent"
+    assert evidence["wait_visible"] is True
+    assert evidence["wait_changed"] is False
+
+
+def test_pending_unrelated_busy_region_cannot_earn_meets():
+    """A new busy-looking node outside the control, form and target is irrelevant."""
+    control = {"text": "Ask", "tag": "button", "wait_target": "#assistant-thread"}
+    state = {"control": {"disabled": False}, "indicators": [{
+        "path": "div.unrelated-busy", "text": "Background refresh",
+        "inScope": False, "appearedAfterClick": True,
+    }], "labelChanged": False, "ariaBusy": False,
+        "waitVisible": True, "waitChanged": False}
+    verdict, evidence = audit._pending_verdict(
+        control, state, [{"method": "POST", "url": "/assistant/ask"}], [], False)
+    assert verdict == "silent"
+    assert evidence["busy_indicators"] == []
+
+
+def test_pending_new_scoped_indicator_earns_meets():
+    """A placeholder inserted after the click in the declared target is feedback."""
+    control = {"text": "Ask", "tag": "button", "wait_target": "#assistant-thread"}
+    state = {"control": {"disabled": False}, "indicators": [{
+        "path": "div.pending-shape", "text": "Asking",
+        "inScope": True, "appearedAfterClick": True,
+    }], "labelChanged": False, "ariaBusy": False,
+        "waitVisible": True, "waitChanged": True}
+    verdict, evidence = audit._pending_verdict(
+        control, state, [{"method": "POST", "url": "/assistant/ask"}], [], False)
+    assert verdict == "meets"
+    assert evidence["wait_changed"] is True
+    assert len(evidence["busy_indicators"]) == 1
+
+
+def test_pending_pre_existing_aria_busy_cannot_earn_meets():
+    """ARIA busy that was already present before activation is stale evidence."""
+    control = {"text": "Ask", "tag": "button", "ariaBusy": "true"}
+    state = {"control": {"disabled": False, "ariaBusy": "true"},
+             "indicators": [], "labelChanged": False, "ariaBusy": True,
+             "ariaBusyChanged": False, "waitVisible": False, "waitChanged": False}
+    verdict, _ = audit._pending_verdict(
+        control, state, [{"method": "POST", "url": "/assistant/ask"}], [], False)
+    assert verdict == "silent"
 
 
 def _signature(**overrides):

@@ -114,6 +114,30 @@ PENDING_ENUM_JS = r"""
   });
 }
 """
+PENDING_WAIT_TARGET_JS = r"""
+(arg) => {
+  function visible(el) {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.01) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 1 && r.height >= 1;
+  }
+  if (!arg) return {present:false, visible:false, pending:false, signature:'', text:''};
+  let target = null;
+  try { target = document.querySelector(arg); } catch (e) { target = null; }
+  if (!target && arg[0] !== '#') target = document.getElementById(arg);
+  if (!target) return {present:false, visible:false, pending:false, signature:'', text:''};
+  const selectors = '[data-wait-ph],.pending-shape,.phase-line,.wait-line,[role="progressbar"]';
+  let pending = false;
+  try { if (target.matches(selectors)) pending = visible(target); } catch (e) {}
+  for (const node of target.querySelectorAll(selectors)) {
+    if (visible(node)) { pending = true; break; }
+  }
+  const text = (target.textContent || '').replace(/\s+/g, ' ').trim();
+  return {present:true, visible:visible(target), pending:pending,
+          signature:target.cloneNode(true).outerHTML, text:text.slice(0, 500)};
+}
+"""
 PENDING_STATE_JS = r"""
 (arg) => {
   function visible(el) {
@@ -148,13 +172,31 @@ PENDING_STATE_JS = r"""
             ariaBusy:el.getAttribute('aria-busy') || '',
             box:{x:box.x, y:box.y, width:box.width, height:box.height}};
   })() : null;
-  let waitVisible = false;
+  let waitTarget = null;
   if (arg.wait_target) {
-    let target = null;
-    try { target = document.querySelector(arg.wait_target); } catch (e) { target = null; }
-    if (!target && arg.wait_target[0] !== '#') target = document.getElementById(arg.wait_target);
-    if (target && visible(target) && (target.textContent || '').trim()) waitVisible = true;
+    try { waitTarget = document.querySelector(arg.wait_target); } catch (e) { waitTarget = null; }
+    if (!waitTarget && arg.wait_target[0] !== '#') waitTarget = document.getElementById(arg.wait_target);
   }
+  const waitSelectors = '[data-wait-ph],.pending-shape,.phase-line,.wait-line,[role="progressbar"]';
+  let waitPending = false;
+  try { if (waitTarget && waitTarget.matches(waitSelectors)) waitPending = visible(waitTarget); } catch (e) {}
+  if (waitTarget) {
+    for (const node of waitTarget.querySelectorAll(waitSelectors)) {
+      if (visible(node)) { waitPending = true; break; }
+    }
+  }
+  const waitVisible = !!(waitTarget && visible(waitTarget) && waitPending);
+  const waitSignature = waitTarget ? waitTarget.cloneNode(true).outerHTML : '';
+  const waitBefore = arg.before_wait || {};
+  const waitChanged = waitVisible && waitPending
+    && (!waitBefore.present || waitBefore.signature !== waitSignature);
+  const form = el && el.form;
+  function inScope(node) {
+    if (form && (node === form || form.contains(node))) return true;
+    if (el && (node === el || el.contains(node))) return true;
+    return !!(waitTarget && (node === waitTarget || waitTarget.contains(node)));
+  }
+  const beforeNodes = window.__layoutPendingBefore || [];
   const indicators = [];
   const seen = new Set();
   for (const selector of ['[aria-busy="true"]','[role="progressbar"]',
@@ -162,7 +204,8 @@ PENDING_STATE_JS = r"""
     for (const node of document.querySelectorAll(selector)) {
       if (!visible(node) || seen.has(node)) continue;
       seen.add(node);
-      indicators.push({path:path(node), text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
+      indicators.push({path:path(node), text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+                       inScope:inScope(node), appearedAfterClick:beforeNodes.indexOf(node) === -1});
     }
   }
   const permanentWire = new Set(['wire','wire-chart','wire-copy','wire-rows','wire-lines',
@@ -179,7 +222,9 @@ PENDING_STATE_JS = r"""
   return {control:info,
           labelChanged: !!(info && arg.before && info.text !== arg.before),
           ariaBusy: !!(info && info.ariaBusy === 'true'),
+          ariaBusyChanged: !!(info && info.ariaBusy === 'true' && arg.before_aria_busy !== 'true'),
           waitVisible:waitVisible,
+          waitChanged:waitChanged,
           indicators:indicators.slice(0, 8),
           url:location.pathname + location.search};
 }
@@ -2951,8 +2996,21 @@ def _pending_indicators(page) -> list[dict]:
             out.push({path:node.tagName.toLowerCase() + '.' + String(node.className || '').split(/\s+/).slice(0, 3).join('.'),
                       text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
           }
+          window.__layoutPendingBefore = Array.from(seen);
           return out.slice(0, 12);
         }""", PENDING_SELECTOR)
+
+
+def _pending_wait_target(page, selector: str) -> dict:
+    """Capture the declared result region before the control is activated."""
+    if not selector:
+        return {"present": False, "visible": False, "pending": False,
+                "signature": "", "text": ""}
+    answer = page.evaluate(PENDING_WAIT_TARGET_JS, selector)
+    return answer if isinstance(answer, dict) else {
+        "present": False, "visible": False, "pending": False,
+        "signature": "", "text": "",
+    }
 
 
 def _theme_init_script(theme: str) -> str:
@@ -3045,12 +3103,15 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
         }
     control_after = state.get("control") or {}
     indicators_after = state.get("indicators") or []
-    before_keys = {(item.get("path"), item.get("text")) for item in before_indicators}
     new_indicators = [item for item in indicators_after
-                      if (item.get("path"), item.get("text")) not in before_keys]
+                      if item.get("inScope") and item.get("appearedAfterClick")]
     label_changed = bool(state.get("labelChanged"))
-    aria_busy = bool(state.get("ariaBusy"))
+    aria_busy = bool(state.get(
+        "ariaBusyChanged",
+        state.get("ariaBusy") and not control.get("ariaBusy"),
+    ))
     wait_visible = bool(state.get("waitVisible"))
+    wait_changed = bool(state.get("waitChanged"))
     disabled = bool(control_after.get("disabled") or
                     control_after.get("ariaDisabled") == "true")
     evidence = {
@@ -3059,6 +3120,8 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
         "disabled": disabled,
         "aria_busy": aria_busy,
         "wait_visible": wait_visible,
+        "wait_changed": wait_changed,
+        "busy_indicators_before": before_indicators[:4],
         "labelChanged": label_changed,
         "labelBefore": control.get("text", ""),
         "labelBusy": control_after.get("text", ""),
@@ -3077,7 +3140,7 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
     if picker:
         evidence["reason"] = "file-picker request held"
         return "native-dialog", evidence
-    if aria_busy or wait_visible or label_changed or new_indicators:
+    if aria_busy or wait_changed or label_changed or new_indicators:
         return "meets", evidence
     if disabled:
         return "disabled-only", evidence
@@ -3209,6 +3272,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     fresh.wait_for_timeout(250)
                 fresh.evaluate("() => window.scrollTo(0, 0)")
                 before_indicators = _pending_indicators(fresh)
+                wait_before = _pending_wait_target(fresh, control.get("wait_target", ""))
                 fresh.on("dialog", on_dialog)
                 fresh.on("filechooser", on_filechooser)
                 fresh.route("**/*", hold)
@@ -3240,7 +3304,9 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     "text": control.get("text", ""),
                     "ordinal": control.get("ordinal", 0),
                     "before": control.get("text") or "",
+                    "before_aria_busy": control.get("ariaBusy", ""),
                     "wait_target": control.get("wait_target", ""),
+                    "before_wait": wait_before,
                 })
                 window_ms = SIGNATURE_EARLY_MS
                 if (not started and not reasons
