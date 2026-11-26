@@ -624,7 +624,7 @@ class Walkthrough:
         preview = out["preview"]
         check(preview["headers"][:2] == ["Deal", "Region"],
               f"the preview headers are {preview['headers']!r}")
-        check(preview["rows"][0][0] == "Halvorsen Freight renewal",
+        check(preview["rows"][0][0] == "Harborlight Freight renewal",
               f"the preview's first row is {preview['rows'][0]!r}")
 
         tracking = {"labelColumn": "Deal", "valueColumn": "Amount",

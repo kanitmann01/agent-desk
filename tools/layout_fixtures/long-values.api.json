@@ -49,13 +49,13 @@
       "Amount"
      ],
      [
-      "Halvorsen Freight renewal and expansion for the northern region",
+      "Harborlight Freight renewal and expansion for the northern region",
       "AMER",
       "Enterprise Prospect Qualification and Discovery Review",
       987654321.12
      ],
      [
-      "Halvorsen Freight renewal and expansion for the northern region",
+      "Harborlight Freight renewal and expansion for the northern region",
       "EMEA",
       "Negotiation and Mutual Action Plan Approval Stage",
       987654321.12
@@ -72,7 +72,7 @@
      ],
      "rows": [
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "AMER",
        "Enterprise Prospect Qualification and Discovery Review",
        987654321.12,
@@ -80,7 +80,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "EMEA",
        "Negotiation and Mutual Action Plan Approval Stage",
        987654321.12,
@@ -88,7 +88,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "APAC",
        "Technical Validation and Security Questionnaire Stage",
        987654321.12,
@@ -96,7 +96,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "AMER",
        "Closed Won and Contract Execution and Handover Stage",
        987654321.12,
@@ -104,7 +104,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "EMEA",
        "Enterprise Prospect Qualification and Discovery Review",
        987654321.12,
@@ -112,7 +112,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "APAC",
        "Negotiation and Mutual Action Plan Approval Stage",
        987654321.12,
@@ -120,7 +120,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "AMER",
        "Technical Validation and Security Questionnaire Stage",
        987654321.12,
@@ -128,7 +128,7 @@
        "Alexandra Montgomery-Richardson"
       ],
       [
-       "Halvorsen Freight renewal and expansion for the northern region",
+       "Harborlight Freight renewal and expansion for the northern region",
        "EMEA",
        "Closed Won and Contract Execution and Handover Stage",
        987654321.12,
@@ -189,7 +189,7 @@
   "recommendations": [
    {
     "cardId": "card-3D9nV86gE61q",
-    "title": "Review the Halvorsen Freight renewal notes, confirm the three open questions, and decide who owns the follow-up call",
+    "title": "Review the Harborlight Freight renewal notes, confirm the three open questions, and decide who owns the follow-up call",
     "why": "The meeting starts soon and the desk holds six related notes, two open commitments, and a workbook row that moved this week.",
     "whySource": "rule",
     "score": null,
@@ -205,7 +205,7 @@
    },
    {
     "cardId": "card-BqnOzCafKjdo",
-    "title": "Review the Halvorsen Freight renewal notes, confirm the three open questions, and decide who owns the follow-up call",
+    "title": "Review the Harborlight Freight renewal notes, confirm the three open questions, and decide who owns the follow-up call",
     "why": "The meeting starts soon and the desk holds six related notes, two open commitments, and a workbook row that moved this week.",
     "whySource": "rule",
     "score": null,
@@ -368,7 +368,7 @@
         ],
         "rows": [
          [
-          "Halvorsen Freight renewal",
+          "Harborlight Freight renewal",
           "AMER",
           "Prospect",
           "19920",
@@ -528,7 +528,7 @@
           "Sam Ortiz"
          ],
          [
-          "Halvorsen Freight expansion",
+          "Harborlight Freight expansion",
           "APAC",
           "Prospect",
           "178300",
@@ -688,7 +688,7 @@
           "Sam Ortiz"
          ],
          [
-          "Halvorsen Freight pilot",
+          "Harborlight Freight pilot",
           "EMEA",
           "Prospect",
           "168680",
@@ -861,7 +861,7 @@
        "status": "ok",
        "source": "local",
        "preferences": [],
-       "note": "Also in your desk: Halvorsen Freight, six durable facts; Kestrel Foods, four commitments; and the northern region pipeline workbook with 1,234,567 rows.",
+       "note": "Also in your desk: Harborlight Freight, six durable facts; Kestrel Foods, four commitments; and the northern region pipeline workbook with 1,234,567 rows.",
        "blocks": [
         {
          "kind": "receipts",

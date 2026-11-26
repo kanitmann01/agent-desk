@@ -33,7 +33,7 @@ from agentdesk.repetition.activity import ActivityLog
 from agentdesk.server import app as server_app
 from agentdesk.settings import SettingsStore, TOGGLES
 
-LINE = "Owns the Halvorsen Freight and Kestrel Foods accounts."
+LINE = "Owns the Harborlight Freight and Kestrel Foods accounts."
 ALLOWED = {881, 902}
 
 

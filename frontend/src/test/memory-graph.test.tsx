@@ -22,15 +22,15 @@ const bank: MemoryGraphData = {
   nodes: [
     { id: 'origin:retain', kind: 'origin', label: 'Save to memory', text: 'Saved conversations.', steps: [] },
     { id: 'origin:page', kind: 'origin', label: 'Memory page', text: 'Typed facts.', steps: [] },
-    { id: 'source:1', kind: 'source', label: 'Call with Dana', text: 'Call with Dana about Halvorsen.', steps: [], speaker: 'You' },
+    { id: 'source:1', kind: 'source', label: 'Call with Dana', text: 'Call with Dana about Harborlight.', steps: [], speaker: 'You' },
     {
-      id: 'fact:1', kind: 'fact', label: 'Halvorsen renews by Dec 15', text: 'Halvorsen renews by Dec 15',
+      id: 'fact:1', kind: 'fact', label: 'Harborlight renews by Dec 15', text: 'Harborlight renews by Dec 15',
       factKind: 'world', createdTs: 1_800_000_000, occurredTs: 1_800_000_000 - DAY, origin: 'origin:retain',
       steps: [
         { step: 'retain', ts: 1_800_000_000 - 60, text: 'A conversation excerpt (You) was saved to memory.' },
         { step: 'approve', ts: 1_800_000_000, text: 'You accepted a memory draft.' },
         { step: 'store', ts: 1_800_000_000, text: 'Written to memory.' },
-        { step: 'link', ts: null, text: 'Linked to Halvorsen.' },
+        { step: 'link', ts: null, text: 'Linked to Harborlight.' },
       ],
     },
     {
@@ -39,7 +39,7 @@ const bank: MemoryGraphData = {
       steps: [{ step: 'store', ts: 1_800_000_100, text: 'Typed on the Memory page and stored as written.' }],
     },
     { id: 'observation:1', kind: 'observation', label: 'Renewal is on track', text: 'Renewal is on track', confidence: 0.8, steps: [] },
-    { id: 'entity:1', kind: 'entity', label: 'Halvorsen', text: 'Halvorsen', entityType: 'org', factCount: 1, steps: [] },
+    { id: 'entity:1', kind: 'entity', label: 'Harborlight', text: 'Harborlight', entityType: 'org', factCount: 1, steps: [] },
   ],
   edges: [
     { source: 'origin:retain', target: 'fact:1', type: 'wrote' },
@@ -86,14 +86,14 @@ describe('MemoryGraph', () => {
     serve(bank);
     const user = userEvent.setup();
     render(<MemoryGraph initialWidth={1000} />);
-    const fact = await screen.findByRole('button', { name: /Halvorsen renews by Dec 15/ });
+    const fact = await screen.findByRole('button', { name: /Harborlight renews by Dec 15/ });
     await user.click(fact);
     expect(fact.getAttribute('aria-pressed')).toBe('true');
     const panel = screen.getByRole('complementary', { name: 'Provenance' });
     expect(within(panel).getByText('How it was made')).toBeTruthy();
     expect(within(panel).getByText(/excerpt \(You\) was saved/)).toBeTruthy();
     expect(within(panel).getByText('You accepted a memory draft.')).toBeTruthy();
-    expect(within(panel).getByRole('button', { name: /Halvorsen$/ })).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: /Harborlight$/ })).toBeTruthy();
     await user.click(within(panel).getByRole('button', { name: 'Clear selection' }));
     expect(fact.getAttribute('aria-pressed')).toBe('false');
   });
@@ -101,7 +101,7 @@ describe('MemoryGraph', () => {
   it('dims what is not in the selected lineage', async () => {
     serve(bank);
     const { container } = render(<MemoryGraph initialWidth={1000} />);
-    const fact = await screen.findByRole('button', { name: /Halvorsen renews by Dec 15/ });
+    const fact = await screen.findByRole('button', { name: /Harborlight renews by Dec 15/ });
     fireEvent.click(fact);
     const dimmed = [...container.querySelectorAll('[data-node-id].is-dim')].map((n) => n.getAttribute('data-node-id'));
     expect(dimmed).toContain('origin:page');
@@ -111,7 +111,7 @@ describe('MemoryGraph', () => {
   it('moves with the arrow keys, selects with Enter and clears with Escape', async () => {
     serve(bank);
     render(<MemoryGraph initialWidth={1000} />);
-    const fact = await screen.findByRole('button', { name: /Halvorsen renews by Dec 15/ });
+    const fact = await screen.findByRole('button', { name: /Harborlight renews by Dec 15/ });
     fact.focus();
     fireEvent.keyDown(fact, { key: 'ArrowRight' });
     const next = document.activeElement as Element;

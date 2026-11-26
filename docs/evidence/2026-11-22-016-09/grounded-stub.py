@@ -1,3 +1,5 @@
+# Note (2026-11-25): the sample client's name in this evidence record was
+# replaced with the fictional sample name (Harborlight) on 2026-11-25.
 """The evidence stub for the 016-09 browser walkthrough.
 
 An OpenAI-compatible /chat/completions mock that answers the
@@ -15,7 +17,7 @@ import re
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-LINE = "Owns the Halvorsen Freight and Kestrel Foods accounts."
+LINE = "Owns the Harborlight Freight and Kestrel Foods accounts."
 
 
 class Handler(BaseHTTPRequestHandler):

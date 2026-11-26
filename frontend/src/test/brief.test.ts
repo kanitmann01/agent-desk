@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { agentCheckedLine, decisionsEmptyText, dealName, deskActionLine, deskCheckAlert, formatSigned, moversFromDelta, netByStage, netPipeline, recommendationRows } from '../dashboard/briefModel';
 
-const atlas = (amount: number) => ['Halvorsen Freight renewal', 'AMER', 'Prospect', amount];
+const atlas = (amount: number) => ['Harborlight Freight renewal', 'AMER', 'Prospect', amount];
 const field = (amount: number) => ['Kestrel Foods pilot', 'EMEA', 'Qualify', amount];
 
 describe('the morning brief movers', () => {
   it('hides the sample row index and keeps the deal name', () => {
-    expect(dealName(['Halvorsen Freight renewal - 1', 'AMER', 'Prospect', 15120])).toBe('Halvorsen Freight renewal');
+    expect(dealName(['Harborlight Freight renewal - 1', 'AMER', 'Prospect', 15120])).toBe('Harborlight Freight renewal');
     // The em dash spelling some exports use still strips, via the escape.
-    expect(dealName(['Halvorsen Freight renewal \u2014 1', 'AMER', 'Prospect', 15120])).toBe('Halvorsen Freight renewal');
+    expect(dealName(['Harborlight Freight renewal \u2014 1', 'AMER', 'Prospect', 15120])).toBe('Harborlight Freight renewal');
   });
 
   it('pairs an edited deal into one row with the signed delta', () => {
@@ -16,7 +16,7 @@ describe('the morning brief movers', () => {
       added: [atlas(15120), ['Marlow & Finch support retainer', 'AMER', 'Negotiate', 22010, '2026-02-01']],
       removed: [atlas(13370), ['Sato Instruments pilot', 'AMER', 'Negotiate', 17480, '2026-02-01']],
     });
-    const changed = movers.find((mover) => mover.name.startsWith('Halvorsen Freight renewal'));
+    const changed = movers.find((mover) => mover.name.startsWith('Harborlight Freight renewal'));
     expect(changed).toMatchObject({
       kind: 'changed',
       previousName: null,
@@ -128,9 +128,9 @@ describe('the morning brief decisions', () => {
     agentLoop,
   }) as never;
 
-  const halvorsen = {
+  const harborlight = {
     cardId: 'card-1',
-    title: 'Halvorsen Freight: December 15 (in 24 days)',
+    title: 'Harborlight Freight: December 15 (in 24 days)',
     why: 'You told the desk this deadline; it is 24 days away.',
     whySource: 'rule' as const,
     score: null,
@@ -142,11 +142,11 @@ describe('the morning brief decisions', () => {
   };
 
   it('renders waiting recommendations before the setup decisions', () => {
-    const { rows, more } = recommendationRows(data([halvorsen]));
+    const { rows, more } = recommendationRows(data([harborlight]));
     expect(rows).toEqual([{
       key: 'card-1',
       cardId: 'card-1',
-      title: 'Halvorsen Freight: December 15 (in 24 days)',
+      title: 'Harborlight Freight: December 15 (in 24 days)',
       why: 'You told the desk this deadline; it is 24 days away.',
       href: '/agents',
       actionLabel: 'Open Agents',
@@ -156,19 +156,19 @@ describe('the morning brief decisions', () => {
   });
 
   it('shows three recommendation rows and counts the rest', () => {
-    const many = Array.from({ length: 5 }, (_, i) => ({ ...halvorsen, cardId: 'card-' + i }));
+    const many = Array.from({ length: 5 }, (_, i) => ({ ...harborlight, cardId: 'card-' + i }));
     const { rows, more } = recommendationRows(data(many));
     expect(rows).toHaveLength(3);
     expect(more).toBe(2);
   });
 
   it('marks a model-ranked why line', () => {
-    const [row] = recommendationRows(data([{ ...halvorsen, whySource: 'model' }])).rows;
+    const [row] = recommendationRows(data([{ ...harborlight, whySource: 'model' }])).rows;
     expect(row.why).toBe('You told the desk this deadline; it is 24 days away. · ranked by your endpoint');
   });
 
   it('treats an engine-sourced why line as the rule text', () => {
-    const [row] = recommendationRows(data([{ ...halvorsen, whySource: 'engine' }])).rows;
+    const [row] = recommendationRows(data([{ ...harborlight, whySource: 'engine' }])).rows;
     expect(row.why).toBe('You told the desk this deadline; it is 24 days away.');
   });
 

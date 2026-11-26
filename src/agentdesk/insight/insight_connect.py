@@ -3,7 +3,7 @@ against what the desk already holds.
 
 Plugins bring rows; this module says which of the names in a row the
 desk already knows, and what it holds about them, so a card can carry
-one honest line: "Also in your desk: Halvorsen Freight, 3 things you
+one honest line: "Also in your desk: Harborlight Freight, 3 things you
 told the desk, renewal call today at 14:38." The match is deterministic
 and model-free, so it works with no key and cannot invent a
 relationship: a name is either here or it is not.
