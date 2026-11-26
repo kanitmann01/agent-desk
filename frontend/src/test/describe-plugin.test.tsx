@@ -36,7 +36,7 @@ const FILLED = {
 
 /** Stub the server: the probe answers, the describe post answers the fill. */
 function stubServer(available: boolean, fill: unknown = FILLED) {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/api/wizard/availability')) {
       return jsonResponse({ autofill: available });
@@ -45,7 +45,9 @@ function stubServer(available: boolean, fill: unknown = FILLED) {
       return jsonResponse(fill, 201);
     }
     return jsonResponse(catalog());
-  }));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
 }
 
 async function openDescribe() {
@@ -84,6 +86,39 @@ describe('describing a plugin (spec 024)', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('Describe the plugin you want')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Fill it in for me' })).toBeInTheDocument();
+  });
+
+  it('disables the fill for an empty description and starts no request when pressed', async () => {
+    const fetchMock = stubServer(true);
+    const form = await openDescribe();
+
+    await userEvent.click(within(form).getByRole('button'));
+    const dialog = await screen.findByRole('dialog');
+    const fill = within(dialog).getByRole('button', { name: 'Fill it in for me' });
+    expect(fill).toBeDisabled();
+
+    await userEvent.click(fill);
+    const fillRequests = fetchMock.mock.calls
+      .filter(([input]) => String(input).includes('/wizard/start'));
+    expect(fillRequests).toHaveLength(0);
+  });
+
+  it('enables the fill after text is typed and starts one request when pressed', async () => {
+    const fetchMock = stubServer(true);
+    const form = await openDescribe();
+
+    await userEvent.click(within(form).getByRole('button'));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText('Describe the plugin you want'),
+                         'A morning list of my mail');
+    const fill = within(dialog).getByRole('button', { name: 'Fill it in for me' });
+    expect(fill).toBeEnabled();
+
+    await userEvent.click(fill);
+    const fillRequests = fetchMock.mock.calls
+      .filter(([input]) => String(input).includes('/wizard/start'));
+    expect(fillRequests).toHaveLength(1);
+    expect(await within(dialog).findByText('My mail')).toBeInTheDocument();
   });
 
   it('shows the fill happening, then says the choices were filled in', async () => {
