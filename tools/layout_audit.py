@@ -2311,6 +2311,45 @@ def _apply_api_fixture(context, path: Path) -> None:
     context.route("**/api/**", handler)
 
 
+def _hold_route(route, started: list[dict], held: list, answered: bool = False) -> None:
+    """Keep every page non-GET inside the instrument from the moment it fires.
+
+    answered=False holds the request without answering it, so no click can
+    mutate the desk before interception; cleanup aborts what is in held.
+    answered=True records the request and lets the isolated desk answer it,
+    which is what the feedback walkthrough's deliberate submits need.
+    GET requests fall through to any other route and then the network.
+    """
+    if route.request.method == "GET":
+        route.fallback()
+        return
+    started.append({"method": route.request.method, "url": route.request.url})
+    if answered:
+        route.fallback()
+        return
+    held.append(route)
+
+
+def _install_request_guard(target, started: list[dict], held: list,
+                           answered: bool = False) -> None:
+    """Route every request through the non-GET hold before any navigation.
+
+    The caller installs this on a page or a context before its first goto,
+    so even the earliest request a page fires is already intercepted.
+    """
+    target.route("**/*", lambda route: _hold_route(
+        route, started, held, answered))
+
+
+def _abort_held(held: list) -> None:
+    """Abort every held request so the page can close cleanly."""
+    for route in held:
+        try:
+            route.abort()
+        except Exception:
+            pass
+
+
 def _api_record_path(record_dir: Path, condition: str, view: dict,
                      api_path: str) -> Path:
     """The file one recorded API response is written to."""
@@ -3175,12 +3214,16 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
     for page_index, combo in enumerate(combos, start=1):
         view = combo["view"]
         page = context.new_page()
+        controls: list[dict] = []
+        enum_started: list[dict] = []
+        enum_held: list = []
         try:
             page.clock.install(time=FIXED_TIME)
             page.clock.set_fixed_time(FIXED_TIME)
         except Exception:
             pass
         try:
+            _install_request_guard(page, enum_started, enum_held)
             page.add_init_script(script=_theme_init_script(combo["theme"]))
             page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
             _wait_for_view(page, view)
@@ -3190,33 +3233,40 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 pass
             page.wait_for_timeout(300)
             if view.get("kind") == "overlay":
-                reason, failed = _open_overlay(page, combo)
+                reason, failed = _open_overlay(page, combo, enum_started)
                 if reason:
                     print(f"[{condition}] pending {view.get('state')}: {reason}",
                           flush=True)
                     records.append(_pending_page_record(
                         combo, page_index, page_total,
                         "error" if failed else "skipped", reason))
-                    page.close()
-                    continue
-                page.wait_for_timeout(250)
-            controls = _pending_controls(page)
-            if not controls:
-                reason = "page yielded no controls to click"
-                records.append(_pending_page_record(
-                    combo, page_index, page_total, "error", reason))
-                print(f"[{condition}] pending {view.get('state')}: {reason}",
-                      flush=True)
-                page.close()
-                continue
+                else:
+                    page.wait_for_timeout(250)
+                    controls = _pending_controls(page)
+                    if not controls:
+                        reason = "page yielded no controls to click"
+                        records.append(_pending_page_record(
+                            combo, page_index, page_total, "error", reason))
+                        print(f"[{condition}] pending {view.get('state')}: {reason}",
+                              flush=True)
+            else:
+                controls = _pending_controls(page)
+                if not controls:
+                    reason = "page yielded no controls to click"
+                    records.append(_pending_page_record(
+                        combo, page_index, page_total, "error", reason))
+                    print(f"[{condition}] pending {view.get('state')}: {reason}",
+                          flush=True)
         except Exception as exc:  # noqa: BLE001 - a failed page stays in coverage
             reason = f"{type(exc).__name__}: {exc}"[:300]
             print(f"[{condition}] pending {view.get('state')}: {reason}", flush=True)
             records.append(_pending_page_record(
                 combo, page_index, page_total, "error", reason))
+        finally:
+            _abort_held(enum_held)
             page.close()
+        if not controls:
             continue
-        page.close()
         for control in controls:
             total += 1
             index = control["index"]
@@ -3251,6 +3301,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             held: list = []
             file_dialog = [False]
             native_dialog = [False]
+            _install_request_guard(fresh, started, held)
 
             def hold(route):
                 """Hold every non-GET request; let GETs through."""
@@ -3292,7 +3343,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     pass
                 fresh.wait_for_timeout(300)
                 if view.get("kind") == "overlay":
-                    reason, failed = _open_overlay(fresh, combo)
+                    reason, failed = _open_overlay(fresh, combo, started)
                     if reason:
                         record["verdict"] = "error" if failed else "skipped"
                         record["evidence"] = {"reason": reason}
@@ -3300,6 +3351,9 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                         fresh.close()
                         continue
                     fresh.wait_for_timeout(250)
+                    _abort_held(held)
+                    held.clear()
+                    started.clear()
                 fresh.evaluate("() => window.scrollTo(0, 0)")
                 before_indicators = _pending_indicators(fresh)
                 wait_before = _pending_wait_target(fresh, control.get("wait_target", ""))
@@ -3585,7 +3639,8 @@ def _open_overlay(page, combo: dict,
 
 def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
                    calendar_fixture: Path, crop_counts: dict, base: str,
-                   record_dir: Path | None = None) -> dict:
+                   record_dir: Path | None = None,
+                   held_requests: list[dict] | None = None) -> dict:
     """Visit, wait, assert and measure one combination.
 
     Returns the matrix entry plus the findings it produced. A page whose
@@ -3644,7 +3699,7 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
             entry["ms"] = int((time.monotonic() - started) * 1000)
             return {"entry": entry, "findings": findings}
         if view.get("kind") == "overlay":
-            reason, failed = _open_overlay(page, combo)
+            reason, failed = _open_overlay(page, combo, held_requests)
             if reason:
                 entry["status"] = "error" if failed else "skipped"
                 entry["note"] = reason
@@ -3783,6 +3838,9 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                         f"could not fix the browser clock at {FIXED_TIME}: {exc}") from exc
                 runtime = _runtime_events(page)
                 _attach_runtime(page, runtime)
+                guard_started: list[dict] = []
+                guard_held: list = []
+                _install_request_guard(page, guard_started, guard_held)
                 current_width = combos[0]["width"]
                 current_theme = ""
                 crop_counts: dict[str, int] = {}
@@ -3809,7 +3867,7 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                             current_theme = combo["theme"]
                         result = _measure_combo(page, combo, runtime, run_dir,
                                                 calendar_fixture, crop_counts, base,
-                                                record_dir)
+                                                record_dir, guard_started)
                         entry = result["entry"]
                         matrix.append(entry)
                         all_findings.extend(result["findings"])
@@ -3830,6 +3888,7 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                         print(f"[{condition}] pending audit wrote {len(pending_records)} "
                               f"control record(s)", flush=True)
                 finally:
+                    _abort_held(guard_held)
                     page.close()
                     context.close()
                     browser.close()

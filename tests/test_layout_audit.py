@@ -473,11 +473,29 @@ def test_box_changed_compares_width_and_height_with_one_pixel_noise():
     assert audit._box_delta(before, {"width": 116.0, "height": 24.0}) == (16.0, 0.0)
 
 
+class _FakeRoute:
+    """A route stand-in that records how the instrument resolved it."""
+
+    def __init__(self, method, url):
+        self.request = SimpleNamespace(method=method, url=url)
+        self.calls = []
+
+    def fallback(self):
+        self.calls.append("fallback")
+
+    def continue_(self):
+        self.calls.append("continue")
+
+    def abort(self):
+        self.calls.append("abort")
+
+
 class _PendingPage:
     """A minimal page stand-in for pending enumeration and activation failures.
 
-    It can replay a held request when an overlay trigger is clicked, so a
-    test can prove what the instrument does with a page-initiated POST.
+    It records the order of route and goto calls so a test can prove the
+    non-GET guard exists before the first navigation, and it can replay a
+    held request when an overlay trigger is clicked.
     """
 
     def __init__(self, controls=None, navigation_error=None, trigger_present=True,
@@ -487,6 +505,7 @@ class _PendingPage:
         self.trigger_present = trigger_present
         self.dialog_timeout = dialog_timeout
         self.held_request = held_request
+        self.events = []
         self.routes = []
         self.fired = []
         self.clock = SimpleNamespace(install=lambda **_kwargs: None,
@@ -496,6 +515,7 @@ class _PendingPage:
         return None
 
     def goto(self, *_args, **_kwargs):
+        self.events.append("goto")
         if self.navigation_error:
             raise self.navigation_error
         return SimpleNamespace(status=200)
@@ -521,12 +541,14 @@ class _PendingPage:
         return None
 
     def route(self, _pattern, handler):
+        self.events.append("route")
         self.routes.append(handler)
 
     def locator(self, _selector, **_kwargs):
         page = self
 
         def _fire():
+            page.events.append("click")
             if page.held_request is not None:
                 for handler in page.routes:
                     fired = _FakeRoute(*page.held_request)
@@ -627,23 +649,6 @@ def test_pending_activation_failure_is_an_error_not_a_skip(monkeypatch):
     assert "control vanished" in records[0]["evidence"]["reason"]
 
 
-class _FakeRoute:
-    """A route stand-in that records how the instrument resolved it."""
-
-    def __init__(self, method, url):
-        self.request = SimpleNamespace(method=method, url=url)
-        self.calls = []
-
-    def fallback(self):
-        self.calls.append("fallback")
-
-    def continue_(self):
-        self.calls.append("continue")
-
-    def abort(self):
-        self.calls.append("abort")
-
-
 _OVERLAY_COMBO = {"condition": "fresh", "width": 1024, "theme": "unkey",
                   "view": {"path": "/marketplace", "state": "overlay-describe",
                            "kind": "overlay", "opener": "describe"}}
@@ -689,6 +694,49 @@ def test_pending_overlay_page_failure_is_recorded_as_an_error():
     assert records[0]["verdict"] == "error"
     assert records[0]["page_index"] == 1
     assert records[0]["page_total"] == 1
+
+
+def test_pending_overlay_page_with_a_held_wizard_submit_is_a_skip():
+    """The held wizard submit proves the fallback, so the page is a skip."""
+    page = _PendingPage(
+        dialog_timeout=True,
+        held_request=("POST", "http://127.0.0.1:43123/wizard/start"))
+    records = audit._run_pending_audit(
+        _PendingContext([page]), "http://127.0.0.1:43123",
+        [_OVERLAY_COMBO], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "skipped"
+    assert "/wizard/start" in records[0]["evidence"]["reason"]
+    assert page.fired[0].calls == ["abort"]
+
+
+def test_pending_pages_install_the_guard_before_their_navigation():
+    """The enumeration page holds non-GET requests from before it loads."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/", "state": "dashboard"}}
+    page = _PendingPage()
+    audit._run_pending_audit(
+        _PendingContext([page]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert page.events.index("route") < page.events.index("goto")
+
+
+def test_pending_fresh_page_guard_precedes_its_navigation(monkeypatch):
+    """The fresh page holds non-GET requests from before it loads."""
+    control = {"index": 0, "ordinal": 0, "path": "button.save", "tag": "button",
+               "text": "Save", "disabled": False, "alreadySelected": False,
+               "wait_target": "#result"}
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/", "state": "dashboard"}}
+    enum_page = _PendingPage([control])
+    fresh_page = _PendingPage([control])
+    monkeypatch.setattr(audit, "_wait_for_view", lambda *_args: None)
+    records = audit._run_pending_audit(
+        _PendingContext([enum_page, fresh_page]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert fresh_page.events.index("route") < fresh_page.events.index("goto")
+    assert enum_page.events.index("route") < enum_page.events.index("goto")
+    assert records[0]["verdict"] == "error"
 
 
 class _MatrixPage:
@@ -740,6 +788,74 @@ def test_matrix_maps_a_legitimate_opener_reason_to_a_skip_row(monkeypatch, tmp_p
         _MatrixPage(), combo, audit._runtime_events(_MatrixPage()), tmp_path,
         tmp_path / "cal.json", {}, "http://127.0.0.1:43123")
     assert result["entry"]["status"] == "skipped"
+
+
+def test_feedback_walkthrough_guards_its_context_before_navigation(
+        monkeypatch, tmp_path):
+    """The walkthrough records every page non-GET from before it navigates."""
+    import feedback_walkthrough as walk
+
+    recorder = _WalkRecorder()
+    _install_fake_desk(monkeypatch, recorder)
+    events = []
+    routes = []
+
+    class Page:
+        url = recorder.base + "/"
+        clock = SimpleNamespace(install=lambda **_kwargs: None,
+                                set_fixed_time=lambda *_args: None)
+
+        def goto(self, _url, **_kwargs):
+            events.append("goto")
+
+    class Context:
+        def __init__(self):
+            self.request = recorder.request()
+
+        def new_page(self):
+            return Page()
+
+        def route(self, _pattern, handler):
+            events.append("route")
+            routes.append(handler)
+
+        def close(self):
+            return None
+
+    class Browser:
+        def new_context(self, **_kwargs):
+            return Context()
+
+        def close(self):
+            return None
+
+    class Playwright:
+        chromium = SimpleNamespace(launch=lambda **_kwargs: Browser())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    playwright_package = types.ModuleType("playwright")
+    playwright_package.__path__ = []
+    sync_api = types.ModuleType("playwright.sync_api")
+    sync_api.sync_playwright = Playwright
+    monkeypatch.setitem(sys.modules, "playwright", playwright_package)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+    monkeypatch.setattr(walk.tempfile, "mkdtemp",
+                        lambda **_kwargs: str(tmp_path / "desk"))
+    monkeypatch.setattr(audit, "_seed", lambda *_args: [])
+    monkeypatch.setattr(walk, "ACTIONS", ())
+    walk._walk(SimpleNamespace(mock_delay_ms=0, only=""), tmp_path / "run")
+    assert events.index("route") < events.index("goto")
+    post = _FakeRoute("POST", recorder.base + "/assistant/ask")
+    routes[0](post)
+    assert post.calls == ["fallback"]
+    get = _FakeRoute("GET", recorder.base + "/api/dashboard")
+    routes[0](get)
+    assert get.calls == ["fallback"]
 
 
 def test_pending_fail_thresholds():
@@ -919,7 +1035,12 @@ def _drive_layout_worker(monkeypatch, tmp_path, recorder, pending=False):
         def on(self, *_args):
             return None
 
+        def route(self, _pattern, _handler):
+            recorder.guard_events.append("page-route")
+            return None
+
         def goto(self, url, **_kwargs):
+            recorder.guard_events.append("page-goto")
             self.url = recorder.base + "/"
             return SimpleNamespace(status=200)
 
@@ -969,7 +1090,7 @@ def _drive_layout_worker(monkeypatch, tmp_path, recorder, pending=False):
     monkeypatch.setattr(audit, "sync_playwright", Playwright)
 
     def measure(_page, combo, _runtime, _run_dir, _calendar, _crops, _base,
-                _record_dir=None):
+                _record_dir=None, _held_requests=None):
         return {"entry": {
             "condition": combo["condition"], "width": combo["width"],
             "theme": combo["theme"], "route": combo["view"]["path"],
@@ -1064,6 +1185,10 @@ def test_every_walk_entry_point_injects_inert_gate_runners(monkeypatch, tmp_path
         assert set(runners) == {key for key, _number, _title in
                                 sys.modules["agentdesk.capabilities"].GATES}
         assert {runner().status for runner in runners.values()} == {"UNKNOWN"}
+        if entry != "feedback":
+            assert (recorder.guard_events.index("page-route")
+                    < recorder.guard_events.index("page-goto")), (
+                f"{entry} page navigated before its non-GET guard")
 
 
 def test_busy_seeding_never_sends_a_capability_request(monkeypatch, tmp_path):
