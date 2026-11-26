@@ -116,6 +116,8 @@ npm test
 
 The full gate runs Python tests, frontend typecheck, Vitest, the license gate, registry CI, and naming guards.
 
+The layout audit plans the `fresh`, `data`, `plugins`, `full`, `long-values`, `busy`, and `legacy-dashboard` conditions. The `busy` condition uses synthetic capability cache fixtures and injected UNKNOWN gate runners. It never retests machine capabilities, reaches an external probe endpoint, installs a package, lists processes, or writes a OneDrive probe.
+
 ## Documentation and IT review
 
 | Document | Purpose |
