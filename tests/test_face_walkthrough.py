@@ -1074,6 +1074,58 @@ def test_the_rail_check_names_the_waiting_count_and_the_blocked_failure(
     assert "not kept" in result["detail"]
 
 
+def test_the_rail_check_fails_a_wrong_mood_or_a_small_size(tmp_path, monkeypatch):
+    """A rail face with the wrong mood or the small size is a failed check."""
+    monkeypatch.setattr(face, "RAIL_CHECK_TIMEOUT_MS", 5)
+    run = face.RunState([], tmp_path)
+    shot = face.Shot(
+        id="rail", surface="rail", kind="rail", theme="unkey", mood="thinking",
+        motion="normal", condition="full", width=1280, state="",
+        variant="face", file="photos/rail.png", locator_kind="rail-face")
+    page = _StagePage()
+    page.rail_states = [{"present": True, "mood": "idle", "size": "md",
+                         "title": ""}]
+    result = face._check_rail(page, shot, run)
+    assert result["passed"] is False
+    assert "data-mood" in result["detail"]
+
+    page = _StagePage()
+    page.rail_states = [{"present": True, "mood": "thinking", "size": "sm",
+                         "title": ""}]
+    result = face._check_rail(page, shot, run)
+    assert result["passed"] is False
+    assert "data-size" in result["detail"]
+    assert "not the rail size" in result["detail"]
+
+
+def test_the_collapsed_check_fails_a_wrong_mood_or_a_small_size(tmp_path):
+    """A collapsed face that is waiting, or small, is a failed check."""
+    run = face.RunState([], tmp_path)
+    shot = face.Shot(
+        id="collapsed", surface="rail-collapsed", kind="rail-collapsed",
+        theme="unkey", mood="idle", motion="normal", condition="fresh",
+        width=1280, state="collapsed", variant="page",
+        file="photos/collapsed.png")
+    page = _StagePage()
+    page.responses[face.COLLAPSED_STATE_JS] = {
+        "collapsed": True,
+        "face": {"present": True, "mood": "waiting", "size": "md"},
+    }
+    result = face._check_collapsed(page, shot, run)
+    assert result["passed"] is False
+    assert "data-mood" in result["detail"]
+
+    page = _StagePage()
+    page.responses[face.COLLAPSED_STATE_JS] = {
+        "collapsed": True,
+        "face": {"present": True, "mood": "idle", "size": "sm"},
+    }
+    result = face._check_collapsed(page, shot, run)
+    assert result["passed"] is False
+    assert "data-size" in result["detail"]
+    assert "not the rail size" in result["detail"]
+
+
 def test_the_surface_checks_record_faces_without_failing_their_absence(tmp_path):
     """Collapsed rail needs its face; phone, dialogs and server record absence."""
     run = face.RunState([], tmp_path)
