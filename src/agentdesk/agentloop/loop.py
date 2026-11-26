@@ -79,6 +79,9 @@ STEP_ORDER_PROFILE_REVIEW = 500
 STEP_ORDER_SKILLS = 600
 STEP_ORDER_CURATOR = 700
 STEP_ORDER_UPDATE = 800
+# The engine acts last (spec 023): a pass heals, recommends, ranks and
+# updates before the engine acts on what all of that found.
+STEP_ORDER_ENGINE = 900
 
 # The step registry. Later tickets append their step with register_step
 # and a declared order.

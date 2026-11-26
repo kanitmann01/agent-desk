@@ -101,14 +101,16 @@ def _expected_full_pass_steps(settings) -> list[str]:
 
     The server module is imported for its registration side effect, so the
     registry holds every ticket step even when this file runs on its own. A
-    full pass (only=None) runs every step whose gate allows it, in registry
-    order; a gate that raises still yields a row, a failed one, exactly as
-    _run_steps records it, so it counts as expected too.
+    full pass (only=None) runs every step whose gate allows it, in the
+    declared pass order (ordered_steps(), never the registration order the
+    import sequence decides); a gate that raises still yields a row, a
+    failed one, exactly as _run_steps records it, so it counts as expected
+    too.
     """
     import agentdesk.server.app  # noqa: F401 - registers the ticket steps
 
     names = []
-    for step in STEPS:
+    for step in ordered_steps():
         try:
             enabled = step.enabled(settings)
         except Exception:  # noqa: BLE001 - the loop records the failure row

@@ -256,6 +256,7 @@ from agentdesk.server.core import (
 from agentdesk.agentloop import AgentLoop, LoopContext, Step, register_step
 from agentdesk.agentloop.loop import (
     STEP_ORDER_CURATOR,
+    STEP_ORDER_ENGINE,
     STEP_ORDER_LEARN_TOPICS,
     STEP_ORDER_PROFILE_REVIEW,
     STEP_ORDER_RANK,
