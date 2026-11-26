@@ -3147,6 +3147,20 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
     return "silent", evidence
 
 
+def _pending_page_record(combo: dict, page_index: int, page_total: int,
+                         verdict: str, reason: str) -> dict:
+    """One explicit coverage record for a page that produced no control rows."""
+    view = combo["view"]
+    return {
+        "condition": combo["condition"], "width": combo["width"],
+        "theme": combo["theme"], "route": view["path"],
+        "state": view.get("state", ""), "control": "(page)",
+        "control_path": "page", "control_tag": "",
+        "page_index": page_index, "page_total": page_total,
+        "verdict": verdict, "evidence": {"reason": reason}, "screenshot": "",
+    }
+
+
 def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                        condition: str) -> list[dict]:
     """Click every visible control on every selected page in a fresh page.
@@ -3157,7 +3171,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
     """
     records: list[dict] = []
     total = 0
-    for combo in combos:
+    page_total = len(combos)
+    for page_index, combo in enumerate(combos, start=1):
         view = combo["view"]
         page = context.new_page()
         try:
@@ -3179,13 +3194,25 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 if reason:
                     print(f"[{condition}] pending {view.get('state')}: {reason}",
                           flush=True)
+                    records.append(_pending_page_record(
+                        combo, page_index, page_total, "skipped", reason))
                     page.close()
                     continue
                 page.wait_for_timeout(250)
             controls = _pending_controls(page)
-        except Exception as exc:  # noqa: BLE001 - one page cannot stop the audit
-            print(f"[{condition}] pending {view.get('state')}: {type(exc).__name__}: {exc}",
-                  flush=True)
+            if not controls:
+                reason = "page yielded no controls to click"
+                records.append(_pending_page_record(
+                    combo, page_index, page_total, "error", reason))
+                print(f"[{condition}] pending {view.get('state')}: {reason}",
+                      flush=True)
+                page.close()
+                continue
+        except Exception as exc:  # noqa: BLE001 - a failed page stays in coverage
+            reason = f"{type(exc).__name__}: {exc}"[:300]
+            print(f"[{condition}] pending {view.get('state')}: {reason}", flush=True)
+            records.append(_pending_page_record(
+                combo, page_index, page_total, "error", reason))
             page.close()
             continue
         page.close()
@@ -3195,6 +3222,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             record = {
                 "condition": condition, "width": combo["width"], "theme": combo["theme"],
                 "route": view["path"], "state": view.get("state", ""),
+                "page_index": page_index, "page_total": page_total,
                 "control": control["text"] or control["path"],
                 "control_path": control["path"], "control_tag": control["tag"],
                 "alreadySelected": bool(control.get("alreadySelected")),
@@ -3351,8 +3379,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     pass
                 records.append(record)
             except Exception as exc:  # noqa: BLE001 - one control cannot stop the audit
-                record["verdict"] = "skipped"
-                record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:200]}
+                record["verdict"] = "error"
+                record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:300]}
                 records.append(record)
             finally:
                 for route in held:
@@ -4084,7 +4112,9 @@ def _pending_evidence(record: dict) -> str:
 
 
 def _pending_fail(records: list[dict], threshold: str) -> bool:
-    """True when a pending verdict reaches the --fail-on threshold."""
+    """True for audit errors or a pending verdict at the requested threshold."""
+    if any(record.get("verdict") == "error" for record in records):
+        return True
     if threshold == "none":
         return False
     wanted = {"any": 0, "low": 2, "medium": 1, "high": 0}.get(threshold, 3)
@@ -4227,8 +4257,18 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
     lines.append("## Pending states")
     lines.append("")
     if not pending:
-        lines.append("No pending audit was requested.")
+        if getattr(args, "pending_audit", False):
+            lines.append("Pending audit was requested but produced no control records.")
+        else:
+            lines.append("No pending audit was requested.")
     else:
+        errors = [record for record in pending if record.get("verdict") == "error"]
+        if errors:
+            lines.append(f"Pending audit errors: {len(errors)}")
+            for record in errors:
+                reason = str((record.get("evidence") or {}).get("reason") or "unknown error")
+                lines.append(f"- {record.get('condition')} {record.get('state') or record.get('route')}: {reason}")
+            lines.append("")
         counts = _pending_counts(pending)
         lines.append("| verdict | controls |")
         lines.append("| --- | ---: |")
@@ -4358,6 +4398,32 @@ def _relative_records(records: list[dict], run_dir: Path) -> list[dict]:
     return out
 
 
+def _pending_coverage_failures(planned: list[dict], pending: list[dict]) -> list[str]:
+    """Name every missing planned page and every explicit pending audit error."""
+    expected: dict[str, int] = {}
+    for combo in planned:
+        condition = str(combo["condition"])
+        expected[condition] = expected.get(condition, 0) + 1
+    seen: dict[str, set[int]] = {condition: set() for condition in expected}
+    failures: list[str] = []
+    for record in pending:
+        condition = str(record.get("condition") or "")
+        try:
+            page_index = int(record.get("page_index") or 0)
+        except (TypeError, ValueError):
+            page_index = 0
+        if page_index > 0:
+            seen.setdefault(condition, set()).add(page_index)
+        if record.get("verdict") == "error":
+            reason = str((record.get("evidence") or {}).get("reason") or "unknown error")
+            failures.append(f"pending error {condition} page {page_index}: {reason}")
+    for condition, count in expected.items():
+        for page_index in range(1, count + 1):
+            if page_index not in seen.get(condition, set()):
+                failures.append(f"pending {condition} page {page_index}: no control record")
+    return failures
+
+
 def _merge_outputs(args, run_dir: Path, conditions: list[str],
                    elapsed: float, child_results: list[dict]) -> int:
     """Merge child JSON, copy crops, write findings/matrix/summary, return code.
@@ -4409,6 +4475,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
                 continue
             group["crops"].append(f"crops/{target.name}")
     planned = _planned_combos(args, conditions)
+    pending_failures = (_pending_coverage_failures(planned, pending)
+                        if getattr(args, "pending_audit", False) else [])
     visited = {_entry_key(entry) for entry in matrix}
     missing = [combo for combo in planned if _combo_key(combo) not in visited]
     failed = [entry for entry in matrix
@@ -4419,7 +4487,7 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
             child_failures.append(result)
     _write_json(run_dir / "findings.json", _relative_records(findings, run_dir))
     _write_json(run_dir / "matrix.json", _relative_records(matrix, run_dir))
-    if pending:
+    if pending or getattr(args, "pending_audit", False):
         _write_json(run_dir / "pending.json", _relative_records(pending, run_dir))
     _write_summary(run_dir, findings, matrix, groups, args, elapsed, missing,
                    child_failures, pending)
@@ -4433,7 +4501,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
           f"box-changed={box_changed} dead={dead}")
     if skipped_entries:
         print(f"SKIPPED {len(skipped_entries)} overlay state(s) listed in summary")
-    incomplete = len(missing) + len(failed) + len(child_failures)
+    incomplete = (len(missing) + len(failed) + len(child_failures)
+                  + len(pending_failures))
     coverage_code = 0
     if incomplete:
         reasons = []
@@ -4446,6 +4515,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
                            f"{entry['theme']} {entry['state']} ({entry.get('note', '')})")
         for result in child_failures[:8]:
             reasons.append(f"child {result.get('condition')} exit {result.get('exit')}")
+        for reason in pending_failures[:8]:
+            reasons.append(reason)
         suffix = "" if args.allow_partial else "; exit 3"
         print(f"COVERAGE INCOMPLETE {incomplete} combination(s){suffix}: "
               + "; ".join(reasons))

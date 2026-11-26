@@ -162,6 +162,46 @@ def test_allow_partial_keeps_a_missing_row_from_failing(tmp_path):
     assert audit._merge_outputs(args, tmp_path, ["fresh"], 0.1, []) == 0
 
 
+def test_requested_pending_pass_with_no_files_is_incomplete(tmp_path):
+    """A requested pending pass cannot inherit a clean layout matrix."""
+    args = _args(conditions="fresh", widths="800", pending_audit=True)
+    planned = audit._planned_combos(args, ["fresh"])
+    _seed_run_folder(tmp_path, _matrix_for(planned))
+    assert audit._merge_outputs(args, tmp_path, ["fresh"], 0.1, []) == 3
+    assert json.loads((tmp_path / "pending.json").read_text("utf-8")) == []
+
+
+def test_pending_page_error_is_incomplete_even_with_a_full_matrix(tmp_path):
+    """An explicit page failure is coverage evidence, not a clean pending pass."""
+    args = _args(conditions="fresh", widths="800", pending_audit=True)
+    planned = audit._planned_combos(args, ["fresh"])
+    _seed_run_folder(tmp_path, _matrix_for(planned))
+    (tmp_path / "pending.fresh.json").write_text(json.dumps([{
+        "condition": "fresh", "verdict": "error", "page_index": 1,
+        "evidence": {"reason": "page yielded no controls to click"},
+    }]), encoding="utf-8")
+    assert audit._merge_outputs(args, tmp_path, ["fresh"], 0.1, []) == 3
+
+
+def test_error_matrix_row_is_incomplete(tmp_path):
+    """A matrix row in error status is failed coverage, never a pass."""
+    args = _args(conditions="fresh", widths="800")
+    planned = audit._planned_combos(args, ["fresh"])
+    rows = _matrix_for(planned)
+    rows[0]["status"] = "error"
+    _seed_run_folder(tmp_path, rows)
+    assert audit._merge_outputs(args, tmp_path, ["fresh"], 0.1, []) == 3
+
+
+def test_pending_summary_names_a_requested_empty_pass(tmp_path):
+    """The summary never calls a requested but empty pending pass unrequested."""
+    args = _args(conditions="fresh", widths="800", pending_audit=True)
+    audit._write_summary(tmp_path, [], [], [], args, 0.1, [], [], [])
+    summary = (tmp_path / "summary.md").read_text("utf-8")
+    assert "Pending audit was requested but produced no control records." in summary
+    assert "No pending audit was requested." not in summary
+
+
 def test_nonzero_child_exit_is_incomplete_even_with_a_full_matrix(tmp_path):
     """A child failure is coverage evidence even when its matrix is full."""
     args = _args(conditions="fresh", widths="800")
@@ -433,6 +473,113 @@ def test_box_changed_compares_width_and_height_with_one_pixel_noise():
     assert audit._box_delta(before, {"width": 116.0, "height": 24.0}) == (16.0, 0.0)
 
 
+class _PendingPage:
+    """A minimal page stand-in for pending enumeration and activation failures."""
+
+    def __init__(self, controls=None, navigation_error=None):
+        self.controls = controls or []
+        self.navigation_error = navigation_error
+        self.clock = SimpleNamespace(install=lambda **_kwargs: None,
+                                     set_fixed_time=lambda *_args: None)
+
+    def add_init_script(self, *_args, **_kwargs):
+        return None
+
+    def goto(self, *_args, **_kwargs):
+        if self.navigation_error:
+            raise self.navigation_error
+        return SimpleNamespace(status=200)
+
+    def wait_for_load_state(self, *_args, **_kwargs):
+        return None
+
+    def wait_for_function(self, *_args, **_kwargs):
+        return None
+
+    def wait_for_timeout(self, *_args, **_kwargs):
+        return None
+
+    def evaluate(self, script, *_args, **_kwargs):
+        if script == audit.PENDING_ENUM_JS:
+            return list(self.controls)
+        return None
+
+    def set_default_timeout(self, *_args):
+        return None
+
+    def on(self, *_args):
+        return None
+
+    def route(self, *_args):
+        return None
+
+    def close(self):
+        return None
+
+
+class _PendingContext:
+    """Return prepared pages without creating a browser."""
+
+    def __init__(self, pages):
+        self.pages = list(pages)
+
+    def new_page(self):
+        return self.pages.pop(0)
+
+
+def test_pending_page_with_no_controls_records_an_error():
+    """A page that should have controls but yields none cannot disappear."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/", "state": "dashboard"}}
+    records = audit._run_pending_audit(
+        _PendingContext([_PendingPage()]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "error"
+    assert records[0]["page_index"] == 1
+    assert records[0]["page_total"] == 1
+    assert "no controls" in records[0]["evidence"]["reason"]
+
+
+def test_pending_navigation_failure_records_an_error():
+    """Enumeration failures leave a named coverage record."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/", "state": "dashboard"}}
+    page = _PendingPage(navigation_error=RuntimeError("navigation failed"))
+    records = audit._run_pending_audit(
+        _PendingContext([page]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "error"
+    assert "navigation failed" in records[0]["evidence"]["reason"]
+
+
+def test_pending_activation_failure_is_an_error_not_a_skip(monkeypatch):
+    """An unexpected activation error cannot masquerade as an intentional skip."""
+    control = {"index": 0, "ordinal": 0, "path": "button.save", "tag": "button",
+               "text": "Save", "disabled": False, "alreadySelected": False,
+               "wait_target": "#result"}
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/", "state": "dashboard"}}
+    context = _PendingContext([_PendingPage([control]), _PendingPage([control])])
+    monkeypatch.setattr(audit, "_wait_for_view", lambda *_args: None)
+    monkeypatch.setattr(audit, "_pending_indicators", lambda *_args: [])
+    monkeypatch.setattr(audit, "_pending_wait_target", lambda *_args: {
+        "present": True, "visible": True, "pending": False,
+        "signature": "before", "text": "old",
+    })
+
+    def fail_click(*_args, **_kwargs):
+        raise RuntimeError("control vanished")
+
+    monkeypatch.setattr(audit, "_pending_click", fail_click)
+    records = audit._run_pending_audit(
+        context, "http://127.0.0.1:43123", [combo], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "error"
+    assert "control vanished" in records[0]["evidence"]["reason"]
+
+
 def test_pending_fail_thresholds():
     """Silent and dead are high, disabled-only is medium, the rest never fail."""
     silent = [{"verdict": "silent"}]
@@ -446,6 +593,7 @@ def test_pending_fail_thresholds():
     assert audit._pending_fail(meets, "any") is False
     assert audit._pending_fail(silent, "none") is False
     assert audit._pending_fail(dead, "none") is False
+    assert audit._pending_fail([{"verdict": "error"}], "none") is True
 
 
 def test_overflow_fixture_is_a_local_widget_with_the_planned_overlays():
