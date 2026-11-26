@@ -1,4 +1,5 @@
 {
+ "note": "The sample client's name in this evidence record was replaced with the fictional sample name (Harborlight) on 2026-11-25.",
  "activityHasLearnedRow": true,
  "activityHasUndo": true,
  "dataDir": "C:\\Users\\mannk\\AppData\\Local\\Temp\\ad-016-09-walk\\data-b",
@@ -52,7 +53,7 @@
       10
      ]
     },
-    "text": "Owns the Halvorsen Freight and Kestrel Foods accounts.",
+    "text": "Owns the Harborlight Freight and Kestrel Foods accounts.",
     "ts": 1795336283.4071214
    }
   ],
@@ -77,7 +78,7 @@
        10
       ]
      },
-     "text": "Owns the Halvorsen Freight and Kestrel Foods accounts.",
+     "text": "Owns the Harborlight Freight and Kestrel Foods accounts.",
      "ts": 1795336283.4071214
     }
    ],
@@ -97,7 +98,7 @@
  "settingsHasLine": true,
  "settingsHasProvenance": true,
  "settingsHasSwitch": true,
- "settingsLearnedExcerpt": "> <div class='w-head'><h2>What the desk learned about you</h2><span class='stamp'>1 LEARNED</span></div> <p>The desk learns only from what you ask it: a topic shows up here when several of your questions named the same thing, and a line only when a review of your recent asks cites them. Each line lists where it came from, and removing one keeps it from coming back.</p> <div class='setting-row'><span>Owns the Halvorsen Freight and Kestrel Foods accounts. <span class='empty'>Learned from activity on 22 Nov 2026</span></span><form method='post' action='/api/profile/learned/remove' class='inlinefo",
+ "settingsLearnedExcerpt": "> <div class='w-head'><h2>What the desk learned about you</h2><span class='stamp'>1 LEARNED</span></div> <p>The desk learns only from what you ask it: a topic shows up here when several of your questions named the same thing, and a line only when a review of your recent asks cites them. Each line lists where it came from, and removing one keeps it from coming back.</p> <div class='setting-row'><span>Owns the Harborlight Freight and Kestrel Foods accounts. <span class='empty'>Learned from activity on 22 Nov 2026</span></span><form method='post' action='/api/profile/learned/remove' class='inlinefo",
  "widgets": {
   "agent_loop_minutes": 60,
   "autonomy": true,

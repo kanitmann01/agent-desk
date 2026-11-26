@@ -1,3 +1,5 @@
+<!-- Note (2026-11-25): the sample client's name in this record was replaced with the fictional sample name (Harborlight) on 2026-11-25. -->
+
 # Browser evidence: ticket 016-08, learned focus topics and memory auto-save
 
 Captured 2026-11-22 against branch `ticket/016-08-topics` at head
@@ -8,20 +10,20 @@ at capture.
 
 ## Walkthrough 1: five asks, Run now, the topic, Remove
 
-- A first batch of five loosely-worded Halvorsen asks produced four small
+- A first batch of five loosely-worded Harborlight asks produced four small
   clusters (the greedy seeder matches against each cluster's first text),
   and the pass honestly reported `learn-topics ok, topics 0`. A second
-  batch sharing one core wording ("What do we know about the Halvorsen
+  batch sharing one core wording ("What do we know about the Harborlight
   Freight <noun>") clustered with the earlier pair; the next pass reported
   `learn-topics ok, topics 1`.
 - `settings-learned-topic.png`: Settings > What the desk learned about you
-  shows "Halvorsen Freight - Learned from 7 asks" with its Remove button,
+  shows "Harborlight Freight - Learned from 7 asks" with its Remove button,
   plus the two switches this ticket owns, both On. (The DOM text at
   capture includes the full section copy and the learned line.)
 - Remove was clicked; `activity-topic-removed.png`: the Activity page
   holds both ledger rows with Undo controls, "Learned the focus topic
-  Halvorsen Freight: named in 7 similar asks." (`profile.learned`) and
-  "You removed the learned topic or line: Halvorsen Freight."
+  Harborlight Freight: named in 7 similar asks." (`profile.learned`) and
+  "You removed the learned topic or line: Harborlight Freight."
   (`profile.removed`), next to the `agentloop.pass` and `profile.learned`
   audit rows.
 
