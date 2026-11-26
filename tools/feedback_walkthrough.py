@@ -707,6 +707,10 @@ def _walk(args, run_dir: Path) -> tuple[list[dict], dict]:
             browser = playwright.chromium.launch(headless=True)
             context = browser.new_context(
                 viewport=VIEWPORT, device_scale_factor=1, reduced_motion="reduce")
+            walk_started: list[dict] = []
+            walk_held: list = []
+            audit._install_request_guard(context, walk_started, walk_held,
+                                         answered=True)
             page = context.new_page()
             page.clock.install(time=FIXED_TIME)
             page.clock.set_fixed_time(FIXED_TIME)

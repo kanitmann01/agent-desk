@@ -114,6 +114,30 @@ PENDING_ENUM_JS = r"""
   });
 }
 """
+PENDING_WAIT_TARGET_JS = r"""
+(arg) => {
+  function visible(el) {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.01) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 1 && r.height >= 1;
+  }
+  if (!arg) return {present:false, visible:false, pending:false, signature:'', text:''};
+  let target = null;
+  try { target = document.querySelector(arg); } catch (e) { target = null; }
+  if (!target && arg[0] !== '#') target = document.getElementById(arg);
+  if (!target) return {present:false, visible:false, pending:false, signature:'', text:''};
+  const selectors = '[data-wait-ph],.pending-shape,.phase-line,.wait-line,[role="progressbar"]';
+  let pending = false;
+  try { if (target.matches(selectors)) pending = visible(target); } catch (e) {}
+  for (const node of target.querySelectorAll(selectors)) {
+    if (visible(node)) { pending = true; break; }
+  }
+  const text = (target.textContent || '').replace(/\s+/g, ' ').trim();
+  return {present:true, visible:visible(target), pending:pending,
+          signature:target.cloneNode(true).outerHTML, text:text.slice(0, 500)};
+}
+"""
 PENDING_STATE_JS = r"""
 (arg) => {
   function visible(el) {
@@ -148,13 +172,31 @@ PENDING_STATE_JS = r"""
             ariaBusy:el.getAttribute('aria-busy') || '',
             box:{x:box.x, y:box.y, width:box.width, height:box.height}};
   })() : null;
-  let waitVisible = false;
+  let waitTarget = null;
   if (arg.wait_target) {
-    let target = null;
-    try { target = document.querySelector(arg.wait_target); } catch (e) { target = null; }
-    if (!target && arg.wait_target[0] !== '#') target = document.getElementById(arg.wait_target);
-    if (target && visible(target) && (target.textContent || '').trim()) waitVisible = true;
+    try { waitTarget = document.querySelector(arg.wait_target); } catch (e) { waitTarget = null; }
+    if (!waitTarget && arg.wait_target[0] !== '#') waitTarget = document.getElementById(arg.wait_target);
   }
+  const waitSelectors = '[data-wait-ph],.pending-shape,.phase-line,.wait-line,[role="progressbar"]';
+  let waitPending = false;
+  try { if (waitTarget && waitTarget.matches(waitSelectors)) waitPending = visible(waitTarget); } catch (e) {}
+  if (waitTarget) {
+    for (const node of waitTarget.querySelectorAll(waitSelectors)) {
+      if (visible(node)) { waitPending = true; break; }
+    }
+  }
+  const waitVisible = !!(waitTarget && visible(waitTarget) && waitPending);
+  const waitSignature = waitTarget ? waitTarget.cloneNode(true).outerHTML : '';
+  const waitBefore = arg.before_wait || {};
+  const waitChanged = waitVisible && waitPending
+    && (!waitBefore.present || waitBefore.signature !== waitSignature);
+  const form = el && el.form;
+  function inScope(node) {
+    if (form && (node === form || form.contains(node))) return true;
+    if (el && (node === el || el.contains(node))) return true;
+    return !!(waitTarget && (node === waitTarget || waitTarget.contains(node)));
+  }
+  const beforeNodes = window.__layoutPendingBefore || [];
   const indicators = [];
   const seen = new Set();
   for (const selector of ['[aria-busy="true"]','[role="progressbar"]',
@@ -162,7 +204,8 @@ PENDING_STATE_JS = r"""
     for (const node of document.querySelectorAll(selector)) {
       if (!visible(node) || seen.has(node)) continue;
       seen.add(node);
-      indicators.push({path:path(node), text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
+      indicators.push({path:path(node), text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+                       inScope:inScope(node), appearedAfterClick:beforeNodes.indexOf(node) === -1});
     }
   }
   const permanentWire = new Set(['wire','wire-chart','wire-copy','wire-rows','wire-lines',
@@ -179,7 +222,9 @@ PENDING_STATE_JS = r"""
   return {control:info,
           labelChanged: !!(info && arg.before && info.text !== arg.before),
           ariaBusy: !!(info && info.ariaBusy === 'true'),
+          ariaBusyChanged: !!(info && info.ariaBusy === 'true' && arg.before_aria_busy !== 'true'),
           waitVisible:waitVisible,
+          waitChanged:waitChanged,
           indicators:indicators.slice(0, 8),
           url:location.pathname + location.search};
 }
@@ -1793,7 +1838,7 @@ def build_views() -> list[dict]:
         {"path": "/what-this-touches", "kind": "server", "state": "what-this-touches"},
         {"path": "/wizard", "kind": "server", "state": "wizard"},
         {"path": "/auth/not-a-real-token", "kind": "server", "state": "error-page",
-         "expected_error": True},
+         "expected_error": True, "no_controls_by_design": True},
     ])
     return views
 
@@ -2072,6 +2117,25 @@ def _pin_store_clocks(server) -> None:
                 pass
 
 
+def _inert_gate_runners() -> dict:
+    """The local test gate's UNKNOWN runners, with no production adapters."""
+    from agentdesk.capabilities import GATES
+    from agentdesk.probe.core import GateResult, UNKNOWN
+
+    def runner_for(key: str, number: int, title: str):
+        """Return an honest fixture result without probing the machine."""
+        def run() -> GateResult:
+            """Answer UNKNOWN for one gate; no probe, no adapter, no effect."""
+            return GateResult(
+                key=key, number=number, title=title, status=UNKNOWN,
+                evidence=("injected audit runner: no probe ran",),
+                note="the layout audit's placeholder runner",
+            )
+        return run
+
+    return {key: runner_for(key, number, title) for key, number, title in GATES}
+
+
 def _boot_desk(condition: str, tmp_root: Path) -> dict:
     """Boot the real app over a fresh data folder and a file-backed keychain.
 
@@ -2095,7 +2159,8 @@ def _boot_desk(condition: str, tmp_root: Path) -> dict:
     try:
         server = server_app.create_server(
             port=0, announce_port=_free_udp_port(),
-            keychain=KeychainSecrets(backend=FileKeychain(keychain)))
+            keychain=KeychainSecrets(backend=FileKeychain(keychain)),
+            gate_runners=_inert_gate_runners())
         if getattr(server, "settings", None) is not None:
             server.settings.set("agent_loop_minutes", 0)
         _pin_store_clocks(server)
@@ -2247,6 +2312,45 @@ def _apply_api_fixture(context, path: Path) -> None:
     context.route("**/api/**", handler)
 
 
+def _hold_route(route, started: list[dict], held: list, answered: bool = False) -> None:
+    """Keep every page non-GET inside the instrument from the moment it fires.
+
+    answered=False holds the request without answering it, so no click can
+    mutate the desk before interception; cleanup aborts what is in held.
+    answered=True records the request and lets the isolated desk answer it,
+    which is what the feedback walkthrough's deliberate submits need.
+    GET requests fall through to any other route and then the network.
+    """
+    if route.request.method == "GET":
+        route.fallback()
+        return
+    started.append({"method": route.request.method, "url": route.request.url})
+    if answered:
+        route.fallback()
+        return
+    held.append(route)
+
+
+def _install_request_guard(target, started: list[dict], held: list,
+                           answered: bool = False) -> None:
+    """Route every request through the non-GET hold before any navigation.
+
+    The caller installs this on a page or a context before its first goto,
+    so even the earliest request a page fires is already intercepted.
+    """
+    target.route("**/*", lambda route: _hold_route(
+        route, started, held, answered))
+
+
+def _abort_held(held: list) -> None:
+    """Abort every held request so the page can close cleanly."""
+    for route in held:
+        try:
+            route.abort()
+        except Exception:
+            pass
+
+
 def _api_record_path(record_dir: Path, condition: str, view: dict,
                      api_path: str) -> Path:
     """The file one recorded API response is written to."""
@@ -2346,12 +2450,32 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
     return notes
 
 
+def _busy_gate_results() -> list:
+    """Synthetic capability cards for layout coverage, never machine verdicts."""
+    from agentdesk.capabilities import GATES
+    from agentdesk.probe.core import FAIL, PASS, GateResult
+
+    fixtures = {
+        "exec-user-space": (PASS, "Synthetic fixture: a user-space command completed."),
+        "uv-tls-bootstrap": (FAIL, "Synthetic fixture: the package bootstrap was refused."),
+        "power-automate-flows": (PASS, "Synthetic fixture: a cloud flow endpoint answered."),
+        "onedrive-sync": (FAIL, "Synthetic fixture: no sync root was selected."),
+        "edr-identity": (PASS, "Synthetic fixture: an endpoint security identity answered."),
+        "embeddings": (FAIL, "Synthetic fixture: the model endpoint did not answer."),
+    }
+    return [GateResult(
+        key=key, number=number, title=title, status=fixtures[key][0],
+        evidence=(fixtures[key][1], "Audit fixture only: no capability probe ran."),
+        note="Synthetic layout fixture, not a verdict about this machine.",
+    ) for key, number, title in GATES]
+
+
 def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None,
                notes: list[str]) -> list[str]:
     """Seed the populated states on top of the full condition.
 
     A saved connection fills the Settings table, the assistant turn fills
-    the thread, one agent run fills the history, the gates fill the
+    the thread, one agent run fills the history, synthetic fixtures fill the
     capability cache, three long facts fill the memory pages, and mail is
     switched on over the sample .eml folder. The file-backed fake keychain
     holds the connection key; the real keychain is never touched. A failed
@@ -2436,23 +2560,17 @@ def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None
         notes.append(f"busy: agent run failed: {type(exc).__name__}: {exc}")
 
     try:
-        from agentdesk.capabilities import GATES
-
-        cached = 0
-        for key, _number, _title in GATES:
-            try:
-                response = context.request.post(
-                    base + f"/capabilities/{key}/retest",
-                    headers={"Content-Type": "application/json"}, timeout=120000)
-                if response.status in (200, 201):
-                    cached += 1
-                else:
-                    notes.append(f"busy: gate {key} answered {response.status}")
-            except Exception as exc:  # noqa: BLE001 - one gate cannot stop the rest
-                notes.append(f"busy: gate {key} failed: {type(exc).__name__}: {exc}")
-        notes.append(f"busy: {cached} capability gate(s) cached")
+        cache = getattr(server, "capabilities_cache", None)
+        if cache is None:
+            notes.append("busy: capability cache unavailable")
+        else:
+            results = _busy_gate_results()
+            for result in results:
+                cache.save_result(result)
+            notes.append(f"busy: {len(results)} synthetic capability fixture(s) cached; "
+                         "no probe ran")
     except Exception as exc:  # noqa: BLE001 - report the page state that follows
-        notes.append(f"busy: capability gates failed: {type(exc).__name__}: {exc}")
+        notes.append(f"busy: capability fixtures failed: {type(exc).__name__}: {exc}")
 
     facts = [
         ("The northern region renewal for Halvorsen Freight is expected to close before "
@@ -2918,8 +3036,21 @@ def _pending_indicators(page) -> list[dict]:
             out.push({path:node.tagName.toLowerCase() + '.' + String(node.className || '').split(/\s+/).slice(0, 3).join('.'),
                       text:(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)});
           }
+          window.__layoutPendingBefore = Array.from(seen);
           return out.slice(0, 12);
         }""", PENDING_SELECTOR)
+
+
+def _pending_wait_target(page, selector: str) -> dict:
+    """Capture the declared result region before the control is activated."""
+    if not selector:
+        return {"present": False, "visible": False, "pending": False,
+                "signature": "", "text": ""}
+    answer = page.evaluate(PENDING_WAIT_TARGET_JS, selector)
+    return answer if isinstance(answer, dict) else {
+        "present": False, "visible": False, "pending": False,
+        "signature": "", "text": "",
+    }
 
 
 def _theme_init_script(theme: str) -> str:
@@ -3012,12 +3143,15 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
         }
     control_after = state.get("control") or {}
     indicators_after = state.get("indicators") or []
-    before_keys = {(item.get("path"), item.get("text")) for item in before_indicators}
     new_indicators = [item for item in indicators_after
-                      if (item.get("path"), item.get("text")) not in before_keys]
+                      if item.get("inScope") and item.get("appearedAfterClick")]
     label_changed = bool(state.get("labelChanged"))
-    aria_busy = bool(state.get("ariaBusy"))
+    aria_busy = bool(state.get(
+        "ariaBusyChanged",
+        state.get("ariaBusy") and not control.get("ariaBusy"),
+    ))
     wait_visible = bool(state.get("waitVisible"))
+    wait_changed = bool(state.get("waitChanged"))
     disabled = bool(control_after.get("disabled") or
                     control_after.get("ariaDisabled") == "true")
     evidence = {
@@ -3026,6 +3160,8 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
         "disabled": disabled,
         "aria_busy": aria_busy,
         "wait_visible": wait_visible,
+        "wait_changed": wait_changed,
+        "busy_indicators_before": before_indicators[:4],
         "labelChanged": label_changed,
         "labelBefore": control.get("text", ""),
         "labelBusy": control_after.get("text", ""),
@@ -3044,11 +3180,42 @@ def _pending_verdict(control: dict, state: dict, started: list[dict],
     if picker:
         evidence["reason"] = "file-picker request held"
         return "native-dialog", evidence
-    if aria_busy or wait_visible or label_changed or new_indicators:
+    if aria_busy or wait_changed or label_changed or new_indicators:
         return "meets", evidence
     if disabled:
         return "disabled-only", evidence
     return "silent", evidence
+
+
+def _pending_page_record(combo: dict, page_index: int, page_total: int,
+                         verdict: str, reason: str) -> dict:
+    """One explicit coverage record for a page that produced no control rows."""
+    view = combo["view"]
+    return {
+        "condition": combo["condition"], "width": combo["width"],
+        "theme": combo["theme"], "route": view["path"],
+        "state": view.get("state", ""), "control": "(page)",
+        "control_path": "page", "control_tag": "",
+        "page_index": page_index, "page_total": page_total,
+        "verdict": verdict, "evidence": {"reason": reason}, "screenshot": "",
+    }
+
+
+def _pending_zero_control_record(combo: dict, page_index: int,
+                                 page_total: int) -> dict:
+    """The record for a page that yielded no controls.
+
+    A view marked ``no_controls_by_design`` is a seen page with a skip
+    verdict: its absence of controls is the page's design, not a coverage
+    failure. Every other zero-control page is an error that fails the run.
+    """
+    if combo["view"].get("no_controls_by_design"):
+        return _pending_page_record(
+            combo, page_index, page_total, "skipped",
+            "page has no controls by design")
+    return _pending_page_record(
+        combo, page_index, page_total, "error",
+        "page yielded no controls to click")
 
 
 def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
@@ -3061,15 +3228,20 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
     """
     records: list[dict] = []
     total = 0
-    for combo in combos:
+    page_total = len(combos)
+    for page_index, combo in enumerate(combos, start=1):
         view = combo["view"]
         page = context.new_page()
+        controls: list[dict] = []
+        enum_started: list[dict] = []
+        enum_held: list = []
         try:
             page.clock.install(time=FIXED_TIME)
             page.clock.set_fixed_time(FIXED_TIME)
         except Exception:
             pass
         try:
+            _install_request_guard(page, enum_started, enum_held)
             page.add_init_script(script=_theme_init_script(combo["theme"]))
             page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
             _wait_for_view(page, view)
@@ -3079,26 +3251,47 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 pass
             page.wait_for_timeout(300)
             if view.get("kind") == "overlay":
-                reason = _open_overlay(page, combo)
+                reason, failed = _open_overlay(page, combo, enum_started)
                 if reason:
                     print(f"[{condition}] pending {view.get('state')}: {reason}",
                           flush=True)
-                    page.close()
-                    continue
-                page.wait_for_timeout(250)
-            controls = _pending_controls(page)
-        except Exception as exc:  # noqa: BLE001 - one page cannot stop the audit
-            print(f"[{condition}] pending {view.get('state')}: {type(exc).__name__}: {exc}",
-                  flush=True)
+                    records.append(_pending_page_record(
+                        combo, page_index, page_total,
+                        "error" if failed else "skipped", reason))
+                else:
+                    page.wait_for_timeout(250)
+                    controls = _pending_controls(page)
+                    if not controls:
+                        record = _pending_zero_control_record(
+                            combo, page_index, page_total)
+                        records.append(record)
+                        print(f"[{condition}] pending {view.get('state')}: "
+                              f"{record['evidence']['reason']}", flush=True)
+            else:
+                controls = _pending_controls(page)
+                if not controls:
+                    record = _pending_zero_control_record(
+                        combo, page_index, page_total)
+                    records.append(record)
+                    print(f"[{condition}] pending {view.get('state')}: "
+                          f"{record['evidence']['reason']}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - a failed page stays in coverage
+            reason = f"{type(exc).__name__}: {exc}"[:300]
+            print(f"[{condition}] pending {view.get('state')}: {reason}", flush=True)
+            records.append(_pending_page_record(
+                combo, page_index, page_total, "error", reason))
+        finally:
+            _abort_held(enum_held)
             page.close()
+        if not controls:
             continue
-        page.close()
         for control in controls:
             total += 1
             index = control["index"]
             record = {
                 "condition": condition, "width": combo["width"], "theme": combo["theme"],
                 "route": view["path"], "state": view.get("state", ""),
+                "page_index": page_index, "page_total": page_total,
                 "control": control["text"] or control["path"],
                 "control_path": control["path"], "control_tag": control["tag"],
                 "alreadySelected": bool(control.get("alreadySelected")),
@@ -3126,6 +3319,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             held: list = []
             file_dialog = [False]
             native_dialog = [False]
+            _install_request_guard(fresh, started, held)
 
             def hold(route):
                 """Hold every non-GET request; let GETs through."""
@@ -3167,15 +3361,20 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     pass
                 fresh.wait_for_timeout(300)
                 if view.get("kind") == "overlay":
-                    reason = _open_overlay(fresh, combo)
+                    reason, failed = _open_overlay(fresh, combo, started)
                     if reason:
+                        record["verdict"] = "error" if failed else "skipped"
                         record["evidence"] = {"reason": reason}
                         records.append(record)
                         fresh.close()
                         continue
                     fresh.wait_for_timeout(250)
+                    _abort_held(held)
+                    held.clear()
+                    started.clear()
                 fresh.evaluate("() => window.scrollTo(0, 0)")
                 before_indicators = _pending_indicators(fresh)
+                wait_before = _pending_wait_target(fresh, control.get("wait_target", ""))
                 fresh.on("dialog", on_dialog)
                 fresh.on("filechooser", on_filechooser)
                 fresh.route("**/*", hold)
@@ -3207,7 +3406,9 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     "text": control.get("text", ""),
                     "ordinal": control.get("ordinal", 0),
                     "before": control.get("text") or "",
+                    "before_aria_busy": control.get("ariaBusy", ""),
                     "wait_target": control.get("wait_target", ""),
+                    "before_wait": wait_before,
                 })
                 window_ms = SIGNATURE_EARLY_MS
                 if (not started and not reasons
@@ -3252,8 +3453,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     pass
                 records.append(record)
             except Exception as exc:  # noqa: BLE001 - one control cannot stop the audit
-                record["verdict"] = "skipped"
-                record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:200]}
+                record["verdict"] = "error"
+                record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:300]}
                 records.append(record)
             finally:
                 for route in held:
@@ -3356,16 +3557,27 @@ def _runtime_findings(store: dict, combo: dict) -> list[dict]:
     return out
 
 
-def _open_overlay(page, combo: dict) -> str:
-    """Open the overlay the combo names; return '' on success or a reason."""
+def _open_overlay(page, combo: dict,
+                  held_requests: list[dict] | None = None) -> tuple[str, bool]:
+    """Open the overlay the combo names.
+
+    Returns (reason, failed). An empty reason is success. A reason with
+    failed=False is an intentional skip: the trigger is absent, or the walk
+    can show a legitimate fallback ran. A reason with failed=True is a
+    present trigger whose expected overlay did not open, which is failed
+    coverage, never a skip.
+    """
     opener = combo["view"].get("opener", "")
     if opener == "widget-menu":
         trigger = page.locator('button[aria-label^="Widget options"]').first
         if trigger.count() == 0:
-            return "no widget overflow trigger on this dashboard"
+            return "no widget overflow trigger on this dashboard", False
         trigger.click()
-        page.wait_for_selector('[role="menu"]', timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector('[role="menu"]', timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the widget menu did not open after its trigger was clicked", True
+        return "", False
     if opener == "tracker-setup":
         buttons = page.locator(".tracker-card button")
         target = None
@@ -3375,56 +3587,78 @@ def _open_overlay(page, combo: dict) -> str:
                 target = buttons.nth(index)
                 break
         if target is None:
-            return "no Set up or Edit control on the tracker card"
+            return "no Set up or Edit control on the tracker card", False
         target.click()
-        page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the tracker setup sheet did not open after its trigger was clicked", True
+        return "", False
     if opener == "customize":
         trigger = page.locator("button", has_text="Customize").first
         if trigger.count() == 0:
-            return "no Customize control on the dashboard"
+            return "no Customize control on the dashboard", False
         trigger.click()
-        page.wait_for_selector(".cust-panel", timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector(".cust-panel", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the customize panel did not open after its trigger was clicked", True
+        return "", False
     if opener == "consent":
         trigger = page.locator("button", has_text="Install plugin").first
         if trigger.count() == 0:
-            return "no Install plugin control (plugin may already be installed)"
+            return "no Install plugin control (plugin may already be installed)", False
         trigger.click()
-        page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
+        try:
+            page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the install sheet did not open after its trigger was clicked", True
+        return "", False
     if opener == "instance-setup":
         trigger = page.locator("button", has_text="Set up a new instance").first
         if trigger.count() == 0:
             trigger = page.locator("button", has_text="Edit ").first
         if trigger.count() == 0:
-            return "no instance setup control on the manage page"
-        trigger.click()
-        page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
-    if opener == "purge":
-        trigger = page.locator("button", has_text="Purge data").first
-        if trigger.count() == 0:
-            return "no Purge data control on the installed page"
-        trigger.click()
-        page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
-        return ""
-    if opener == "describe":
-        trigger = page.locator("button", has_text="Describe a plugin in plain English").first
-        if trigger.count() == 0:
-            return "no describe-a-plugin control on the catalog page"
+            return "no instance setup control on the manage page", False
         trigger.click()
         try:
             page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
         except PlaywrightTimeoutError:
-            return "the describe control submitted the walk instead of opening a dialog"
-        return ""
-    return f"unknown overlay opener {opener!r}"
+            return "the instance sheet did not open after its trigger was clicked", True
+        return "", False
+    if opener == "purge":
+        trigger = page.locator("button", has_text="Purge data").first
+        if trigger.count() == 0:
+            return "no Purge data control on the installed page", False
+        trigger.click()
+        try:
+            page.wait_for_selector(".mkt-sheet[role=\"dialog\"]", timeout=5000)
+        except PlaywrightTimeoutError:
+            return "the purge sheet did not open after its trigger was clicked", True
+        return "", False
+    if opener == "describe":
+        trigger = page.locator("button", has_text="Describe a plugin in plain English").first
+        if trigger.count() == 0:
+            return "no describe-a-plugin control on the catalog page", False
+        trigger.click()
+        try:
+            page.wait_for_selector(".setup-sheet[role=\"dialog\"]", timeout=5000)
+            return "", False
+        except PlaywrightTimeoutError:
+            held = [item for item in (held_requests or [])
+                    if "/wizard" in str(item.get("url", ""))]
+            if held:
+                return ("the describe walk fell back to a plain wizard submit "
+                        f"({held[0]['method']} {held[0]['url'][:120]})", False)
+            return ("the describe control opened no dialog and sent no wizard "
+                    "request", True)
+    return f"unknown overlay opener {opener!r}", True
 
 
 def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
                    calendar_fixture: Path, crop_counts: dict, base: str,
-                   record_dir: Path | None = None) -> dict:
+                   record_dir: Path | None = None,
+                   held_requests: list[dict] | None = None) -> dict:
     """Visit, wait, assert and measure one combination.
 
     Returns the matrix entry plus the findings it produced. A page whose
@@ -3483,9 +3717,9 @@ def _measure_combo(page, combo: dict, runtime: dict, run_dir: Path,
             entry["ms"] = int((time.monotonic() - started) * 1000)
             return {"entry": entry, "findings": findings}
         if view.get("kind") == "overlay":
-            reason = _open_overlay(page, combo)
+            reason, failed = _open_overlay(page, combo, held_requests)
             if reason:
-                entry["status"] = "skipped"
+                entry["status"] = "error" if failed else "skipped"
                 entry["note"] = reason
                 entry["ms"] = int((time.monotonic() - started) * 1000)
                 return {"entry": entry, "findings": findings}
@@ -3622,6 +3856,9 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                         f"could not fix the browser clock at {FIXED_TIME}: {exc}") from exc
                 runtime = _runtime_events(page)
                 _attach_runtime(page, runtime)
+                guard_started: list[dict] = []
+                guard_held: list = []
+                _install_request_guard(page, guard_started, guard_held)
                 current_width = combos[0]["width"]
                 current_theme = ""
                 crop_counts: dict[str, int] = {}
@@ -3637,6 +3874,7 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                     if notes:
                         print(f"[{condition}] seeded: {', '.join(notes)}", flush=True)
                     for combo in combos:
+                        guard_started.clear()
                         if combo["width"] != current_width:
                             page.set_viewport_size(
                                 {"width": combo["width"], "height": VIEWPORT_HEIGHT})
@@ -3648,7 +3886,7 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                             current_theme = combo["theme"]
                         result = _measure_combo(page, combo, runtime, run_dir,
                                                 calendar_fixture, crop_counts, base,
-                                                record_dir)
+                                                record_dir, guard_started)
                         entry = result["entry"]
                         matrix.append(entry)
                         all_findings.extend(result["findings"])
@@ -3669,6 +3907,7 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                         print(f"[{condition}] pending audit wrote {len(pending_records)} "
                               f"control record(s)", flush=True)
                 finally:
+                    _abort_held(guard_held)
                     page.close()
                     context.close()
                     browser.close()
@@ -3985,7 +4224,9 @@ def _pending_evidence(record: dict) -> str:
 
 
 def _pending_fail(records: list[dict], threshold: str) -> bool:
-    """True when a pending verdict reaches the --fail-on threshold."""
+    """True for audit errors or a pending verdict at the requested threshold."""
+    if any(record.get("verdict") == "error" for record in records):
+        return True
     if threshold == "none":
         return False
     wanted = {"any": 0, "low": 2, "medium": 1, "high": 0}.get(threshold, 3)
@@ -4128,8 +4369,18 @@ def _write_summary(run_dir: Path, findings: list[dict], matrix: list[dict],
     lines.append("## Pending states")
     lines.append("")
     if not pending:
-        lines.append("No pending audit was requested.")
+        if getattr(args, "pending_audit", False):
+            lines.append("Pending audit was requested but produced no control records.")
+        else:
+            lines.append("No pending audit was requested.")
     else:
+        errors = [record for record in pending if record.get("verdict") == "error"]
+        if errors:
+            lines.append(f"Pending audit errors: {len(errors)}")
+            for record in errors:
+                reason = str((record.get("evidence") or {}).get("reason") or "unknown error")
+                lines.append(f"- {record.get('condition')} {record.get('state') or record.get('route')}: {reason}")
+            lines.append("")
         counts = _pending_counts(pending)
         lines.append("| verdict | controls |")
         lines.append("| --- | ---: |")
@@ -4259,6 +4510,32 @@ def _relative_records(records: list[dict], run_dir: Path) -> list[dict]:
     return out
 
 
+def _pending_coverage_failures(planned: list[dict], pending: list[dict]) -> list[str]:
+    """Name every missing planned page and every explicit pending audit error."""
+    expected: dict[str, int] = {}
+    for combo in planned:
+        condition = str(combo["condition"])
+        expected[condition] = expected.get(condition, 0) + 1
+    seen: dict[str, set[int]] = {condition: set() for condition in expected}
+    failures: list[str] = []
+    for record in pending:
+        condition = str(record.get("condition") or "")
+        try:
+            page_index = int(record.get("page_index") or 0)
+        except (TypeError, ValueError):
+            page_index = 0
+        if page_index > 0:
+            seen.setdefault(condition, set()).add(page_index)
+        if record.get("verdict") == "error":
+            reason = str((record.get("evidence") or {}).get("reason") or "unknown error")
+            failures.append(f"pending error {condition} page {page_index}: {reason}")
+    for condition, count in expected.items():
+        for page_index in range(1, count + 1):
+            if page_index not in seen.get(condition, set()):
+                failures.append(f"pending {condition} page {page_index}: no control record")
+    return failures
+
+
 def _merge_outputs(args, run_dir: Path, conditions: list[str],
                    elapsed: float, child_results: list[dict]) -> int:
     """Merge child JSON, copy crops, write findings/matrix/summary, return code.
@@ -4310,6 +4587,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
                 continue
             group["crops"].append(f"crops/{target.name}")
     planned = _planned_combos(args, conditions)
+    pending_failures = (_pending_coverage_failures(planned, pending)
+                        if getattr(args, "pending_audit", False) else [])
     visited = {_entry_key(entry) for entry in matrix}
     missing = [combo for combo in planned if _combo_key(combo) not in visited]
     failed = [entry for entry in matrix
@@ -4320,7 +4599,7 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
             child_failures.append(result)
     _write_json(run_dir / "findings.json", _relative_records(findings, run_dir))
     _write_json(run_dir / "matrix.json", _relative_records(matrix, run_dir))
-    if pending:
+    if pending or getattr(args, "pending_audit", False):
         _write_json(run_dir / "pending.json", _relative_records(pending, run_dir))
     _write_summary(run_dir, findings, matrix, groups, args, elapsed, missing,
                    child_failures, pending)
@@ -4334,7 +4613,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
           f"box-changed={box_changed} dead={dead}")
     if skipped_entries:
         print(f"SKIPPED {len(skipped_entries)} overlay state(s) listed in summary")
-    incomplete = len(missing) + len(failed) + len(child_failures)
+    incomplete = (len(missing) + len(failed) + len(child_failures)
+                  + len(pending_failures))
     coverage_code = 0
     if incomplete:
         reasons = []
@@ -4347,6 +4627,8 @@ def _merge_outputs(args, run_dir: Path, conditions: list[str],
                            f"{entry['theme']} {entry['state']} ({entry.get('note', '')})")
         for result in child_failures[:8]:
             reasons.append(f"child {result.get('condition')} exit {result.get('exit')}")
+        for reason in pending_failures[:8]:
+            reasons.append(reason)
         suffix = "" if args.allow_partial else "; exit 3"
         print(f"COVERAGE INCOMPLETE {incomplete} combination(s){suffix}: "
               + "; ".join(reasons))
