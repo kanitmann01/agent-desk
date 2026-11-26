@@ -392,6 +392,9 @@ class _CropLocator:
     def count(self):
         return 1
 
+    def scroll_into_view_if_needed(self, **_kwargs):
+        self.page.scrolled.append(self.page.box)
+
     def bounding_box(self):
         return self.box
 
@@ -402,6 +405,7 @@ class _CropPage:
     def __init__(self, box):
         self.box = box
         self.shots = []
+        self.scrolled = []
         self.viewport_size = {"width": 1280, "height": 800}
 
     def locator(self, _selector):
@@ -433,6 +437,8 @@ def test_a_sheet_mood_crop_uses_the_faces_bounding_box(tmp_path):
     path, note = face._shoot_shot(page, shot, tmp_path)
     assert note == ""
     assert Path(path).is_file()
+    assert page.scrolled == [{"x": 100.0, "y": 50.0, "width": 32.0,
+                              "height": 33.0}]
     assert page.shots[-1][1]["clip"] == {
         "x": 92.0, "y": 42.0, "width": 48.0, "height": 49.0}
 

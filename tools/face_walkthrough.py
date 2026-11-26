@@ -694,6 +694,7 @@ def _shoot_clip(page, locator, path: Path, pad: int = 8) -> tuple[str, str]:
     is returned so the capture is recorded as failed rather than passed.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    locator.scroll_into_view_if_needed(timeout=5000)
     box = locator.bounding_box()
     if box is None:
         page.screenshot(path=str(path), full_page=True, timeout=20000)
