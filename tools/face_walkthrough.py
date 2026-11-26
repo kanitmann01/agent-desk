@@ -686,13 +686,19 @@ def _exit_code(counts: dict, startup_failed: bool) -> int:
     return 0
 
 
-def _shoot_clip(page, locator, path: Path, pad: int = 8) -> str:
-    """One padded crop around a locator, or a full page when the box is gone."""
+def _shoot_clip(page, locator, path: Path, pad: int = 8) -> tuple[str, str]:
+    """One padded crop from the face's bounding box, never waiting for stillness.
+
+    The box is a layout measurement, so an animating face still yields its
+    crop. A box that cannot be measured takes the full page, and the reason
+    is returned so the capture is recorded as failed rather than passed.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     box = locator.bounding_box()
     if box is None:
         page.screenshot(path=str(path), full_page=True, timeout=20000)
-        return str(path)
+        return (str(path),
+                "the face had no bounding box; the photograph is the full page")
     viewport = getattr(page, "viewport_size", None) or {}
     x = max(0.0, float(box["x"]) - pad)
     y = max(0.0, float(box["y"]) - pad)
@@ -704,38 +710,32 @@ def _shoot_clip(page, locator, path: Path, pad: int = 8) -> str:
     page.screenshot(path=str(path), timeout=20000,
                     clip={"x": x, "y": y, "width": max(1.0, width),
                           "height": max(1.0, height)})
-    return str(path)
+    return str(path), ""
 
 
-def _shoot_shot(page, shot: Shot, run_dir: Path) -> str:
-    """Take one planned photograph and return its absolute path.
+def _shoot_shot(page, shot: Shot, run_dir: Path) -> tuple[str, str]:
+    """Take one planned photograph and return its path and any fallback reason.
 
-    A face crop is a padded clip around the face element; a sheet tile is an
-    element screenshot of the tile; every other shot is the full page. A
-    missing element falls back to the full page so a failed check still has
-    its photograph.
+    A sheet mood and a rail face are padded crops from their ``.face-box``
+    bounding box, so an animating face still yields its crop without waiting
+    for the animation to settle. Every other shot is the full page. A crop
+    that cannot be measured is still photographed as the full page and the
+    reason comes back with it; the capture is then recorded as failed.
     """
     path = run_dir / shot.file
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if shot.locator_kind == "rail-face":
-            locator = page.locator(RAIL_FACE).first
-            if locator.count() == 0:
-                page.screenshot(path=str(path), full_page=True, timeout=20000)
-                return str(path)
-            return _shoot_clip(page, locator, path)
-        if shot.locator_kind == "sheet-tile":
-            locator = _sheet_tile(page, shot.mood)
-            if locator.count() == 0:
-                page.screenshot(path=str(path), full_page=True, timeout=20000)
-                return str(path)
-            locator.screenshot(path=str(path), timeout=20000)
-            return str(path)
-    except Exception:  # noqa: BLE001 - a photograph failure is still recorded
+    if shot.locator_kind == "rail-face":
+        locator = page.locator(RAIL_FACE).first
+    elif shot.locator_kind == "sheet-tile":
+        locator = _sheet_tile(page, shot.mood)
+    else:
         page.screenshot(path=str(path), full_page=True, timeout=20000)
-        return str(path)
-    page.screenshot(path=str(path), full_page=True, timeout=20000)
-    return str(path)
+        return str(path), ""
+    if locator.count() == 0:
+        page.screenshot(path=str(path), full_page=True, timeout=20000)
+        return (str(path),
+                "the face element is absent; the photograph is the full page")
+    return _shoot_clip(page, locator, path)
 
 
 def _capture_group(page, shots: list[Shot], check, run: RunState,
@@ -757,11 +757,23 @@ def _capture_group(page, shots: list[Shot], check, run: RunState,
                 "detail": f"{type(exc).__name__}: {exc}"[:300],
             }
         file = ""
+        note = ""
         error = ""
         try:
-            file = (shoot or _shoot_shot)(page, shot, run.run_dir)
+            result = (shoot or _shoot_shot)(page, shot, run.run_dir)
+            if isinstance(result, tuple):
+                file, note = result
+            else:
+                file = result
         except Exception as exc:  # noqa: BLE001 - record and keep going
             error = f"{type(exc).__name__}: {exc}"[:300]
+        if note:
+            check_result = dict(check_result)
+            check_result["passed"] = False
+            detail = str(check_result.get("detail") or "").strip()
+            check_result["detail"] = ((detail + "; ") if detail else "") + note
+            check_result["capture_note"] = note
+            error = error or note
         record = run.records[shot.id]
         relative = ""
         if file:
@@ -774,7 +786,7 @@ def _capture_group(page, shots: list[Shot], check, run: RunState,
             "file": relative,
             "check": check_result,
             "verdict": ("passed" if check_result.get("passed") and relative
-                        else "failed"),
+                        and not note else "failed"),
             "missing": not bool(relative),
             "elapsed_s": round(time.monotonic() - started, 3),
             "error": error,

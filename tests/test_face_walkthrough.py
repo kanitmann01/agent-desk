@@ -372,6 +372,96 @@ def test_only_the_research_request_passes_the_guard():
     assert get.calls == ["network"]
 
 
+class _CropLocator:
+    """A locator with a bounding box and deliberately no screenshot method."""
+
+    def __init__(self, page, box):
+        self.page = page
+        self.box = box
+
+    @property
+    def first(self):
+        return self
+
+    def nth(self, _index):
+        return self
+
+    def locator(self, _selector):
+        return self
+
+    def count(self):
+        return 1
+
+    def bounding_box(self):
+        return self.box
+
+
+class _CropPage:
+    """A fake page that only offers the full-page screenshot with a clip."""
+
+    def __init__(self, box):
+        self.box = box
+        self.shots = []
+        self.viewport_size = {"width": 1280, "height": 800}
+
+    def locator(self, _selector):
+        return _CropLocator(self, self.box)
+
+    def screenshot(self, path=None, **kwargs):
+        self.shots.append((path, kwargs))
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_bytes(b"png")
+
+
+def test_a_sheet_mood_crop_uses_the_faces_bounding_box(tmp_path):
+    """An animating face still yields its crop, taken from the bounding box."""
+    shot = face.Shot(
+        id="crop", surface="review-sheet", kind="sheet", theme="unkey",
+        mood="thinking", motion="normal", condition="", width=1280,
+        state="tile", variant="tile", file="photos/thinking.png",
+        locator_kind="sheet-tile")
+    page = _CropPage({"x": 100.0, "y": 50.0, "width": 32.0, "height": 33.0})
+    path, note = face._shoot_shot(page, shot, tmp_path)
+    assert note == ""
+    assert Path(path).is_file()
+    assert page.shots[-1][1]["clip"] == {
+        "x": 92.0, "y": 42.0, "width": 48.0, "height": 49.0}
+
+    rail = face.Shot(
+        id="rail", surface="rail", kind="rail", theme="unkey", mood="idle",
+        motion="normal", condition="fresh", width=1280, state="",
+        variant="face", file="photos/rail.png", locator_kind="rail-face")
+    page = _CropPage({"x": 10.0, "y": 20.0, "width": 32.0, "height": 32.0})
+    path, note = face._shoot_shot(page, rail, tmp_path)
+    assert note == ""
+    assert Path(path).is_file()
+    assert page.shots[-1][1]["clip"] == {
+        "x": 2.0, "y": 12.0, "width": 48.0, "height": 48.0}
+
+
+def test_a_forced_fallback_is_a_failed_capture(tmp_path):
+    """A crop that cannot be measured is photographed, but recorded failed."""
+    shot = face.Shot(
+        id="fallback", surface="review-sheet", kind="sheet", theme="unkey",
+        mood="thinking", motion="normal", condition="", width=1280,
+        state="tile", variant="tile", file="photos/fallback.png",
+        locator_kind="sheet-tile")
+    page = _CropPage(None)
+    path, note = face._shoot_shot(page, shot, tmp_path)
+    assert Path(path).is_file()
+    assert "full page" in note
+    run = face.RunState([shot], tmp_path)
+    face._capture_group(
+        page, [shot], lambda _shot: {"kind": "sheet-face", "passed": True,
+                                     "detail": "the page check passed"},
+        run, shoot=face._shoot_shot)
+    record = run.records[shot.id]
+    assert record["verdict"] == "failed"
+    assert record["check"]["passed"] is False
+    assert "full page" in record["check"]["detail"]
+    assert record["missing"] is False
+
+
 def test_a_failed_check_is_still_photographed_and_the_run_continues(tmp_path):
     """One failed check does not stop the captures after it."""
     shots = [
