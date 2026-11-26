@@ -37,6 +37,8 @@ import json
 import os
 import re
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -66,9 +68,13 @@ PLANNED_WIDTHS = (DESKTOP_WIDTH, STRIP_WIDTH, PHONE_WIDTH)
 DEFAULT_WIDTHS = "1280,800,420"
 DEFAULT_MOCK_DELAY_MS = 12000
 DONE_DURATION_MS = 1600
-SHEET_HOST = "127.0.0.1"
+SHEET_HOST = "localhost"
 SHEET_PORT = 5199
-SHEET_URL = f"http://{SHEET_HOST}:{SHEET_PORT}/face-sheet.html"
+SHEET_URLS = (
+    f"http://{SHEET_HOST}:{SHEET_PORT}/static/spa/face-sheet.html",
+    f"http://{SHEET_HOST}:{SHEET_PORT}/face-sheet.html",
+)
+SHEET_URL = SHEET_URLS[0]
 RAIL_FACE = '[data-face-slot="rail"] .face-box'
 DIALOG_FACE = '[role="dialog"] .face-box'
 PHONE_BAR = ".phone-bar"
@@ -83,6 +89,40 @@ RESEARCH_REFUSAL = (
     "The face walk refused this research request on purpose to photograph "
     "the blocked mood."
 )
+SHEET_STATE_JS = r"""
+(arg) => {
+  let el = null;
+  if (arg.demo) {
+    el = document.querySelector('.face-sheet-demo [data-face-slot="rail"] .face-box');
+  } else {
+    const grids = document.querySelectorAll('.face-sheet-grid');
+    const grid = grids.length > 0 ? grids[0] : null;
+    const tiles = grid ? grid.querySelectorAll('.face-sheet-tile') : [];
+    const tile = tiles.length > arg.index ? tiles[arg.index] : null;
+    el = tile ? tile.querySelector('.face-box') : null;
+  }
+  const left = el ? el.querySelector('.face-eye-left') : null;
+  const right = el ? el.querySelector('.face-eye-right') : null;
+  const styleOf = (node) => node ? {
+    transform: node.style.transform || '',
+    borderRadius: node.style.borderRadius || '',
+    shape: node.dataset ? (node.dataset.shape || '') : '',
+  } : null;
+  return {
+    present: !!el,
+    mood: el ? (el.getAttribute('data-mood') || '') : '',
+    size: el ? (el.getAttribute('data-size') || '') : '',
+    title: el ? (el.getAttribute('title') || '') : '',
+    theme: document.documentElement.getAttribute('data-theme') || '',
+    media: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    signature: el ? {
+      box: styleOf(el),
+      left: styleOf(left),
+      right: styleOf(right),
+    } : null,
+  };
+}
+"""
 REQUIRED_SURFACES = ("review-sheet", "rail", "rail-collapsed", "phone-strip",
                      "dialog-describe", "dialog-tracker", "server-inbox")
 
@@ -160,10 +200,27 @@ def _proxied_paths() -> tuple[str, ...]:
     match = re.search(r"const backendPaths\s*=\s*\[(.*?)\];", text, re.S)
     if match is None:
         raise FaceWalkError("vite.config.ts has no backendPaths list")
-    paths = re.findall(r"'([^']+)'", match.group(1))
+    paths = [value for value in re.findall(r"'([^'\n]+)'", match.group(1))
+             if value.startswith("/")]
     if not paths:
         raise FaceWalkError("vite.config.ts backendPaths is empty")
     return tuple(dict.fromkeys(paths))
+
+
+def _strip_vite_base(path: str) -> str:
+    """Drop the dev server's build base so a prefixed asset keeps its name.
+
+    Vite serves this config's assets under ``/static/spa/`` (the production
+    mount). Its own client and dependency modules can arrive with that
+    prefix, so the asset checks look at the path without it; the proxied
+    paths are checked both with and without the prefix.
+    """
+    base = "/static/spa"
+    if path == base:
+        return "/"
+    if path.startswith(base + "/"):
+        return path[len(base):]
+    return path
 
 
 def _is_proxied_path(path: str, proxied: tuple[str, ...]) -> bool:
@@ -173,27 +230,28 @@ def _is_proxied_path(path: str, proxied: tuple[str, ...]) -> bool:
     allowlist, so even an asset-looking proxied path never leaves the dev
     server's own origin.
     """
-    for prefix in proxied:
-        if path == prefix or path.startswith(prefix + "/"):
-            return True
+    for candidate in (path, _strip_vite_base(path)):
+        for prefix in proxied:
+            if candidate == prefix or candidate.startswith(prefix + "/"):
+                return True
     return False
 
 
 def _is_sheet_asset(path: str) -> bool:
     """True for the sheet's own document, module, stylesheet, font or favicon."""
-    if path in ("/face-sheet.html", "/face-sheet",
-                "/static/spa/face-sheet.html"):
+    candidate = _strip_vite_base(path)
+    if candidate in ("/face-sheet.html", "/face-sheet"):
         return True
-    if path in ("/@vite/client", "/@react-refresh"):
+    if candidate in ("/@vite/client", "/@react-refresh"):
         return True
     for prefix in ("/src/", "/node_modules/", "/@vite/", "/@react-refresh",
                    "/@id/", "/@fs/"):
-        if path.startswith(prefix):
+        if candidate.startswith(prefix):
             return True
-    if path.endswith((".js", ".mjs", ".css", ".woff", ".woff2", ".ttf",
-                      ".otf", ".eot")):
+    if candidate.endswith((".js", ".mjs", ".css", ".woff", ".woff2", ".ttf",
+                           ".otf", ".eot")):
         return True
-    return "favicon" in path and path.endswith((".svg", ".ico", ".png"))
+    return "favicon" in candidate and candidate.endswith((".svg", ".ico", ".png"))
 
 
 def _sheet_deny_handler(route, allowed_origins: set[str],
@@ -224,7 +282,7 @@ def _install_sheet_deny(target, proxied: tuple[str, ...] | None = None) -> tuple
     """Install the sheet's deny rule before the sheet page navigates."""
     paths = _proxied_paths() if proxied is None else tuple(proxied)
     origins = {f"http://{SHEET_HOST}:{SHEET_PORT}",
-               f"http://localhost:{SHEET_PORT}"}
+               f"http://127.0.0.1:{SHEET_PORT}"}
     target.route("**/*", lambda route: _sheet_deny_handler(
         route, origins, paths))
     return paths
@@ -486,11 +544,14 @@ class RunState:
     def observe_surface(self, name: str, face: bool, observed: bool,
                         detail: str = "") -> None:
         """Record whether one surface carries a face, or that it went unseen."""
+        previous = self.surfaces.get(name)
+        if previous and previous.get("observed") and previous.get("face"):
+            face = True
         self.surfaces[name] = {
             "name": name,
             "face": bool(face),
-            "observed": bool(observed),
-            "detail": detail,
+            "observed": bool(observed) or bool(previous and previous.get("observed")),
+            "detail": detail or (previous or {}).get("detail", ""),
         }
 
 
@@ -654,6 +715,242 @@ def _sheet_tile(page, mood: str):
         ".face-box")
 
 
+def _port_open(host: str, port: int) -> bool:
+    """True when something already answers a TCP connect on the port."""
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_sheet_port_free() -> None:
+    """Stop before starting a second dev server on the pinned port."""
+    if _port_open(SHEET_HOST, SHEET_PORT):
+        raise FaceWalkError(
+            f"port {SHEET_PORT} is already in use; stop the other dev server")
+
+
+def _vite_command() -> list[str]:
+    """The dev server command, spelled for this platform."""
+    return ["npm.cmd" if os.name == "nt" else "npm", "run", "dev"]
+
+
+def _start_vite(run_dir: Path):
+    """Start Vite as this walk's child process, logging into the run folder."""
+    log_path = run_dir / "vite.log"
+    log = open(log_path, "w", encoding="utf-8")
+    kwargs = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        kwargs["start_new_session"] = True
+    try:
+        process = subprocess.Popen(
+            _vite_command(), cwd=str(ROOT / "frontend"), stdout=log,
+            stderr=subprocess.STDOUT, **kwargs)
+    except Exception:
+        log.close()
+        raise
+    return process, log, log_path
+
+
+def _wait_for_vite(process, log_path: Path, timeout_s: float = 90.0) -> str:
+    """Wait until the dev server answers the sheet document, or name the failure."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        code = process.poll()
+        if code is not None:
+            raise FaceWalkError(
+                f"the dev server exited {code}; see {log_path}")
+        for url in SHEET_URLS:
+            try:
+                with urllib.request.urlopen(url, timeout=2) as response:
+                    if response.status == 200:
+                        return url
+            except Exception:  # noqa: BLE001 - try the next spelling
+                continue
+        time.sleep(0.5)
+    raise FaceWalkError(
+        f"the dev server did not answer {SHEET_URL}; see {log_path}")
+
+
+def _stop_vite(process, log) -> None:
+    """Stop the dev server and its child processes, then close its log."""
+    if process is None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           capture_output=True, timeout=30)
+        else:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except Exception:  # noqa: BLE001 - fall back to the direct child
+                process.terminate()
+        try:
+            process.wait(timeout=15)
+        except Exception:  # noqa: BLE001 - make sure it is gone
+            try:
+                process.kill()
+            except Exception:  # noqa: BLE001 - already gone
+                pass
+    finally:
+        try:
+            log.close()
+        except Exception:  # noqa: BLE001 - the log is best effort
+            pass
+
+
+def _sheet_mood_argument(mood: str) -> dict:
+    """The sheet script's argument: the demo face for working, a tile otherwise."""
+    return {"demo": mood == "working", "index": MOODS.index(mood)}
+
+
+def _check_sheet(page, shot: Shot, run: RunState) -> dict:
+    """Check the sheet's face before its photograph.
+
+    The face must be present, its ``data-mood`` must match, and the requested
+    theme must sit on the sheet's root. A reduced-motion capture also checks
+    that the media query matches and that the face's own inline pose
+    signature is identical after 500 ms.
+    """
+    argument = _sheet_mood_argument(shot.mood)
+    state = page.evaluate(SHEET_STATE_JS, argument)
+    present = bool(state.get("present"))
+    run.observe_surface("review-sheet", present, True,
+                        f"{shot.theme}/{shot.motion}")
+    failures: list[str] = []
+    if not present:
+        failures.append("the face element is absent")
+    if state.get("mood") != shot.mood:
+        failures.append(f"data-mood is {state.get('mood')!r}")
+    if state.get("theme") != shot.theme:
+        failures.append(f"data-theme is {state.get('theme')!r}")
+    if shot.motion == "reduce":
+        if not state.get("media"):
+            failures.append("the reduced-motion media query did not match")
+        page.wait_for_timeout(500)
+        after = page.evaluate(SHEET_STATE_JS, argument)
+        if after.get("signature") != state.get("signature"):
+            failures.append("the face moved in reduced motion")
+    elif state.get("media"):
+        failures.append("the normal-motion capture ran under reduced motion")
+    return {
+        "kind": "sheet-face",
+        "mood": shot.mood,
+        "motion": shot.motion,
+        "theme": shot.theme,
+        "passed": not failures,
+        "detail": "; ".join(failures) if failures else "face mood, theme and "
+                  + ("still pose" if shot.motion == "reduce" else "motion mode")
+                  + " hold",
+        "state": state,
+    }
+
+
+def _prepare_sheet_working(page) -> None:
+    """Choose the sheet's working mood and step it once, as the sheet offers."""
+    button = page.get_by_role("button", name="working", exact=True)
+    if button.count() == 0:
+        raise FaceWalkError("the review sheet has no working mood button")
+    button.first.click()
+    step = page.get_by_role("button", name=re.compile(r"^Step row"))
+    if step.count() > 0:
+        step.first.click()
+    page.wait_for_selector(
+        '.face-sheet-demo [data-face-slot="rail"] .face-box[data-mood="working"]',
+        timeout=10000)
+
+
+def _open_sheet_page(browser, motion: str, proxied: tuple[str, ...],
+                     run: RunState, sheet_url: str = SHEET_URL):
+    """Create one sheet context with the guard and deny rule before its goto."""
+    options = {
+        "viewport": {"width": DESKTOP_WIDTH, "height": VIEWPORT_HEIGHT},
+        "device_scale_factor": 1,
+    }
+    if motion == "reduce":
+        options["reduced_motion"] = "reduce"
+    context = browser.new_context(**options)
+    guard_started: list[dict] = []
+    held: list = []
+    audit._install_request_guard(context, guard_started, held, answered=False)
+    _install_sheet_deny(context, proxied)
+    page = context.new_page()
+    page.emulate_media(reduced_motion=("reduce" if motion == "reduce"
+                                      else "no-preference"))
+    page.goto(sheet_url, wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_selector(".face-sheet-grid .face-sheet-tile", timeout=60000)
+    page.wait_for_timeout(1000)
+    run.notes.append(f"sheet page ready ({motion}) at {sheet_url}")
+    return context, page, held
+
+
+def _run_sheet_phase(args, run: RunState, plan: list[Shot],
+                     playwright) -> None:
+    """Start the dev server, photograph the sheet, and stop it in finally.
+
+    Nothing from the sheet page may leave the dev server: the deny rule is
+    installed on every sheet context before its first navigation, and every
+    proxied backend path is aborted before the asset allowlist is consulted.
+    """
+    shots = [shot for shot in plan if shot.kind == "sheet"]
+    if not shots:
+        return
+    _ensure_sheet_port_free()
+    process = None
+    log = None
+    browser = None
+    pages: dict[str, tuple] = {}
+    held_all: list = []
+    try:
+        process, log, log_path = _start_vite(run.run_dir)
+        sheet_url = _wait_for_vite(process, log_path)
+        run.notes.append("dev server started")
+        browser = playwright.chromium.launch(headless=True)
+        if not run.browser_version:
+            run.browser_version = str(getattr(browser, "version", ""))
+        proxied = _proxied_paths()
+        for motion in MOTIONS:
+            if not any(shot.motion == motion for shot in shots):
+                continue
+            context, page, held = _open_sheet_page(
+                browser, motion, proxied, run, sheet_url)
+            pages[motion] = (context, page)
+            held_all.extend(held)
+        themes = list(dict.fromkeys(shot.theme for shot in shots))
+        for theme in themes:
+            for motion in MOTIONS:
+                if motion not in pages:
+                    continue
+                _context, page = pages[motion]
+                page.evaluate(
+                    "(theme) => document.documentElement.setAttribute("
+                    "'data-theme', theme)", theme)
+                page.wait_for_timeout(100)
+                group = [shot for shot in shots
+                         if shot.theme == theme and shot.motion == motion]
+                if any(shot.mood == "working" for shot in group):
+                    _prepare_sheet_working(page)
+                _capture_group(
+                    page, group,
+                    lambda shot, sheet=page: _check_sheet(sheet, shot, run),
+                    run)
+        for _context, _page in pages.values():
+            _context.close()
+        pages.clear()
+    finally:
+        _abort_held(held_all)
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001 - close everything that opened
+                pass
+        _stop_vite(process, log)
+
+
 def _boot_isolated_desk(condition: str, tmp_root: Path) -> dict:
     """Boot one isolated desk through the layout audit's boot function.
 
@@ -788,15 +1085,6 @@ def _manifest(run: RunState, args, meta: dict, surfaces: dict | None = None) -> 
         "metrics_line": _metric_line(counts),
         "verdict_line": _verdict_line(counts),
     }
-
-
-def _run_sheet_phase(args, run: RunState, plan: list[Shot],
-                     playwright) -> None:
-    """Start the dev server and photograph the review sheet; stage 2 fills this."""
-    shots = [shot for shot in plan if shot.kind == "sheet"]
-    if not shots:
-        return
-    run.notes.append("sheet capture phase is not implemented yet")
 
 
 def _run_real_phase(args, run: RunState, plan: list[Shot],

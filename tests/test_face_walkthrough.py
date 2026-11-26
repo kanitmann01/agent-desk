@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import sys
 import types
 from pathlib import Path
@@ -417,3 +418,230 @@ class _SwitchPage:
         self.shots.append(path)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_bytes(b"png")
+
+
+def test_the_proxied_paths_are_read_from_the_vite_config():
+    """The deny rule tracks every backendPath the dev server proxies."""
+    paths = face._proxied_paths()
+    assert "/api" in paths
+    assert "/auth" in paths
+    assert "/widgets" in paths
+    assert "/agents" in paths
+    config = (ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
+    block = config.split("const backendPaths = [", 1)[1].split("];", 1)[0]
+    for path in paths:
+        assert f"'{path}'" in block
+
+
+def test_the_sheet_deny_rule_aborts_every_proxied_and_foreign_request():
+    """Only the sheet's own assets fall through; every proxied path aborts."""
+    class Target:
+        def __init__(self):
+            self.handler = None
+
+        def route(self, _pattern, handler):
+            self.handler = handler
+
+    target = Target()
+    proxied = face._install_sheet_deny(target)
+
+    def resolve(method, url):
+        route = _FakeRoute(method, url)
+        target.handler(route)
+        return route.calls
+
+    origin = f"http://{face.SHEET_HOST}:{face.SHEET_PORT}"
+    for path in proxied:
+        assert resolve("GET", origin + path) == ["abort"], path
+        assert resolve("GET", origin + "/static/spa" + path) == ["abort"], path
+    assert resolve("GET", origin + "/api/marketplace/retest") == ["abort"]
+    assert resolve("POST", origin + "/face-sheet.html") == ["abort"]
+    assert resolve("GET", origin + "/marketplace") == ["abort"]
+    assert resolve("GET", origin + "/") == ["abort"]
+    assert resolve("GET", "https://example.com/src/evil.js") == ["abort"]
+    for path in ("/face-sheet.html", "/src/face/sheet.tsx",
+                 "/node_modules/.vite/deps/react.js?v=1", "/@vite/client",
+                 "/static/spa/@vite/client", "/@react-refresh",
+                 "/src/index.css", "/static/spa/fonts/inter.woff2",
+                 "/static/spa/favicon.svg", "/favicon.ico"):
+        assert resolve("GET", origin + path) == ["fallback"], path
+
+
+def _sheet_state(mood, theme, media=False, signature=None):
+    """One SHEET_STATE_JS answer with a stable signature by default."""
+    sig = signature or {
+        "box": {"transform": "", "borderRadius": "", "shape": ""},
+        "left": {"transform": "translate(0px, 0px)", "borderRadius": "3px",
+                 "shape": "capsule"},
+        "right": {"transform": "translate(0px, 0px)", "borderRadius": "3px",
+                  "shape": "capsule"},
+    }
+    return {"present": True, "mood": mood, "size": "md", "theme": theme,
+            "title": "Nexuus Bot", "media": media, "signature": sig}
+
+
+class _SheetCheckPage:
+    """A fake page that replays sheet states and records the 500 ms wait."""
+
+    def __init__(self, states):
+        self.states = list(states)
+        self.waits = []
+        self.arguments = []
+
+    def evaluate(self, script, argument):
+        assert script == face.SHEET_STATE_JS
+        self.arguments.append(argument)
+        return self.states.pop(0) if self.states else {}
+
+    def wait_for_timeout(self, ms):
+        self.waits.append(ms)
+
+
+def test_the_sheet_check_passes_a_normal_and_a_still_reduced_face(tmp_path):
+    """Normal motion checks mood and theme; reduced motion also checks stillness."""
+    run = face.RunState([], tmp_path)
+    normal_shot = face.Shot(
+        id="n", surface="review-sheet", kind="sheet", theme="unkey",
+        mood="thinking", motion="normal", condition="", width=1280,
+        state="tile", variant="tile", file="photos/n.png")
+    page = _SheetCheckPage([_sheet_state("thinking", "unkey")])
+    result = face._check_sheet(page, normal_shot, run)
+    assert result["passed"] is True
+    assert page.waits == []
+    assert run.surfaces["review-sheet"]["face"] is True
+
+    reduced_shot = face.Shot(
+        id="r", surface="review-sheet", kind="sheet", theme="coforge",
+        mood="working", motion="reduce", condition="", width=1280,
+        state="tile", variant="tile", file="photos/r.png")
+    still = _sheet_state("working", "coforge", media=True)
+    page = _SheetCheckPage([still, json.loads(json.dumps(still))])
+    result = face._check_sheet(page, reduced_shot, run)
+    assert result["passed"] is True
+    assert page.waits == [500]
+    assert page.arguments[0] == {"demo": True, "index": 4}
+
+
+def test_the_sheet_check_fails_a_moved_reduced_face_and_a_wrong_mood(tmp_path):
+    """A moving reduced pose and a wrong data-mood are failed checks."""
+    run = face.RunState([], tmp_path)
+    shot = face.Shot(
+        id="r", surface="review-sheet", kind="sheet", theme="unkey",
+        mood="thinking", motion="reduce", condition="", width=1280,
+        state="tile", variant="tile", file="photos/r.png")
+    first = _sheet_state("thinking", "unkey", media=True)
+    moved = json.loads(json.dumps(first))
+    moved["signature"]["left"]["transform"] = "translate(2px, 0px)"
+    page = _SheetCheckPage([first, moved])
+    result = face._check_sheet(page, shot, run)
+    assert result["passed"] is False
+    assert "moved" in result["detail"]
+
+    page = _SheetCheckPage([_sheet_state("idle", "unkey")])
+    result = face._check_sheet(page, shot, run)
+    assert result["passed"] is False
+    assert "data-mood" in result["detail"]
+
+    page = _SheetCheckPage([_sheet_state("thinking", "momentuum")])
+    result = face._check_sheet(page, shot, run)
+    assert result["passed"] is False
+    assert "data-theme" in result["detail"]
+
+
+def test_the_sheet_page_installs_the_guard_and_deny_rule_before_navigation():
+    """Both routes exist before the sheet page navigates, in both motions."""
+    events = []
+    options = []
+
+    class Page:
+        def emulate_media(self, **kwargs):
+            events.append(("emulate", kwargs))
+
+        def goto(self, _url, **_kwargs):
+            events.append("goto")
+
+        def wait_for_selector(self, *_args, **_kwargs):
+            events.append("selector")
+
+        def wait_for_timeout(self, _ms):
+            return None
+
+    class Context:
+        def route(self, _pattern, _handler):
+            events.append("route")
+
+        def new_page(self):
+            events.append("new_page")
+            return Page()
+
+    class Browser:
+        def new_context(self, **kwargs):
+            options.append(kwargs)
+            return Context()
+
+    run = face.RunState([], Path("unused"))
+    face._open_sheet_page(Browser(), "reduce", ("/api",), run)
+    assert events[:5] == ["route", "route", "new_page",
+                          ("emulate", {"reduced_motion": "reduce"}), "goto"]
+    assert options[0]["reduced_motion"] == "reduce"
+    events.clear()
+    options.clear()
+    face._open_sheet_page(Browser(), "normal", ("/api",), run)
+    assert options[0].get("reduced_motion") is None
+    assert ("emulate", {"reduced_motion": "no-preference"}) in events
+
+
+def test_the_sheet_tile_locator_uses_the_active_preset_grid():
+    """A mood tile is the active preset's grid tile at the mood's index."""
+    log = []
+
+    class Locator:
+        def nth(self, index):
+            log.append(("nth", index))
+            return self
+
+        def locator(self, selector):
+            log.append(("locator", selector))
+            return self
+
+        @property
+        def first(self):
+            log.append("first")
+            return self
+
+    class Page:
+        def locator(self, selector):
+            log.append(("locator", selector))
+            return Locator()
+
+    face._sheet_tile(Page(), "thinking")
+    assert log == [("locator", ".face-sheet-grid"), ("nth", 0),
+                   ("locator", ".face-sheet-tile"), ("nth", 2),
+                   ("locator", ".face-box")]
+    log.clear()
+    face._sheet_tile(Page(), "working")
+    assert log == [("locator",
+                    '.face-sheet-demo [data-face-slot="rail"] .face-box'),
+                   "first"]
+
+
+def test_sheet_only_execution_never_boots_a_desk(monkeypatch, tmp_path):
+    """The sheet-only mode starts the sheet phase and no desk boot."""
+    plan = face.build_plan(_args(sheet_only=True))
+    run = face.RunState(plan, tmp_path)
+    calls = []
+
+    class Playwright:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(face.audit, "sync_playwright", lambda: Playwright())
+    monkeypatch.setattr(face, "_run_sheet_phase",
+                        lambda *_args: calls.append("sheet"))
+    monkeypatch.setattr(face, "_boot_isolated_desk",
+                        lambda *_args: calls.append("boot"))
+    assert face._execute(_args(sheet_only=True), run) is False
+    assert calls == ["sheet"]
