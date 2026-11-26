@@ -2072,6 +2072,24 @@ def _pin_store_clocks(server) -> None:
                 pass
 
 
+def _inert_gate_runners() -> dict:
+    """The local test gate's UNKNOWN runners, with no production adapters."""
+    from agentdesk.capabilities import GATES
+    from agentdesk.probe.core import GateResult, UNKNOWN
+
+    def runner_for(key: str, number: int, title: str):
+        """Return an honest fixture result without probing the machine."""
+        def run() -> GateResult:
+            return GateResult(
+                key=key, number=number, title=title, status=UNKNOWN,
+                evidence=("injected audit runner: no probe ran",),
+                note="the layout audit's placeholder runner",
+            )
+        return run
+
+    return {key: runner_for(key, number, title) for key, number, title in GATES}
+
+
 def _boot_desk(condition: str, tmp_root: Path) -> dict:
     """Boot the real app over a fresh data folder and a file-backed keychain.
 
@@ -2095,7 +2113,8 @@ def _boot_desk(condition: str, tmp_root: Path) -> dict:
     try:
         server = server_app.create_server(
             port=0, announce_port=_free_udp_port(),
-            keychain=KeychainSecrets(backend=FileKeychain(keychain)))
+            keychain=KeychainSecrets(backend=FileKeychain(keychain)),
+            gate_runners=_inert_gate_runners())
         if getattr(server, "settings", None) is not None:
             server.settings.set("agent_loop_minutes", 0)
         _pin_store_clocks(server)
@@ -2346,12 +2365,32 @@ def _seed(context, base: str, condition: str, tmp_root: Path) -> list[str]:
     return notes
 
 
+def _busy_gate_results() -> list:
+    """Synthetic capability cards for layout coverage, never machine verdicts."""
+    from agentdesk.capabilities import GATES
+    from agentdesk.probe.core import FAIL, PASS, GateResult
+
+    fixtures = {
+        "exec-user-space": (PASS, "Synthetic fixture: a user-space command completed."),
+        "uv-tls-bootstrap": (FAIL, "Synthetic fixture: the package bootstrap was refused."),
+        "power-automate-flows": (PASS, "Synthetic fixture: a cloud flow endpoint answered."),
+        "onedrive-sync": (FAIL, "Synthetic fixture: no sync root was selected."),
+        "edr-identity": (PASS, "Synthetic fixture: an endpoint security identity answered."),
+        "embeddings": (FAIL, "Synthetic fixture: the model endpoint did not answer."),
+    }
+    return [GateResult(
+        key=key, number=number, title=title, status=fixtures[key][0],
+        evidence=(fixtures[key][1], "Audit fixture only: no capability probe ran."),
+        note="Synthetic layout fixture, not a verdict about this machine.",
+    ) for key, number, title in GATES]
+
+
 def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None,
                notes: list[str]) -> list[str]:
     """Seed the populated states on top of the full condition.
 
     A saved connection fills the Settings table, the assistant turn fills
-    the thread, one agent run fills the history, the gates fill the
+    the thread, one agent run fills the history, synthetic fixtures fill the
     capability cache, three long facts fill the memory pages, and mail is
     switched on over the sample .eml folder. The file-backed fake keychain
     holds the connection key; the real keychain is never touched. A failed
@@ -2436,23 +2475,17 @@ def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None
         notes.append(f"busy: agent run failed: {type(exc).__name__}: {exc}")
 
     try:
-        from agentdesk.capabilities import GATES
-
-        cached = 0
-        for key, _number, _title in GATES:
-            try:
-                response = context.request.post(
-                    base + f"/capabilities/{key}/retest",
-                    headers={"Content-Type": "application/json"}, timeout=120000)
-                if response.status in (200, 201):
-                    cached += 1
-                else:
-                    notes.append(f"busy: gate {key} answered {response.status}")
-            except Exception as exc:  # noqa: BLE001 - one gate cannot stop the rest
-                notes.append(f"busy: gate {key} failed: {type(exc).__name__}: {exc}")
-        notes.append(f"busy: {cached} capability gate(s) cached")
+        cache = getattr(server, "capabilities_cache", None)
+        if cache is None:
+            notes.append("busy: capability cache unavailable")
+        else:
+            results = _busy_gate_results()
+            for result in results:
+                cache.save_result(result)
+            notes.append(f"busy: {len(results)} synthetic capability fixture(s) cached; "
+                         "no probe ran")
     except Exception as exc:  # noqa: BLE001 - report the page state that follows
-        notes.append(f"busy: capability gates failed: {type(exc).__name__}: {exc}")
+        notes.append(f"busy: capability fixtures failed: {type(exc).__name__}: {exc}")
 
     facts = [
         ("The northern region renewal for Halvorsen Freight is expected to close before "

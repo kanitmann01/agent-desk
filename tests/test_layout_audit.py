@@ -12,7 +12,9 @@ import argparse
 import inspect
 import json
 import sys
+import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -412,3 +414,302 @@ def test_relative_records_drop_the_run_folder_prefix(tmp_path):
     path = tmp_path / "crops" / "a.png"
     records = audit._relative_records([{"crop": str(path)}], tmp_path)
     assert records[0]["crop"] == "crops/a.png"
+
+
+class _GateResult:
+    """The small immutable result shape the instrument's fixtures need."""
+
+    def __init__(self, key, number, title, status, evidence=(), note=""):
+        self.key = key
+        self.number = number
+        self.title = title
+        self.status = status
+        self.evidence = tuple(evidence)
+        self.note = note
+
+
+class _WalkRecorder:
+    """A stand-in for the server factory and every request a walk makes."""
+
+    def __init__(self):
+        self.create_calls = []
+        self.requests = []
+        self.cached = []
+        self.guard_events = []
+        self.base = "http://127.0.0.1:43123"
+
+    def create_server(self, **kwargs):
+        """Record the factory call and return a server that cannot listen."""
+        self.create_calls.append(kwargs)
+        recorder = self
+
+        class Server:
+            port = 43123
+            settings = None
+            sessions = SimpleNamespace(bootstrap_token=lambda: "test-token")
+            excel = calendar = mail = plugins = None
+            gate_runners = kwargs.get("gate_runners")
+            capabilities_cache = SimpleNamespace(
+                save_result=lambda result: recorder.cached.append(result) or result)
+
+            def serve_forever(self):
+                return None
+
+            def shutdown(self):
+                return None
+
+            def server_close(self):
+                return None
+
+        return Server()
+
+    def request(self):
+        """The context request client, recording but never sending."""
+        recorder = self
+
+        class Request:
+            def post(self, url, **_kwargs):
+                recorder.requests.append(("POST", url))
+                return SimpleNamespace(status=200, text=lambda: "")
+
+        return Request()
+
+
+def _install_fake_desk(monkeypatch, recorder):
+    """Replace every agentdesk import used by a boot with in-memory stand-ins."""
+    agentdesk = types.ModuleType("agentdesk")
+    agentdesk.__path__ = []
+    server_package = types.ModuleType("agentdesk.server")
+    server_package.__path__ = []
+    server_app = types.ModuleType("agentdesk.server.app")
+    server_app.create_server = recorder.create_server
+    server_package.app = server_app
+    keys_package = types.ModuleType("agentdesk.keys")
+    keys_package.__path__ = []
+    secrets = types.ModuleType("agentdesk.keys.secrets")
+
+    class KeychainSecrets:
+        def __init__(self, backend):
+            self.backend = backend
+
+    secrets.KeychainSecrets = KeychainSecrets
+    probe_package = types.ModuleType("agentdesk.probe")
+    probe_package.__path__ = []
+    core = types.ModuleType("agentdesk.probe.core")
+    core.GateResult = _GateResult
+    core.UNKNOWN = "UNKNOWN"
+    core.PASS = "PASS"
+    core.FAIL = "FAIL"
+    capabilities = types.ModuleType("agentdesk.capabilities")
+    capabilities.GATES = (
+        ("exec-user-space", 1, "User-space execution"),
+        ("uv-tls-bootstrap", 2, "uv bootstrap under corporate TLS"),
+        ("power-automate-flows", 3, "Power Automate personal cloud flows"),
+        ("onedrive-sync", 4, "OneDrive sync root"),
+        ("edr-identity", 5, "EDR / AV identity"),
+        ("embeddings", 6, "Endpoint embeddings"),
+    )
+    for module in (agentdesk, server_package, server_app, keys_package, secrets,
+                   probe_package, core, capabilities):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    def pin(data_dir, _condition, _mock_port):
+        monkeypatch.setenv("AGENTDESK_DATA", str(data_dir))
+
+    monkeypatch.setattr(audit, "_pin_environment", pin)
+    monkeypatch.setattr(audit, "_start_mock", lambda _delay=0: (
+        SimpleNamespace(shutdown=lambda: None, server_close=lambda: None), 4321))
+    return Path(recorder.base)
+
+
+def _worker_args(condition, run_dir, pending=False):
+    """The complete child namespace without a browser or a real desk."""
+    values = vars(_args(
+        conditions=condition, widths="1024", themes="unkey", no_stress=True,
+        pending_audit=pending))
+    values.update(jobs=1, out=str(run_dir), child=True, only_condition=condition)
+    return argparse.Namespace(**values)
+
+
+def _drive_layout_worker(monkeypatch, tmp_path, recorder, pending=False):
+    """Drive the real condition worker against a recorded, inert server."""
+    import feedback_walkthrough as walk
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    desk_root = tmp_path / "desk"
+    desk_root.mkdir()
+    monkeypatch.setattr(audit.tempfile, "mkdtemp", lambda **_kwargs: str(desk_root))
+    monkeypatch.setattr(audit, "_seed", lambda *_args: [])
+
+    class Page:
+        url = recorder.base + "/"
+
+        def __init__(self):
+            self.clock = SimpleNamespace(install=lambda **_kwargs: None,
+                                         set_fixed_time=lambda *_args: None)
+
+        def on(self, *_args):
+            return None
+
+        def goto(self, url, **_kwargs):
+            self.url = recorder.base + "/"
+            return SimpleNamespace(status=200)
+
+        def evaluate(self, *_args, **_kwargs):
+            return None
+
+        def wait_for_timeout(self, *_args):
+            return None
+
+        def close(self):
+            return None
+
+    class Context:
+        def __init__(self):
+            self.request = recorder.request()
+
+        def new_page(self):
+            return Page()
+
+        def add_init_script(self, *_args, **_kwargs):
+            recorder.guard_events.append("init-script")
+            return None
+
+        def route(self, _pattern, _handler):
+            recorder.guard_events.append("route")
+            return None
+
+        def close(self):
+            return None
+
+    class Browser:
+        def new_context(self, **_kwargs):
+            return Context()
+
+        def close(self):
+            return None
+
+    class Playwright:
+        chromium = SimpleNamespace(launch=lambda **_kwargs: Browser())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(audit, "sync_playwright", Playwright)
+
+    def measure(_page, combo, _runtime, _run_dir, _calendar, _crops, _base,
+                _record_dir=None):
+        return {"entry": {
+            "condition": combo["condition"], "width": combo["width"],
+            "theme": combo["theme"], "route": combo["view"]["path"],
+            "state": combo["view"].get("state", ""), "stress": combo["stress"],
+            "status": "measured", "note": "", "http": 200,
+            "final_url": recorder.base + "/", "ms": 1,
+        }, "findings": []}
+
+    monkeypatch.setattr(audit, "_measure_combo", measure)
+    monkeypatch.setattr(audit, "_run_pending_audit", lambda *_args: [{
+        "verdict": "meets", "page_index": 1, "page_total": 1,
+    }])
+    args = _worker_args("busy", run_dir, pending)
+    assert audit._condition_worker(args, "busy", run_dir) == 0
+    assert walk.audit is audit
+
+
+def _drive_feedback_worker(monkeypatch, tmp_path, recorder):
+    """Drive the feedback boot and seed with no action and no real browser."""
+    import feedback_walkthrough as walk
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    run_dir = tmp_path / "feedback"
+    run_dir.mkdir()
+    desk_root = tmp_path / "feedback-desk"
+    desk_root.mkdir()
+    monkeypatch.setattr(walk.tempfile, "mkdtemp", lambda **_kwargs: str(desk_root))
+    monkeypatch.setattr(audit, "_seed", lambda *_args: [])
+
+    class Page:
+        url = recorder.base + "/"
+        clock = SimpleNamespace(install=lambda **_kwargs: None,
+                                set_fixed_time=lambda *_args: None)
+
+        def goto(self, _url, **_kwargs):
+            return None
+
+    class Context:
+        def __init__(self):
+            self.request = recorder.request()
+
+        def new_page(self):
+            return Page()
+
+        def route(self, _pattern, _handler):
+            recorder.guard_events.append("route")
+            return None
+
+        def close(self):
+            return None
+
+    class Browser:
+        def new_context(self, **_kwargs):
+            return Context()
+
+        def close(self):
+            return None
+
+    class Playwright:
+        chromium = SimpleNamespace(launch=lambda **_kwargs: Browser())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    playwright_package = types.ModuleType("playwright")
+    playwright_package.__path__ = []
+    sync_api = types.ModuleType("playwright.sync_api")
+    sync_api.sync_playwright = Playwright
+    monkeypatch.setitem(sys.modules, "playwright", playwright_package)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+    monkeypatch.setattr(walk, "ACTIONS", ())
+    args = SimpleNamespace(mock_delay_ms=0, only="")
+    walk._walk(args, run_dir)
+
+
+def test_every_walk_entry_point_injects_inert_gate_runners(monkeypatch, tmp_path):
+    """Matrix, pending and feedback boots all replace production gate runners."""
+    for entry in ("matrix", "pending", "feedback"):
+        recorder = _WalkRecorder()
+        _install_fake_desk(monkeypatch, recorder)
+        if entry == "feedback":
+            _drive_feedback_worker(monkeypatch, tmp_path / entry, recorder)
+        else:
+            _drive_layout_worker(monkeypatch, tmp_path / entry, recorder,
+                                 pending=entry == "pending")
+        assert len(recorder.create_calls) == 1
+        runners = recorder.create_calls[0].get("gate_runners")
+        assert runners is not None, f"{entry} boot omitted gate_runners"
+        assert set(runners) == {key for key, _number, _title in
+                                sys.modules["agentdesk.capabilities"].GATES}
+        assert {runner().status for runner in runners.values()} == {"UNKNOWN"}
+
+
+def test_busy_seeding_never_sends_a_capability_request(monkeypatch, tmp_path):
+    """Busy pages come from cache fixtures, never real capability retests."""
+    recorder = _WalkRecorder()
+    _install_fake_desk(monkeypatch, recorder)
+    server = recorder.create_server()
+    context = SimpleNamespace(request=recorder.request())
+    notes = []
+    audit._seed_busy(context, recorder.base, tmp_path, server, 4321, notes)
+    capability_requests = [url for method, url in recorder.requests
+                           if method != "GET" and "/capabilities/" in url]
+    assert capability_requests == []
+    assert {result.key for result in recorder.cached} == {
+        key for key, _number, _title in sys.modules["agentdesk.capabilities"].GATES}
