@@ -6,7 +6,7 @@ These files support the root `README.md`.
 - `memory.png`: memory page or graph view.
 - `marketplace.png`: marketplace Discover or plugin Detail view.
 - `architecture.svg`: original Nexuus Bot architecture diagram.
-- `badges/`: local static badges for Python, React, loopback networking, and the proprietary license.
+- `badges/`: Shields.io SVGs for Python, React, loopback networking, and the proprietary license. The files are stored locally to avoid third-party requests.
 
 ## Source
 
