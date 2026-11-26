@@ -392,7 +392,7 @@ class _CropLocator:
     def count(self):
         return 1
 
-    def scroll_into_view_if_needed(self, **_kwargs):
+    def evaluate(self, _script):
         self.page.scrolled.append(self.page.box)
 
     def bounding_box(self):
