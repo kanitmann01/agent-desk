@@ -1,22 +1,15 @@
-"""The brand rules, pinned (spec 017 workstreams 8a and the 017-11 rider).
+"""The approved name and the banned em dash, pinned.
 
-Two greps, pinned. First: no user-visible surface carries the retired
-working name; the walk covers the shipped string sources, the build
-scripts whose bundle metadata names the exe a person installs, the ops
-guides the IT reviewer reads, and the demo script plus the frontend
-manifest and readme. Second:
-no live file carries the em dash, the mark the writing rules ban; that
-walk adds the test tree and docs/docstrings.md. The dated archives
-(docs/evidence, docs/tickets, docs/plans, docs/ideas, docs/superpowers,
-docs/plugins and the design records) are records of what was produced
-then and stay untouched. Case-insensitive on the name on purpose: a
-mixed-case occurrence is still the retired name on screen.
+Nexuus Bot is the product name and the agent-face name. The README title
+and the one canonical client constant carry the approved name. No live
+file carries the em dash. The dated archives under docs/evidence,
+docs/tickets, docs/plans, docs/ideas, docs/superpowers, docs/plugins and
+the design records stay untouched.
 """
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RETIRED_NAME = "nexuus"
 EM_DASH = chr(0x2014)
 
 NAME_ROOTS = (
@@ -54,21 +47,18 @@ def _iter_files(roots, files):
     yield from files
 
 
-def test_every_surface_says_agent_desk_not_the_retired_name():
-    hits = []
-    for path in _iter_files(NAME_ROOTS, SCAN_FILES):
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            hits.append(f"{path}: unreadable ({exc})")
-            continue
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            if RETIRED_NAME in line.lower():
-                hits.append(f"{path.relative_to(ROOT)}:{lineno}")
-    assert hits == [], (
-        "the retired working name must not appear on any surface; "
-        "found: " + ", ".join(hits[:10])
+def test_readme_uses_the_approved_product_name():
+    first_line = (ROOT / "README.md").read_text(
+        encoding="utf-8", errors="replace"
+    ).splitlines()[0]
+    assert first_line == "# Nexuus Bot"
+
+
+def test_agent_face_keeps_the_approved_name():
+    source = (ROOT / "frontend" / "src" / "face" / "name.ts").read_text(
+        encoding="utf-8", errors="replace"
     )
+    assert "export const AGENT_NAME = 'Nexuus Bot';" in source
 
 
 def test_no_live_file_carries_the_banned_em_dash():

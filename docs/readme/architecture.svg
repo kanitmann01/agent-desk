@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Nexuus Bot architecture</title>
+  <desc id="desc">A local-first diagram showing local sources, the loopback web application, SQLite, the OS keychain, user-selected external services, and the plugin control plane.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8E8E93"/>
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#E1F56A"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="760" rx="0" fill="#060609"/>
+
+  <text x="54" y="62" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="34" font-weight="600">Nexuus Bot architecture</text>
+  <text x="54" y="96" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="18">One local work desk. User-selected services. Visible control.</text>
+
+  <text x="54" y="154" fill="#E1F56A" font-family="Geist, Segoe UI, sans-serif" font-size="13" font-weight="600" letter-spacing="1">LOCAL SOURCES</text>
+  <text x="334" y="154" fill="#E1F56A" font-family="Geist, Segoe UI, sans-serif" font-size="13" font-weight="600" letter-spacing="1">LOOPBACK APPLICATION</text>
+  <text x="926" y="154" fill="#E1F56A" font-family="Geist, Segoe UI, sans-serif" font-size="13" font-weight="600" letter-spacing="1">USER-CHOSEN SERVICES</text>
+
+  <rect x="54" y="182" width="220" height="82" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+  <text x="74" y="216" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Workbook</text>
+  <text x="74" y="243" fill="#8E8E93" font-family="Geist Mono, Consolas, monospace" font-size="14">.xlsx shadow copy</text>
+
+  <rect x="54" y="302" width="220" height="82" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+  <text x="74" y="336" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Calendar</text>
+  <text x="74" y="363" fill="#8E8E93" font-family="Geist Mono, Consolas, monospace" font-size="14">calendar_sync.json</text>
+
+  <rect x="54" y="422" width="220" height="82" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+  <text x="74" y="456" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Mail headers</text>
+  <text x="74" y="483" fill="#8E8E93" font-family="Geist Mono, Consolas, monospace" font-size="14">.eml metadata only</text>
+
+  <rect x="334" y="182" width="532" height="342" rx="8" fill="#101014" stroke="#3A3B40"/>
+  <rect x="358" y="208" width="220" height="116" rx="6" fill="#16161A" stroke="#26272A"/>
+  <text x="378" y="241" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="20" font-weight="500">Web interface</text>
+  <text x="378" y="269" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">React SPA</text>
+  <text x="378" y="292" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Server-rendered pages</text>
+
+  <rect x="602" y="208" width="240" height="116" rx="6" fill="#16161A" stroke="#26272A"/>
+  <text x="622" y="241" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="20" font-weight="500">Python server</text>
+  <text x="622" y="269" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Session and request guard</text>
+  <text x="622" y="292" fill="#E1F56A" font-family="Geist Mono, Consolas, monospace" font-size="14">127.0.0.1 only</text>
+
+  <rect x="358" y="366" width="220" height="116" rx="6" fill="#16161A" stroke="#26272A"/>
+  <text x="378" y="399" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="20" font-weight="500">SQLite</text>
+  <text x="378" y="427" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Sources and memory graph</text>
+  <text x="378" y="450" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Ledger and plugin state</text>
+
+  <rect x="602" y="366" width="240" height="116" rx="6" fill="#16161A" stroke="#26272A"/>
+  <text x="622" y="399" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="20" font-weight="500">OS keychain</text>
+  <text x="622" y="427" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Model connection secrets</text>
+  <text x="622" y="450" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Masked hints in SQLite</text>
+
+  <path d="M 578 266 L 602 266" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 602 286 L 578 286" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 468 324 L 468 366" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 468 366 L 468 324" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 722 324 L 722 366" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 722 366 L 722 324" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <path d="M 274 223 L 334 223 L 358 223" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 274 343 L 334 343 L 358 343" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 274 463 L 334 463 L 358 463" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="926" y="182" width="220" height="82" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+  <text x="946" y="216" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Model endpoint</text>
+  <text x="946" y="243" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Prompts and context</text>
+
+  <rect x="926" y="302" width="220" height="82" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+  <text x="946" y="336" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Research provider</text>
+  <text x="946" y="363" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Optional web research</text>
+
+  <rect x="926" y="422" width="220" height="82" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+  <text x="946" y="456" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Paired desk</text>
+  <text x="946" y="483" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Explicit plugin bundles</text>
+
+  <path d="M 842 223 L 926 223" fill="none" stroke="#E1F56A" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M 926 243 L 842 243" fill="none" stroke="#E1F56A" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M 842 343 L 926 343" fill="none" stroke="#E1F56A" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M 926 363 L 842 363" fill="none" stroke="#E1F56A" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M 842 463 L 926 463" fill="none" stroke="#E1F56A" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M 926 483 L 842 483" fill="none" stroke="#E1F56A" stroke-width="2" marker-end="url(#arrow-accent)"/>
+
+  <text x="54" y="562" fill="#E1F56A" font-family="Geist, Segoe UI, sans-serif" font-size="13" font-weight="600" letter-spacing="1">CONTROL PLANE</text>
+  <rect x="54" y="582" width="1092" height="92" rx="8" fill="#0C0C0F" stroke="#26272A"/>
+
+  <text x="78" y="618" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Class D plugin runtime</text>
+  <text x="78" y="645" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Declarative sources and UI schemas</text>
+
+  <line x1="400" y1="600" x2="400" y2="656" stroke="#26272A" stroke-width="1"/>
+  <text x="424" y="618" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Audit, consent and undo</text>
+  <text x="424" y="645" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Ask-first destructive actions</text>
+
+  <line x1="770" y1="600" x2="770" y2="656" stroke="#26272A" stroke-width="1"/>
+  <text x="794" y="618" fill="#FBFBFB" font-family="Geist, Segoe UI, sans-serif" font-size="19" font-weight="500">Policy and release control</text>
+  <text x="794" y="645" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="14">Digest pins, rollback and quarantine</text>
+
+  <path d="M 600 524 L 600 582" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 600 582 L 600 524" fill="none" stroke="#8E8E93" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <text x="54" y="716" fill="#8E8E93" font-family="Geist, Segoe UI, sans-serif" font-size="15">Raw workbook and mail files stay local. Outbound paths are user-selected.</text>
+</svg>
