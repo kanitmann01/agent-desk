@@ -610,6 +610,70 @@ def test_pending_page_with_no_controls_records_an_error():
     assert "no controls" in records[0]["evidence"]["reason"]
 
 
+def _planned_view(state):
+    """The one planned view with this state."""
+    return next(view for view in audit.build_views() if view["state"] == state)
+
+
+def test_pending_error_page_with_no_controls_by_design_is_a_skip():
+    """The planned error page has no controls on purpose, so it cannot fail the run."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": _planned_view("error-page")}
+    records = audit._run_pending_audit(
+        _PendingContext([_PendingPage()]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "skipped"
+    assert "by design" in records[0]["evidence"]["reason"]
+    assert audit._pending_coverage_failures([combo], records) == []
+    assert audit._pending_fail(records, "none") is False
+
+
+def test_pending_error_page_skip_counts_as_seen_in_the_merge(tmp_path):
+    """A by-design skip is a seen page: no missing record and no exit 3."""
+    args = _args(conditions="fresh", widths="1024", routes="error-page",
+                 pending_audit=True)
+    planned = audit._planned_combos(args, ["fresh"])
+    assert {combo["view"]["state"] for combo in planned} == {"error-page"}
+    _seed_run_folder(tmp_path, _matrix_for(planned))
+    records = [{
+        "condition": "fresh", "width": 1024, "theme": combo["theme"],
+        "route": "/auth/not-a-real-token", "state": "error-page",
+        "control": "(page)", "page_index": index, "page_total": len(planned),
+        "verdict": "skipped",
+        "evidence": {"reason": "page has no controls by design"},
+    } for index, combo in enumerate(planned, start=1)]
+    (tmp_path / "pending.fresh.json").write_text(
+        json.dumps(records), encoding="utf-8")
+    assert audit._merge_outputs(args, tmp_path, ["fresh"], 0.1, []) == 0
+
+
+def test_pending_page_that_should_have_controls_still_fails():
+    """A planned page whose controls vanished stays an error that fails the run."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": _planned_view("inbox")}
+    records = audit._run_pending_audit(
+        _PendingContext([_PendingPage()]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "error"
+    assert "no controls" in records[0]["evidence"]["reason"]
+    assert audit._pending_coverage_failures([combo], records)
+    assert audit._pending_fail(records, "none") is True
+
+
+def test_pending_view_without_a_by_design_mark_is_an_error():
+    """No mark means no exemption, even when the view expects an HTTP error."""
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/plain", "state": "plain", "expected_error": True}}
+    records = audit._run_pending_audit(
+        _PendingContext([_PendingPage()]), "http://127.0.0.1:43123",
+        [combo], Path("unused"), "fresh")
+    assert len(records) == 1
+    assert records[0]["verdict"] == "error"
+    assert "no controls" in records[0]["evidence"]["reason"]
+
+
 def test_pending_navigation_failure_records_an_error():
     """Enumeration failures leave a named coverage record."""
     combo = {"condition": "fresh", "width": 1024, "theme": "unkey",

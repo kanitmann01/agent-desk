@@ -1838,7 +1838,7 @@ def build_views() -> list[dict]:
         {"path": "/what-this-touches", "kind": "server", "state": "what-this-touches"},
         {"path": "/wizard", "kind": "server", "state": "wizard"},
         {"path": "/auth/not-a-real-token", "kind": "server", "state": "error-page",
-         "expected_error": True},
+         "expected_error": True, "no_controls_by_design": True},
     ])
     return views
 
@@ -3201,6 +3201,23 @@ def _pending_page_record(combo: dict, page_index: int, page_total: int,
     }
 
 
+def _pending_zero_control_record(combo: dict, page_index: int,
+                                 page_total: int) -> dict:
+    """The record for a page that yielded no controls.
+
+    A view marked ``no_controls_by_design`` is a seen page with a skip
+    verdict: its absence of controls is the page's design, not a coverage
+    failure. Every other zero-control page is an error that fails the run.
+    """
+    if combo["view"].get("no_controls_by_design"):
+        return _pending_page_record(
+            combo, page_index, page_total, "skipped",
+            "page has no controls by design")
+    return _pending_page_record(
+        combo, page_index, page_total, "error",
+        "page yielded no controls to click")
+
+
 def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                        condition: str) -> list[dict]:
     """Click every visible control on every selected page in a fresh page.
@@ -3245,19 +3262,19 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     page.wait_for_timeout(250)
                     controls = _pending_controls(page)
                     if not controls:
-                        reason = "page yielded no controls to click"
-                        records.append(_pending_page_record(
-                            combo, page_index, page_total, "error", reason))
-                        print(f"[{condition}] pending {view.get('state')}: {reason}",
-                              flush=True)
+                        record = _pending_zero_control_record(
+                            combo, page_index, page_total)
+                        records.append(record)
+                        print(f"[{condition}] pending {view.get('state')}: "
+                              f"{record['evidence']['reason']}", flush=True)
             else:
                 controls = _pending_controls(page)
                 if not controls:
-                    reason = "page yielded no controls to click"
-                    records.append(_pending_page_record(
-                        combo, page_index, page_total, "error", reason))
-                    print(f"[{condition}] pending {view.get('state')}: {reason}",
-                          flush=True)
+                    record = _pending_zero_control_record(
+                        combo, page_index, page_total)
+                    records.append(record)
+                    print(f"[{condition}] pending {view.get('state')}: "
+                          f"{record['evidence']['reason']}", flush=True)
         except Exception as exc:  # noqa: BLE001 - a failed page stays in coverage
             reason = f"{type(exc).__name__}: {exc}"[:300]
             print(f"[{condition}] pending {view.get('state')}: {reason}", flush=True)
