@@ -413,6 +413,15 @@ class _CropPage:
         Path(path).write_bytes(b"png")
 
 
+def test_the_finished_meta_fills_the_closing_time():
+    """The manifest's closing timestamp and total elapsed seconds are filled."""
+    meta = {"finished_at": "", "elapsed_s": 0.0}
+    finished = face._finish_meta(meta, face.time.monotonic())
+    assert finished["finished_at"]
+    assert finished["finished_at"].endswith("+00:00")
+    assert finished["elapsed_s"] >= 0.0
+
+
 def test_a_sheet_mood_crop_uses_the_faces_bounding_box(tmp_path):
     """An animating face still yields its crop, taken from the bounding box."""
     shot = face.Shot(

@@ -794,7 +794,7 @@ def _capture_group(page, shots: list[Shot], check, run: RunState,
 
 
 def _sheet_tile(page, mood: str):
-    """The active-preset review-sheet tile for one mood.
+    """The face in the active-preset review-sheet tile for one mood.
 
     The first ``.face-sheet-grid`` is the active preset's all-moods section,
     and its tiles follow ``FACE_MOODS`` order, so the index is stable. The
@@ -1651,9 +1651,11 @@ def _photograph_real_app(page, context, desk: dict, config: RouteConfig,
                 {"width": DESKTOP_WIDTH, "height": VIEWPORT_HEIGHT})
 
 
-def run_tmp_root(run: RunState) -> Path:
-    """The desk's temporary root, named on the run for the seed."""
-    return Path(run.tmp_root)
+def _finish_meta(meta: dict, started: float) -> dict:
+    """Fill the run's closing timestamp and total elapsed seconds."""
+    meta["finished_at"] = _now_iso()
+    meta["elapsed_s"] = round(time.monotonic() - started, 3)
+    return meta
 
 
 def _run_real_phase(args, run: RunState, plan: list[Shot],
@@ -1783,7 +1785,7 @@ def main(argv: list[str] | None = None) -> int:
     except FaceWalkError as exc:
         print(f"face walkthrough failed to start: {exc}", flush=True)
         startup_failed = True
-    meta = _meta(args, run_dir, started)
+    meta = _finish_meta(_meta(args, run_dir, started), started)
     document = _manifest(run, args, meta)
     _write_json(run_dir / "manifest.json", document)
     _write_json(run_dir / "photographs.json", list(run.records.values()))
