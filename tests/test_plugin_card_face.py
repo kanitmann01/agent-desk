@@ -181,3 +181,29 @@ def test_a_progress_face_uses_the_reading_s_target(tmp_path):
     assert face[0]["kind"] == "progress"
     assert face[0]["value"] == 10
     assert face[0]["target"] == 20
+
+
+def test_a_wizard_built_tile_applies_the_chosen_face(tmp_path):
+    """Regression for the core merge: runtime.py briefly held two
+    _active_manifest definitions, and core's simpler one (no parsed
+    elements, no chosen-face marker) sat later in the file and silently
+    won, so a wizard-built tile fell back to the classic tracker. One
+    definition survives: the one that attaches both the elements and the
+    marker, and a wizard-built install proves both ride on its manifest."""
+    from agentdesk.plugins.runtime import PluginRuntime
+
+    runtime = PluginRuntime(
+        plugins_dir=tmp_path / "plugins",
+        data_dir=tmp_path / "data",
+        workspace_dir=tmp_path / "workspace",
+        now=NOW,
+    )
+    plugin = runtime.install(str(_workbook_zip(
+        tmp_path, [{"type": "metric", "binding": "value", "label": "Deals"}])),
+        source="wizard")
+    entry = runtime.record(plugin["id"])
+    manifest = runtime._active_manifest(entry)
+
+    assert manifest["_chosen_face"] is True
+    assert manifest["_ui_elements"] == [
+        {"type": "metric", "binding": "value", "label": "Deals"}]

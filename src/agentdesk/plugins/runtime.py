@@ -765,13 +765,6 @@ class PluginRuntime:
         version, not the active one (the same source _manifest serves)."""
         return self._manifest(entry["id"])
 
-    def _active_manifest(self, entry: dict) -> dict:
-        """The manifest of the entry's active version, or {} when absent."""
-        manifest_path = self._active_version_dir(entry) / "manifest.json"
-        if manifest_path.exists():
-            return json.loads(manifest_path.read_text(encoding="utf-8"))
-        return {}
-
     def layout_keys(self) -> list[str]:
         """Card keys for the dashboard layout.
 
