@@ -39,6 +39,10 @@ SCAN_FILES = (
 )
 LIVE_FILES = SCAN_FILES + (ROOT / "docs" / "docstrings.md",)
 SKIP_DIRS = {"node_modules", "__pycache__", ".pytest_cache", ".venv"}
+SPA_ROOT = ROOT / "src" / "agentdesk" / "server" / "static" / "spa"
+AGENT_NAME_FILE = ROOT / "frontend" / "src" / "face" / "name.ts"
+AGENT_NAME_LINE = 2
+AGENT_NAME_DEFINITION = "export const AGENT_NAME = 'Nexuus Bot';"
 ARCHIVE_DIRS = ("docs-evidence", "docs-tickets", "docs-plans", "docs-ideas",
                 "docs-superpowers", "docs-plugins")
 
@@ -50,8 +54,17 @@ def _iter_files(roots, files):
                 continue
             if any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts):
                 continue
+            if path == SPA_ROOT or SPA_ROOT in path.parents:
+                continue
             yield path
     yield from files
+
+
+def test_the_agent_name_is_defined_on_one_line_in_its_own_module():
+    lines = AGENT_NAME_FILE.read_text(encoding="utf-8").splitlines()
+    assert len(lines) >= AGENT_NAME_LINE
+    assert lines[AGENT_NAME_LINE - 1] == AGENT_NAME_DEFINITION
+    assert sum(RETIRED_NAME in line.lower() for line in lines) == 1
 
 
 def test_every_surface_says_agent_desk_not_the_retired_name():
@@ -63,6 +76,8 @@ def test_every_surface_says_agent_desk_not_the_retired_name():
             hits.append(f"{path}: unreadable ({exc})")
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
+            if path == AGENT_NAME_FILE and lineno == AGENT_NAME_LINE:
+                continue
             if RETIRED_NAME in line.lower():
                 hits.append(f"{path.relative_to(ROOT)}:{lineno}")
     assert hits == [], (
