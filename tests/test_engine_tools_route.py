@@ -575,3 +575,15 @@ def test_the_engine_step_does_not_run_the_fixed_loop(monkeypatch):
         assert _ledger_json(booted) == []
     finally:
         booted.close()
+
+
+def test_the_boot_mints_its_tokens_with_the_secrets_module():
+    """Regression: the core merge dropped the module's `import secrets`,
+    which left every boot dying with a NameError while minting the
+    engine token. One in-process boot proves the mint works again."""
+    booted = Booted()
+    try:
+        token = booted.server.engine_token
+        assert isinstance(token, str) and len(token) >= 32
+    finally:
+        booted.close()
