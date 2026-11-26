@@ -2125,6 +2125,7 @@ def _inert_gate_runners() -> dict:
     def runner_for(key: str, number: int, title: str):
         """Return an honest fixture result without probing the machine."""
         def run() -> GateResult:
+            """Answer UNKNOWN for one gate; no probe, no adapter, no effect."""
             return GateResult(
                 key=key, number=number, title=title, status=UNKNOWN,
                 evidence=("injected audit runner: no probe ran",),
