@@ -13,6 +13,7 @@ import Rail from '../dashboard/Rail';
 import { FaceProvider, useFaceState, type ResolvedFaceState } from '../face/FaceProvider';
 import FaceSlot from '../face/FaceSlot';
 import { DONE_DURATION_MS } from '../face/moods';
+import { AGENT_NAME } from '../face/name';
 import type { DashboardData, PluginCard } from '../types';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -195,7 +196,7 @@ describe('CommandBar listening and gaze tracking', () => {
 
     fireEvent.focus(field);
     expect(getRailFace()).toHaveAttribute('data-mood', 'listening');
-    expect(getRailFace()).toHaveAttribute('title', 'Nexuus Bot: Listening to your question');
+    expect(getRailFace()).toHaveAttribute('title', `${AGENT_NAME}: Listening to your question`);
     expect(stateRef.current?.lookTarget).toEqual({ x: 300, y: 220 });
 
     // Input growth shifts the vertical center.
@@ -253,7 +254,7 @@ describe('Dashboard waits, inbox waiting, poll errors, and priority', () => {
 
     const face = getRailFace()!;
     expect(face).toHaveAttribute('data-mood', 'waiting');
-    expect(face).toHaveAttribute('title', 'Nexuus Bot: 3 waiting in Inbox');
+    expect(face).toHaveAttribute('title', `${AGENT_NAME}: 3 waiting in Inbox`);
 
     // Focusing CommandBar does not override waiting (waiting > listening).
     const field = screen.getByLabelText('Research question');
@@ -357,7 +358,7 @@ describe('Dashboard waits, inbox waiting, poll errors, and priority', () => {
 
     // blocked outranks inbox waiting.
     expect(getRailFace()).toHaveAttribute('data-mood', 'blocked');
-    expect(getRailFace()).toHaveAttribute('title', 'Nexuus Bot: The desk could not be reached');
+    expect(getRailFace()).toHaveAttribute('title', `${AGENT_NAME}: The desk could not be reached`);
 
     rerender(
       <FaceProvider trackPointer={false}>

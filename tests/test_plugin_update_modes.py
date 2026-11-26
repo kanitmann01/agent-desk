@@ -23,6 +23,7 @@ for _p in (str(ROOT / "src"),):
         sys.path.insert(0, _p)
 
 from agentdesk.plugins.execute import PluginWidgetRunner  # noqa: E402
+from agentdesk.plugins.refresh import ReadingStore  # noqa: E402
 
 
 def _manifest(events: list) -> dict:
@@ -75,8 +76,11 @@ def _write_value(workspace: Path, value: int) -> None:
     os.utime(path, ns=(written.st_atime_ns, written.st_mtime_ns + 1_000_000))
 
 
-def _attached(workspace: Path, tmp_path: Path, events: list) -> PluginWidgetRunner:
+def _attached(workspace: Path, tmp_path: Path, events: list,
+              reading_time: datetime | None = None) -> PluginWidgetRunner:
     runner = PluginWidgetRunner(workspace)
+    if reading_time is not None:
+        runner.readings = ReadingStore(lambda: reading_time)
     version_dir = tmp_path / "plugin"
     _write_ui(version_dir)
     runner.attach("sales", _manifest(events), version_dir, tmp_path / "data")
@@ -110,21 +114,37 @@ def test_a_scheduled_tile_serves_its_stored_reading_between_ticks(workspace, tmp
     assert _value(opened) == _value(stored) == "10"
 
 
-def test_a_scheduled_tile_refreshes_when_its_clock_comes_due(workspace, tmp_path):
+@pytest.mark.parametrize(("stored", "not_due", "expected_due"), [
+    (datetime(2026, 11, 25, 0, 0),
+     (datetime(2026, 11, 25, 7, 59),),
+     datetime(2026, 11, 25, 8, 0)),
+    (datetime(2026, 11, 25, 7, 59),
+     (),
+     datetime(2026, 11, 25, 8, 0)),
+    (datetime(2026, 11, 25, 8, 0),
+     (datetime(2026, 11, 25, 8, 0), datetime(2026, 11, 25, 23, 59)),
+     datetime(2026, 11, 26, 8, 0)),
+])
+def test_a_scheduled_tile_refreshes_when_its_clock_comes_due(
+        workspace, tmp_path, stored, not_due, expected_due):
     runner = _attached(workspace, tmp_path,
-                       ["onWidget:sales", "onSchedule:0 8 * * *"])
+                       ["onWidget:sales", "onSchedule:0 8 * * *"], stored)
     before = runner.card("sales")
     _write_value(workspace, 50)
-    # A day after the stored reading, before and then at the scheduled minute.
-    stored = datetime.fromisoformat(before["asOf"])
-    tomorrow = (stored + timedelta(days=1)).replace(hour=7, minute=59, second=30)
+    assert before["asOf"] == stored.isoformat(timespec="seconds")
 
-    # Not due yet: nothing refreshes, and the tile still shows the old read.
-    assert runner.refresh_due(tomorrow) == []
-    assert _value(runner.card("sales")) == _value(before)
+    # The first 08:00 strictly after the stored reading is the due time.
+    due = stored.replace(hour=8, minute=0, second=0, microsecond=0)
+    if due <= stored:
+        due += timedelta(days=1)
+    assert due == expected_due
+
+    # Before the due minute, including the rest of a reading's own 08:00 day.
+    for now in not_due:
+        assert runner.refresh_due(now) == []
+        assert _value(runner.card("sales")) == _value(before)
 
     # The scheduled minute: the tile re-reads, and the open now shows it.
-    due = tomorrow.replace(hour=8, minute=0, second=5)
     assert runner.refresh_due(due) == ["sales"]
     assert _value(runner.card("sales")) == "50"
 

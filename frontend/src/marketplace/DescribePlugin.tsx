@@ -58,6 +58,7 @@ export default function DescribePlugin() {
   const [description, setDescription] = useState('');
   const [probing, setProbing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const empty = description.trim() === '';
   const formRef = useRef<HTMLFormElement>(null);
   // The probe is the first wait: the door disables at once and says it is
   // checking only after 100 ms, so a fast answer never flashes.
@@ -149,7 +150,8 @@ export default function DescribePlugin() {
                    placeholder="A morning list of my mail, or last week's sales by region"
                    onChange={(event) => setDescription(event.target.value)} />
             <div className="mkt-fill-actions">
-              <Button tone="primary" onClick={() => { void onFill(); }}>Fill it in for me</Button>
+              <Button tone="primary" onClick={() => { void onFill(); }}
+                      disabled={empty}>Fill it in for me</Button>
             </div>
           </div>
         ) : null}
