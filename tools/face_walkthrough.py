@@ -457,13 +457,18 @@ def _build_rail_shots(themes: list[str], widths: set[int]) -> list[Shot]:
 
 
 def _build_collapsed_shots(themes: list[str], widths: set[int]) -> list[Shot]:
-    """One collapsed-rail photograph per theme at the desk width."""
+    """One collapsed-rail photograph per theme on the fresh desk.
+
+    The full seed's four waiting cards make the rail face ``waiting``, so the
+    collapsed rail is captured before the seed, where the condition guarantees
+    an idle face and the check may demand it.
+    """
     if DESKTOP_WIDTH not in widths:
         return []
     return [Shot(
         id=f"rail-collapsed|{theme}|collapsed",
         surface="rail-collapsed", kind="rail-collapsed", theme=theme,
-        mood="idle", motion="normal", condition="full",
+        mood="idle", motion="normal", condition="fresh",
         width=DESKTOP_WIDTH, state="collapsed", variant="page",
         file=f"photos/rail-collapsed/{theme}/collapsed-page.png", route="/")
         for theme in themes]
@@ -1474,12 +1479,13 @@ def _photograph_real_app(page, context, desk: dict, config: RouteConfig,
     """Photograph every planned real-app surface on the booted desk."""
     base = desk["base"]
     rail = [shot for shot in shots if shot.kind == "rail"]
-    fresh = [shot for shot in rail if shot.condition == "fresh"]
+    fresh = [shot for shot in shots if shot.condition == "fresh"]
+    fresh_rail = [shot for shot in fresh if shot.kind == "rail"]
     if fresh:
         for theme in dict.fromkeys(shot.theme for shot in fresh):
             _set_theme_storage(page, theme)
             for mood in ("idle", "listening"):
-                group = [shot for shot in fresh
+                group = [shot for shot in fresh_rail
                          if shot.theme == theme and shot.mood == mood]
                 if not group:
                     continue
@@ -1491,6 +1497,25 @@ def _photograph_real_app(page, context, desk: dict, config: RouteConfig,
                     page, group, prep,
                     lambda shot: _check_rail(page, shot, run, SHEET_QUESTION),
                     run)
+            collapsed = [shot for shot in fresh
+                         if shot.kind == "rail-collapsed"
+                         and shot.theme == theme]
+            if collapsed:
+                def prep_collapsed(theme=theme) -> None:
+                    """Collapse the rail on the fresh desk's dashboard."""
+                    _set_theme_storage(page, theme)
+                    page.evaluate(
+                        "() => { try { localStorage.setItem("
+                        "'agentdesk.railCollapsed', '1'); } catch (error) {} }")
+                    _act_idle(page, base)
+                    page.wait_for_selector(".app.rail-collapsed", timeout=10000)
+
+                _capture_surface(
+                    page, collapsed, prep_collapsed,
+                    lambda shot: _check_collapsed(page, shot, run), run)
+                page.evaluate(
+                    "() => { try { localStorage.setItem("
+                    "'agentdesk.railCollapsed', '0'); } catch (error) {} }")
     full = [shot for shot in shots if shot.condition == "full"]
     if not full:
         return
@@ -1540,23 +1565,6 @@ def _photograph_real_app(page, context, desk: dict, config: RouteConfig,
                     page, done, done_prep,
                     lambda shot: _check_rail(page, shot, run, SHEET_QUESTION),
                     run)
-        collapsed = [shot for shot in shots
-                     if shot.kind == "rail-collapsed" and shot.theme == theme]
-        if collapsed:
-            def prep_collapsed(theme=theme) -> None:
-                """Collapse the rail on the requested theme's dashboard."""
-                _set_theme_storage(page, theme)
-                page.evaluate(
-                    "() => { try { localStorage.setItem("
-                    "'agentdesk.railCollapsed', '1'); } catch (error) {} }")
-                _act_idle(page, base)
-                page.wait_for_selector(".app.rail-collapsed", timeout=10000)
-
-            _capture_surface(page, collapsed, prep_collapsed,
-                             lambda shot: _check_collapsed(page, shot, run), run)
-            page.evaluate(
-                "() => { try { localStorage.setItem("
-                "'agentdesk.railCollapsed', '0'); } catch (error) {} }")
         describe = [shot for shot in shots
                     if shot.surface == "dialog-describe"
                     and shot.theme == theme]

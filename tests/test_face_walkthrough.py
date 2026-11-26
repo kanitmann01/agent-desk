@@ -339,6 +339,15 @@ def test_the_sheet_only_plan_holds_no_real_app_shot():
     assert len(plan) == 48
 
 
+def test_the_collapsed_rail_is_planned_on_the_fresh_desk():
+    """The collapsed rail is photographed before the full seed, where it is idle."""
+    plan = face.build_plan(_args())
+    collapsed = [shot for shot in plan if shot.kind == "rail-collapsed"]
+    assert collapsed
+    assert {shot.condition for shot in collapsed} == {"fresh"}
+    assert {shot.mood for shot in collapsed} == {"idle"}
+
+
 def test_plan_filters_and_rejects_unsupported_values():
     """Routes select, and an unsupported theme, width or route is a named error."""
     sheet = face.build_plan(_args(routes="sheet"))
