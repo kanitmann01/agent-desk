@@ -101,8 +101,7 @@ def test_delete_removes_exactly_one_fact():
 def test_recall_ranks_through_the_hybrid_ranker():
     # Ticket #90 deliberately changes the score's meaning: the store's
     # recall is the hybrid ranker, so the score is the fused RRF
-    # contribution (keyword rank 0 here: 1/61), not the overlap
-    # fraction the old service.rank returned.
+    # contribution (keyword rank 0 here: 1/61), not an overlap fraction.
     store = _store()
     store.add("the meeting room is booked", source="page")
     store.add("revenue is 220", source="page")

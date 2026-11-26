@@ -30,6 +30,9 @@ TOGGLES = {
     "endpoint_enabled": True,
     "quiet_hours": True,
     "mail_enabled": False,  # mail digest: off until the user turns it on
+    # Outlook alerts (spec 024): read the local OS notification store for
+    # sender and subject lines before the mail poll; off by default.
+    "mail_feeder": False,
     "sample_data": False,  # demo seed (#68): off until the user asks for it
     # Semantic recall (ticket #95): embeddings stay inactive until the
     # embeddings probe passes on the capabilities page, so this default

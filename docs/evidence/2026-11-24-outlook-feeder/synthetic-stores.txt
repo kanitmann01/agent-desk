@@ -1,0 +1,38 @@
+$ python docs/evidence/2026-11-24-outlook-feeder/synthetic_stores.py
+== Windows WPN synthetic store ==
+store rows inserted: 5 (2 Outlook mail, 1 duplicate, 1 Outlook reminder, 1 other app, 1 condensed)
+available: (True, '')
+first pass: 3 messages
+  id=<wpn-900005-Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows@agent-desk.local> | sender='Example Sender' | subject='Quarterly Report Q3' | date_ts=1795521550
+  id=<wpn-900001-Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows@agent-desk.local> | sender='Example Sender' | subject='Quarterly Report Q3' | date_ts=1795521500
+  id=<wpn-900002-Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows@agent-desk.local> | sender='Reminder: Board review' | subject='10:00 AM, 11/25/2026' | date_ts=1795521400
+write_mail wrote: 3 files; files on disk: 3
+  feeder-4e10ae9c8815db1d.eml (204 bytes)
+  feeder-d17d1b2612c06cee.eml (204 bytes)
+  feeder-edb40d6df1dd0e5f.eml (213 bytes)
+preview sentinel present in any file: False
+sentinel present in any message field: False
+second pass messages: 3; files after rerun: 3
+first .eml headers (synthetic):
+  From: Example Sender
+  Subject: Quarterly Report Q3
+  Date: Tue, 24 Nov 2026 11:58:20 GMT
+  Message-ID: <wpn-900001-Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows@agent-desk.local>
+  
+
+== macOS Notification Center synthetic store ==
+store records inserted: 3 (Outlook mail with body, Outlook reminder, non-Outlook chat)
+available: (True, '')
+first pass: 2 messages
+  id=<mac-notifications-mail-uuid@com.microsoft.Outlook> | sender='Priya Sharma <priya@example.com>' | subject='Q4 budget' | date_ts=1794301200
+  id=<mac-notifications-reminder-uuid@com.microsoft.Outlook> | sender='Standup reminder' | subject='In 10 minutes' | date_ts=1794304800
+write_mail wrote: 2 files; files on disk: 2
+  feeder-275d5d2313eb73c7.eml (164 bytes)
+  feeder-2ddab8d16c61861c.eml (156 bytes)
+BODY_SENTINEL present in any file: False
+REMINDER_SENTINEL present in any file: False
+CHAT_SENTINEL present in any file: False
+second pass messages: 2; files after rerun: 2
+
+
+exit code: 0

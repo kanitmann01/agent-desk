@@ -8,9 +8,10 @@ for, without ever leaving two alive. The input-hash skip is the monitor
 idea (hash_monitor_output) in new code: a step that would call the
 endpoint with input it already ran can be skipped by hash.
 
-Steps are registered in import order and each runs isolated: one step
-raising is an agentloop.step-failed audit row, and the next step still
-runs. A pass claims the run slot for the whole data folder
+Each step declares its order (the STEP_ORDER_* constants beside the
+registry) and runs isolated: one step raising is an agentloop.step-failed
+audit row, and the next step still runs. A pass claims the run slot for
+the whole data folder
 (schedule.claim_run), writes one agentloop.pass audit row, and remembers
 its steps and time for the settings page and the status payload.
 """
@@ -45,26 +46,55 @@ DEFAULT_MINUTES = 60
 
 @dataclass(frozen=True)
 class Step:
-    """One unit of a pass: its name, when it applies, and what it does.
+    """One unit of a pass: its name, its declared place, when it applies,
+    and what it does.
 
-    enabled is read at pass time, so a settings flip takes effect without a
-    restart. run receives the LoopContext and returns a small dict of
-    counts that becomes the step's note in the status payload.
+    order is the step's position in the pass, one of the STEP_ORDER_*
+    constants beside the registry: the pass sorts on it (stable on
+    registration sequence), so where a step registers and what order the
+    modules import in carry no meaning. enabled is read at pass time, so a
+    settings flip takes effect without a restart. run receives the
+    LoopContext and returns a small dict of counts that becomes the step's
+    note in the status payload.
     """
 
     name: str
+    order: int
     enabled: Callable[[Any], bool]
     run: Callable[["LoopContext"], dict]
 
 
-# Ordered step registry: registration order is the pass order. Later
-# tickets append their step with register_step (spec 016 section 6.2).
+# The declared pass order (spec 016 section 6.2): a pass heals, then
+# recommends, ranks, learns topics, reviews the profile, consolidates
+# skills, curates, and only then checks the share, which is the one step
+# that can replace the program. The gaps leave later steps room to slot in
+# without renumbering. A pass sorts by order, stable on registration
+# sequence, so the registration site and the import order stop being
+# load-bearing (spec 016 section 6.2).
+STEP_ORDER_DESKCHECK = 100
+STEP_ORDER_RECOMMEND = 200
+STEP_ORDER_RANK = 300
+STEP_ORDER_LEARN_TOPICS = 400
+STEP_ORDER_PROFILE_REVIEW = 500
+STEP_ORDER_SKILLS = 600
+STEP_ORDER_CURATOR = 700
+STEP_ORDER_UPDATE = 800
+
+# The step registry. Later tickets append their step with register_step
+# and a declared order.
 STEPS: list[Step] = []
 
 
 def register_step(step: Step) -> None:
-    """Append one step to the registry, in import order."""
+    """Add one step to the registry; its declared order places it in the pass."""
     STEPS.append(step)
+
+
+def ordered_steps(steps: list[Step] | None = None) -> list[Step]:
+    """The steps of one pass in declared order, stable on registration
+    sequence for steps that share an order (sorted is stable)."""
+    return sorted(STEPS if steps is None else steps,
+                  key=lambda step: step.order)
 
 
 def _input_digest(payload: Any) -> str:
@@ -115,8 +145,10 @@ class AgentLoop:
     def __init__(self, server: Any, *, clock: Callable[[], float] = time.time,
                  wake_seconds: float = WAKE_SECONDS,
                  startup_delay: float = STARTUP_DELAY,
-                 data_dir: Path | str | None = None) -> None:
-        """Bind the loop to its server; clock, cadence and data folder injectable.
+                 data_dir: Path | str | None = None,
+                 steps: list[Step] | None = None) -> None:
+        """Bind the loop to its server; clock, cadence, data folder and
+        steps injectable.
 
         Nothing opens and nothing writes here: the thread opens in start(),
         the lock file only at claim time, so building a loop is free.
@@ -126,6 +158,10 @@ class AgentLoop:
         self.wake_seconds = wake_seconds
         self.startup_delay = startup_delay
         self._data_dir = data_dir
+        # The steps this loop runs; None means the shared registry. A loop
+        # that passes its own list runs those, which is how a pass runs
+        # with chosen steps without touching the process-wide registry.
+        self._steps = None if steps is None else list(steps)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # The manual run-now thread, joined by stop() with the loop thread
@@ -237,7 +273,7 @@ class AgentLoop:
             schedule.release_run(self.lock_path, start_ts=started)
 
     def _run_steps(self, only: set[str] | None) -> list[dict]:
-        """Run the selected enabled steps in registry order, isolated.
+        """Run the selected enabled steps in declared order, isolated.
 
         A step that raises is one failed row and one agentloop.step-failed
         audit row naming it; the steps after it still run.
@@ -245,7 +281,7 @@ class AgentLoop:
         settings = getattr(self.server, "settings", None)
         ledger = getattr(self.server, "ledger", None)
         results: list[dict] = []
-        for step in STEPS:
+        for step in ordered_steps(self._steps):
             if only is not None and step.name not in only:
                 continue
             try:
@@ -498,9 +534,10 @@ def _run_deskcheck(ctx: LoopContext) -> dict:
 
 
 # Ticket 04 registers only the desk check step, which wraps the checks
-# (ticket 02) and their fixes (ticket 03). Later tickets append below.
-register_step(Step(name="deskcheck", enabled=_deskcheck_enabled,
-                   run=_run_deskcheck))
+# (ticket 02) and their fixes (ticket 03). Later tickets append below,
+# each with the order its place in the pass declares.
+register_step(Step(name="deskcheck", order=STEP_ORDER_DESKCHECK,
+                   enabled=_deskcheck_enabled, run=_run_deskcheck))
 
 
 def _skills_enabled(settings: Any) -> bool:
@@ -530,7 +567,8 @@ def _run_curator(ctx: LoopContext) -> dict:
 
 
 # Ticket 10's skills step (consolidation plus refine) and curator step (the
-# weekly lifecycle pass) are registered from server/app.py in the order spec
-# 016 section 6.2 gives, after the learned-topics and profile-review steps.
-# Registering them here would run them before every step app.py appends,
-# because this module is imported first.
+# weekly lifecycle pass) register from server/app.py beside the steps whose
+# bodies live there; their declared orders, not the registration site, place
+# them after the learned-topics and profile-review steps. The run functions
+# above stay here beside the desk check's until a later wave moves the step
+# bodies together.

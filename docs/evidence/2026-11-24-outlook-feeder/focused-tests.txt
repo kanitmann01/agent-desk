@@ -1,0 +1,16 @@
+$ git rev-parse HEAD
+661c6fbb567279c12a6a9b153a878c9d4b421160
+
+$ python -m pytest tests/test_feeder_contract.py tests/test_feeder_writer.py tests/test_feeder_runner.py tests/test_feeder_platform.py tests/test_feeder_wpn.py tests/test_feeder_macos.py -q
+..................................................................s      [100%]
+66 passed, 1 skipped in 0.68s
+
+exit code: 0
+
+$ python -m pytest tests/test_mail_core.py tests/test_mail_watcher.py tests/test_mail_store.py tests/test_mail_brief.py tests/test_server_mail_api.py tests/test_route_table.py tests/test_server_settings_api.py tests/test_server_it_surface.py tests/test_settings_concurrency.py -q
+........................................................................ [ 45%]
+........................................................................ [ 90%]
+................                                                         [100%]
+160 passed in 43.91s
+
+exit code: 0

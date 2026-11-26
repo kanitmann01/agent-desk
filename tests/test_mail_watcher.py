@@ -376,3 +376,150 @@ def test_the_self_address_is_re_read_from_the_provider_each_poll(tmp_path):
     assert case.watch.self_address == ""
     status = case.watch.status()
     assert status["selfDetection"] is False
+
+
+# -- the Outlook alert feeder, injected before the folder read -------------
+
+
+def test_the_feeder_runs_once_before_the_folder_read_and_lands_in_status(tmp_path):
+    case = WatchCase(tmp_path)
+    write_message(case.folder, "<a1@example.com>", "Alert", "Wed, 11 Nov 2026 08:00:00 GMT")
+    calls = []
+
+    def feeder():
+        calls.append(case.reads)  # 0 means the folder has not been read yet
+        return {
+            "collector": "notification-store",
+            "platform": "test-os",
+            "lastRunTs": case.now,
+            "lastResult": "ok",
+            "lastError": "",
+            "written": 1,
+        }
+
+    case.watch.feeder = feeder
+    status = case.watch.poll()
+    assert calls == [0]
+    assert status["fetch"]["collector"] == "notification-store"
+    assert status["fetch"]["written"] == 1
+    assert case.watch.view()["fetch"] == status["fetch"]
+    assert case.audit == [("mail.fetch", "mail", "ok"), ("mail.poll", "mail", "ok")]
+
+
+def test_a_failing_feeder_never_stops_the_folder_read(tmp_path):
+    case = WatchCase(tmp_path)
+    write_message(case.folder, "<a1@example.com>", "Alert", "Wed, 11 Nov 2026 08:00:00 GMT")
+
+    def feeder():
+        raise RuntimeError("the notification store is locked")
+
+    case.watch.feeder = feeder
+    status = case.watch.poll()
+    assert status["state"] == STATE_WATCHING
+    assert status["messageCount"] == 1  # the folder was read anyway
+    assert status["fetch"]["lastResult"] == "error"
+    assert "the notification store is locked" in status["fetch"]["lastError"]
+    assert case.audit == [("mail.fetch", "mail", "error"), ("mail.poll", "mail", "ok")]
+
+
+def test_no_feeder_runs_without_a_folder_and_status_says_so(tmp_path):
+    case = WatchCase(tmp_path, mailbox=None)
+    case.watch.folder_provider = lambda: ""
+    calls = []
+    case.watch.feeder = lambda: calls.append(1) or {"lastResult": "ok"}
+    status = case.watch.poll()
+    assert status["state"] == STATE_UNCONFIGURED
+    assert calls == []
+    assert status["fetch"] is None
+
+
+def test_the_feeder_path_imports_no_network_or_model_client():
+    """The structural half of the privacy promise: the watcher and the
+    feeder core cannot reach a socket or the model client."""
+    import agentdesk.feeder.runner as runner
+    import agentdesk.mail.watcher as watcher
+
+    for module in (runner, watcher):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for banned in ("import socket", "import urllib", "import requests",
+                       "http.client", "agentdesk.llm"):
+            assert banned not in source, (module.__name__, banned)
+
+
+def test_a_seeded_fetch_status_survives_a_restart(tmp_path):
+    """The runner's status file is passed back at construction, so the
+    Settings card does not read Not run yet after a restart."""
+    case = WatchCase(tmp_path)
+    seeded = {
+        "collector": "notification-store",
+        "platform": "test-os",
+        "lastRunTs": 1700000000.0,
+        "lastResult": "ok",
+        "lastError": "",
+        "written": 2,
+        "coverageFromTs": None,
+        "coverageToTs": None,
+    }
+    watch = MailWatch(
+        inbox=case.inbox,
+        store=case.store,
+        adapters=case.watch.adapters,
+        folder_provider=lambda: str(case.folder),
+        fetch_status=seeded,
+    )
+    assert watch.status()["fetch"] == seeded
+
+
+def test_a_corrupt_feeder_status_file_is_ignored(monkeypatch, tmp_path):
+    from agentdesk.server.app import _read_feeder_status
+
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    assert _read_feeder_status() is None  # no file yet
+    (tmp_path / "outlook-feeder.json").write_text("{not json", encoding="utf-8")
+    assert _read_feeder_status() is None
+
+
+def _fetch_once(tmp_path, result):
+    """One fetch-now before the first poll, with the feeder faked."""
+    case = WatchCase(tmp_path)
+    case.watch.feeder = lambda: dict(result)
+    case.watch.fetch_now()
+    return case
+
+
+def test_an_ok_fetch_is_audited_against_the_resolved_folder(tmp_path):
+    case = _fetch_once(tmp_path, {
+        "lastResult": "ok", "collector": "notification-store",
+        "written": 1, "lastError": "",
+    })
+    # No poll ran yet, so the target comes from the folder provider.
+    assert case.audit == [("mail.fetch", "mail", "ok")]
+
+
+def test_an_error_fetch_is_audited_as_an_error(tmp_path):
+    case = _fetch_once(tmp_path, {
+        "lastResult": "error", "collector": "", "written": 0,
+        "lastError": "The pass failed.",
+    })
+    assert case.audit == [("mail.fetch", "mail", "error")]
+
+
+def test_unavailable_and_busy_fetches_are_not_audited(tmp_path):
+    """Nothing was touched in either outcome, so no audit row claims a touch."""
+    for name, result in (
+        ("unavailable", {"lastResult": "unavailable"}),
+        ("busy", {"lastResult": "busy"}),
+    ):
+        folder = tmp_path / name
+        folder.mkdir()
+        case = _fetch_once(folder, result)
+        assert case.audit == [], result
+
+
+def test_a_fetch_with_no_folder_configures_no_audit_target(monkeypatch, tmp_path):
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    case = WatchCase(tmp_path)
+    case.watch.folder_provider = lambda: ""
+    case.watch.feeder = lambda: {"lastResult": "ok"}
+    case.watch.fetch_now()
+    assert case.audit == []

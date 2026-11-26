@@ -24,7 +24,6 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
 
 import server_harness
 from agentdesk.agentloop.loop import AgentLoop, Step
-from agentdesk.agentloop import loop as loop_module
 from agentdesk.assistant import audit as audit_store
 from agentdesk.server import app as server_app
 from agentdesk.settings import SettingsStore
@@ -133,7 +132,7 @@ def test_a_fresh_desk_acts_within_120_seconds_of_first_boot(env, auth, tmp_path)
         fast.stop()
 
 
-def test_run_now_starts_and_a_second_call_is_409(env, auth, monkeypatch, tmp_path):
+def test_run_now_starts_and_a_second_call_is_409(env, auth, tmp_path):
     entered = threading.Event()
     release = threading.Event()
 
@@ -142,7 +141,11 @@ def test_run_now_starts_and_a_second_call_is_409(env, auth, monkeypatch, tmp_pat
         release.wait(5)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS", [Step("slow", lambda settings: True, slow)])
+    # The boot loop is not started, so it runs no pass of its own; the
+    # loop under test runs the chosen slow step instead of the registry.
+    env.server.agent_loop = AgentLoop(env.server, data_dir=tmp_path / "claim",
+                                      steps=[Step("slow", 100,
+                                                  lambda settings: True, slow)])
     status, _headers, body = env.post_json("/api/agent-loop/run", {}, auth)
     assert status == 200, body
     assert json.loads(body) == {"started": True}
@@ -156,7 +159,7 @@ def test_run_now_starts_and_a_second_call_is_409(env, auth, monkeypatch, tmp_pat
     assert _wait_until(lambda: env.server.agent_loop.status()["running"] is False)
 
 
-def test_a_scheduled_tick_cannot_stomp_a_running_manual_pass(env, auth, monkeypatch):
+def test_a_scheduled_tick_cannot_stomp_a_running_manual_pass(env, auth, tmp_path):
     """The P1 regression over HTTP: one owner for the running flag.
 
     A due tick's run_pass arriving while a manual pass runs skips outright,
@@ -171,7 +174,11 @@ def test_a_scheduled_tick_cannot_stomp_a_running_manual_pass(env, auth, monkeypa
         release.wait(5)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS", [Step("slow", lambda settings: True, slow)])
+    # The boot loop is not started, so it runs no pass of its own; the
+    # loop under test runs the chosen slow step instead of the registry.
+    env.server.agent_loop = AgentLoop(env.server, data_dir=tmp_path / "claim",
+                                      steps=[Step("slow", 100,
+                                                  lambda settings: True, slow)])
     status, _headers, body = env.post_json("/api/agent-loop/run", {}, auth)
     assert status == 200, body
     try:

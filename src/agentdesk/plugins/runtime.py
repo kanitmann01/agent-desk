@@ -29,6 +29,7 @@ from agentdesk.plugins.cards import (
 from agentdesk.plugins.execute import PluginWidgetRunner
 from agentdesk.registry.install import tree_digest
 from agentdesk.validator.core import validate_plugin
+from agentdesk.validator.grammar import SAFE_NAME as _SAFE_NAME
 
 # The PRD's binding count (R3.7): "a visible 'pilot' badge for the first
 # 5 runs". The test pins this constant against that sentence.
@@ -38,10 +39,6 @@ PILOT_VIEWS = 5
 # HTTP boundary caps compressed bodies; this caps what a small bundle can
 # become in memory when extracted (a peer bundle is another desk's input).
 MAX_ZIP_MEMBER_BYTES = 16 * 1024 * 1024
-
-# Plugin ids and versions become filesystem fragments (install dirs,
-# data dirs, rmtree targets), so they are names, not free text.
-_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _alias_id(name: str) -> str:
@@ -733,6 +730,48 @@ class PluginRuntime:
         """
         return [dict(entry) for entry in self._read()["plugins"].values()]
 
+    def emission_targets(self, state: dict, manifest_of):
+        """The one emission spine under layout_keys, widget_cards and
+        record_dashboard_view.
+
+        Yields (entry, manifest, config, target, folds_into_target) for the
+        decisions all three loops share: skip disabled or versionless
+        entries, read the manifest through manifest_of, and fold an alias
+        or instance-capable plugin into its target, yielded once no matter
+        how many entries point at it. The callers keep their own edge
+        decisions: layout_keys owns the unconfirmed-main-instance rule,
+        widget_cards the tampered-tree attention card, record_dashboard_view
+        the spend decision. manifest_of exists because the readers
+        deliberately disagree: layout_keys reads the newest recorded
+        version, the card emitters the active one.
+        """
+        emitted: set[str] = set()
+        for entry in state["plugins"].values():
+            if entry["state"] != "enabled" or not entry["versions"]:
+                continue
+            manifest = manifest_of(entry)
+            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+            plugin_id = entry["id"]
+            target = str(config.get("aliasOf")) if config.get("aliasOf") else plugin_id
+            folds = bool(config.get("aliasOf") or self._is_instance_capable(manifest))
+            if folds:
+                if target in emitted:
+                    continue
+                emitted.add(target)
+            yield entry, manifest, config, target, folds
+
+    def _newest_manifest(self, entry: dict) -> dict:
+        """The manifest layout_keys reads under: the newest recorded
+        version, not the active one (the same source _manifest serves)."""
+        return self._manifest(entry["id"])
+
+    def _active_manifest(self, entry: dict) -> dict:
+        """The manifest of the entry's active version, or {} when absent."""
+        manifest_path = self._active_version_dir(entry) / "manifest.json"
+        if manifest_path.exists():
+            return json.loads(manifest_path.read_text(encoding="utf-8"))
+        return {}
+
     def layout_keys(self) -> list[str]:
         """Card keys for the dashboard layout.
 
@@ -742,20 +781,12 @@ class PluginRuntime:
         instance is a card of the target.
         """
         keys = []
-        emitted: set[str] = set()
-        for entry in self.list_records():
-            if entry.get("state") != "enabled" or not entry.get("versions"):
-                continue
-            manifest = self._manifest(entry["id"])
-            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
-            plugin_id = entry["id"]
-            target = str(config.get("aliasOf")) if config.get("aliasOf") else plugin_id
-            if config.get("aliasOf") or self._is_instance_capable(manifest):
-                if target not in emitted:
-                    keys.extend(self._instance_keys(target))
-                    emitted.add(target)
-                continue
-            keys.append(entry["id"])
+        for entry, _manifest, _config, target, folds in self.emission_targets(
+                self._read(), self._newest_manifest):
+            if folds:
+                keys.extend(self._instance_keys(target))
+            else:
+                keys.append(entry["id"])
         return keys
 
     def _is_instance_capable(self, manifest: dict) -> bool:
@@ -918,23 +949,13 @@ class PluginRuntime:
         """
         state = self._read()
         cards = []
-        emitted: set[str] = set()
-        for entry in state["plugins"].values():
-            if entry["state"] != "enabled" or not entry["versions"]:
-                continue
-            manifest = {}
-            manifest_path = self._active_version_dir(entry) / "manifest.json"
-            if manifest_path.exists():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        for entry, manifest, _config, target, folds in self.emission_targets(
+                state, self._active_manifest):
             plugin_id = entry["id"]
-            target = str(config.get("aliasOf")) if config.get("aliasOf") else plugin_id
-            if config.get("aliasOf") or self._is_instance_capable(manifest):
-                if target not in emitted:
-                    target_entry = (entry if target == plugin_id
-                                    else self._plugin_entry(state, target))
-                    cards.extend(self._instance_cards(target, target_entry))
-                    emitted.add(target)
+            if folds:
+                target_entry = (entry if target == plugin_id
+                                else self._plugin_entry(state, target))
+                cards.extend(self._instance_cards(target, target_entry))
                 continue
             if not self.runner.attached(entry["id"]):
                 # A runtime is rebuilt on every server start and the
@@ -977,34 +998,25 @@ class PluginRuntime:
     def record_dashboard_view(self) -> int:
         """Spend one pilot view per plugin target a dashboard view showed.
 
-        Mirrors the emission conditions of widget_cards: disabled plugins,
-        plugins without an installed version and a tampered tree that fails
-        verification spend nothing, and an alias or instance-capable plugin
-        spends for its target. Returns the number of pilot views spent; the
-        plugin store is written once, and only when a count actually changed,
+        Shares the emission spine with widget_cards (emission_targets), so
+        the two cannot drift: disabled plugins, plugins without an
+        installed version and a tampered tree that fails verification
+        spend nothing, and an alias or instance-capable plugin spends for
+        its target. Returns the number of pilot views spent; the plugin
+        store is written once, and only when a count actually changed,
         so a view after the pilot has run out leaves the file untouched.
         """
         state = self._read()
         dirty = False
         spent = 0
-        emitted: set[str] = set()
-        for entry in state["plugins"].values():
-            if entry["state"] != "enabled" or not entry["versions"]:
-                continue
-            manifest = {}
-            manifest_path = self._active_version_dir(entry) / "manifest.json"
-            if manifest_path.exists():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+        for entry, _manifest, _config, _target, folds in self.emission_targets(
+                state, self._active_manifest):
             plugin_id = entry["id"]
-            target = config.get("aliasOf") or plugin_id
-            if config.get("aliasOf") or self._is_instance_capable(manifest):
-                if target not in emitted:
-                    emitted.add(target)
-                    if entry["pilot_views_left"] > 0:
-                        entry["pilot_views_left"] -= 1
-                        dirty = True
-                        spent += 1
+            if folds:
+                if entry["pilot_views_left"] > 0:
+                    entry["pilot_views_left"] -= 1
+                    dirty = True
+                    spent += 1
                 continue
             if not self.runner.attached(plugin_id):
                 try:
