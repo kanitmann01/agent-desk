@@ -42,17 +42,17 @@ def _index(*entities, agenda=None, now=1_000_000.0):
 
 def test_longest_whole_word_match_wins_and_cap_holds():
     index = _index(
-        _Entity(1, "Halvorsen Freight", fact_count=3),
+        _Entity(1, "Harborlight Freight", fact_count=3),
         _Entity(2, "Marlow & Finch", fact_count=1),
         _Entity(3, "Acropolis Logistics", ("Acropolis Group",), fact_count=2),
         _Entity(4, "Bergstrom Holdings", fact_count=5),
     )
     rows = [
-        "Halvorsen Freight renewal",
+        "Harborlight Freight renewal",
         "Marlow & Finch / Acropolis Group / Bergstrom Holdings",
     ]
     line, notes = insight_connect.connect_line(rows, index)
-    assert "Halvorsen Freight" in line and "Marlow & Finch" in line
+    assert "Harborlight Freight" in line and "Marlow & Finch" in line
     assert "Acropolis Logistics" in line  # the alias names the entity once
     assert "Bergstrom" not in line        # the cap keeps three per card
     assert notes == 3 + 1 + 2
@@ -77,12 +77,12 @@ def test_refusals():
 
 
 def test_empty_memory_draws_no_line():
-    assert insight_connect.connect_line(["Halvorsen Freight"], ()) == ("", 0)
+    assert insight_connect.connect_line(["Harborlight Freight"], ()) == ("", 0)
     assert insight_connect.connect_line([], ()) == ("", 0)
 
 
 def test_a_card_with_no_rows_carries_no_line():
-    index = _index(_Entity(1, "Halvorsen Freight", fact_count=3))
+    index = _index(_Entity(1, "Harborlight Freight", fact_count=3))
     found = _reading_for(
         {"tracker": {"table": {"headers": ["Account", "Amount"], "rows": []},
                      "labelColumn": "Account"}},
@@ -96,47 +96,47 @@ def test_the_longer_name_wins_a_span_it_shares_with_a_shorter_one():
     """Memory holds both names; a row naming the longer one is one
     connection, to the longer entity, and the shorter is not counted."""
     index = _index(
-        _Entity(1, "Halvorsen Freight", fact_count=3),
-        _Entity(2, "Halvorsen Freight Logistics", fact_count=5),
+        _Entity(1, "Harborlight Freight", fact_count=3),
+        _Entity(2, "Harborlight Freight Logistics", fact_count=5),
     )
-    row = "Halvorsen Freight Logistics renewal"
+    row = "Harborlight Freight Logistics renewal"
     named = insight_connect.match_names(row, index)
     assert [entry.entity_id for entry in named] == [2]
     line, notes = insight_connect.connect_line([row], index)
-    assert line.startswith("Also in your desk: Halvorsen Freight Logistics, 5 things")
+    assert line.startswith("Also in your desk: Harborlight Freight Logistics, 5 things")
     assert "3 things" not in line
-    assert line.count("Halvorsen Freight") == 1
+    assert line.count("Harborlight Freight") == 1
     assert notes == 5
 
 
 def test_the_agenda_clause_reaches_every_entity_its_title_names():
-    agenda = {"title": "Renewal call: Halvorsen Freight and Kestrel Foods",
+    agenda = {"title": "Renewal call: Harborlight Freight and Kestrel Foods",
               "time": "2026-11-23T14:38:00"}
     index = _index(
-        _Entity(1, "Halvorsen Freight", fact_count=3),
+        _Entity(1, "Harborlight Freight", fact_count=3),
         _Entity(2, "Kestrel Foods", fact_count=2),
         agenda=agenda,
         now=datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc).timestamp(),
     )
     assert all(entry.event_clause.endswith("14:38") for entry in index)
     line, _notes = insight_connect.connect_line(
-        ["Halvorsen Freight renewal", "Kestrel Foods pilot"], index)
+        ["Harborlight Freight renewal", "Kestrel Foods pilot"], index)
     assert line.count("at 14:38") == 2
 
 
 def test_the_agenda_dates_the_entity_it_names():
-    agenda = {"title": "Renewal call: Halvorsen Freight", "time": "2026-11-23T14:38:00"}
-    index = _index(_Entity(1, "Halvorsen Freight", fact_count=3), agenda=agenda,
+    agenda = {"title": "Renewal call: Harborlight Freight", "time": "2026-11-23T14:38:00"}
+    index = _index(_Entity(1, "Harborlight Freight", fact_count=3), agenda=agenda,
                    now=datetime(2026, 11, 23, 12, 0,
                                 tzinfo=timezone.utc).timestamp())
-    named = insight_connect.match_names("Halvorsen Freight renewal", index)
+    named = insight_connect.match_names("Harborlight Freight renewal", index)
     assert named and named[0].event_clause.endswith("14:38")
-    line, _notes = insight_connect.connect_line(["Halvorsen Freight"], index)
+    line, _notes = insight_connect.connect_line(["Harborlight Freight"], index)
     assert "you told the desk" in line and "at 14:38" in line
     # The title keeps the casing it was stored with; matching lowercased
     # it only to find the entity.
-    assert "Renewal call: Halvorsen Freight" in line
-    assert "renewal call: halvorsen freight" not in line
+    assert "Renewal call: Harborlight Freight" in line
+    assert "renewal call: harborlight freight" not in line
 
 
 def test_a_sealed_bank_yields_no_names_and_no_line():
@@ -146,12 +146,12 @@ def test_a_sealed_bank_yields_no_names_and_no_line():
     what the test pins."""
     sealed = SimpleNamespace(
         is_sealed=True,
-        entities=lambda: [_Entity(1, "Halvorsen Freight", fact_count=3)],
+        entities=lambda: [_Entity(1, "Harborlight Freight", fact_count=3)],
     )
     context = build_context(SimpleNamespace(memory=sealed, calendar=None), {})
     assert context.desk_names == ()
     assert "locked" in context.memory_note
-    assert insight_connect.connect_line(["Halvorsen Freight"], context.desk_names) == ("", 0)
+    assert insight_connect.connect_line(["Harborlight Freight"], context.desk_names) == ("", 0)
 
 
 def _tracker_payload(label_column=None):
@@ -159,7 +159,7 @@ def _tracker_payload(label_column=None):
     rising amount (the trend), and an account column for the labels."""
     rows = []
     for index in range(12):
-        account = "Halvorsen Freight" if index % 3 == 0 else "Kestrel Foods"
+        account = "Harborlight Freight" if index % 3 == 0 else "Kestrel Foods"
         rows.append([account, f"2026-{index + 1:02d}-01", 900 + index * 40])
     headers = ["Account", "When", "Amount"]
     return {
@@ -175,7 +175,7 @@ def _reading_for(payload, desk_names):
 
 
 def test_the_line_is_a_note_block_never_an_element():
-    index = _index(_Entity(1, "Halvorsen Freight", fact_count=3))
+    index = _index(_Entity(1, "Harborlight Freight", fact_count=3))
     found = _reading_for(_tracker_payload(), index)
     text = " ".join(block["text"] for block in insight_reading.blocks(found))
     assert "Also in your desk" in text
@@ -198,7 +198,7 @@ def test_no_match_leaves_the_reading_exactly_as_it_was():
     plain = _reading_for(plain_payload, ())
     assert plain.inputs == ("rows",) and plain.memory_notes == 0
     matched = _reading_for(
-        payload, _index(_Entity(1, "Halvorsen Freight", fact_count=3)))
+        payload, _index(_Entity(1, "Harborlight Freight", fact_count=3)))
     assert matched.inputs == ("rows", "memory", "calendar")
 
 
@@ -269,20 +269,20 @@ def test_the_sample_desk_holds_nameable_things(tmp_path, monkeypatch):
         names = ()
         while time_module.monotonic() < deadline:
             names = build_context(booted.server, {}, now=time_module.time()).desk_names
-            if any("Halvorsen Freight" in entry.names for entry in names):
+            if any("Harborlight Freight" in entry.names for entry in names):
                 break
             time_module.sleep(0.2)
         named = {name for entry in names for name in entry.names}
-        assert "Halvorsen Freight" in named and "Kestrel Foods" in named
+        assert "Harborlight Freight" in named and "Kestrel Foods" in named
         assert not any("Q4 pipeline review" in named for _entry in names)
         counts = {entry.names[0]: entry.fact_count for entry in names}
-        assert counts.get("Halvorsen Freight") == 3
+        assert counts.get("Harborlight Freight") == 3
 
         insight = _tracker_card(booted, auth)
         assert insight is not None
         text = " ".join(block["text"] for block in insight.get("blocks") or [])
         assert "Also in your desk" in text
-        assert "Halvorsen Freight" in text
+        assert "Harborlight Freight" in text
         assert "memory (6 notes)" in text
     finally:
         booted.close()

@@ -80,7 +80,7 @@ def _inbox():
     return InboxStore(sqlite3.connect(":memory:", check_same_thread=False), Clock(MORNING))
 
 
-def _card(inbox, card_id="rec-1", title="Halvorsen Freight: December 15 (in 25 days)"):
+def _card(inbox, card_id="rec-1", title="Harborlight Freight: December 15 (in 25 days)"):
     due = datetime.datetime(2026, 12, 15, 0, 0).astimezone().timestamp()
     return inbox.add(
         KIND_SUGGESTION,
@@ -126,7 +126,7 @@ def test_build_input_has_candidates_and_facts():
     assert payload["candidates"] == [
         {
             "id": "rec-1",
-            "title": "Halvorsen Freight: December 15 (in 25 days)",
+            "title": "Harborlight Freight: December 15 (in 25 days)",
             "facts": ["Renewal 15 December."],
             "daysUntil": 25,
         }

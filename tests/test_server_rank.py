@@ -119,7 +119,7 @@ def test_ranked_reason_reaches_dashboard_and_page(desk, tmp_path, monkeypatch):
         auth = _auth(desk)
         assert _toggle(desk, auth, "sample_data") is True
         recs = _recommendations(desk, auth)
-        halvorsen = next(r for r in recs if r["title"].startswith("Halvorsen Freight"))
+        harborlight = next(r for r in recs if r["title"].startswith("Harborlight Freight"))
         settings = desk.stores[0]
         settings.set("llm_base", stub.base_url)
         settings.set("llm_key", "test-key")
@@ -127,7 +127,7 @@ def test_ranked_reason_reaches_dashboard_and_page(desk, tmp_path, monkeypatch):
         stub.reply = json.dumps(
             [
                 {
-                    "id": halvorsen["cardId"],
+                    "id": harborlight["cardId"],
                     "score": 9,
                     "why": "Renewal closes in 25 days and it is your largest account.",
                 }
@@ -137,7 +137,7 @@ def test_ranked_reason_reaches_dashboard_and_page(desk, tmp_path, monkeypatch):
         first = desk.server.agent_loop.run_pass(only={"rank"})
         assert first and first[0]["name"] == "rank" and first[0]["ok"], first
         recs = _recommendations(desk, auth)
-        ranked = next(r for r in recs if r["cardId"] == halvorsen["cardId"])
+        ranked = next(r for r in recs if r["cardId"] == harborlight["cardId"])
         assert ranked["why"] == "Renewal closes in 25 days and it is your largest account."
         assert ranked["whySource"] == "model"
         assert ranked["score"] == 9
@@ -149,7 +149,7 @@ def test_ranked_reason_reaches_dashboard_and_page(desk, tmp_path, monkeypatch):
         assert len(rows) == 1
         assert rows[0][1] == "stub-model"
         assert rows[0][2] > 0
-        assert "Halvorsen" not in " ".join(str(value) for value in rows[0])
+        assert "Harborlight" not in " ".join(str(value) for value in rows[0])
 
         second = desk.server.agent_loop.run_pass(only={"rank"})
         assert second and second[0]["name"] == "rank" and second[0]["ok"], second

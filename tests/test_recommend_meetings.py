@@ -88,17 +88,17 @@ def _fact(fact_id: int, text: str, created: float) -> Fact:
 
 def test_meeting_match_cites_three_newest():
     now = MORNING.astimezone()
-    event = _event("Halvorsen Freight renewal call", now + datetime.timedelta(hours=3))
+    event = _event("Harborlight Freight renewal call", now + datetime.timedelta(hours=3))
     facts = [
-        _fact(1, "Oldest Halvorsen fact.", 100.0),
-        _fact(2, "Second Halvorsen fact.", 200.0),
-        _fact(3, "Third Halvorsen fact.", 300.0),
-        _fact(4, "Newest Halvorsen fact.", 400.0),
+        _fact(1, "Oldest Harborlight fact.", 100.0),
+        _fact(2, "Second Harborlight fact.", 200.0),
+        _fact(3, "Third Harborlight fact.", 300.0),
+        _fact(4, "Newest Harborlight fact.", 400.0),
     ]
 
     candidates = meeting_candidates(
         [event],
-        {7: "Halvorsen Freight"},
+        {7: "Harborlight Freight"},
         {7: facts},
         now,
     )
@@ -108,13 +108,13 @@ def test_meeting_match_cites_three_newest():
     assert candidate.rule == "meeting-prep"
     assert candidate.key == "meeting-prep:evt-1:2026-11-20"
     assert candidate.title == (
-        "Prep for Halvorsen Freight renewal call: 3 things you know about Halvorsen Freight"
+        "Prep for Harborlight Freight renewal call: 3 things you know about Harborlight Freight"
     )
     assert candidate.cites == (4, 3, 2)
     assert candidate.href == "/assistant"
     assert candidate.action_label == "Prep in Assistant"
     assert candidate.body.count("\n") == 2
-    assert "Newest Halvorsen fact." in candidate.body.splitlines()[0]
+    assert "Newest Harborlight fact." in candidate.body.splitlines()[0]
 
 
 def test_no_match_no_card():
@@ -122,8 +122,8 @@ def test_no_match_no_card():
     event = _event("Quarterly all hands", now + datetime.timedelta(hours=2))
     candidates = meeting_candidates(
         [event],
-        {7: "Halvorsen Freight"},
-        {7: [_fact(1, "Halvorsen fact.", 100.0)]},
+        {7: "Harborlight Freight"},
+        {7: [_fact(1, "Harborlight fact.", 100.0)]},
         now,
     )
     assert candidates == []
@@ -131,25 +131,25 @@ def test_no_match_no_card():
 
 def test_the_match_folds_case():
     now = MORNING.astimezone()
-    event = _event("HALVORSEN FREIGHT renewal call", now + datetime.timedelta(hours=2))
+    event = _event("HARBORLIGHT FREIGHT renewal call", now + datetime.timedelta(hours=2))
     candidates = meeting_candidates(
         [event],
-        {7: "Halvorsen Freight"},
-        {7: [_fact(1, "Halvorsen fact.", 100.0)]},
+        {7: "Harborlight Freight"},
+        {7: [_fact(1, "Harborlight fact.", 100.0)]},
         now,
     )
     assert len(candidates) == 1
-    assert candidates[0].title.startswith("Prep for HALVORSEN FREIGHT renewal call")
+    assert candidates[0].title.startswith("Prep for HARBORLIGHT FREIGHT renewal call")
 
 
 def test_past_events_and_far_events_do_not_become_cards():
     now = MORNING.astimezone()
     events = [
-        _event("Halvorsen Freight yesterday", now - datetime.timedelta(hours=2), "past"),
-        _event("Halvorsen Freight next week", now + datetime.timedelta(days=7), "far"),
+        _event("Harborlight Freight yesterday", now - datetime.timedelta(hours=2), "past"),
+        _event("Harborlight Freight next week", now + datetime.timedelta(days=7), "far"),
     ]
     assert meeting_candidates(
-        events, {7: "Halvorsen Freight"}, {7: [_fact(1, "Halvorsen fact.", 100.0)]}, now
+        events, {7: "Harborlight Freight"}, {7: [_fact(1, "Harborlight fact.", 100.0)]}, now
     ) == []
 
 
@@ -163,16 +163,16 @@ def _builder(settings: dict | None = None, settings_store: SettingsStore | None 
     inbox = InboxStore(conn, clock)
     ledger = Ledger(":memory:", clock=clock)
     now = MORNING.astimezone()
-    event = _event("Halvorsen Freight renewal call", now + datetime.timedelta(hours=3))
+    event = _event("Harborlight Freight renewal call", now + datetime.timedelta(hours=3))
     facts = [
-        _fact(1, "Oldest Halvorsen fact.", 100.0),
-        _fact(2, "Second Halvorsen fact.", 200.0),
-        _fact(3, "Third Halvorsen fact.", 300.0),
-        _fact(4, "Newest Halvorsen fact.", 400.0),
+        _fact(1, "Oldest Harborlight fact.", 100.0),
+        _fact(2, "Second Harborlight fact.", 200.0),
+        _fact(3, "Third Harborlight fact.", 300.0),
+        _fact(4, "Newest Harborlight fact.", 400.0),
     ]
     memory = FakeMemory(
         facts,
-        [EntitySummary(id=7, canonical_name="Halvorsen Freight", type="org", fact_count=4)],
+        [EntitySummary(id=7, canonical_name="Harborlight Freight", type="org", fact_count=4)],
         {1: [7], 2: [7], 3: [7], 4: [7]},
     )
     calendar = FakeCalendar([event])
@@ -255,7 +255,7 @@ def test_sample_calendar_names_a_sample_account():
     """The sample calendar must exercise the meeting rule, not just parse."""
     document = json.loads(demo_data.sample_calendar_bytes(MORNING.astimezone()))
     subjects = " ".join(item["subject"] for item in document["events"])
-    assert "Halvorsen" in subjects
+    assert "Harborlight" in subjects
 
 
 def _stores():
@@ -299,7 +299,7 @@ def test_server_dashboard_shows_the_prep_row_with_sample_data(tmp_path, monkeypa
         assert len(rows) == 1
         row = rows[0]
         assert row["title"] == (
-            "Prep for Halvorsen Freight renewal call: 3 things you know about Halvorsen Freight"
+            "Prep for Harborlight Freight renewal call: 3 things you know about Harborlight Freight"
         )
         assert row["whySource"] == "rule"
         assert row["actionLabel"] == "Prep in Assistant"
@@ -310,7 +310,7 @@ def test_server_dashboard_shows_the_prep_row_with_sample_data(tmp_path, monkeypa
         status, _headers, page = booted.request("GET", "/", auth)
         assert status == 200
         text = page.decode("utf-8")
-        assert "Prep for Halvorsen Freight renewal call" in text
+        assert "Prep for Harborlight Freight renewal call" in text
         assert "Prep in Assistant" in text
         assert 'href="/assistant"' in text
     finally:

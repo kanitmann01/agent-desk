@@ -60,7 +60,7 @@ def test_a_pass_builds_the_deadline_recommendation(env, auth):
     if (target.month, target.day) == (2, 29):
         # The deadline rules deliberately skip Feb 29.
         target += datetime.timedelta(days=1)
-    text = f"The Halvorsen renewal is due {target:%B} {target.day}."
+    text = f"The Harborlight renewal is due {target:%B} {target.day}."
     status, _headers, body = env.post_json("/memory/add", {"text": text}, auth)
     assert status == 201, body
     fact = json.loads(body)
@@ -95,7 +95,7 @@ def test_the_rank_step_pays_the_ledger_and_undo_restores_the_card(env, auth, mon
     target = datetime.date.today() + datetime.timedelta(days=10)
     if (target.month, target.day) == (2, 29):
         target += datetime.timedelta(days=1)
-    text = f"The Halvorsen renewal is due {target:%B} {target.day}."
+    text = f"The Harborlight renewal is due {target:%B} {target.day}."
     status, _headers, body = env.post_json("/memory/add", {"text": text}, auth)
     assert status == 201, body
     rule_row = next(rec for rec in _get_json(env, auth, "/api/dashboard")["recommendations"]

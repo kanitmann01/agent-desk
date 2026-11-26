@@ -85,11 +85,11 @@ def _entity_id(memory, name):
 
 def test_rule_summary_is_a_count_and_the_latest_state_newest_first():
     memory = _store()
-    facts = [loop.store_fact(memory, f"Halvorsen Freight moved to stage {n}.", source="page",
-                             entities=[("Halvorsen Freight", "org")]).fact for n in range(1, 8)]
-    summary = loop.rule_summary("Halvorsen Freight", facts)
-    assert summary.text.startswith("7 facts about Halvorsen Freight. Latest, Jan 15: "
-                                   "Halvorsen Freight moved to stage 7.")
+    facts = [loop.store_fact(memory, f"Harborlight Freight moved to stage {n}.", source="page",
+                             entities=[("Harborlight Freight", "org")]).fact for n in range(1, 8)]
+    summary = loop.rule_summary("Harborlight Freight", facts)
+    assert summary.text.startswith("7 facts about Harborlight Freight. Latest, Jan 15: "
+                                   "Harborlight Freight moved to stage 7.")
     assert "stage 6" in summary.text and "stage 1" not in summary.text
     assert ";" not in summary.text and len(summary.text) <= loop.MAX_SUMMARY_CHARS
     assert summary.method == loop.METHOD_RULES
@@ -148,13 +148,13 @@ def test_an_overlong_or_empty_model_reply_is_refused():
 
 def test_two_entities_with_the_same_facts_share_one_observation():
     memory = _store()
-    loop.store_fact(memory, "Jordan Lee moved the Halvorsen Freight renewal to legal.", source="page",
-                    entities=[("Jordan Lee", "person"), ("Halvorsen Freight", "org")])
-    loop.store_fact(memory, "Jordan Lee closed the Halvorsen Freight renewal.", source="page",
-                    entities=[("Jordan Lee", "person"), ("Halvorsen Freight", "org")])
+    loop.store_fact(memory, "Jordan Lee moved the Harborlight Freight renewal to legal.", source="page",
+                    entities=[("Jordan Lee", "person"), ("Harborlight Freight", "org")])
+    loop.store_fact(memory, "Jordan Lee closed the Harborlight Freight renewal.", source="page",
+                    entities=[("Jordan Lee", "person"), ("Harborlight Freight", "org")])
     [obs] = memory.observations()
-    loop.store_fact(memory, "Halvorsen Freight is based in Oslo.", source="page",
-                    entities=[("Halvorsen Freight", "org")])
+    loop.store_fact(memory, "Harborlight Freight is based in Oslo.", source="page",
+                    entities=[("Harborlight Freight", "org")])
     # Now the sets differ: each entity gets its own.
     texts = sorted(o.text for o in memory.observations())
     assert len(texts) == 2 and texts[0].startswith("2 facts about Jordan Lee")
@@ -218,22 +218,22 @@ HEADER = ["Deal", "Stage", "Owner"]
 
 def test_workbook_rows_become_facts_written_from_the_cells():
     delta = Delta(
-        added=[["Halvorsen Freight", "Legal", "Jordan Lee"], ["Brightwater", "Intro", "Priya Shah"]],
-        removed=[["Halvorsen Freight", "Proposal", "Jordan Lee"], ["Old Mill", "Lost", ""]],
+        added=[["Harborlight Freight", "Legal", "Jordan Lee"], ["Brightwater", "Intro", "Priya Shah"]],
+        removed=[["Harborlight Freight", "Proposal", "Jordan Lee"], ["Old Mill", "Lost", ""]],
     )
     found = loop.workbook_candidates(HEADER, delta.added, delta.removed)
     assert [c.text for c in found] == [
-        "Halvorsen Freight: Stage changed from Proposal to Legal.",
+        "Harborlight Freight: Stage changed from Proposal to Legal.",
         "Brightwater was added to the tracker with Stage Intro, Owner Priya Shah.",
         "Old Mill was removed from the tracker.",
     ]
-    assert found[0].entities == (("Halvorsen Freight", "org"),) or found[0].entities[0][0] == "Halvorsen Freight"
+    assert found[0].entities == (("Harborlight Freight", "org"),) or found[0].entities[0][0] == "Harborlight Freight"
 
 
 def test_workbook_capture_stages_cards_and_does_not_repropose_rejected_ones():
     memory, inbox = _store(), _inbox()
     candidates = loop.workbook_candidates(
-        HEADER, [["Halvorsen Freight", "Legal", "Jordan Lee"]], [["Halvorsen Freight", "Proposal", "Jordan Lee"]])
+        HEADER, [["Harborlight Freight", "Legal", "Jordan Lee"]], [["Harborlight Freight", "Proposal", "Jordan Lee"]])
     settings = loop.CaptureSettings()
 
     def run():

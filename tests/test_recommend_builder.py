@@ -71,7 +71,7 @@ def _recommendations(cards) -> list[dict]:
 
 def test_refresh_idempotent():
     desk = Desk()
-    fact = desk.memory.add("Sign the Halvorsen renewal before December 15.", source="page")
+    fact = desk.memory.add("Sign the Harborlight renewal before December 15.", source="page")
 
     assert desk.builder.refresh() == {"added": 1, "withdrawn": 0}
     assert desk.builder.refresh() == {"added": 0, "withdrawn": 0}
@@ -167,10 +167,10 @@ def test_sample_flag():
     by_title = {card.title: rec for card, rec in zip(
         desk.builder.waiting(), _recommendations(desk.builder.waiting())
     )}
-    halvorsen = next(
+    harborlight = next(
         (rec for title, rec in by_title.items() if "December 15" in title), None,
     )
-    assert halvorsen is not None and halvorsen["sample"] is True
+    assert harborlight is not None and harborlight["sample"] is True
     page = next(rec for title, rec in by_title.items() if "A page fact" in title)
     assert page["sample"] is False
 
@@ -196,7 +196,7 @@ def test_settings_off_stops_creating_but_keeps_cards():
 
 def test_ledger_detail_holds_fact_ids_only_and_undo_dismisses():
     desk = Desk()
-    fact = desk.memory.add("Sign the Halvorsen renewal before December 15.")
+    fact = desk.memory.add("Sign the Harborlight renewal before December 15.")
     desk.builder.refresh()
 
     entry = next(entry for entry in desk.ledger.entries(limit=20) if entry.action == "recommend.added")
@@ -204,8 +204,8 @@ def test_ledger_detail_holds_fact_ids_only_and_undo_dismisses():
     assert entry.detail == {"rule": "deadline", "cites": [fact.id]}
     assert entry.undo_kind == "card-added"
     assert entry.undoable
-    assert "Halvorsen" not in json.dumps(entry.detail)
-    assert "Halvorsen" not in entry.subject and "Halvorsen" not in entry.why
+    assert "Harborlight" not in json.dumps(entry.detail)
+    assert "Harborlight" not in entry.subject and "Harborlight" not in entry.why
 
     card = desk.builder.waiting()[0]
     server = SimpleNamespace(inbox=desk.inbox, ledger=desk.ledger)

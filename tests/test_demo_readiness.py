@@ -124,7 +124,7 @@ def test_r28_zero_cards_fail_when_the_connect_step_is_in_the_build(readiness):
     """The old pass-on-empty rule is gone: a missing line is a failure."""
     desk = _FakeDesk(dashboard={"plugins": {"cards": []}})
     ok, detail = readiness._connect_lines_name_held(
-        desk, {"Halvorsen Freight"}, connect_present=True)
+        desk, {"Harborlight Freight"}, connect_present=True)
     assert ok is False
     assert "none carries" in detail
 
@@ -133,24 +133,24 @@ def test_r28_zero_cards_are_honest_without_the_connect_step(readiness):
     """A build without the connect step says so instead of claiming a line."""
     desk = _FakeDesk(dashboard={"plugins": {"cards": []}})
     ok, detail = readiness._connect_lines_name_held(
-        desk, {"Halvorsen Freight"}, connect_present=False)
+        desk, {"Harborlight Freight"}, connect_present=False)
     assert ok is True
     assert "not in this build" in detail
 
 
 def test_r28_a_real_line_passes_and_an_unheld_name_fails(readiness):
     """A card line naming a held name passes; one naming another fails."""
-    held = "Also in your desk: Halvorsen Freight, 3 things you told the desk."
+    held = "Also in your desk: Harborlight Freight, 3 things you told the desk."
     desk = _FakeDesk(dashboard={"plugins": {"cards": [
         {"payload": {"insight": {"blocks": [{"text": held}]}}}]}})
     ok, detail = readiness._connect_lines_name_held(
-        desk, {"Halvorsen Freight"}, connect_present=True)
+        desk, {"Harborlight Freight"}, connect_present=True)
     assert ok is True and "1 connect line" in detail
     unheld = "Also in your desk: Quiebro Nova, 1 thing you told the desk."
     desk = _FakeDesk(dashboard={"plugins": {"cards": [
         {"payload": {"insight": {"blocks": [{"text": unheld}]}}}]}})
     ok, detail = readiness._connect_lines_name_held(
-        desk, {"Halvorsen Freight"}, connect_present=True)
+        desk, {"Harborlight Freight"}, connect_present=True)
     assert ok is False and "quiebro nova" in detail
 
 
