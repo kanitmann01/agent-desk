@@ -68,6 +68,8 @@ PLANNED_WIDTHS = (DESKTOP_WIDTH, STRIP_WIDTH, PHONE_WIDTH)
 DEFAULT_WIDTHS = "1280,800,420"
 DEFAULT_MOCK_DELAY_MS = 12000
 DONE_DURATION_MS = 1600
+RAIL_CHECK_TIMEOUT_MS = 15000
+DONE_CHECK_TIMEOUT_MS = 60000
 SHEET_HOST = "localhost"
 SHEET_PORT = 5199
 SHEET_URLS = (
@@ -122,6 +124,74 @@ SHEET_STATE_JS = r"""
     } : null,
   };
 }
+"""
+RAIL_STATE_JS = r"""
+() => {
+  const el = document.querySelector('[data-face-slot="rail"] .face-box');
+  return el ? {
+    present: true,
+    mood: el.getAttribute('data-mood') || '',
+    size: el.getAttribute('data-size') || '',
+    title: el.getAttribute('title') || '',
+  } : {present: false, mood: '', size: '', title: ''};
+}
+"""
+BLOCKED_STATE_JS = r"""
+() => {
+  const area = document.querySelector('.brief-answer');
+  const alert = area ? area.querySelector('[role="alert"], .alert') : null;
+  const field = document.querySelector('textarea[aria-label="Research question"]');
+  return {
+    alert: alert ? ((alert.innerText || alert.textContent || '') + '').trim() : '',
+    question: field ? field.value : '',
+  };
+}
+"""
+COLLAPSED_STATE_JS = r"""
+() => {
+  const el = document.querySelector('[data-face-slot="rail"] .face-box');
+  return {
+    collapsed: !!document.querySelector('.app.rail-collapsed'),
+    face: el ? {
+      present: true,
+      mood: el.getAttribute('data-mood') || '',
+      size: el.getAttribute('data-size') || '',
+      title: el.getAttribute('title') || '',
+    } : {present: false, mood: '', size: '', title: ''},
+  };
+}
+"""
+PHONE_STATE_JS = r"""
+() => {
+  const bar = document.querySelector('.phone-bar');
+  return {
+    bar: !!bar,
+    visible: bar ? getComputedStyle(bar).display !== 'none' : false,
+    slots: bar ? bar.querySelectorAll('[data-face-slot]').length : -1,
+    faces: bar ? bar.querySelectorAll('.face-box').length : -1,
+  };
+}
+"""
+DIALOG_STATE_JS = r"""
+() => {
+  const dialog = document.querySelector('[role="dialog"]');
+  return {
+    dialog: !!dialog,
+    dialogFaces: dialog ? dialog.querySelectorAll('.face-box').length : -1,
+    dialogSlots: dialog ? dialog.querySelectorAll('[data-face-slot]').length : -1,
+    railFaces: document.querySelectorAll('[data-face-slot="rail"] .face-box').length,
+    railStays: document.querySelectorAll('[data-face-slot="rail"]').length > 0,
+  };
+}
+"""
+SERVER_STATE_JS = r"""
+() => ({
+  theme: document.documentElement.getAttribute('data-theme') || '',
+  faceSlots: document.querySelectorAll('[data-face-slot]').length,
+  faceBoxes: document.querySelectorAll('.face-box').length,
+  railSlots: document.querySelectorAll('.rail .brand [data-face-slot]').length,
+  collapsed: !!document.querySelector('.app.rail-collapsed'),
+})
 """
 REQUIRED_SURFACES = ("review-sheet", "rail", "rail-collapsed", "phone-strip",
                      "dialog-describe", "dialog-tracker", "server-inbox")
@@ -951,6 +1021,317 @@ def _run_sheet_phase(args, run: RunState, plan: list[Shot],
         _stop_vite(process, log)
 
 
+def _set_theme_storage(page, theme: str) -> None:
+    """Pin the theme in localStorage; the next navigation applies it."""
+    page.evaluate(
+        "(theme) => { try { localStorage.setItem('agentdesk.theme', theme); } "
+        "catch (error) {} }", theme)
+
+
+def _settle_dashboard(page) -> None:
+    """Wait for the dashboard's command bar, the research actions' anchor."""
+    page.wait_for_load_state("domcontentloaded", timeout=30000)
+    page.wait_for_timeout(600)
+    page.wait_for_selector(RESEARCH_BUTTON, state="visible", timeout=15000)
+
+
+def _focus_research(page) -> dict:
+    """Focus the research question field, the action that reaches listening."""
+    field = page.locator(RESEARCH_FIELD).first
+    field.focus()
+    return {"field": RESEARCH_FIELD}
+
+
+def _ask_research(page, question: str) -> dict:
+    """Type a question and start Research, the action behind three moods."""
+    field = page.locator(RESEARCH_FIELD).first
+    field.fill(question)
+    page.locator(RESEARCH_BUTTON).first.click()
+    return {"question": question}
+
+
+def _act_idle(page, base: str) -> dict:
+    """Land on the dashboard with nothing active and no waiting cards."""
+    page.goto(base + "/", wait_until="domcontentloaded", timeout=30000)
+    _settle_dashboard(page)
+    return {"action": "idle"}
+
+
+def _act_listening(page, base: str) -> dict:
+    """Focus the research field on the freshly booted dashboard."""
+    _act_idle(page, base)
+    return _focus_research(page)
+
+
+def _act_thinking(page, base: str, question: str) -> dict:
+    """Type a question and start Research while the mock holds the answer."""
+    _act_idle(page, base)
+    return _ask_research(page, question)
+
+
+def _act_blocked(page, base: str, config: RouteConfig, question: str) -> dict:
+    """Ask Research with the walk's own 500 route in place."""
+    config.research = "fail"
+    _act_idle(page, base)
+    return _ask_research(page, question)
+
+
+def _act_reading(page, base: str, config: RouteConfig) -> dict:
+    """Open a non-fresh card's menu and choose Re-test now while it is held."""
+    config.retest = "hold"
+    _act_idle(page, base)
+    return _open_retest_menu(page)
+
+
+def _act_waiting(page, base: str) -> dict:
+    """Land on the dashboard of the full seed, whose sample data waits."""
+    return _act_idle(page, base)
+
+
+def _act_done(page, base: str) -> dict:
+    """The done mood follows the successful research action already in flight."""
+    return {"action": "done", "base": base}
+
+
+def _open_retest_menu(page) -> dict:
+    """Find the first widget whose menu offers Re-test now and click it.
+
+    A fresh card's menu has only Manage plugins, so the loop opens each
+    widget's menu until the Re-test now item appears, closing the others.
+    """
+    triggers = page.locator('button[aria-label^="Widget options"]')
+    for index in range(min(triggers.count(), 30)):
+        trigger = triggers.nth(index)
+        label = trigger.get_attribute("aria-label") or ""
+        trigger.click()
+        item = page.get_by_role("menuitem", name="Re-test now", exact=True)
+        if item.count() > 0:
+            item.first.click()
+            return {"card": label}
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(100)
+    raise FaceWalkError("no non-fresh plugin card offers Re-test now")
+
+
+def _open_describe_dialog(page, base: str) -> None:
+    """Open the plugin description dialog on the catalog page."""
+    page.goto(base + "/marketplace", wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(600)
+    trigger = page.get_by_role(
+        "button", name="Describe a plugin in plain English", exact=True)
+    if trigger.count() == 0:
+        raise FaceWalkError("no describe-a-plugin control on the catalog page")
+    trigger.first.click()
+    page.wait_for_selector('.setup-sheet[role="dialog"]', timeout=10000)
+
+
+def _open_tracker_dialog(page, base: str) -> None:
+    """Open the tracker setup dialog from the seeded tracker card."""
+    page.goto(base + "/", wait_until="domcontentloaded", timeout=30000)
+    _settle_dashboard(page)
+    buttons = page.locator(".tracker-card button")
+    for index in range(min(buttons.count(), 20)):
+        button = buttons.nth(index)
+        if (button.inner_text() or "").strip() in ("Set up", "Edit"):
+            button.click()
+            page.wait_for_selector('.setup-sheet[role="dialog"]', timeout=10000)
+            return
+    raise FaceWalkError("no Set up or Edit control on the tracker card")
+
+
+def _close_dialog(page) -> None:
+    """Close an open dialog, by its own control or the Escape key."""
+    close = page.get_by_role("button", name="Close dialog", exact=True)
+    if close.count() > 0:
+        close.first.click()
+    else:
+        page.keyboard.press("Escape")
+    page.wait_for_timeout(150)
+
+
+def _wait_mood(page, mood: str, timeout_ms: int, poll_ms: int = 60) -> dict:
+    """Poll the rail face until its data-mood is the expected one."""
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    last: dict = {}
+    while time.monotonic() < deadline:
+        try:
+            last = page.evaluate(RAIL_STATE_JS)
+        except Exception:  # noqa: BLE001 - navigation briefly removes the face
+            last = {}
+        if last.get("present") and last.get("mood") == mood:
+            return last
+        page.wait_for_timeout(poll_ms)
+    return last
+
+
+def _check_rail(page, shot: Shot, run: RunState, question: str = "") -> dict:
+    """Check the rail face's mood, size and the two moods with an extra fact."""
+    timeout = (DONE_CHECK_TIMEOUT_MS if shot.mood == "done"
+               else RAIL_CHECK_TIMEOUT_MS)
+    state = _wait_mood(page, shot.mood, timeout,
+                       poll_ms=50 if shot.mood == "done" else 60)
+    present = bool(state.get("present"))
+    run.observe_surface("rail", present, True, f"{shot.theme}/{shot.mood}")
+    failures: list[str] = []
+    if not present:
+        failures.append("the rail face is absent")
+    if state.get("mood") != shot.mood:
+        failures.append(f"data-mood is {state.get('mood')!r}")
+    if present and state.get("size") != "md":
+        failures.append(f"data-size is {state.get('size')!r}, not the rail size")
+    extra: dict = {}
+    if shot.mood == "waiting":
+        match = re.search(r"(\d+) waiting in Inbox", state.get("title") or "")
+        extra["waiting_count"] = int(match.group(1)) if match else None
+        if match is None:
+            failures.append("the face tooltip does not name the waiting count")
+    if shot.mood == "blocked":
+        facts = page.evaluate(BLOCKED_STATE_JS)
+        extra["blocked"] = facts
+        if not str(facts.get("alert") or "").strip():
+            failures.append("the answer area keeps no failure")
+        if question and facts.get("question") != question:
+            failures.append("the typed question is not kept")
+    return {
+        "kind": "rail-face",
+        "mood": shot.mood,
+        "passed": not failures,
+        "detail": "; ".join(failures) if failures else "rail face mood holds",
+        "state": state,
+        "extra": extra,
+    }
+
+
+def _check_collapsed(page, shot: Shot, run: RunState) -> dict:
+    """Check the collapsed rail still carries an idle face at rail size."""
+    state = page.evaluate(COLLAPSED_STATE_JS)
+    face = state.get("face") or {}
+    present = bool(face.get("present"))
+    run.observe_surface("rail-collapsed", present, True, shot.theme)
+    failures: list[str] = []
+    if not state.get("collapsed"):
+        failures.append("the rail did not collapse")
+    if not present:
+        failures.append("the collapsed rail has no face")
+    if face.get("mood") != "idle":
+        failures.append(f"data-mood is {face.get('mood')!r}")
+    if face.get("size") != "md":
+        failures.append(f"data-size is {face.get('size')!r}, not the rail size")
+    return {
+        "kind": "collapsed-rail",
+        "passed": not failures,
+        "detail": "; ".join(failures) if failures else "collapsed rail keeps its face",
+        "state": state,
+    }
+
+
+def _check_phone(page, shot: Shot, run: RunState) -> dict:
+    """Check that the phone strip carries no face slot and no face box."""
+    state = page.evaluate(PHONE_STATE_JS)
+    run.observe_surface("phone-strip", False, True,
+                        f"{shot.theme}/{shot.width}")
+    failures: list[str] = []
+    if not state.get("bar"):
+        failures.append("the phone strip is absent")
+    if state.get("slots") != 0:
+        failures.append(f"{state.get('slots')} face slot(s) inside the phone strip")
+    if state.get("faces") != 0:
+        failures.append(f"{state.get('faces')} face box(es) inside the phone strip")
+    return {
+        "kind": "phone-strip",
+        "passed": not failures,
+        "detail": "; ".join(failures) if failures else "phone strip has no face",
+        "state": state,
+    }
+
+
+def _check_dialog(page, shot: Shot, run: RunState) -> dict:
+    """Record whether the open dialog mounts a face and whether the rail stays."""
+    state = page.evaluate(DIALOG_STATE_JS)
+    open_dialog = bool(state.get("dialog"))
+    faces = int(state.get("dialogFaces") or 0)
+    run.observe_surface(shot.surface, faces > 0, open_dialog,
+                        f"{shot.theme}: {faces} face(s)")
+    failures: list[str] = []
+    if not open_dialog:
+        failures.append("the dialog did not open")
+    return {
+        "kind": "dialog",
+        "passed": not failures,
+        "detail": ("dialog face count " + str(faces) + "; rail face in page "
+                   + str(int(state.get("railFaces") or 0)))
+                  if not failures else "; ".join(failures),
+        "state": state,
+    }
+
+
+def _check_server(page, shot: Shot, run: RunState) -> dict:
+    """Record the server-rendered rail's missing face and the requested state."""
+    state = page.evaluate(SERVER_STATE_JS)
+    any_face = int(state.get("faceSlots") or 0) + int(state.get("faceBoxes") or 0)
+    run.observe_surface("server-inbox", any_face > 0, True,
+                        f"{shot.theme}/{shot.state}: {any_face} face node(s)")
+    failures: list[str] = []
+    if state.get("theme") != shot.theme:
+        failures.append(f"data-theme is {state.get('theme')!r}")
+    if bool(state.get("collapsed")) != (shot.state == "collapsed"):
+        failures.append(f"rail collapsed is {bool(state.get('collapsed'))}")
+    return {
+        "kind": "server-page",
+        "passed": not failures,
+        "detail": ("server rail face count " + str(any_face))
+                  if not failures else "; ".join(failures),
+        "state": state,
+    }
+
+
+def _capture_surface(page, shots: list[Shot], prep, check, run: RunState,
+                     shoot=None) -> None:
+    """Run one surface's action, then check and photograph every shot.
+
+    A failed action is recorded as a failed check for the group, and the
+    page is still photographed, so one broken surface never stops the run.
+    """
+    if not shots:
+        return
+    try:
+        prep()
+    except Exception as exc:  # noqa: BLE001 - the photograph still happens
+        detail = f"{type(exc).__name__}: {exc}"[:300]
+        run.notes.append(f"{shots[0].surface}: {detail}")
+
+        def failed(_shot: Shot) -> dict:
+            """Name the action failure as this capture's failed check."""
+            return {"kind": "action", "passed": False, "detail": detail}
+
+        _capture_group(page, shots, failed, run, shoot=shoot)
+        return
+    _capture_group(page, shots, check, run, shoot=shoot)
+
+
+def _api_recorder(record_dir: Path):
+    """A response listener that saves GET /api JSON bodies, or None."""
+    def handler(response) -> None:
+        """Write one JSON API body; a read failure is skipped, not raised."""
+        try:
+            if response.request.method != "GET":
+                return
+            api_path = urllib.parse.urlsplit(response.url).path
+            if not api_path.startswith("/api/"):
+                return
+            body = response.body()
+            if not body:
+                return
+            json.loads(body)
+        except Exception:  # noqa: BLE001 - recording never fails a page
+            return
+        target = record_dir / (_slug(api_path.lstrip("/")) + ".json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+
+    return handler
+
+
 def _boot_isolated_desk(condition: str, tmp_root: Path) -> dict:
     """Boot one isolated desk through the layout audit's boot function.
 
@@ -1087,9 +1468,171 @@ def _manifest(run: RunState, args, meta: dict, surfaces: dict | None = None) -> 
     }
 
 
+def _photograph_real_app(page, context, desk: dict, config: RouteConfig,
+                         run: RunState, shots: list[Shot],
+                         tmp_root: Path) -> None:
+    """Photograph every planned real-app surface on the booted desk."""
+    base = desk["base"]
+    rail = [shot for shot in shots if shot.kind == "rail"]
+    fresh = [shot for shot in rail if shot.condition == "fresh"]
+    if fresh:
+        for theme in dict.fromkeys(shot.theme for shot in fresh):
+            _set_theme_storage(page, theme)
+            for mood in ("idle", "listening"):
+                group = [shot for shot in fresh
+                         if shot.theme == theme and shot.mood == mood]
+                if not group:
+                    continue
+                if mood == "idle":
+                    prep = lambda: _act_idle(page, base)  # noqa: E731
+                else:
+                    prep = lambda: _act_listening(page, base)  # noqa: E731
+                _capture_surface(
+                    page, group, prep,
+                    lambda shot: _check_rail(page, shot, run, SHEET_QUESTION),
+                    run)
+    full = [shot for shot in shots if shot.condition == "full"]
+    if not full:
+        return
+    notes = audit._seed(context, base, "full", tmp_root)
+    run.notes.extend(notes)
+    for theme in dict.fromkeys(shot.theme for shot in full):
+        _set_theme_storage(page, theme)
+        waiting = [shot for shot in rail
+                   if shot.theme == theme and shot.mood == "waiting"]
+        if waiting:
+            _capture_surface(page, waiting, lambda: _act_waiting(page, base),
+                             lambda shot: _check_rail(
+                                 page, shot, run, SHEET_QUESTION), run)
+        blocked = [shot for shot in rail
+                   if shot.theme == theme and shot.mood == "blocked"]
+        if blocked:
+            _capture_surface(
+                page, blocked,
+                lambda: _act_blocked(page, base, config, SHEET_QUESTION),
+                lambda shot: _check_rail(page, shot, run, SHEET_QUESTION), run)
+            config.research = "pass"
+        reading = [shot for shot in rail
+                   if shot.theme == theme and shot.mood == "reading"]
+        if reading:
+            _capture_surface(
+                page, reading, lambda: _act_reading(page, base, config),
+                lambda shot: _check_rail(page, shot, run, SHEET_QUESTION), run)
+            _abort_held(run.held)
+            config.retest = "pass"
+        thinking = [shot for shot in rail
+                    if shot.theme == theme and shot.mood == "thinking"]
+        done = [shot for shot in rail
+                if shot.theme == theme and shot.mood == "done"]
+        if thinking or done:
+            config.research = "pass"
+            if thinking:
+                _capture_surface(
+                    page, thinking,
+                    lambda: _act_thinking(page, base, SHEET_QUESTION),
+                    lambda shot: _check_rail(page, shot, run, SHEET_QUESTION),
+                    run)
+            if done:
+                done_prep = ((lambda: _act_done(page, base)) if thinking
+                             else (lambda: _act_thinking(
+                                 page, base, SHEET_QUESTION)))
+                _capture_surface(
+                    page, done, done_prep,
+                    lambda shot: _check_rail(page, shot, run, SHEET_QUESTION),
+                    run)
+        collapsed = [shot for shot in shots
+                     if shot.kind == "rail-collapsed" and shot.theme == theme]
+        if collapsed:
+            def prep_collapsed(theme=theme) -> None:
+                """Collapse the rail on the requested theme's dashboard."""
+                _set_theme_storage(page, theme)
+                page.evaluate(
+                    "() => { try { localStorage.setItem("
+                    "'agentdesk.railCollapsed', '1'); } catch (error) {} }")
+                _act_idle(page, base)
+                page.wait_for_selector(".app.rail-collapsed", timeout=10000)
+
+            _capture_surface(page, collapsed, prep_collapsed,
+                             lambda shot: _check_collapsed(page, shot, run), run)
+            page.evaluate(
+                "() => { try { localStorage.setItem("
+                "'agentdesk.railCollapsed', '0'); } catch (error) {} }")
+        describe = [shot for shot in shots
+                    if shot.surface == "dialog-describe"
+                    and shot.theme == theme]
+        if describe:
+            def prep_describe(theme=theme) -> None:
+                """Open the plugin description dialog on the catalog page."""
+                _set_theme_storage(page, theme)
+                _open_describe_dialog(page, base)
+
+            _capture_surface(page, describe, prep_describe,
+                             lambda shot: _check_dialog(page, shot, run), run)
+            _close_dialog(page)
+        tracker = [shot for shot in shots
+                   if shot.surface == "dialog-tracker" and shot.theme == theme]
+        if tracker:
+            def prep_tracker(theme=theme) -> None:
+                """Open the tracker setup dialog from the seeded card."""
+                _set_theme_storage(page, theme)
+                _open_tracker_dialog(page, base)
+
+            _capture_surface(page, tracker, prep_tracker,
+                             lambda shot: _check_dialog(page, shot, run), run)
+            _close_dialog(page)
+        for state in ("expanded", "collapsed"):
+            server = [shot for shot in shots
+                      if shot.surface == "server-inbox"
+                      and shot.theme == theme and shot.state == state]
+            if not server:
+                continue
+
+            def prep_server(theme=theme, state=state) -> None:
+                """Open the server-rendered inbox with the requested rail state."""
+                _set_theme_storage(page, theme)
+                page.evaluate(
+                    "(value) => { try { localStorage.setItem("
+                    "'agentdesk.railCollapsed', value); } catch (error) {} }",
+                    "1" if state == "collapsed" else "0")
+                page.goto(base + "/inbox", wait_until="domcontentloaded",
+                          timeout=30000)
+                page.wait_for_selector(".app", timeout=15000)
+                page.wait_for_timeout(500)
+
+            _capture_surface(page, server, prep_server,
+                             lambda shot: _check_server(page, shot, run), run)
+        for width in (STRIP_WIDTH, PHONE_WIDTH):
+            phone = [shot for shot in shots
+                     if shot.surface == "phone-strip"
+                     and shot.theme == theme and shot.width == width]
+            if not phone:
+                continue
+
+            def prep_phone(theme=theme, width=width) -> None:
+                """Load the dashboard at the requested phone width."""
+                _set_theme_storage(page, theme)
+                page.set_viewport_size(
+                    {"width": width, "height": VIEWPORT_HEIGHT})
+                page.goto(base + "/", wait_until="domcontentloaded",
+                          timeout=30000)
+                page.wait_for_selector(".phone-bar", state="attached",
+                                       timeout=15000)
+                page.wait_for_timeout(400)
+
+            _capture_surface(page, phone, prep_phone,
+                             lambda shot: _check_phone(page, shot, run), run)
+            page.set_viewport_size(
+                {"width": DESKTOP_WIDTH, "height": VIEWPORT_HEIGHT})
+
+
+def run_tmp_root(run: RunState) -> Path:
+    """The desk's temporary root, named on the run for the seed."""
+    return Path(run.tmp_root)
+
+
 def _run_real_phase(args, run: RunState, plan: list[Shot],
                     playwright) -> None:
-    """Boot the isolated desk and photograph the real app; stage 3 fills this."""
+    """Boot the isolated desk and photograph the real app's faces."""
     shots = [shot for shot in plan if shot.kind in REAL_KINDS]
     if not shots:
         return
@@ -1097,6 +1640,8 @@ def _run_real_phase(args, run: RunState, plan: list[Shot],
     mock = None
     desk = None
     browser = None
+    context = None
+    config = RouteConfig()
     try:
         mock, mock_port = audit._start_mock(int(args.mock_delay_ms))
         audit._pin_environment(tmp_root / "data", "full", mock_port)
@@ -1112,20 +1657,32 @@ def _run_real_phase(args, run: RunState, plan: list[Shot],
             viewport={"width": DESKTOP_WIDTH, "height": VIEWPORT_HEIGHT},
             device_scale_factor=1)
         _install_real_guard(context, run.guard_started, run.held)
-        _install_real_routes(context, RouteConfig(), run.held)
+        _install_real_routes(context, config, run.held)
+        if getattr(args, "record_api", ""):
+            record_dir = Path(args.record_api)
+            record_dir.mkdir(parents=True, exist_ok=True)
+            context.on("response", _api_recorder(record_dir))
         page = context.new_page()
         page.clock.install(time=FIXED_TIME)
         page.clock.set_fixed_time(FIXED_TIME)
+        page.emulate_media(reduced_motion="no-preference")
         page.goto(desk["base"] + "/auth/" + desk["token"],
                   wait_until="domcontentloaded", timeout=30000)
         if page.url.rstrip("/") != desk["base"].rstrip("/"):
             raise FaceWalkError(f"auth landed on {page.url}, not the dashboard")
         _save_mock_connection(context, desk["base"], mock_port)
         run.notes.append("mock connection saved")
-        run.notes.append("real-app capture phase is not implemented yet")
+        _photograph_real_app(page, context, desk, config, run, shots,
+                             tmp_root)
         context.close()
+        context = None
     finally:
         _abort_held(run.held)
+        if context is not None:
+            try:
+                context.close()
+            except Exception:  # noqa: BLE001 - close everything that opened
+                pass
         if browser is not None:
             try:
                 browser.close()
