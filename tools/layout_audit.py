@@ -2573,7 +2573,7 @@ def _seed_busy(context, base: str, tmp_root: Path, server, mock_port: int | None
         notes.append(f"busy: capability fixtures failed: {type(exc).__name__}: {exc}")
 
     facts = [
-        ("The northern region renewal for Halvorsen Freight is expected to close before "
+        ("The northern region renewal for Harborlight Freight is expected to close before "
          "the end of the quarter, and the commercial team agreed to confirm the final "
          "contract value with the customer success team."),
         (r"C:\Users\a.manager\OneDrive - Northwind Holdings\Quarterly Forecasts"

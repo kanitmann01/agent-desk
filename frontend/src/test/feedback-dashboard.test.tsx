@@ -67,7 +67,7 @@ const SKILL_DATA: DashboardData = {
 
 const RECOMMENDATION: Recommendation = {
   cardId: 'card-1',
-  title: 'Halvorsen Freight: December 15',
+  title: 'Harborlight Freight: December 15',
   why: 'You told the desk this deadline.',
   whySource: 'rule',
   score: null,
@@ -488,7 +488,7 @@ describe('a recommendation and a card menu', () => {
         onExpired={NOOP}
       />,
     );
-    const row = screen.getByText('Halvorsen Freight: December 15').closest('li') as HTMLElement;
+    const row = screen.getByText('Harborlight Freight: December 15').closest('li') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Not now' }));
     const dismissing = await within(row).findByRole('button', { name: 'Dismissing...' });
     expect(dismissing).toHaveAttribute('aria-busy', 'true');

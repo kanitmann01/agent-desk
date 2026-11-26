@@ -46,7 +46,7 @@ POSITIVES = [
 
 NEGATIVES = [
     "summarise the Kestrel Foods order history",
-    "Owns the Halvorsen Freight and Kestrel Foods accounts.",
+    "Owns the Harborlight Freight and Kestrel Foods accounts.",
     "don't forget to follow the setup instructions",
     "Never forget: the quarterly review is on Tuesday.",
     "The report is attached; my manager is Dana.",

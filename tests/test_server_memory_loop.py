@@ -298,13 +298,13 @@ def test_without_endpoint_calls_the_rules_write_a_compact_summary(env, auth):
 
 
 def test_the_graph_names_the_entity_first_on_its_observation(env, auth):
-    _add(env, auth, "Jordan Lee moved the Halvorsen Freight renewal to legal.")
-    _add(env, auth, "Jordan Lee closed the Halvorsen Freight renewal.")
-    _add(env, auth, "Halvorsen Freight is based in Oslo.")
+    _add(env, auth, "Jordan Lee moved the Harborlight Freight renewal to legal.")
+    _add(env, auth, "Jordan Lee closed the Harborlight Freight renewal.")
+    _add(env, auth, "Harborlight Freight is based in Oslo.")
     status, _h, body = env.request("GET", "/api/memory/graph", auth)
     assert status == 200
     labels = sorted(n["label"] for n in json.loads(body)["nodes"] if n["kind"] == "observation")
-    assert len(labels) == 2 and labels[0].startswith("Halvorsen Freight: ")
+    assert len(labels) == 2 and labels[0].startswith("Harborlight Freight: ")
     assert labels[1].startswith("Jordan Lee: ")
 
 
@@ -312,11 +312,11 @@ def test_a_changed_workbook_row_is_captured_for_review(env, auth):
     from agentdesk.excel.core import Delta
     hook = env.server.excel.change_hook
     hook("tracker.xlsx", ["Deal", "Stage", "Owner"],
-         Delta(added=[["Halvorsen Freight", "Legal", "Jordan Lee"]],
-               removed=[["Halvorsen Freight", "Proposal", "Jordan Lee"]]))
+         Delta(added=[["Harborlight Freight", "Legal", "Jordan Lee"]],
+               removed=[["Harborlight Freight", "Proposal", "Jordan Lee"]]))
     state = _loop(env, auth)
     [card] = state["candidates"]
-    assert card["text"] == "Halvorsen Freight: Stage changed from Proposal to Legal."
+    assert card["text"] == "Harborlight Freight: Stage changed from Proposal to Legal."
     assert card["channel"] == "workbook"
     assert "tracker.xlsx" in card["excerpt"]["text"]
     channels = {c["id"]: c for c in state["capture"]["channels"]}

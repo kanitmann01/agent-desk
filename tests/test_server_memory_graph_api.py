@@ -60,14 +60,14 @@ def _edges(payload: dict, kind: str) -> set[tuple[str, str]]:
 def _retained_fact(memory, inbox):
     """The real retain path: an excerpt, a draft card the user accepts,
     and the fact the accept writes with its entity mentions."""
-    excerpt = memory.add_source("Dana said Halvorsen wants to renew by Dec 15.",
+    excerpt = memory.add_source("Dana said Harborlight wants to renew by Dec 15.",
                                 speaker="You", context="assistant")
-    card = inbox.add(KIND_MEMORY_DRAFT, "memory", "Halvorsen renews by Dec 15",
-                     meta={"memoryFact": {"entities": [["Halvorsen", "org"]]}})
+    card = inbox.add(KIND_MEMORY_DRAFT, "memory", "Harborlight renews by Dec 15",
+                     meta={"memoryFact": {"entities": [["Harborlight", "org"]]}})
     inbox.accept(card.id)
-    fact = memory.add("Halvorsen renews by Dec 15", source=f"inbox card {card.id}",
+    fact = memory.add("Harborlight renews by Dec 15", source=f"inbox card {card.id}",
                       source_id=excerpt)
-    memory.resolve_and_link(fact.id, [("Halvorsen", "org")])
+    memory.resolve_and_link(fact.id, [("Harborlight", "org")])
     return excerpt, card, fact
 
 
@@ -104,11 +104,11 @@ def test_a_retained_fact_carries_its_whole_trail(booted, auth):
     assert node["origin"] == "origin:retain"
     assert [s["step"] for s in node["steps"]] == [
         "retain", "extract", "approve", "store", "link"]
-    assert "Halvorsen" in node["steps"][1]["text"]
+    assert "Harborlight" in node["steps"][1]["text"]
     assert ("origin:retain", f"fact:{fact.id}") in _edges(payload, "wrote")
     assert (f"source:{excerpt}", f"fact:{fact.id}") in _edges(payload, "extracted")
     entity = next(n for n in payload["nodes"] if n["kind"] == "entity")
-    assert entity["label"] == "Halvorsen" and entity["factCount"] == 1
+    assert entity["label"] == "Harborlight" and entity["factCount"] == 1
     assert (f"fact:{fact.id}", entity["id"]) in _edges(payload, "mentions")
     counts = {s["step"]: s["count"] for s in payload["pipeline"]}
     assert counts == {"retain": 1, "extract": 1, "approve": 1,

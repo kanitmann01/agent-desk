@@ -198,9 +198,9 @@ def test_concurrent_add_and_remove_leaves_a_valid_document(tmp_path):
 
 def test_merged_topics_state_first_then_learned_deduped():
     stated = ["Kestrel Foods", "Acme"]
-    learned = [{"topic": "kestrel foods"}, {"topic": "Halvorsen Freight"}]
+    learned = [{"topic": "kestrel foods"}, {"topic": "Harborlight Freight"}]
     assert profile.merged_topics(stated, learned) == [
-        "Kestrel Foods", "Acme", "Halvorsen Freight"]
+        "Kestrel Foods", "Acme", "Harborlight Freight"]
 
 
 def test_merged_topics_cap_at_the_stated_store_limit():

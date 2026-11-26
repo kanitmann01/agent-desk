@@ -27,8 +27,8 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
 import server_harness
 from agentdesk.server import app as server_app
 
-LINE = "Owns the Halvorsen Freight and Kestrel Foods accounts."
-ASK = "summarise the Halvorsen Freight order history"
+LINE = "Owns the Harborlight Freight and Kestrel Foods accounts."
+ASK = "summarise the Harborlight Freight order history"
 
 
 class OpsEndpoint:

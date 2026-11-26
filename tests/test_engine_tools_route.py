@@ -27,7 +27,7 @@ from agentdesk.engine import TurnResult
 from agentdesk.server import app as server_app
 from server_harness import Booted, FakeEngine, _engine_actions
 
-FACT = "The Halvorsen Freight renewal is settled for this quarter."
+FACT = "The Harborlight Freight renewal is settled for this quarter."
 CARD_TITLE = "The desk suggests a look at the renewal"
 
 
@@ -37,7 +37,7 @@ def _memory_with_entity():
 
     memory = _inert_memory()
     fact = memory.add(FACT, source="page")
-    memory.resolve_and_link(fact.id, [("Halvorsen Freight", "org")])
+    memory.resolve_and_link(fact.id, [("Harborlight Freight", "org")])
     return memory
 
 
@@ -144,7 +144,7 @@ def test_desk_names_read_what_the_desk_holds():
         assert status == 200
         names = json.loads(body)["names"]
         memory_names = [row["name"] for row in names["memory"]]
-        assert "Halvorsen Freight" in memory_names
+        assert "Harborlight Freight" in memory_names
         assert names["workbook"] is None
         assert names["agenda"] is None
     finally:
@@ -221,14 +221,14 @@ def test_a_proposed_fact_is_stored_with_an_undo_when_review_is_off():
         assert status == 201, body
         entry_id = json.loads(body)["entryId"]
         page = _get_page(booted, "/memory")
-        assert "Halvorsen Freight" in page
+        assert "Harborlight Freight" in page
         entries = [row for row in _ledger_json(booted) if row["id"] == entry_id]
         assert entries and entries[0]["action"] == "memory.auto-saved"
         assert entries[0]["undoable"] is True
         status, _h, _b = _undo(booted, entry_id)
         assert status == 200
         page = _get_page(booted, "/memory")
-        assert "Halvorsen Freight" not in page
+        assert "Harborlight Freight" not in page
     finally:
         booted.close()
 

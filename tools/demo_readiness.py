@@ -1015,14 +1015,14 @@ def _names_are_held(desk: Desk) -> tuple[bool, str]:
     if not _wait_for_loop_idle(desk):
         return False, "the agent loop was still running when R28 tried to seed a name"
     seeded = desk.post_json("/memory/add", {
-        "text": "The Halvorsen Freight Group renewal is settled for this quarter."})
+        "text": "The Harborlight Freight Group renewal is settled for this quarter."})
     if seeded[0] not in (200, 201):
         return False, f"saving the named fact answered {seeded[0]}: {seeded[2][:120]!r}"
 
     def name_held() -> bool:
         """Whether the desk_names tool now reads the seeded organisation."""
         status, held = _engine_held_names(desk)
-        return status == 200 and "Halvorsen Freight Group" in held
+        return status == 200 and "Harborlight Freight Group" in held
 
     appeared = _wait_until(name_held, seconds=15.0)
     status, held = _engine_held_names(desk)

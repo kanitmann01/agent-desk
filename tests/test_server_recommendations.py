@@ -98,10 +98,10 @@ def _recommendations(desk, auth):
     return json.loads(body)["recommendations"]
 
 
-def _halvorsen(desk, auth):
-    """The Halvorsen Freight recommendation, or a failure naming what was served."""
+def _harborlight(desk, auth):
+    """The Harborlight Freight recommendation, or a failure naming what was served."""
     recs = _recommendations(desk, auth)
-    return next(r for r in recs if r["title"].startswith("Halvorsen Freight")), recs
+    return next(r for r in recs if r["title"].startswith("Harborlight Freight")), recs
 
 
 def _dismiss(desk, auth, card_id):
@@ -116,9 +116,9 @@ def _dismiss(desk, auth, card_id):
 def test_dashboard_api_serves_the_sample_recommendation(desk):
     auth = _auth(desk)
     assert _toggle(desk, auth, "sample_data") is True
-    rec, recs = _halvorsen(desk, auth)
+    rec, recs = _harborlight(desk, auth)
     assert rec["sample"] is True
-    assert rec["title"] == "Halvorsen Freight: December 15 (in 25 days)"
+    assert rec["title"] == "Harborlight Freight: December 15 (in 25 days)"
     assert "Harold" not in json.dumps(rec)
     assert "wants the renewal signed" not in json.dumps(recs)
     assert rec["why"] == "You told the desk this deadline; it is 25 days away."
@@ -135,10 +135,10 @@ def test_dashboard_api_serves_the_sample_recommendation(desk):
 def test_server_rendered_dashboard_shows_the_decisions_widget(desk):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    rec, _recs = _halvorsen(desk, auth)
+    rec, _recs = _harborlight(desk, auth)
     page = desk.request("GET", "/", auth)[2].decode("utf-8")
     assert ">Decisions</h2>" in page
-    assert "Halvorsen Freight: December 15 (in 25 days)" in page
+    assert "Harborlight Freight: December 15 (in 25 days)" in page
     assert "Not now" in page
     assert f'action="/inbox/cards/{rec["cardId"]}/dismiss"' in page
     assert ">Open Agents</a>" in page
@@ -186,7 +186,7 @@ class _LiveWorkbook:
 def test_server_rendered_dashboard_says_nothing_needs_a_decision_once_set_up(desk):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    _halvorsen(desk, auth)
+    _harborlight(desk, auth)
     desk.server.calendar = _LiveCalendar()
     desk.server.excel = _LiveWorkbook()
     audit_store.record(desk.server.audit_conn, "llm.research", status="ok")
@@ -205,7 +205,7 @@ def test_server_rendered_dashboard_says_nothing_needs_a_decision_once_set_up(des
 def test_not_now_removes_the_card_and_it_stays_gone_across_a_restart(desk, tmp_path):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    rec, _recs = _halvorsen(desk, auth)
+    rec, _recs = _harborlight(desk, auth)
     status, headers, _body = _dismiss(desk, auth, rec["cardId"])
     assert status == 303
     assert headers.get("Location").split("?", 1)[0] == "/inbox"
@@ -238,7 +238,7 @@ def test_memory_add_builds_a_recommendation_from_the_saved_fact(desk):
 def test_deleting_the_fact_withdraws_its_recommendation(desk):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    rec, _recs = _halvorsen(desk, auth)
+    rec, _recs = _harborlight(desk, auth)
     fact_id = rec["cites"][0]
     status, _headers, _body = desk.post_json(f"/memory/{fact_id}/delete", {}, auth)
     assert status == 200
@@ -253,7 +253,7 @@ def test_deleting_the_fact_withdraws_its_recommendation(desk):
 def test_recommendations_off_creates_no_new_cards_but_keeps_the_waiting_one(desk):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    rec, _recs = _halvorsen(desk, auth)
+    rec, _recs = _harborlight(desk, auth)
     assert _toggle(desk, auth, "recommendations") is False
     status, _headers, _body = desk.post_json(
         "/memory/add", {"text": "Quarterly pricing review due December 1."}, auth
@@ -271,7 +271,7 @@ def test_recommendations_off_creates_no_new_cards_but_keeps_the_waiting_one(desk
 def test_ledger_recommend_rows_hold_fact_ids_only(desk):
     auth = _auth(desk)
     _toggle(desk, auth, "sample_data")
-    _halvorsen(desk, auth)
+    _harborlight(desk, auth)
     added = [
         entry for entry in desk.server.ledger.entries(limit=50)
         if entry.action == "recommend.added"
@@ -281,5 +281,5 @@ def test_ledger_recommend_rows_hold_fact_ids_only(desk):
         detail = entry.detail
         assert set(detail) == {"rule", "cites"}
         assert all(isinstance(i, int) for i in detail["cites"])
-        assert "Halvorsen" not in json.dumps(detail)
+        assert "Harborlight" not in json.dumps(detail)
         assert "December 15" not in json.dumps(detail)
