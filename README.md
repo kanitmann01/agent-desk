@@ -118,6 +118,14 @@ The full gate runs Python tests, frontend typecheck, Vitest, the license gate, r
 
 The layout audit plans the `fresh`, `data`, `plugins`, `full`, `long-values`, `busy`, and `legacy-dashboard` conditions. The `busy` condition uses synthetic capability cache fixtures and injected UNKNOWN gate runners. It never retests machine capabilities, reaches an external probe endpoint, installs a package, lists processes, or writes a OneDrive probe.
 
+The face walkthrough photographs the agent's face in every mood and on every surface. It boots the same isolated desk as the layout audit and starts the dev-only review sheet from `frontend/`:
+
+```bash
+uv run --no-project --with playwright --with keyring --with cryptography python tools/face_walkthrough.py
+```
+
+`--sheet-only` photographs the review sheet alone and boots no desk. Exit codes: 0 when every planned photograph was taken and every check passed (surfaces with no face are listed, not failed), 1 when a check failed or a planned photograph is missing, and 2 when the desk, the browser or the dev server did not start.
+
 ## Documentation and IT review
 
 | Document | Purpose |
