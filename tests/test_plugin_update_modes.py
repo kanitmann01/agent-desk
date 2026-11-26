@@ -114,28 +114,35 @@ def test_a_scheduled_tile_serves_its_stored_reading_between_ticks(workspace, tmp
     assert _value(opened) == _value(stored) == "10"
 
 
-@pytest.mark.parametrize(("stored", "expected_due"), [
-    (datetime(2026, 11, 25, 0, 0), datetime(2026, 11, 25, 8, 0)),
-    (datetime(2026, 11, 25, 7, 59), datetime(2026, 11, 25, 8, 0)),
-    (datetime(2026, 11, 25, 8, 0), datetime(2026, 11, 25, 8, 0)),
+@pytest.mark.parametrize(("stored", "not_due", "expected_due"), [
+    (datetime(2026, 11, 25, 0, 0),
+     (datetime(2026, 11, 25, 7, 59),),
+     datetime(2026, 11, 25, 8, 0)),
+    (datetime(2026, 11, 25, 7, 59),
+     (),
+     datetime(2026, 11, 25, 8, 0)),
+    (datetime(2026, 11, 25, 8, 0),
+     (datetime(2026, 11, 25, 8, 0), datetime(2026, 11, 25, 23, 59)),
+     datetime(2026, 11, 26, 8, 0)),
 ])
 def test_a_scheduled_tile_refreshes_when_its_clock_comes_due(
-        workspace, tmp_path, stored, expected_due):
+        workspace, tmp_path, stored, not_due, expected_due):
     runner = _attached(workspace, tmp_path,
                        ["onWidget:sales", "onSchedule:0 8 * * *"], stored)
     before = runner.card("sales")
     _write_value(workspace, 50)
     assert before["asOf"] == stored.isoformat(timespec="seconds")
 
-    # The first 08:00 at or after the stored reading is the due time.
+    # The first 08:00 strictly after the stored reading is the due time.
     due = stored.replace(hour=8, minute=0, second=0, microsecond=0)
-    if due < stored:
+    if due <= stored:
         due += timedelta(days=1)
     assert due == expected_due
 
-    # Not due yet: nothing refreshes, and the tile still shows the old read.
-    assert runner.refresh_due(due - timedelta(minutes=1)) == []
-    assert _value(runner.card("sales")) == _value(before)
+    # Before the due minute, including the rest of a reading's own 08:00 day.
+    for now in not_due:
+        assert runner.refresh_due(now) == []
+        assert _value(runner.card("sales")) == _value(before)
 
     # The scheduled minute: the tile re-reads, and the open now shows it.
     assert runner.refresh_due(due) == ["sales"]
