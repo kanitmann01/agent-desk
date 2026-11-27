@@ -99,11 +99,12 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for _path in (str(ROOT / "src"),):
+for _path in (str(ROOT / "src"), str(ROOT / "tools")):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
 from agentdesk.engine import DEFAULT_TURN_TIMEOUT_S
+from layout_audit import _inert_gate_runners
 
 MOCK_KEY = "sk-ready-0001"
 MOCK_MODEL = "mock-chat"
@@ -209,7 +210,8 @@ class Desk:
         os.environ["AGENTDESK_DATA"] = str(data_dir)
         self.server = server_app.create_server(
             port=0, announce_port=announce_port,
-            keychain=KeychainSecrets(backend=FileKeychain(keychain_file)))
+            keychain=KeychainSecrets(backend=FileKeychain(keychain_file)),
+            gate_runners=_inert_gate_runners())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         # The launcher's serve() starts the background polls (the
