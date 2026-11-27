@@ -8,7 +8,7 @@ runs from the repo root.
 
 | Pattern | Where core defines it | Sites core applied | Post-fork sites found | Sites applied by this run | The grep that proves it |
 |---|---|---|---|---|---|
-| Declared step order | `src/agentdesk/agentloop/loop.py`: `Step.order`, `STEP_ORDER_*`, `ordered_steps()` | 8 steps registered in `loop.py` and `server/app.py` with `order=` constants (deskcheck 100 through update 800) | 1: the `engine` step (PR #293, spec 023) | 0 new: already landed in Stage 1 (`STEP_ORDER_ENGINE = 900` at `loop.py:84`, engine registered with it at `app.py:8994`); this run verified the test lists all 9 names in pass order with `engine` last and the expected-pass helper iterates `ordered_steps()` | `grep -rn "register_step(Step(name=" src/` gives exactly 9 registrations, every one with `order=`; `grep -n "STEP_ORDER_ENGINE" src/agentdesk/agentloop/loop.py tests/test_agentloop.py` |
+| Declared step order | `src/agentdesk/agentloop/loop.py`: `Step.order`, `STEP_ORDER_*`, `ordered_steps()` | 8 steps registered in `loop.py` and `server/app.py` with `order=` constants (deskcheck 100 through update 800) | 1: the `engine` step (PR #293, spec 023) | 0 new: already landed in Stage 1 (`STEP_ORDER_ENGINE = 900` at `loop.py:84`, engine registered with it at `app.py:8998`); this run verified the test lists all 9 names in pass order with `engine` last and the expected-pass helper iterates `ordered_steps()` | `grep -rn "register_step(Step(name=" src/` gives exactly 9 registrations, every one with `order=`; `tests/test_agentloop.py:233` asserts the pass order through `ordered_steps()`, engine last |
 | `_require_store` (one refusal for an optional store) | `server/app.py` `_require_store` (sends the 503 JSON itself, returns None) | 53 call sites in `server/app.py`, 11 in `server/memory_api.py` | 1 unguarded raw-503 handler (`_memory_forget_all`, `memory_api.py:301`), 6 tuple-shaped engine refusals in `server/app.py` (three groups: 2, 3, 1), 4 form-notice sites kept raw at merge time | 11: the handler guarded with `_require_store` (JSON byte-identical); the 6 engine refusals and the 4 form sites routed through the one result-returning sibling (`StoreMissing` / `_store_missing` / `_send_store_missing`) | `grep -rn '"the .* is not available"' src/agentdesk --include=*.py` now shows only the two helpers (`_require_store`, `_store_missing`) and the 2 pre-fork leftovers listed below |
 | `emission_targets` (one emission spine) | `plugins/runtime.py:733` | 3 consumers, all on the spine: `layout_keys`, `widget_cards`, `record_dashboard_view` | 0 bypasses: every plugin card emission goes through the spine; outside readers only consume its results (`server/dashboard_state.py:313` calls `widget_cards()`, `server/app.py:4669` calls `record_dashboard_view()`) | 0 needed | `grep -rn "emission_targets" src/ --include=*.py` gives the definition plus exactly the three loop consumers |
 | Shared safety grammar | `validator/grammar.py` (one owner of `SAFE_NAME`, `JSON_OBJECT`, `JSON_LIST`, `JSON_PATH_PART`, `WORKSPACE_ROOT`, `PLUGIN_DATA_ROOT`) | 6 importers: `plugins/config.py`, `plugins/sources.py`, `plugins/runtime.py`, `registry/index.py`, `server/peers_api.py`, `validator/lint.py` | 0 new local definitions: every surviving `_SAFE`, `_SAFE_NAME`, `_SAFE_ID`, `_PEER_SAFE_NAME`, `_JSON_OBJECT`, `_JSON_LIST`, `_JSON_PATH_PART` is an import alias of the owner, not a local regex | 0 needed | `grep -rn "from agentdesk.validator.grammar import\|from .grammar import" src/ --include=*.py` gives exactly the 6 importers; `grep -rnE "^_SAFE|^_JSON_(OBJECT|LIST|PATH_PART) =|^_PEER_SAFE_NAME = " src/ tests/ --include=*.py` gives none |
@@ -31,10 +31,10 @@ The four form-notice sites, current line numbers:
 
 | Site | Handler | Line | Note |
 |---|---|---|---|
-| agents brief | `_agents_run` path, the `server.agents is None` branch | `server/app.py:3045` | form notice kept verbatim, typed brief and agent kept |
-| presentation | the presentation run path, same store read | `server/app.py:3167` | same |
+| agents brief | `_agents_run` path, the `server.agents is None` branch | `server/app.py:3046` | form notice kept verbatim, typed brief and agent kept |
+| presentation | the presentation run path, same store read | `server/app.py:3168` | same |
 | capabilities cache | `_send_capabilities_page` | `server/app.py:5248` | the merge had dropped both parents' response here (the handler answered nothing at all); the sibling restores the raw JSON 503 for callers and covers the form shape |
-| mail draft | `_mail_draft`, the watcher read then the inbox read | `server/app.py:5505-5524` | the watcher read had gone through `_require_store` at merge time, which sent raw JSON to form posts and left the wave's notice branch dead behind a second send; the sibling answers once, in the caller's shape |
+| mail draft | `_mail_draft`, the watcher read then the inbox read | `server/app.py:5508-5524` | the watcher read had gone through `_require_store` at merge time, which sent raw JSON to form posts and left the wave's notice branch dead behind a second send; the sibling answers once, in the caller's shape |
 
 ## Count notes (differences from the plan's appendix)
 
@@ -63,8 +63,8 @@ The four form-notice sites, current line numbers:
 - The four wizard store reads core also left alone.
 - No inventory tests exist for the unguarded patterns; the greps in the table
   above are this run's substitute proof.
-- `_memory_graph_json` (`memory_api.py:566`) and `_memory_loop_json`
-  (`memory_api.py:897`): pre-fork JSON routes whose refusal shape is
+- `_memory_graph_json` (`memory_api.py:567`) and `_memory_loop_json`
+  (`memory_api.py:898`): pre-fork JSON routes whose refusal shape is
   `{"status": "unavailable", "error": ...}` rather than the pattern's
   `{"error": ...}`. Core saw both and left them raw on `core/main` as well;
   converting them would change their JSON bytes, so they stay.
