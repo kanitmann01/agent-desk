@@ -101,9 +101,11 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
   const [attempt, setAttempt] = useState(0);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   // The Search button owns the wait its submit starts; a filter change dims
-  // the results instead of replacing them.
+  // the results instead of replacing them. An empty question has nothing to
+  // search, so the button is disabled like the fill door's.
   const [searching, setSearching] = useState(false);
   const searchBusy = useBusy(searching);
+  const emptyQuery = q.trim() === '';
 
   useEffect(() => { setQ(committedQ); }, [committedQ]);
 
@@ -214,7 +216,7 @@ export function CatalogPage({ route }: { route: { name: string; params: Record<s
             autoComplete="off"
           />
         </div>
-        <Button tone="primary" type="submit" disabled={searching}
+        <Button tone="primary" type="submit" disabled={searching || emptyQuery}
                 pending={searchBusy} pendingLabel="Searching…">
           Search
         </Button>
