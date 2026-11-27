@@ -33,9 +33,11 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for _p in (str(ROOT / "src"),):
+for _p in (str(ROOT / "src"), str(ROOT / "tools")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+from layout_audit import _inert_gate_runners
 
 CANONICAL = "Watch this workbook and show me the 24-hour change"
 BUILTINS = ["sales", "commitments", "research", "skills"]
@@ -172,7 +174,8 @@ class Desk:
         self.name = name
         self.data_dir = data_dir
         self.server = server_app.create_server(port=0, announce_port=announce_port,
-                                               pick_workbook=pick_workbook)
+                                               pick_workbook=pick_workbook,
+                                               gate_runners=_inert_gate_runners())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.server.port}"

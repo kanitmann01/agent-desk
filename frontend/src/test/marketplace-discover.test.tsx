@@ -101,6 +101,24 @@ describe('the marketplace catalog surface', () => {
     });
   });
 
+  it('disables Search until the question has a word, and does nothing while empty', async () => {
+    const fetchMock = stubCatalog();
+    const user = userEvent.setup();
+    render(<MarketplaceApp />);
+    await screen.findByText('AR Aging');
+
+    const search = screen.getByRole('button', { name: 'Search' });
+    expect(search).toBeDisabled();
+    const before = fetchMock.mock.calls.length;
+    await user.click(search);
+    expect(fetchMock.mock.calls.length).toBe(before);
+
+    await user.type(screen.getByLabelText('Search plugins'), 'aging');
+    expect(search).toBeEnabled();
+    await user.clear(screen.getByLabelText('Search plugins'));
+    expect(search).toBeDisabled();
+  });
+
   it('renders Search from the q in the URL and asks the API the same question', async () => {
     window.history.replaceState({}, '', '/marketplace/search?q=overdue%20invoices');
     const fetchMock = stubCatalog(catalog([card()]));

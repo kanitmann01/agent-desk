@@ -16,9 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from excel_fixtures import make_xlsx  # noqa: E402
+from layout_audit import _inert_gate_runners  # noqa: E402
 
 
 def main() -> int:
@@ -48,7 +50,7 @@ def main() -> int:
             ["Region", "Sales"], ["North", 10], ["South", 20],
         ]))
 
-        server = server_app.create_server(port=0)
+        server = server_app.create_server(port=0, gate_runners=_inert_gate_runners())
         threading.Thread(target=server.serve_forever, daemon=True).start()
         base = f"http://127.0.0.1:{server.port}"
 

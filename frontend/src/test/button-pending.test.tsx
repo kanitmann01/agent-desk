@@ -228,3 +228,15 @@ describe('the stylesheet carries the pending contract', () => {
     expect(busy).toContain('opacity:');
   });
 });
+
+describe('the stylesheet carries the disabled contract', () => {
+  it('dims a disabled primary like every other disabled control', () => {
+    // The describe door's "Fill it in for me" is a primary that is disabled
+    // until a description is typed. Every disabled control dims through the
+    // one rule; the primary's own disabled rule adds the surface colour and
+    // leaves that dimming in place.
+    expect(rule('button:disabled')).toContain('opacity:.55');
+    expect(rule('.btn-primary:disabled')).not.toContain('opacity');
+    expect(rule('.btn-primary:disabled')).toContain('background:var(--surface-3)');
+  });
+});
