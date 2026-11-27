@@ -526,7 +526,14 @@ def test_the_settings_page_renders_the_outlook_alerts_block(env, auth):
     assert "The manual .eml folder is the history source" in page
 
 
-def test_the_mail_feeder_toggle_is_accepted_and_saved(env, auth):
+def test_the_mail_feeder_toggle_is_accepted_and_saved(env, auth, monkeypatch,
+                                                      tmp_path):
+    # Turning the feeder on force-enables the mail watcher, whose folder
+    # falls back to AGENTDESK_MAIL_FOLDER and whose desk data to
+    # AGENTDESK_DATA: both are pinned so no config load can point the
+    # poll at a real folder (its sibling below carries the same pins).
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
     status, _h, body = env.post_json(
         "/settings/toggle", {"key": "mail_feeder"}, auth)
     assert status == 200

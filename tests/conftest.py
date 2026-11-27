@@ -29,3 +29,16 @@ def no_spa_build(monkeypatch, tmp_path):
     namespaces are repointed."""
     monkeypatch.setattr(server_app, "SPA_DIR", tmp_path / "no-spa-build")
     monkeypatch.setattr(server_memory_api, "SPA_DIR", tmp_path / "no-spa-build")
+
+
+@pytest.fixture(autouse=True)
+def sandbox_localappdata(monkeypatch, tmp_path):
+    """Keep every test away from the real Windows notification store.
+
+    A desk built by the app resolves the real notification store through
+    LOCALAPPDATA at call time (%LOCALAPPDATA%/Microsoft/Windows/
+    Notifications/wpndatabase.db), so a test that turns the mail watcher
+    or the Outlook alerts feeder on would otherwise put the real store in
+    reach of a poll. The sandbox holds no store, which is also the state
+    the feeder's unavailable cause is verified against."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
