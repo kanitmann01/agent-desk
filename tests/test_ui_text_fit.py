@@ -440,6 +440,25 @@ def test_the_legacy_plugin_card_offers_retest_only_when_it_can_change():
     assert widget.freshness.stamp == "Re-test available"
 
 
+def test_a_stale_source_is_stamped_stale_not_live():
+    from agentdesk.server import app as server_app
+
+    card = {
+        "id": "audit-overflow", "title": "Regional Pipeline", "version": "0.1.0",
+        "pilot": True, "state": "enabled", "freshness": "fresh",
+        "checked_at": "2020-01-01T00:00:00",
+        "payload": {
+            "elements": [{"kind": "metric", "value": "123456789012345",
+                          "label": "Pipeline"}],
+            "source": {"state": "stale", "reason": "older-than-window"},
+        },
+    }
+    widget = server_app.DashboardHandler._plugin_widget(None, card)
+    assert widget.freshness.status == "attention"
+    assert widget.freshness.stamp == "Stale since 00:00"
+    assert "123456789012345" in widget.body_html
+
+
 # -- B: the server sheet matches the SPA wrap contract ---------------------
 
 TWINS = (

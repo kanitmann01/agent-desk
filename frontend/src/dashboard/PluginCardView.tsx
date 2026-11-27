@@ -22,6 +22,7 @@ import TrackerCard from './TrackerCard';
 import Button from '../components/Button';
 import { PhaseLine, usePhase } from '../components/feedback';
 import { useBusy } from '../components/useBusy';
+import { hhmmFromIso } from '../fmt';
 import { useFaceActions } from '../face/FaceProvider';
 import { useFaceActivity } from '../face/useFaceActivity';
 import { WireState } from './cells';
@@ -402,6 +403,12 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
     );
   }
   const fresh = card.freshness === 'fresh';
+  // A stale source keeps its last good value on the card, but not the live stamp.
+  const sourceStale = card.payload?.source?.state === 'stale';
+  const staleWhen = sourceStale && card.checkedAt ? hhmmFromIso(card.checkedAt) : '';
+  const stamp = sourceStale
+    ? { fresh: false, text: staleWhen ? `Stale since ${staleWhen}` : 'Stale' }
+    : fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' };
   const elements = fresh ? (card.payload?.elements ?? []) : [];
   const insight = fresh ? card.payload?.insight : undefined;
   const blocks = insight?.blocks ?? [];
@@ -447,7 +454,7 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
       title={card.title}
       span="span-4"
       badge={card.pilot ? 'PILOT' : undefined}
-      stamp={fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' }}
+      stamp={stamp}
       amber={!fresh}
       menuItems={menuItems}
       foot={`plugin v${card.version}`}

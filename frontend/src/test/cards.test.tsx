@@ -333,6 +333,33 @@ describe('the plugin card', () => {
     expect(document.querySelector('.stamp')).not.toHaveClass('amber');
   });
 
+  it('stamps a stale source stale, not live, and keeps the value', () => {
+    render(
+      <PluginCardView
+        card={{
+          id: 'audit-overflow',
+          title: 'Regional Pipeline',
+          version: '0.1.0',
+          pilot: true,
+          state: 'enabled',
+          freshness: 'fresh',
+          cause: '',
+          checkedAt: '2020-01-01T00:00:00',
+          payload: {
+            elements: [{ kind: 'metric', value: '123456789012345', label: 'Pipeline' }],
+            source: { state: 'stale' },
+          },
+        }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    expect(screen.getByText('Stale since 00:00')).toBeInTheDocument();
+    expect(screen.queryByText('live')).toBeNull();
+    expect(document.querySelector('.stamp')).toHaveClass('amber');
+    expect(screen.getByText('123456789012345')).toBeInTheDocument();
+  });
+
   it('draws lists, tables and statuses, not only metric and text', () => {
     render(
       <PluginCardView
