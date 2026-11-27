@@ -79,7 +79,7 @@ _OWNERS = ("Avery Kim", "Jordan Lee", "Riley Chen", "Sam Ortiz")
 # folder under a sheet named Sample; the desk marks it SAMPLE DATA once
 # per cell, so the names themselves carry no prefix.
 _ACCOUNTS = (
-    "Halvorsen Freight", "Brightwater Clinics", "Kestrel Foods", "Marlow & Finch",
+    "Harborlight Freight", "Brightwater Clinics", "Kestrel Foods", "Marlow & Finch",
     "Northgate Utilities", "Pellam Logistics", "Ridgeway Dental", "Sato Instruments",
     "Tamsin Hotels", "Ubeda Textiles", "Corran Mining", "Lindqvist Retail",
     "Oakhurst Schools", "Fenwick Insurance", "Delgado Farms", "Wexford Transit",
@@ -261,7 +261,7 @@ def sample_calendar_bytes(now: datetime) -> bytes:
             },
             {
                 "id": "sample-evt-3",
-                "subject": "Halvorsen Freight renewal call",
+                "subject": "Harborlight Freight renewal call",
                 "start": (now.replace(second=0, microsecond=0) + timedelta(hours=3)).isoformat(),
                 "end": (now.replace(second=0, microsecond=0) + timedelta(hours=3, minutes=30)).isoformat(),
                 "location": "Call",
@@ -460,16 +460,16 @@ _DAY = 86_400.0
 _SAMPLE_EXCERPTS = (
     {
         "days_ago": 6,
-        "text": ("Call with Dana Ortiz at Halvorsen Freight: they want the renewal "
+        "text": ("Call with Dana Ortiz at Harborlight Freight: they want the renewal "
                  "signed before December 15 and asked for a three-year price lock. "
                  "Jordan Lee owns the deal."),
         "facts": (
-            ("Halvorsen Freight wants the renewal signed before December 15.",
-             "world", (("Halvorsen Freight", "org"),)),
-            ("Halvorsen Freight asked for a three-year price lock on the renewal.",
-             "world", (("Halvorsen Freight", "org"), ("Dana Ortiz", "person"))),
-            ("Jordan Lee owns the Halvorsen Freight renewal.",
-             "world", (("Jordan Lee", "person"), ("Halvorsen Freight", "org"))),
+            ("Harborlight Freight wants the renewal signed before December 15.",
+             "world", (("Harborlight Freight", "org"),)),
+            ("Harborlight Freight asked for a three-year price lock on the renewal.",
+             "world", (("Harborlight Freight", "org"), ("Dana Ortiz", "person"))),
+            ("Jordan Lee owns the Harborlight Freight renewal.",
+             "world", (("Jordan Lee", "person"), ("Harborlight Freight", "org"))),
         ),
     },
     {
@@ -488,7 +488,7 @@ _SAMPLE_EXCERPTS = (
     {
         "days_ago": 1,
         "text": ("I sent the Q4 pipeline summary to Avery Kim before the review and "
-                 "flagged Halvorsen and Kestrel as the two at-risk deals."),
+                 "flagged Harborlight and Kestrel as the two at-risk deals."),
         "facts": (
             ("I sent the Q4 pipeline summary to Avery Kim and flagged two at-risk deals.",
              "experience", (("Avery Kim", "person"), ("Q4 pipeline review", "concept"))),
@@ -499,7 +499,7 @@ _SAMPLE_EXCERPTS = (
 _SAMPLE_TYPED_FACT = "The sample quarter closes on December 31."
 _SAMPLE_OBSERVATION = (
     "Both at-risk Q4 deals are waiting on the customer: a signing deadline at "
-    "Halvorsen Freight and a security review at Kestrel Foods."
+    "Harborlight Freight and a security review at Kestrel Foods."
 )
 
 

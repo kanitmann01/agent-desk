@@ -36,9 +36,9 @@ const AI_SAVED: DashboardData['sources'] = {
   items: [{ id: 'research-endpoint', status: 'connected', detail: 'AI connected.' }],
 };
 
-const HALVORSEN: Recommendation = {
+const HARBORLIGHT: Recommendation = {
   cardId: 'card-1',
-  title: 'Halvorsen Freight: December 15 (in 25 days)',
+  title: 'Harborlight Freight: December 15 (in 25 days)',
   why: 'You told the desk this deadline; it is 25 days away.',
   whySource: 'rule',
   score: null,
@@ -60,8 +60,8 @@ afterEach(() => {
 
 describe('the Decisions cell', () => {
   it('renders a waiting recommendation with its sample tag and actions', () => {
-    show({ ...BASE, recommendations: [HALVORSEN] });
-    expect(screen.getByText('Halvorsen Freight: December 15 (in 25 days)')).toBeInTheDocument();
+    show({ ...BASE, recommendations: [HARBORLIGHT] });
+    expect(screen.getByText('Harborlight Freight: December 15 (in 25 days)')).toBeInTheDocument();
     expect(screen.getByText('You told the desk this deadline; it is 25 days away.')).toBeInTheDocument();
     expect(screen.getByText('SAMPLE DATA')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'Open Agents' });
@@ -91,17 +91,17 @@ describe('the Decisions cell', () => {
   });
 
   it('links the overflow line to the inbox', () => {
-    const rows = [1, 2, 3, 4].map((n) => ({ ...HALVORSEN, cardId: `card-${n}` }));
+    const rows = [1, 2, 3, 4].map((n) => ({ ...HARBORLIGHT, cardId: `card-${n}` }));
     show({ ...BASE, recommendations: rows });
     expect(screen.getByRole('link', { name: '1 more in inbox' })).toHaveAttribute('href', '/inbox');
   });
 
   it('keeps the row and says so when a dismiss fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })));
-    show({ ...BASE, recommendations: [HALVORSEN] });
+    show({ ...BASE, recommendations: [HARBORLIGHT] });
     fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not dismiss that decision.');
-    expect(screen.getByText('Halvorsen Freight: December 15 (in 25 days)')).toBeInTheDocument();
+    expect(screen.getByText('Harborlight Freight: December 15 (in 25 days)')).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 

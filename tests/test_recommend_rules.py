@@ -94,13 +94,13 @@ def test_superseded_facts_are_ignored():
 
 def test_entity_name_becomes_the_subject():
     candidates = deadline_candidates(
-        [_fact(6, "Renewal due December 15.")], set(), {6: "Halvorsen Freight"}, NOV_20, 30,
+        [_fact(6, "Renewal due December 15.")], set(), {6: "Harborlight Freight"}, NOV_20, 30,
     )
-    assert candidates[0].title.startswith("Halvorsen Freight: December 15 (in 25 days)")
+    assert candidates[0].title.startswith("Harborlight Freight: December 15 (in 25 days)")
 
 
 def test_fact_text_cut_at_48_becomes_the_subject():
-    text = "The Halvorsen Freight renewal agreement has to be signed before December 15."
+    text = "The Harborlight Freight renewal agreement has to be signed before December 15."
     candidates = deadline_candidates([_fact(8, text)], set(), {}, NOV_20, 30)
     assert candidates[0].title.startswith(text[:48] + ": December 15")
 

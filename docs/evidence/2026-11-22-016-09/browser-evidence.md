@@ -1,3 +1,5 @@
+<!-- Note (2026-11-25): the sample client's name in this record was replaced with the fictional sample name (Harborlight) on 2026-11-25. -->
+
 # 016-09: the profile review, end to end and in the browser
 
 Date: 2026-11-22. Branch `ticket/016-09-profile`, worktree
@@ -31,7 +33,7 @@ A loopback OpenAI-compatible stub stood in for the company endpoint:
   kept by the review pass, not the one this run used
 - answers `/chat/completions`; a prompt carrying the review step's own marker
   sentence (`Only add or patch lines`) gets one operation adding the line
-  `Owns the Halvorsen Freight and Kestrel Foods accounts.`, and the ids it
+  `Owns the Harborlight Freight and Kestrel Foods accounts.`, and the ids it
   cites are the two newest `activity` ids read out of the JSON payload the
   desk appended, so the reply can only cite ids the desk really showed it; if
   the payload carries no ids it answers `{"ops": []}`
@@ -54,7 +56,7 @@ browser session and the token is redacted everywhere in this directory; the
 session cookie is `agentdesk_session`, domain `127.0.0.1`, `HttpOnly`,
 `SameSite=Strict`.
 
-The ten asks were the same in both scenarios (Halvorsen and Kestrel
+The ten asks were the same in both scenarios (Harborlight and Kestrel
 questions). Drivers `driver-a.py` and `driver-b.py` did the HTTP work: one
 ask per question, then `POST /api/agent-loop/run` and a poll of
 `/api/agent-loop` until the pass finished, then reads of `/settings`,
@@ -105,14 +107,14 @@ What the desk then held:
   "cited": [9, 10], "learnedIn": []}`. One review call, and the ids it cited
   are the ids the desk had just shown it.
 - Settings: `<span class='stamp'>1 LEARNED</span>` and the row
-  `Owns the Halvorsen Freight and Kestrel Foods accounts.`
+  `Owns the Harborlight Freight and Kestrel Foods accounts.`
   with `<span class='empty'>Learned from activity on 22 Nov 2026</span>`
   and a `Remove` form posting `/api/profile/learned/remove` with hidden
   `id=p-2368`
 - Activity: `Learned a line about you from activity 9, 10.`
 - `/api/profile/learned`:
   `{"by": "review", "id": "p-2368", "learnedFrom": {"activity": [9, 10]},
-  "text": "Owns the Halvorsen Freight and Kestrel Foods accounts.",
+  "text": "Owns the Harborlight Freight and Kestrel Foods accounts.",
   "ts": 1795336283.407}`
 - `profile.learned.json` beside the other stores, 361 bytes, same document
 - `preferences.json`: **not created**, and the driver's before/after sha256
@@ -156,7 +158,7 @@ three:
 ```
 What the desk learned about you  1 LEARNED
 The desk learns only from what you ask it: ...
-Owns the Halvorsen Freight and Kestrel Foods accounts.  Learned from activity on 22 Nov 2026  [Remove]
+Owns the Harborlight Freight and Kestrel Foods accounts.  Learned from activity on 22 Nov 2026  [Remove]
 Learn focus topics from repeated asks            [On]
 Learn lines about you from your recent asks      [On]
 Save captured facts without asking               [On]
@@ -193,7 +195,7 @@ The card came back, read in the same call as `settings-learned-restored.png`:
 
 ```
 ... 1 LEARNED
-Owns the Halvorsen Freight and Kestrel Foods accounts.  Learned from activity on 22 Nov 2026  [Remove]
+Owns the Harborlight Freight and Kestrel Foods accounts.  Learned from activity on 22 Nov 2026  [Remove]
 ```
 
 and `/api/profile/learned` held the original entry with the original

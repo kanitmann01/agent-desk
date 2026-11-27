@@ -63,8 +63,8 @@ export const SAMPLE_TRACKER: TrackerView = {
 /** Page watch on a supplier's public pricing page. */
 export function sampleWatch(now: Date): WatchView {
   return {
-    name: 'Halvorsen Freight rates',
-    url: 'halvorsen-freight.example/rates',
+    name: 'Harborlight Freight rates',
+    url: 'harborlight-freight.example/rates',
     checkedAt: hoursFrom(now, -1),
     changes: 2,
     lines: [
