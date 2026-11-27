@@ -113,7 +113,7 @@ def test_four_switches_come_before_advanced_and_the_computer_check_after_it(env,
     marker = page.index("id='settings-advanced'")
     before = _switches(page[:marker])
     # Five: the mail digest's switch, the Outlook alerts switch under it
-    # in the sources card (spec 024), and the memory card's three.
+    # in the sources card (spec 028), and the memory card's three.
     assert len(before) <= 5
     assert sorted(before) == ["mail_enabled", "mail_feeder", "memory_auto_approve",
                               "memory_capture_assistant", "memory_capture_research"]
@@ -151,7 +151,7 @@ def test_your_tools_shows_each_tools_live_state_and_one_action(env, auth):
     assert "<a class='btn btn-secondary' href='/walkthrough/calendar'>Set up</a>" in tools
     assert "Off. Nothing is read." in tools
     # The mail digest's switch, then the Outlook alerts switch under it
-    # in the same card (spec 024 re-homed).
+    # in the same card (spec 028 re-homed).
     assert _switches(tools) == ["mail_enabled", "mail_feeder"]
     assert 'action="/settings/mail/folder"' in tools
 

@@ -2,7 +2,7 @@
 
 Status: **UNVERIFIED procedure.** No Mac was used for this evidence pack. This file is a procedure to run later and record, not a result. Do not treat macOS automatic collection as verified until a dated transcript replaces this note.
 
-Date written: 2026-11-24. Applies to: spec 024, the macOS Notification Center reader in `src/agentdesk/feeder/collectors/mac_notifications.py`.
+Date written: 2026-11-24. Applies to: spec 028 (numbered 024 in the agent-desk-core sandbox when written), the macOS Notification Center reader in `src/agentdesk/feeder/collectors/mac_notifications.py`.
 
 ## What this check proves
 

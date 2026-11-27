@@ -1176,7 +1176,7 @@ def _tools_section(excel_status: dict | None, calendar_status: dict | None,
     without it, so the page never shows a control that cannot work); the
     calendar's is its setup page; the mail's is its on/off switch. The
     folder and address forms fold into a disclosure. Under the mail
-    source sits the Outlook alerts block (spec 024), which feeds its
+    source sits the Outlook alerts block (spec 028, numbered 024 in the agent-desk-core sandbox), which feeds its
     alerts into the same folder; `mail_fetch` is the feeder's own last
     status, read when the page rendered.
     """

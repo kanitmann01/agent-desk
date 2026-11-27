@@ -1,6 +1,6 @@
 # I3: The macOS Notification Center reader
 
-Part of specs/024-outlook-metadata-feeder.md (G3, G4, G5). Blocked by: I1.
+Part of specs/028-outlook-metadata-feeder.md (G3, G4, G5). Blocked by: I1.
 
 ## Context
 

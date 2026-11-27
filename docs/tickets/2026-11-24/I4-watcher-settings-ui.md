@@ -1,6 +1,6 @@
 # I4: Watcher, settings, UI and disclosure
 
-Part of specs/024-outlook-metadata-feeder.md (G4, G6, G7). Blocked by: I1.
+Part of specs/028-outlook-metadata-feeder.md (G4, G6, G7). Blocked by: I1.
 
 ## Context
 

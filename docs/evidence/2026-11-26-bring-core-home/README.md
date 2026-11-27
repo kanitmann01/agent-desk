@@ -178,7 +178,7 @@ are against this tree after the re-homing.
 - Rule (a): grep for `Graph`, `IMAP`, `EWS`, `Power Automate`, `add-in`
   across `src/agentdesk/feeder/`, the card copy, the touches lines and
   `docs/known-limitations.md` gives zero hits. The only appearances are
-  in `specs/024-outlook-metadata-feeder.md`, and only as the problem
+  in `specs/028-outlook-metadata-feeder.md`, and only as the problem
   statement ("the tenant blocks app registration, Graph, IMAP, EWS,
   Power Automate and Outlook add-ins") and its non-goals list. Nothing
   promises any of them. PASS.
@@ -397,11 +397,15 @@ The wave is already on `main`, so "landing second" is exactly this replay:
 10. Gate: `pinned.py --gate python tools/ci_local.py` from the worktree root.
     Expect 6/7 until step 11; the pytest failure must be the spec-numbering
     collision and nothing else.
-11. Renumber `specs/024-outlook-metadata-feeder.md` to the next free number
-    (spec 026 and 027 belong to the wave) and update its references (title,
-    the five feeder tickets, the research note, the plan document, the
-    comment in `src/agentdesk/settings.py`, this README). This is what makes
-    `test_specs_numbering.py` pass and the gate reach 7/7.
+11. Renumber the feeder spec to the next free number and update its
+    references (title, the five feeder tickets, the research note, the plan
+    document, the comment in `src/agentdesk/settings.py`, this README).
+    This is what makes `test_specs_numbering.py` pass and the gate reach
+    7/7. DONE on this branch: the spec is `specs/028-outlook-metadata-feeder.md`
+    (numbered 024 in the agent-desk-core sandbox; 028 was the next free
+    number on every local branch at the time). A replay from before this
+    branch must redo the step and choose the next free number at that
+    moment.
 12. Layout audit under pinned full isolation (never `--gate`): the command in
     the brief with conditions `fresh,data,plugins,full,legacy-dashboard,
     long-values,busy`, `--fail-on none --jobs 2`. Take the baseline at plain

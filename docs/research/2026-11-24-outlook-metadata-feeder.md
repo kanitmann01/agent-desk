@@ -1,6 +1,6 @@
 # Outlook metadata feeder: OS alerts plus manual history
 
-Status: research and evidence note for spec 024, 2026-11-24. Host: Windows 11 (Chibi). The macOS path was exercised against a synthetic store only; no Mac was used in this session. Every macOS procedure below is a written check, marked unverified.
+Status: research and evidence note for spec 028 (numbered 024 in the agent-desk-core sandbox), 2026-11-24. Host: Windows 11 (Chibi). The macOS path was exercised against a synthetic store only; no Mac was used in this session. Every macOS procedure below is a written check, marked unverified.
 
 Verification key: **[V]** measured on this Windows host in this session or recorded in the tree. **[S]** measured against a synthetic store built from the live schema, with invented senders and subjects. **[D]** a vendor or forensic documentation claim, not measured here. **[U]** unverified, needs a Mac or another machine.
 
@@ -144,7 +144,7 @@ No gap remains in the cause path: the runner records the reader's own unavailabl
 Reported, not fixed, because this change is docs and evidence only.
 
 1. **Platform-specific coverage copy on every platform.** The Settings coverage paragraph says "On Windows that is about 20 per app" unconditionally, including on macOS, against I4's rule that copy is platform agnostic except for the macOS Full Disk Access cause. File: `src/agentdesk/server/settings_view.py:1101-1103`.
-2. **Comment drift in the runner.** `DEFAULT_WINDOW_DAYS = 14` is commented "# the settings choice's default, mail_feeder_days", but spec 024 says not to add a window setting and no `mail_feeder_days` exists. File: `src/agentdesk/feeder/runner.py:25`.
+2. **Comment drift in the runner.** `DEFAULT_WINDOW_DAYS = 14` is commented "# the settings choice's default, mail_feeder_days", but spec 028 says not to add a window setting and no `mail_feeder_days` exists. File: `src/agentdesk/feeder/runner.py:25`.
 3. **WPN tests are platform-gated by the host, not the fixture seam.** `WpnCollector.available()` checks `sys.platform != "win32"` before looking at an injected `store_path`, so the synthetic WPN tests can only pass on Windows. The current Linux CI job runs a named subset that excludes them, so there is no live CI break, but the fixture seam is not usable off Windows the way the macOS reader's `platform=` seam is.
 
 ## Evidence and rerun commands
@@ -163,7 +163,7 @@ The expected results are in `focused-tests.txt`, `synthetic-stores.txt`, `live-w
 
 ## Sources
 
-- Spec 024: `specs/024-outlook-metadata-feeder.md`.
+- Spec 028: `specs/028-outlook-metadata-feeder.md` (numbered 024 in the agent-desk-core sandbox).
 - Wayfinder map and tickets: `docs/plans/2026-11-24-outlook-local-ingestion-map.md`, `docs/tickets/2026-11-24/`.
 - Earlier repo research: `docs/research/2026-11-18-outlook-without-connector.md`.
 - Local swarm notes (machine-local, outside the repo): `outlook-ingestion-research.md`, `macos-outlook-research.md`.

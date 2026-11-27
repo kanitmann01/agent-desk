@@ -1,6 +1,6 @@
 # I5: Docs, walkthrough and evidence
 
-Part of specs/024-outlook-metadata-feeder.md (G3, G7, G8). Blocked by: I2, I3, I4.
+Part of specs/028-outlook-metadata-feeder.md (G3, G7, G8). Blocked by: I2, I3, I4.
 
 ## Context
 

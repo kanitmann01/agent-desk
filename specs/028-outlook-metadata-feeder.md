@@ -1,6 +1,7 @@
-# Spec 024: A platform-agnostic Outlook alert feeder
+# Spec 028: A platform-agnostic Outlook alert feeder
 
 Status: draft for review, 2026-11-24. Wayfinder map: docs/plans/2026-11-24-outlook-local-ingestion-map.md. Tickets: docs/tickets/2026-11-24/.
+nNumbered 028 in agent-desk (2026-11-26); it was numbered 024 in the agent-desk-core sandbox, which is why the research note, tickets and evidence pack of 2026-11-24 still say 024 in places.
 
 ## Problem Statement
 

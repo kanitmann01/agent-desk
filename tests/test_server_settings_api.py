@@ -61,7 +61,7 @@ def test_every_setting_has_a_default_and_toggles(env, auth):
         # Mail (#44): off by default, no folder chosen.
         "mail_enabled": False,
         "mail_folder": "",
-        # Outlook alerts (spec 024): off by default.
+        # Outlook alerts (spec 028, numbered 024 in the agent-desk-core sandbox): off by default.
         "mail_feeder": False,
         # Registry: no checkout pinned, so resolution is automatic.
         "registry_path": "",
@@ -501,7 +501,7 @@ def test_the_settings_page_lists_the_ranking_controls(env, auth):
     assert "Rank with my AI" in page
 
 
-# -- the Outlook alerts source (spec 024) ----------------------------------
+# -- the Outlook alerts source (spec 028, numbered 024 in the agent-desk-core sandbox) ----------------------------------
 
 
 def _watch_with_feeder(tmp_path, feeder):

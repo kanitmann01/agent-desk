@@ -1,8 +1,8 @@
-# Evidence: Outlook metadata feeder (I5, spec 024)
+# Evidence: Outlook metadata feeder (I5, spec 028, numbered 024 in the agent-desk-core sandbox)
 
 Date: 2026-11-24. Tree: branch `spec024/outlook-feeder`. Evidence run against commit `661c6fbb567279c12a6a9b153a878c9d4b421160` (the fix that surfaces the platform unavailable cause); the docs commit follows it.
 
-This folder holds the docs and evidence pack for spec 024. It contains no product code change and no real mail. The synthetic fixtures use invented senders and subjects. The live Windows smoke prints counts and Outlook handler ids only and never selects a notification payload.
+This folder holds the docs and evidence pack for spec 028, which was numbered 024 in the agent-desk-core sandbox. It contains no product code change and no real mail. The synthetic fixtures use invented senders and subjects. The live Windows smoke prints counts and Outlook handler ids only and never selects a notification payload.
 
 ## Files
 

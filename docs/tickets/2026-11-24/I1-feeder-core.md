@@ -1,6 +1,6 @@
 # I1: The feeder core and the header-only .eml writer
 
-Part of specs/024-outlook-metadata-feeder.md (G1, G4, G5). Blocked by: none.
+Part of specs/028-outlook-metadata-feeder.md (G1, G4, G5). Blocked by: none.
 
 ## Context
 
