@@ -25,13 +25,15 @@ Nexuus Bot is a local-first web workspace for your workbook, calendar, exported 
 
 ## Quick start
 
-The app requires Python 3.10 or later. Use Python 3.12 for the full development gate. The frontend development tools require Node.
+The app requires Python 3.10 or later. Use Python 3.12 for the full development gate. The frontend development tools need Node 20.19 or newer on the Node 20 line, or Node 22.12 or newer; that floor is Vite 7's own requirement, recorded in `frontend/package-lock.json`. Node 18, Node 19, Node 20 versions before 20.19, every Node 21 version, and Node 22 versions before 22.12 do not work with the frontend tools.
 
 ```bash
 git clone https://github.com/kanitmann01/agent-desk.git
 cd agent-desk
 python -m pip install -e ".[dev]"
 ```
+
+The repository and clone folder (`kanitmann01/agent-desk`), the launcher filenames (`tools/agent-desk.cmd`, `tools/agent-desk.command`) and the `.agent-desk` data folder keep their existing names: they are compatibility contracts that keep existing desks and scripts working, not the product's name. The product on screen is Nexuus Bot.
 
 On Windows, double-click `tools/agent-desk.cmd`.
 
@@ -82,7 +84,7 @@ Updates show new permission scopes before they apply. Rollback restores the prev
 - Python serves the app on loopback with session, Host, and Origin guards.
 - The committed React bundle serves the dashboard and marketplace. Other pages use server rendering.
 - SQLite stores source snapshots, memory, audit events, plugin state, and run history.
-- The OS keychain stores model keys. SQLite keeps masked hints.
+- Where a usable OS keychain is available, model keys are stored in the OS keychain. Where there is none, no key is stored: a save is refused, and keys still reach the app as plain text through the environment or the optional `config.env` file, or through the legacy settings rows from earlier builds. SQLite keeps masked hints only.
 - OpenAI-compatible connections use the endpoint and model you choose.
 - The optional engine sidecar calls only four desk-owned tools. The fixed loop remains the default.
 
