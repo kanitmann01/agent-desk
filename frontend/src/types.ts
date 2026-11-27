@@ -200,8 +200,9 @@ export interface PluginCard {
     face?: 'ui-schema';
     asOf?: string;
     // The runner's source read when it produced no elements: reason is a
-    // structural code such as "no-transport", never display copy.
-    source?: { reason?: string };
+    // structural code such as "no-transport", never display copy; state is
+    // the reader's own state, stale included.
+    source?: { reason?: string; state?: string };
   } | null;
   // Set on a hand-kept number tile, whose value only the manager can supply.
   manualMetric?: string;

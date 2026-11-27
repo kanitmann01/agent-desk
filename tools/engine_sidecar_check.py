@@ -35,9 +35,11 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for _path in (str(ROOT / "src"),):
+for _path in (str(ROOT / "src"), str(ROOT / "tools")):
     if _path not in sys.path:
         sys.path.insert(0, _path)
+
+from layout_audit import _inert_gate_runners
 
 MOCK_KEY = "sk-sidecar-check"
 MOCK_MODEL = "mock-chat"
@@ -110,7 +112,8 @@ def _boot_temp_desk(folder: Path):
     saved = _pin_env(folder)
     try:
         server = server_app.create_server(
-            port=0, keychain=KeychainSecrets(backend=MemoryKeychain()))
+            port=0, keychain=KeychainSecrets(backend=MemoryKeychain()),
+            gate_runners=_inert_gate_runners())
     except Exception:
         _restore_env(saved)
         raise

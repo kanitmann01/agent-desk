@@ -291,6 +291,19 @@ describe('the brief groups its numbers and its health rows', () => {
     expect(within(health).getAllByText('never')).toHaveLength(1);
   });
 
+  it('does not count a stale plugin source as live', () => {
+    const stale = pluginCard('manual-one', 'Manual metric');
+    stale.payload = { elements: [], source: { state: 'stale' } };
+    show({
+      ...RICH,
+      layout: { cards: [{ key: 'manual-one', title: null }] },
+      plugins: { cards: [stale] },
+    });
+    const health = document.querySelector('.cell-health') as HTMLElement;
+    expect(within(health).getByText('0 of 1 live')).toBeInTheDocument();
+    expect(within(health).getByText('stale')).toBeInTheDocument();
+  });
+
   it('uses one tag name per kind and a plain PLUGIN for an unknown one', () => {
     show(RICH);
     expect(document.querySelector('.cell-tracker h2.tag')).toHaveTextContent('TRACKER');

@@ -6330,6 +6330,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         file_name = html.escape(str(card.get("file") or "the data source"))
         version = html.escape(str(card["version"]))
         payload = card.get("payload") or {}
+        source = payload.get("source") if isinstance(payload, dict) else None
+        # A stale read keeps its last good value, but it must not wear the live stamp.
+        stale = (status == FRESH and isinstance(source, dict)
+                 and source.get("state") == "stale")
         elements = payload.get("elements") if isinstance(payload, dict) else None
         if status == FRESH and elements:
             parts = [
@@ -6367,10 +6371,18 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             insight = payload.get("insight")
             body += _receipt_line(payload)
             body += _press_form(card, insight.get("press") if isinstance(insight, dict) else None)
+        stamp = "live"
+        if stale:
+            checked = str(card.get("checked_at") or "")
+            try:
+                hhmm = datetime.fromisoformat(checked).strftime("%H:%M")
+            except ValueError:
+                hhmm = ""
+            stamp = f"Stale since {hhmm}" if hhmm else "Stale"
         freshness = Freshness(
-            status=status,
+            status=ATTENTION if stale else status,
             stamp=("Re-test available" if retestable
-                   else "Needs attention" if status == ATTENTION else "live"),
+                   else "Needs attention" if status == ATTENTION else stamp),
             updated_iso=str(card.get("checked_at", "")),
         )
         return Widget(

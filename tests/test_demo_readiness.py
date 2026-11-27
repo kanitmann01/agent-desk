@@ -13,7 +13,9 @@ on a checkout where the product does not yet have the behaviour.
 import importlib.util
 import json
 import os
+import sys
 import tempfile
+import types
 from pathlib import Path
 
 import pytest
@@ -29,6 +31,82 @@ def readiness():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+class _BootStopped(Exception):
+    """Stop the tool immediately after its factory call."""
+
+
+class _GateResult:
+    def __init__(self, key, number, title, status, evidence=(), note=""):
+        self.key = key
+        self.number = number
+        self.title = title
+        self.status = status
+        self.evidence = tuple(evidence)
+        self.note = note
+
+
+class _ServerFactory:
+    def __init__(self):
+        self.create_calls = []
+
+    def create_server(self, **kwargs):
+        self.create_calls.append(kwargs)
+        raise _BootStopped
+
+
+def _install_fake_agentdesk(monkeypatch, factory):
+    """Close every import the boot uses, so no production runner can execute."""
+    agentdesk = types.ModuleType("agentdesk")
+    agentdesk.__path__ = []
+    server_package = types.ModuleType("agentdesk.server")
+    server_package.__path__ = []
+    server_app = types.ModuleType("agentdesk.server.app")
+    server_app.create_server = factory.create_server
+    server_package.app = server_app
+    keys_package = types.ModuleType("agentdesk.keys")
+    keys_package.__path__ = []
+    secrets = types.ModuleType("agentdesk.keys.secrets")
+
+    class KeychainSecrets:
+        def __init__(self, backend):
+            self.backend = backend
+
+    secrets.KeychainSecrets = KeychainSecrets
+    probe_package = types.ModuleType("agentdesk.probe")
+    probe_package.__path__ = []
+    core = types.ModuleType("agentdesk.probe.core")
+    core.GateResult = _GateResult
+    core.UNKNOWN = "UNKNOWN"
+    capabilities = types.ModuleType("agentdesk.capabilities")
+    capabilities.GATES = (
+        ("exec-user-space", 1, "User-space execution"),
+        ("uv-tls-bootstrap", 2, "uv bootstrap under corporate TLS"),
+        ("power-automate-flows", 3, "Power Automate personal cloud flows"),
+        ("onedrive-sync", 4, "OneDrive sync root"),
+        ("edr-identity", 5, "EDR / AV identity"),
+        ("embeddings", 6, "Endpoint embeddings"),
+    )
+    for module in (agentdesk, server_package, server_app, keys_package, secrets,
+                   probe_package, core, capabilities):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+
+
+def test_desk_boot_passes_every_inert_gate_runner(
+        readiness, tmp_path, monkeypatch):
+    """The readiness constructor injects UNKNOWN runners and starts no desk."""
+    factory = _ServerFactory()
+    _install_fake_agentdesk(monkeypatch, factory)
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path / "before"))
+    with pytest.raises(_BootStopped):
+        readiness.Desk(tmp_path / "data", tmp_path / "keychain.json", 0)
+    assert len(factory.create_calls) == 1
+    runners = factory.create_calls[0].get("gate_runners")
+    assert runners is not None
+    assert set(runners) == {key for key, _number, _title in
+                            sys.modules["agentdesk.capabilities"].GATES}
+    assert {runner().status for runner in runners.values()} == {"UNKNOWN"}
 
 
 def _leftovers() -> list[str]:

@@ -344,14 +344,17 @@ export default function Brief({
       items: '-',
     },
   ];
-  const pluginRows: HealthRow[] = pluginCards.map((card) => ({
-    name: card.title,
-    live: card.freshness === 'fresh',
-    status: card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
-    // A card that never ran has no checkedAt: say never, not the clock.
-    lastRun: card.checkedAt ? fromIso(card.checkedAt) : 'never',
-    items: card.payload?.setup ? '-' : String(card.payload?.elements?.length ?? 0),
-  }));
+  const pluginRows: HealthRow[] = pluginCards.map((card) => {
+    const stale = card.payload?.source?.state === 'stale';
+    return {
+      name: card.title,
+      live: card.freshness === 'fresh' && !stale,
+      status: stale ? 'stale' : card.freshness === 'fresh' ? 'live' : card.payload?.setup ? 'set up' : 'attention',
+      // A card that never ran has no checkedAt: say never, not the clock.
+      lastRun: card.checkedAt ? fromIso(card.checkedAt) : 'never',
+      items: card.payload?.setup ? '-' : String(card.payload?.elements?.length ?? 0),
+    };
+  });
   const sourceLive = sourceRows.filter((row) => row.live).length;
 
   const LIST = new Intl.ListFormat('en-US', { style: 'long', type: 'conjunction' });
