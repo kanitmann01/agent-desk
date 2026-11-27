@@ -333,7 +333,7 @@ describe('the plugin card', () => {
     expect(document.querySelector('.stamp')).not.toHaveClass('amber');
   });
 
-  it('stamps a stale source stale, not live, and keeps the value', () => {
+  it('stamps a stale source stale, not live, and names an older day', () => {
     render(
       <PluginCardView
         card={{
@@ -354,10 +354,32 @@ describe('the plugin card', () => {
         onExpired={NOOP_EXPIRED}
       />,
     );
-    expect(screen.getByText('Stale since 00:00')).toBeInTheDocument();
+    expect(screen.getByText('Stale since 1 Jan 2020, 00:00')).toBeInTheDocument();
     expect(screen.queryByText('live')).toBeNull();
     expect(document.querySelector('.stamp')).toHaveClass('amber');
     expect(screen.getByText('123456789012345')).toBeInTheDocument();
+
+    cleanup();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T09:05:00`;
+    render(
+      <PluginCardView
+        card={{
+          id: 'audit-overflow',
+          title: 'Regional Pipeline',
+          version: '0.1.0',
+          pilot: true,
+          state: 'enabled',
+          freshness: 'fresh',
+          cause: '',
+          checkedAt: today,
+          payload: { elements: [], source: { state: 'stale' } },
+        }}
+        onRefetch={NOOP_REFETCH}
+        onExpired={NOOP_EXPIRED}
+      />,
+    );
+    expect(screen.getByText('Stale since 09:05')).toBeInTheDocument();
   });
 
   it('draws lists, tables and statuses, not only metric and text', () => {
