@@ -487,7 +487,13 @@ def test_the_toggle_form_posts_back_to_its_section_without_script(booted):
     assert booted.server.settings.get("memory_auto_approve") is not None
 
 
-def test_a_settings_toggle_flip_still_works_without_script(booted):
+def test_a_settings_toggle_flip_still_works_without_script(booted, monkeypatch,
+                                                           tmp_path):
+    # Toggling mail on constructs the default watcher and polls it once,
+    # so the same two pins the settings module's feeder toggles carry
+    # keep that poll away from any real folder and real data folder.
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
     before = booted.server.settings.get("mail_enabled")
     status, headers, _body = _post_form(
         booted, "/settings/toggle",

@@ -51,6 +51,8 @@ Add `--no-browser` to skip the browser open. The server binds to `127.0.0.1` onl
 
 The Settings page is the normal configuration path. Optional text configuration lives at `%USERPROFILE%\.agent-desk\config.env` on Windows or `~/.agent-desk/config.env` on macOS.
 
+- **Mail folder and Outlook alerts**: mail is off by default. Turn the digest on in Settings and choose the folder your `.eml` exports land in; the desk reads the file headers only and never keeps a body. The optional "Fetch Outlook alerts" toggle, in the Workbook, calendar and mail card, reads the local OS notification store while the app is open, writes the sender and subject of each Outlook alert as header-only `.eml` files into that folder, and drops the preview. Turning the alerts on also turns on the mail digest, because the alert files land in the folder it reads. It is a live alert signal, not a mailbox mirror: saved `.eml` files are the history source, Windows keeps only a short alert history, and the macOS reader needs Full Disk Access. The Workbook, calendar and mail card shows the collector, the last run, the coverage window and any honest cause.
+
 ## Product tour
 
 ### Memory with provenance
@@ -115,6 +117,8 @@ npm test
 ```
 
 The full gate runs Python tests, frontend typecheck, Vitest, the license gate, registry CI, and naming guards.
+
+The Outlook alert feeder lives in `src/agentdesk/feeder/`: one platform-agnostic core over the existing header-only `Message` type, a Windows toast reader and a macOS Notification Center reader behind one collector protocol, an atomic `.eml` writer, and one status record. It runs inside the mail watcher only while the app is open and creates no OS task or service.
 
 The layout audit plans the `fresh`, `data`, `plugins`, `full`, `long-values`, `busy`, and `legacy-dashboard` conditions. The `busy` condition uses synthetic capability cache fixtures and injected UNKNOWN gate runners. It never retests machine capabilities, reaches an external probe endpoint, installs a package, lists processes, or writes a OneDrive probe.
 

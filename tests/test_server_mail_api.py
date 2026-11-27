@@ -90,7 +90,13 @@ def frozen_mail_bundle():
 
 
 @pytest.fixture()
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
+    # _enable_mail turns the digest on through the real toggle, which
+    # starts one poll right away: the folder pins keep that poll away
+    # from any real mail folder, and AGENTDESK_DATA keeps the feeder
+    # status path off the real profile folder.
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
     outbox = tmp_path / "outbox"
     watch, inbox, store, settings = frozen_mail_bundle()
     booted = server_harness.Booted(

@@ -1166,7 +1166,8 @@ def _settings_bar() -> str:
 
 def _tools_section(excel_status: dict | None, calendar_status: dict | None,
                    settings_values: dict, mail_folder: str,
-                   mail_self_address: str) -> str:
+                   mail_self_address: str,
+                   mail_fetch: dict | None = None) -> str:
     """Your tools: the workbook, the calendar and the mail folder, each
     with its live state and one action (spec 022).
 
@@ -1174,7 +1175,10 @@ def _tools_section(excel_status: dict | None, calendar_status: dict | None,
     The workbook's one action is the picker, which needs script (hidden
     without it, so the page never shows a control that cannot work); the
     calendar's is its setup page; the mail's is its on/off switch. The
-    folder and address forms fold into a disclosure.
+    folder and address forms fold into a disclosure. Under the mail
+    source sits the Outlook alerts block (spec 024), which feeds its
+    alerts into the same folder; `mail_fetch` is the feeder's own last
+    status, read when the page rendered.
     """
     excel_status = excel_status or {}
     calendar_status = calendar_status or {}
@@ -1233,6 +1237,7 @@ address inside the From header), so threads you already answered stop
 producing follow-up cards. With no address set, self-detection is simply
 off: the digest works, follow-up cards are not filed.</p>
 </details>
+{_outlook_alerts_section(values, mail_fetch)}
 </section>"""
 
 
@@ -1334,6 +1339,9 @@ def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> s
         "machine, so the manual .eml folder above is the mail source.</p>"
         if collector == "manual" or result == "unavailable" else ""
     )
+    # Both forms carry the tools section, so a no-JS submit lands the
+    # person back here (the section the sources card lives in), the same
+    # return_to the card's other toggles post.
     return f"""<h3>Outlook alerts</h3>
 <p class='empty'>Alerts only, not a mailbox: while the desk is open it reads
 the sender and subject lines of the Outlook alerts the OS notification
@@ -1342,10 +1350,13 @@ above, and drops any preview. Turning alerts on also turns the mail
 digest on, because the alerts land in that same folder. The manual .eml
 folder stays the history source.</p>
 <div class='settings-block'>
-{_toggle_button("mail_feeder", on, label="Fetch Outlook alerts")}
+{_toggle_button("mail_feeder", on, label="Fetch Outlook alerts", section="tools")}
 </div>
 {state}{manual}
-<form method="post" action="/settings/mail/fetch-now" class="cardform">
+<form method="post" action="/settings/mail/fetch-now" class="cardform"
+ data-wait="#sources" data-wait-shape="panel"
+ data-wait-label="Running one Outlook alert pass..." data-busy="Fetching...">
+<input type="hidden" name="return_to" value="/settings#tools">
 <button class="btn btn-secondary" type="submit">Fetch now</button>
 </form>
 <p class='empty'>Coverage: only the alerts the OS notification store still keeps.
@@ -1524,7 +1535,7 @@ def render_settings_page(
                                connections_notice)
         + _jobs_section(bindings, connections, ai))
     tools_html = _tools_section(excel_status, calendar_status, settings_values,
-                                mail_folder, mail_self_address)
+                                mail_folder, mail_self_address, mail_fetch)
     memory_html = _memory_card(settings_values) + _learned_section(learned, settings_values)
     preferences_html = _preferences_section(preferences, preference_notice) + f"""<section class='card settings-card' id='appearance'>
 <div class='w-head'><h2>Appearance</h2><span class='stamp'>THIS BROWSER</span></div>

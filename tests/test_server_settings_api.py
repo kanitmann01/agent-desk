@@ -516,6 +516,15 @@ def _watch_with_feeder(tmp_path, feeder):
     )
 
 
+def _sources_card(page: str) -> str:
+    """The tools section's sources card, sliced out of the settings page.
+
+    The card holds no nested section, so it ends at the first closing
+    tag after its own opener."""
+    start = page.index("id='sources'")
+    return page[start:page.index("</section>", start)]
+
+
 def test_the_settings_page_renders_the_outlook_alerts_block(env, auth):
     page = env.request("GET", "/settings", auth)[2].decode("utf-8")
     assert "Outlook alerts" in page
@@ -524,6 +533,16 @@ def test_the_settings_page_renders_the_outlook_alerts_block(env, auth):
     assert "Fetch now" in page
     assert "Not run yet" in page
     assert "The manual .eml folder is the history source" in page
+    # The re-homed block lives inside the sources card ("Workbook,
+    # calendar and mail") of the tools section, not as a flat block of
+    # its own, and both of its forms post the person back to that
+    # section without JavaScript.
+    card = _sources_card(page)
+    assert "Outlook alerts" in card
+    assert "Alerts only, not a mailbox" in card
+    tools_start = page.index("data-settings-section='tools'")
+    assert tools_start < page.index("id='sources'")
+    assert 'name="return_to" value="/settings#tools"' in card
 
 
 def test_the_mail_feeder_toggle_is_accepted_and_saved(env, auth, monkeypatch,
@@ -583,6 +602,14 @@ def test_fetch_now_runs_the_injected_feeder_and_shows_the_manual_fallback(
             "POST", "/settings/mail/fetch-now", form_headers, b"")
         assert status == 303
         assert headers["Location"] == "/settings#sources"
+        # The card's own form names the tools section, so a real no-JS
+        # submit from the page returns the person to that section.
+        assert 'name="return_to" value="/settings#tools"' in _sources_card(page)
+        status, headers, _b = booted.request(
+            "POST", "/settings/mail/fetch-now", form_headers,
+            urlencode({"return_to": "/settings#tools"}).encode("ascii"))
+        assert status == 303
+        assert headers["Location"] == "/settings#tools"
     finally:
         booted.close()
 
@@ -673,3 +700,8 @@ def test_the_fetch_outlook_alerts_toggle_appears_once(env, auth):
     assert page.count("data-setting='mail_feeder'") == 1
     assert "Fetch Outlook alerts" in page
     assert "Outlook alerts (not a mailbox)" not in page
+    # The one toggle lives in the sources card and posts the person back
+    # to the tools section, like the card's other switches.
+    card = _sources_card(page)
+    assert "data-setting='mail_feeder'" in card
+    assert "value='/settings#tools'" in card

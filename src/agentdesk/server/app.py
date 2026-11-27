@@ -5647,18 +5647,22 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
         The pass writes headers only into the mail folder; it reads no
         body and calls no model. A desk with the feed off has nothing to
-        run, which is an honest answer rather than an error page.
+        run, which is an honest answer rather than an error page. The
+        card's form names the tools section as its return_to, and a post
+        without one (a fetch client, an empty body) lands on the sources
+        card itself, the anchor inside that same section.
         """
         server = self.server  # type: ignore[attr-defined]
+        body = self._read_json_body() or {}
+        target = self._form_return_to(body, "/settings#sources")
         if server.mail is None or server.mail.feeder is None:
             self._respond_form_or_json(
-                "/settings#sources",
+                target,
                 {"ran": False, "error": "Outlook alerts are off."},
             )
             return
         fetch = server.mail.fetch_now()
-        self._respond_form_or_json(
-            "/settings#sources", {"ran": True, "fetch": fetch})
+        self._respond_form_or_json(target, {"ran": True, "fetch": fetch})
 
     def _mail_address_save(self) -> None:
         """The settings page's mail address field, next to the folder.
