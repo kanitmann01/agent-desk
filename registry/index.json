@@ -55,7 +55,7 @@
       "releases": [
         {
           "version": "0.1.0",
-          "sha256": "4004f29ed87dc64b1935c7429b1c6d68d92154880d5ae03339918cfc1ebe5876",
+          "sha256": "df3222c8f79d50218409b1cb50ba4cd63e62b7a765b071e92aa38b6dbf1c7651",
           "source": "local",
           "yanked": false
         }

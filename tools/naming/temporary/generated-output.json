@@ -2,21 +2,6 @@
   "family": "generated-output",
   "ticket": "04",
   "issue": 358,
-  "note": "Ticket 04 (issue 358) clears this family and edits only this file. No registry plugin description carries an old display form today; the publisher identifiers in the registry are compatibility allowlist entries, not entries here.",
-  "entries": [
-    {
-      "surface": "Probe report header, module docstring and CLI description",
-      "files": [
-        "src/agentdesk/probe/__init__.py",
-        "src/agentdesk/probe/cli.py",
-        "src/agentdesk/probe/report.py"
-      ],
-      "issue": 358
-    },
-    {
-      "surface": "Presentation document properties (creator, last-modified-by, application)",
-      "files": ["src/agentdesk/presentations/ooxml.py"],
-      "issue": 358
-    }
-  ]
+  "note": "Cleared by ticket 04 (issue 358): probe output and presentation document properties say Nexuus Bot, and the starter shells regenerate from the neutral builder so the registry pin and the bundled catalog follow. No registry plugin description carries an old display form; the publisher identifiers in the registry are compatibility allowlist entries, not entries here.",
+  "entries": []
 }
