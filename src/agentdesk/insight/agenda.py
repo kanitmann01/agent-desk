@@ -191,12 +191,16 @@ def recalled(context: InsightContext, subject: str, *, limit: int = 2) -> list[d
         text = str(fact.get("text") or "").strip()
         if not text or not mentions(text, line):
             continue
-        rows.append(
-            {
-                "text": text,
-                "source": str(fact.get("source") or "").strip() or "memory",
-            }
-        )
+        row = {
+            "text": text,
+            "source": str(fact.get("source") or "").strip() or "memory",
+        }
+        # The id rides along when the adapter carried one, so a citation can
+        # name the fact without quoting it; a bool is not an id.
+        fact_id = fact.get("id")
+        if isinstance(fact_id, int) and not isinstance(fact_id, bool):
+            row["id"] = fact_id
+        rows.append(row)
         if len(rows) >= limit:
             break
     return rows
