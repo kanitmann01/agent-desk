@@ -13,6 +13,7 @@ from typing import Callable
 from agentdesk.insight import calendar, digest, research, workbook
 from agentdesk.insight import reading as insight_reading
 from agentdesk.insight.preferences import changed
+from agentdesk.insight.snapshots import card_signature, perceptual_delta
 from agentdesk.insight.types import InsightContext, InsightError, InsightReading
 from agentdesk.plugins.render import ELEMENT_KINDS
 
@@ -26,18 +27,68 @@ FAMILIES: dict[str, Callable[[dict, dict, InsightContext], InsightReading]] = {
 }
 
 
-def attach_cards(cards: list[dict], context: InsightContext) -> None:
-    """Mutate the cards in place: extra elements, plus payload["insight"]."""
+def attach_cards(
+    cards: list[dict],
+    context: InsightContext,
+    *,
+    snapshots: dict | None = None,
+) -> None:
+    """Mutate the cards in place: extra elements, plus payload["insight"].
+
+    `snapshots` is the watermark's card map from the snapshot store, or
+    None. None leaves every card exactly as the reading left it; a map
+    makes each tile open with its one-line delta when what it shows moved
+    since the user last viewed the dashboard, even on a tile whose
+    payload no family touches.
+    """
     for card in cards or []:
         if not isinstance(card, dict):
             continue
         family = FAMILIES.get(str(card.get("pluginId") or ""))
         if family is None:
+            _delta(card, snapshots)
             continue
         payload = card.get("payload")
         if not isinstance(payload, dict):
+            _delta(card, snapshots)
             continue
         _attach(card, family, payload, context)
+        _delta(card, snapshots)
+
+
+def _delta(card: dict, snapshots: dict | None) -> None:
+    """Prepend one tile's perceptual delta block, when one is owed.
+
+    The signature is read after the family ran, so a snapshot taken at
+    view time and a signature taken at read time see the same card. A
+    None snapshots map, a tile with no watermark, and an unchanged tile
+    all leave the card exactly as it was.
+    """
+    if not snapshots:
+        return
+    entry = snapshots.get(str(card.get("id") or card.get("pluginId") or ""))
+    previous = entry.get("signature") if isinstance(entry, dict) else None
+    line = perceptual_delta(previous, card_signature(card))
+    if not line:
+        return
+    payload = card.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+        card["payload"] = payload
+    insight = payload.get("insight")
+    if not isinstance(insight, dict):
+        insight = {
+            "status": "ok",
+            "source": "local",
+            "preferences": [],
+            "note": "",
+            "blocks": [],
+            "press": None,
+        }
+        payload["insight"] = insight
+    blocks = insight.get("blocks")
+    insight["blocks"] = [{"kind": "delta", "text": line}] + (
+        blocks if isinstance(blocks, list) else [])
 
 
 def _attach(
