@@ -144,6 +144,7 @@ def old_forms() -> tuple[str, ...]:
 def load_contract() -> Contract:
     """Read the four contract files and the per-family temporary lists."""
     def _read(name: str) -> dict:
+        """Read one contract JSON file from tools/naming."""
         return json.loads((NAMING / name).read_text(encoding="utf-8"))
 
     temporary = []
