@@ -1,0 +1,45 @@
+{
+  "family": "spa-and-bundle",
+  "ticket": "03",
+  "issue": 357,
+  "note": "Ticket 03 (issue 357) clears this family and edits only this file. The committed bundle is rebuilt from the renamed source in the same ticket.",
+  "entries": [
+    {
+      "surface": "SPA rail wordmarks, user card and avatar title and initials",
+      "files": ["frontend/src/dashboard/Rail.tsx"],
+      "issue": 357,
+      "initials": "AD",
+      "expected_initials": "NB"
+    },
+    {
+      "surface": "SPA tab title",
+      "files": ["frontend/index.html"],
+      "issue": 357
+    },
+    {
+      "surface": "SPA copy naming the product: session-expired, update banner, commitments, dashboard footer, face sheet and config, stylesheet header, marketplace admin and studio, memory loop",
+      "files": [
+        "frontend/src/api.ts",
+        "frontend/src/dashboard/CommitmentsCard.tsx",
+        "frontend/src/dashboard/Dashboard.tsx",
+        "frontend/src/face/sheet.tsx",
+        "frontend/src/face/config.ts",
+        "frontend/src/index.css",
+        "frontend/src/marketplace/Admin.tsx",
+        "frontend/src/marketplace/Studio.tsx",
+        "frontend/src/memory/loop/MemoryLoop.tsx"
+      ],
+      "issue": 357
+    },
+    {
+      "surface": "Committed bundle copy (rebuilt and recommitted by this ticket)",
+      "files": [
+        "src/agentdesk/server/static/spa/index.html",
+        "src/agentdesk/server/static/spa/assets/index-BSvoylOL.js",
+        "src/agentdesk/server/static/spa/assets/useBusy-BnHbzNUF.js",
+        "src/agentdesk/server/static/spa/assets/memory-loop.js"
+      ],
+      "issue": 357
+    }
+  ]
+}
