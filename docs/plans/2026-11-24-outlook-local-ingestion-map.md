@@ -11,9 +11,9 @@ A decision-ready spec for `agent-desk-core` that lets a corporate laptop, on Win
 - Hard constraints: no tenant admin, no app registration, no Graph, no IMAP, no EWS, no Power Automate, no Outlook add-in, no machine-wide install, no OS service, no admin rights, no cloud copy, header-only mail.
 - Platform agnostic: the feeder core, settings and output contract work on Windows and macOS. The user may run the app on a work Mac. No Windows COM, PowerShell, Task Scheduler or Windows Search dependency in the core. Platform collectors sit behind one Python interface: Spotlight on macOS, the Windows Search index or classic COM on Windows, and the manual folder everywhere. Scheduling is the app's own timer, not an OS scheduler.
 - The app already reads RFC 822 `.eml` files from a watched folder (`src/agentdesk/mail/`) and calendar data from a JSON file (`src/agentdesk/calendar/`). The feeder is host-side, not a plugin. The plugin set was retired; do not add a plugin for this.
-- Research lives in `D:/20-projects/Personal Agents/.scratch/outlook-ingest-swarm`. The synthesis will be linked from this map.
+- Research lives in the machine-local scratch folder `.scratch/outlook-ingest-swarm` (outside the repo). The synthesis will be linked from this map.
 - Skills every session consults: `wayfinder` (this map), `ponytail` (smallest complete change), `implement-spec` (ticket graph plus TDD subagents), `tdd`, `code-review`.
-- The product repo is `D:/20-projects/Personal Agents/agent-desk-core`. Implementation happens in a worktree branched from `main`.
+- The product repo is the `agent-desk-core` sandbox. Implementation happens in a worktree branched from `main`.
 
 ## Open tickets
 

@@ -60,7 +60,7 @@ Measured on the Windows host in this session:
 - Synthetic macOS store: 3 records in, 2 Outlook messages out (mail with a body, reminder), the non-Outlook chat filtered out, all three body sentinels absent from every file, 2 files written, 2 files after a rerun.
 - Settings capture, feed off: `/widgets/settings` returns `mail_feeder: false`; the alerts block says "Not run yet" and carries the manual folder as the history source. Settings capture, injected manual fallback: the block names collector `manual`, result `unavailable`, shows the manual sentence, and shows no alert count.
 
-Recorded on this host before this session (from `D:/20-projects/Personal Agents/.scratch/notes/outlook-ingestion-research.md`, verified there):
+Recorded on this host before this session (from a machine-local research note, `outlook-ingestion-research.md`, kept outside the repo, verified there):
 
 - Classic Outlook is installed at `C:\Program Files\Microsoft Office\Root\Office16\OUTLOOK.EXE` but `%LOCALAPPDATA%\Microsoft\Outlook` is absent, so there is no classic profile and COM export cannot work here.
 - The new Outlook package exists but has no signed-in account and an essentially empty local cache.
@@ -166,5 +166,5 @@ The expected results are in `focused-tests.txt`, `synthetic-stores.txt`, `live-w
 - Spec 024: `specs/024-outlook-metadata-feeder.md`.
 - Wayfinder map and tickets: `docs/plans/2026-11-24-outlook-local-ingestion-map.md`, `docs/tickets/2026-11-24/`.
 - Earlier repo research: `docs/research/2026-11-18-outlook-without-connector.md`.
-- Local swarm notes: `D:/20-projects/Personal Agents/.scratch/notes/outlook-ingestion-research.md`, `D:/20-projects/Personal Agents/.scratch/notes/macos-outlook-research.md`.
+- Local swarm notes (machine-local, outside the repo): `outlook-ingestion-research.md`, `macos-outlook-research.md`.
 - Microsoft and Apple documentation links are carried in those notes; this note cites them as documentation claims rather than re-verifying them here.

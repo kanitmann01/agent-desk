@@ -2,7 +2,7 @@ $ python docs/evidence/2026-11-24-outlook-feeder/live_wpn_smoke.py
 Windows WPN live smoke: counts and handler ids only
 run at: 2026-11-24T08:49:56+00:00
 python: 3.14.5 on win32
-store path: C:\Users\mannk\AppData\Local\Microsoft\Windows\Notifications\wpndatabase.db
+store path: %LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db
 store exists: yes (1048576 bytes)
   sidecar -wal: yes (3745112 bytes)
   sidecar -shm: yes (32768 bytes)
