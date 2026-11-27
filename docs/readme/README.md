@@ -18,6 +18,14 @@ These files support the root `README.md`.
 
 ## Capture command
 
+On a clean machine, install the browser first. The audit drives Chromium through Playwright, and Playwright downloads no browser by itself:
+
+```bash
+uv run --no-project --with playwright playwright install chromium
+```
+
+Then capture:
+
 ```bash
 uv run --no-project --with playwright --with keyring --with cryptography \
   python tools/layout_audit.py \
@@ -35,5 +43,11 @@ The audit uses synthetic data, a fake keychain, a loopback mock model, fixed clo
 ## Replacement note
 
 The screenshots show the current UI without edits. The product UI is changing in a separate task. Replace these PNG files in place when that work lands. Keep the same filenames so the root README does not need link changes.
+
+The audit writes each full-page screenshot under `build/readme-shots/<condition>/<width>x<height>/<theme>/<route>__<state>.png`. The three README images come from the `data` condition, the sample-data desk. Copy these produced files over the committed images, keeping the filenames:
+
+- `build/readme-shots/data/1280x800/unkey/root__dashboard.png` over `docs/readme/dashboard.png`
+- `build/readme-shots/data/1280x800/unkey/memory__memory.png` over `docs/readme/memory.png`
+- `build/readme-shots/data/1280x800/unkey/marketplace__marketplace.png` over `docs/readme/marketplace.png`
 
 Do not use the `long-values` audit condition for public images. Its fixture contains a real local username and path.
