@@ -36,6 +36,7 @@ def _args(**overrides):
         "fail_on": "none",
         "allow_partial": False,
         "record_api": "",
+        "continue_request_path": [],
         "api_fixture": "",
         "mock_delay_ms": 0,
         "slow_ms": 0,
@@ -504,6 +505,31 @@ class _FakeRoute:
         self.calls.append("abort")
 
 
+class _FakeRouteTarget:
+    """A route target that models Playwright's latest-route-first fallback chain."""
+
+    def __init__(self):
+        self.routes = []
+        self.events = []
+
+    def route(self, _pattern, handler):
+        self.events.append("route")
+        self.routes.append(handler)
+
+    def dispatch(self, method, url):
+        return _dispatch_fake_routes(self.routes, method, url)
+
+
+def _dispatch_fake_routes(routes, method, url):
+    """Dispatch until a route handles the request instead of falling back."""
+    route = _FakeRoute(method, url)
+    for handler in reversed(routes):
+        handler(route)
+        if not route.calls or route.calls[-1] != "fallback":
+            break
+    return route
+
+
 class _PendingPage:
     """A minimal page stand-in for pending enumeration and activation failures.
 
@@ -608,6 +634,135 @@ class _PendingContext:
 
     def new_page(self):
         return self.pages.pop(0)
+
+
+def test_continue_request_path_parser_is_repeatable_and_defaults_empty(monkeypatch):
+    """The parser preserves every path and supplies no exception by default."""
+    seen = []
+    monkeypatch.setattr(audit, "sync_playwright", object())
+    monkeypatch.setattr(audit, "_child_main", lambda args: seen.append(args) or 0)
+
+    assert audit.main(["--child", "--only-condition", "fresh"]) == 0
+    assert seen[-1].continue_request_path == []
+    assert audit.main([
+        "--child", "--only-condition", "fresh",
+        "--continue-request-path", "/research",
+        "--continue-request-path", "/assistant/ask",
+    ]) == 0
+    assert seen[-1].continue_request_path == ["/research", "/assistant/ask"]
+
+
+def test_continue_request_path_continues_a_match_and_holds_every_other_non_get(
+        monkeypatch):
+    """Named same-origin non-GETs continue, while every other request stays held."""
+    recorder = _WalkRecorder()
+    _install_fake_desk(monkeypatch, recorder)
+    base = recorder.base
+    paths = ["/research", "/assistant/ask"]
+    target = _FakeRouteTarget()
+    started = []
+    held = []
+    audit._install_request_guard(target, started, held)
+    audit._install_continue_routes(target, base, paths, started)
+
+    assert len(target.routes) == 2
+    for path in paths:
+        route = target.dispatch("POST", base + path + "?source=test")
+        assert route.calls == ["continue"]
+        assert started[-1] == {"method": "POST", "url": base + path + "?source=test"}
+    assert held == []
+
+    get = target.dispatch("GET", base + "/research")
+    assert get.calls == ["fallback", "fallback"]
+    foreign = target.dispatch("POST", "https://example.test/research")
+    assert foreign.calls == ["fallback"]
+    assert held == [foreign]
+    other = target.dispatch("POST", base + "/wizard/start")
+    assert other.calls == ["fallback"]
+    assert held == [foreign, other]
+
+    control = {"index": 0, "ordinal": 0, "path": "button.save", "tag": "button",
+               "text": "Save", "disabled": False, "alreadySelected": False,
+               "wait_target": "#result"}
+    combo = {"condition": "fresh", "width": 1024, "theme": "unkey",
+             "view": {"path": "/", "state": "dashboard"}}
+    enum_page = _PendingPage([control])
+    fresh_page = _PendingPage(
+        [control], navigation_error=RuntimeError("stop after route installation"))
+    records = audit._run_pending_audit(
+        _PendingContext([enum_page, fresh_page]), base, [combo],
+        Path("unused"), "fresh", paths)
+    assert records[0]["verdict"] == "error"
+    assert fresh_page.events[-4:] == ["route", "route", "route", "goto"]
+    assert len(fresh_page.routes) == 3
+
+    matched = _dispatch_fake_routes(
+        fresh_page.routes, "POST", base + "/research")
+    assert matched.calls == ["continue"]
+    foreign = _dispatch_fake_routes(
+        fresh_page.routes, "POST", "https://example.test/research")
+    assert foreign.calls == ["fallback", "fallback"]
+    other = _dispatch_fake_routes(
+        fresh_page.routes, "POST", base + "/wizard/start")
+    assert other.calls == ["fallback"]
+    get = _dispatch_fake_routes(fresh_page.routes, "GET", base + "/research")
+    assert get.calls == ["fallback", "continue"]
+
+
+def test_request_guard_holds_every_non_get_without_continue_request_paths():
+    """An empty path list installs no exception and preserves the holding guard."""
+    target = _FakeRouteTarget()
+    started = []
+    held = []
+    audit._install_request_guard(target, started, held)
+    audit._install_continue_routes(target, "http://127.0.0.1:43123", [], started)
+
+    assert len(target.routes) == 1
+    post = target.dispatch("POST", "http://127.0.0.1:43123/research")
+    assert post.calls == []
+    assert held == [post]
+    assert started == [{"method": "POST", "url": post.request.url}]
+    get = target.dispatch("GET", "http://127.0.0.1:43123/research")
+    assert get.calls == ["fallback"]
+    assert held == [post]
+
+
+@pytest.mark.parametrize("value", [
+    "/capabilities/",
+    "/capabilities/exec-user-space",
+    "/capabilities/exec-user-space/retest",
+    "/%63apabilities/exec-user-space/%72etest",
+])
+def test_continue_request_path_refuses_capability_retest_before_boot(
+        monkeypatch, tmp_path, capsys, value):
+    """Capability paths are refused before Playwright, folders, children or boots."""
+    recorder = _WalkRecorder()
+    _install_fake_desk(monkeypatch, recorder)
+    monkeypatch.setattr(audit, "sync_playwright", None)
+    out = tmp_path / "must-not-exist"
+
+    result = audit.main([
+        "--continue-request-path", value,
+        "--out", str(out),
+    ])
+    output = capsys.readouterr().out
+    assert result == 2
+    assert value in output
+    assert "capabilit" in output.lower()
+    assert "refus" in output.lower()
+    assert recorder.create_calls == []
+    assert not out.exists()
+
+
+def test_continue_request_path_is_forwarded_to_every_condition_child(tmp_path):
+    """Every condition command carries every repeated path in order."""
+    paths = ["/research", "/assistant/ask"]
+    args = _args(continue_request_path=paths, jobs=3)
+    for condition in audit.ALL_CONDITIONS:
+        command = audit._child_command(condition, tmp_path, args)
+        forwarded = [command[index + 1] for index, token in enumerate(command[:-1])
+                     if token == "--continue-request-path"]
+        assert forwarded == paths
 
 
 def test_pending_page_with_no_controls_records_an_error():

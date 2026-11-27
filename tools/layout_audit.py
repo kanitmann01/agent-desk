@@ -38,6 +38,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import posixpath
 import re
 import shutil
 import socket
@@ -2342,6 +2343,50 @@ def _install_request_guard(target, started: list[dict], held: list,
         route, started, held, answered))
 
 
+def _url_origin(url: str) -> tuple[str, str]:
+    """The scheme and authority that decide whether a URL is desk-owned."""
+    parsed = urllib.parse.urlsplit(url)
+    return parsed.scheme.lower(), parsed.netloc.lower()
+
+
+def _continue_request_handler(route, base: str, paths: tuple[str, ...],
+                              started: list[dict]) -> None:
+    """Continue only named non-GET requests from the isolated desk's origin."""
+    request = route.request
+    if request.method == "GET":
+        route.fallback()
+        return
+    parsed = urllib.parse.urlsplit(request.url)
+    if parsed.path in paths and _url_origin(request.url) == _url_origin(base):
+        started.append({"method": request.method, "url": request.url})
+        route.continue_()
+        return
+    route.fallback()
+
+
+def _install_continue_routes(target, base: str, paths: list[str] | tuple[str, ...],
+                             started: list[dict]) -> None:
+    """Install the narrow continuation after the holding guard, if requested."""
+    if not paths:
+        return
+    accepted = tuple(paths)
+    target.route("**/*", lambda route: _continue_request_handler(
+        route, base, accepted, started))
+
+
+def _validate_continue_request_paths(paths: list[str]) -> str:
+    """Return a refusal message for any decoded capability path."""
+    for value in paths:
+        decoded = urllib.parse.unquote(value)
+        path = urllib.parse.urlsplit(decoded).path
+        normalized = posixpath.normpath(path)
+        if (path.startswith("/capabilities/")
+                or normalized.startswith("/capabilities/")):
+            return (f"--continue-request-path {value!r} is refused: "
+                    "capability retest paths cannot be continued")
+    return ""
+
+
 def _abort_held(held: list) -> None:
     """Abort every held request so the page can close cleanly."""
     for route in held:
@@ -3219,14 +3264,17 @@ def _pending_zero_control_record(combo: dict, page_index: int,
 
 
 def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
-                       condition: str) -> list[dict]:
+                       condition: str,
+                       continue_request_paths: list[str] | None = None) -> list[dict]:
     """Click every visible control on every selected page in a fresh page.
 
     Non-GET requests are held and never completed, so no click can mutate
-    the desk. Each control gets its own page, with the same fixed clock and
-    route fixture as the measured run.
+    the desk, except for explicitly named same-origin continuation paths.
+    Each control gets its own page, with the same fixed clock and route
+    fixture as the measured run.
     """
     records: list[dict] = []
+    continue_paths = tuple(continue_request_paths or ())
     total = 0
     page_total = len(combos)
     for page_index, combo in enumerate(combos, start=1):
@@ -3242,6 +3290,7 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             pass
         try:
             _install_request_guard(page, enum_started, enum_held)
+            _install_continue_routes(page, base, continue_paths, enum_started)
             page.add_init_script(script=_theme_init_script(combo["theme"]))
             page.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
             _wait_for_view(page, view)
@@ -3322,9 +3371,11 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             _install_request_guard(fresh, started, held)
 
             def hold(route):
-                """Hold every non-GET request; let GETs through."""
+                """Hold non-GETs except named paths, which fall through."""
                 if route.request.method == "GET":
                     route.continue_()
+                elif urllib.parse.urlsplit(route.request.url).path in continue_paths:
+                    route.fallback()
                 else:
                     started.append({"method": route.request.method,
                                     "url": route.request.url})
@@ -3340,12 +3391,16 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                     pass
 
             def on_filechooser(chooser):
-                """Record a native file picker and dismiss it."""
+                """Record native file picker and dismiss it."""
                 file_dialog[0] = True
                 try:
                     chooser.set_files([])
                 except Exception:
                     pass
+
+            if continue_paths:
+                fresh.route("**/*", hold)
+                _install_continue_routes(fresh, base, continue_paths, started)
 
             try:
                 fresh.clock.install(time=FIXED_TIME)
@@ -3377,7 +3432,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 wait_before = _pending_wait_target(fresh, control.get("wait_target", ""))
                 fresh.on("dialog", on_dialog)
                 fresh.on("filechooser", on_filechooser)
-                fresh.route("**/*", hold)
+                if not continue_paths:
+                    fresh.route("**/*", hold)
                 box_before = _pending_click(fresh, control, activate=False)
                 if not isinstance(box_before, dict):
                     raise RuntimeError("control not found on the fresh page")
@@ -3859,6 +3915,9 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                 guard_started: list[dict] = []
                 guard_held: list = []
                 _install_request_guard(page, guard_started, guard_held)
+                _install_continue_routes(
+                    page, base, getattr(args, "continue_request_path", []),
+                    guard_started)
                 current_width = combos[0]["width"]
                 current_theme = ""
                 crop_counts: dict[str, int] = {}
@@ -3903,7 +3962,8 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                         print(f"[{condition}] pending audit over {len(combos)} page(s)",
                               flush=True)
                         pending_records = _run_pending_audit(
-                            context, base, combos, run_dir, condition)
+                            context, base, combos, run_dir, condition,
+                            getattr(args, "continue_request_path", []))
                         print(f"[{condition}] pending audit wrote {len(pending_records)} "
                               f"control record(s)", flush=True)
                 finally:
@@ -3971,6 +4031,8 @@ def _child_command(condition: str, run_dir: Path, args) -> list[str]:
         command.extend(["--api-fixture", args.api_fixture])
     if getattr(args, "record_api", ""):
         command.extend(["--record-api", args.record_api])
+    for path in getattr(args, "continue_request_path", []) or []:
+        command.extend(["--continue-request-path", path])
     if getattr(args, "mock_delay_ms", 0):
         command.extend(["--mock-delay-ms", str(args.mock_delay_ms)])
     if getattr(args, "slow_ms", 0):
@@ -4686,6 +4748,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="conditions to run in parallel (default 1)")
     parser.add_argument("--record-api", default="",
                         help="write GET /api JSON bodies under this directory")
+    parser.add_argument("--continue-request-path", action="append", default=[],
+                        metavar="PATH",
+                        help="continue a named non-GET path only from the isolated desk")
     parser.add_argument("--api-fixture", default="",
                         help="fulfil matching GET /api requests from this JSON map")
     parser.add_argument("--mock-delay-ms", type=int, default=0,
@@ -4699,6 +4764,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--child", action="store_true",
                         help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    refusal = _validate_continue_request_paths(args.continue_request_path)
+    if refusal:
+        print(refusal)
+        return 2
     if sync_playwright is None:
         print(PLAYWRIGHT_HELP)
         return 2

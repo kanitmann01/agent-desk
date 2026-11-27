@@ -118,6 +118,18 @@ The full gate runs Python tests, frontend typecheck, Vitest, the license gate, r
 
 The layout audit plans the `fresh`, `data`, `plugins`, `full`, `long-values`, `busy`, and `legacy-dashboard` conditions. The `busy` condition uses synthetic capability cache fixtures and injected UNKNOWN gate runners. It never retests machine capabilities, reaches an external probe endpoint, installs a package, lists processes, or writes a OneDrive probe.
 
+The layout audit holds every non-GET request by default. Repeat `--continue-request-path PATH` to continue only non-GET requests whose URL path exactly matches a named path and whose origin is the isolated desk's own origin. GET behavior is unchanged, and every other non-GET remains held. Values under `/capabilities/`, including capability retest paths, are refused after percent-decoding with exit 2 before any run folder, child, mock, or desk starts.
+
+The slow run is this option's only current use. It lets the `full` condition's Research request reach the loopback mock delayed by four seconds. The `fresh` and `plugins` conditions do not start or pin that mock, so this command does not claim a delayed model answer for them:
+
+```bash
+uv run --no-project --with playwright --with keyring --with cryptography \
+  python tools/layout_audit.py --pending-audit \
+  --conditions fresh,plugins,full --widths 1280 --themes unkey \
+  --no-stress --fail-on none --jobs 3 \
+  --continue-request-path /research --mock-delay-ms 4000 --out <dir>
+```
+
 The face walkthrough photographs the agent's face in every mood and on every surface. It boots the same isolated desk as the layout audit and starts the dev-only review sheet from `frontend/`:
 
 ```bash
