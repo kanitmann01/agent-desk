@@ -5,8 +5,10 @@ the reading works from those elements (the answer is the text the reader
 already sees, the time is what the card printed) rather than opening the
 store for a second opinion. Everything added here comes from what the user
 typed on Settings, from the meeting the calendar already resolved, and from
-what memory remembers about the same subject. Nothing is written and no
-model is called.
+what memory remembers about the same subject. The reading also names what
+would change its mind: one deterministic falsification criterion derived
+from the answer's own claims, with a press that lets the user ask Your AI
+for counter-evidence. Nothing is written and no model is called here.
 """
 
 from __future__ import annotations
@@ -14,12 +16,39 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from agentdesk.insight import press as press_module
 from agentdesk.insight.types import InsightContext, InsightReading
 
 MAX_SUGGESTIONS = 3
 MAX_RECALL = 2
 FACT_CHARS = 160
 SUBJECT_CHARS = 400
+
+# The one press a research reading offers: the stored answer, tested against
+# opposing evidence. The text riding on it is the answer's summary plus the
+# falsification criterion, bounded in derive so the criterion always fits.
+PRESS = {
+    "label": "Check counter-evidence",
+    "route": "/api/insight/draft",
+    "kind": "check-counter",
+}
+
+FALSIFY_CHARS = 200
+FALSIFY_PREFIX = "What would change my mind: "
+
+# Words that make a claim causal or comparative, kept short on purpose: a
+# hit decides the falsifier's shape, and a miss only falls through to the
+# next rule. Numbers decide the quantitative shape on their own.
+CAUSAL_WORDS = frozenset(
+    "because cause causes caused due drives lead leads resulted results "
+    "therefore thus impact impacts affect affects effect effects".split()
+)
+COMPARATIVE_WORDS = frozenset(
+    "than faster slower better worse cheaper higher lower more less "
+    "compared versus outperform outperforms ahead beat beats".split()
+)
+
+_NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
 # The labels the research widget's own schema sets on its rendered text
 # elements: the only handle a family has on an answer it did not compute.
@@ -104,8 +133,9 @@ def derive(
             )
 
     memory_notes = 0
+    citations: list[dict] = []
     if context.recall is not None:
-        rows = _recall_rows(context, answer)
+        rows, citations = _recall_rows(context, answer)
         if rows:
             elements.append({"kind": "list", "title": "From memory", "rows": rows})
         memory_notes = len(rows)
@@ -123,11 +153,19 @@ def derive(
         inputs.append("calendar")
     if context.recall is not None:
         inputs.append("memory")
+    falsify = _falsify(answer)
+    # The summary yields room so the criterion always survives the bound:
+    # the press must carry both, or the model is arguing against half a
+    # sentence the card never printed.
+    summary = _trim(_line(answer), press_module.MAX_FINDING - len(falsify) - 4)
     return InsightReading(
         elements=elements,
         note=note,
         inputs=tuple(inputs),
         memory_notes=memory_notes,
+        press=dict(PRESS, text=summary + " " + falsify),
+        why=(_why_entry(answer, citations),),
+        falsify=falsify,
     )
 
 
@@ -281,15 +319,18 @@ def _meeting_rows(meeting: dict | None, answer_words: set[str]) -> list[dict]:
     return rows
 
 
-def _recall_rows(context: InsightContext, answer: str) -> list[dict]:
-    """What memory remembers that bears on the answer, at most two lines."""
+def _recall_rows(context: InsightContext, answer: str) -> tuple[list[dict], list[dict]]:
+    """What memory remembers that bears on the answer, at most two lines,
+    plus the citations (fact id and source) of the rows that carry an id,
+    so the why can name a fact without quoting it."""
     try:
         found = context.recall(answer[:SUBJECT_CHARS], MAX_RECALL)
     except Exception:  # noqa: BLE001 - memory never sinks a card's reading
-        return []
+        return [], []
     if not isinstance(found, list):
-        return []
+        return [], []
     rows: list[dict] = []
+    citations: list[dict] = []
     seen: set[str] = set()
     for item in found:
         if not isinstance(item, dict):
@@ -306,9 +347,12 @@ def _recall_rows(context: InsightContext, answer: str) -> list[dict]:
                 "meta": _trim(_line(str(item.get("source") or "")), 80) or "Memory",
             }
         )
+        fact_id = item.get("id")
+        if isinstance(fact_id, int) and not isinstance(fact_id, bool):
+            citations.append({"id": fact_id, "source": str(item.get("source") or "")})
         if len(rows) == MAX_RECALL:
             break
-    return rows
+    return rows, citations
 
 
 def _closest(topics: list[str], answer_words: set[str]) -> str:
@@ -319,6 +363,87 @@ def _closest(topics: list[str], answer_words: set[str]) -> str:
         if hits > score:
             best, score = topic, hits
     return best
+
+
+def _claim_kind(answer: str) -> str:
+    """How the answer's claim reads: causal, comparative, quantitative, or
+    plain keyword. The first rule that fires wins, so the same answer always
+    classifies the same way and the criterion never drifts."""
+    words = set(_WORD.findall(answer.lower()))
+    if words & CAUSAL_WORDS:
+        return "causal"
+    if words & COMPARATIVE_WORDS:
+        return "comparative"
+    if _NUM.search(answer):
+        return "quantitative"
+    return "keyword"
+
+
+def _falsify(answer: str) -> str:
+    """The falsification criterion: one deterministic sentence saying what
+    evidence would overturn the answer's claim, bounded to FALSIFY_CHARS."""
+    kind = _claim_kind(answer)
+    subject = _subject(answer)
+    numbers = ", ".join(_NUM.findall(answer)[:3])
+    if kind == "causal":
+        sentence = FALSIFY_PREFIX + (
+            "an instance where " + subject + " does not produce the outcome "
+            "the answer claims."
+        )
+    elif kind == "comparative":
+        sentence = FALSIFY_PREFIX + (
+            "a fair comparison where " + subject + " does not come out "
+            "ahead of the alternative."
+        )
+    elif kind == "quantitative":
+        sentence = FALSIFY_PREFIX + (
+            "a recount where the numbers the answer gives (" + numbers + ") "
+            "come out materially different."
+        )
+    else:
+        sentence = FALSIFY_PREFIX + (
+            "credible evidence about " + subject + " that points the other way."
+        )
+    return _clip(sentence, FALSIFY_CHARS)
+
+
+def _subject(answer: str, limit: int = 3) -> str:
+    """The answer's first keywords in the order they appear, as the one
+    subject the falsifier names."""
+    words: list[str] = []
+    for word in _WORD.findall(answer.lower()):
+        if len(word) >= 3 and word not in STOPWORDS and word not in words:
+            words.append(word)
+        if len(words) == limit:
+            break
+    return " ".join(words)
+
+
+def _clip(text: str, limit: int) -> str:
+    """The sentence cut to its exact limit on a word boundary and marked
+    with ... when something was cut, so a criterion never reads half a word."""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 3]
+    space = cut.rfind(" ")
+    if space >= limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:.") + "..."
+
+
+def _why_entry(answer: str, citations: list[dict]) -> dict:
+    """The falsifier's provenance: the claim it targets, the rule that
+    classified the answer, and the cited facts' ids and sources. The
+    presentation bounds each field, the same as every family's why."""
+    entry: dict = {
+        "claim": _line(answer),
+        "rule": (
+            "The falsifier targets a " + _claim_kind(answer) + " claim in the stored answer"
+        ),
+    }
+    if citations:
+        entry["facts"] = citations
+    return entry
 
 
 def _topics(preferences: object) -> list[str]:

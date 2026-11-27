@@ -43,7 +43,11 @@ DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows."
 # The press page's heading, taken from the kind the card carried, so the page
 # a press lands on repeats the sentence the person just pressed. The default
 # is what an unknown kind reads as; it never falls back to a raw identifier.
-PRESS_LABELS = {"reply-draft": "Draft a reply", "explain-range": "Explain this range"}
+PRESS_LABELS = {
+    "reply-draft": "Draft a reply",
+    "explain-range": "Explain this range",
+    "check-counter": "Check counter-evidence",
+}
 DEFAULT_PRESS_LABEL = "Ask the model"
 
 # The request-shaped fields a press may carry: what the action needs, and
@@ -162,8 +166,9 @@ def blocks(reading: InsightReading) -> list[dict]:
     """The resolved lines under a card, in the order a surface prints them.
 
     A receipt block comes first because it is the card's record of what the
-    reading consulted; a note block follows only when the reading has
-    something to explain, so a reading that used nothing and says nothing
+    reading consulted; a falsify block follows when the reading names what
+    would overturn its own claim; a note block follows only when the reading
+    has something to explain, so a reading that used nothing and says nothing
     still sends no empty line. Each text is final: surfaces print it as it
     came and never look a name up. The reading's why provenance, when it has
     any, is resolved onto the receipts block so the drilldown travels with
@@ -174,6 +179,9 @@ def blocks(reading: InsightReading) -> list[dict]:
     line = receipt_line(receipts(reading))
     if line:
         lines.append({"kind": "receipts", "text": line})
+    falsify = str(reading.falsify or "").strip()
+    if falsify:
+        lines.append({"kind": "falsify", "text": falsify})
     note = str(reading.note or "").strip()
     if note:
         lines.append({"kind": "note", "text": note})
