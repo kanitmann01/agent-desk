@@ -312,3 +312,60 @@ def test_a_refused_page_press_records_an_error_row(tmp_path, monkeypatch):
     assert rows[0]["detail"] == "insight:model-off"
     assert [r for r in rows if r["status"] == "ok"] == []
 
+
+# -- the counter-evidence press on the page -------------------------------
+
+
+def test_a_counter_check_answer_page_shows_its_disclosure_then_the_answer(tmp_path, monkeypatch):
+    """A pressed check lands on the same page shape as an explanation."""
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    from tests.server_harness import Booted
+
+    booted = Booted(
+        llm=lambda _prompt: "The discount spike could be seasonal; check last November.",
+        llm_endpoint="http://llm.test/v1",
+    )
+    try:
+        booted.server.settings.set("endpoint_enabled", True)
+        auth = booted.exchange()
+        status, _headers, body = _post_form(
+            booted, auth,
+            {"kind": "check-counter", "text": "Booked falls while Margin rises."},
+        )
+    finally:
+        booted.close()
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "Check counter-evidence" in page
+    # The page escapes its own copy, so the promise is read up to the
+    # apostrophe, the same way the explanation page pins its disclosure.
+    disclosure = "Sends: the stored answer summary and the desk"
+    assert disclosure in page
+    assert "falsification criterion." in page
+    assert page.index(disclosure) < page.index("The discount spike could be seasonal")
+    assert 'Source: <span class="mono">model</span>' in page
+    # The page names the press in words, never as the raw kind it travelled as.
+    assert "check-counter" not in page
+    assert "Stage as a reply card" not in page
+
+
+def test_a_counter_check_refusal_keeps_the_page_and_names_the_model_off(tmp_path, monkeypatch):
+    """With Your AI off the page keeps the desk's refusal, and offers nothing."""
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
+    from tests.server_harness import Booted
+
+    booted = Booted()
+    try:
+        auth = booted.exchange()
+        status, _headers, body = _post_form(
+            booted, auth, {"kind": "check-counter", "text": "Booked falls while Margin rises."},
+        )
+    finally:
+        booted.close()
+    page = body.decode("utf-8")
+    assert status == 200
+    assert "Nothing was checked: model calls are off on this desk" in page
+    assert '<div class="alert"><p>' in page
+    assert "Stage as a reply card" not in page
+    assert "check-counter" not in page
+
