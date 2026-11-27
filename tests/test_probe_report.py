@@ -114,9 +114,15 @@ class TestReportRendering:
     def test_report_includes_context_header(self):
         report = render_report(sample_results(), aggregate_verdict(sample_results()), CONTEXT)
 
-        assert "# Agent Desk environment probe" in report
+        assert "# Nexuus Bot environment probe" in report
         assert "2026-01-01 12:00:00" in report
         assert "3.14.0" in report
+
+    def test_report_carries_no_old_product_name(self):
+        report = render_report(sample_results(), aggregate_verdict(sample_results()), CONTEXT)
+
+        for form in ("Agent Desk", "AgentDesk", "agent-desk"):
+            assert form not in report
 
     def test_gate_headings_use_title_and_keep_the_machine_key(self):
         report = render_report(sample_results(), aggregate_verdict(sample_results()), CONTEXT)
@@ -151,6 +157,11 @@ class TestStdoutSummary:
 
         assert "uv" in summary
         assert lines_verdict(summary) == verdict_line(verdict)
+
+    def test_summary_opens_with_the_product_name(self):
+        summary = render_summary(sample_results(), aggregate_verdict(sample_results()))
+
+        assert summary.splitlines()[0] == "Nexuus Bot environment probe"
 
 
 def lines_verdict(text):
