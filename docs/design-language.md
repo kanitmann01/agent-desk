@@ -1,4 +1,4 @@
-# Design language: Agent Desk
+# Design language: Nexuus Bot
 
 One bento language, three themes. This document describes the system the
 code ships; when it disagrees with the code, the code wins and this file
