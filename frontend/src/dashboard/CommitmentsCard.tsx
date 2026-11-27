@@ -6,6 +6,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import { postJson } from '../api';
 import { commitmentsStamp, hhmmFromIso } from '../fmt';
+import { AGENT_NAME } from '../face/name';
 import type { CommitmentsStatus, KeyEvent } from '../types';
 import WidgetCard from '../components/WidgetCard';
 import Button from '../components/Button';
@@ -186,7 +187,7 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
       >
         <EmptyState icon={ICON_CALENDAR}>
           The calendar bridge is not running on this machine, so today's
-          commitments cannot be read. Restarting Agent Desk usually brings it
+          commitments cannot be read. Restarting {AGENT_NAME} usually brings it
           back.
         </EmptyState>
       </WidgetCard>
@@ -288,7 +289,7 @@ export default function CommitmentsCard({ commitments, title, onRefetch, onExpir
           icon={ICON_CALENDAR}
           action={<Button tone="primary" href={WALKTHROUGH_PATH}>Connect your calendar</Button>}
         >
-          No calendar data yet. Agent Desk watches{' '}
+          No calendar data yet. {AGENT_NAME} watches{' '}
           <code className="nowrap">agent-desk/calendar_sync.json</code>
           {' '}in your OneDrive. A 3-step browser walkthrough creates the flow
           that writes it.

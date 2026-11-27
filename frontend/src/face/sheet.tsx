@@ -263,14 +263,14 @@ function FaceSheetApp() {
               <div className="face-sheet-rail-preview">
                 <div className="brand">
                   <AgentFace mood="idle" config={activeConfig} />
-                  <span className="brand-name">Agent Desk</span>
+                  <span className="brand-name">{AGENT_NAME}</span>
                 </div>
               </div>
 
               <div className="face-sheet-rail-preview is-collapsed">
                 <div className="brand">
                   <AgentFace mood="idle" config={activeConfig} />
-                  <span className="brand-name">Agent Desk</span>
+                  <span className="brand-name">{AGENT_NAME}</span>
                 </div>
               </div>
 
