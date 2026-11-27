@@ -2,28 +2,6 @@
   "family": "operator-guides",
   "ticket": "06",
   "issue": 360,
-  "note": "Ticket 06 (issue 360) clears this family and edits only this file. The distribution guide's AppLocker template lines are ticket 07's (bundle-metadata family); the retained installer, artifact and share names are compatibility allowlist entries.",
-  "entries": [
-    {
-      "surface": "Distribution guide prose",
-      "files": ["docs/ops/distribution.md"],
-      "issue": 360,
-      "matches": ["close agent desk"]
-    },
-    {
-      "surface": "Marketplace operator guide prose",
-      "files": ["docs/ops/marketplace-operator.md"],
-      "issue": 360,
-      "matches": [
-        "runs agent desk",
-        "agent desk is a single-user",
-        "stop agent desk"
-      ]
-    },
-    {
-      "surface": "Spec 030 founder decision naming the product",
-      "files": ["specs/030-one-shell-and-the-face-on-every-wait.md"],
-      "issue": 360
-    }
-  ]
+  "note": "Ticket 06 (issue 360) cleared this family: the distribution, marketplace and licensing guides and Spec 030 now say Nexuus Bot, and the operator compatibility table is generated from the allowlist. The old-form text still present in these files is retained contract, covered by the compatibility allowlist and by the other families' entries: the AppLocker template labels are ticket 07's (bundle-metadata), the package-tree references are ticket 08's (python-package).",
+  "entries": []
 }

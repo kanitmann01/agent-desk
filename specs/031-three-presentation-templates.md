@@ -205,6 +205,7 @@ A good test drives a public seam and checks what comes out: a deck the tool wrot
 ### What this spec depends on
 
 - The audit of the UI wave on main closes its P0 and P1 findings, and the shell and face spec lands, before this one starts.
+- Spec 032 completes the rename before presentation work starts: the product and the agent are Nexuus Bot on every live surface, and the naming guard holds the line.
 
 ### Risks and mitigations
 
