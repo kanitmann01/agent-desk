@@ -19,6 +19,7 @@ import tempfile
 import zipfile
 
 import agentdesk
+from agentdesk.validator.grammar import SAFE_NAME as _PEER_SAFE_NAME
 
 from agentdesk.peers.client import PeerClient, PeerClientError, extract_bundle
 from agentdesk.peers.store import PeerError, PeerStore, derive_token
@@ -61,7 +62,6 @@ def _normalize_peer_address(address: str) -> str | None:
         return None
     return f"{host}:{port}"
 
-_PEER_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class PeersApiMixin:

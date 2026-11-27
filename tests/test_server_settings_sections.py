@@ -112,8 +112,10 @@ def test_four_switches_come_before_advanced_and_the_computer_check_after_it(env,
     page = _page(env, auth)
     marker = page.index("id='settings-advanced'")
     before = _switches(page[:marker])
-    assert len(before) <= 4
-    assert sorted(before) == ["mail_enabled", "memory_auto_approve",
+    # Five: the mail digest's switch, the Outlook alerts switch under it
+    # in the sources card (spec 028), and the memory card's three.
+    assert len(before) <= 5
+    assert sorted(before) == ["mail_enabled", "mail_feeder", "memory_auto_approve",
                               "memory_capture_assistant", "memory_capture_research"]
     # The computer check is for IT and is offered from Advanced only.
     check = page.index('href="/capabilities"')
@@ -148,7 +150,9 @@ def test_your_tools_shows_each_tools_live_state_and_one_action(env, auth):
     assert "No calendar is connected." in tools
     assert "<a class='btn btn-secondary' href='/walkthrough/calendar'>Set up</a>" in tools
     assert "Off. Nothing is read." in tools
-    assert _switches(tools) == ["mail_enabled"]
+    # The mail digest's switch, then the Outlook alerts switch under it
+    # in the same card (spec 028 re-homed).
+    assert _switches(tools) == ["mail_enabled", "mail_feeder"]
     assert 'action="/settings/mail/folder"' in tools
 
 

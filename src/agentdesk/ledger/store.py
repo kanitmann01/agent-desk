@@ -10,7 +10,6 @@ promises Undo also promises the before state is on disk, so when that
 capture cannot be written the action does not run.
 """
 
-import functools
 import hashlib
 import json
 import logging
@@ -21,6 +20,8 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from agentdesk.locking import serialized as _serialized
 
 LOG = logging.getLogger("agentdesk.ledger")
 
@@ -91,22 +92,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     existing data folder keeps every row it already has."""
     conn.executescript(SCHEMA)
     conn.commit()
-
-
-def _serialized(method):
-    """Every read and write holds the ledger's one lock. The connection is
-    shared by the server's request threads (check_same_thread=False) and
-    Python's sqlite3 connection keeps one implicit transaction, so two
-    threads interleaving could commit each other's half-done writes. An
-    RLock, because record() calls the blob and maintenance helpers."""
-
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        """Run one ledger method with the ledger's re-entrant lock held."""
-        with self._lock:
-            return method(self, *args, **kwargs)
-
-    return wrapper
 
 
 @dataclass(frozen=True)

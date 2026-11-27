@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from pathlib import Path
+
+from agentdesk.llm import LlmUnavailable
 
 DEFAULT_TIMEOUT_S = 30.0
 _DIGITS = re.compile(r"\d[\d,.]*")
@@ -260,6 +263,70 @@ def outline_from_fill(brief: str, recipe: dict, planned: list[dict],
             })
     slides.append({"role": "closing"})
     return {"title": deck_title[:60], "slides": slides}
+
+
+def run_fill(pack, variant: str, recipe: dict, planned: list[dict],
+             sources: list[dict], brief: str, title: str, llm, timeout: float,
+             deck_dir: Path, runner=None) -> tuple[dict | None, str]:
+    """Fill every planned section, outline them, and write the deck.
+
+    The one fill pipeline entry: the fresh run and the research resume
+    both answer from here, so the loop, the shorten helper, the write
+    and the failure ladder cannot drift apart. Returns (delivered,
+    cause): a written deck carries an empty cause and names its run
+    folder under ``folder``; a failed one is None plus the degraded
+    sentence, and no file was written.
+    """
+    try:
+        # The fit step imports this module's digit guard, so the deliver
+        # import stays inside the entry to keep the circle closed.
+        from agentdesk.presentations.deliver import deliver_deck
+
+        filled = []
+        for section in planned:
+            slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
+            if not slides:
+                raise ValueError("malformed fill")
+            filled.append(slides)
+        outline = outline_from_fill(brief, recipe, planned, filled, sources, title=title)
+
+        def shorten(text, limit, call_timeout):
+            """One shorten call, on the presentation timeout."""
+            reply = call_model(
+                llm,
+                f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
+                call_timeout,
+            )
+            return (reply or "").strip() or text
+
+        shell_path = pack.shell_path(variant)
+        if shell_path is None:
+            raise ValueError("no shell for variant")
+        folder = Path(deck_dir) / secrets.token_hex(8)
+        delivered = deliver_deck(
+            shell_path.read_bytes(), recipe, outline, sources, folder,
+            shorten, timeout, runner=runner,
+        )
+    except (OSError, ValueError, LlmUnavailable) as exc:
+        return None, fill_cause(exc)
+    delivered["folder"] = folder.name
+    return delivered, ""
+
+
+def fill_cause(exc: Exception) -> str:
+    """The degraded sentence for a pipeline failure, read off the exception.
+
+    An unavailable endpoint already carries an honest sentence; a
+    malformed plan or fill names its step; everything else is the write
+    that failed, never the endpoint.
+    """
+    if isinstance(exc, LlmUnavailable):
+        return str(exc)
+    if isinstance(exc, ValueError) and "plan" in str(exc):
+        return "The presentation plan could not be read, so no deck was written."
+    if isinstance(exc, ValueError) and "fill" in str(exc):
+        return "The presentation could not be filled, so no deck was written."
+    return "The deck could not be written."
 
 
 def _proper_title(text: str) -> str:

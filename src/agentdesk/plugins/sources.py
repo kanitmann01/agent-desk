@@ -34,6 +34,14 @@ from glob import glob
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from agentdesk.validator.grammar import (
+    JSON_LIST as _JSON_LIST,
+    JSON_OBJECT as _JSON_OBJECT,
+    JSON_PATH_PART as _JSON_PATH_PART,
+    PLUGIN_DATA_VAR,
+    WORKSPACE_VAR,
+)
+
 STATES = ("ok", "stale", "blank", "coarse", "partial")
 
 DEFAULT_WINDOW = "24h"
@@ -50,10 +58,6 @@ LOCAL_TYPES = (
     "calendar-read", "mail-digest", "outlook-brief", "research-brief",
 )
 
-_JSON_OBJECT = re.compile(r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
-_JSON_LIST = re.compile(
-    r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*)+\[\*\]\.[A-Za-z_][A-Za-z0-9_]*$")
-_JSON_PATH_PART = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)")
 _WINDOW = re.compile(r"^(\d+)([hdwm])$")
 _CHECKBOX = re.compile(r"^\s*[-*]\s+\[([ xX])\]\s+(.*)$")
 _DUE = re.compile(r"due:\s*([^\s)]+)", re.IGNORECASE)
@@ -177,8 +181,8 @@ def _expand(path, ctx: SourceContext) -> Path:
     path is taken from the workspace. Permission is not checked here and the path
     is not resolved, so the check that follows sees the real target.
     """
-    text = str(path).replace("${workspace}", str(ctx.workspace_dir))
-    text = text.replace("${pluginData}", str(ctx.data_dir))
+    text = str(path).replace(WORKSPACE_VAR, str(ctx.workspace_dir))
+    text = text.replace(PLUGIN_DATA_VAR, str(ctx.data_dir))
     candidate = Path(text)
     if not candidate.is_absolute():
         candidate = Path(ctx.workspace_dir) / candidate

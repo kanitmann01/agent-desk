@@ -598,7 +598,12 @@ def test_the_inbox_accept_redirect_names_the_outcome(booted):
     "http://127.0.0.1:1/settings",
 ))
 def test_an_external_return_to_falls_back_to_the_safe_settings_page(
-        booted, return_to):
+        booted, return_to, monkeypatch, tmp_path):
+    # The flip turns mail on, which constructs the default watcher and
+    # polls it once: pin it away from any real folder and data folder,
+    # the same two pins the settings module's feeder toggles carry.
+    monkeypatch.delenv("AGENTDESK_MAIL_FOLDER", raising=False)
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path))
     status, headers, _body = _post_form(
         booted, "/settings/toggle",
         {"key": "mail_enabled", "return_to": return_to})
