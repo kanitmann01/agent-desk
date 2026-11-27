@@ -1,10 +1,10 @@
 {
-  "note": "One structured entry per compatibility identifier with its exact permitted context. No spelling is allowlisted globally: an entry tolerates its identifier only in the files its context_paths match. Spec 032 removes no entry; a founder-approved migration spec would.",
+  "note": "One structured entry per compatibility identifier with its exact permitted context. No spelling is allowlisted globally: an entry tolerates its identifier only in the files its context_paths match. Spec 032 removes no entry; a founder-approved migration spec would. The operator compatibility table docs/ops/compatibility.md is generated from these entries by tools/naming/generate_compatibility_table.py, so every entry that carries an old-form identifier also tolerates the table that names it.",
   "entries": [
     {
       "category": "import-compatibility",
       "identifier": "agentdesk",
-      "context_paths": ["src/agentdesk/*"],
+      "context_paths": ["src/agentdesk/*", "docs/ops/compatibility.md"],
       "context": "The Python package tree's own module identity: import statements, module-path strings in docstrings and comments, logging namespaces, and internal code identifiers such as the AgentDeskServer class. Ticket 08 re-roots the tree to nexuusbot; afterwards this identifier is permitted only in the alias package (src/agentdesk as the shim), alias tests, plugin compatibility tests and compatibility documentation.",
       "purpose": "The old import path keeps resolving so existing plugins and scripts do not break or create duplicate state.",
       "owner": "Spec 032 stories 27 to 30, out-of-scope item 14",
@@ -58,7 +58,7 @@
     {
       "category": "import-compatibility",
       "identifier": "agentdesk.probe",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The probe argparse parser name (python -m agentdesk.probe --help prints it).",
       "purpose": "Existing command output stays recognisable.",
       "owner": "Spec 032 story 29",
@@ -67,7 +67,7 @@
     {
       "category": "import-compatibility",
       "identifier": "agentdesk.presentations",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The presentations argparse parser name.",
       "purpose": "Existing command output stays recognisable.",
       "owner": "Spec 032 story 29",
@@ -76,7 +76,7 @@
     {
       "category": "import-compatibility",
       "identifier": "agentdesk.registry",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The registry argparse parser name.",
       "purpose": "Existing command output stays recognisable.",
       "owner": "Spec 032 story 29",
@@ -85,7 +85,7 @@
     {
       "category": "import-compatibility",
       "identifier": "agentdesk-validator",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The validator argparse parser name.",
       "purpose": "Existing command output stays recognisable.",
       "owner": "Spec 032 story 29",
@@ -103,7 +103,7 @@
     {
       "category": "data-and-local-state",
       "identifier": "agent-desk-data",
-      "context_paths": ["tests/*"],
+      "context_paths": ["tests/*", "docs/ops/compatibility.md"],
       "context": "The reserved alternate data-folder name; current occurrences live in the test tree only.",
       "purpose": "Retained data-folder contract named by the spec.",
       "owner": "Spec 032 out-of-scope item 1",
@@ -121,7 +121,7 @@
     {
       "category": "data-and-local-state",
       "identifier": "agent-desk",
-      "context_paths": ["src/agentdesk/server/pages.py", "src/agentdesk/calendar/watcher.py", "src/agentdesk/server/app.py", "src/agentdesk/server/commitments.py"],
+      "context_paths": ["src/agentdesk/server/pages.py", "src/agentdesk/calendar/watcher.py", "src/agentdesk/server/app.py", "src/agentdesk/server/commitments.py", "docs/ops/compatibility.md"],
       "context": "The OneDrive folder name in the calendar hint setup copy and search paths.",
       "purpose": "The renamed product finds existing calendar exports.",
       "owner": "Spec 032 story 35, out-of-scope item 1",
@@ -211,7 +211,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "AGENTDESK_",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "The environment prefix in prefix-handling code and tooling checks (the prefix as display text stays rejected).",
       "purpose": "The prefix contract survives per-variable checks.",
       "owner": "Spec 032 out-of-scope item 2",
@@ -220,7 +220,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "__AGENTDESK_LAYOUT_STRESS__",
-      "context_paths": ["src/*", "tools/*", "tests/*"],
+      "context_paths": ["src/*", "tools/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The layout stress-test global and its reads.",
       "purpose": "Layout tooling keeps its contract.",
       "owner": "Spec 032 story 37, out-of-scope item 2",
@@ -229,7 +229,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "__AGENTDESK_LAYOUT_TRIPLED__",
-      "context_paths": ["src/*", "tools/*", "tests/*"],
+      "context_paths": ["src/*", "tools/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The layout tripled-test global and its reads.",
       "purpose": "Layout tooling keeps its contract.",
       "owner": "Spec 032 story 37, out-of-scope item 2",
@@ -238,7 +238,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-ci-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of the local CI gate.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -247,7 +247,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-base-index-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary file prefix of the registry base index in the CI gate.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -256,7 +256,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-smoke-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of bundle smoke checks.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -265,7 +265,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-walkthrough-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of walkthrough runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -274,7 +274,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-ready-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of demo readiness checks.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -283,7 +283,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-engine-smoke-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of engine sidecar smoke checks.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -292,7 +292,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-feedback-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of feedback walkthrough runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -301,7 +301,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-layout-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of layout audit runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -310,7 +310,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-bundle-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of bundle build work.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -319,7 +319,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-wizard-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of wizard runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -328,7 +328,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-selfcheck-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of server selfchecks.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -337,7 +337,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-publish-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of registry publish runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -346,7 +346,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-registry-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of registry work in the server and CI.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -355,7 +355,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-marketplace",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary name prefix of marketplace work.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -364,7 +364,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-update-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of update staging work.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -373,7 +373,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-peer-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of peer work.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -382,7 +382,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-probe-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of probe runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -391,7 +391,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-shadow",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "The Excel shadow store name.",
       "purpose": "Runtime and tooling names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -400,7 +400,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk-face-",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "Temporary directory prefix of face walkthrough runs.",
       "purpose": "Runtime and tooling temp names are retained contracts.",
       "owner": "Spec 032 out-of-scope items 1 and 2",
@@ -409,7 +409,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agentdesk_mock_endpoint",
-      "context_paths": ["tools/*"],
+      "context_paths": ["tools/*", "docs/ops/compatibility.md"],
       "context": "The module name the walk tools load tools/mock_endpoint.py under.",
       "purpose": "Walk tooling keeps its mock endpoint seam.",
       "owner": "Spec 032 tooling contract",
@@ -418,7 +418,7 @@
     {
       "category": "environment-and-tooling",
       "identifier": "agent-desk-core",
-      "context_paths": ["src/agentdesk/settings.py"],
+      "context_paths": ["src/agentdesk/settings.py", "docs/ops/compatibility.md"],
       "context": "The provenance comment in settings.py naming the development sandbox where spec 028 was authored.",
       "purpose": "A historical note about authoring provenance, not product copy.",
       "owner": "Spec 032 ticket 01a classification",
@@ -427,7 +427,7 @@
     {
       "category": "browser-and-secrets",
       "identifier": "agentdesk.railCollapsed",
-      "context_paths": ["frontend/src/*", "src/*", "tools/*"],
+      "context_paths": ["frontend/src/*", "src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "Browser storage key for the rail collapsed state, in the SPA source, the committed bundle, the server-rendered fallback script and the walkthrough tools.",
       "purpose": "Browser preferences survive the rename.",
       "owner": "Spec 032 story 38, out-of-scope item 3",
@@ -436,7 +436,7 @@
     {
       "category": "browser-and-secrets",
       "identifier": "agentdesk.setupDismissed",
-      "context_paths": ["frontend/src/*", "src/*", "tools/*"],
+      "context_paths": ["frontend/src/*", "src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "Browser storage key for the get-started dismissal state.",
       "purpose": "Browser preferences survive the rename.",
       "owner": "Spec 032 story 38, out-of-scope item 3",
@@ -445,7 +445,7 @@
     {
       "category": "browser-and-secrets",
       "identifier": "agentdesk.marketplace.catalog.v1",
-      "context_paths": ["frontend/src/*", "src/*", "tools/*"],
+      "context_paths": ["frontend/src/*", "src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "Browser storage key for the marketplace catalog cache.",
       "purpose": "Catalog state survives the rename.",
       "owner": "Spec 032 story 38, out-of-scope item 3",
@@ -454,7 +454,7 @@
     {
       "category": "browser-and-secrets",
       "identifier": "agentdesk.theme",
-      "context_paths": ["frontend/src/*", "frontend/public/*", "src/*", "tools/*"],
+      "context_paths": ["frontend/src/*", "frontend/public/*", "src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "Browser storage key for the theme choice.",
       "purpose": "Theme choice survives the rename.",
       "owner": "Spec 032 story 38, out-of-scope item 3",
@@ -463,7 +463,7 @@
     {
       "category": "browser-and-secrets",
       "identifier": "agentdesk_session",
-      "context_paths": ["src/*", "tests/*"],
+      "context_paths": ["src/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The session cookie name in the server auth code and its tests.",
       "purpose": "Current sessions do not fail.",
       "owner": "Spec 032 story 39, out-of-scope item 4",
@@ -472,7 +472,7 @@
     {
       "category": "browser-and-secrets",
       "identifier": "agent-desk",
-      "context_paths": ["src/agentdesk/keys/*", "tests/*"],
+      "context_paths": ["src/agentdesk/keys/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The OS keychain service name in the keys store.",
       "purpose": "Saved secrets remain reachable.",
       "owner": "Spec 032 story 40, out-of-scope item 4",
@@ -481,7 +481,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agent-desk",
-      "context_paths": ["src/agentdesk/server/health.py", "src/agentdesk/peers/*", "tests/*"],
+      "context_paths": ["src/agentdesk/server/health.py", "src/agentdesk/peers/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The health and peer identity value (APP_NAME) in the health endpoint and peer discovery.",
       "purpose": "Old and new desks recognise each other.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -490,7 +490,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "AgentDesk/",
-      "context_paths": ["src/*", "tools/*", "scripts/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/compatibility.md"],
       "context": "The server User-Agent prefix AgentDesk/<version>.",
       "purpose": "Stored records keep their meaning; peers recognise the server.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -499,7 +499,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agentdesk/0.1",
-      "context_paths": ["src/*", "tools/*"],
+      "context_paths": ["src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "The probe User-Agent.",
       "purpose": "Stored records keep their meaning.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -508,7 +508,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agentdesk-probe",
-      "context_paths": ["src/*", "tools/*"],
+      "context_paths": ["src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "The probe client User-Agent suffix.",
       "purpose": "Stored records keep their meaning.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -517,7 +517,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agentdesk-peer-channel:",
-      "context_paths": ["src/*", "tests/*"],
+      "context_paths": ["src/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The peer channel derivation prefix.",
       "purpose": "Peer derivation stays compatible.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -526,7 +526,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agentdesk-peer-token:",
-      "context_paths": ["src/*", "tests/*"],
+      "context_paths": ["src/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The peer token derivation prefix.",
       "purpose": "Peer derivation stays compatible.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -535,7 +535,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agent-desk",
-      "context_paths": ["src/agentdesk/assistant/audit.py", "src/agentdesk/server/*", "tests/*"],
+      "context_paths": ["src/agentdesk/assistant/audit.py", "src/agentdesk/server/*", "tests/*", "docs/ops/compatibility.md"],
       "context": "The audit actor value recorded in audit stores.",
       "purpose": "Stored audit records keep their meaning.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -544,7 +544,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agent-desk.local",
-      "context_paths": ["src/*", "tools/*"],
+      "context_paths": ["src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "The Outlook Message-ID domain in the feeder writer, the WPN collector and the Outlook export script.",
       "purpose": "Stored mail records keep their meaning.",
       "owner": "Spec 032 story 41, out-of-scope item 5",
@@ -571,7 +571,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agent-desk-wizard",
-      "context_paths": ["src/*", "tests/*", "tools/*"],
+      "context_paths": ["src/*", "tests/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "The wizard publisher identity.",
       "purpose": "Wizard-created plugins keep their provenance.",
       "owner": "Spec 032 story 43, out-of-scope item 6",
@@ -580,7 +580,7 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agentdesk:theme",
-      "context_paths": ["frontend/src/*", "src/*", "tools/*"],
+      "context_paths": ["frontend/src/*", "src/*", "tools/*", "docs/ops/compatibility.md"],
       "context": "The existing theme DOM event name.",
       "purpose": "The wire surface stays stable; no new product-branded event is introduced.",
       "owner": "Spec 032 story 42, out-of-scope item 5",
@@ -640,7 +640,7 @@
       "category": "commands-and-launchers",
       "identifier": "test_agent_desk",
       "paths": ["tests/test_agent_desk_cmd.py", "tests/test_agent_desk_command.py"],
-      "context_paths": ["tests/*"],
+      "context_paths": ["tests/*", "docs/ops/compatibility.md"],
       "context": "The tests of the retained launchers; a path may keep an old form as a test of a retained launcher.",
       "purpose": "The launcher contracts stay proven under their own names.",
       "owner": "Spec 032 path rule, implementation decisions",
@@ -658,7 +658,7 @@
     {
       "category": "public-distribution",
       "identifier": "cd agent-desk",
-      "context_paths": ["README.md"],
+      "context_paths": ["README.md", "docs/ops/compatibility.md"],
       "context": "The clone folder name in the checkout instructions.",
       "purpose": "Checkout instructions remain true.",
       "owner": "Spec 032 story 46, out-of-scope item 8",
@@ -685,7 +685,7 @@
     {
       "category": "public-distribution",
       "identifier": "agent-desk-bundle",
-      "context_paths": [".github/*"],
+      "context_paths": [".github/*", "docs/ops/compatibility.md"],
       "context": "The bundle artifact name in the hosted workflow.",
       "purpose": "Endpoint and update rules keep matching.",
       "owner": "Spec 032 story 47, out-of-scope item 9",
@@ -721,7 +721,7 @@
     {
       "category": "public-distribution",
       "identifier": "%LOCALAPPDATA%.\\\\AgentDesk",
-      "context_paths": ["scripts/build_bundle.py"],
+      "context_paths": ["scripts/build_bundle.py", "docs/ops/compatibility.md"],
       "context": "The bundle install folder contract as spelled in the build tool's selfcheck source literal.",
       "purpose": "Endpoint and update rules keep matching.",
       "owner": "Spec 032 story 47, out-of-scope item 9",
@@ -757,7 +757,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agent-desk",
-      "context_paths": ["scripts/sbom.py", "tests/*"],
+      "context_paths": ["scripts/sbom.py", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM application name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -784,7 +784,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:dev-dependency",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM dev-dependency property name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -793,7 +793,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:stdlib-note",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM stdlib-note property name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -802,7 +802,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:license-ref",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM licence-ref property name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -811,7 +811,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:sdk-license",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM SDK licence property name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -820,7 +820,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:bundle",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM bundle property name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -829,7 +829,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:python-runtime-dependencies",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM runtime dependency property name.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -838,7 +838,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agentdesk:frontend-lockfile",
-      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The SBOM frontend-lockfile property name and its sha256 variant.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -847,7 +847,7 @@
     {
       "category": "compliance-metadata",
       "identifier": "agent-desk-licenses",
-      "context_paths": ["pyproject.toml", "scripts/*", "docs/licensing.md", "tests/*"],
+      "context_paths": ["pyproject.toml", "scripts/*", "docs/licensing.md", "tests/*", "docs/ops/compatibility.md"],
       "context": "The licence table identifier [tool.agent-desk-licenses] and its programmatic reads.",
       "purpose": "Generated compliance records stay stable.",
       "owner": "Spec 032 story 48, out-of-scope item 10",
@@ -856,7 +856,7 @@
     {
       "category": "legal-text",
       "identifier": "Agent Desk bundles third-party components",
-      "context_paths": ["scripts/third_party_notices.py"],
+      "context_paths": ["scripts/third_party_notices.py", "docs/ops/compatibility.md"],
       "context": "The generated third-party notice wording in its generator; the committed file is excluded as a notice file.",
       "purpose": "This rename makes no legal amendment.",
       "owner": "Spec 032 story 49, out-of-scope item 11",
@@ -865,7 +865,7 @@
     {
       "category": "legal-text",
       "identifier": "The Agent Desk core itself is proprietary",
-      "context_paths": ["scripts/third_party_notices.py"],
+      "context_paths": ["scripts/third_party_notices.py", "docs/ops/compatibility.md"],
       "context": "The generated third-party notice wording in its generator; the committed file is excluded as a notice file.",
       "purpose": "This rename makes no legal amendment.",
       "owner": "Spec 032 story 49, out-of-scope item 11",
@@ -874,7 +874,7 @@
     {
       "category": "legal-text",
       "identifier": "Agent Desk core",
-      "context_paths": ["docs/licensing.md"],
+      "context_paths": ["docs/licensing.md", "docs/ops/compatibility.md"],
       "context": "The licensing guide's licence-table row for the proprietary core.",
       "purpose": "Licence-table identifiers stay byte for byte.",
       "owner": "Spec 032 story 49, out-of-scope item 11",
@@ -883,7 +883,7 @@
     {
       "category": "legal-text",
       "identifier": "grants Agent Desk",
-      "context_paths": ["docs/licensing.md"],
+      "context_paths": ["docs/licensing.md", "docs/ops/compatibility.md"],
       "context": "The licensing guide's plugin-grant summary.",
       "purpose": "The plugin-grant summary stays byte for byte.",
       "owner": "Spec 032 story 49, out-of-scope item 11",
