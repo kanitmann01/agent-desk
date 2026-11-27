@@ -2,71 +2,17 @@
   "family": "server-pages",
   "ticket": "02",
   "issue": 356,
-  "note": "Ticket 02 (issue 356) clears this family and edits only this file. Entries tolerate the old display forms in the named files until the ticket lands; allowlisted compatibility identifiers in the same files are not part of this list.",
+  "note": "Ticket 02 (issue 356) renamed every server-rendered surface to Nexuus Bot and its avatar initials to NB, and this family's entries left the list in the same change. One scoped entry remains, and it is a structural question posted on issue 356: it covers the retained -m agentdesk.server invocations inside the launcher scripts, which are compatibility command spellings ticket 02 must not rename (the pythonw, py -3, python3 and $PY rungs), while the python -m agentdesk.server allowlist entry does not match them. Ticket 08 (issue 362) re-points the launchers at the canonical module and clears this entry, or the founder widens the allowlist instead.",
   "entries": [
     {
-      "surface": "Server shell: wordmark, breadcrumb root, page titles, user card, avatar title and initials",
-      "files": ["src/agentdesk/server/pages.py"],
-      "issue": 356,
-      "initials": "AD",
-      "expected_initials": "NB"
-    },
-    {
-      "surface": "Startup banner and authentication recovery sentence",
-      "files": ["src/agentdesk/server/app.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Server CLI argparse description (startup output)",
-      "files": ["src/agentdesk/server/cli.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Memory page intro sentence",
-      "files": ["src/agentdesk/server/memory_view.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Settings page memory sentence",
-      "files": ["src/agentdesk/server/settings_view.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Commitments page copy",
-      "files": ["src/agentdesk/server/commitments.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Wizard page titles and breadcrumbs",
-      "files": ["src/agentdesk/server/wizard_view.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Update ready banner and health-failed message",
-      "files": ["src/agentdesk/update/__init__.py"],
-      "issue": 356
-    },
-    {
-      "surface": "Module docstrings naming the product (root package and validator)",
-      "files": ["src/agentdesk/__init__.py", "src/agentdesk/validator/__init__.py"],
-      "issue": 356
-    },
-    {
-      "surface": "macOS notification sentence naming the product",
-      "files": ["src/agentdesk/feeder/collectors/mac_notifications.py"],
-      "issue": 356,
-      "matches": ["agent desk"]
-    },
-    {
-      "surface": "Retained launcher scripts printing the product name (filenames unchanged)",
+      "surface": "Retained launcher module invocations, not display copy: the -m agentdesk.server spellings that the pythonw, py -3, python3 and $PY rungs run and that the python -m agentdesk.server allowlist entry does not cover",
       "files": [
         "tools/agent-desk.cmd",
         "tools/agent-desk.command",
-        "tools/probe.cmd",
-        "tools/probe.command",
         "tools/start.cmd",
         "tools/start.command"
       ],
+      "matches": ["-m agentdesk.server"],
       "issue": 356
     }
   ]
