@@ -232,8 +232,12 @@ def py_text_lines(path: Path) -> list[tuple[int, str]]:
 def file_lines(path: Path, overrides: dict | None) -> list[tuple[int, str]]:
     """The scanned lines of one in-scope file, as (lineno, line).
 
-    An override carries the content of a temporary copy, so the drift
-    fixtures plant their text without touching the tree.
+    Python files are read through their string and comment tokens; the
+    named text suffixes are read as text; anything else (an image, a
+    generated metadata blob) is not display text and is skipped, the
+    same filter the ticket 01a sweep applied. An override carries the
+    content of a temporary copy, so the drift fixtures plant their text
+    without touching the tree.
     """
     if overrides is not None:
         text = overrides.get(path.as_posix())
@@ -243,8 +247,10 @@ def file_lines(path: Path, overrides: dict | None) -> list[tuple[int, str]]:
             return list(enumerate(text.splitlines(), start=1))
     if path.suffix == PY_SUFFIX:
         return py_text_lines(path)
-    text = path.read_text(encoding="utf-8", errors="replace")
-    return list(enumerate(text.splitlines(), start=1))
+    if path.suffix in TEXT_SUFFIXES or path.name in TEXT_NAMES:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return list(enumerate(text.splitlines(), start=1))
+    return []
 
 
 def occurrences(line: str) -> list[tuple[int, int, str]]:
