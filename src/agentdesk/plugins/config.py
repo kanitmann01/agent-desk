@@ -8,12 +8,12 @@ confirms them. A read of any other file is refused.
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentdesk.validator.grammar import SAFE_NAME as _SAFE
+
 MAX_INSTANCE_CAP = 6
-_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SUFFIXES = {".xlsx", ".xlsm", ".csv", ".json"}
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 

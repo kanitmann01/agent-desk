@@ -1,0 +1,12 @@
+Final verification
+2026-11-24, host Chibi, Python 3.14.5
+
+Focused suites:
+$ python -m pytest tests/test_feeder_contract.py tests/test_feeder_writer.py tests/test_feeder_runner.py tests/test_feeder_platform.py tests/test_feeder_wpn.py tests/test_feeder_macos.py tests/test_feeder_privacy.py tests/test_mail_core.py tests/test_mail_watcher.py tests/test_server_settings_api.py tests/test_route_table.py tests/test_server_it_surface.py -q
+201 passed, 1 skipped in 26.99s
+
+Full repository suite:
+$ python -m pytest tests -q --no-header -x
+3176 passed, 3 skipped, 13 warnings in 618.29s (0:10:18)
+
+The skips are environment-gated (the live macOS Notification Center check and other platform-specific checks). No macOS live store was read in this session.

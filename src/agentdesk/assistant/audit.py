@@ -55,6 +55,7 @@ VOCABULARY: list[tuple[str, str, str]] = [
     # mail path is metadata-only by construction: bodies are discarded
     # at parse time and no LLM call exists anywhere in it.
     ("mail.poll", "file", "The mail folder you chose is listed and the .eml headers are read, read-only. Message bodies are discarded at parse time and never stored. Off by default."),
+    ("mail.fetch", "file", "One Outlook alert pass read the local OS notification store's sender and subject lines, read-only, and wrote header-only .eml files into your mail folder. The preview is dropped and nothing is transmitted."),
     ("mail.draft", "decision", "A reply draft card was created from the message's headers (recipients, subject). The draft text is what you typed, never message content."),
     ("mail.sent", "file", "Accepting a reply draft wrote a threaded .eml file into the local outbox folder. Nothing is transmitted by this app; sending the reply is yours to do in your own mail client."),
     # The approvals vocabulary (ticket #41): every decision on an inbox

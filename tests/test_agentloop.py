@@ -28,12 +28,11 @@ for _path in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _path)
 
 from agentdesk.agentloop import schedule
-from agentdesk.agentloop import loop as loop_module
 from agentdesk.agentloop.loop import (
     AgentLoop,
     LoopContext,
     Step,
-    STEPS,
+    ordered_steps,
 )
 from agentdesk.assistant import audit as audit_store
 from agentdesk.inbox.store import InboxStore
@@ -102,14 +101,16 @@ def _expected_full_pass_steps(settings) -> list[str]:
 
     The server module is imported for its registration side effect, so the
     registry holds every ticket step even when this file runs on its own. A
-    full pass (only=None) runs every step whose gate allows it, in registry
-    order; a gate that raises still yields a row, a failed one, exactly as
-    _run_steps records it, so it counts as expected too.
+    full pass (only=None) runs every step whose gate allows it, in the
+    declared pass order (ordered_steps(), never the registration order the
+    import sequence decides); a gate that raises still yields a row, a
+    failed one, exactly as _run_steps records it, so it counts as expected
+    too.
     """
     import agentdesk.server.app  # noqa: F401 - registers the ticket steps
 
     names = []
-    for step in STEPS:
+    for step in ordered_steps():
         try:
             enabled = step.enabled(settings)
         except Exception:  # noqa: BLE001 - the loop records the failure row
@@ -225,10 +226,11 @@ def test_release_never_deletes_a_successors_claim(tmp_path):
 
 
 def test_the_built_in_steps_are_registered():
-    # The loop registers the desk check; app.py appends the ticket steps.
-    # Recommendations and ranking come before the learning steps, as spec
-    # §6.2 says.
-    assert [step.name for step in STEPS] == [
+    # The pass order is the declared orders composed (spec §6.2), whatever
+    # order the modules import in: recommendations and ranking come before
+    # the learning steps, and the update check runs last as the only step
+    # that can replace the program.
+    assert [step.name for step in ordered_steps()] == [
         "deskcheck", "recommend", "rank", "learn-topics", "profile-review",
         "skills", "curator", "update", "engine"]
 
@@ -236,31 +238,31 @@ def test_the_built_in_steps_are_registered():
 # ---- run_pass: order, isolation, audit -----------------------------------
 
 
-def test_failing_step_isolated(monkeypatch, tmp_path):
+def test_failing_step_isolated(tmp_path):
     ran = []
 
-    def make(name, enabled=None, raises=False):
+    def make(name, order, enabled=None, raises=False):
         def run(ctx):
             ran.append(name)
             if raises:
                 raise RuntimeError(f"{name} broke")
             return {"note": f"{name} ran"}
-        return Step(name=name, enabled=enabled or (lambda settings: True), run=run)
+        return Step(name=name, order=order,
+                    enabled=enabled or (lambda settings: True), run=run)
 
     steps = [
-        make("first"),
-        make("broken", raises=True),
-        make("skipped", enabled=lambda settings: False),
-        make("last"),
+        make("first", 100),
+        make("broken", 200, raises=True),
+        make("skipped", 300, enabled=lambda settings: False),
+        make("last", 400),
     ]
-    monkeypatch.setattr(loop_module, "STEPS", steps)
     audit = _audit_conn()
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=audit)
-    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path, steps=steps)
 
     results = loop.run_pass()
 
-    # Registration order, the failing step recorded, the disabled step skipped.
+    # Declared order, the failing step recorded, the disabled step skipped.
     assert [row["name"] for row in results] == ["first", "broken", "last"]
     assert [row["ok"] for row in results] == [True, False, True]
     assert ran == ["first", "broken", "last"]
@@ -284,18 +286,17 @@ def test_failing_step_isolated(monkeypatch, tmp_path):
     assert schedule.interval_due(stored, 1.0, aware_now) == (False, None)
 
 
-def test_a_step_whose_gate_raises_writes_its_audit_row(monkeypatch, tmp_path):
+def test_a_step_whose_gate_raises_writes_its_audit_row(tmp_path):
     def broken_gate(settings):
         raise RuntimeError("the gate broke")
 
     def never_runs(ctx):
         raise AssertionError("the step must not run when its gate raises")
 
-    monkeypatch.setattr(loop_module, "STEPS",
-                        [Step("gated", broken_gate, never_runs)])
     audit = _audit_conn()
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=audit)
-    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path,
+                     steps=[Step("gated", 100, broken_gate, never_runs)])
 
     results = loop.run_pass()
 
@@ -307,7 +308,7 @@ def test_a_step_whose_gate_raises_writes_its_audit_row(monkeypatch, tmp_path):
     assert [row["target"] for row in failures] == ["gated"]
 
 
-def test_two_loops_on_one_data_folder_run_one_pass_at_a_time(monkeypatch, tmp_path):
+def test_two_loops_on_one_data_folder_run_one_pass_at_a_time(tmp_path):
     entered = threading.Event()
     release = threading.Event()
 
@@ -316,10 +317,10 @@ def test_two_loops_on_one_data_folder_run_one_pass_at_a_time(monkeypatch, tmp_pa
         release.wait(2)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS", [Step("slow", lambda settings: True, slow)])
+    slow_step = [Step("slow", 100, lambda settings: True, slow)]
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=_audit_conn())
-    first = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
-    second = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    first = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path, steps=slow_step)
+    second = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path, steps=slow_step)
 
     outcome = {}
 
@@ -475,7 +476,7 @@ def test_close_joins(tmp_path):
     assert not thread.is_alive()
 
 
-def test_run_now_409_when_busy(monkeypatch, tmp_path):
+def test_run_now_409_when_busy(tmp_path):
     entered = threading.Event()
     release = threading.Event()
 
@@ -484,9 +485,9 @@ def test_run_now_409_when_busy(monkeypatch, tmp_path):
         release.wait(2)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS", [Step("slow", lambda settings: True, slow)])
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=_audit_conn())
-    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path,
+                     steps=[Step("slow", 100, lambda settings: True, slow)])
     assert loop.run_now() is True
     try:
         assert _wait_until(lambda: loop.status()["running"] is True)
@@ -499,7 +500,7 @@ def test_run_now_409_when_busy(monkeypatch, tmp_path):
     assert _wait_until(lambda: loop.status()["running"] is False)
 
 
-def test_scheduled_tick_cannot_stomp_a_manual_pass(monkeypatch, tmp_path):
+def test_scheduled_tick_cannot_stomp_a_manual_pass(tmp_path):
     """The P1 regression: one owner for the running flag.
 
     A due scheduled run_pass arriving while a manual pass runs must skip
@@ -515,9 +516,9 @@ def test_scheduled_tick_cannot_stomp_a_manual_pass(monkeypatch, tmp_path):
         release.wait(2)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS", [Step("slow", lambda settings: True, slow)])
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=_audit_conn())
-    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path,
+                     steps=[Step("slow", 100, lambda settings: True, slow)])
     assert loop.run_now() is True
     try:
         assert _wait_until(lambda: loop.status()["running"] is True)
@@ -535,7 +536,7 @@ def test_scheduled_tick_cannot_stomp_a_manual_pass(monkeypatch, tmp_path):
     assert [row["ok"] for row in loop.status()["lastSteps"]] == [True]
 
 
-def test_stop_joins_the_manual_pass_thread(monkeypatch, tmp_path):
+def test_stop_joins_the_manual_pass_thread(tmp_path):
     """The manual pass thread is tracked and joined before the stores close."""
     entered = threading.Event()
     release = threading.Event()
@@ -545,9 +546,9 @@ def test_stop_joins_the_manual_pass_thread(monkeypatch, tmp_path):
         release.wait(2)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS", [Step("slow", lambda settings: True, slow)])
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=_audit_conn())
-    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path,
+                     steps=[Step("slow", 100, lambda settings: True, slow)])
     assert loop.run_now() is True
     assert _wait_until(entered.is_set)
     started = time.monotonic()
@@ -561,7 +562,7 @@ def test_stop_joins_the_manual_pass_thread(monkeypatch, tmp_path):
     assert loop.status()["running"] is False
 
 
-def test_a_manual_pass_never_starts_after_stop(monkeypatch, tmp_path):
+def test_a_manual_pass_never_starts_after_stop(tmp_path):
     """A run_now that loses the race with shutdown reserves the slot but
     runs nothing: the job sees the stop request and returns."""
     ran = []
@@ -570,11 +571,22 @@ def test_a_manual_pass_never_starts_after_stop(monkeypatch, tmp_path):
         ran.append(1)
         return {}
 
-    monkeypatch.setattr(loop_module, "STEPS",
-                        [Step("quick", lambda settings: True, quick)])
     server = FakeServer(settings=_settings(), ledger=Ledger(":memory:"), audit=_audit_conn())
-    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path)
+    loop = AgentLoop(server, clock=lambda: NOW, data_dir=tmp_path,
+                     steps=[Step("quick", 100, lambda settings: True, quick)])
     loop.stop()
     assert loop.run_now() is True
     assert _wait_until(lambda: loop.status()["running"] is False)
     assert ran == []
+
+
+def test_ordered_steps_sorts_on_the_declared_order():
+    # The wave's central claim, pinned: the pass runs in declared order
+    # even when the list hands the steps over backwards, so registration
+    # and argument order decide nothing.
+    def run(ctx):
+        return {}
+
+    late = Step(name="late", order=300, enabled=lambda settings: True, run=run)
+    early = Step(name="early", order=100, enabled=lambda settings: True, run=run)
+    assert [step.name for step in ordered_steps([late, early])] == ["early", "late"]

@@ -94,13 +94,18 @@ class MailWatch:
         digest_hours: float = DIGEST_HOURS,
         self_address: str = "",
         self_address_provider: Callable[[], str] | None = None,
+        feeder: Callable[[], dict] | None = None,
+        fetch_status: dict | None = None,
     ) -> None:
         """Wire the inbox, the handled store and the adapters for one folder.
 
         folder_provider is asked on every poll, so a folder chosen in settings
         applies without a restart; self_address_provider is asked the same
         way, and the constructor's self_address wins while the provider
-        stays empty. Nothing polls until start_polling.
+        stays empty. feeder is one Outlook alert pass, called before the
+        folder read; None means no automatic feed. fetch_status seeds the
+        last persisted alert status, so the Settings card survives a
+        restart. Nothing polls until start_polling.
         """
         self.inbox = inbox
         self.store = store
@@ -109,6 +114,8 @@ class MailWatch:
         self.audit_hook = audit_hook
         self.follow_up_days = follow_up_days
         self.digest_hours = digest_hours
+        self.feeder = feeder
+        self._fetch: dict | None = fetch_status
         self._self_address = self_address
         self.self_address_provider = self_address_provider or (lambda: "")
         self._state = STATE_UNCONFIGURED
@@ -154,6 +161,9 @@ class MailWatch:
         # The folder is known before the read: a failed first contact is
         # audited exactly like a successful one (the calendar's rule).
         self._folder = str(folder)
+        # The Outlook alerts land before the folder read, so this poll's
+        # digest already sees them; a failed fetch never stops the read.
+        self.fetch_now()
         try:
             messages, unparsed = self.adapters.read_folder(folder)
         except OSError as exc:
@@ -193,6 +203,44 @@ class MailWatch:
     def retest(self) -> dict:
         """Poll once, now; the retest button's whole behaviour."""
         return self.poll()
+
+    def fetch_now(self) -> dict | None:
+        """Run one Outlook alert pass now, or None when no feeder is wired.
+
+        The runner already answers rather than raises, but a broken wiring
+        must be as harmless as a broken collector: every exception becomes
+        an honest error status, never a failed poll or page.
+        """
+        if self.feeder is None:
+            return None
+        try:
+            result = self.feeder()
+        except Exception as exc:  # noqa: BLE001 - a failed fetch never stops the read
+            LOG.warning("outlook alert fetch failed", exc_info=True)
+            detail = str(exc).strip() or exc.__class__.__name__
+            result = {
+                "lastResult": "error",
+                "lastError": f"The Outlook alert fetch failed: {detail}.",
+            }
+        if not isinstance(result, dict):
+            result = {
+                "lastResult": "error",
+                "lastError": "The Outlook alert fetch returned no status.",
+            }
+        self._fetch = result
+        last = result.get("lastResult")
+        if last in ("ok", "error"):
+            # Only a pass that touched the folder is audited: unavailable
+            # and busy changed nothing, so an audit row would claim a
+            # touch that never happened. A fetch before the first poll
+            # resolves its target from the folder provider, so the row
+            # still lands on the folder the pass would have read.
+            target = self._folder
+            if target is None:
+                folder = resolve_folder(self.folder_provider())
+                target = str(folder) if folder is not None else None
+            self._audit("mail.fetch", last, target=target)
+        return result
 
     def _file_cards(self, messages: list, handled: set[str], now: float) -> int:
         """The card deltas: at most one waiting digest, one follow-up per
@@ -284,6 +332,7 @@ class MailWatch:
             "selfDetection": bool(self.self_address),
             "handled": sorted(self.store.handled()),
             "followUpDays": self.follow_up_days,
+            "fetch": self._fetch,
         }
         if folder is None:
             return payload
@@ -323,17 +372,22 @@ class MailWatch:
             "followUps": list(self._follow_ups),
             "selfDetection": bool(self.self_address),
             "handledCount": len(self.store.handled()),
+            "fetch": self._fetch,
         }
 
     # -- the audit hook ----------------------------------------------------
 
-    def _audit(self, action: str, status: str) -> None:
+    def _audit(self, action: str, status: str, target: str | None = None) -> None:
         """Record a brokered touch when the hook is wired. The target is
         the folder's own name, never a message: the log names the touch,
-        not the mail."""
-        if self.audit_hook is None or self._folder is None:
+        not the mail. An explicit target lets a fetch-now before the
+        first poll still name the folder; no target skips the row."""
+        if self.audit_hook is None:
             return
-        name = self._folder.replace("\\", "/").rsplit("/", 1)[-1]
+        folder = target if target is not None else self._folder
+        if folder is None:
+            return
+        name = folder.replace("\\", "/").rsplit("/", 1)[-1]
         try:
             self.audit_hook(action, name, status)
         except Exception:  # noqa: BLE001 - auditing must never break the watcher

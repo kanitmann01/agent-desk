@@ -1166,7 +1166,8 @@ def _settings_bar() -> str:
 
 def _tools_section(excel_status: dict | None, calendar_status: dict | None,
                    settings_values: dict, mail_folder: str,
-                   mail_self_address: str) -> str:
+                   mail_self_address: str,
+                   mail_fetch: dict | None = None) -> str:
     """Your tools: the workbook, the calendar and the mail folder, each
     with its live state and one action (spec 022).
 
@@ -1174,7 +1175,10 @@ def _tools_section(excel_status: dict | None, calendar_status: dict | None,
     The workbook's one action is the picker, which needs script (hidden
     without it, so the page never shows a control that cannot work); the
     calendar's is its setup page; the mail's is its on/off switch. The
-    folder and address forms fold into a disclosure.
+    folder and address forms fold into a disclosure. Under the mail
+    source sits the Outlook alerts block (spec 028, numbered 024 in the agent-desk-core sandbox), which feeds its
+    alerts into the same folder; `mail_fetch` is the feeder's own last
+    status, read when the page rendered.
     """
     excel_status = excel_status or {}
     calendar_status = calendar_status or {}
@@ -1233,6 +1237,7 @@ address inside the From header), so threads you already answered stop
 producing follow-up cards. With no address set, self-detection is simply
 off: the digest works, follow-up cards are not filed.</p>
 </details>
+{_outlook_alerts_section(values, mail_fetch)}
 </section>"""
 
 
@@ -1277,6 +1282,88 @@ on the Memory page first.</p>
 </section>"""
 
 
+def _outlook_alerts_section(settings_values: dict, mail_fetch: dict | None) -> str:
+    """The Outlook alerts block under the mail source.
+
+    Alerts only, not a mailbox: the card names the collector, its last
+    run, the count inside the coverage window and any honest cause. An
+    attention state (error, unavailable or the manual fallback) shows the
+    cause and no count, because a number there would read as mail the
+    desk had actually seen.
+    """
+    on = bool(settings_values.get("mail_feeder", False))
+    fetch = mail_fetch or {}
+    result = str(fetch.get("lastResult", "") or "")
+    collector = str(fetch.get("collector", "") or "")
+    platform = str(fetch.get("platform", "") or "")
+    error = html.escape(str(fetch.get("lastError", "") or ""))
+    written = fetch.get("written")
+    attention = (result in ("error", "unavailable", "busy", "running")
+                 or collector == "manual")
+    if not fetch:
+        state = ("<p class='empty'>Not run yet. The first pass runs with the "
+                 "next mail poll, or press Fetch now.</p>")
+    else:
+        parts = []
+        if collector:
+            parts.append(f"Collector <b class='mono'>{html.escape(collector)}</b>")
+        if fetch.get("lastRunTs"):
+            parts.append(f"last run <span class='mono'>"
+                         f"{_agent_clock(fetch['lastRunTs'])}</span>")
+        parts.append(f"result <b class='mono'>{html.escape(result or 'unknown')}</b>")
+        state = "<p class='empty'>" + " · ".join(parts) + ".</p>"
+        if result in ("busy", "running"):
+            state += ("<p class='empty'>Another pass is already running; "
+                      "nothing new ran.</p>")
+        if not attention and result == "ok" and isinstance(written, int):
+            alert_word = "alert" if written == 1 else "alerts"
+            state += (f"<p>{written} {alert_word} written into the mail "
+                      f"folder in this fetch.</p>")
+        coverage_from = fetch.get("coverageFromTs")
+        coverage_to = fetch.get("coverageToTs")
+        if coverage_from and coverage_to:
+            state += (f"<p class='empty'>Coverage <span class='mono'>"
+                      f"{_agent_clock(coverage_from)}</span> to "
+                      f"<span class='mono'>{_agent_clock(coverage_to)}</span>, "
+                      "the oldest and newest alert in this fetch.</p>")
+        if error:
+            state += f"<div class='alert'><p>{error}</p></div>"
+        if platform == "darwin" and "Full Disk Access" in error:
+            state += ("<p class='empty'>On a Mac the fix is Full Disk Access "
+                      "for this app; the manual .eml folder works without it.</p>")
+        if attention:
+            state += ("<p class='empty'>No alert count is shown while the "
+                      "fetch is not working.</p>")
+    manual = (
+        "<p class='empty'>No automatic collector is available on this "
+        "machine, so the manual .eml folder above is the mail source.</p>"
+        if collector == "manual" or result == "unavailable" else ""
+    )
+    # Both forms carry the tools section, so a no-JS submit lands the
+    # person back here (the section the sources card lives in), the same
+    # return_to the card's other toggles post.
+    return f"""<h3>Outlook alerts</h3>
+<p class='empty'>Alerts only, not a mailbox: while the desk is open it reads
+the sender and subject lines of the Outlook alerts the OS notification
+store kept, writes them as header-only .eml files into the mail folder
+above, and drops any preview. Turning alerts on also turns the mail
+digest on, because the alerts land in that same folder. The manual .eml
+folder stays the history source.</p>
+<div class='settings-block'>
+{_toggle_button("mail_feeder", on, label="Fetch Outlook alerts", section="tools")}
+</div>
+{state}{manual}
+<form method="post" action="/settings/mail/fetch-now" class="cardform"
+ data-wait="#sources" data-wait-shape="panel"
+ data-wait-label="Running one Outlook alert pass..." data-busy="Fetching...">
+<input type="hidden" name="return_to" value="/settings#tools">
+<button class="btn btn-secondary" type="submit">Fetch now</button>
+</form>
+<p class='empty'>Coverage: only the alerts the OS notification store still keeps.
+Windows keeps about 20 per app and macOS keeps a short history; it is a
+live signal, not mailbox history. The manual .eml folder is the history source.</p>"""
+
+
 def render_settings_page(
     activity_entries: list[dict],
     skills: list[dict],
@@ -1286,6 +1373,7 @@ def render_settings_page(
     endpoint_status: dict | None = None,
     mail_folder: str = "",
     mail_self_address: str = "",
+    mail_fetch: dict | None = None,
     registry_status: dict | None = None,
     extra_hosts: str = "",
     server_port: int = 8765,
@@ -1447,7 +1535,7 @@ def render_settings_page(
                                connections_notice)
         + _jobs_section(bindings, connections, ai))
     tools_html = _tools_section(excel_status, calendar_status, settings_values,
-                                mail_folder, mail_self_address)
+                                mail_folder, mail_self_address, mail_fetch)
     memory_html = _memory_card(settings_values) + _learned_section(learned, settings_values)
     preferences_html = _preferences_section(preferences, preference_notice) + f"""<section class='card settings-card' id='appearance'>
 <div class='w-head'><h2>Appearance</h2><span class='stamp'>THIS BROWSER</span></div>

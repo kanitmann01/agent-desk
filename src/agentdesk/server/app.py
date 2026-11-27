@@ -11,10 +11,10 @@ session validation before handshake.
 import html
 import http.client
 import json
-import secrets
 import logging
 import os
 import re
+import secrets
 import socket
 import sqlite3
 import subprocess
@@ -24,6 +24,7 @@ import threading
 import time
 import webbrowser
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -105,6 +106,8 @@ from agentdesk.layout import (
     parse_layout,
     resolved_layout,
 )
+from agentdesk.feeder.platform import current_platform, default_collectors
+from agentdesk.feeder.runner import OutlookFeeder
 from agentdesk.ledger import Ledger, LedgerError, may_act
 from agentdesk.ledger import undo as ledger_undo
 from agentdesk.engine import (
@@ -123,6 +126,7 @@ from agentdesk.mail.watcher import (
     STATE_UNCONFIGURED,
     MailWatch,
 )
+from agentdesk.locking import store_lock
 from agentdesk.llm import (
     LlmUnavailable,
     NO_ENDPOINT_CAUSE,
@@ -135,7 +139,7 @@ from agentdesk.llm import (
     env_config,
     settings_chat,
 )
-from agentdesk.presentations.deliver import deliver_deck
+from agentdesk.presentations.artifact import deck_artifact
 from agentdesk.presentations.packs import load_packs
 from agentdesk.presentations.tools import (
     ToolError,
@@ -151,13 +155,12 @@ from agentdesk.presentations.research import (
 )
 from agentdesk.presentations.pipeline import (
     call_model,
-    fill_prompt,
+    fill_cause,
     gather,
-    outline_from_fill,
-    parse_fill,
     parse_plan,
     plan_prompt,
     receipt_lines,
+    run_fill,
     timeout_seconds,
 )
 from agentdesk.memory.crypto import MemoryEncryptedError
@@ -252,6 +255,20 @@ from agentdesk.server.core import (
     plain_preview,
 )
 from agentdesk.agentloop import AgentLoop, LoopContext, Step, register_step
+from agentdesk.agentloop.loop import (
+    STEP_ORDER_CURATOR,
+    STEP_ORDER_ENGINE,
+    STEP_ORDER_LEARN_TOPICS,
+    STEP_ORDER_PROFILE_REVIEW,
+    STEP_ORDER_RANK,
+    STEP_ORDER_RECOMMEND,
+    STEP_ORDER_SKILLS,
+    STEP_ORDER_UPDATE,
+    _curator_enabled,
+    _run_curator,
+    _run_skills,
+    _skills_enabled,
+)
 from agentdesk.recommend.rank import rank_enabled, rank_step
 from agentdesk.server.demo import Widget
 from agentdesk.server import demo_data
@@ -1348,6 +1365,29 @@ def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, de
         candidates=candidates,
     )
 
+@dataclass(frozen=True)
+class StoreMissing:
+    """A typed answer for an optional store that is not configured.
+
+    The result-returning sibling of `_require_store` for callers that
+    answer in more than one shape: what "missing" means is decided once,
+    in `_store_missing`, and each surface renders from this outcome. The
+    JSON shape is the status and error payload those callers always sent,
+    byte-identical; the form shape is the wave's failure notice, which
+    says what failed and what to try next, in place near the action
+    (docs/design-language.md F5 and F7), so a form post never meets raw
+    JSON.
+    """
+
+    status: int
+    sentence: str
+    notice: str
+
+    def as_json(self) -> tuple[int, dict]:
+        """The JSON-API shape: the status and the error payload as sent before."""
+        return self.status, {"error": self.sentence}
+
+
 class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     """GET for the shell, health and statics; POST for state changes."""
 
@@ -1903,10 +1943,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """
         server = self.server  # type: ignore[attr-defined]
         if server.recommender is None or server.inbox is None:
-            return 503, {"error": "the recommendation builder is not available"}
+            return self._store_missing("recommendation builder").as_json()
         if server.ledger is None:
-            return 409, {"error": ("The ledger is not available, so no "
-                                   "suggestion was added.")}
+            return self._store_missing(
+                "ledger", status=409,
+                sentence="The ledger is not available, so no suggestion was "
+                         "added.").as_json()
         refusal = self._engine_write_refusal("engine.card", "cards")
         if refusal is not None:
             return refusal
@@ -1944,10 +1986,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         memory = server.memory
         if memory is None:
-            return 503, {"error": "the memory store is not available"}
+            return self._store_missing("memory store").as_json()
         if server.ledger is None:
-            return 409, {"error": ("The ledger is not available, so no fact was "
-                                   "proposed.")}
+            return self._store_missing(
+                "ledger", status=409,
+                sentence="The ledger is not available, so no fact was "
+                         "proposed.").as_json()
         if memory.locked_cause is not None:
             return 423, {"status": "locked", "error": memory.locked_cause}
         settings = memory_loop.capture_settings(server.settings)
@@ -1958,7 +2002,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if refusal is not None:
             return refusal
         if not settings.auto_approve and server.inbox is None:
-            return 503, {"error": "the inbox is not available"}
+            return self._store_missing("inbox").as_json()
         text = str(args.get("text") or "").strip()
         if not text:
             return 400, {"error": "the propose_fact call needs the fact text"}
@@ -1986,9 +2030,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None or not may_act(settings, action):
-            return 409, {
-                "error": (f"Autonomy is off in settings, so the desk's engine "
-                          f"cannot make {noun}.")}
+            return self._store_missing(
+                "settings", status=409,
+                sentence=(f"Autonomy is off in settings, so the desk's engine "
+                          f"cannot make {noun}.")).as_json()
         return None
 
     def _fact_already_held(self, text: str) -> bool:
@@ -2139,9 +2184,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _send_agent_loop_api(self) -> None:
         """Serve the agent loop's status payload (spec 016 sections 6.2 and 7)."""
-        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        loop = self._require_store(getattr(self.server, "agent_loop", None), "agent loop")
         if loop is None:
-            self._send_json(503, {"error": "the agent loop is not available"})
             return
         self._send_json(200, loop.status())
 
@@ -2152,9 +2196,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         already running. A plain form post (the settings page's Run now
         button) goes back to the agent section instead.
         """
-        loop = getattr(self.server, "agent_loop", None)  # type: ignore[attr-defined]
+        loop = self._require_store(getattr(self.server, "agent_loop", None), "agent loop")
         if loop is None:
-            self._send_json(503, {"error": "the agent loop is not available"})
             return
         started = loop.run_now()
         if self._is_form_submit():
@@ -2262,17 +2305,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _excel_watch_pick(self) -> None:
         """Open the workbook picker and return the chosen path."""
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         self._send_json(200, {"path": self.server.pick_workbook()})  # type: ignore[attr-defined]
 
     def _excel_watch_register(self) -> None:
         """Validate and register the workbook path the card submitted."""
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         body = self._read_json_body()
         if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
@@ -2290,18 +2331,16 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _excel_watch_retest(self) -> None:
         """Re-test the registered workbook and return the watch status."""
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         excel.retest()
         self._send_json(200, excel.status())
 
     def _commitment_check(self) -> None:
         """Toggle one commitment checkbox on the calendar bridge."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         body = self._read_json_body()
         if body is None or not isinstance(body.get("eventId"), str):
@@ -2314,9 +2353,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_retest(self) -> None:
         """Re-test the calendar bridge and return its status."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         calendar.retest()
         self._maybe_briefs()
@@ -2324,17 +2362,15 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_pick(self) -> None:
         """Open the calendar picker and return the chosen path."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         self._send_json(200, {"path": self.server.pick_calendar()})  # type: ignore[attr-defined]
 
     def _calendar_bridge_path(self) -> None:
         """Store the explicit calendar path the card submitted, then re-poll."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         body = self._read_json_body()
         if body is None or not isinstance(body.get("path"), str) or not body["path"].strip():
@@ -2356,9 +2392,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_upload(self) -> None:
         """Store the uploaded calendar document and point the bridge at it."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         raw = getattr(self, "_raw_body", b"")
         declared = getattr(self, "_content_length", 0)
@@ -2382,9 +2417,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _calendar_bridge_reset(self) -> None:
         """Clear the explicit calendar path, re-poll and return the status."""
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         calendar.clear_explicit_path()
         calendar.retest()
@@ -2410,8 +2444,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _inbox_card_add(self) -> None:
         """Add one inbox card from the posted body and return it."""
-        if self.server.inbox is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the inbox is not available"})
+        if self._require_store(self.server.inbox, "inbox") is None:  # type: ignore[attr-defined]
             return
         body = self._read_json_body() or {}
         try:
@@ -2457,8 +2490,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _inbox_consolidate(self) -> None:
         """Run the repetition detector and return its consolidated cards."""
-        if self.server.consolidator is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the repetition detector is not available"})
+        if self._require_store(self.server.consolidator, "repetition detector") is None:  # type: ignore[attr-defined]
             return
         self._send_json(200, self.server.consolidator.consolidate())  # type: ignore[attr-defined]
 
@@ -2864,9 +2896,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         503 when no watcher exists: the widget's shape belongs to the watcher, and
         inventing an empty one here would look like a connected source with no data.
         """
-        excel = self.server.excel  # type: ignore[attr-defined]
+        excel = self._require_store(self.server.excel, "excel watch")
         if excel is None:
-            self._send_json(503, {"error": "the excel watch is not available"})
             return
         self._send_json(200, excel.status())
 
@@ -2876,9 +2907,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         503 when no bridge exists, since an unbuilt collaborator is not the same thing
         as a source that happens to be empty.
         """
-        calendar = self.server.calendar  # type: ignore[attr-defined]
+        calendar = self._require_store(self.server.calendar, "calendar bridge")
         if calendar is None:
-            self._send_json(503, {"error": "the calendar bridge is not available"})
             return
         self._send_json(200, calendar.status())
 
@@ -3013,14 +3043,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if server.agents is None:
-            if self._is_form_submit():
-                self._send_agents_page(
-                    notice="The run history is not available right now, so the "
-                           "brief was not run.",
-                    notice_kind="alert", typed_agent=kind.id,
-                    typed_brief=typed_brief)
-                return
-            self._send_json(503, {"error": "the agents store is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "agents store",
+                    notice=("The run history is not available right now, so the "
+                            "brief was not run.")),
+                render=lambda notice: self._send_agents_page(
+                    notice=notice, notice_kind="alert", typed_agent=kind.id,
+                    typed_brief=typed_brief))
             return
         if not self._source_allowed("endpoint_enabled"):
             result = endpoint_off_run()
@@ -3135,14 +3165,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if server.agents is None:
-            if self._is_form_submit():
-                self._send_agents_page(
-                    notice="The run history is not available right now, so no "
-                           "deck was built.",
-                    notice_kind="alert", typed_agent="presentation",
-                    typed_brief=typed_brief)
-                return
-            self._send_json(503, {"error": "the agents store is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "agents store",
+                    notice=("The run history is not available right now, so no "
+                            "deck was built.")),
+                render=lambda notice: self._send_agents_page(
+                    notice=notice, notice_kind="alert", typed_agent="presentation",
+                    typed_brief=typed_brief))
             return
         ready, sentence = self._presentation_endpoint()
         if not ready:
@@ -3188,6 +3218,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             server.settings.get("presentation_timeout_s") if server.settings is not None else "30"
         )
         llm = self._effective_llm("presentations")[0]
+        delivered = None
+        cause = ""
         try:
             parsed = parse_plan(call_model(llm, plan_prompt(brief, recipe_doc), timeout), recipe_doc)
             if not parsed:
@@ -3198,63 +3230,26 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                     server, brief, pack, variant, recipe, planned, sources, timeout, deck_title,
                 )
                 return
-            filled = []
-            for section in planned:
-                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
-                if not slides:
-                    raise ValueError("malformed fill")
-                filled.append(slides)
-            outline = outline_from_fill(
-                brief, recipe_doc, planned, filled, sources, title=deck_title,
+            delivered, cause = run_fill(
+                pack, variant, recipe_doc, planned, sources, brief, deck_title,
+                llm, timeout, self._presentation_dir(),
+                runner=getattr(server, "presentation_runner", None),
             )
-
-            def shorten(text, limit, call_timeout):
-                """One shorten call, on the presentation timeout."""
-                reply = call_model(
-                    llm,
-                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
-                    call_timeout,
-                )
-                return (reply or "").strip() or text
-
-            folder = self._presentation_dir() / secrets.token_hex(8)
-            delivered = deliver_deck(
-                shell_path.read_bytes(), recipe_doc, outline, sources, folder,
-                shorten, timeout, runner=getattr(server, "presentation_runner", None),
-            )
-            fit_notes = delivered["fit"]
-            rendered = delivered["rendered"]
         except (OSError, ValueError, LlmUnavailable) as exc:
-            if isinstance(exc, LlmUnavailable):
-                cause = str(exc)
-            elif isinstance(exc, ValueError) and "plan" in str(exc):
-                cause = "The presentation plan could not be read, so no deck was written."
-            elif isinstance(exc, ValueError) and "fill" in str(exc):
-                cause = "The presentation could not be filled, so no deck was written."
-            else:
-                cause = "The deck could not be written."
+            cause = fill_cause(exc)
+        if delivered is None:
             run_id = server.agents.record("presentation", brief, "degraded", cause=cause)
             self._audit("agents.run", target="presentation", status="error",
                         detail=f"status degraded; {cause}")
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
-        prefix = folder.name
-        artifact = {
-            "kind": "presentation",
-            "templateId": pack.id,
-            "templateVersion": pack.version,
-            "digest": pack.digest,
-            "variant": variant,
-            "recipe": recipe,
-            "phase": "written",
-            "file": f"{prefix}/deck.pptx",
-            "sources": receipt_lines(sources),
-            "renderer": rendered["renderer"],
-            "previewNote": rendered["note"],
-            "pdf": f"{prefix}/{rendered['pdf']}" if rendered["pdf"] else "",
-            "images": [f"{prefix}/{image}" for image in rendered["images"]],
-            "fit": fit_notes,
-        }
+        fit_notes = delivered["fit"]
+        rendered = delivered["rendered"]
+        prefix = delivered["folder"]
+        artifact = deck_artifact(
+            pack, variant, recipe, phase="written", folder=prefix, rendered=rendered,
+            sources=receipt_lines(sources), fit=fit_notes,
+        )
         facts = [
             {"id": row["id"], "text": row["text"]}
             for row in sources if row["kind"] == "memory"
@@ -3302,18 +3297,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                         detail=f"status degraded; research unconfigured")
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
-        base = {
-            "kind": "presentation",
-            "templateId": pack.id,
-            "templateVersion": pack.version,
-            "digest": pack.digest,
-            "variant": variant,
-            "recipe": recipe,
-            "plan": planned,
-            "title": deck_title,
-            "deskSources": sources,
-            "timeout": timeout,
-        }
+        base = deck_artifact(
+            pack, variant, recipe, plan=planned, title=deck_title,
+            deskSources=sources, timeout=timeout,
+        )
         try:
             if fetch is not None:
                 rows = list(fetch(brief, titles))[:RESULT_LIMIT]
@@ -3409,56 +3396,35 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         timeout = timeout_seconds(artifact.get("timeout") or 30)
         llm = self._effective_llm("assistant")[0]
-        planned = artifact.get("plan") or []
         try:
-            filled = []
-            for section in planned:
-                slides = parse_fill(call_model(llm, fill_prompt(section, sources, brief), timeout))
-                if not slides:
-                    raise ValueError("malformed fill")
-                filled.append(slides)
-            outline = outline_from_fill(
-                brief, recipe_doc, planned, filled, sources, title=str(artifact.get("title") or ""),
-            )
-
-            def shorten(text, limit, call_timeout):
-                """One shorten call, on the presentation timeout."""
-                reply = call_model(
-                    llm,
-                    f"Shorten this to at most {limit} characters. Reply with the text only.\n{text}",
-                    call_timeout,
-                )
-                return (reply or "").strip() or text
-
-            folder = self._presentation_dir() / secrets.token_hex(8)
-            delivered = deliver_deck(
-                shell_path.read_bytes(), recipe_doc, outline, sources, folder,
-                shorten, timeout, runner=getattr(server, "presentation_runner", None),
+            delivered, cause = run_fill(
+                pack, artifact.get("variant"), recipe_doc, artifact.get("plan") or [],
+                sources, brief, str(artifact.get("title") or ""),
+                llm, timeout, self._presentation_dir(),
+                runner=getattr(server, "presentation_runner", None),
             )
         except (OSError, ValueError, LlmUnavailable) as exc:
-            if isinstance(exc, LlmUnavailable):
-                cause = str(exc)
-            elif isinstance(exc, ValueError) and "fill" in str(exc):
-                cause = "The presentation could not be filled, so no deck was written."
-            else:
-                cause = "The deck could not be written."
+            # The fresh run's ladder catches its whole pipeline, folder
+            # creation included; the resume must answer the same way, or a
+            # write failure here degrades into the generic 500 instead of
+            # an honest run row.
+            delivered, cause = None, fill_cause(exc)
+        if delivered is None:
             server.agents.update_outcome(run_id, "degraded", None, cause)
             self._finish_agent_run(run_id, "presentation", "degraded", cause, "", None, [])
             return
         rendered = delivered["rendered"]
-        updated = {
-            **{key: artifact[key] for key in artifact if key not in ("plan", "webSources")},
-            "phase": "written",
-            "file": f"{folder.name}/deck.pptx",
-            "sources": receipt_lines(sources),
-            "research": True,
-            "kept": [source.get("id") for source in chosen],
-            "fit": delivered["fit"],
-            "renderer": rendered["renderer"],
-            "previewNote": rendered["note"],
-            "pdf": f"{folder.name}/{rendered['pdf']}" if rendered["pdf"] else "",
-            "images": [f"{folder.name}/{image}" for image in rendered["images"]],
-        }
+        prefix = delivered["folder"]
+        # The paused card's research fields ride along; its plan and the
+        # unkept web sources do not.
+        carried = {key: artifact[key] for key in ("title", "deskSources", "timeout")
+                   if key in artifact}
+        updated = deck_artifact(
+            pack, artifact.get("variant"), recipe_name,
+            phase="written", folder=prefix, rendered=rendered,
+            **carried, sources=receipt_lines(sources), research=True,
+            kept=[source.get("id") for source in chosen], fit=delivered["fit"],
+        )
         server.agents.update_outcome(run_id, "ok", updated, "")
         kept = ", ".join(str(source.get("id")) for source in chosen) or "none"
         self._audit(
@@ -3650,7 +3616,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_json(500, {"error": "The deck tool failed."})
             return
         self._audit("presentation.tool", target=name.strip(),
-                    detail=f"{result.get('file') or result.get('bytes') or ''}")
+                    detail=(f"plugin {result['plugin']}; "
+                            f"{result.get('file') or result.get('bytes') or ''}"))
         self._send_json(200, self._presentation_tool_urls(result))
 
     def _presentation_file(self, rest: str) -> None:
@@ -3764,8 +3731,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                           " characters; shorten it"},
             )
             return
-        if server.agents is None:
-            self._send_json(503, {"error": "the agents store is not available"})
+        if self._require_store(server.agents, "agents store") is None:
             return
         try:
             run_id = int(str(run_id_text).strip())
@@ -3824,8 +3790,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         503 without a store: the tail is the store's data, and an empty list would claim
         there was nothing to record.
         """
-        if self.server.audit_conn is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the audit store is not available"})
+        if self._require_store(self.server.audit_conn, "audit store") is None:  # type: ignore[attr-defined]
             return
         self._send_json(200, {"entries": audit_store.entries(self.server.audit_conn)})  # type: ignore[attr-defined]
 
@@ -3836,8 +3801,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         the file carries exactly what the store holds; the content type tells a browser
         to download it.
         """
-        if self.server.audit_conn is None:  # type: ignore[attr-defined]
-            self._send_json(503, {"error": "the audit store is not available"})
+        if self._require_store(self.server.audit_conn, "audit store") is None:  # type: ignore[attr-defined]
             return
         self._send_bytes(
             200,
@@ -3924,6 +3888,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             mail_folder=server.settings.get("mail_folder") if server.settings is not None else "",
             mail_self_address=(server.settings.get("mail_self_address")
                                if server.settings is not None else ""),
+            mail_fetch=(server.mail.status().get("fetch")
+                        if server.mail is not None else None),
             registry_status=self._registry_status_for_settings(),
             extra_hosts=(server.settings.get("extra_allowed_hosts")
                          if server.settings is not None else ""),
@@ -4008,9 +3974,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         see, never the raw store, so the widget route cannot become a second read
         surface.
         """
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         self._send_json(200, self._settings_public_values())
 
@@ -4023,9 +3988,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         rows are read-only fallback now, so every other field name is
         refused with the accepted names: a silent ok with dropped values
         is how a typo loses data."""
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         unknown = sorted(
@@ -4073,8 +4037,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         state every store route uses.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         self._send_json(200, {
             "connections": [_connection_payload(c) for c in server.keys.all()],
@@ -4112,8 +4075,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         provider still saves a model that provider accepts.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         body = self._read_json_body() or {}
         values, error = _connection_input(body, CONNECTION_CREATE_FIELDS,
@@ -4188,8 +4150,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         form always posts the field, so there a blank is the user clearing it.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             existing = server.keys.get(connection_id)
@@ -4281,8 +4242,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         connection back with its key: that delete is the recovery path,
         and both confirmations say so."""
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -4340,8 +4300,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         lands back on Settings, where the badge re-renders from the row.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -4381,8 +4340,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         stamps the row exactly like the free check's.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -4428,8 +4386,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         model by hand is always the allowed path.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         try:
             connection = server.keys.get(connection_id)
@@ -4460,8 +4417,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """GET /api/bindings: every job binding. 503 without a store, the
         honest unavailable state every keys route uses."""
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         self._send_json(200, {
             "bindings": [_binding_payload(b) for b in server.keys.bindings()],
@@ -4479,8 +4435,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         binding back.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.keys is None:
-            self._send_json(503, {"error": "the connections store is not available"})
+        if self._require_store(server.keys, "connections store") is None:
             return
         body = self._read_json_body() or {}
         unknown = sorted(name for name in body if name not in BINDING_FIELDS)
@@ -4535,12 +4490,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         goes back to the inbox, the one page that posts this without JavaScript.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.settings is None:
-            self._send_json(503, {"error": "settings are not available"})
+        if self._require_store(server.settings, "settings store") is None:
             return
         body = self._read_json_body() or {}
         key = body.get("key")
-        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
+        if key not in ("excel_enabled", "calendar_enabled", "endpoint_enabled", "quiet_hours", "daily_cap", "mail_enabled", "mail_feeder", "sample_data", "semantic_memory", "autonomy", "suggest_headers_only", "plugin_instance_cap", "agent_loop_minutes",
                        "memory_capture", "memory_auto_approve", "memory_capture_assistant",
                        "memory_capture_research", "memory_capture_workbook",
                        "memory_capture_agents", "learn_topics", "learn_profile",
@@ -4567,6 +4521,11 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             # memory write would otherwise have to wait for.
             if key == "recommendations":
                 self._after_memory_change()
+        elif key == "mail_feeder":
+            # Alerts land in the mail folder, so the feed needs the mail
+            # watch that reads it: turning alerts on turns the digest on
+            # as part of the same action.
+            value = self._apply_mail_feeder(value)
         elif key in ("autonomy", "suggest_headers_only", "plugin_instance_cap",
                      "agent_loop_minutes", "auto_update",
                      "auto_update_plugins", "learn_topics", "learn_profile",
@@ -4681,8 +4640,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         card.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.layout is None:
-            self._send_json(503, {"error": "the layout store is not available"})
+        if self._require_store(server.layout, "layout store") is None:
             return
         body = self._read_json_body() or {}
         known = set(BUILTIN_LAYOUT_KEYS) | set(enabled_plugin_ids(server))
@@ -4757,6 +4715,35 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             if server.plugins is not None:
                 server.plugins.runner.mail = server.mail if value else None
 
+    def _apply_mail_feeder(self, value) -> bool:
+        """Apply the Outlook alert switch, turning the mail digest on with it.
+
+        Alerts land in the mail folder, so an alert feed without its
+        watcher would never be polled. Turning alerts on therefore sets
+        mail_enabled too, constructs and starts the watcher exactly as
+        the mail toggle does, polls once, and only then wires the feeder;
+        the effective switch value is returned. A watcher that cannot be
+        constructed answers with the switch back off, never on with
+        nothing to run it.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        settings = server.settings
+        if value and settings is not None:
+            mail_on = bool(settings.get("mail_enabled"))
+            if not mail_on:
+                settings.set("mail_enabled", True)
+            # Construct and start the watch only when mail was off or no
+            # watcher exists, exactly the mail_enabled branch.
+            if not mail_on or server.mail is None:
+                self._apply_source_toggles("mail_enabled", True)
+            if server.mail is None:
+                settings.set("mail_feeder", False)
+                return False
+        if server.mail is not None and settings is not None:
+            feeder = _default_outlook_feeder(settings) if value else None
+            server.mail.feeder = feeder.run_once if feeder is not None else None
+        return value
+
     def _source_allowed(self, key: str) -> bool:
         """Whether a settings-keyed source is switched on, a missing store counting as on.
 
@@ -4788,8 +4775,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         than breaking the run.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         if not self._source_allowed("endpoint_enabled"):
             self._send_json(200, {"status": "degraded", "cause": "Company endpoint calls are turned off in settings."})
@@ -4825,8 +4811,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         on success the body is the store's own record of the deactivation.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         try:
             skill = server.skills.get(skill_id)  # type: ignore[attr-defined]
@@ -4857,8 +4842,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                                   "No skill lives at this address.")
             return
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         body = self._read_json_body() or {}
         raw = body.get("pinned")
@@ -4890,10 +4874,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                                   "No skill lives at this address.")
             return
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None or server.ledger is None:
-            self._send_json(503, {"error": "skills are not available"})
+        skills = self._require_store(server.skills, "skills store")
+        if skills is None:
             return
-        skill = server.skills.get(skill_id)  # type: ignore[attr-defined]
+        if self._require_store(server.ledger, "ledger") is None:
+            return
+        skill = skills.get(skill_id)  # type: ignore[attr-defined]
         if skill is None:
             self._send_json(404, {"error": f"no skill {skill_id}"})
             return
@@ -4922,8 +4908,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         shows the text instead of rendering it as a page.
         """
         server = self.server  # type: ignore[attr-defined]
-        if server.skills is None:
-            self._send_json(503, {"error": "skills are not available"})
+        if self._require_store(server.skills, "skills store") is None:
             return
         try:
             markdown = server.skills.markdown(skill_id)  # type: ignore[attr-defined]
@@ -4969,9 +4954,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         while the page was away is already waiting. The clock is the store's own, like
         every payload, so a card never ages by two different clocks.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
         self._evaluate_inbox(inbox)
@@ -5005,9 +4989,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         them; notified counts waiting cards that have been announced, so the badge does
         not double-count a card that already asked for attention.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         self._maybe_briefs()
         self._evaluate_inbox(inbox)
@@ -5029,9 +5012,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         follow-up and the fact-carried hook, and both decisions are audited under
         inbox.approved or inbox.denied.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         try:
@@ -5125,9 +5107,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _inbox_edit(self, card_id: str) -> None:
         """Update the card's draft; the decision vocabulary calls it
         edited. An identical draft is a no-op, like the donor's edit."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         draft = body.get("draft")
@@ -5148,9 +5129,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _inbox_snooze(self, card_id: str) -> None:
         """Hide the card for one hour or until the next morning. The
         store's own clock judges the return time, like every payload."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         choice = body.get("choice")
@@ -5171,9 +5151,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     def _inbox_more_info(self, card_id: str) -> None:
         """Attach the user's instruction; the card stays waiting for the
         decision, and a running snooze ends so it is visible again."""
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         body = self._read_json_body() or {}
         instruction = body.get("instruction")
@@ -5263,7 +5242,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         query = parse_qs(self.path.partition("?")[2])
         cache = self.server.capabilities_cache
         if cache is None:
-            self._send_json(503, {"error": "the capabilities cache is not available"})
+            # Without the cache the page itself cannot render: API callers
+            # get the raw JSON refusal as before, and a form post (which
+            # cannot be answered with this page) still never meets raw JSON.
+            self._send_store_missing(self._store_missing("capabilities cache"))
             return
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
@@ -5325,9 +5307,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         runner set and re-cache the answer. An unknown gate address is a
         404 before any runner is touched."""
         server = self.server  # type: ignore[attr-defined]
-        cache = server.capabilities_cache
+        cache = self._require_store(server.capabilities_cache, "capabilities cache")
         if cache is None:
-            self._send_json(503, {"error": "the capabilities cache is not available"})
             return
         runner = (server.gate_runners or {}).get(gate_key)
         if runner is None:
@@ -5524,22 +5505,22 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         mail = server.mail
         if mail is None:
-            if self._is_form_submit():
-                self._send_mail_page(
-                    notice="The mail watcher is not available on this machine, "
-                           "so no draft was made.",
-                    notice_kind="alert")
-                return
-            self._send_json(503, {"error": "the mail watcher is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "mail watcher",
+                    notice=("The mail watcher is not available on this machine, "
+                            "so no draft was made.")),
+                render=lambda notice: self._send_mail_page(
+                    notice=notice, notice_kind="alert"))
             return
         if server.inbox is None:
-            if self._is_form_submit():
-                self._send_mail_page(
-                    notice="The inbox is not available right now, so the draft "
-                           "was not made. Try again once it is back.",
-                    notice_kind="alert")
-                return
-            self._send_json(503, {"error": "the inbox is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "inbox",
+                    notice=("The inbox is not available right now, so the draft "
+                            "was not made. Try again once it is back.")),
+                render=lambda notice: self._send_mail_page(
+                    notice=notice, notice_kind="alert"))
             return
         body = self._read_json_body() or {}
         text = body.get("body")
@@ -5645,9 +5626,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """The settings page's mail folder field. An empty value clears
         the choice; the watcher re-reads the folder right away."""
         server = self.server  # type: ignore[attr-defined]
-        settings = server.settings
+        settings = self._require_store(server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         folder = body.get("folder")
@@ -5662,6 +5642,28 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             return
         self._send_json(200, {"key": "mail_folder", "value": folder.strip()})
 
+    def _mail_fetch_now(self) -> None:
+        """Run one Outlook alert pass now, the Settings card's button.
+
+        The pass writes headers only into the mail folder; it reads no
+        body and calls no model. A desk with the feed off has nothing to
+        run, which is an honest answer rather than an error page. The
+        card's form names the tools section as its return_to, and a post
+        without one (a fetch client, an empty body) lands on the sources
+        card itself, the anchor inside that same section.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        body = self._read_json_body() or {}
+        target = self._form_return_to(body, "/settings#sources")
+        if server.mail is None or server.mail.feeder is None:
+            self._respond_form_or_json(
+                target,
+                {"ran": False, "error": "Outlook alerts are off."},
+            )
+            return
+        fetch = server.mail.fetch_now()
+        self._respond_form_or_json(target, {"ran": True, "fetch": fetch})
+
     def _mail_address_save(self) -> None:
         """The settings page's mail address field, next to the folder.
 
@@ -5670,9 +5672,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         follow-up cards that cannot know which threads were answered).
         A saved address is retried against the folder right away."""
         server = self.server  # type: ignore[attr-defined]
-        settings = server.settings
+        settings = self._require_store(server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         address = body.get("address")
@@ -5825,9 +5826,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         410 for one that is gone for good. A restore is audited like every other
         decision, so a card cannot reappear with no history.
         """
-        inbox = self.server.inbox  # type: ignore[attr-defined]
+        inbox = self._require_store(self.server.inbox, "inbox")
         if inbox is None:
-            self._send_json(503, {"error": "the inbox is not available"})
             return
         try:
             card = inbox.restore(card_id)
@@ -5853,9 +5853,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         with its own status and code, any other failure goes through the setup envelope
         so it still names itself, and a path matching neither shape is a 404 quoting it.
         """
-        plugins = self.server.plugins  # type: ignore[attr-defined]
+        plugins = self._require_store(self.server.plugins, "plugin runtime")
         if plugins is None:
-            self._send_json(503, {"error": "plugins are not available"})
             return
         parts = [part for part in path.split("/") if part]
         try:
@@ -6680,9 +6679,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _registry_path_save(self) -> None:
         """Save or clear the registry checkout path (the settings form)."""
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         chosen = str(body.get("path", "")).strip()
@@ -6702,9 +6700,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         host[:port] entries admitted beyond loopback. Stored as typed
         (comma or space separated); the guard re-reads it on every
         request, so an empty save returns to loopback-only at once."""
-        settings = self.server.settings  # type: ignore[attr-defined]
+        settings = self._require_store(self.server.settings, "settings store")
         if settings is None:
-            self._send_json(503, {"error": "settings are not available"})
             return
         body = self._read_json_body() or {}
         if self._is_form_submit():
@@ -6725,9 +6722,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
 
     def _route_wizard(self, method: str, path: str) -> None:
         """The wizard surface: describe, answer, build, preview, approve."""
-        wizard = self.server.wizard_store  # type: ignore[attr-defined]
+        wizard = self._require_store(self.server.wizard_store, "wizard")
         if wizard is None:
-            self._send_json(503, {"error": "the wizard is not available"})
             return
         parts = [part for part in path.split("/") if part]  # ["wizard", ...]
         if method == "GET" and len(parts) < 2 and parts[0] == "wizard":
@@ -6903,9 +6899,8 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             wizard.save(session)
             self._send_redirect(f"/wizard/{session_id}")
             return
-        compiler = self._wizard_compiler()
+        compiler = self._require_store(self._wizard_compiler(), "wizard")
         if compiler is None:
-            self._send_json(503, {"error": "the wizard is not available"})
             return
         try:
             draft = compiler.build(session, answers)
@@ -7179,6 +7174,58 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             json.dumps(payload, indent=2).encode("utf-8"),
             "application/json; charset=utf-8",
         )
+
+    def _require_store(self, store, name: str):
+        """The one refusal for an optional store that is not configured.
+
+        Every handler used to write its own None check, and the sentences
+        drifted ("skills are not available", "settings are not available").
+        One helper keeps the status, the JSON shape and the wording in one
+        place. Returns the store, or None once the 503 has gone out.
+        """
+        if store is None:
+            self._send_json(503, {"error": f"the {name} is not available"})
+            return None
+        return store
+
+    def _store_missing(self, name: str, *, status: int = 503, sentence: str = "",
+                       notice: str = "") -> StoreMissing:
+        """The one decision point for an optional store that is not there,
+        for callers that answer in more than one shape (the engine tool
+        helpers return refusal tuples; form handlers render a page).
+
+        A refusal site asks here instead of building its own tuple or
+        dict. The JSON sentence defaults to `_require_store`'s exact
+        wording, so JSON callers keep the bytes they always sent; the
+        form notice defaults to the same sentence capitalized, and a
+        caller whose page copy says more (the wave's failure lines,
+        which name what failed and the next step) passes `notice`.
+        """
+        sentence = sentence or f"the {name} is not available"
+        return StoreMissing(status=status, sentence=sentence,
+                            notice=notice or (sentence[0].upper() + sentence[1:]))
+
+    def _send_store_missing(self, outcome: StoreMissing, render=None) -> None:
+        """Answer a store-missing outcome in the caller's own shape.
+
+        A form post renders the page it came from with the outcome's
+        notice (never raw JSON on a form post; the page's typed-value
+        handling keeps what the reader typed, F5), and every other
+        caller gets the raw JSON payload, byte-identical to the answer
+        those callers always got. `render` is the caller's one-argument
+        page renderer for the form shape; without one the notice rides
+        the plain error page, so a form post can still never meet raw
+        JSON.
+        """
+        if self._is_form_submit():
+            if render is None:
+                self._send_error_page(outcome.status, "Not available",
+                                      outcome.notice)
+            else:
+                render(outcome.notice)
+            return
+        status, payload = outcome.as_json()
+        self._send_json(status, payload)
 
     def _send_error_page(self, status: int, title: str, message: str) -> None:
         """Send one HTML error page with the given status.
@@ -8022,16 +8069,52 @@ def _default_mail_store() -> MailStore | None:
         LOG.exception("mail store unavailable")
         return None
 
+def _default_outlook_feeder(settings_store) -> OutlookFeeder:
+    """The real Outlook alert feeder: the host's collectors, the same
+    mail folder the watcher reads, and its own status and lock files
+    beside the other data."""
+    return OutlookFeeder(
+        collectors=default_collectors(),
+        folder_provider=lambda: settings_store.get("mail_folder"),
+        status_path=default_data_dir() / "outlook-feeder.json",
+        lock_path=default_data_dir() / "outlook-feeder.lock",
+        clock=time.time,
+        platform=current_platform(),
+    )
+
+def _read_feeder_status() -> dict | None:
+    """The last persisted Outlook alert status, or None when there is none.
+
+    The runner writes outlook-feeder.json on every pass; reading it at
+    watcher construction keeps the Settings card honest across a
+    restart. A missing, unreadable or malformed file is ignored: the
+    card falls back to its Not run yet state rather than failing a boot.
+    """
+    path = default_data_dir() / "outlook-feeder.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
 def _default_mail_watch(settings_store, inbox_store, mail_store) -> MailWatch | None:
     """The real mail watcher: settings decide the folder and the user's
     own address on every poll, so either saved in the app applies
-    without a restart."""
+    without a restart. The Outlook alert feeder rides the same watcher
+    and exists only when its own toggle is on; its last persisted status
+    seeds the card so a restart does not read as Not run yet."""
     try:
+        feeder = (
+            _default_outlook_feeder(settings_store)
+            if bool(settings_store.get("mail_feeder")) else None
+        )
         return MailWatch(
             inbox=inbox_store,
             store=mail_store,
             folder_provider=lambda: settings_store.get("mail_folder"),
             self_address_provider=lambda: settings_store.get("mail_self_address"),
+            feeder=feeder.run_once if feeder is not None else None,
+            fetch_status=_read_feeder_status(),
         )
     except (OSError, sqlite3.Error):
         LOG.exception("mail watcher unavailable")
@@ -8125,7 +8208,9 @@ def _default_repetition_stores() -> tuple[ActivityLog | None, SkillStore | None]
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(data_dir / "repetition.sqlite3", check_same_thread=False)
-        lock = threading.RLock()
+        # One connection, one lock (the agentdesk.locking rule): both
+        # stores sit on this connection, so its lock is the connection's.
+        lock = store_lock()
         return (ActivityLog(conn, time.time, lock=lock),
                 SkillStore(conn, time.time, lock=lock))
     except (OSError, sqlite3.Error):
@@ -8833,27 +8918,26 @@ def _run_recommend(ctx) -> dict:
     return recommender.refresh()
 
 
-# Tickets 05 and 06 append their steps after the desk check, in the order
-# spec 016 section 6.2 gives: a pass heals, recommends, then ranks.
-register_step(Step(name="recommend", enabled=_recommend_enabled,
-                   run=_run_recommend))
-register_step(Step(name="rank", enabled=rank_enabled, run=rank_step))
+# Tickets 05 and 06 register their steps with the orders spec 016 section
+# 6.2 gives: a pass heals, recommends, then ranks. The declared order, not
+# this file's position, decides when each runs.
+register_step(Step(name="recommend", order=STEP_ORDER_RECOMMEND,
+                   enabled=_recommend_enabled, run=_run_recommend))
+register_step(Step(name="rank", order=STEP_ORDER_RANK,
+                   enabled=rank_enabled, run=rank_step))
 
 # Ticket 08's learned topics and ticket 09's profile review follow, then
-# ticket 10's skills and curator steps. The definitions stay in
-# agentloop/loop.py beside the desk check's.
-from agentdesk.agentloop.loop import (  # noqa: E402 - position is the order
-    _curator_enabled,
-    _run_curator,
-    _run_skills,
-    _skills_enabled,
-)
-register_step(Step(name="learn-topics", enabled=_learn_topics_enabled,
-                   run=_run_learn_topics))
-register_step(Step(name="profile-review", enabled=_profile_review_enabled,
-                   run=_run_profile_review))
-register_step(Step(name="skills", enabled=_skills_enabled, run=_run_skills))
-register_step(Step(name="curator", enabled=_curator_enabled, run=_run_curator))
+# ticket 10's skills and curator steps. The bodies of the last two stay in
+# agentloop/loop.py beside the desk check's until a later wave moves the
+# step bodies together.
+register_step(Step(name="learn-topics", order=STEP_ORDER_LEARN_TOPICS,
+                   enabled=_learn_topics_enabled, run=_run_learn_topics))
+register_step(Step(name="profile-review", order=STEP_ORDER_PROFILE_REVIEW,
+                   enabled=_profile_review_enabled, run=_run_profile_review))
+register_step(Step(name="skills", order=STEP_ORDER_SKILLS,
+                   enabled=_skills_enabled, run=_run_skills))
+register_step(Step(name="curator", order=STEP_ORDER_CURATOR,
+                   enabled=_curator_enabled, run=_run_curator))
 
 
 def _update_enabled(settings) -> bool:
@@ -8871,9 +8955,11 @@ def _run_update_step(ctx) -> dict:
     return run_update(ctx.server)
 
 
-# Ticket 11 appends the update step last: a pass heals, ranks, and then
-# reads the share, which is the only step that can replace the program.
-register_step(Step(name="update", enabled=_update_enabled, run=_run_update_step))
+# Ticket 11 registers the update step with the last order: a pass heals,
+# ranks, and then reads the share, which is the only step that can replace
+# the program.
+register_step(Step(name="update", order=STEP_ORDER_UPDATE,
+                   enabled=_update_enabled, run=_run_update_step))
 
 
 # -- the engine step (spec 023, ticket 023-3) -------------------------------
@@ -8909,7 +8995,8 @@ def _run_engine(ctx) -> dict:
     return engine_step_run(ctx)
 
 
-register_step(Step(name="engine", enabled=_engine_enabled, run=_run_engine))
+register_step(Step(name="engine", order=STEP_ORDER_ENGINE,
+                   enabled=_engine_enabled, run=_run_engine))
 
 
 def _server_resolution_or_none(server, job: str):

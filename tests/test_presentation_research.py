@@ -280,3 +280,57 @@ def test_cancel_stops_the_run_and_a_second_submit_does_not_fill_again():
         booted.close()
         if "again" in dir():
             again.close()
+
+
+def test_the_resumed_artifact_names_the_pack_that_wrote_the_deck():
+    # The pause stores identity, the resume writes the deck: the card must
+    # name the pack that actually produced the file, not the one from
+    # pause time. A copy of the shipped starter (same id and version, one
+    # extra file, new digest) is installed between the two phases.
+    import os
+    import shutil
+
+    from agentdesk.presentations.packs import load_packs
+    from agentdesk.registry.install import tree_digest
+
+    def fetch(topic, sections):
+        return [
+            {"title": "Kept page", "url": "https://example.test/kept", "snippet": "kept-snippet"},
+            {"title": "Dropped page", "url": "https://example.test/dropped", "snippet": "dropped-snippet"},
+        ][:RESULT_LIMIT + 1]
+
+    booted = _boot(fetch)
+    try:
+        auth = booted.exchange()
+        body = json.loads(booted.post_json(
+            "/agents/run",
+            {"agent": "presentation", "brief": "the Q3 review",
+             "template": "starter", "variant": "dark", "recipe": "briefing",
+             "use_research": "1"},
+            auth,
+        )[2])
+        assert body["status"] == "awaiting-review"
+        pause_digest = body["artifact"]["digest"]
+
+        shipped = next(p for p in load_packs() if p.id == "starter")
+        target = Path(os.environ["AGENTDESK_TEMPLATES"]) / "starter"
+        shutil.copytree(shipped.root, target)
+        (target / "provenance.txt").write_text(
+            "updated between pause and resume", encoding="utf-8")
+        new_digest = tree_digest(target)
+        assert new_digest != pause_digest
+
+        kept_id = str(body["artifact"]["webSources"][0]["id"])
+        status, _h, confirmed = booted.post_json(
+            f"/agents/runs/{body['id']}/sources",
+            {"keep": [kept_id]},
+            auth,
+        )
+        payload = json.loads(confirmed)
+        assert status == 200 and payload["status"] == "ok"
+        assert payload["artifact"]["file"].endswith("deck.pptx")
+        assert payload["artifact"]["templateId"] == "starter"
+        assert payload["artifact"]["digest"] == new_digest
+        assert payload["artifact"]["digest"] != pause_digest
+    finally:
+        booted.close()

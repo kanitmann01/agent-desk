@@ -5,7 +5,6 @@ for thirty days, expired cards stay visible as expired. The notification
 ledger is the budget's memory: how many were spent today.
 """
 
-import functools
 import json
 import logging
 import sqlite3
@@ -22,6 +21,7 @@ from agentdesk.inbox.core import (
     Card,
     UnknownCard,
 )
+from agentdesk.locking import serialized as _serialized
 
 LOG = logging.getLogger(__name__)
 
@@ -81,22 +81,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError:
             pass  # column already there
     conn.commit()
-
-
-def _serialized(method):
-    """Every read and write holds the store's one lock. The connection is
-    shared (check_same_thread=False) by the server's request threads and
-    the background memory-capture thread; Python's sqlite3 connection
-    keeps one implicit transaction, so two threads interleaving on it
-    can commit each other's half-done writes or read a row mid-write.
-    An RLock, because some methods call others (dismiss reads the card
-    back through get)."""
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        """Run one store method with the store's re-entrant lock held."""
-        with self._lock:
-            return method(self, *args, **kwargs)
-    return wrapper
 
 
 class InboxStore:

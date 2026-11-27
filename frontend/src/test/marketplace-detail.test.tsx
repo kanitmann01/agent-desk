@@ -106,6 +106,7 @@ describe('plugin detail', () => {
           version: '1.3.0',
           digest: 'sha256:abc',
           widening: ['filesystem.write: ${workspace}/finance/**'],
+          dropping: [],
           scopes: [
             'filesystem.read: ${workspace}/finance/**',
             'filesystem.write: ${workspace}/finance/**',

@@ -148,6 +148,9 @@ def run_tool(name: str, payload: dict, root: Path,
     ``root`` is the only folder a deck tool may read or write. Every
     returned path is relative to it, posix-style, so an HTTP caller can
     turn the path into a download URL without learning the filesystem.
+    Every result also names the plugin whose catalog row answered: when
+    two packs declare one name, the listing and the audit agree on who
+    answers for the run (the catalog keeps the first declaring pack).
     """
     spec = _TOOLS.get(name)
     if spec is None:
@@ -159,14 +162,16 @@ def run_tool(name: str, payload: dict, root: Path,
     if unknown:
         raise ToolError(400, f"Unknown field: {unknown[0]}.")
     packs = packs if packs is not None else load_packs()
-    declared = {row["name"] for row in tool_catalog(packs)}
-    if name not in declared:
+    catalog = tool_catalog(packs)
+    row = next((row for row in catalog if row["name"] == name), None)
+    if row is None:
         raise ToolError(404, f"No installed template pack declares {name}.")
+    plugin = row["plugin"]
     operation = spec["operation"]
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     if operation == "outline":
-        return _outline(payload, packs)
+        return {**_outline(payload, packs), "plugin": plugin}
     if operation == "create":
         result = _create(payload, packs, root, runner)
         return {
@@ -177,10 +182,11 @@ def run_tool(name: str, payload: dict, root: Path,
             "pdf": _relative(root, result["pdf"]) if result["pdf"] else "",
             "images": [_relative(root, item) for item in result["images"]],
             "note": result["note"],
+            "plugin": plugin,
         }
     if operation == "inspect":
-        return _inspect(payload, root)
-    return _render(payload, root, runner)
+        return {**_inspect(payload, root), "plugin": plugin}
+    return {**_render(payload, root, runner), "plugin": plugin}
 
 
 def build_deck(outline: dict, pack: TemplatePack, recipe_id: str, variant: str,

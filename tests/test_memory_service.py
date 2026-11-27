@@ -1,10 +1,8 @@
-"""Memory recall arithmetic: tokenize, rank, and the bounded block.
+"""The bounded facts block over whatever ranking the store returns.
 
-Pure functions, no I/O, like the snooze arithmetic: the ranking must be
-deterministic (same store, same query, same order, every time) and the
-prompt block must stay bounded (at most 5 facts, 500 characters, whole
-facts only). The scoring ports the teammate's keyword-overlap fraction;
-the deliberate divergences are documented on the module.
+Pure function, no I/O, like the snooze arithmetic: the block must stay
+bounded (at most 5 facts, 500 characters, whole facts only). The ranking
+itself is memory/hybrid's, tested there and through the store.
 """
 
 import sys
@@ -20,100 +18,11 @@ from agentdesk.memory.service import (
     MAX_CHARS,
     MAX_FACTS,
     build_facts_block,
-    rank,
-    score,
-    tokenize,
 )
 
 
 def _fact(fact_id: int, text: str, created_ts: float = 100.0) -> Fact:
     return Fact(id=fact_id, text=text, source="page", created_ts=created_ts)
-
-
-# -- tokenize ------------------------------------------------------------
-
-
-def test_tokenize_lowercases_splits_and_drops_short_tokens():
-    assert tokenize("The Revenue Total is 220!") == ["the", "revenue", "total", "220"]
-
-
-def test_tokenize_drops_tokens_of_two_characters_or_fewer():
-    assert tokenize("I like AB") == ["like"]
-
-
-def test_tokenize_of_silence_is_empty():
-    assert tokenize("") == []
-    assert tokenize("... !!! ___") == []
-
-
-# -- score ---------------------------------------------------------------
-
-
-def test_score_is_the_fraction_of_query_tokens_found_in_the_fact():
-    query = tokenize("revenue total")
-    assert score(query, tokenize("the revenue total was 220")) == 1.0
-    assert score(query, tokenize("revenue only")) == 0.5
-    assert score(query, tokenize("nothing matches here")) == 0.0
-
-
-def test_score_of_an_empty_side_is_zero():
-    assert score([], tokenize("revenue")) == 0.0
-    assert score(tokenize("revenue"), []) == 0.0
-
-
-# -- rank ----------------------------------------------------------------
-
-
-def test_rank_orders_by_overlap_most_relevant_first():
-    facts = [
-        _fact(1, "the revenue total lives in channel-weekly.xlsx"),
-        _fact(2, "the revenue total for October is 220"),
-    ]
-    ranked = rank("revenue total october", facts)
-    assert [fact.id for _s, fact in ranked] == [2, 1]
-
-
-def test_rank_excludes_facts_with_zero_overlap():
-    facts = [
-        _fact(1, "revenue is 220"),
-        _fact(2, "the meeting room is booked"),
-    ]
-    ranked = rank("revenue", facts)
-    assert [fact.id for _s, fact in ranked] == [1]
-
-
-def test_rank_is_deterministic_across_calls():
-    facts = [
-        _fact(1, "revenue lives in the sales workbook"),
-        _fact(2, "revenue is checked every monday"),
-    ]
-    first = rank("revenue workbook", facts)
-    for _ in range(5):
-        assert rank("revenue workbook", facts) == first
-
-
-def test_rank_breaks_ties_by_created_timestamp_then_id():
-    # Same overlap for both facts: the older one wins; identical
-    # timestamps fall back to the smaller id.
-    facts = [
-        _fact(2, "revenue monthly note", created_ts=200.0),
-        _fact(1, "revenue weekly note", created_ts=100.0),
-        _fact(3, "revenue daily note", created_ts=100.0),
-    ]
-    ranked = rank("revenue note", facts)
-    assert [fact.id for _s, fact in ranked] == [1, 3, 2]
-
-
-def test_rank_of_a_query_without_tokens_is_empty():
-    facts = [_fact(1, "revenue is 220")]
-    assert rank("ab", facts) == []
-    assert rank("", facts) == []
-
-
-def test_rank_scores_carry_the_overlap_fraction():
-    facts = [_fact(1, "revenue is 220")]
-    ranked = rank("revenue workbook", facts)
-    assert ranked[0][0] == 0.5
 
 
 # -- the bounded block ---------------------------------------------------
