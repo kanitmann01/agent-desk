@@ -14,6 +14,7 @@ store on every render, never inferred.
 import html
 from datetime import datetime
 
+from agentdesk import PRODUCT_NAME
 from agentdesk.insight.preferences import PreferenceStore, changed
 from agentdesk.keys.presets import PRESETS, preset_for
 from agentdesk.keys.resolve import JOB_LABELS
@@ -1260,7 +1261,7 @@ def _memory_card(settings_values: dict) -> str:
     )
     return f"""<section class='card settings-card' id='memory-settings'>
 <div class='w-head'><h2>Memory</h2><span class='stamp'>ON THIS COMPUTER</span></div>
-<p>Agent Desk remembers facts about you and your work, such as who owns a
+<p>{PRODUCT_NAME} remembers facts about you and your work, such as who owns a
 renewal or when a deadline falls, and uses them when you ask a question.
 It learns as you work: from what you tell the Assistant and from what you
 ask in Research, and only while the switches below are on. Everything it
