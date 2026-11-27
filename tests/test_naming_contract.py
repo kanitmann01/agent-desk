@@ -339,8 +339,9 @@ def test_temporary_entries_declare_the_old_avatar_initials():
         assert entry.get("expected_initials") == APPROVED_INITIALS
         assert "avatar" in entry["surface"].lower()
     named = {f for entry in avatars for f in entry["files"]}
-    for path in ("src/agentdesk/server/pages.py",
-                 "frontend/src/dashboard/Rail.tsx"):
+    # The SPA avatar is cleared: ticket 03 (issue 357) renamed it to NB, so
+    # only the server-rendered avatar still waits for its ticket here.
+    for path in ("src/agentdesk/server/pages.py",):
         assert path in named, f"the avatar surface {path} is not declared"
 
 
