@@ -242,3 +242,173 @@ What the output shows, with only sandbox paths
 8. On the clean sub-sandbox the card renders its unavailable cause
    ("No Windows notification store was found on this machine."), the
    manual fallback sentence, and no alert count.
+
+## Stage 5 compatibility proof
+
+Run date: 2026-11-26, integration head `deb95aff` on `merge/bring-core-home`.
+There is no compat branch and no compat worktree: the wave landed on
+`origin/main` first (2026-11-26, PRs #345, #348, #349 and the earlier wave
+PRs), so the integration branch carries the wave already and the proof runs on
+the integration head itself. Verified read-only: every wave branch tip
+(`fix/ui-text-overflow`, `merge/026-text-fit`, `merge/027-feedback`,
+`docs/026-027-closeout`, `fix/027-review-audit`, `fix/027-review-server`,
+`fix/027-review-dashboard`, `fix/027-review-marketplace`,
+`fix/027-review-memory`, `docs/spec-027`, `docs/026-027-evidence`) is an
+ancestor of `origin/main`, and PRs #345, #348 and #349 are MERGED.
+
+### Safety read-back (before anything ran)
+
+- `grep -c mail_feeder tools/layout_audit.py` is 0: the audit tool never sets
+  `mail_feeder`, so the audit cannot switch the feeder on.
+- `tests/conftest.py` holds the Stage 1 guard: `@pytest.fixture(autouse=True)
+  def sandbox_localappdata`, which points `LOCALAPPDATA` at `tmp_path` for
+  every test (a desk built by the app resolves the real Windows notification
+  store through it).
+- The `AGENTDESK_MAIL_FOLDER` pins are in place in every test file that turns
+  the mail watcher or the feeder on: `tests/test_mail_watcher.py` (three),
+  `tests/test_server_mail_api.py` (one), `tests/test_server_settings_api.py`
+  (two, including the feeder toggle test),
+  `tests/test_ui_feedback.py` and `tests/test_ui_feedback_review.py` (one
+  each).
+
+### The gate
+
+Command: `pinned.py --gate python tools/ci_local.py` from the worktree root.
+Transcript: `.scratch\bring-core-home\evidence\gate-stage5-20261126-195505.txt`.
+npm ran inside the pinned gate environment; no direct-run fallback was needed.
+
+Result: **6/7 gates passed in 122s; FAILED gates: pytest**. pytest:
+1 failed, 3687 passed, 3 skipped. The six other gates are green
+(py-grammar, frontend-check, frontend-tests with 647 vitest tests including
+the text-fit files, licenses, registry-ci, brand-leak).
+
+The one failure is real, not a flake (rerun under pinned full isolation,
+`.scratch\bring-core-home\evidence\gate-stage5-20261126-195505-rerun-spec-numbering.txt`,
+same failure): `tests/test_specs_numbering.py::test_every_spec_number_belongs_to_exactly_one_file`
+fails with `one spec number addresses several files: {'024':
+['024-outlook-metadata-feeder.md', '024-tracker-charts.md']}`. This is the
+known spec number collision the run documents: core's feeder spec arrived as
+`024`, which collides with agent-desk's own `specs/024-tracker-charts.md`.
+The fix (renumber the feeder spec to the next free number and update its
+references) is deliberately scheduled as the run's last commit so it is one
+commit to drop if declined. Until that commit lands, the pytest gate shows
+this failure and 7/7 is not reachable on this branch; nothing else fails.
+
+### The layout audit
+
+Command: the brief's layout audit command under pinned full isolation (never
+`--gate`; the real `LOCALAPPDATA` never reaches the audit). Exit 0, elapsed
+1179.4s. Run folder:
+`.scratch\bring-core-home\evidence\postmerge-audit-20261126-195751\20261126-195752`.
+
+Coverage complete: 1040 planned, 1028 measured, 12 skipped, 0 failed.
+
+| | Post-merge (this run) | Baseline, pre-merge `origin/main` (`68044fc3`) | Wave run `20261124-195742` |
+|---|---:|---:|---:|
+| Findings | 872 | 872 | 836 |
+| tiny-type (stress) | 820 (86) | 820 (86) | 784 (86) |
+| squeezed-text (stress) | 40 (40) | 40 (40) | 40 (40) |
+| runtime | 12 | 12 | 12 |
+| 4-tuple groups (condition, state, kind, stress) | 82 | 82 | 82 |
+| Root-cause groups | 45 | 45 | (not compared) |
+| Coverage | 1040/1028/12/0 | 1040/1028/12/0 | 1040/1028/12/0 |
+
+- **Primary comparison** (same tool version, same machine, taken hours before
+  the merge at plain `origin/main`): folder
+  `.scratch\bring-core-home\evidence\baseline-audit-premerge-68044fc\20261126-182949`.
+  Post minus baseline is EMPTY: zero new groups, and zero groups resolved.
+  Every count above is identical.
+- **Secondary comparison**: the wave's own newest run,
+  `.worktrees\027-merge\build\final-layout\20261124-195742`. It used an
+  OLDER tool version, so absolute differences against it are expected and do
+  not count against the proof (the whole 36-finding tiny-type delta is the
+  tool's tighter detector, not the merge). The 4-tuple group set is
+  nonetheless identical: zero new groups against it too.
+- **Outlook alerts card: zero findings.** The check: every post-merge finding
+  whose route is exactly `/settings`, matched case-insensitively against
+  `outlook`, `mail_feeder`, `fetch`, `alerts`, `feeder` over its
+  text, selector, classes and container: 0 hits. The check is not vacuous:
+  the matrix measures `/settings` 24 times (4 stress rows), every row http
+  200, and the route holds zero findings of any kind; the only settings-route
+  findings live on `/settings/activity` (20, identical in the baseline). The
+  card therefore rendered in every audited condition (the sandbox holds no
+  store, so its unavailable state) and produced nothing.
+
+### The recipe for whoever lands core second (or replays this merge)
+
+The wave is already on `main`, so "landing second" is exactly this replay:
+
+1. Cut the integration branch and its worktree from the current `origin/main`;
+   never merge into `main` directly.
+2. `git merge --no-ff --no-commit <core/main>`.
+3. Resolve the 8 conflicted files by the standing rule (agent-desk's structure
+   wins, core's pattern or feature is re-applied on top):
+   - `GLOSSARY.md`: union; core's `# Glossary` heading demoted to
+     `## Architecture vocabulary`, no duplicate terms.
+   - `README.md`: agent-desk's side; core's two feeder bullets are re-added
+     adapted in the copy pass, not by the merge.
+   - `src/agentdesk/memory/store.py`: core's side (`serialized` imported as
+     `_locked` from `agentdesk.locking`); move agent-desk's joined-reads
+     rationale into the lock comment.
+   - `src/agentdesk/server/app.py`, wizard compiler hunk: agent-desk's
+     block, plus `_require_store` on the compiler line.
+   - `src/agentdesk/server/app.py`, step registration hunk: core's `update`
+     line with `order=STEP_ORDER_UPDATE`, then agent-desk's engine block with
+     `order=STEP_ORDER_ENGINE` (add the constant).
+   - `src/agentdesk/server/memory_api.py`: agent-desk's docstring and
+     "Forget everything" confirm parameter, plus core's `_require_store`.
+   - `src/agentdesk/server/settings_view.py`, hunk 1: the union (agent-desk's
+     `SETTINGS_SECTIONS` and helpers, core's `_outlook_alerts_section`).
+   - `src/agentdesk/server/settings_view.py`, hunk 2: agent-desk's side only
+     (core's side re-adds the flat cards spec 022 removed).
+   - `tests/test_server_settings_api.py`: agent-desk's "Rank with my AI"
+     assertion, core's feeder tests appended.
+   - `src/agentdesk/server/static/spa/*`: clear the markers on either side,
+     then rebuild from merged source (next step); never hand-merge the
+     bundle.
+4. The four form-notice hunks in `server/app.py` (agents brief, presentation,
+   capabilities, mail draft): keep the wave's notice flow and typed value
+   handling at all four, and route the store-missing answers through the
+   result-returning sibling (`StoreMissing` / `_store_missing` /
+   `_send_store_missing`, one decision point, two answer shapes) instead of
+   applying core's raw-JSON 503 there: these handlers answer form posts, and
+   a raw JSON send would replace the person's page (and strand the wave's
+   notice branch behind an already-sent response). Apply `_require_store`
+   only where the handler answers JSON. Give the engine's tuple-shaped
+   refusals the same sibling.
+5. Boot blockers before anything runs: restore the lost `import secrets` in
+   `server/app.py`; declare the engine step's order and keep one
+   `_active_manifest` (the one that applies the chosen face); make the
+   expected-pass helper iterate `ordered_steps()`.
+6. Test isolation guards before any test runs: the autouse `LOCALAPPDATA`
+   fixture in `tests/conftest.py`, and `AGENTDESK_MAIL_FOLDER` +
+   `AGENTDESK_DATA` pins in every test that turns `mail_enabled` or
+   `mail_feeder` on (the founder's real `config.env` sets
+   `AGENTDESK_MAIL_FOLDER`; the app loads it on the command-line start path).
+7. Re-home the Outlook alerts card into the sources card of the tools
+   section (`settings_view.py`, inside `id='sources'`, "Workbook, calendar
+   and mail"), existing server-page classes only, copy rules applied.
+8. Rebuild the bundle as its own commit: `cd frontend && npm ci && npm run
+   build`, then commit everything that changed under
+   `src/agentdesk/server/static/spa/` (the build deletes old hashed assets).
+   A second build must leave `git status` empty.
+9. Re-run the counted pattern sweep (the table above) against the current
+   `origin/main`; the post-fork sites move as `main` moves.
+10. Gate: `pinned.py --gate python tools/ci_local.py` from the worktree root.
+    Expect 6/7 until step 11; the pytest failure must be the spec-numbering
+    collision and nothing else.
+11. Renumber `specs/024-outlook-metadata-feeder.md` to the next free number
+    (spec 026 and 027 belong to the wave) and update its references (title,
+    the five feeder tickets, the research note, the plan document, the
+    comment in `src/agentdesk/settings.py`, this README). This is what makes
+    `test_specs_numbering.py` pass and the gate reach 7/7.
+12. Layout audit under pinned full isolation (never `--gate`): the command in
+    the brief with conditions `fresh,data,plugins,full,legacy-dashboard,
+    long-values,busy`, `--fail-on none --jobs 2`. Take the baseline at plain
+    pre-merge `origin/main` BEFORE the merge, then require: coverage complete
+    (planned == measured + skipped, none failed), zero new
+    (condition, state, kind, stress) groups against that baseline and against
+    the wave's newest run, and zero findings on the Outlook alerts card.
+13. Everything through `pinned.py`; full isolation for anything that imports
+    `agentdesk` or boots a desk; `--gate` only for the gate; never the real
+    data folder, notification store, mail folder or keychain.
