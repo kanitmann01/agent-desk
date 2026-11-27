@@ -1169,6 +1169,22 @@ def _plugin_retest_can_change(cause: str) -> bool:
     )
 
 
+def _plugin_stale_since(checked: str) -> str:
+    """A stale card's stamp: the clock today, the date and clock on an earlier day.
+
+    checked_at is the source read's naive local wall clock, so the day is
+    compared in local time and the stamp prints that same clock, for example
+    ``Stale since 1 Jan 2020, 00:00``.
+    """
+    try:
+        at = datetime.fromisoformat(checked)
+    except ValueError:
+        return "Stale"
+    if at.date() == _local_now().date():
+        return f"Stale since {at:%H:%M}"
+    return f"Stale since {at.day} {at:%b} {at.year}, {at:%H:%M}"
+
+
 def _press_form(card: dict, press: object) -> str:
     """A card's press as a real control: a plain form, no script.
 
@@ -6373,12 +6389,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             body += _press_form(card, insight.get("press") if isinstance(insight, dict) else None)
         stamp = "live"
         if stale:
-            checked = str(card.get("checked_at") or "")
-            try:
-                hhmm = datetime.fromisoformat(checked).strftime("%H:%M")
-            except ValueError:
-                hhmm = ""
-            stamp = f"Stale since {hhmm}" if hhmm else "Stale"
+            stamp = _plugin_stale_since(str(card.get("checked_at") or ""))
         freshness = Freshness(
             status=ATTENTION if stale else status,
             stamp=("Re-test available" if retestable
