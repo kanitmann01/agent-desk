@@ -120,7 +120,7 @@
       "tools/layout_fixtures",
       "tools/naming"
     ],
-    "skip_note": "Test trees and audit fixtures are outside the display-name scan; they may carry negative fixtures and compatibility imports. The naming contract's own data folder is outside it too: the spellings it lists are the allowed forms themselves, and skipping it keeps the recorded ticket 01a sweep numbers (835 occurrences over 466 scanned files) exact on the merged tree."
+    "skip_note": "Test trees, audit fixtures and the contract data itself are outside the display-name scan; the data names the old forms by necessity, and test trees may carry negative fixtures and compatibility imports."
   },
   "pinned": [
     {

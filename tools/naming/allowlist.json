@@ -553,9 +553,18 @@
     {
       "category": "wire-and-recorded-identity",
       "identifier": "agent-desk",
-      "context_paths": ["src/agentdesk/marketplace/*", "src/agentdesk/wizard/*", "registry/*", "scripts/*", "frontend/src/*", "tools/*", "docs/ops/*", "docs/design/*"],
+      "context_paths": ["src/agentdesk/marketplace/*", "src/agentdesk/wizard/*", "registry/*", "scripts/*", "frontend/src/*", "tools/*", "docs/ops/*"],
       "context": "The plugin publisher identity: manifests, catalog records, publisher route values, installed publisher records, walkthrough fixtures and the authoring example.",
       "purpose": "Plugin pages, policy and provenance still resolve.",
+      "owner": "Spec 032 story 43, out-of-scope item 6",
+      "review_trigger": "A founder-approved migration spec."
+    },
+    {
+      "category": "wire-and-recorded-identity",
+      "identifier": "/publisher/",
+      "context_paths": ["src/agentdesk/marketplace/*", "frontend/src/marketplace/*"],
+      "context": "The generic publisher route pattern: the marketplace API dispatches routes starting /publisher/ to a publisher page whose name segment carries existing publisher ids such as agent-desk (src/agentdesk/marketplace/api.py get_publisher, and the frontend marketplace router).",
+      "purpose": "Publisher pages keep resolving for existing publishers.",
       "owner": "Spec 032 story 43, out-of-scope item 6",
       "review_trigger": "A founder-approved migration spec."
     },
