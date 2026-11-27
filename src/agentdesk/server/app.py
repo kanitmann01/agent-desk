@@ -24,6 +24,7 @@ import threading
 import time
 import webbrowser
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -1364,6 +1365,29 @@ def _workbook_changed(server: "AgentDeskServer", workbook: str, header: list, de
         candidates=candidates,
     )
 
+@dataclass(frozen=True)
+class StoreMissing:
+    """A typed answer for an optional store that is not configured.
+
+    The result-returning sibling of `_require_store` for callers that
+    answer in more than one shape: what "missing" means is decided once,
+    in `_store_missing`, and each surface renders from this outcome. The
+    JSON shape is the status and error payload those callers always sent,
+    byte-identical; the form shape is the wave's failure notice, which
+    says what failed and what to try next, in place near the action
+    (docs/design-language.md F5 and F7), so a form post never meets raw
+    JSON.
+    """
+
+    status: int
+    sentence: str
+    notice: str
+
+    def as_json(self) -> tuple[int, dict]:
+        """The JSON-API shape: the status and the error payload as sent before."""
+        return self.status, {"error": self.sentence}
+
+
 class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
     """GET for the shell, health and statics; POST for state changes."""
 
@@ -1919,10 +1943,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """
         server = self.server  # type: ignore[attr-defined]
         if server.recommender is None or server.inbox is None:
-            return 503, {"error": "the recommendation builder is not available"}
+            return self._store_missing("recommendation builder").as_json()
         if server.ledger is None:
-            return 409, {"error": ("The ledger is not available, so no "
-                                   "suggestion was added.")}
+            return self._store_missing(
+                "ledger", status=409,
+                sentence="The ledger is not available, so no suggestion was "
+                         "added.").as_json()
         refusal = self._engine_write_refusal("engine.card", "cards")
         if refusal is not None:
             return refusal
@@ -1960,10 +1986,12 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         server = self.server  # type: ignore[attr-defined]
         memory = server.memory
         if memory is None:
-            return 503, {"error": "the memory store is not available"}
+            return self._store_missing("memory store").as_json()
         if server.ledger is None:
-            return 409, {"error": ("The ledger is not available, so no fact was "
-                                   "proposed.")}
+            return self._store_missing(
+                "ledger", status=409,
+                sentence="The ledger is not available, so no fact was "
+                         "proposed.").as_json()
         if memory.locked_cause is not None:
             return 423, {"status": "locked", "error": memory.locked_cause}
         settings = memory_loop.capture_settings(server.settings)
@@ -1974,7 +2002,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if refusal is not None:
             return refusal
         if not settings.auto_approve and server.inbox is None:
-            return 503, {"error": "the inbox is not available"}
+            return self._store_missing("inbox").as_json()
         text = str(args.get("text") or "").strip()
         if not text:
             return 400, {"error": "the propose_fact call needs the fact text"}
@@ -2002,9 +2030,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         """
         settings = self.server.settings  # type: ignore[attr-defined]
         if settings is None or not may_act(settings, action):
-            return 409, {
-                "error": (f"Autonomy is off in settings, so the desk's engine "
-                          f"cannot make {noun}.")}
+            return self._store_missing(
+                "settings", status=409,
+                sentence=(f"Autonomy is off in settings, so the desk's engine "
+                          f"cannot make {noun}.")).as_json()
         return None
 
     def _fact_already_held(self, text: str) -> bool:
@@ -3014,14 +3043,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if server.agents is None:
-            if self._is_form_submit():
-                self._send_agents_page(
-                    notice="The run history is not available right now, so the "
-                           "brief was not run.",
-                    notice_kind="alert", typed_agent=kind.id,
-                    typed_brief=typed_brief)
-                return
-            self._send_json(503, {"error": "the agents store is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "agents store",
+                    notice=("The run history is not available right now, so the "
+                            "brief was not run.")),
+                render=lambda notice: self._send_agents_page(
+                    notice=notice, notice_kind="alert", typed_agent=kind.id,
+                    typed_brief=typed_brief))
             return
         if not self._source_allowed("endpoint_enabled"):
             result = endpoint_off_run()
@@ -3136,14 +3165,14 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             )
             return
         if server.agents is None:
-            if self._is_form_submit():
-                self._send_agents_page(
-                    notice="The run history is not available right now, so no "
-                           "deck was built.",
-                    notice_kind="alert", typed_agent="presentation",
-                    typed_brief=typed_brief)
-                return
-            self._send_json(503, {"error": "the agents store is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "agents store",
+                    notice=("The run history is not available right now, so no "
+                            "deck was built.")),
+                render=lambda notice: self._send_agents_page(
+                    notice=notice, notice_kind="alert", typed_agent="presentation",
+                    typed_brief=typed_brief))
             return
         ready, sentence = self._presentation_endpoint()
         if not ready:
@@ -5213,6 +5242,10 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         query = parse_qs(self.path.partition("?")[2])
         cache = self.server.capabilities_cache
         if cache is None:
+            # Without the cache the page itself cannot render: API callers
+            # get the raw JSON refusal as before, and a form post (which
+            # cannot be answered with this page) still never meets raw JSON.
+            self._send_store_missing(self._store_missing("capabilities cache"))
             return
         excel = self.server.excel  # type: ignore[attr-defined]
         calendar = self.server.calendar  # type: ignore[attr-defined]
@@ -5470,24 +5503,24 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         No message content goes into the card: the draft body is the
         user's own words, by construction and by rule."""
         server = self.server  # type: ignore[attr-defined]
-        mail = self._require_store(server.mail, "mail watcher")
+        mail = server.mail
         if mail is None:
-            if self._is_form_submit():
-                self._send_mail_page(
-                    notice="The mail watcher is not available on this machine, "
-                           "so no draft was made.",
-                    notice_kind="alert")
-                return
-            self._send_json(503, {"error": "the mail watcher is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "mail watcher",
+                    notice=("The mail watcher is not available on this machine, "
+                            "so no draft was made.")),
+                render=lambda notice: self._send_mail_page(
+                    notice=notice, notice_kind="alert"))
             return
         if server.inbox is None:
-            if self._is_form_submit():
-                self._send_mail_page(
-                    notice="The inbox is not available right now, so the draft "
-                           "was not made. Try again once it is back.",
-                    notice_kind="alert")
-                return
-            self._send_json(503, {"error": "the inbox is not available"})
+            self._send_store_missing(
+                self._store_missing(
+                    "inbox",
+                    notice=("The inbox is not available right now, so the draft "
+                            "was not made. Try again once it is back.")),
+                render=lambda notice: self._send_mail_page(
+                    notice=notice, notice_kind="alert"))
             return
         body = self._read_json_body() or {}
         text = body.get("body")
@@ -7150,6 +7183,45 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
             self._send_json(503, {"error": f"the {name} is not available"})
             return None
         return store
+
+    def _store_missing(self, name: str, *, status: int = 503, sentence: str = "",
+                       notice: str = "") -> StoreMissing:
+        """The one decision point for an optional store that is not there,
+        for callers that answer in more than one shape (the engine tool
+        helpers return refusal tuples; form handlers render a page).
+
+        A refusal site asks here instead of building its own tuple or
+        dict. The JSON sentence defaults to `_require_store`'s exact
+        wording, so JSON callers keep the bytes they always sent; the
+        form notice defaults to the same sentence capitalized, and a
+        caller whose page copy says more (the wave's failure lines,
+        which name what failed and the next step) passes `notice`.
+        """
+        sentence = sentence or f"the {name} is not available"
+        return StoreMissing(status=status, sentence=sentence,
+                            notice=notice or (sentence[0].upper() + sentence[1:]))
+
+    def _send_store_missing(self, outcome: StoreMissing, render=None) -> None:
+        """Answer a store-missing outcome in the caller's own shape.
+
+        A form post renders the page it came from with the outcome's
+        notice (never raw JSON on a form post; the page's typed-value
+        handling keeps what the reader typed, F5), and every other
+        caller gets the raw JSON payload, byte-identical to the answer
+        those callers always got. `render` is the caller's one-argument
+        page renderer for the form shape; without one the notice rides
+        the plain error page, so a form post can still never meet raw
+        JSON.
+        """
+        if self._is_form_submit():
+            if render is None:
+                self._send_error_page(outcome.status, "Not available",
+                                      outcome.notice)
+            else:
+                render(outcome.notice)
+            return
+        status, payload = outcome.as_json()
+        self._send_json(status, payload)
 
     def _send_error_page(self, status: int, title: str, message: str) -> None:
         """Send one HTML error page with the given status.

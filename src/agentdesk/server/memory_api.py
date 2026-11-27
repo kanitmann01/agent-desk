@@ -298,9 +298,8 @@ class MemoryApiMixin:
         first is already removing. A locked store answers a form post
         with the memory page's locked banner, never raw JSON; fetch
         clients keep the JSON cause."""
-        memory = self.server.memory  # type: ignore[attr-defined]
+        memory = self._require_store(self.server.memory, "memory store")
         if memory is None:
-            self._send_json(503, {"error": "the memory store is not available"})
             return
         if memory.locked_cause is not None:
             # A browser form must never meet raw JSON: the person gets
