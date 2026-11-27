@@ -122,13 +122,28 @@ export interface TrackerView {
   goal?: { value: string; unit: string } | null;
 }
 
+// One bounded provenance entry a receipts block may carry: what the
+// reading consulted, clipped by the server before it travelled. Cited
+// facts name ids and sources only, never a fact's text; a desk entity
+// names itself, its id and its fact count.
+export interface InsightWhyItem {
+  claim: string;
+  columns?: string[];
+  cells?: string[];
+  rule?: string;
+  facts?: ({ id: number; source: string } | { entityId: number; name: string; factCount: number })[];
+}
+
 // One line under a card's reading. The server resolved it from the names the
-// family declared (receipts from what the reading used, a note when it has
-// something to explain), so a surface prints the text as it came and never
-// keeps a phrase table of its own.
+// family declared (the sitting's delta, receipts from what the reading used,
+// a note when it has something to explain, the reading's own falsifier), so
+// a surface prints the text as it came and never keeps a phrase table of its
+// own. A delta line renders at the top of the tile; the rest render below
+// the elements. The why provenance rides on a receipts block only.
 export interface InsightBlock {
-  kind: 'receipts' | 'note';
+  kind: 'delta' | 'receipts' | 'note' | 'falsify';
   text: string;
+  why?: InsightWhyItem[];
 }
 
 // The one model call a reading may offer. Nothing is spent until the
@@ -138,10 +153,10 @@ export interface InsightBlock {
 export interface InsightPress {
   label: string;
   route: string;
-  kind: 'reply-draft' | 'explain-range';
+  kind: 'reply-draft' | 'explain-range' | 'check-counter';
   /** The thread a reply drafts from, nested as the digest family emits it. */
   thread?: { subject: string; sender?: string; last?: string };
-  /** The one sentence an explanation explains, as the workbook emits it. */
+  /** The one sentence an explanation explains, or the stored answer and criterion a check tests. */
   text?: string;
 }
 

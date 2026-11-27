@@ -5,11 +5,13 @@
 // cause and the honest note about Re-test, amber. The overflow menu
 // re-tests the plugin's data source through the plugin endpoint and
 // links the plugins page; the item refuses clicks while one is running.
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { postJson, pressReading, type PressBody } from '../api';
 import type {
   InsightAnswer,
+  InsightBlock,
   InsightPress,
+  InsightWhyItem,
   PluginCard,
   PluginChecklistItem,
   PluginElement,
@@ -202,6 +204,72 @@ export function drawableElements(elements: PluginElement[] | undefined): PluginE
   return (elements ?? []).filter((element) => knownKind(element.kind));
 }
 
+/** One citation the drilldown prints: a fact's id and source, or a desk
+ * entity's name and fact count. A fact's text never travels, so none can
+ * be printed. */
+function whyCitation(fact: NonNullable<InsightWhyItem['facts']>[number]): string {
+  return 'id' in fact ? `Fact ${fact.id} from ${fact.source}` : `${fact.name}, ${fact.factCount} notes`;
+}
+
+/**
+ * The receipts block's provenance drilldown: a native disclosure, so the
+ * detail costs no script and no space until it is asked for. The entries
+ * print as the server bounded them; this is the one markup both tiles'
+ * surfaces draw.
+ */
+function WhyDetails({ items }: { items: InsightWhyItem[] }) {
+  return (
+    <details className="w-why">
+      <summary>Why</summary>
+      <ul className="w-why-list">
+        {items.map((item, i) => (
+          <li key={i}>
+            <span className="w-why-claim">{item.claim}</span>
+            {item.columns?.length ? <span className="w-why-meta">Columns: {item.columns.join(', ')}</span> : null}
+            {item.cells?.length ? <span className="w-why-meta">Cells: {item.cells.join(', ')}</span> : null}
+            {item.rule ? <span className="w-why-meta">Rule: {item.rule}</span> : null}
+            {item.facts?.length ? (
+              <span className="w-why-meta">Cites: {item.facts.map(whyCitation).join(' · ')}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * The tile's sitting delta line, drawn at the top of the tile whatever its
+ * state, an attention tile included. The line is the server's sentence,
+ * printed as it came; a tile without one draws nothing.
+ */
+export function DeltaBanner({ block }: { block: InsightBlock | undefined }) {
+  if (!block || block.kind !== 'delta') return null;
+  return <p className="w-delta-banner">{block.text}</p>;
+}
+
+/**
+ * The reading's lines below the elements: receipts (with its why
+ * drilldown), falsify and note, in the order the server resolved them. A
+ * delta block never renders here (DeltaBanner owns the top of the tile),
+ * and a kind this build does not know draws nothing, so a newer server
+ * degrades quietly.
+ */
+export function InsightBlocks({ blocks }: { blocks: InsightBlock[] }) {
+  return (
+    <>
+      {blocks.map((block, i) =>
+        block.kind === 'delta' ? null : (
+          <Fragment key={i}>
+            <p className="w-note">{block.text}</p>
+            {block.kind === 'receipts' && block.why?.length ? <WhyDetails items={block.why} /> : null}
+          </Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
 interface PressOfferProps {
   press: InsightPress;
   onRefetch: () => Promise<void>;
@@ -221,7 +289,12 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
   const [refusal, setRefusal] = useState('');
   const [staged, setStaged] = useState<'' | 'staged' | 'existing'>('');
   const [stagedCard, setStagedCard] = useState('');
-  const pressPhase = press.kind === 'reply-draft' ? 'Drafting the reply' : 'Explaining this range';
+  const pressPhase =
+    press.kind === 'reply-draft'
+      ? 'Drafting the reply'
+      : press.kind === 'check-counter'
+        ? 'Checking the counter-evidence'
+        : 'Explaining this range';
   // Nothing shows under 100 ms on either the control or its placeholder,
   // and the answer replaces the placeholder in place.
   const busyShown = useBusy(busy);
@@ -287,7 +360,13 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
     }
     setStaged('');
     setAnswer(result.data);
-    faceActions?.notifyDone(press.kind === 'reply-draft' ? 'Reply drafted' : 'Range explained');
+    faceActions?.notifyDone(
+      press.kind === 'reply-draft'
+        ? 'Reply drafted'
+        : press.kind === 'check-counter'
+          ? 'Counter-evidence checked'
+          : 'Range explained',
+    );
   }
 
   const disclosure = answer?.disclosure ?? [];
@@ -300,7 +379,13 @@ export function PressOffer({ press, onRefetch, onExpired }: PressOfferProps) {
         className="btn-sm"
         disabled={busy}
         pending={busyShown && action === 'press'}
-        pendingLabel={press.kind === 'reply-draft' ? 'Drafting the reply...' : 'Explaining this range...'}
+        pendingLabel={
+          press.kind === 'reply-draft'
+            ? 'Drafting the reply...'
+            : press.kind === 'check-counter'
+              ? 'Checking the counter-evidence...'
+              : 'Explaining this range...'
+        }
         onClick={() => send(false)}
       >
         {press.label}
@@ -410,8 +495,12 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
     ? { fresh: false, text: staleWhen ? `Stale since ${staleWhen}` : 'Stale' }
     : fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' };
   const elements = fresh ? (card.payload?.elements ?? []) : [];
+  // The sitting's delta rides the payload even on an attention tile, so it
+  // is read off the card whatever its state; the reading's other lines only
+  // render where the tile can stand behind them.
+  const deltaBlock = card.payload?.insight?.blocks?.find((block) => block.kind === 'delta');
   const insight = fresh ? card.payload?.insight : undefined;
-  const blocks = insight?.blocks ?? [];
+  const blocks = (insight?.blocks ?? []).filter((block) => block.kind !== 'delta');
   /**
    * Ask the server to run the plugin again, then refresh the card.
    *
@@ -461,6 +550,7 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
     >
       {busy ? <PhaseLine active text="Re-testing the data source" /> : null}
       <div className={busy ? 'w-body-stack region-busy' : 'w-body-stack'} aria-busy={busy ? 'true' : undefined}>
+        <DeltaBanner block={deltaBlock} />
         {fresh && elements.length > 0 ? (
           elements.map((element, i) => <ElementView key={i} element={element} />)
         ) : fresh ? (
@@ -480,11 +570,7 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
             {note ? <div className="alert" role="alert">{note}</div> : null}
           </>
         )}
-        {blocks.map((block, i) => (
-          <p className="w-note" key={i}>
-            {block.text}
-          </p>
-        ))}
+        <InsightBlocks blocks={blocks} />
         {card.manualMetric ? (
           <ManualValueForm pluginId={card.manualMetric} onRefetch={onRefetch} onExpired={onExpired} />
         ) : null}
