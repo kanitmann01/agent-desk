@@ -73,6 +73,8 @@ same either way.
   executable.
 - `--enable-plugin=no-qt` keeps unused Qt support out.
 - `--include-package=nexuusbot` compiles the application package.
+- `--include-package=agentdesk` compiles the compatibility alias beside
+  it, so the old import path keeps resolving inside the frozen build.
 - `--include-data-dir=src/nexuusbot/server/static=nexuusbot/server/static`
   embeds the committed dashboard build output.
 - `--nofollow-import-to=tests` and `pytest` keep test code out.

@@ -112,7 +112,7 @@ def _build_command(root: Path, *, allow_downloads: bool) -> list[str]:
         "--enable-plugin=no-qt",
         "--include-package=nexuusbot",
         # The compatibility alias ships beside the canonical package so
-        # old `agentdesk.*` imports keep resolving inside frozen builds.
+        # old imports keep resolving inside frozen builds.
         "--include-package=agentdesk",
         "--include-data-dir=src/nexuusbot/server/static=nexuusbot/server/static",
         "--nofollow-import-to=tests",
