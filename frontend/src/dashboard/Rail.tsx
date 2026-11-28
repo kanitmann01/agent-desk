@@ -11,6 +11,7 @@
 // server-rendered pages' toggle (key: agentdesk.railCollapsed).
 import { useEffect, useState } from 'react';
 import FaceSlot from '../face/FaceSlot';
+import { AGENT_INITIALS, AGENT_NAME } from '../face/name';
 import ThemePicker from '../theme/ThemePicker';
 
 interface RailProps {
@@ -78,7 +79,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
   return (
     <nav id="main-rail" className={menuOpen ? 'rail rail-open' : 'rail'} aria-label="Main">
       <div className="phone-bar">
-        <span className="brand-name">Agent Desk</span>
+        <span className="brand-name">{AGENT_NAME}</span>
         <span className="phone-current">{sectionName}</span>
         <button
           type="button"
@@ -92,7 +93,7 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
       </div>
       <div className="brand">
         <FaceSlot slot="rail" />
-        <span className="brand-name">Agent Desk</span>
+        <span className="brand-name">{AGENT_NAME}</span>
       </div>
       <a href="/" title="Dashboard" aria-current={active === '/' ? 'page' : undefined} aria-label="Dashboard"><span className="rail-mark" aria-hidden="true">D</span><span className="rail-label">Dashboard</span></a>
       <a href="/inbox" title={inboxName} aria-label={inboxName}><span className="rail-mark" aria-hidden="true">I</span><span className="rail-label">Inbox</span>{badge}</a>
@@ -129,9 +130,9 @@ export default function Rail({ inboxWaiting, active = '/' }: RailProps) {
         <ThemePicker compact />
       </div>
       <div className="user">
-        <span className="avatar" aria-hidden="true" title="Agent Desk">AD</span>
+        <span className="avatar" aria-hidden="true" title={AGENT_NAME}>{AGENT_INITIALS}</span>
         <div>
-          <b className="user-name">Agent Desk</b>
+          <b className="user-name">{AGENT_NAME}</b>
           <small>local only</small>
         </div>
       </div>

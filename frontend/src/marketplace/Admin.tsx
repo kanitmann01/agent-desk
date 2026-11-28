@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import Button from '../components/Button';
+import { AGENT_NAME } from '../face/name';
 import { useBusy } from '../components/useBusy';
 import { getMarket, MarketApiError, marketErrorText, postMarket } from './client';
 import { SkeletonPanel } from './MarketGrid';
@@ -316,7 +317,7 @@ export default function AdminPage() {
           <h2 id="mkt-admin-off">Admin mode is off</h2>
           <p>
             The admin surface is disabled on this desk. Set <code tabIndex={0} title="AGENTDESK_MARKETPLACE_ADMIN=1">AGENTDESK_MARKETPLACE_ADMIN=1</code>{' '}
-            in the environment that starts Agent Desk, then reload this page.
+            in the environment that starts {AGENT_NAME}, then reload this page.
           </p>
           <p className="w-note">
             Nothing is served while admin mode is off: no snapshot, no mutation and no audit export.

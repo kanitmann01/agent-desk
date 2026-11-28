@@ -184,8 +184,8 @@
     {
       "category": "environment-and-tooling",
       "identifier": "AGENTDESK_MARKETPLACE_ADMIN",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "docs/known-limitations.md"],
-      "context": "The marketplace admin-mode variable: name and precedence kept.",
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "docs/known-limitations.md", "frontend/src/marketplace/Admin.tsx"],
+      "context": "The marketplace admin-mode variable: name and precedence kept; the SPA admin page names it in its how-to-enable sentence.",
       "purpose": "Existing environments keep working.",
       "owner": "Spec 032 story 36, out-of-scope item 2",
       "review_trigger": "A founder-approved migration spec."
