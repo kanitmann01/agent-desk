@@ -71,13 +71,17 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
     # The connect step (spec 023): what the rows' names already sit in the
     # desk's memory and agenda. A block on the card, never an element, and
     # its receipts say so: no match leaves the reading exactly as it was.
-    line, notes = insight_connect.connect_line(_row_labels(table, tracker), context.desk_names)
+    # The named entities ride along as the why provenance's citations.
+    line, notes, named = insight_connect.connect_named(
+        _row_labels(table, tracker), context.desk_names
+    )
     # The press carries the sentence it would explain, so a client never has
     # to re-derive which finding the button belonged to.
     press = dict(PRESS, text=found[0].text[: press_module.MAX_FINDING])
     # The table is the only thing this reading read, and the chart setting is
     # a receipt only once it is off auto: that is when it changed the sentence.
     used = ("chart",) if preference != "auto" else ()
+    why = _why(found, line, named)
     if line:
         return InsightReading(
             elements=elements,
@@ -87,6 +91,7 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
             used=used,
             inputs=("rows", "memory", "calendar"),
             memory_notes=notes,
+            why=why,
         )
     return InsightReading(
         elements=elements,
@@ -94,7 +99,45 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
         press=press,
         used=used,
         inputs=("rows",),
+        why=why,
     )
+
+
+def _why(
+    found: list[relations.Finding],
+    line: str,
+    named: tuple[insight_connect.DeskName, ...],
+) -> tuple[dict, ...]:
+    """The reading's provenance: one bounded entry per surfaced finding
+    (its claim, the columns and cells it rested on, and the rule and
+    threshold that fired), then the desk entities the connect step named,
+    cited by id, name and fact count so an "Also in your desk" line is
+    traceable without carrying a fact's text."""
+    entries = [
+        {
+            "claim": finding.text,
+            "columns": list(finding.columns),
+            "cells": list(finding.cells),
+            "rule": finding.rule,
+        }
+        for finding in found[:MAX_FINDINGS]
+    ]
+    if line:
+        entries.append(
+            {
+                "claim": line,
+                "rule": "held org or person named in this card's rows",
+                "facts": [
+                    {
+                        "entityId": entry.entity_id,
+                        "name": entry.names[0],
+                        "factCount": entry.fact_count,
+                    }
+                    for entry in named
+                ],
+            }
+        )
+    return tuple(entries)
 
 
 def _row_labels(table: relations.Table, tracker: dict) -> list[str]:

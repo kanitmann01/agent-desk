@@ -135,7 +135,14 @@ def _memory(server: Any) -> tuple[Any, str]:
         for _score, fact in list(found)[:limit]:
             text = str(getattr(fact, "text", "") or "").strip()
             if text:
-                rows.append({"text": text, "source": str(getattr(fact, "source", "") or "")})
+                row = {"text": text, "source": str(getattr(fact, "source", "") or "")}
+                # An integer fact id rides along so a reading can cite the
+                # fact without quoting it; a bool is not an id, and a store
+                # that does not name its facts cites nothing.
+                fact_id = getattr(fact, "id", None)
+                if isinstance(fact_id, int) and not isinstance(fact_id, bool):
+                    row["id"] = fact_id
+                rows.append(row)
         return rows
 
     return recall, ""

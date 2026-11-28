@@ -104,7 +104,34 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
         used=_shaped_keys(thread, context.preferences),
         inputs=_inputs(context),
         memory_notes=len(facts),
+        why=_why(thread, topics, facts),
     )
+
+
+def _why(
+    thread: dict, topics: list[str], facts: list[dict]
+) -> tuple[dict, ...]:
+    """The reading's provenance: the matched thread, the rule that picked it
+    (with the focus topics that fired), and the cited fact ids and sources.
+
+    A fact is cited by id and source only, so the drilldown can travel
+    without carrying a fact's text; a row without an integer id cannot be
+    cited at all."""
+    rule = "First thread a focus topic or a recalled fact touches"
+    if topics:
+        rule += "; focus matched: " + _joined(topics)
+    cited = [
+        {"id": row["id"], "source": row["source"]}
+        for row in facts
+        if isinstance(row.get("id"), int) and not isinstance(row.get("id"), bool)
+    ]
+    entry: dict = {
+        "claim": f"Thread this reading matched: {thread['subject']}",
+        "rule": rule,
+    }
+    if cited:
+        entry["facts"] = cited
+    return (entry,)
 
 
 def _shaped_keys(thread: dict, preferences: dict) -> tuple[str, ...]:

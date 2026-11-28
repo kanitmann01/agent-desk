@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getJson, postJson } from '../api';
 import { dateLineFor, greetingFor } from '../fmt';
+import { AGENT_NAME } from '../face/name';
 import type { DashboardData, LayoutCardState } from '../types';
 import Rail from './Rail';
 import SalesCard from './SalesCard';
@@ -900,7 +901,7 @@ export default function Dashboard({ data, onRefetch, onExpired, pollNote = '' }:
         ) : null}
         <footer className="page-foot">
           <p>
-            Agent Desk <span className="mono">{data.version}</span>. Workbooks are copied before they
+            {AGENT_NAME} <span className="mono">{data.version}</span>. Workbooks are copied before they
             are read. Calendar setup stays in the browser. Research calls are logged; file contents
             stay here. <a href="/what-this-touches">What this app touches</a>
           </p>

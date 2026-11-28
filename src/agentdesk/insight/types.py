@@ -88,6 +88,15 @@ class InsightReading:
     # number, and the card's line says "memory (2 notes)"; zero means there
     # is nothing to count.
     memory_notes: int = 0
+    # The provenance behind the reading's claim, as bounded entries the
+    # presentation resolves onto the receipts block: what was claimed, which
+    # columns and cells it rested on, the rule and threshold that fired, and
+    # the cited fact ids and sources. Empty for a reading that has nothing
+    # to show for itself.
+    why: tuple[dict, ...] = ()
+    # What would overturn the reading's claim. Consumed by a later wave 1
+    # ticket, so it stands here even though nothing reads it yet.
+    falsify: str = ""
 
 
 class InsightError(Exception):

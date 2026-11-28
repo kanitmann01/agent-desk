@@ -1,5 +1,5 @@
 #!/bin/sh
-# Agent Desk: start everything.
+# Nexuus Bot: start everything.
 # Double-click me for the dashboard (same as agent-desk.command).
 # From a terminal, "./start.command dev" runs the development stack:
 # the Python API in the background with a pid file, and the

@@ -10,6 +10,10 @@ produces rather than a flattened set of bindings.
 Nothing here reads the clock or the disk: the context carries the meeting,
 the preferences and the memory callable, so every assertion is a pure
 function of what the dashboard already decided to show.
+
+Wave 1 ticket 04 adds the falsification loop: a deterministic "What would
+change my mind" criterion, its why provenance, and the "Check
+counter-evidence" press offer, all derived from the stored answer alone.
 """
 
 import json
@@ -22,6 +26,7 @@ for _p in (str(ROOT / "src"), str(ROOT / "tests")):
         sys.path.insert(0, _p)
 
 from agentdesk.insight import preferences, research, service
+from agentdesk.insight import press as press_module
 from agentdesk.insight.types import InsightContext
 
 NOW = 1_765_000_000.0
@@ -371,3 +376,126 @@ def test_a_sealed_bank_says_why_it_recalled_nothing():
         "text": "Memory is locked, so nothing was recalled.",
         "tone": "attention",
     }
+
+
+# -- falsification and the counter-evidence press -------------------------
+
+
+def test_the_falsifier_is_deterministic_and_bounded():
+    one = research.derive(_card(), _payload(), _context())
+    two = research.derive(_card(), _payload(), _context())
+
+    assert one.falsify == two.falsify
+    assert one.falsify.startswith("What would change my mind: ")
+    assert len(one.falsify) <= 200
+
+
+def test_a_comparative_claim_asks_for_a_fair_comparison():
+    payload = _payload(summary="Vendor A onboarded faster than vendor B across both pilots.")
+
+    reading = research.derive(_card(payload), payload, _context())
+
+    assert reading.falsify == (
+        "What would change my mind: a fair comparison where vendor onboarded "
+        "faster does not come out ahead of the alternative."
+    )
+
+
+def test_a_quantitative_claim_asks_for_a_recount():
+    payload = _payload(summary="The pilot covered 90 days with 5 sources.")
+
+    reading = research.derive(_card(payload), payload, _context())
+
+    assert reading.falsify == (
+        "What would change my mind: a recount where the numbers the answer "
+        "gives (90, 5) come out materially different."
+    )
+
+
+def test_a_plain_claim_still_names_what_would_overturn_it():
+    payload = _payload(
+        summary="Deploying with a paired engineer keeps customers close to the team."
+    )
+
+    reading = research.derive(_card(payload), payload, _context())
+
+    assert reading.falsify == (
+        "What would change my mind: credible evidence about deploying paired "
+        "engineer that points the other way."
+    )
+
+
+def test_an_empty_reading_carries_no_falsify_why_or_press():
+    payload = {"elements": [], "status": "attention", "cause": "no answer", "checked_at": ""}
+
+    reading = research.derive(_card(payload), payload, _context(topics=["pricing"]))
+
+    assert reading.falsify == ""
+    assert reading.why == ()
+    assert reading.press is None
+
+
+def test_the_why_entry_names_the_claim_rule_and_cited_fact_ids():
+    def recall(subject, limit):
+        return [
+            {
+                "text": "Staff augmentation lost the March review on cost.",
+                "source": "note: March review",
+                "id": 7,
+            },
+            {
+                "text": "Two vendors offered six-month pilots instead.",
+                "source": "email: kickoff",
+                "id": 11,
+            },
+        ]
+
+    reading = research.derive(_card(), _payload(), _context(recall=recall))
+
+    entry = reading.why[0]
+    assert entry["claim"] == SUMMARY
+    assert entry["rule"] == "The falsifier targets a comparative claim in the stored answer"
+    assert entry["facts"] == [
+        {"id": 7, "source": "note: March review"},
+        {"id": 11, "source": "email: kickoff"},
+    ]
+
+
+def test_a_reading_without_memory_cites_no_facts_but_still_names_its_rule():
+    reading = research.derive(_card(), _payload(), _context())
+
+    assert set(reading.why[0]) == {"claim", "rule"}
+
+
+def test_the_press_offer_is_the_counter_evidence_action():
+    reading = research.derive(_card(), _payload(), _context())
+
+    offer = reading.press
+    assert offer["kind"] == "check-counter"
+    assert offer["label"] == "Check counter-evidence"
+    assert offer["route"] == "/api/insight/draft"
+    assert len(offer["text"]) <= press_module.MAX_FINDING
+    assert reading.falsify in offer["text"]
+
+
+def test_a_long_answer_leaves_room_for_the_criterion_in_the_press_text():
+    payload = _payload(summary=" ".join(["Faster ramps beat cheaper bodies."] * 40))
+
+    reading = research.derive(_card(payload), payload, _context())
+
+    assert len(reading.press["text"]) <= press_module.MAX_FINDING
+    assert reading.falsify in reading.press["text"]
+
+
+def test_the_falsify_block_sits_between_receipts_and_note():
+    card = _card()
+    service.attach_cards(
+        [card],
+        _context(memory_note="Memory is not set up on this desk, so nothing was recalled."),
+    )
+
+    insight = card["payload"]["insight"]
+    assert [block["kind"] for block in insight["blocks"]] == ["receipts", "falsify", "note"]
+    assert insight["blocks"][1]["text"].startswith("What would change my mind: ")
+    # Elements are untouched: the criterion is a block, never an element.
+    assert [element["kind"] for element in card["payload"]["elements"][3:]] == ["status"]
