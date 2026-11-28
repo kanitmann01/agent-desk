@@ -3265,7 +3265,8 @@ def _pending_zero_control_record(combo: dict, page_index: int,
 
 def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                        condition: str,
-                       continue_request_paths: list[str] | None = None) -> list[dict]:
+                       continue_request_paths: list[str] | None = None,
+                       calendar_fixture: Path | None = None) -> list[dict]:
     """Click every visible control on every selected page in a fresh page.
 
     Non-GET requests are held and never completed, so no click can mutate
@@ -3279,6 +3280,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
     page_total = len(combos)
     for page_index, combo in enumerate(combos, start=1):
         view = combo["view"]
+        use_fixture = (bool(view.get("calendar_fixture"))
+                       and calendar_fixture is not None)
         page = context.new_page()
         controls: list[dict] = []
         enum_started: list[dict] = []
@@ -3288,6 +3291,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             page.clock.set_fixed_time(FIXED_TIME)
         except Exception:
             pass
+        if use_fixture:
+            os.environ["AGENTDESK_CALENDAR_FILE"] = str(calendar_fixture)
         try:
             _install_request_guard(page, enum_started, enum_held)
             _install_continue_routes(page, base, continue_paths, enum_started)
@@ -3330,6 +3335,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
             records.append(_pending_page_record(
                 combo, page_index, page_total, "error", reason))
         finally:
+            if use_fixture:
+                os.environ["AGENTDESK_CALENDAR_FILE"] = ""
             _abort_held(enum_held)
             page.close()
         if not controls:
@@ -3407,6 +3414,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 fresh.clock.set_fixed_time(FIXED_TIME)
             except Exception:
                 pass
+            if use_fixture:
+                os.environ["AGENTDESK_CALENDAR_FILE"] = str(calendar_fixture)
             try:
                 fresh.goto(base + view["path"], wait_until="domcontentloaded", timeout=30000)
                 _wait_for_view(fresh, view)
@@ -3513,6 +3522,8 @@ def _run_pending_audit(context, base: str, combos: list[dict], run_dir: Path,
                 record["evidence"] = {"reason": f"{type(exc).__name__}: {exc}"[:300]}
                 records.append(record)
             finally:
+                if use_fixture:
+                    os.environ["AGENTDESK_CALENDAR_FILE"] = ""
                 for route in held:
                     try:
                         route.abort()
@@ -3963,7 +3974,8 @@ def _condition_worker(args, condition: str, run_dir: Path) -> int:
                               flush=True)
                         pending_records = _run_pending_audit(
                             context, base, combos, run_dir, condition,
-                            getattr(args, "continue_request_path", []))
+                            getattr(args, "continue_request_path", []),
+                            calendar_fixture)
                         print(f"[{condition}] pending audit wrote {len(pending_records)} "
                               f"control record(s)", flush=True)
                 finally:
