@@ -84,7 +84,12 @@ def make_calendar(calendar_file: Path | None) -> CalendarBridge:
 
 
 @pytest.fixture()
-def booted():
+def booted(tmp_path, monkeypatch):
+    # The desk keeps preferences and the last-seen snapshots under the data
+    # dir, which the gate shares across suites: a GET reads the snapshots,
+    # so a leftover watermark from another suite must never reach a pinned
+    # payload. Move the data dir into this test's own folder first.
+    monkeypatch.setenv("AGENTDESK_DATA", str(tmp_path / "data"))
     server = server_harness.Booted()
     try:
         yield server

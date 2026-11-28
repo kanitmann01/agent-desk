@@ -36,6 +36,7 @@ Ticket #96 adds the graph page; this page reaches it from Maintenance.
 
 import html
 
+from agentdesk import PRODUCT_NAME
 from agentdesk.server.core import count_noun
 from agentdesk.server.memory_loop_api import _card_for, origin_of
 from agentdesk.server.pages import page_shell, status_line
@@ -65,7 +66,7 @@ EDIT_MERGE_NOTICE = (
 # its heading, in plain words, answering what memory remembers, how it
 # learns and who controls it.
 HOW_MEMORY_WORKS = (
-    "Agent Desk remembers facts about you and your work, such as who owns a "
+    f"{PRODUCT_NAME} remembers facts about you and your work, such as who owns a "
     "renewal or when a deadline moved, and learns new ones as you work. "
     "Every fact is listed below with where it came from. You are in "
     "control: edit or forget any item, forget everything, or switch "

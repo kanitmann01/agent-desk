@@ -1,4 +1,4 @@
-"""Agent Desk plugin validator: manifest in, verdict out.
+"""Nexuus Bot plugin validator: manifest in, verdict out.
 
 The same code runs as a standalone CLI (``python -m agentdesk.validator``),
 in the app's install path, and in registry CI.

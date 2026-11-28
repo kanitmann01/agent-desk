@@ -114,7 +114,7 @@ function buildMoods(
 }
 
 /**
- * Four distinct non-Grok-Bot character personalities for Agent Desk.
+ * Four distinct non-Grok-Bot character personalities for Nexuus Bot.
  *
  * Each preset keeps full three-theme token contrast while varying body silhouette,
  * resting eye geometry, and signature idle attitude.

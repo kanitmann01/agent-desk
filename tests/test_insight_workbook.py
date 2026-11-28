@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 
+from agentdesk.insight import insight_connect
+from agentdesk.insight import reading as insight_reading
 from agentdesk.insight import workbook
 from agentdesk.insight.preferences import defaults
 from agentdesk.insight.service import attach_cards
@@ -253,3 +257,70 @@ def test_a_thin_table_suggests_no_rows():
 
     attach_cards([card], _context())
     assert "suggested" not in card["payload"]["insight"]
+
+
+# -- why provenance ---------------------------------------------------------
+
+
+@dataclass
+class _Entity:
+    """Only what build_index reads off the store's entity summaries."""
+
+    id: int
+    canonical_name: str
+    aliases: tuple = ()
+    type: str = "org"
+    fact_count: int = 0
+
+
+def test_derive_maps_surfaced_findings_into_why():
+    headers, rows = _mixed_rows()
+    payload = _payload(headers, rows)
+    reading = workbook.derive(_card(payload), payload, _context())
+    assert len(reading.why) == workbook.MAX_FINDINGS == 2
+    assert [entry["claim"] for entry in reading.why] == [
+        element["text"] for element in reading.elements if element["label"] != "Chart"
+    ]
+    for entry in reading.why:
+        assert entry["columns"]
+        assert entry["cells"]
+        assert entry["rule"]
+
+
+def test_the_workbook_why_rides_on_the_receipts_block():
+    headers, rows = _mixed_rows()
+    payload = _payload(headers, rows)
+    reading = workbook.derive(_card(payload), payload, _context())
+    blocks = insight_reading.blocks(reading)
+    assert blocks[0]["kind"] == "receipts"
+    assert len(blocks[0]["why"]) == 2
+    assert blocks[0]["why"][0]["rule"].startswith("trend:")
+
+
+def test_why_names_the_desk_entities_the_rows_match():
+    names = (
+        ["Harborlight Freight"] * 6 + ["Northwind Traders"] * 4 + ["Cedar and Sons"] * 2
+    )
+    rows = [[name, 10] for name in names]
+    payload = _payload(["client", "amount"], rows)
+    index = insight_connect.build_index(
+        [_Entity(7, "Harborlight Freight", fact_count=3)], None, 0.0
+    )
+    context = InsightContext(
+        preferences=defaults(), now=1_700_000_000.0, desk_names=index
+    )
+    reading = workbook.derive(_card(payload), payload, context)
+    # This table surfaces one finding; the connect step's entry follows it.
+    assert len(reading.why) == 2
+    entry = reading.why[-1]
+    assert entry["claim"] == reading.note
+    assert entry["facts"] == [
+        {"entityId": 7, "name": "Harborlight Freight", "factCount": 3}
+    ]
+    assert reading.memory_notes == 3
+
+
+def test_a_note_reading_carries_no_why():
+    payload = _payload(["name", "note"], [["Dana", "paid"], ["Sam", "late"], ["Jo", "paid"]])
+    reading = workbook.derive(_card(payload), payload, _context())
+    assert reading.why == ()
