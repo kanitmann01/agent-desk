@@ -234,6 +234,7 @@ tests/test_agent_desk_command.py
 tests/test_agentloop.py
 tests/test_agents_runner.py
 tests/test_agents_store.py
+tests/test_alias_identity.py
 tests/test_brand_naming.py
 tests/test_briefs.py
 tests/test_bundle_metadata.py
@@ -328,6 +329,7 @@ tests/test_memory_retain.py
 tests/test_memory_service.py
 tests/test_memory_store.py
 tests/test_memory_store_embeddings.py
+tests/test_module_commands.py
 tests/test_naming_contract.py
 tests/test_operator_guides.py
 tests/test_pack_builder.py
@@ -372,6 +374,7 @@ tests/test_recommend_rules.py
 tests/test_recommend_step.py
 tests/test_registry_ci.py
 tests/test_registry_ci_tool.py
+tests/test_registry_dual_path.py
 tests/test_registry_hardening.py
 tests/test_registry_index.py
 tests/test_registry_index_v2.py

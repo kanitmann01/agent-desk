@@ -65,9 +65,11 @@ def test_the_windows_version_fields_say_nexuus_bot():
     assert "--windows-product-name=Nexuus Bot" in command
     assert "--windows-company-name=Nexuus Bot" in command
     assert "--windows-file-description=Nexuus Bot local application" in command
-    # The names a machine matches do not move.
+    # The names a machine matches do not move. The frozen build carries
+    # the canonical package and the compatibility alias beside it.
     assert "--output-filename=AgentDesk.exe" in command
     assert "--include-package=nexuusbot" in command
+    assert "--include-package=agentdesk" in command
 
 
 def test_the_bundle_manifest_product_says_nexuus_bot(tmp_path):
