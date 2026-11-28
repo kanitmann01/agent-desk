@@ -1,0 +1,9 @@
+FINAL CLEANUP time=2026-11-26T22:58:04-05:00
+BROWSER-RUN.LOCK absent
+SWARM-HEAVY-RUN.LOCK absent and untouched
+port 5199 free
+Audit instrument, cached Playwright browser, audit desk, audit mock, and audit Vite processes remaining: none
+HEAD=3f099e0b6240cb97b72359afdaf0cb1366b3b4ea
+Worktree clean at 3f099e0b6240cb97b72359afdaf0cb1366b3b4ea
+Post-run note: at 22:58:04, unrelated processes C:/Python314/python.exe tools/ci_local.py and C:/Python314/python.exe -m pytest tests -q --no-header -n 8 were observed. They were created after the slow command ended at 22:53:25, were not audit instrument processes, and were not touched. A follow-up query found no audit instrument process.
+Final required state: BROWSER-RUN.LOCK deleted; port 5199 free.

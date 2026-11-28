@@ -1,0 +1,15 @@
+error_rows=0
+fresh_page_36_controls=6 errors=0
+plugins_page_36_controls=6 errors=0
+fresh page=36 control=Expand navigation verdict=instant screenshot=pending/fresh/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__256.png
+fresh page=36 control=Pick a file verdict=native-dialog screenshot=pending/fresh/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__257.png
+fresh page=36 control=Reset to automatic discovery verdict=meets screenshot=pending/fresh/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__258.png
+fresh page=36 control=Use this path verdict=instant screenshot=pending/fresh/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__259.png
+fresh page=36 control=Upload this file verdict=instant screenshot=pending/fresh/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__260.png
+fresh page=36 control=Check for calendar data now verdict=meets screenshot=pending/fresh/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__261.png
+plugins page=36 control=Expand navigation verdict=instant screenshot=pending/plugins/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__298.png
+plugins page=36 control=Pick a file verdict=native-dialog screenshot=pending/plugins/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__299.png
+plugins page=36 control=Reset to automatic discovery verdict=meets screenshot=pending/plugins/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__300.png
+plugins page=36 control=Use this path verdict=instant screenshot=pending/plugins/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__301.png
+plugins page=36 control=Upload this file verdict=instant screenshot=pending/plugins/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__302.png
+plugins page=36 control=Check for calendar data now verdict=meets screenshot=pending/plugins/1280x800/unkey/walkthrough_calendar__walkthrough-calendar__303.png

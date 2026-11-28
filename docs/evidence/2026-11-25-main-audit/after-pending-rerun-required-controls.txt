@@ -1,0 +1,25 @@
+Memory review Ask me first: verdict=meets condition=fresh state=memory page=22 screenshot=pending/fresh/1280x800/unkey/memory__memory__152.png
+Memory review Ask me first: verdict=meets condition=plugins state=memory page=22 screenshot=pending/plugins/1280x800/unkey/memory__memory__194.png
+Memory review Ask me first: verdict=meets condition=full state=memory page=22 screenshot=pending/full/1280x800/unkey/memory__memory__224.png
+Research with no question typed: already disabled records=4
+  condition=full state=dashboard page=1 verdict=skipped reason=already disabled screenshot=(none)
+  condition=full state=overlay-widget-menu page=40 verdict=skipped reason=already disabled screenshot=(none)
+  condition=full state=overlay-tracker-setup page=41 verdict=skipped reason=already disabled screenshot=(none)
+  condition=full state=overlay-customize page=42 verdict=skipped reason=already disabled screenshot=(none)
+Fill it in for me with empty description: verdict=skipped condition=full state=overlay-describe page=45 reason=already disabled screenshot=(none); wording conflict: issue body says skipped, newer comment says disabled one, instrument emits skipped
+Copy digest records=14 verdicts={'instant': 12, 'skipped': 2}
+  condition=fresh state=marketplace-plugin-competitor-watch page=7 verdict=instant screenshot=pending/fresh/1280x800/unkey/marketplace_plugin_competitor-watch__marketplace-plugin-competitor-watch__080.png
+  condition=fresh state=marketplace-plugin-excel-report page=8 verdict=instant screenshot=pending/fresh/1280x800/unkey/marketplace_plugin_excel-report__marketplace-plugin-excel-report__087.png
+  condition=fresh state=marketplace-plugin-presentation-starter page=9 verdict=instant screenshot=pending/fresh/1280x800/unkey/marketplace_plugin_presentation-starter__marketplace-plugin-presentation-starter__094.png
+  condition=fresh state=marketplace-manage-excel-report page=10 verdict=instant screenshot=pending/fresh/1280x800/unkey/marketplace_plugin_excel-report_manage__marketplace-manage-excel-report__101.png
+  condition=plugins state=marketplace-plugin-competitor-watch page=7 verdict=instant screenshot=pending/plugins/1280x800/unkey/marketplace_plugin_competitor-watch__marketplace-plugin-competitor-watch__084.png
+  condition=plugins state=marketplace-plugin-excel-report page=8 verdict=instant screenshot=pending/plugins/1280x800/unkey/marketplace_plugin_excel-report__marketplace-plugin-excel-report__096.png
+  condition=plugins state=marketplace-plugin-presentation-starter page=9 verdict=instant screenshot=pending/plugins/1280x800/unkey/marketplace_plugin_presentation-starter__marketplace-plugin-presentation-starter__108.png
+  condition=plugins state=marketplace-manage-excel-report page=10 verdict=instant screenshot=pending/plugins/1280x800/unkey/marketplace_plugin_excel-report_manage__marketplace-manage-excel-report__120.png
+  condition=plugins state=overlay-instance-setup page=43 verdict=skipped screenshot=(none)
+  condition=full state=marketplace-plugin-competitor-watch page=7 verdict=instant screenshot=pending/full/1280x800/unkey/marketplace_plugin_competitor-watch__marketplace-plugin-competitor-watch__087.png
+  condition=full state=marketplace-plugin-excel-report page=8 verdict=instant screenshot=pending/full/1280x800/unkey/marketplace_plugin_excel-report__marketplace-plugin-excel-report__099.png
+  condition=full state=marketplace-plugin-presentation-starter page=9 verdict=instant screenshot=pending/full/1280x800/unkey/marketplace_plugin_presentation-starter__marketplace-plugin-presentation-starter__111.png
+  condition=full state=marketplace-manage-excel-report page=10 verdict=instant screenshot=pending/full/1280x800/unkey/marketplace_plugin_excel-report_manage__marketplace-manage-excel-report__123.png
+  condition=full state=overlay-instance-setup page=43 verdict=skipped screenshot=(none)
+Clipboard success and focused manual-digest refusal path are not fields in pending.json; photograph reviewers must verify them. Walk agent did not review photographs.

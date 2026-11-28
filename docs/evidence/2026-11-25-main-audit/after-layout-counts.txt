@@ -1,0 +1,11 @@
+planned 1040
+measured 1028
+skipped 12
+failed 0
+busy planned 78 measured 78 skipped 0 failed 0
+data planned 102 measured 96 skipped 6 failed 0
+fresh planned 324 measured 318 skipped 6 failed 0
+full planned 348 measured 348 skipped 0 failed 0
+legacy-dashboard planned 2 measured 2 skipped 0 failed 0
+long-values planned 78 measured 78 skipped 0 failed 0
+plugins planned 108 measured 108 skipped 0 failed 0

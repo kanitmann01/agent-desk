@@ -1,0 +1,19 @@
+FACE COUNTS
+capture_rows=72
+actual_pngs=72
+verdicts={'failed': 4, 'passed': 68}
+themes={'coforge': 36, 'unkey': 36}
+surfaces={'dialog-describe': 2, 'dialog-tracker': 2, 'phone-strip': 2, 'rail': 28, 'rail-collapsed': 2, 'review-sheet': 32, 'server-inbox': 4}
+kinds={'dialog': 4, 'phone-strip': 2, 'rail': 28, 'rail-collapsed': 2, 'server': 4, 'sheet': 32}
+photographs_dialog-describe=2
+photographs_dialog-tracker=2
+photographs_phone-strip=2
+photographs_rail=28
+photographs_rail-collapsed=2
+photographs_server-inbox=4
+photographs_sheet=32
+planned_full_run=108
+planned_themes=unkey,coforge,momentum
+observed_themes=coforge,unkey
+missing_metric=0
+missing_theme=momentum

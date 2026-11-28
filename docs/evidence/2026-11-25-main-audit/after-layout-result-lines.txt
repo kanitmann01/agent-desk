@@ -1,0 +1,3 @@
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-layout\20261126-205809
+METRIC findings=872 groups=45 pages=1028 skipped=12 box-changed=0 dead=0
+SKIPPED 12 overlay state(s) listed in summary

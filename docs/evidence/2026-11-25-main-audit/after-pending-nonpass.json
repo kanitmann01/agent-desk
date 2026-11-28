@@ -1,0 +1,1393 @@
+[
+  {
+    "condition": "fresh",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 41,
+    "control": "Coforge theme",
+    "control_path": "button.theme-dot",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52381/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Coforge theme",
+      "labelBusy": "Coforge theme",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "document-attributes"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 71,
+        "y": 688.25,
+        "width": 30,
+        "height": 24
+      },
+      "boxBusy": {
+        "x": 71,
+        "y": 688.25,
+        "width": 30,
+        "height": 24
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/fresh/1280x800/unkey/root__dashboard__003.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "theme-dot",
+      "path": "button.theme-dot",
+      "text": "Coforge theme",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 71,
+        "y": 688.25,
+        "width": 30,
+        "height": 24
+      }
+    }
+  },
+  {
+    "condition": "fresh",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 41,
+    "control": "Momentuum blue theme",
+    "control_path": "button.theme-dot",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52381/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Momentuum blue theme",
+      "labelBusy": "Momentuum blue theme",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "document-attributes"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 107,
+        "y": 688.25,
+        "width": 30,
+        "height": 24
+      },
+      "boxBusy": {
+        "x": 107,
+        "y": 688.25,
+        "width": 30,
+        "height": 24
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/fresh/1280x800/unkey/root__dashboard__004.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "theme-dot",
+      "path": "button.theme-dot",
+      "text": "Momentuum blue theme",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 107,
+        "y": 688.25,
+        "width": 30,
+        "height": 24
+      }
+    }
+  },
+  {
+    "condition": "fresh",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 41,
+    "control": "Not now",
+    "control_path": "button.text-btn.gs-dismiss",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52381/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Not now",
+      "labelBusy": "",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 1155.078125,
+        "y": 240,
+        "width": 50.921875,
+        "height": 23.5
+      },
+      "boxBusy": null,
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/fresh/1280x800/unkey/root__dashboard__006.png"
+  },
+  {
+    "condition": "fresh",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace",
+    "state": "marketplace",
+    "page_index": 2,
+    "page_total": 41,
+    "control": "Search",
+    "control_path": "button.btn.btn-primary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "dead",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Search",
+      "labelBusy": "Search",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 1500,
+      "boxBefore": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxBusy": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/fresh/1280x800/unkey/marketplace__marketplace__014.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary",
+      "path": "button.btn.btn-primary",
+      "text": "Search",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      }
+    }
+  },
+  {
+    "condition": "fresh",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/search?q=watch",
+    "state": "marketplace-search",
+    "page_index": 3,
+    "page_total": 41,
+    "control": "Search",
+    "control_path": "button.btn.btn-primary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "dead",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Search",
+      "labelBusy": "Search",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 1500,
+      "boxBefore": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxBusy": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/fresh/1280x800/unkey/marketplace_search_q_watch__marketplace-search__027.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary",
+      "path": "button.btn.btn-primary",
+      "text": "Search",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 44,
+    "control": "Coforge theme",
+    "control_path": "button.theme-dot",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52380/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Coforge theme",
+      "labelBusy": "Coforge theme",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "document-attributes"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 71,
+        "y": 687.5,
+        "width": 30,
+        "height": 24
+      },
+      "boxBusy": {
+        "x": 71,
+        "y": 687.5,
+        "width": 30,
+        "height": 24
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/root__dashboard__003.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "theme-dot",
+      "path": "button.theme-dot",
+      "text": "Coforge theme",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 71,
+        "y": 687.5,
+        "width": 30,
+        "height": 24
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 44,
+    "control": "Momentuum blue theme",
+    "control_path": "button.theme-dot",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52380/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Momentuum blue theme",
+      "labelBusy": "Momentuum blue theme",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "document-attributes"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 107,
+        "y": 687.5,
+        "width": 30,
+        "height": 24
+      },
+      "boxBusy": {
+        "x": 107,
+        "y": 687.5,
+        "width": 30,
+        "height": 24
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/root__dashboard__004.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "theme-dot",
+      "path": "button.theme-dot",
+      "text": "Momentuum blue theme",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 107,
+        "y": 687.5,
+        "width": 30,
+        "height": 24
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 44,
+    "control": "Not now",
+    "control_path": "button.text-btn.gs-dismiss",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52380/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Not now",
+      "labelBusy": "",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 1155.078125,
+        "y": 240,
+        "width": 50.921875,
+        "height": 23.5
+      },
+      "boxBusy": null,
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/root__dashboard__006.png"
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 44,
+    "control": "Set up",
+    "control_path": "button.btn.btn-primary.btn-sm",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52380/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Set up",
+      "labelBusy": "Set up",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 157,
+        "y": 385.25,
+        "width": 66.578125,
+        "height": 30
+      },
+      "boxBusy": {
+        "x": 157,
+        "y": 385.25,
+        "width": 66.578125,
+        "height": 30
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/root__dashboard__009.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary btn-sm",
+      "path": "button.btn.btn-primary.btn-sm",
+      "text": "Set up",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 157,
+        "y": 385.25,
+        "width": 66.578125,
+        "height": 30
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 44,
+    "control": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+    "control_path": "button.icon-btn",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52380/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+      "labelBusy": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 1157,
+        "y": 386.25,
+        "width": 28,
+        "height": 28
+      },
+      "boxBusy": {
+        "x": 1157,
+        "y": 386.25,
+        "width": 28,
+        "height": 28
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/root__dashboard__010.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "icon-btn",
+      "path": "button.icon-btn",
+      "text": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1157,
+        "y": 386.25,
+        "width": 28,
+        "height": 28
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 44,
+    "control": "Save",
+    "control_path": "button.btn.btn-secondary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52380/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Save",
+      "labelBusy": "Save",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 895,
+        "y": 522,
+        "width": 63.1875,
+        "height": 39
+      },
+      "boxBusy": {
+        "x": 895,
+        "y": 522,
+        "width": 63.1875,
+        "height": 39
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/root__dashboard__011.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-secondary",
+      "path": "button.btn.btn-secondary",
+      "text": "Save",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 895,
+        "y": 522,
+        "width": 63.1875,
+        "height": 39
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace",
+    "state": "marketplace",
+    "page_index": 2,
+    "page_total": 44,
+    "control": "Search",
+    "control_path": "button.btn.btn-primary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "dead",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Search",
+      "labelBusy": "Search",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 1500,
+      "boxBefore": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxBusy": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/marketplace__marketplace__017.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary",
+      "path": "button.btn.btn-primary",
+      "text": "Search",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      }
+    }
+  },
+  {
+    "condition": "plugins",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/search?q=watch",
+    "state": "marketplace-search",
+    "page_index": 3,
+    "page_total": 44,
+    "control": "Search",
+    "control_path": "button.btn.btn-primary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "dead",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Search",
+      "labelBusy": "Search",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 1500,
+      "boxBefore": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxBusy": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/plugins/1280x800/unkey/marketplace_search_q_watch__marketplace-search__030.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary",
+      "path": "button.btn.btn-primary",
+      "text": "Search",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Coforge theme",
+    "control_path": "button.theme-dot",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52379/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Coforge theme",
+      "labelBusy": "Coforge theme",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "document-attributes"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 71,
+        "y": 688.296875,
+        "width": 30,
+        "height": 24
+      },
+      "boxBusy": {
+        "x": 71,
+        "y": 688.296875,
+        "width": 30,
+        "height": 24
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/root__dashboard__003.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "theme-dot",
+      "path": "button.theme-dot",
+      "text": "Coforge theme",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 71,
+        "y": 688.296875,
+        "width": 30,
+        "height": 24
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Momentuum blue theme",
+    "control_path": "button.theme-dot",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52379/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Momentuum blue theme",
+      "labelBusy": "Momentuum blue theme",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "document-attributes"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 107,
+        "y": 688.296875,
+        "width": 30,
+        "height": 24
+      },
+      "boxBusy": {
+        "x": 107,
+        "y": 688.296875,
+        "width": 30,
+        "height": 24
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/root__dashboard__004.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "theme-dot",
+      "path": "button.theme-dot",
+      "text": "Momentuum blue theme",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 107,
+        "y": 688.296875,
+        "width": 30,
+        "height": 24
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Not now",
+    "control_path": "button.text-btn.gs-dismiss",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52379/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Not now",
+      "labelBusy": "",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 1155.078125,
+        "y": 240,
+        "width": 50.921875,
+        "height": 23.5
+      },
+      "boxBusy": null,
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/root__dashboard__007.png"
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Edit",
+    "control_path": "button.btn.btn-secondary.btn-sm",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52379/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Edit",
+      "labelBusy": "Edit",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 1155.734375,
+        "y": 384.5,
+        "width": 50.265625,
+        "height": 30
+      },
+      "boxBusy": {
+        "x": 1155.734375,
+        "y": 384.5,
+        "width": 50.265625,
+        "height": 30
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/root__dashboard__011.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-secondary btn-sm",
+      "path": "button.btn.btn-secondary.btn-sm",
+      "text": "Edit",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1155.734375,
+        "y": 384.5,
+        "width": 50.265625,
+        "height": 30
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+    "control_path": "button.icon-btn",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52379/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+      "labelBusy": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 1157,
+        "y": 386.046875,
+        "width": 28,
+        "height": 28
+      },
+      "boxBusy": {
+        "x": 1157,
+        "y": 386.046875,
+        "width": 28,
+        "height": 28
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/root__dashboard__013.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "icon-btn",
+      "path": "button.icon-btn",
+      "text": "Widget options, Regional Pipeline Operations Console with Quarterly Forecast and Review",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1157,
+        "y": 386.046875,
+        "width": 28,
+        "height": 28
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Save",
+    "control_path": "button.btn.btn-secondary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "silent",
+    "evidence": {
+      "request_started": true,
+      "requests": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:52379/api/dashboard/view"
+        }
+      ],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Save",
+      "labelBusy": "Save",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 895,
+        "y": 522.796875,
+        "width": 63.1875,
+        "height": 39
+      },
+      "boxBusy": {
+        "x": 895,
+        "y": 522.796875,
+        "width": 63.1875,
+        "height": 39
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/root__dashboard__014.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-secondary",
+      "path": "button.btn.btn-secondary",
+      "text": "Save",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 895,
+        "y": 522.796875,
+        "width": 63.1875,
+        "height": 39
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace",
+    "state": "marketplace",
+    "page_index": 2,
+    "page_total": 45,
+    "control": "Search",
+    "control_path": "button.btn.btn-primary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "dead",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Search",
+      "labelBusy": "Search",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 1500,
+      "boxBefore": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxBusy": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/marketplace__marketplace__020.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary",
+      "path": "button.btn.btn-primary",
+      "text": "Search",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1145.609375,
+        "y": 259.6875,
+        "width": 77.390625,
+        "height": 43
+      }
+    }
+  },
+  {
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/search?q=watch",
+    "state": "marketplace-search",
+    "page_index": 3,
+    "page_total": 45,
+    "control": "Search",
+    "control_path": "button.btn.btn-primary",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "dead",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Search",
+      "labelBusy": "Search",
+      "busy_indicators": [],
+      "signatureChanged": false,
+      "signatureReasons": [],
+      "signatureWindowMs": 1500,
+      "boxBefore": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxBusy": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/marketplace_search_q_watch__marketplace-search__033.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "btn btn-primary",
+      "path": "button.btn.btn-primary",
+      "text": "Search",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 1145.609375,
+        "y": 206.6875,
+        "width": 77.390625,
+        "height": 43
+      }
+    }
+  }
+]

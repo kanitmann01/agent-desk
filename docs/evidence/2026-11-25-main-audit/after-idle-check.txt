@@ -1,0 +1,4 @@
+IDLE_CHECK_OK at=2026-11-27T01:56:26Z heavy-lock=absent instruments=none named-ports=free worktree=clean head=b39669491b965ef6c6624903db30e0b9df552004; existing agent/MCP service processes are not tests, gates, builds, installs, desks, mocks, browsers, or Vite.
+IDLE_CHECK_OK run=AFTER-layout at=2026-11-27T01:58:08Z heavy-lock=absent instruments=none named-ports=free worktree=clean
+IDLE_CHECK_OK run=AFTER-pending at=2026-11-27T02:30:10Z heavy-lock=absent instruments=none named-ports=free worktree=clean
+IDLE_CHECK_OK run=AFTER-feedback at=2026-11-27T02:58:39Z heavy-lock=absent instruments=none named-port-5199=free worktree=clean head=b39669491b965ef6c6624903db30e0b9df552004; existing agent/MCP services and user-profile Chrome are not walk, test, gate, build, install, desk, mock, cached-Playwright, or Vite processes.

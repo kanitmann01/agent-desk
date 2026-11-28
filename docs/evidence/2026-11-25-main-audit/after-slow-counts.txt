@@ -1,0 +1,17 @@
+SLOW COUNTS
+matrix_rows=130
+matrix_status={'measured': 129, 'skipped': 1}
+findings=96
+pending_records=1261
+actual_pngs=1262
+matrix_fresh={'measured': 40, 'skipped': 1}
+matrix_plugins={'measured': 44}
+matrix_full={'measured': 45}
+photographs_crops=142
+photographs_fresh=40
+photographs_plugins=44
+photographs_full=45
+photographs_pending=991
+photographs_pending_fresh=241
+photographs_pending_plugins=310
+photographs_pending_full=440

@@ -1,0 +1,10 @@
+met=4
+not-met=1
+absent=2
+dashboard-research=not-met failure=result: the control is still busy
+dashboard-explain=met
+dashboard-reply=absent reason=no dashboard reading offers a reply draft
+assistant-ask=met
+agents-presentation=met
+wizard-describe=met
+inbox-draft=absent reason=no waiting card offers a model-backed reply draft

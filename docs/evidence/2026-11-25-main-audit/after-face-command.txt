@@ -1,0 +1,16 @@
+Working directory: D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694
+Commit: b39669491b965ef6c6624903db30e0b9df552004
+Environment: UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright"
+
+if netstat -ano | grep -Eq ':5199[[:space:]]+.*LISTENING'; then
+  printf 'STOP: port 5199 is already listening\n' >&2
+  exit 1
+fi
+
+UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright" \
+  uv run --no-project --with playwright --with keyring --with cryptography \
+  python tools/face_walkthrough.py \
+  --routes sheet,rail,rail-collapsed,phone-strip,dialog,server \
+  --themes unkey,coforge,momentum --widths 1280,800 \
+  --mock-delay-ms 12000 --record-api "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face-api" \
+  --out "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face"

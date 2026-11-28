@@ -1,0 +1,62 @@
+[
+  {
+    "id": "P5-01",
+    "severity": "P0",
+    "file": "tools/layout_audit.py",
+    "line": 2442,
+    "title": "The default busy audit retests real machine gates and writes into real OneDrive",
+    "what": "The busy condition POSTs every capability gate's retest endpoint. The audit boots the server without injecting gate_runners, so the server uses its production real adapters. Those adapters discover the current user's OneDrive root, copy a probe file into it, call external HTTPS endpoints, install a package through uv, and list running processes. This escapes the temporary data folder and can sync a file to the user's real cloud storage.",
+    "why": "The instrument's isolation promise is a security boundary. A normal unfiltered audit includes busy by default, so a maintainer cannot safely run the documented command without unrelated writes, network traffic, and process inspection. The OneDrive write is outside AGENTDESK_DATA and is not removed by temporary-folder cleanup.",
+    "evidence": "By reading. tools/layout_audit.py:272-273 includes busy in ALL_CONDITIONS; :4386 defaults --conditions to all of them; :3634-3636 calls _seed_busy; :2442-2446 POSTs /capabilities/<key>/retest. _boot_desk calls create_server at :2096-2098 without gate_runners. src/agentdesk/server/app.py:7259 exposes the gate_runners injection seam, while :8062-8064 otherwise builds default_gate_runners. src/agentdesk/capabilities.py:151 selects real_adapters when no adapter bundle is supplied. src/agentdesk/probe/adapters.py:123-132 discovers OneDrive from the real environment/profile, and :152-162 wires real subprocess, urllib, filesystem, and process adapters. src/agentdesk/probe/gates.py:303-314 copies agentdesk-probe-<timestamp>.txt into that real sync root; :186-190 installs six through uv; :247 calls the real Power Automate reachability check.",
+    "fix": "Inject deterministic gate_runners when creating the audit server, or seed the capability cache directly with synthetic GateResult values. Do not call the production retest endpoints from the audit. Add an isolation test that fails if a gate runner invokes subprocess, urllib, Path.home, OneDrive discovery, or any path outside the temporary root.",
+    "confidence": "high"
+  },
+  {
+    "id": "P5-02",
+    "severity": "P1",
+    "file": "tools/layout_audit.py",
+    "line": 3047,
+    "title": "Pending verdicts accept stale or unrelated page content as proof of feedback",
+    "what": "The pending detector marks a request as meets when the form's declared wait target merely exists and has text, even if that text was present before the press. It also accepts any newly visible busy-looking element anywhere in the document. On populated server pages, removing the placeholder and busy-control behavior can therefore still produce meets.",
+    "why": "Spec 027 requires the audit to prove visible pending feedback, not merely a started request. This is a test that can stay green while the behavior it names is broken, which is explicitly a P1 condition in the review brief.",
+    "evidence": "By reading. PENDING_STATE_JS at tools/layout_audit.py:151-156 sets waitVisible from target visibility and non-empty text only; it never compares the target with its pre-click state. :158-177 collects indicators from document.querySelectorAll, not from the pressed control, form, or result region. _pending_verdict at :3047-3048 returns meets for wait_visible or any new_indicators. The busy seed saves an assistant turn at :2411-2418 before the pending pass, so #assistant-thread already has content. If the delegated placeholder code in src/agentdesk/server/pages.py were removed, the native POST would still start, the old thread text would keep waitVisible true, and this verdict would still be meets.",
+    "fix": "Capture each wait target's DOM/signature before activation and require a newly inserted placeholder or phase line in that target after activation. Scope indicator comparison to the pressed control, its form, and the declared result region. Add a planted negative fixture with pre-existing target text and an unrelated busy region; both must produce silent or disabled-only, not meets.",
+    "confidence": "high"
+  },
+  {
+    "id": "P5-03",
+    "severity": "P1",
+    "file": "tools/layout_audit.py",
+    "line": 3090,
+    "title": "Pending audit failures disappear from coverage and can pass with zero controls checked",
+    "what": "Page enumeration errors are printed and skipped without a record. Per-control activation errors are recorded as skipped, which _pending_fail ignores. If --pending-audit is requested but every page fails before controls are enumerated, pending_records stays empty, no pending JSON is written, the child exits 0, and coverage is computed only from the layout matrix.",
+    "why": "The acceptance claim is that every control was pressed and produced zero silent or disabled-only verdicts. A failed audit is not evidence of zero defects, but this implementation lets an unexecuted pending pass inherit a successful layout run.",
+    "evidence": "By reading. tools/layout_audit.py:3090-3094 catches page failures and continues; :3254-3257 turns control failures into skipped. :3680-3681 writes pending output only when records are nonempty, and :3686 returns 0. _pending_fail at :3987-4002 ignores skipped and every verdict except silent, dead, and disabled-only. _merge_outputs computes incomplete coverage at :4337 from missing layout rows, failed layout rows, and child exits only; it does not require pending records when --pending-audit was requested.",
+    "fix": "Track planned pending pages and controls, and make unexpected enumeration or activation errors explicit failed coverage records. Write an empty pending report when the pass was requested but executed no controls, and include pending coverage in the exit-3 decision. Reserve skipped for intentional cases such as absent overlays, selected controls, disabled controls, covered controls, and drag handles.",
+    "confidence": "high"
+  },
+  {
+    "id": "P5-04",
+    "severity": "P1",
+    "file": "tools/layout_audit.py",
+    "line": 3488,
+    "title": "A present Describe control that fails to open its dialog is treated as an allowed skip",
+    "what": "The Describe overlay opener finds and clicks the real control. If the expected dialog does not appear, it returns a reason saying the control submitted the walk instead. _measure_combo converts every opener reason into status skipped, and skipped rows do not fail coverage. The pending pass likewise drops the overlay when the opener returns a reason.",
+    "why": "The dialog is a spec 027 main path and the trigger was present, so this is broken behavior rather than an unreachable optional state. The audit can report complete coverage and pass while the Describe workflow no longer opens.",
+    "evidence": "By reading. tools/layout_audit.py:3412-3420 clicks the Describe control and converts a missing dialog into the reason 'the describe control submitted the walk instead of opening a dialog'. :3485-3491 maps that reason to skipped. :4315-4317 excludes skipped rows from failed coverage, and :4337 counts only missing, failed, and child failures. The pending path at :3081-3087 also continues without a control record when an overlay opener returns a reason.",
+    "fix": "Distinguish an absent trigger, which may be an intentional skip, from a present trigger whose expected overlay fails to open. Mark the latter as an error or failed overlay and make it incomplete coverage. Apply the same distinction in the pending pass.",
+    "confidence": "high"
+  },
+  {
+    "id": "P5-05",
+    "severity": "P2",
+    "file": "tools/layout_audit.py",
+    "line": 4433,
+    "title": "Mixed valid and invalid condition filters silently drop the invalid condition",
+    "what": "main filters the --conditions list down to recognized values before build_combos validates it. A command such as --conditions fresh,busy typo runs fresh and reports a complete filtered run instead of rejecting the unsupported condition. Widths and themes do reject unsupported values, so the behavior is inconsistent with the tool's own hard-error contract.",
+    "why": "A typo can remove an intended condition from an evidence run while leaving a successful exit code, making the resulting coverage claim narrower than the operator requested.",
+    "evidence": "By reading. tools/layout_audit.py:4430-4436 silently filters conditions and only errors when none remain. build_combos at :1855-1857 does contain a hard error for unsupported conditions, but main never passes the rejected token to it. The printed run line at :4447 shows only the filtered list.",
+    "fix": "Validate every requested condition before filtering. Return exit 2 and name each unsupported token, matching the width and theme validation path.",
+    "confidence": "high"
+  }
+]

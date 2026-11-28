@@ -1,0 +1,90 @@
+[
+  {
+    "id": "P1-01",
+    "verdict": "confirmed",
+    "methods": ["reading", "running"],
+    "evidence": [
+      "tests/test_brand_naming.py:22-28 scans both src and frontend/src; :65-67 rejects every case-insensitive nexuus hit with no allowlist, so the canonical frontend/src/face/name.ts:2 line and the bundled asset under src/agentdesk/server/static/spa/ are rejected.",
+      "Spec 029:21 and :78 require exactly the canonical agent-name line to be allowed and present, the static bundle to be skipped, and every other occurrence to fail.",
+      "frontend/src/test/face.test.ts:151-165,415,584,667 and frontend/src/test/face-rail.test.tsx:198,256,360 contain further literal agent-name occurrences.",
+      "Ran python -m pytest -q tests/test_brand_naming.py in the read-only worktree: F.; 1 failed, 1 passed in 0.86s. The failure reported 12 hits, including index-Bf3o3Xx2.js:1, name.ts:2, and both face test files."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P1-02",
+    "verdict": "confirmed",
+    "methods": ["reading", "running"],
+    "evidence": [
+      "src/agentdesk/server/dashboard_state.py:344-353 projects loop.status() into only lastRunTs, nextRunTs, and enabled, dropping running and lastSteps.",
+      "src/agentdesk/agentloop/loop.py:447-469 returns enabled, intervalMinutes, lastRunTs, nextRunTs, running, and lastSteps, but no currentStep or lastOk.",
+      "frontend/src/types.ts:269-273 repeats the three-field AgentLoopSummary. frontend/src/App.tsx:50-55,84-88,121-126 polls only /api/dashboard every 8000 ms, with no /api/agent-loop request.",
+      "frontend/src/dashboard/Dashboard.tsx:118-138 has no agentLoop, deskCheck, or recommendations reference and registers only request, request-error, inbox-waiting, and poll-failure activities.",
+      "tests/test_server_agentloop_api.py:191-195 pins the incomplete three-key dashboard summary. Spec 029:139 requires currentStep, lastOk, existing loop fields on both payloads, a 2-second active-pass poll, and face mapping for pass, completion, fatal, broken-loop, and waiting states.",
+      "Ran python -m pytest -q tests/test_server_agentloop_api.py in the read-only worktree: 13 passed in 7.12s."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P1-03",
+    "verdict": "confirmed",
+    "methods": ["reading", "running"],
+    "evidence": [
+      "frontend/src/marketplace/DescribePlugin.tsx:7-11,136-141 imports no face API and opens ModalSheet with no face or face activity.",
+      "frontend/src/dashboard/TrackerSetup.tsx:7-18,263-272 imports no face API and opens InstanceWalk with no face or face activity.",
+      "frontend/src/components/ModalSheet.tsx:7-14,88-94 and frontend/src/components/InstanceWalk.tsx:99-129,143-147 provide no face prop or mount, so neither shell adds one implicitly.",
+      "A production search found FaceSlot only at frontend/src/dashboard/Rail.tsx:94; the only other mount is dev-only frontend/src/face/sheet.tsx:63. Spec 029:30 and :137 require both dialogs to mount a modal face and report their agent-assisted states.",
+      "Ran npx vitest run src/test/describe-plugin.test.tsx from the read-only worktree frontend: 1 test file passed, 4 tests passed. The tests at frontend/src/test/describe-plugin.test.tsx:78-144 assert dialog controls and outcomes but no face or face mood. jsdom emitted the existing HTMLFormElement.prototype.submit not-implemented warning without failing."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P1-04",
+    "verdict": "confirmed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "frontend/src/test/face.test.ts:408-424 clicks the rendered face but asserts only data-mood remains waiting; it observes no transform, frame, or brain call.",
+      "The direct brain test at frontend/src/test/face.test.ts:284-317 calls brain.triggerSquash() itself at :312, so it does not cover component click wiring.",
+      "The removable behavior is frontend/src/face/AgentFace.tsx:175, onClick={() => brainRef.current?.triggerSquash()}.",
+      "Baseline npx vitest run src/test/face.test.ts in the read-only frontend: 1 test file passed, 19 tests passed."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P1-04",
+      "commit": "3540b9f",
+      "file": "frontend/src/face/AgentFace.tsx",
+      "lines": "175",
+      "change": "Deleted only the onClick squash handler; the diff was one removed line.",
+      "command": "npx vitest run src/test/face.test.ts",
+      "result": "1 test file passed, 19 tests passed, so the named component click behavior was broken while the suite stayed green."
+    },
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P1-05",
+    "verdict": "confirmed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "frontend/src/test/face.test.ts:260-282 advances only through direct brain.step calls. The scheduler-aware advanceTime helper at :84-87 is not used.",
+      "frontend/src/face/brain.ts:459-466 is the sleeping brain's wake callback; :465 calls scheduleNextFrame after advanceAutonomousEvents. Removing it leaves no frame to render blink or drift.",
+      "The read-only npx vitest run src/test/face.test.ts baseline used for P1-04 produced 1 test file passed and 19 tests passed."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P1-05",
+      "commit": "3540b9f",
+      "file": "frontend/src/face/brain.ts",
+      "lines": "465",
+      "change": "Deleted only scheduleNextFrame() from the wake timer callback; the diff was one removed line.",
+      "command": "npx vitest run src/test/face.test.ts",
+      "result": "1 test file passed, 19 tests passed, so autonomous wake-to-frame behavior was broken while the suite stayed green."
+    },
+    "severity": "P1",
+    "restated": null
+  }
+]

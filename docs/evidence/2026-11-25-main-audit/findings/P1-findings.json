@@ -1,0 +1,86 @@
+[
+  {
+    "id": "P1-01",
+    "severity": "P1",
+    "file": "frontend/src/face/name.ts",
+    "line": 2,
+    "title": "Brand guard rejects the canonical agent name and the rebuilt bundle",
+    "what": "The canonical constant is under frontend/src, which tests/test_brand_naming.py scans case-insensitively for nexuus with no allowlist. The test also scans the committed SPA bundle even though spec 029 requires that bundle to be skipped. The merged tree fails its naming gate, and the face tests add further literal occurrences.",
+    "why": "Spec 029 lines 21 and 78 require exactly one canonical client line to be allowed, require that line to exist, require the static bundle to be skipped, and require every other live occurrence to fail. Main cannot stay green without the narrowing, but a broad allowlist would lose the product-name guarantee.",
+    "evidence": "By reading, tests/test_brand_naming.py:22-28 includes ROOT / src and ROOT / frontend / src, and lines 65-67 reject every case-insensitive hit. frontend/src/face/name.ts:2 is export const AGENT_NAME = 'Nexuus Bot';. By running python -m pytest -q tests/test_brand_naming.py, the result was 1 failed, 1 passed in 0.42s. The failure listed 12 hits, including frontend/src/face/name.ts:2, both face test files, and src/agentdesk/server/static/spa/assets/index-Bf3o3Xx2.js:1.",
+    "fix": "Allow exactly the canonical path and line, assert it exists once, skip src/agentdesk/server/static/spa/, and make tests use AGENT_NAME instead of literal name strings. Keep case-insensitive rejection everywhere else.",
+    "confidence": "high"
+  },
+  {
+    "id": "P1-02",
+    "severity": "P1",
+    "file": "src/agentdesk/server/dashboard_state.py",
+    "line": 347,
+    "title": "Server-driven face signals are not exposed or consumed",
+    "what": "The dashboard projection reduces loop status to lastRunTs, nextRunTs, and enabled, dropping running and lastSteps. The loop has no currentStep or lastOk. The SPA polls only /api/dashboard every 8 seconds and never polls /api/agent-loop at the required active-pass cadence. Dashboard face activities ignore agentLoop, fatal deskCheck findings, and waiting recommendations, so background work, completion, fatal health, and decision waits cannot drive the face.",
+    "why": "Spec 029 line 139 requires currentStep, lastOk, the existing loop fields on both payloads, a 2-second active-pass poll, and mood mapping for passes, completion, fatal checks, broken loops, and waiting decisions. User stories 17 through 20 depend on it.",
+    "evidence": "By reading, dashboard_state.py:344-351 builds only three keys from full = loop.status(). frontend/src/types.ts:269-273 has the same three-field AgentLoopSummary. frontend/src/App.tsx:55 sets POLL_MS = 8000 and lines 121-126 poll only refetch(). frontend/src/dashboard/Dashboard.tsx:118-138 has all four face activities and none reads data.agentLoop, data.deskCheck, or data.recommendations. tests/test_server_agentloop_api.py:191-195 asserts set(payload['agentLoop']) == {'lastRunTs', 'nextRunTs', 'enabled'}. By running that file, all 13 tests passed while the spec-029 fields remained absent.",
+    "fix": "Track currentStep and lastOk around step.run under the state lock without holding the lock during the step, expose them with running through dashboard_state and /api/agent-loop, poll every 2 seconds while a pass is active, and map pass, completion, fatal, and recommendation state into face activities. Replace the stale three-key assertion and add the deadlock test.",
+    "confidence": "high"
+  },
+  {
+    "id": "P1-03",
+    "severity": "P1",
+    "file": "frontend/src/marketplace/DescribePlugin.tsx",
+    "line": 136,
+    "title": "Neither opt-in agent dialog mounts the face",
+    "what": "DescribePlugin opens ModalSheet with only a title and body. TrackerSetup opens InstanceWalk with only a title and callbacks. Neither file imports or renders FaceSlot, and neither reports modal-scoped face activity. The takeover primitive exists, but no production dialog uses it.",
+    "why": "Spec 029 lines 30 and 137 require a face beside both agent-assisted dialog headings, with listening, thinking, working, done, and blocked states and rail hiding during takeover. These are main plugin and workbook setup flows.",
+    "evidence": "By reading, DescribePlugin.tsx:136-141 renders ModalSheet with no heading face. TrackerSetup.tsx:263-272 renders InstanceWalk with no face prop. git grep -n 'FaceSlot|useFaceActivity' -- frontend/src/marketplace/DescribePlugin.tsx frontend/src/dashboard/TrackerSetup.tsx returned no output. The only production FaceSlot mount is frontend/src/dashboard/Rail.tsx:94.",
+    "fix": "Add a modal FaceSlot beside each dialog heading and report modal-scoped activities for typing, fill or suggestion work, completion, failure, and no-model idle. Preserve focus traps, Escape handling, and Tab order. Test the real dialogs rather than only a synthetic FaceSlot.",
+    "confidence": "high"
+  },
+  {
+    "id": "P1-04",
+    "severity": "P1",
+    "file": "frontend/src/test/face.test.ts",
+    "line": 422,
+    "title": "Click-to-squash test never observes a squash",
+    "what": "The component test named for click squash clicks the face and asserts only that data-mood is still waiting. It never observes a transform, frame, or brain call. The direct brain test calls triggerSquash itself, so component click wiring is uncovered.",
+    "why": "Deleting the AgentFace onClick handler would break the named behavior while leaving this test and the rest of the file green. The brief classifies a test that passes with its named behavior broken as P1.",
+    "evidence": "By reading, face.test.ts:422-424 is fireEvent.click(face); expect(face).toHaveAttribute('data-mood', 'waiting');. The deletable implementation line is frontend/src/face/AgentFace.tsx:175, onClick={() => brainRef.current?.triggerSquash()}. By running npx vitest run src/test/face.test.ts, all 19 tests passed.",
+    "fix": "Inject the fake clock and capture the brain through onBrainReady, click the rendered face, advance a frame, assert the box transform changes, then advance past the squash and assert the mood is unchanged and the transform settles.",
+    "confidence": "high"
+  },
+  {
+    "id": "P1-05",
+    "severity": "P1",
+    "file": "frontend/src/test/face.test.ts",
+    "line": 260,
+    "title": "Autonomous blink and drift test bypasses the wake scheduler",
+    "what": "The test advances the brain with direct brain.step calls. It exercises advanceAutonomousEvents but not the timer callback that wakes a sleeping browser face, so the scheduler is not responsible for the behavior the test names.",
+    "why": "Deleting scheduleNextFrame from the timer callback would break autonomous animation in the browser while this test stays green. That is a P1 false-positive test under the brief.",
+    "evidence": "By reading, face.test.ts:267-280 repeatedly calls brain.step(50) and brain.step(15). The scheduler-aware advanceTime helper at lines 84-87 is not used. The deletable production line is frontend/src/face/brain.ts:465 inside the clock.setTimer callback at lines 459-466. By running the file, all 19 tests passed.",
+    "fix": "Use sched.advanceTime so the wake timer fires, then flush frames and assert drift and blink poses. Pin the 2 through 4 second drift and 3 through 6 second blink boundaries through the scheduler.",
+    "confidence": "high"
+  },
+  {
+    "id": "P1-06",
+    "severity": "P2",
+    "file": "frontend/src/test/tokens.test.ts",
+    "line": 297,
+    "title": "Face token and bundle contracts are absent",
+    "what": "The token suite has no face or agent-name assertions. Its changed block tests pending-button layout only. Face-specific semantic-color, banned-effect, reduced-motion, review-sheet, written-exception, and bundle-marker contracts are missing.",
+    "why": "Spec 029 lines 153-155 make these tests part of acceptance. General stylesheet guards do not prove the face stays within its narrow exception or that the review sheet cannot enter the committed bundle.",
+    "evidence": "By reading, tokens.test.ts:297-329 is describe('a pending button keeps its box', ...). git grep -n -i 'face|nexuus' -- frontend/src/test/tokens.test.ts returned no output. By running npx vitest run src/test/tokens.test.ts, all 56 tests passed.",
+    "fix": "Add the specified face contract block for zero hex literals, banned effects, transition all, reduced motion, exact written exceptions, face-sheet absence from static/spa, and face markers in the rebuilt JS and CSS.",
+    "confidence": "high"
+  },
+  {
+    "id": "P1-07",
+    "severity": "P2",
+    "file": "frontend/src/face/brain.ts",
+    "line": 132,
+    "title": "Reduced-motion preference is sampled only at mount",
+    "what": "The brain reads prefers-reduced-motion once during creation and exposes setReducedMotion, but nothing subscribes to preference changes. Production AgentFace does not pass the optional reducedMotion prop, so changing the OS or browser setting while the page is open leaves JavaScript frames and timers running.",
+    "why": "User story 29 requires zero frame-by-frame animation under reduced motion. The CSS reduced-motion block cannot stop inline transforms driven by requestAnimationFrame.",
+    "evidence": "By reading, brain.ts:132 initializes reducedMotion from options or prefersReducedMotion(). Searching frontend/src/face for matchMedia, change listeners, and setReducedMotion found only the one-shot helper at brain.ts:66-71, prop sync at AgentFace.tsx:127-131, and the setter at brain.ts:699-714. face.test.ts:377-404 forces reducedMotion true and does not test a live preference change.",
+    "fix": "Subscribe to the MediaQueryList change event for the brain lifetime, call setReducedMotion on change, and remove the listener in destroy. Test starting animated, changing the media query, and asserting frames and timers stop immediately.",
+    "confidence": "high"
+  }
+]

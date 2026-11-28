@@ -1,0 +1,67 @@
+[
+  {
+    "id": "P3-01",
+    "verdict": "confirmed",
+    "methods": ["reading", "running"],
+    "evidence": [
+      "frontend/src/marketplace/PluginDetail.tsx:532 computes cannotRun, :219-224 hides Re-test for that state, but :924-929 renders Re-run validator with only installed as its guard.",
+      "The validator action calls lifecycle('retest', 'validate') at PluginDetail.tsx:924-929 and posts to /api/marketplace/retest at :626-631. src/agentdesk/marketplace/api.py:1686-1688 only re-probes the installed data source, so it cannot add the missing HTTP transport.",
+      "frontend/src/test/marketplace-cannot-run.test.tsx:78-88 checks only the exact Re-test label and never queries Re-run validator.",
+      "Command: cd D:/20-projects/Personal Agents/.worktrees/027-merge/frontend && npx vitest run src/test/marketplace-cannot-run.test.tsx. Output: 1 passed (1), 9 passed (9).",
+      "P1 holds because the main plugin detail path exposes a visible dead action for an installed cannot-run plugin. specs/027-one-home-screen-feedback.md:149 says retest is absent because it cannot change the transport."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P3-02",
+    "verdict": "confirmed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "frontend/src/test/feedback-marketplace.test.tsx:445-480 claims each lifecycle action but holds only /enable and /retest, then asserts only Enabling… and Re-testing….",
+      "Install, update and consent share ConsentSheet through PluginDetail.tsx:563-597 and :992-1009. ConsentSheet.tsx:110-113 uses an immediate boolean busy prop, generic Working… label, disabled and aria-busy, with no 100 ms gate or action-specific pending label.",
+      "docs/tickets/2026-11-24-feedback/06-marketplace-feedback.md:11-12 claims all eight lifecycle buttons show F1 and cites this test as verification.",
+      "Baseline command: cd D:/20-projects/Personal Agents/.worktrees/027-merge/frontend && npx vitest run src/test/feedback-marketplace.test.tsx. Output: 1 passed (1), 20 passed (20); the named lifecycle test passed.",
+      "P1 holds because a test passes while the behavior it names is broken. The affected controls also violate docs/design-language.md:159-165."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P3-02",
+      "file": "frontend/src/marketplace/ConsentSheet.tsx",
+      "lines": "110-113",
+      "change": "Removed disabled={busy}, aria-busy, and the Working… branch from the shared confirm button, leaving an always-enabled confirmLabel button. This removes all busy presentation from install, update and consent.",
+      "command": "cd D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P3-02/frontend && npx vitest run src/test/feedback-marketplace.test.tsx",
+      "result": "still passed: 1 passed (1), 20 passed (20), including names each plugin detail lifecycle action while it runs",
+      "cleanup": "Temporary worktree removed; subsequent git worktree list confirmed it was gone."
+    },
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P3-05",
+    "verdict": "confirmed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "frontend/src/test/marketplace-cannot-run.test.tsx:196-206 waits for the installed heading, then uses waitFor only to assert the cannot-run notice is absent. It never waits for the detail request or capability evaluation.",
+      "frontend/src/marketplace/Installed.tsx:111 initializes cannotRunIds empty; :183-191 fills it only after the asynchronous detail response settles and asksForWeb is evaluated.",
+      "Baseline command: cd D:/20-projects/Personal Agents/.worktrees/027-merge/frontend && npx vitest run src/test/marketplace-cannot-run.test.tsx. Output: 1 passed (1), 9 passed (9).",
+      "Under the one-line mutation, the full file reported 1 failed and 8 passed: the named non-web case found the incorrect Cannot run on this desk badge. This full-file ordering caught the regression.",
+      "Under the same mutation, the named case alone passed in 81 ms with 8 skipped, before the mutated asynchronous result painted the badge. This directly confirms the race and shows that coverage is timing- and order-dependent.",
+      "P1 holds because the named test passed while the behavior it names was broken. This does not claim that every full-file run misses the regression."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P3-05",
+      "file": "frontend/src/marketplace/Installed.tsx",
+      "lines": "187",
+      "change": "Replaced cache.set(entry.key, asksForWeb(data.plugin.capabilities)) with cache.set(entry.key, true), making every fetched plugin web-dependent.",
+      "commands": [
+        "cd D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P3-05/frontend && npx vitest run src/test/marketplace-cannot-run.test.tsx",
+        "cd D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P3-05/frontend && npx vitest run src/test/marketplace-cannot-run.test.tsx -t 'shows no state when the plugin does not ask for the web'"
+      ],
+      "result": "Full file: 1 failed, 8 passed; the named non-web case failed on the incorrect badge. Named case alone: 1 passed, 8 skipped in 81 ms, so the assertion passed before the mutated async result appeared.",
+      "cleanup": "Temporary worktree removed; subsequent git worktree list confirmed it was gone."
+    },
+    "severity": "P1",
+    "restated": null
+  }
+]

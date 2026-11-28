@@ -1,0 +1,38 @@
+[
+  {
+    "id": "P2-01",
+    "verdict": "confirmed",
+    "methods": [
+      "reading",
+      "running",
+      "mutation"
+    ],
+    "evidence": {
+      "reading": [
+        "frontend/src/dashboard/TrackerCard.tsx:56 defines wizardFace for a fresh ui-schema card, but lines 76-80 always render TrackerFigure and lines 90-100 then render the chosen faceElements and blocks.",
+        "frontend/src/dashboard/PluginCardView.tsx:385-388 routes every excel-report id to TrackerCard, including wizard-face cards.",
+        "frontend/src/dashboard/cells.tsx:218 renders .figure and lines 176-198 plus 225-239 render the classic .spark.",
+        "frontend/src/test/tracker-cards.test.tsx:250-266 checks only the chosen 42 and Value text, not the absence of .figure or .spark; lines 268-287 have the same gap for the generic wizard route.",
+        "specs/025-executive-plugin-choices.md:170-173 and 258-259 require the ui-schema face instead of the classic tracker face for a big-number workbook choice.",
+        "specs/027-one-home-screen-feedback.md:63 requires one tracker tile with one face; lines 143-144 retain excel-report routing so a wizard-built face still draws its schema elements."
+      ],
+      "baseline_command": "cd \"D:/20-projects/Personal Agents/.worktrees/027-merge/frontend\" && npx vitest run src/test/tracker-cards.test.tsx",
+      "baseline_result": "Test Files 1 passed (1); Tests 9 passed (9); tracker-cards.test.tsx 89ms.",
+      "read_only_worktree": "Clean at 3540b9f before and after the baseline and mutation runs."
+    },
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P2-01",
+      "base": "3540b9f",
+      "dependency_setup": "npm ci in the temporary worktree frontend directory; no node_modules link, junction, or copy.",
+      "file": "frontend/src/dashboard/TrackerCard.tsx",
+      "location": "Inserted at line 92 in the wizardFace branch, immediately after its opening fragment.",
+      "change": "Added {tracker ? <TrackerFigure view={tracker} /> : null} before faceElements.map.",
+      "effect": "Wizard-face cards render two classic tracker figures plus the chosen schema elements, worsening the duplicate-face defect while leaving classic cards unchanged.",
+      "command": "cd \"D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P2-01/frontend\" && npx vitest run src/test/tracker-cards.test.tsx",
+      "result": "Test Files 1 passed (1); Tests 9 passed (9); tracker-cards.test.tsx 86ms.",
+      "noticed": false
+    },
+    "severity": "P1",
+    "restated": null
+  }
+]

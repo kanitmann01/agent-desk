@@ -1,0 +1,76 @@
+[
+  {
+    "id": "P4-01",
+    "verdict": "narrowed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "Reading: src/agentdesk/server/inbox_view.py:60-63, 123, and 185 render ordinary Accept, Dismiss, and Restore as bare buttons outside forms; src/agentdesk/server/pages.py:1123-1134 supplies their only click POSTs.",
+      "Reading: src/agentdesk/server/app.py:5082-5089 supports form notices for accept and dismiss, but src/agentdesk/server/app.py:5820-5845 always returns JSON for restore.",
+      "Reading exception: src/agentdesk/server/inbox_view.py:93-106 gives update-consent cards a separate plain POST Accept form, so not every card kind loses all no-script acceptance.",
+      "Running: python -m pytest -q -p no:cacheprovider tests/test_ui_feedback.py in the read-only worktree, with all data and home paths redirected to a fresh temporary folder, reported 47 passed in 21.43s.",
+      "Coverage: tests/test_ui_feedback.py:453-497 tests settings toggles only and contains no inbox decision post.",
+      "Mutation: deleting src/agentdesk/server/inbox_view.py:93-106 in temporary worktree mutation/P4-01 removed the only existing no-script inbox Accept form; the same isolated test command still reported 47 passed in 21.97s, so the test did not notice."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P4-01",
+      "file": "src/agentdesk/server/inbox_view.py",
+      "lines": "93-106",
+      "change": "Deleted the update-consent plain POST Accept form, removing the only existing no-script inbox Accept path.",
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_ui_feedback.py",
+      "result": "47 passed in 21.97s",
+      "test_noticed": false
+    },
+    "severity": "P1",
+    "restated": "With JavaScript off, ordinary inbox cards cannot be accepted or dismissed and dismissed cards cannot be restored because those controls are script-only buttons; update-consent cards retain one separate no-script Accept form. Sales and calendar Re-test and dashboard skill-run controls are also script-only. The no-script feedback tests cover settings toggles but not these actions. P1 holds because losing the ordinary inbox decision path is a user-visible failure on a main path."
+  },
+  {
+    "id": "P4-02",
+    "verdict": "confirmed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "Reading: src/agentdesk/server/peers_api.py:395-410 appends keep_code to the refusal redirect, and lines 441-466 pass it for missing fields, bad addresses, and PeerClientError failures.",
+      "Reading: src/agentdesk/server/app.py:1621-1629 reads the code query parameter back into the form, while src/agentdesk/server/pages.py:579-592 removes only notice and notice_kind, leaving code in the URL.",
+      "Reading: src/agentdesk/server/peers_api.py:412-431 also places a newly generated pairing code inside the notice query.",
+      "Reading: src/agentdesk/peers/store.py:97-105 derives the channel token from the secret code, and lines 177-188 give it a ten-minute life.",
+      "Running: python -m pytest -q -p no:cacheprovider tests/test_ui_feedback.py in the read-only worktree with temporary data, template, and home isolation reported 47 passed in 21.34s.",
+      "Coverage: tests/test_ui_feedback.py:429-437 asserts that the refused address and code remain in the form but never asserts that Location or the final URL excludes the code.",
+      "Mutation: deleting src/agentdesk/server/peers_api.py:407-408 in temporary worktree mutation/P4-02 removed the refusal URL exposure; the same isolated test command reported 1 failed, 46 passed in 21.33s because tests/test_ui_feedback.py:436 requires URL-based code retention. No secrecy assertion exists."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P4-02",
+      "file": "src/agentdesk/server/peers_api.py",
+      "lines": "407-408",
+      "change": "Deleted the two lines that append keep_code to the refusal redirect, removing the refusal-path URL exposure.",
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_ui_feedback.py",
+      "result": "1 failed, 46 passed in 21.33s; failure at tests/test_ui_feedback.py:436 because the typed code was no longer retained through the URL.",
+      "test_noticed": true,
+      "noticed_behavior": "Loss of typed-code retention, not the URL secrecy property."
+    },
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P4-03",
+    "verdict": "confirmed",
+    "methods": ["reading", "running", "mutation"],
+    "evidence": [
+      "Reading: src/agentdesk/server/agents_view.py:140-145 checks Workbook tracker by default; src/agentdesk/server/app.py:3497-3518 maps use_workbook to excel-report, lines 3180-3185 pass _excel_status() to gather, and lines 3536-3544 return the watcher status unchanged.",
+      "Reading: src/agentdesk/excel/core.py:47-75 and 88-104 store actual row lists in Delta.added and serialize them unchanged; src/agentdesk/excel/watcher.py:252-261 and 286-297 also supplies bounded examples and grid.",
+      "Reading: src/agentdesk/presentations/pipeline.py:65-79 reads only the file name, added-row count, and dict-shaped added rows, never grid, examples, rowsSeen, or tracker bindings. Lines 157-177 send that source text to the fill model, and lines 85-106 replace uncited numbers with [data needed].",
+      "Coverage: tests/test_presentation_pipeline.py:277-303 supplies only configured and path, checking file-name inclusion and full-path exclusion, with no figure assertion. tests/test_presentation_packs.py:35-65 returns generic model text and lines 239-267 run with the inert unconfigured workbook from tests/server_harness.py:151-158.",
+      "Running: isolated single-file runs in the read-only worktree reported 13 passed in 19.78s for tests/test_presentation_pipeline.py and 13 passed in 5.08s for tests/test_presentation_packs.py.",
+      "Mutation: deleting src/agentdesk/presentations/pipeline.py:73-74 in temporary worktree mutation/P4-03 removed the added-row count, the only numeric workbook datum contributed by the real list-shaped delta path. The same isolated commands still reported 13 passed in 21.21s and 13 passed in 6.71s respectively, so neither test noticed."
+    ],
+    "mutation": {
+      "worktree": "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/mutation/P4-03",
+      "file": "src/agentdesk/presentations/pipeline.py",
+      "lines": "73-74",
+      "change": "Deleted the two lines that append added {len(added)} to the workbook source.",
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_presentation_pipeline.py; python -m pytest -q -p no:cacheprovider tests/test_presentation_packs.py",
+      "result": "13 passed in 21.21s and 13 passed in 6.71s",
+      "test_noticed": false
+    },
+    "severity": "P1",
+    "restated": null
+  }
+]

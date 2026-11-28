@@ -1,0 +1,10 @@
+Working directory: D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694
+Commit: 3f099e0b6240cb97b72359afdaf0cb1366b3b4ea
+Environment: UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright"
+
+UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright" \
+  uv run --no-project --with playwright --with keyring --with cryptography \
+  python tools/layout_audit.py --pending-audit \
+  --conditions fresh,plugins,full --widths 1280 --themes unkey \
+  --no-stress --fail-on none --jobs 3 --mock-delay-ms 4000 \
+  --continue-request-path /research --out "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow"

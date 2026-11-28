@@ -1,0 +1,1 @@
+COMMAND 5 feedback start=2026-11-27T02:58:39Z end=2026-11-27T03:01:03Z duration_s=144 exit=1 log=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-command.log
