@@ -117,7 +117,7 @@ afterEach(() => {
 });
 
 describe('rail brand placement and collapsed layout', () => {
-  it('places FaceSlot inside .brand before Agent Desk and excludes .phone-bar', () => {
+  it(`places FaceSlot inside .brand before ${AGENT_NAME} and excludes .phone-bar`, () => {
     render(
       <FaceProvider trackPointer={false}>
         <Rail inboxWaiting={0} />
@@ -129,7 +129,7 @@ describe('rail brand placement and collapsed layout', () => {
     const slot = brand.querySelector('[data-face-slot="rail"]') as HTMLElement;
     const wordmark = brand.querySelector('.brand-name') as HTMLElement;
     expect(slot).not.toBeNull();
-    expect(wordmark).toHaveTextContent('Agent Desk');
+    expect(wordmark).toHaveTextContent(AGENT_NAME);
     expect(brand.firstElementChild).toBe(slot);
     expect(slot.compareDocumentPosition(wordmark) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
 

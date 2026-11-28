@@ -33,7 +33,7 @@ SYNTHETIC_INDEX = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Agent Desk</title>
+<title>Nexuus Bot</title>
 <script type="module" crossorigin src="/static/spa/assets/index-deadbeef.js"></script>
 <link rel="stylesheet" href="/static/spa/assets/index-deadbeef.css">
 </head>
@@ -207,6 +207,12 @@ def test_committed_bundle_exists_and_is_referenced():
         "frontend/ and commit the output"
     )
     page = index.read_text(encoding="utf-8")
+    # The shipped tab title is the product's one approved name (spec 032):
+    # the bundle a browser downloads says what the source says.
+    assert "<title>Nexuus Bot</title>" in page, (
+        "the committed SPA shell does not carry the approved tab title; "
+        "rebuild the bundle from the renamed source"
+    )
     # No remote resource URLs: the app is offline by construction.
     for banned in ("http://", "https://", "//cdn."):
         assert banned not in page, banned

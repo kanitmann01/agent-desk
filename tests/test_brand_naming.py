@@ -86,12 +86,17 @@ def test_agent_face_keeps_the_approved_name():
 
 
 def test_the_avatar_entries_expect_the_approved_initials():
-    """The avatar entries declare the old initials and expect NB."""
+    """Any avatar entry left on the temporary lists expects NB.
+
+    The list may be empty: tickets 02 and 03 renamed both avatar surfaces,
+    so both entries left the temporary lists by design. Completeness stays
+    pinned by the classification sweep, which rejects any old initials an
+    emptied entry no longer covers.
+    """
     contract = g.load_contract()
     assert g.initials_contract_violations(contract) == []
     declared = [entry for _f, _fam, entry in contract.temporary
                 if entry.get("initials")]
-    assert declared, "the avatar entries vanished from the temporary lists"
     for entry in declared:
         assert entry["expected_initials"] == "NB"
 

@@ -10,6 +10,7 @@ import CommandBar from '../components/CommandBar';
 import Dashboard from '../dashboard/Dashboard';
 import Rail from '../dashboard/Rail';
 import { dateLineFor, greetingFor } from '../fmt';
+import { AGENT_INITIALS, AGENT_NAME } from '../face/name';
 import type { DashboardData, SetupData } from '../types';
 
 const DATA: DashboardData = {
@@ -64,7 +65,7 @@ describe('the rail', () => {
     render(<Rail inboxWaiting={2} />);
     // The brand carries no gradient: a plain span in the ink.
     const brand = document.querySelector<HTMLElement>('.brand-name');
-    expect(brand).toHaveTextContent('Agent Desk');
+    expect(brand).toHaveTextContent(AGENT_NAME);
     expect(brand?.style.backgroundImage).toBe('');
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(nav).toHaveTextContent('Dashboard');
@@ -95,9 +96,12 @@ describe('the rail', () => {
     render(<Rail inboxWaiting={2} />);
     expect(document.querySelectorAll('.rail-label')).toHaveLength(8);
     // The avatar is a 30px square: its initials can be elided, so the
-    // same name the user line carries is the reachable title.
+    // same name the user line carries is the reachable title, and the
+    // initials are the approved ones.
     expect(document.querySelector('.rail .user .avatar'))
-      .toHaveAttribute('title', 'Agent Desk');
+      .toHaveAttribute('title', AGENT_NAME);
+    expect(document.querySelector('.rail .user .avatar'))
+      .toHaveTextContent(AGENT_INITIALS);
   });
 
   it('keeps Memory and Mail on the rail', () => {
@@ -353,7 +357,7 @@ describe('the centered app states', () => {
     expect(screen.getByRole('heading', { name: 'Session required' })).toHaveFocus();
     // A reload only leads back to the same refusal; the notice names the
     // next step instead of offering a button that cannot succeed.
-    expect(alert).toHaveTextContent('Open Agent Desk from its shortcut to get a fresh link.');
+    expect(alert).toHaveTextContent('Open Nexuus Bot from its shortcut to get a fresh link.');
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
