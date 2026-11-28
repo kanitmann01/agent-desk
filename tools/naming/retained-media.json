@@ -1,0 +1,23 @@
+{
+  "note": "The three README screenshots still show the pre-rename UI. The founder decided on 2026-11-25 that they stay as they are through every stage of Spec 032 and are retaken once, by the README capture command, at the wave closeout. Nothing else in the guard looks at images; their provenance note is docs/readme/README.md.",
+  "entries": [
+    {
+      "path": "docs/readme/dashboard.png",
+      "captured": "2026-11-25",
+      "review_trigger": "Wave closeout: retake once with the README capture command after Specs 030 and 031 have landed.",
+      "what_it_shows": "Sample-data morning dashboard with the pre-rename wordmark."
+    },
+    {
+      "path": "docs/readme/memory.png",
+      "captured": "2026-11-25",
+      "review_trigger": "Wave closeout: retake once with the README capture command after Specs 030 and 031 have landed.",
+      "what_it_shows": "Memory page with the pre-rename wordmark."
+    },
+    {
+      "path": "docs/readme/marketplace.png",
+      "captured": "2026-11-25",
+      "review_trigger": "Wave closeout: retake once with the README capture command after Specs 030 and 031 have landed.",
+      "what_it_shows": "Marketplace Discover view with the pre-rename wordmark."
+    }
+  ]
+}

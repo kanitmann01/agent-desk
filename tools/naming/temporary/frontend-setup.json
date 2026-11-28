@@ -1,0 +1,19 @@
+{
+  "family": "frontend-setup",
+  "ticket": "05",
+  "issue": 359,
+  "note": "Ticket 05 (issue 359) clears this family and edits only this file. The frontend package name and lockfile identity are ticket 09's and stay unchanged here.",
+  "entries": [
+    {
+      "surface": "Frontend README intro sentence",
+      "files": ["frontend/README.md"],
+      "issue": 359
+    },
+    {
+      "surface": "Frontend package description sentence",
+      "files": ["frontend/package.json"],
+      "issue": 359,
+      "matches": ["agent desk"]
+    }
+  ]
+}
