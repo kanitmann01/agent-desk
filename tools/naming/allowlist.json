@@ -5,8 +5,8 @@
       "category": "import-compatibility",
       "identifier": "agentdesk",
       "paths": ["src/agentdesk/__init__.py"],
-      "context_paths": ["src/agentdesk/*", "docs/ops/compatibility.md"],
-      "context": "The compatibility alias package: one module at src/agentdesk/__init__.py that maps every old agentdesk.* import onto the same nexuusbot.* module object (never a copy). Ticket 08 moved the tree to nexuusbot, so this identifier appears in first-party text only in the shim itself, in the alias and plugin-compatibility tests (which the display scan does not read), and in compatibility documentation.",
+      "context_paths": ["src/agentdesk/*", "README.md", "docs/ops/compatibility.md"],
+      "context": "The compatibility alias package: one module at src/agentdesk/__init__.py that maps every old agentdesk.* import onto the same nexuusbot.* module object (never a copy). Ticket 08 moved the tree to nexuusbot, so this identifier appears in first-party text only in the shim itself, in the alias and plugin-compatibility tests (which the display scan does not read), in compatibility documentation, and in the README developer section's alias sentence, which names the alias and its five module commands.",
       "purpose": "The old import path keeps resolving so existing plugins and scripts do not break or create duplicate state.",
       "owner": "Spec 032 stories 27 to 30, out-of-scope item 14",
       "review_trigger": "A founder-approved migration spec setting the alias support window."
@@ -50,7 +50,7 @@
     {
       "category": "import-compatibility",
       "identifier": "python -m agentdesk.presentations.cli",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "registry/*", "DEMO.md"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "README.md", "docs/ops/*", "registry/*", "DEMO.md"],
       "context": "The documented presentations module command; it keeps working through the alias after ticket 08.",
       "purpose": "Existing commands and runbooks stay valid.",
       "owner": "Spec 032 story 29",
@@ -59,7 +59,7 @@
     {
       "category": "import-compatibility",
       "identifier": "python -m agentdesk.registry",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "registry/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "README.md", "docs/ops/*", "registry/*"],
       "context": "The documented registry module command; it keeps working through the alias after ticket 08.",
       "purpose": "Existing commands and runbooks stay valid.",
       "owner": "Spec 032 story 29",
@@ -68,7 +68,7 @@
     {
       "category": "import-compatibility",
       "identifier": "python -m agentdesk.validator",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "registry/*"],
+      "context_paths": ["src/*", "tools/*", "scripts/*", "README.md", "docs/ops/*", "registry/*"],
       "context": "The documented validator module command; it keeps working through the alias after ticket 08.",
       "purpose": "Existing commands and runbooks stay valid.",
       "owner": "Spec 032 story 29",
