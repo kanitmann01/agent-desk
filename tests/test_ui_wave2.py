@@ -181,7 +181,7 @@ def test_every_shell_page_carries_a_breadcrumb_naming_the_page(booted, path, tit
     page = _get(booted, path)
     assert '<nav class="crumbs" aria-label="Breadcrumb">' in page, path
     crumbs = page.split('<nav class="crumbs" aria-label="Breadcrumb">')[1].split("</nav>")[0]
-    assert '<a href="/">Agent Desk</a>' in crumbs, (path, crumbs[:200])
+    assert '<a href="/">Nexuus Bot</a>' in crumbs, (path, crumbs[:200])
     assert f'<span aria-current="page">{title}</span>' in crumbs, (path, crumbs[:200])
 
 

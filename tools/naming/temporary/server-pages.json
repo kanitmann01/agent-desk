@@ -1,0 +1,19 @@
+{
+  "family": "server-pages",
+  "ticket": "02",
+  "issue": 356,
+  "note": "Ticket 02 (issue 356) renamed every server-rendered surface to Nexuus Bot and its avatar initials to NB, and this family's entries left the list in the same change. One scoped entry remains, and it is a structural question posted on issue 356: it covers the retained -m agentdesk.server invocations inside the launcher scripts, which are compatibility command spellings ticket 02 must not rename (the pythonw, py -3, python3 and $PY rungs), while the python -m agentdesk.server allowlist entry does not match them. Ticket 08 (issue 362) re-points the launchers at the canonical module and clears this entry, or the founder widens the allowlist instead.",
+  "entries": [
+    {
+      "surface": "Retained launcher module invocations, not display copy: the -m agentdesk.server spellings that the pythonw, py -3, python3 and $PY rungs run and that the python -m agentdesk.server allowlist entry does not cover",
+      "files": [
+        "tools/agent-desk.cmd",
+        "tools/agent-desk.command",
+        "tools/start.cmd",
+        "tools/start.command"
+      ],
+      "matches": ["-m agentdesk.server"],
+      "issue": 356
+    }
+  ]
+}
