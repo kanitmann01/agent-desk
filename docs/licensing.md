@@ -6,6 +6,12 @@ contains bracketed `[COUNSEL: ...]` placeholders for commercial terms. Do
 not describe the product as legally cleared until counsel has reviewed
 `LICENSE`, `LICENSE-SDK`, and the plugin distribution grant.
 
+The product is Nexuus Bot. This rename amends no licence: the licence
+files, copyright lines, plugin notices, generated third-party notice
+wording, the plugin-grant summary below and the licence-table identifier
+keep their existing wording byte for byte; they are listed as retained
+contracts in `docs/ops/compatibility.md`.
+
 ## The boundary
 
 | Area | Licence | What it covers |

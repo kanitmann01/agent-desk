@@ -184,7 +184,7 @@ A good test drives a public seam and asserts what a person can see or hear: the 
 3. A face on the phone strip, and speech bubbles, badges or sound around the face.
 4. Renaming either token dialect, or merging the two stylesheets.
 5. Measuring phone widths in the layout audit. The audit starts at 800 pixels; phone coverage is filed as a follow-up.
-6. Copy or prompt changes that speak as Nexuus Bot.
+6. Copy or prompt wording beyond the product name. The product and the agent are Nexuus Bot (Spec 032); this spec changes no other copy or prompt.
 7. How the Dashboard and the Plugins pages are served. The app keeps its own document.
 
 ## Further Notes
@@ -197,11 +197,12 @@ A good test drives a public seam and asserts what a person can see or hear: the 
 - The spec finishes the three things Spec 029 promised and did not build.
 - Every wait names its outcome, or says its end is not news, and a test enforces it.
 - The server-rendered rail stays only as the no-script fallback, held equal to the component by a test.
-- The agent's name is Nexuus Bot. The product stays Agent Desk.
+- The agent's name is Nexuus Bot, and the product is Nexuus Bot too: Spec 032 renames every live surface to one name.
 
 ### What this spec depends on
 
-- The audit of the UI wave on main closes its P0 and P1 findings before this spec starts. That audit's first ticket also narrows the brand-naming guard, so the agent's name stops failing it.
+- The audit of the UI wave on main closes its P0 and P1 findings before this spec starts. That audit's first ticket narrowed the brand-naming guard of its day; Spec 032 replaced it with the full-surface naming guard.
+- Spec 032 completes the rename before shell and face work starts: the product and the agent are Nexuus Bot on every live surface, compatibility identifiers keep their documented names, and the naming guard holds the line.
 - Spec 029 is closed by that audit's closeout, with a pointer to this spec for everything it left unbuilt.
 
 ### Risks and mitigations

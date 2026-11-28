@@ -6,6 +6,13 @@ what IT must provide, and the AppLocker rule template. The bundle is
 AppLocker section as a template to complete after signing, not as a deployed
 policy.
 
+The product is Nexuus Bot. The names the bundle and its rules ship with
+(`AgentDesk.exe`, `dist/agent-desk`, the `\\fileserver\AgentDesk` install
+and update shares, `agent-desk.zip`, the AppLocker `BinaryName`) are
+compatibility identifiers: they keep their exact spelling so endpoint and
+update rules keep matching. `docs/ops/compatibility.md` lists every
+retained identifier with its context, owner and review trigger.
+
 ## Build
 
 ### Prerequisites
@@ -137,8 +144,10 @@ and exits 3. If no built executable exists, `smoke` prints `SKIP` and exits
   trigger SmartScreen and possibly AV heuristics.
 - Network egress for the model and data sources the user configures. The app
   listens only on loopback; no inbound firewall rule is needed.
-- A backup policy for `%LOCALAPPDATA%\AgentDesk` (or the directory named by
-  `AGENTDESK_DATA`). That directory holds user data and settings.
+- A backup policy for the runtime data root, `%USERPROFILE%\.agent-desk`
+  by default or the directory named by `AGENTDESK_DATA`. That directory
+  holds user data and settings; the install folder `%LOCALAPPDATA%\AgentDesk`
+  holds the program, not user data.
 
 No admin rights, service account, machine-wide registry key, or driver is
 required at runtime.
@@ -224,11 +233,13 @@ rebuild changes the hash, so they are not recommended as the primary rule.
   background service.
 - The server binds to `127.0.0.1` only and opens a browser at
   `/auth/<one-time token>`. The token is exchanged for a session cookie.
-- Default data directory: `%LOCALAPPDATA%\AgentDesk`. Override with the
-  `AGENTDESK_DATA` environment variable.
-- Uninstall: delete the shortcut and the install folder, then
-  `%LOCALAPPDATA%\AgentDesk` if the user's data is no longer needed. No
-  machine-wide changes are made.
+- Default data root: `%USERPROFILE%\.agent-desk`. Override with the
+  `AGENTDESK_DATA` environment variable. The program installs to
+  `%LOCALAPPDATA%\AgentDesk`; that folder holds the application, not user
+  data.
+- Uninstall: delete the shortcut and the install folder
+  `%LOCALAPPDATA%\AgentDesk`, then the data root `%USERPROFILE%\.agent-desk`
+  if the user's data is no longer needed. No machine-wide changes are made.
 
 ## Update channel and rollback
 
@@ -246,7 +257,7 @@ version directory in place.
 
 Update procedure:
 
-1. Close Agent Desk.
+1. Close Nexuus Bot.
 2. Copy the new version to a versioned folder under
    `%LOCALAPPDATA%\AgentDesk\app\<version>`.
 3. Verify `manifest.json` against the extracted files and check the SBOM and
