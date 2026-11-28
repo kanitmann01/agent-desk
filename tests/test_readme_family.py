@@ -382,6 +382,34 @@ def test_the_readme_labels_its_retained_names_as_compatibility_contracts():
         )
 
 
+def test_the_developer_section_names_the_package_identity():
+    """Ticket 08 (issue 362): the README names the distribution, the
+    import path and the alias, and promises only the import path.
+
+    The compatibility promise is the old import path (`import
+    agentdesk` and the five old module commands), never the old
+    distribution name as an install alias: no install instruction may
+    name it.
+    """
+    text = _normalized(README)
+    start = text.index("## Development")
+    section = text[start:text.index("## Documentation and IT review")]
+    for needle in ("nexuus-bot", "nexuusbot", "import agentdesk",
+                   "python -m agentdesk.server",
+                   "python -m nexuusbot"):
+        assert needle in section, (
+            f"the developer section does not name {needle!r}"
+        )
+    assert "same module objects" in section, (
+        "the alias promise does not say the modules are the same objects"
+    )
+    for install_alias in ("install agent-desk", "pip install agent-desk"):
+        assert install_alias not in text, (
+            f"the README promises {install_alias!r}, an install alias "
+            "the project never offers"
+        )
+
+
 # -- the retained media stays byte for byte ---------------------------------
 
 

@@ -101,6 +101,8 @@ Updates show new permission scopes before they apply. Rollback restores the prev
 
 ## Development
 
+The Python distribution is `nexuus-bot` and the canonical import path is `nexuusbot`; `python -m pip install -e ".[dev]"` installs it under that name. The old import path keeps working: `import agentdesk` and every `agentdesk.*` submodule resolve to the same module objects `nexuusbot` and `nexuusbot.*` resolve to (one alias package, never a copy), and the five old module commands (`python -m agentdesk.server`, `python -m agentdesk.probe`, `python -m agentdesk.presentations.cli`, `python -m agentdesk.registry`, `python -m agentdesk.validator`) keep their existing parser names through the alias, beside the canonical `python -m nexuusbot.*` spellings. New code imports `nexuusbot`.
+
 Run the backend test suite from the repository root:
 
 ```bash
