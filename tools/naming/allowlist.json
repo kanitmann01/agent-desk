@@ -184,8 +184,8 @@
     {
       "category": "environment-and-tooling",
       "identifier": "AGENTDESK_MARKETPLACE_ADMIN",
-      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "docs/known-limitations.md"],
-      "context": "The marketplace admin-mode variable: name and precedence kept.",
+      "context_paths": ["src/*", "tools/*", "scripts/*", "docs/ops/*", "docs/known-limitations.md", "frontend/src/marketplace/Admin.tsx"],
+      "context": "The marketplace admin-mode variable: name and precedence kept; the SPA admin page names it in its how-to-enable sentence.",
       "purpose": "Existing environments keep working.",
       "owner": "Spec 032 story 36, out-of-scope item 2",
       "review_trigger": "A founder-approved migration spec."
@@ -888,6 +888,42 @@
       "purpose": "The plugin-grant summary stays byte for byte.",
       "owner": "Spec 032 story 49, out-of-scope item 11",
       "review_trigger": "A founder-approved migration spec."
+    },
+    {
+      "category": "import-compatibility",
+      "identifier": "agentdesk",
+      "context_paths": ["GLOSSARY.md"],
+      "context": "Named once in the glossary's product definition as a compatibility identifier: the old Python import path that keeps resolving through the alias after ticket 08. Not a wordmark; the definition distinguishes it from the product name.",
+      "purpose": "The glossary distinguishes the product name from compatibility identifiers so new copy does not imitate legacy code names (Spec 032 story 53).",
+      "owner": "Issue 359 (ticket 05), the glossary's product definition",
+      "review_trigger": "The compatibility table of ticket 06 (issue 360), then a founder-approved migration spec."
+    },
+    {
+      "category": "environment-and-tooling",
+      "identifier": "AGENTDESK_",
+      "context_paths": ["GLOSSARY.md"],
+      "context": "Named once in the glossary's product definition as a compatibility identifier: the retained environment prefix. Not a wordmark.",
+      "purpose": "The glossary distinguishes the product name from compatibility identifiers so new copy does not imitate legacy code names (Spec 032 story 53).",
+      "owner": "Issue 359 (ticket 05), the glossary's product definition",
+      "review_trigger": "The compatibility table of ticket 06 (issue 360), then a founder-approved migration spec."
+    },
+    {
+      "category": "data-and-local-state",
+      "identifier": ".agent-desk",
+      "context_paths": ["GLOSSARY.md"],
+      "context": "Named once in the glossary's product definition as a compatibility identifier: the retained data folder. Not a wordmark.",
+      "purpose": "The glossary distinguishes the product name from compatibility identifiers so new copy does not imitate legacy code names (Spec 032 story 53).",
+      "owner": "Issue 359 (ticket 05), the glossary's product definition",
+      "review_trigger": "The compatibility table of ticket 06 (issue 360), then a founder-approved migration spec."
+    },
+    {
+      "category": "browser-and-secrets",
+      "identifier": "agentdesk_session",
+      "context_paths": ["GLOSSARY.md"],
+      "context": "Named once in the glossary's product definition as a compatibility identifier: the retained session cookie. Not a wordmark.",
+      "purpose": "The glossary distinguishes the product name from compatibility identifiers so new copy does not imitate legacy code names (Spec 032 story 53).",
+      "owner": "Issue 359 (ticket 05), the glossary's product definition",
+      "review_trigger": "The compatibility table of ticket 06 (issue 360), then a founder-approved migration spec."
     }
   ]
 }

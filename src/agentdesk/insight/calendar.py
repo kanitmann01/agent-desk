@@ -9,7 +9,7 @@ honest line when memory could not be consulted.
 
 from __future__ import annotations
 
-from agentdesk.insight.agenda import DEFAULT_MINUTES, memory_lines, normalise, prep_items
+from agentdesk.insight.agenda import DEFAULT_MINUTES, normalise, prep_items, recalled
 from agentdesk.insight.preferences import PREP_MINUTES
 from agentdesk.insight.types import InsightContext, InsightReading
 
@@ -44,6 +44,7 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
         elements = [{"kind": "checklist", "title": CHECKLIST_TITLE, "items": items}]
     note = ""
     memory_notes = 0
+    rows: list[dict] = []
     if context.recall is None:
         # Quiet keeps one element, so the reason rides the note instead of
         # a status line that would be dropped.
@@ -54,9 +55,24 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
                 {"kind": "status", "text": context.memory_note, "tone": "attention"}
             )
     elif not quiet:
-        rows = memory_lines(context, title, limit=2)
+        # The rows are read once here: the list element and the why citations
+        # both come from them, so a second recall call is never needed.
+        rows = recalled(context, title, limit=2)
         if rows:
-            elements.append({"kind": "list", "title": MEMORY_TITLE, "rows": rows})
+            elements.append(
+                {
+                    "kind": "list",
+                    "title": MEMORY_TITLE,
+                    "rows": [
+                        {
+                            "primary": f"Last time: {row['text']}",
+                            "secondary": "",
+                            "meta": row["source"],
+                        }
+                        for row in rows
+                    ],
+                }
+            )
         memory_notes = len(rows)
     return InsightReading(
         elements=elements[: context.max_elements],
@@ -65,7 +81,30 @@ def derive(card: dict, payload: dict, context: InsightContext) -> InsightReading
         used=_sized_by_preference(context),
         inputs=_inputs(context, quiet=quiet),
         memory_notes=memory_notes,
+        why=_why(title, items[0]["text"], rows),
     )
+
+
+def _why(title: str, sizing_line: str, rows: list[dict]) -> tuple[dict, ...]:
+    """The reading's provenance: the meeting it prepared for, the rule and
+    threshold that sized the checklist (the prep window and focus topics),
+    and the cited fact ids and sources.
+
+    A fact is cited by id and source only, so the drilldown can travel
+    without carrying a fact's text; a row without an integer id cannot be
+    cited at all."""
+    cited = [
+        {"id": row["id"], "source": row["source"]}
+        for row in rows
+        if isinstance(row.get("id"), int) and not isinstance(row.get("id"), bool)
+    ]
+    entry: dict = {
+        "claim": f"Next meeting this reading prepared for: {title}",
+        "rule": sizing_line,
+    }
+    if cited:
+        entry["facts"] = cited
+    return (entry,)
 
 
 def _sized_by_preference(context: InsightContext) -> tuple[str, ...]:

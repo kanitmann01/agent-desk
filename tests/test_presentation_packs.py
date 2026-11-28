@@ -115,6 +115,22 @@ def test_the_shipped_shells_are_the_neutral_builder():
     assert b"Thank you" in parts["ppt/slideLayouts/slideLayout4.xml"]
 
 
+def test_document_properties_carry_the_product_name():
+    """The fields a reader sees in an exported deck's file properties."""
+    blobs = {
+        "built dark": build_shell(variant="dark", body_placeholder=True),
+        "committed dark": (PACK / "shells" / "starter-dark.pptx").read_bytes(),
+        "committed light": (PACK / "shells" / "starter-light.pptx").read_bytes(),
+    }
+    for label, blob in blobs.items():
+        parts = read_parts(blob)
+        core = parts["docProps/core.xml"].decode("utf-8")
+        app = parts["docProps/app.xml"].decode("utf-8")
+        assert "<dc:creator>Nexuus Bot</dc:creator>" in core, label
+        assert "<cp:lastModifiedBy>Nexuus Bot</cp:lastModifiedBy>" in core, label
+        assert "<Application>Nexuus Bot</Application>" in app, label
+
+
 def test_the_parts_check_fails_a_tampered_part():
     dark = (PACK / "shells" / "starter-dark.pptx").read_bytes()
     parts = read_parts(dark)

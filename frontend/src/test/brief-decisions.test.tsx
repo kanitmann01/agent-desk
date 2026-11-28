@@ -128,7 +128,7 @@ describe('the Decisions cell', () => {
     show({
       ...BASE,
       update: {
-        banner: 'Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch.',
+        banner: 'Version 0.1.1 is ready. Restart Nexuus Bot from its shortcut to switch.',
         available: '0.1.1',
         autoUpdate: true,
         channelSet: true,
@@ -136,7 +136,7 @@ describe('the Decisions cell', () => {
       },
     });
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch.',
+      'Version 0.1.1 is ready. Restart Nexuus Bot from its shortcut to switch.',
     );
   });
 

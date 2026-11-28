@@ -12,6 +12,7 @@ prohibited outright.
 import html
 from typing import Iterable
 
+from agentdesk import PRODUCT_INITIALS, PRODUCT_NAME
 from agentdesk.server.core import ATTENTION, FRESH, SAMPLE, SOURCE_IDS, Freshness
 from agentdesk.server.demo import Widget
 
@@ -139,6 +140,12 @@ svg{display:block;flex:none}
 .addplugin-form{display:inline-flex;margin:0}
 .w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12px;color:var(--ink-3)}
+/* The tile's change line opens it in the quiet voice, and the receipts'
+   Why drilldown stays a native disclosure so it works with no script. */
+.w-delta{font-size:12px;color:var(--ink-3)}
+.w-why summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--ink-3)}
+.w-why ul{margin:4px 0 0;padding-left:16px}
+.w-why li{font-size:12px;color:var(--ink-3);overflow-wrap:anywhere}
 /* A plugin's timeline (plugins/html.py): an unmarked list whose rows are a
    nowrap time column and a wrapping title/meta column, the same grid the
    SPA sheet uses. The meta rule stays scoped to the timeline. */
@@ -1543,17 +1550,17 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         "/memory": "Memory",
         "/settings": "Settings",
         "/marketplace": "Plugins",
-    }.get(active, "Agent Desk")
+    }.get(active, PRODUCT_NAME)
     phone = (
         '<div class="phone-bar">'
-        '<b class="brand-name">Agent Desk</b>'
+        f'<b class="brand-name">{PRODUCT_NAME}</b>'
         f'<span class="phone-current">{current_label}</span>'
         '<button type="button" class="phone-menu" aria-expanded="false" '
         'aria-controls="main-rail">Menu</button></div>'
     )
     return (
         f'<nav class="rail" id="main-rail" aria-label="Main">{phone}'
-        '<div class="brand"><b class="brand-name">Agent Desk</b></div>'
+        f'<div class="brand"><b class="brand-name">{PRODUCT_NAME}</b></div>'
         f'{entry("/", "Dashboard")}'
         # The count rides inside the link: one row on the rail, and
         # the accessible name carries the waiting number.
@@ -1572,8 +1579,8 @@ def _rail(active: str = "/", inbox_count: int = 0) -> str:
         f'{entry("/marketplace", "Plugins")}'
         f'{entry("/settings", "Settings")}'
         f'{toggle}'
-        '<div class="user"><span class="avatar" aria-hidden="true" title="Agent Desk">AD</span>'
-        '<div><b class="user-name">Agent Desk</b><small>local only</small></div></div>'
+        f'<div class="user"><span class="avatar" aria-hidden="true" title="{PRODUCT_NAME}">{PRODUCT_INITIALS}</span>'
+        f'<div><b class="user-name">{PRODUCT_NAME}</b><small>local only</small></div></div>'
         "</nav>"
     )
 
@@ -1608,7 +1615,7 @@ def page_footer(version: str, note: str = "", touches: bool = True) -> str:
     link = '<a href="/what-this-touches">What this app touches</a>' if touches else ""
     return (
         '<footer class="page-foot">'
-        f'<span>Agent Desk <span class="mono">{html.escape(version)}</span>.</span>'
+        f'<span>{PRODUCT_NAME} <span class="mono">{html.escape(version)}</span>.</span>'
         f"{note_html}{link}</footer>"
     )
 
@@ -1657,10 +1664,10 @@ def page_shell(
     so the reader lands at the result without a jump in the markup.
     """
     esc_title = html.escape(title)
-    return f"""{document_head(f"{title}, Agent Desk")}
+    return f"""{document_head(f"{title}, {PRODUCT_NAME}")}
 <div class="app">{_rail(active, inbox_count)}
 <main id="main"><p class="page-status" id="page-note" role="status" hidden></p><div class="{'doc doc-wide' if wide else 'doc'}">
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">{PRODUCT_NAME}</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {content_html}
 {page_footer(version)}
 </div>
@@ -1770,7 +1777,7 @@ def render_dashboard(widgets: Iterable[Widget], version: str, greeting: str, dat
         f"<div class='alert' role='status'>{html.escape(banner)}</div>"
         if banner else ""
     )
-    return f"""{document_head("Agent Desk")}
+    return f"""{document_head(PRODUCT_NAME)}
 <div class="app">
 {_rail("/", inbox_count)}
 <main id="main">
@@ -1801,7 +1808,7 @@ def render_error_page(title: str, message: str) -> str:
     The skip link still reaches a main region, so the error page obeys the
     same keyboard contract as every other page.
     """
-    return f"""{document_head(f"{title}, Agent Desk")}
+    return f"""{document_head(f"{title}, {PRODUCT_NAME}")}
 <main id="main" class="error-card">
 <h1>{html.escape(title)}</h1>
 <p>{html.escape(message)}</p>
@@ -1905,8 +1912,8 @@ def render_walkthrough(watch_hint: str, explicit_path: str, version: str, inbox_
             '<button class="btn btn-secondary" data-calendar-reset>'
             "Reset to automatic discovery</button>"
         )
-    content = """<h1>Connect your calendar</h1>
-<p>Agent Desk reads one file that a small Power Automate flow keeps fresh
+    content = f"""<h1>Connect your calendar</h1>
+<p>{PRODUCT_NAME} reads one file that a small Power Automate flow keeps fresh
 in your OneDrive. You create that flow once, in your browser: no admin,
 no terminal, nothing installed.</p>
 <ol>

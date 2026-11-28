@@ -1,6 +1,6 @@
 ---
 version: 3
-name: Agent Desk
+name: Nexuus Bot
 description: One bento language, three themes. Near-black canvas by default, 1px rules, Geist and Geist Mono, one accent per theme doing all the pointing.
 themes:
   unkey:
@@ -44,7 +44,7 @@ spacing:
 elevation: none
 ---
 
-# Agent Desk
+# Nexuus Bot
 
 The desk is a quiet instrument, dark by default: near-black canvas, 1px rules, one accent per theme doing all the pointing. Hierarchy comes from spacing, weight and a four-level ink ramp, never from shadow or glass. The work is louder than the chrome. `docs/design-language.md` is the full statement of this system; `frontend/src/test/tokens.test.ts` enforces it.
 

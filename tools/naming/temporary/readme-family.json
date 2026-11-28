@@ -2,18 +2,6 @@
   "family": "readme-family",
   "ticket": "05",
   "issue": 359,
-  "note": "Ticket 05 (issue 359) clears this family and edits only this file. The README itself already says Nexuus Bot on every surface and is pinned in inventory.json; this file holds the two root design documents that still carry the old display name. Their placement in this family is provisional and posted as a question on issue 354.",
-  "entries": [
-    {
-      "surface": "DESIGN.md product name (frontmatter name and heading)",
-      "files": ["DESIGN.md"],
-      "issue": 359
-    },
-    {
-      "surface": "Design language document title",
-      "files": ["docs/design-language.md"],
-      "issue": 359,
-      "matches": ["agent desk"]
-    }
-  ]
+  "note": "Ticket 05 (issue 359) cleared this family: DESIGN.md and the design-language title say Nexuus Bot, and their entries are gone. The retained module-path references in these files belong to the python-package family (ticket 08).",
+  "entries": []
 }

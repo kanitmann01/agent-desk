@@ -13,6 +13,7 @@ never reads as a raw identifier.
 
 from __future__ import annotations
 
+from agentdesk.insight.agenda import truncate
 from agentdesk.insight.preferences import FIELDS
 from agentdesk.insight.types import InsightReading
 
@@ -42,13 +43,26 @@ DEFAULTS_RECEIPT = "Used the defaults; read only this card's rows."
 # The press page's heading, taken from the kind the card carried, so the page
 # a press lands on repeats the sentence the person just pressed. The default
 # is what an unknown kind reads as; it never falls back to a raw identifier.
-PRESS_LABELS = {"reply-draft": "Draft a reply", "explain-range": "Explain this range"}
+PRESS_LABELS = {
+    "reply-draft": "Draft a reply",
+    "explain-range": "Explain this range",
+    "check-counter": "Check counter-evidence",
+}
 DEFAULT_PRESS_LABEL = "Ask the model"
 
 # The request-shaped fields a press may carry: what the action needs, and
 # nothing about how a surface draws it. A client posts these verbatim.
 PRESS_KEYS = ("label", "route", "kind", "thread", "text")
 THREAD_KEYS = ("subject", "sender", "last")
+
+# The why drilldown's bounds: a claim or rule short enough to read at a
+# glance, short column and cell strings, six cells at most, and fact
+# citations that name ids and sources and never a fact's text.
+WHY_CLAIM_CHARS = 200
+WHY_RULE_CHARS = 160
+WHY_TEXT_CHARS = 40
+WHY_MAX_CELLS = 6
+WHY_MAX_COLUMNS = 6
 
 
 def press_label(kind: object) -> str:
@@ -152,19 +166,104 @@ def blocks(reading: InsightReading) -> list[dict]:
     """The resolved lines under a card, in the order a surface prints them.
 
     A receipt block comes first because it is the card's record of what the
-    reading consulted; a note block follows only when the reading has
-    something to explain, so a reading that used nothing and says nothing
+    reading consulted; a falsify block follows when the reading names what
+    would overturn its own claim; a note block follows only when the reading
+    has something to explain, so a reading that used nothing and says nothing
     still sends no empty line. Each text is final: surfaces print it as it
-    came and never look a name up.
+    came and never look a name up. The reading's why provenance, when it has
+    any, is resolved onto the receipts block so the drilldown travels with
+    the line it explains; a reading that declares no receipts has nothing
+    for provenance to explain, so its why is left off.
     """
     lines: list[dict] = []
     line = receipt_line(receipts(reading))
     if line:
         lines.append({"kind": "receipts", "text": line})
+    falsify = str(reading.falsify or "").strip()
+    if falsify:
+        lines.append({"kind": "falsify", "text": falsify})
     note = str(reading.note or "").strip()
     if note:
         lines.append({"kind": "note", "text": note})
+    why = _why(reading.why)
+    if why and lines and lines[0].get("kind") == "receipts":
+        lines[0]["why"] = why
     return lines
+
+
+def _why(entries: object) -> list[dict]:
+    """The bounded provenance a receipts block may carry, or [] for none.
+
+    Each entry keeps only the five fields a surface may draw: the claim and
+    rule clipped, short column names, at most six cell references, and fact
+    citations that name ids and sources (or a desk entity's id, name and
+    fact count) and never a fact's text. Anything else a family wrote, an
+    unknown field included, is dropped here, so a mistake cannot leak
+    private prose into the trust payload."""
+    resolved: list[dict] = []
+    for entry in entries or ():
+        if not isinstance(entry, dict):
+            continue
+        item: dict = {}
+        claim = truncate(entry.get("claim"), WHY_CLAIM_CHARS)
+        if claim:
+            item["claim"] = claim
+        columns = _short_strings(entry.get("columns"), WHY_MAX_COLUMNS)
+        if columns:
+            item["columns"] = columns
+        cells = _short_strings(entry.get("cells"), WHY_MAX_CELLS)
+        if cells:
+            item["cells"] = cells
+        rule = truncate(entry.get("rule"), WHY_RULE_CHARS)
+        if rule:
+            item["rule"] = rule
+        facts = _citations(entry.get("facts"))
+        if facts:
+            item["facts"] = facts
+        if item:
+            resolved.append(item)
+    return resolved
+
+
+def _short_strings(values: object, cap: int) -> list[str]:
+    """At most `cap` short strings: a non-string or empty value is dropped,
+    every kept string is clipped, and nothing kept reads as no field."""
+    kept: list[str] = []
+    for value in values or ():
+        text = truncate(value, WHY_TEXT_CHARS)
+        if text:
+            kept.append(text)
+        if len(kept) >= cap:
+            break
+    return kept
+
+
+def _citations(values: object) -> list[dict]:
+    """The fact citations that survive: an integer fact id with its source,
+    or a desk entity's id, name and fact count.
+
+    A bool is not an id, and a fact's text is never carried, so a family
+    that passes whole rows cannot leak prose into the payload."""
+    kept: list[dict] = []
+    for value in values or ():
+        if not isinstance(value, dict):
+            continue
+        fact_id = value.get("id")
+        if isinstance(fact_id, int) and not isinstance(fact_id, bool):
+            kept.append({"id": fact_id, "source": str(value.get("source") or "")})
+            continue
+        entity_id = value.get("entityId")
+        name = truncate(value.get("name"), WHY_TEXT_CHARS)
+        count = value.get("factCount")
+        if (
+            isinstance(entity_id, int)
+            and not isinstance(entity_id, bool)
+            and name
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+        ):
+            kept.append({"entityId": entity_id, "name": name, "factCount": count})
+    return kept
 
 
 def _named(names: tuple[str, ...], vocabulary: tuple[str, ...]) -> list[str]:

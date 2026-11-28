@@ -1,6 +1,6 @@
 # DEMO.md: one manager's morning
 
-The script for an 8 minute demo of Agent Desk on one Windows laptop. It is
+The script for an 8 minute demo of Nexuus Bot on one Windows laptop. It is
 one person's story, not a tour of the product: a desk that asks for three
 things once, then reads my pipeline, knows my day, answers questions about
 my own work, and remembers what I tell it.
@@ -16,7 +16,7 @@ and prints one PASS line per check (`METRIC ready=27`).
 
 ## The story in one sentence
 
-SAY: "This is Agent Desk. I tell it three things once. After that it reads
+SAY: "This is Nexuus Bot. I tell it three things once. After that it reads
 my pipeline, knows my day, answers questions about my own work, and
 remembers what I teach it. Nothing leaves this machine except the question
 I type, and that goes to the AI I choose with my own key."
@@ -26,9 +26,10 @@ I type, and that goes to the AI I choose with my own key."
 1. **Get the build.** This file ships with branch `spec022/demo-ready`.
    Double-click `tools\agent-desk.cmd` in the checkout that holds that
    branch (tonight: `.worktrees\022-demo-ready`; after the pull request is
-   merged: your usual checkout). It prints
-   `Agent Desk is running: http://127.0.0.1:8765/auth/<one-time-token>` and
-   opens the browser itself. The link is the session: there is no sign-in.
+   merged: your usual checkout). It starts the desk and opens the browser
+   itself at the one-time start link
+   (`http://127.0.0.1:8765/auth/<one-time-token>`). The link is the
+   session: there is no sign-in.
    Before the purge below, copy the whole data folder
    (`C:\Users\<you>\.agent-desk`) beside itself once: a plain copy named
    `.agent-desk-backup` is enough. Every step after this one changes that

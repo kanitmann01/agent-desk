@@ -149,12 +149,26 @@ def connect_line(rows: list[str], index: tuple[DeskName, ...]) -> tuple[str, int
     with its fact count and its event clause when there is one. The
     longest name present wins each span, so a shorter held name inside a
     longer one is never counted as a second connection."""
+    line, notes, _named = connect_named(rows, index)
+    return line, notes
+
+
+def connect_named(
+    rows: list[str], index: tuple[DeskName, ...]
+) -> tuple[str, int, tuple[DeskName, ...]]:
+    """The line, its note count, and the entities the line names, in order.
+
+    The pure projection behind connect_line: the same match rules produce
+    the same line, and each named entity rides along as the DeskName it
+    matched, so a caller that wants provenance (the entity's id, its
+    canonical name, its fact count and its event clause) has it without
+    re-running the matcher."""
     picked: dict[int, tuple[int, DeskName]] = {}
     for position, row in enumerate(rows or ()):
         for span in _matching_spans(str(row), index):
             picked.setdefault(span.entry.entity_id, (position, span.entry))
     if not picked:
-        return "", 0
+        return "", 0, ()
     ordered = [entry for _position, entry in
                sorted(picked.values(), key=lambda pair: pair[0])[:MAX_PER_CARD]]
     clauses = []
@@ -166,7 +180,7 @@ def connect_line(rows: list[str], index: tuple[DeskName, ...]) -> tuple[str, int
         if entry.event_clause:
             clause += f", {entry.event_clause}"
         clauses.append(clause)
-    return "Also in your desk: " + "; ".join(clauses) + ".", total
+    return "Also in your desk: " + "; ".join(clauses) + ".", total, tuple(ordered)
 
 
 def _event_clause(agenda: dict, now: float) -> str:

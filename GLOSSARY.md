@@ -1,4 +1,12 @@
-# Agent Desk
+# Nexuus Bot
+
+**Nexuus Bot** is the product's name and the name of the agent inside it.
+New copy says Nexuus Bot. Some identifiers carry the old code identity and
+keep their names as compatibility contracts, so existing desks, plugins and
+scripts keep working: the `agentdesk` Python import path, the `AGENTDESK_`
+environment prefix, the `.agent-desk` data folder and the `agentdesk_session`
+session cookie. They are not wordmarks, and new copy never imitates them: it
+spells the product name.
 
 The words the desk uses for its own concepts, on screen and in code. One
 concept, one word. The words under _Avoid_ are still read in old code and

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import Button from '../components/Button';
 import { useBusy } from '../components/useBusy';
+import { AGENT_NAME } from '../face/name';
 import { getMarket, marketErrorText, postMarket } from './client';
 import { CATEGORIES, categoryLabel } from './MarketGrid';
 import { SamplePreview } from './Sample';
@@ -47,7 +48,7 @@ function buildManifest(draft: Draft) {
   const highlights = [
     summary || `${name} runs on this desk.`,
     'It reads only the scopes you approve.',
-    'It runs only while Agent Desk is open.',
+    `It runs only while ${AGENT_NAME} is open.`,
   ].map((line) => line.slice(0, 120));
   return {
     schemaVersion: 2,
