@@ -1,0 +1,169 @@
+{
+  "approved_name": "Nexuus Bot",
+  "approved_initials": "NB",
+  "old_display_forms": [
+    "Agent Desk",
+    "AgentDesk",
+    "agentdesk",
+    "agent-desk",
+    "agent_desk"
+  ],
+  "old_initials_note": "The old AD initials are rejected only in avatar contexts; the temporary entries that carry an initials field declare those contexts.",
+  "families": [
+    {
+      "family": "server-pages",
+      "ticket": "02",
+      "issue": 356,
+      "title": "Server-rendered pages, shell, avatar, startup, auth, session, update, error, wizard and launcher output",
+      "temporary_file": "temporary/server-pages.json"
+    },
+    {
+      "family": "spa-and-bundle",
+      "ticket": "03",
+      "issue": 357,
+      "title": "SPA source copy and the committed bundle, rebuilt by the same ticket",
+      "temporary_file": "temporary/spa-and-bundle.json"
+    },
+    {
+      "family": "generated-output",
+      "ticket": "04",
+      "issue": 358,
+      "title": "Probe reports, presentation metadata and bundled plugin descriptions",
+      "temporary_file": "temporary/generated-output.json"
+    },
+    {
+      "family": "readme-family",
+      "ticket": "05",
+      "issue": 359,
+      "title": "README family and the root product documents: README, its provenance note, DESIGN.md and the design-language document",
+      "temporary_file": "temporary/readme-family.json"
+    },
+    {
+      "family": "demo-and-glossary",
+      "ticket": "05",
+      "issue": 359,
+      "title": "The demo script and walkthrough tool, and the glossary",
+      "temporary_file": "temporary/demo-and-glossary.json"
+    },
+    {
+      "family": "frontend-setup",
+      "ticket": "05",
+      "issue": 359,
+      "title": "Frontend setup documents: the frontend README and the frontend package description",
+      "temporary_file": "temporary/frontend-setup.json"
+    },
+    {
+      "family": "operator-guides",
+      "ticket": "06",
+      "issue": 360,
+      "title": "Operator guides, dependent specs and the compatibility table",
+      "temporary_file": "temporary/operator-guides.json"
+    },
+    {
+      "family": "bundle-metadata",
+      "ticket": "07",
+      "issue": 361,
+      "title": "Human-readable bundle metadata: Windows fields, bundle manifest product, AppLocker template labels, and the developer tooling display text that names the product",
+      "temporary_file": "temporary/bundle-metadata.json"
+    },
+    {
+      "family": "python-package",
+      "ticket": "08",
+      "issue": 362,
+      "title": "The Python distribution and import identity: the package tree paths and every module-path reference outside it",
+      "temporary_file": "temporary/python-package.json"
+    },
+    {
+      "family": "frontend-package",
+      "ticket": "09",
+      "issue": 363,
+      "title": "The frontend package name and lockfile identity",
+      "temporary_file": "temporary/frontend-package.json"
+    }
+  ],
+  "scan": {
+    "roots": [
+      "src",
+      "tools",
+      "scripts",
+      "frontend/src",
+      "registry",
+      "docs/ops",
+      "docs/readme"
+    ],
+    "files": [
+      "README.md",
+      "DEMO.md",
+      "DESIGN.md",
+      "GLOSSARY.md",
+      "pyproject.toml",
+      ".gitignore",
+      ".gitattributes",
+      ".github/workflows/enterprise.yml",
+      "frontend/package.json",
+      "frontend/package-lock.json",
+      "frontend/index.html",
+      "frontend/vite.config.ts",
+      "frontend/README.md",
+      "frontend/public/theme-boot.js",
+      "docs/licensing.md",
+      "docs/design-language.md",
+      "docs/known-limitations.md",
+      "docs/presentation-packs.md",
+      "docs/PRD.md",
+      "docs/docstrings.md",
+      "specs/030-one-shell-and-the-face-on-every-wait.md",
+      "specs/031-three-presentation-templates.md"
+    ],
+    "skip": [
+      "frontend/src/test",
+      "tools/layout_fixtures",
+      "tools/naming"
+    ],
+    "skip_note": "Test trees, audit fixtures and the contract data itself are outside the display-name scan; the data names the old forms by necessity, and test trees may carry negative fixtures and compatibility imports."
+  },
+  "pinned": [
+    {
+      "surface": "README title",
+      "family": "readme-family",
+      "file": "README.md",
+      "status": "nexuus-bot",
+      "must_contain": ["# Nexuus Bot"]
+    },
+    {
+      "surface": "README dashboard screenshot alt text",
+      "family": "readme-family",
+      "file": "README.md",
+      "status": "nexuus-bot",
+      "must_contain": ["Nexuus Bot dashboard with sample workbook"]
+    },
+    {
+      "surface": "README memory screenshot alt text",
+      "family": "readme-family",
+      "file": "README.md",
+      "status": "nexuus-bot",
+      "must_contain": ["Nexuus Bot memory page with sample facts"]
+    },
+    {
+      "surface": "README marketplace screenshot alt text",
+      "family": "readme-family",
+      "file": "README.md",
+      "status": "nexuus-bot",
+      "must_contain": ["Nexuus Bot marketplace with sample plugin catalog"]
+    },
+    {
+      "surface": "README architecture label",
+      "family": "readme-family",
+      "file": "README.md",
+      "status": "nexuus-bot",
+      "must_contain": ["Nexuus Bot architecture diagram"]
+    },
+    {
+      "surface": "Agent face name constant",
+      "family": "spa-and-bundle",
+      "file": "frontend/src/face/name.ts",
+      "status": "nexuus-bot",
+      "must_contain": ["export const AGENT_NAME = 'Nexuus Bot';"]
+    }
+  ]
+}

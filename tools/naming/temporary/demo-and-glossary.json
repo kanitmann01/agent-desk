@@ -1,0 +1,24 @@
+{
+  "family": "demo-and-glossary",
+  "ticket": "05",
+  "issue": 359,
+  "note": "Ticket 05 (issue 359) clears this family and edits only this file. Retained commands in the demo keep their exact spelling; those are compatibility allowlist entries.",
+  "entries": [
+    {
+      "surface": "DEMO.md spoken and written copy",
+      "files": ["DEMO.md"],
+      "issue": 359
+    },
+    {
+      "surface": "Demo walkthrough tool header and docstring",
+      "files": ["tools/demo_walkthrough.py"],
+      "issue": 359
+    },
+    {
+      "surface": "Glossary title",
+      "files": ["GLOSSARY.md"],
+      "issue": 359,
+      "matches": ["agent desk"]
+    }
+  ]
+}
