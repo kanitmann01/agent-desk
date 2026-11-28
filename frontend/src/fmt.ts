@@ -43,6 +43,21 @@ export function hhmmFromIso(iso: string | null | undefined): string {
   return hhmm(new Date(iso));
 }
 
+/** The stale stamp: the clock today, the date and clock on an earlier day.
+ *
+ * The clock is the timestamp's local wall clock, the same reading hhmmFromIso
+ * gives; only the local calendar day is compared. The month is the date line's
+ * long name cut to its three-letter form, for example
+ * `Stale since 1 Jan 2020, 00:00`.
+ */
+export function staleSince(iso: string, now = new Date()): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return 'Stale';
+  const when = hhmm(at);
+  if (at.toDateString() === now.toDateString()) return `Stale since ${when}`;
+  return `Stale since ${at.getDate()} ${MONTHS[at.getMonth()].slice(0, 3)} ${at.getFullYear()}, ${when}`;
+}
+
 // The freshness contract of the sales card, from freshness_for in
 // sales.py: stamp text only, the dot color is derived from fresh/attention.
 /** Freshness stamp for the sales card: text plus the dot's `fresh` flag.

@@ -455,8 +455,12 @@ def test_a_stale_source_is_stamped_stale_not_live():
     }
     widget = server_app.DashboardHandler._plugin_widget(None, card)
     assert widget.freshness.status == "attention"
-    assert widget.freshness.stamp == "Stale since 00:00"
+    assert widget.freshness.stamp == "Stale since 1 Jan 2020, 00:00"
     assert "123456789012345" in widget.body_html
+
+    card["checked_at"] = datetime.now().strftime("%Y-%m-%dT09:05:00")
+    widget = server_app.DashboardHandler._plugin_widget(None, card)
+    assert widget.freshness.stamp == "Stale since 09:05"
 
 
 # -- B: the server sheet matches the SPA wrap contract ---------------------

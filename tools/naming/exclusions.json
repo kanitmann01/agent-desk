@@ -1,0 +1,45 @@
+{
+  "entries": [
+    {
+      "kind": "legal-instrument",
+      "paths": [
+        "LICENSE",
+        "LICENSE-SDK"
+      ],
+      "reason": "The proprietary licence and the SDK licence are legal instruments; a rename inside them would be a legal amendment.",
+      "pinned_as": "unchanged provenance"
+    },
+    {
+      "kind": "notice-file",
+      "paths": [
+        "THIRD-PARTY-NOTICES.md",
+        "licenses/*",
+        "src/agentdesk/server/static/spa/licenses/*"
+      ],
+      "reason": "Generated and bundled third-party notices keep their wording byte for byte; the generator scripts/third_party_notices.py carries the same wording under the legal-text allowlist entries.",
+      "pinned_as": "unchanged provenance"
+    },
+    {
+      "kind": "dated-archive",
+      "paths": [
+        "archive/*",
+        "docs/evidence/*",
+        "docs/tickets/*",
+        "docs/plans/*",
+        "docs/ideas/*",
+        "docs/research/*",
+        "docs/research.md",
+        "docs/superpowers/*",
+        "docs/plugins/*",
+        "docs/merge/*",
+        "docs/design/*",
+        "docs/demo/*",
+        "TODO.md",
+        "specs/0[0-2][0-9]-*.md",
+        "specs/032-*.md"
+      ],
+      "reason": "Dated evidence, tickets, plans, ideas, research, old specs, design records and archives record what was produced then; specs 030 and 031 are live and stay in scope (ticket 06 updates them).",
+      "pinned_as": "unchanged provenance"
+    }
+  ]
+}
