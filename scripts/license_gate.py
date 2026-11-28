@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed license gate for the Agent Desk CycloneDX 1.6 SBOM.
+"""Fail-closed license gate for the Nexuus Bot CycloneDX 1.6 SBOM.
 
 The allowlist is deliberately narrow: MIT, Apache-2.0, BSD-2-Clause,
 BSD-3-Clause and ISC. Every component is checked, including build-only
@@ -263,7 +263,7 @@ def render_report(result: GateResult, sbom_path: Path) -> str:
     "RESULT: FAIL". The returned text always ends with a newline.
     """
     lines = [
-        "Agent Desk licence gate (CycloneDX 1.6)",
+        "Nexuus Bot licence gate (CycloneDX 1.6)",
         f"SBOM: {sbom_path.as_posix()}",
         "Allowlist: " + ", ".join(sorted(ALLOWED_LICENSES)),
         "Recorded exceptions: " + ", ".join(sorted(LICENSE_EXCEPTIONS)),
@@ -325,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="license_gate.py",
-        description="Fail closed on licences outside the Agent Desk allowlist.",
+        description="Fail closed on licences outside the Nexuus Bot allowlist.",
     )
     parser.add_argument(
         "sbom", nargs="?", default="build/sbom.cdx.json",

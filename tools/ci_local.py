@@ -283,7 +283,7 @@ def main() -> int:
     started = time.time()
     data_dir = tempfile.mkdtemp(prefix="agentdesk-ci-")
     env = {**os.environ, **PINNED_ENV, "AGENTDESK_DATA": data_dir}
-    print(f"agent-desk local CI  (data dir: {data_dir})")
+    print(f"Nexuus Bot local CI  (data dir: {data_dir})")
     print(f"checkout: {ROOT}")
     print("-" * 72)
     results: list[tuple[str, bool, str, float]] = []

@@ -193,14 +193,14 @@ Template, with placeholders that must be replaced from a signed binary:
   <RuleCollection Type="Exe" EnforcementMode="Enforced">
     <FilePublisherRule
         Id="00000000-0000-0000-0000-000000000000"
-        Name="Agent Desk - signed publisher"
-        Description="Allow Agent Desk from its per-user install folder"
+        Name="Nexuus Bot - signed publisher"
+        Description="Allow Nexuus Bot from its per-user install folder"
         UserOrGroupSid="S-1-1-0"
         Action="Allow">
       <Conditions>
         <FilePublisherCondition
             PublisherName="CN=&lt;REPLACE-WITH-CERT-SUBJECT-CN&gt;, O=&lt;REPLACE-WITH-ORG&gt;, L=&lt;REPLACE-WITH-LOCALITY&gt;, S=&lt;REPLACE-WITH-STATE&gt;, C=&lt;REPLACE-WITH-COUNTRY&gt;"
-            ProductName="Agent Desk"
+            ProductName="Nexuus Bot"
             BinaryName="AgentDesk.exe">
           <BinaryVersionRange LowSection="0.1.0.0" HighSection="*" />
         </FilePublisherCondition>

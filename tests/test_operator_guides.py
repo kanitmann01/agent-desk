@@ -58,13 +58,20 @@ def test_the_distribution_guide_names_the_product_and_keeps_contracts():
     ):
         assert contract in text, f"the guide lost the contract {contract!r}"
     # The AppLocker template's rule name, description and ProductName
-    # condition are ticket 07's scope and stay exactly as they are.
+    # condition say Nexuus Bot (ticket 07, issue 361) while the
+    # BinaryName condition keeps the executable contract above.
+    for label in (
+        'Name="Nexuus Bot - signed publisher"',
+        'Description="Allow Nexuus Bot from its per-user install folder"',
+        'ProductName="Nexuus Bot"',
+    ):
+        assert label in text, f"the AppLocker template lost its label: {label!r}"
     for label in (
         'Name="Agent Desk - signed publisher"',
         'Description="Allow Agent Desk from its per-user install folder"',
         'ProductName="Agent Desk"',
     ):
-        assert label in text, f"ticket 07's AppLocker label moved: {label!r}"
+        assert label not in text, f"the AppLocker template still says: {label!r}"
     assert "1. Close Nexuus Bot." in text
     assert "Close Agent Desk" not in text
 

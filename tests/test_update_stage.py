@@ -42,7 +42,7 @@ def _bundle(root, version="0.2.0", files=None):
     ]
     manifest = {
         "schema_version": 1,
-        "product": "Agent Desk",
+        "product": "Nexuus Bot",
         "version": version,
         "files": entries,
     }

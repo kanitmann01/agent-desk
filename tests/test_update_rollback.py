@@ -48,7 +48,7 @@ def _publish(root, version="0.1.1"):
     ]
     manifest = {
         "schema_version": 1,
-        "product": "Agent Desk",
+        "product": "Nexuus Bot",
         "version": version,
         "files": entries,
     }
