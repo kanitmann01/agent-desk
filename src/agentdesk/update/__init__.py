@@ -16,11 +16,15 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentdesk import __version__
+from agentdesk import PRODUCT_NAME, __version__
 from agentdesk.update import stage
 from agentdesk.update.channel import Available, ChannelUnreadable, newest, parse_version
 
-READY = "Version {version} is ready. Restart Agent Desk from its shortcut to switch."
+READY = (
+    "Version {version} is ready. Restart "
+    f"{PRODUCT_NAME} from its shortcut to switch."
+)
+NO_PROGRAM_IN_STAGE = f"The update has no {PRODUCT_NAME} program in it."
 ROLLED_BACK = (
     "This version failed its check. The desk went back to {version}. "
     "Restart from the shortcut to finish."
@@ -239,7 +243,7 @@ def _stage_bundle(server, data_dir: Path, available: Available, health_runner) -
     )
     if executable is None:
         shutil.rmtree(staged, ignore_errors=True)
-        return _failed(data_dir, "health-failed", "The update has no Agent Desk program in it.")
+        return _failed(data_dir, "health-failed", NO_PROGRAM_IN_STAGE)
 
     try:
         data_copy = _copy_for_check(data_dir)

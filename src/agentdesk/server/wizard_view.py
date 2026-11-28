@@ -29,6 +29,7 @@ than an error:
 
 import html
 
+from agentdesk import PRODUCT_NAME
 from agentdesk.server.pages import document_head, page_footer, status_line
 from agentdesk.wizard.core import resolve_choice
 
@@ -508,10 +509,10 @@ def _page_shell(title: str, body: str, version: str) -> str:
     wizard keeps its focused no-rail shell, but carries the same
     breadcrumb so the way back is never a mystery."""
     esc_title = html.escape(title)
-    return f"""{document_head(f"{title}, Agent Desk")}
+    return f"""{document_head(f"{title}, {PRODUCT_NAME}")}
 <main id="main" class="doc">
 <p class="page-status" id="page-note" role="status" hidden></p>
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Agent Desk</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">{PRODUCT_NAME}</a><span class="crumb-sep" aria-hidden="true">/</span><span aria-current="page">{esc_title}</span></nav>
 {body}
 <div id="wizard-progress"></div>
 {page_footer(version, note="Local only: nothing here reaches the internet.", touches=False)}

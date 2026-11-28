@@ -26,6 +26,9 @@ from datetime import date as _Date
 MAX_ROWS = 60
 MAX_COLUMNS = 10
 
+# A finding's cell references cite one column letter per column.
+_CELL_LETTERS = "ABCDEFGHIJ"
+
 MIN_PAIRED = 8
 MIN_CORRELATION = 0.6
 MIN_TREND_POINTS = 6
@@ -220,7 +223,11 @@ class Finding:
     `rows` is the count of rows the measure rests on. `chart` is the shape
     the relationship itself suggests; `chart_choice` lets a stated
     preference override it. `suggested` holds the table row indices worth
-    selecting for this finding.
+    selecting for this finding. `columns` names the columns the measure
+    read, `cells` cites the bounded cells it rested on, and `rule` names
+    the detector rule and the threshold that fired. An outlier additionally
+    carries `segment` (the categorical or date segment that moved most)
+    and `action` (the one concrete check to run next).
     """
 
     key: str
@@ -231,6 +238,10 @@ class Finding:
     chart: str
     columns: tuple[str, ...] = ()
     suggested: tuple[int, ...] = ()
+    cells: tuple[str, ...] = ()
+    rule: str = ""
+    segment: str = ""
+    action: str = ""
 
 
 def read_table(value: object) -> Table | None:
@@ -327,6 +338,19 @@ def _prose_date(day: _Date) -> str:
     return f"{day.year}-{day.month:02d}-{day.day:02d}"
 
 
+def _month_bucket(day: _Date) -> str:
+    """A date's YYYY-MM bucket, the coarser reading of a dated column."""
+    return f"{day.year}-{day.month:02d}"
+
+
+def _cell_ref(column: Column, row_index: int, value: object) -> str:
+    """One bounded cell reference: the sheet's own column letter and row
+    number with what was read there, so a reader can open the sheet and
+    check the arithmetic. The header row is row 1, so a table row reads as
+    its sheet row."""
+    return f"{_CELL_LETTERS[column.index]}{row_index + 2}: {str(value).strip()}"
+
+
 def _pearson(xs: list[float], ys: list[float]) -> float | None:
     """The Pearson coefficient of two equal-length runs, or None when it
     is undefined.
@@ -399,12 +423,14 @@ def correlations(table: Table) -> list[Finding]:
         for right in columns[position + 1:]:
             xs: list[float] = []
             ys: list[float] = []
-            for row in table.rows:
+            paired: list[int] = []
+            for row_index, row in enumerate(table.rows):
                 x = parse_number(row[left.index])
                 y = parse_number(row[right.index])
                 if x is not None and y is not None:
                     xs.append(x)
                     ys.append(y)
+                    paired.append(row_index)
             if len(xs) < MIN_PAIRED or xs == ys:
                 continue
             coefficient = _pearson(xs, ys)
@@ -429,6 +455,16 @@ def correlations(table: Table) -> list[Finding]:
                     score=abs(coefficient),
                     chart=AUTO_CHART["correlation"],
                     columns=(left.name, right.name),
+                    cells=(
+                        _cell_ref(left, paired[0], table.rows[paired[0]][left.index]),
+                        _cell_ref(right, paired[0], table.rows[paired[0]][right.index]),
+                        _cell_ref(left, paired[-1], table.rows[paired[-1]][left.index]),
+                        _cell_ref(right, paired[-1], table.rows[paired[-1]][right.index]),
+                    ),
+                    rule=(
+                        f"correlation: |r| >= {MIN_CORRELATION} across "
+                        f">= {MIN_PAIRED} paired rows"
+                    ),
                 )
             )
     return found
@@ -439,19 +475,22 @@ def trends(table: Table) -> list[Finding]:
     found: list[Finding] = []
     for value_column in _numeric(table):
         for date_column in _dated(table):
-            points: dict[_Date, list[float]] = {}
+            points: dict[_Date, list[tuple[int, float]]] = {}
             used = 0
-            for row in table.rows:
+            for row_index, row in enumerate(table.rows):
                 day = parse_date(row[date_column.index])
                 number = parse_number(row[value_column.index])
                 if day is None or number is None:
                     continue
-                points.setdefault(day, []).append(number)
+                points.setdefault(day, []).append((row_index, number))
                 used += 1
             if len(points) < MIN_TREND_POINTS:
                 continue
             ordered = sorted(points.items())
-            means = [math.fsum(values) / len(values) for _day, values in ordered]
+            means = [
+                math.fsum(number for _index, number in entries) / len(entries)
+                for _day, entries in ordered
+            ]
             if means[0] == means[-1]:
                 continue
             direction = 1 if means[-1] > means[0] else -1
@@ -460,6 +499,8 @@ def trends(table: Table) -> list[Finding]:
             fraction = consistent / len(steps)
             if fraction < MIN_MONOTONIC:
                 continue
+            first_index = ordered[0][1][0][0]
+            last_index = ordered[-1][1][-1][0]
             verb = "rose" if direction > 0 else "fell"
             found.append(
                 Finding(
@@ -479,6 +520,20 @@ def trends(table: Table) -> list[Finding]:
                     score=fraction,
                     chart=AUTO_CHART["trend"],
                     columns=(value_column.name, date_column.name),
+                    cells=(
+                        _cell_ref(value_column, first_index,
+                                  table.rows[first_index][value_column.index]),
+                        _cell_ref(date_column, first_index,
+                                  table.rows[first_index][date_column.index]),
+                        _cell_ref(value_column, last_index,
+                                  table.rows[last_index][value_column.index]),
+                        _cell_ref(date_column, last_index,
+                                  table.rows[last_index][date_column.index]),
+                    ),
+                    rule=(
+                        f"trend: >= {MIN_TREND_POINTS} dated points and "
+                        f"{MIN_MONOTONIC:.0%} of steps in one direction"
+                    ),
                 )
             )
     return found
@@ -521,6 +576,7 @@ def shares(table: Table) -> list[Finding]:
             share = top_value / total
             if share < MIN_TOP_SHARE:
                 continue
+            top_index = rows.get(top, [])[0]
             found.append(
                 Finding(
                     key="share",
@@ -537,6 +593,16 @@ def shares(table: Table) -> list[Finding]:
                     chart=AUTO_CHART["share"],
                     columns=(group_column.name, value_column.name),
                     suggested=tuple(rows.get(top, [])[:5]),
+                    cells=(
+                        _cell_ref(group_column, top_index,
+                                  table.rows[top_index][group_column.index]),
+                        _cell_ref(value_column, top_index,
+                                  table.rows[top_index][value_column.index]),
+                    ),
+                    rule=(
+                        f"share: one group holds >= {MIN_TOP_SHARE:.0%} of the total "
+                        f"across >= {MIN_GROUPS} groups"
+                    ),
                 )
             )
     return found
@@ -562,6 +628,8 @@ def ratios(table: Table) -> list[Finding]:
             if ratio > MAX_RATIO:
                 continue
             score = (MAX_RATIO - ratio) / (MAX_RATIO - 1.0)
+            first_index = rows.get(first, [])[0]
+            second_index = rows.get(second, [])[0]
             found.append(
                 Finding(
                     key="ratio",
@@ -579,6 +647,20 @@ def ratios(table: Table) -> list[Finding]:
                     chart=AUTO_CHART["ratio"],
                     columns=(group_column.name, value_column.name),
                     suggested=tuple((rows.get(first, []) + rows.get(second, []))[:5]),
+                    cells=(
+                        _cell_ref(group_column, first_index,
+                                  table.rows[first_index][group_column.index]),
+                        _cell_ref(value_column, first_index,
+                                  table.rows[first_index][value_column.index]),
+                        _cell_ref(group_column, second_index,
+                                  table.rows[second_index][group_column.index]),
+                        _cell_ref(value_column, second_index,
+                                  table.rows[second_index][value_column.index]),
+                    ),
+                    rule=(
+                        f"split: two leading groups within {MAX_RATIO}x across "
+                        f">= {MIN_RATIO_ROWS} rows"
+                    ),
                 )
             )
     return found
@@ -604,8 +686,92 @@ def _row_name(table: Table, index: int, label_column: str | None) -> str:
     return f"row {index + 1}"
 
 
+def _segment_labels(
+    table: Table, column: Column, points: list[tuple[int, float]]
+) -> dict[int, str] | None:
+    """Each valued row's segment label under one candidate column, or None
+    when the column cannot carry segments.
+
+    A text column qualifies when its labels among the valued rows pass the
+    categorical guard. A date column groups by exact date first, then by
+    its YYYY-MM month bucket, and a grouping qualifies only when it passes
+    the guard and every segment holds at least two rows, so a column where
+    nearly every row carries its own date never turns one row's date into
+    a segment."""
+    if column.kind == "text":
+        labels = {
+            index: table.rows[index][column.index].strip()
+            for index, _value in points
+        }
+        named = {index: label for index, label in labels.items() if label}
+        if not _categorical(len({label for label in named.values()}), len(named)):
+            return None
+        return named
+    if column.kind != "date":
+        return None
+    days = {
+        index: parse_date(table.rows[index][column.index])
+        for index, _value in points
+    }
+    for label_of in (_prose_date, _month_bucket):
+        labels = {
+            index: label_of(day) for index, day in days.items() if day is not None
+        }
+        counts: dict[str, int] = {}
+        for label in labels.values():
+            counts[label] = counts.get(label, 0) + 1
+        if not counts or not _categorical(len(counts), len(labels)):
+            continue
+        if min(counts.values()) >= 2:
+            return labels
+    return None
+
+
+def _moved_segment(
+    table: Table, points: list[tuple[int, float]], outlier_index: int
+) -> tuple[str, Column | None, float, float]:
+    """The segment whose rows' average sits furthest from the remaining
+    rows, as (label, its column, segment mean, rest mean), or empty answers
+    when no column offers one.
+
+    Every categorical text column and every qualifying date column is
+    scored on |segment_mean - rest_mean|; a segment must hold at least two
+    of the valued rows before it may be named, so the outlier's own label
+    is never invented into a cause. When two segments sit equally far (two
+    groups are always symmetric), the one holding the outlier row wins, and
+    beyond that the table's own order decides."""
+    best: tuple[float, bool, str, Column, float, float] | None = None
+    for column in table.columns:
+        labels = _segment_labels(table, column, points)
+        if labels is None:
+            continue
+        groups: dict[str, list[float]] = {}
+        for index, value in points:
+            label = labels.get(index)
+            if label:
+                groups.setdefault(label, []).append(value)
+        for label, values in sorted(groups.items()):
+            if len(values) < 2 or len(values) == len(points):
+                continue
+            segment_mean = math.fsum(values) / len(values)
+            rest = [value for index, value in points if labels.get(index) != label]
+            if not rest:
+                continue
+            rest_mean = math.fsum(rest) / len(rest)
+            shift = abs(segment_mean - rest_mean)
+            holds = labels.get(outlier_index) == label
+            if best is None or shift > best[0] or (
+                shift == best[0] and holds and not best[1]
+            ):
+                best = (shift, holds, label, column, segment_mean, rest_mean)
+    if best is None:
+        return "", None, 0.0, 0.0
+    return best[2], best[3], best[4], best[5]
+
+
 def outliers(table: Table, label_column: str | None = None) -> list[Finding]:
-    """One row 2.5 standard deviations from its column's average."""
+    """One row 2.5 standard deviations from its column's average, with the
+    segment that moved most as its cause and one concrete check to run."""
     found: list[Finding] = []
     for column in _numeric(table):
         points = [
@@ -625,23 +791,51 @@ def outliers(table: Table, label_column: str | None = None) -> list[Finding]:
         if abs(z_score) < MIN_Z:
             continue
         side = "above" if z_score > 0 else "below"
+        segment, segment_column, segment_mean, rest_mean = _moved_segment(
+            table, points, index
+        )
+        cells = [_cell_ref(column, index, table.rows[index][column.index])]
+        cause = ""
+        action = ""
+        if segment and segment_column is not None:
+            cause = (
+                f" {segment} rows average {_with_unit(segment_mean, column)} "
+                f"against {_with_unit(rest_mean, column)} elsewhere."
+            )
+            action = f"Check the {segment} rows' {column.name} entries first."
+            cells.append(
+                _cell_ref(segment_column, index, table.rows[index][segment_column.index])
+            )
+        else:
+            action = (
+                f"Check row {index + 1}'s {column.name} entry first."
+            )
+        text = (
+            f"{_row_name(table, index, label_column)} is {abs(z_score):.1f} standard "
+            f"deviations {side} the {column.name} average of "
+            f"{_with_unit(mean, column)} "
+            f"({_with_unit(value, column)}) across {len(points)} rows. "
+            "One row that far out bends any average or trend drawn from this range, "
+            "so read it first."
+        )
+        if cause:
+            text += f"{cause} {action}"
+        else:
+            text += " No column here splits the rows into groups. " + action
         found.append(
             Finding(
                 key="outlier",
                 label=LABELS["outlier"],
-                text=(
-                    f"{_row_name(table, index, label_column)} is {abs(z_score):.1f} standard "
-                    f"deviations {side} the {column.name} average of "
-                    f"{_with_unit(mean, column)} "
-                    f"({_with_unit(value, column)}) across {len(points)} rows. "
-                    "One row that far out bends any average or trend drawn from this range, "
-                    "so read it first."
-                ),
+                text=text,
                 rows=len(points),
                 score=abs(z_score),
                 chart=AUTO_CHART["outlier"],
                 columns=(column.name,),
                 suggested=(index,),
+                cells=tuple(cells),
+                rule=f"outlier: |z| >= {MIN_Z} across >= {MIN_OUTLIER_POINTS} rows",
+                segment=segment,
+                action=action,
             )
         )
     return found

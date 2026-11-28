@@ -1,5 +1,5 @@
 @echo off
-REM Agent Desk: double-click me. The dashboard opens in your browser.
+REM Nexuus Bot: double-click me. The dashboard opens in your browser.
 REM No elevation, ever. No terminal stays open: the app runs windowless.
 setlocal enabledelayedexpansion
 set "PYTHONPATH=%~dp0..\src;%PYTHONPATH%"
