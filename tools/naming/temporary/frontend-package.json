@@ -1,0 +1,14 @@
+{
+  "family": "frontend-package",
+  "ticket": "09",
+  "issue": 363,
+  "note": "Ticket 09 (issue 363) clears this family and edits only this file. With it the temporary list empties: every surface is on the new name and every remaining old identifier sits in the compatibility allowlist.",
+  "entries": [
+    {
+      "surface": "Frontend package name and lockfile identity",
+      "files": ["frontend/package.json", "frontend/package-lock.json"],
+      "matches": ["agentdesk-dashboard-spa"],
+      "issue": 363
+    }
+  ]
+}

@@ -25,6 +25,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from agentdesk import PRODUCT_NAME
 from agentdesk.mail.core import Message
 
 NAME = "mac-notifications"
@@ -57,7 +58,7 @@ MISSING_CAUSE = (
 )
 FULL_DISK_ACCESS_CAUSE = (
     "macOS is blocking access to the Notification Center database."
-    " Give Agent Desk Full Disk Access in System Settings > Privacy &"
+    f" Give {PRODUCT_NAME} Full Disk Access in System Settings > Privacy &"
     " Security > Full Disk Access, or save messages into the .eml"
     " folder instead."
 )

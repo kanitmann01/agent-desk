@@ -14,6 +14,7 @@ import argparse
 import json
 from pathlib import Path
 
+from agentdesk import PRODUCT_NAME
 from agentdesk.config import load_env_file
 from agentdesk.server import app, selfcheck
 
@@ -26,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="python -m agentdesk.server",
-        description="Start the Agent Desk dashboard (127.0.0.1 only).",
+        description=f"Start the {PRODUCT_NAME} dashboard (127.0.0.1 only).",
     )
     parser.add_argument(
         "--port",

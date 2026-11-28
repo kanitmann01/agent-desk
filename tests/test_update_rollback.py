@@ -125,7 +125,7 @@ def test_apply_writes_pointer_only_on_pass(tmp_path, monkeypatch):
         assert len(applied) == 1
         assert applied[0].undo_kind == "version-pointer"
         assert update.summary(data_dir)["banner"] == (
-            "Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch."
+            "Version 0.1.1 is ready. Restart Nexuus Bot from its shortcut to switch."
         )
     finally:
         booted.close()
@@ -327,10 +327,10 @@ def test_update_step_stages_and_the_dashboard_says_restart(tmp_path, monkeypatch
         assert status == 200
         payload = json.loads(body)
         assert payload["update"]["banner"] == (
-            "Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch."
+            "Version 0.1.1 is ready. Restart Nexuus Bot from its shortcut to switch."
         )
         page = booted.request("GET", "/", auth)[2].decode("utf-8")
-        assert "Version 0.1.1 is ready. Restart Agent Desk from its shortcut to switch." in page
+        assert "Version 0.1.1 is ready. Restart Nexuus Bot from its shortcut to switch." in page
         assert "class='alert'" in page
     finally:
         booted.close()
