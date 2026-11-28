@@ -4,7 +4,7 @@
 // page lands on the dashboard without a reload.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getJson, postJson, SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_TITLE } from './api';
-import type { DashboardData } from './types';
+import type { DashboardData, InsightBlock, PluginCard } from './types';
 import Dashboard from './dashboard/Dashboard';
 import DashboardSkeleton from './dashboard/DashboardSkeleton';
 import MarketplaceApp from './marketplace/MarketplaceApp';
@@ -54,6 +54,60 @@ function isMarketplacePath(pathname: string): boolean {
 // socket, no event stream, no new dependency.
 const POLL_MS = 8000;
 
+// The sitting's delta lines (spec 033): the SPA reports the view once per
+// sitting, so every poll that follows answers without the delta block. Each
+// tile's first-seen line is held here against a signature of the tile's
+// other content, so the line stays up while the reader reads it, and goes
+// (or is replaced by the answer's newer line) once the content changes.
+interface SittingDelta {
+  signature: string;
+  block: InsightBlock | null;
+}
+
+/** A tile's content signature: the payload with every delta block stripped,
+ * so the delta line itself never counts as a change. */
+function cardContentSignature(card: PluginCard): string {
+  const payload = card.payload;
+  if (!payload) return 'null';
+  const insight = payload.insight;
+  if (!insight?.blocks) return JSON.stringify(payload);
+  return JSON.stringify({
+    ...payload,
+    insight: { ...insight, blocks: insight.blocks.filter((block) => block.kind !== 'delta') },
+  });
+}
+
+/**
+ * Fold the sitting's delta lines into a freshly read payload, which reaches
+ * the screen only through this fold.
+ *
+ * A poll whose tile content stands still keeps the line the sitting opened
+ * with; a changed tile clears it or adopts the newer line the answer
+ * brought. Cards that left the layout drop their held line.
+ */
+function applySittingDeltas(data: DashboardData, held: Map<string, SittingDelta>): DashboardData {
+  const seen = new Set<string>();
+  for (const card of data.plugins.cards) {
+    seen.add(card.id);
+    const incoming = card.payload?.insight?.blocks?.find((block) => block.kind === 'delta') ?? null;
+    const signature = cardContentSignature(card);
+    const sitting = held.get(card.id);
+    if (!sitting || sitting.signature !== signature) {
+      held.set(card.id, { signature, block: incoming });
+      continue;
+    }
+    sitting.block = incoming ?? sitting.block;
+    const insight = card.payload?.insight;
+    if (!incoming && sitting.block && insight) {
+      insight.blocks = [sitting.block, ...(insight.blocks ?? [])];
+    }
+  }
+  for (const id of held.keys()) {
+    if (!seen.has(id)) held.delete(id);
+  }
+  return data;
+}
+
 /**
  * Dashboard route: fetch `/api/dashboard` on mount and then, while the tab
  * is visible, every POLL_MS, and render the loading state, the
@@ -73,6 +127,9 @@ function DashboardApp() {
   // newer read was started is stale: it belongs to a payload the screen
   // has already moved past, so it is dropped instead of overwriting it.
   const latestRead = useRef(0);
+  // Each tile's sitting delta, held across the polls that no longer carry
+  // it (see applySittingDeltas).
+  const sittingDeltas = useRef(new Map<string, SittingDelta>());
 
   // Focus the failure heading as it mounts (it stays out of the tab
   // order) so Try again is the following keypress. A callback ref runs
@@ -95,7 +152,7 @@ function DashboardApp() {
         setPollFailed(true);
         return;
       }
-      setData(res.data as DashboardData);
+      setData(applySittingDeltas(res.data as DashboardData, sittingDeltas.current));
       setLoadFailed(false);
       setPollFailed(false);
       if (!reportedView.current) {

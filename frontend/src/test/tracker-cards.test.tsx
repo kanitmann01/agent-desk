@@ -285,4 +285,39 @@ describe('the tracker tile owns its face', () => {
     expect(screen.getByText('42')).toBeInTheDocument();
     expect(screen.getByText('Value')).toBeInTheDocument();
   });
+
+  it('carries the receipts why drilldown inside the reading, through the shared markup (ticket 06)', () => {
+    const card: PluginCard = {
+      ...CLASSIC_CARD,
+      payload: {
+        ...CLASSIC_CARD.payload!,
+        insight: {
+          ...CLASSIC_CARD.payload!.insight!,
+          blocks: [
+            {
+              kind: 'receipts',
+              text: "Used: your chart preference · this card's rows.",
+              why: [
+                {
+                  claim: 'Booked fell 18 rows behind last month.',
+                  columns: ['Region', 'Booked'],
+                  rule: 'mean shift larger than 2 standard deviations',
+                },
+              ],
+            },
+            { kind: 'note', text: 'Only the rows under the chart were looked at.' },
+          ],
+        },
+      },
+    };
+    render(<TrackerCard card={card} onRefetch={NOOP_REFETCH} onExpired={NOOP_EXPIRED} />);
+
+    expect(screen.getByText("Used: your chart preference · this card's rows.")).toBeInTheDocument();
+    const details = document.querySelector('details.w-why');
+    expect(details).not.toBeNull();
+    expect(details?.querySelector('summary')).toHaveTextContent('Why');
+    expect(details?.textContent).toContain('Booked fell 18 rows behind last month.');
+    expect(details?.textContent).toContain('Columns: Region, Booked');
+    expect(details?.textContent).toContain('Rule: mean shift larger than 2 standard deviations');
+  });
 });
