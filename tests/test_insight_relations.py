@@ -351,6 +351,114 @@ def test_outlier_names_the_row_from_the_label_column():
     assert "Nia" in found[0].text
 
 
+# -- provenance: cells, rule, and the outlier's cause and action -----------
+
+
+@pytest.mark.parametrize(
+    ("key", "threshold"),
+    [
+        ("trend", "70%"),
+        ("correlation", "0.6"),
+        ("share", "50%"),
+        ("ratio", "1.5x"),
+        ("outlier", "2.5"),
+    ],
+)
+def test_every_detector_names_its_columns_rule_and_cells(key, threshold):
+    finding = _finding(key)
+    assert finding.columns
+    assert threshold in finding.rule
+    assert finding.cells
+    assert all(cell.strip() for cell in finding.cells)
+
+
+def test_trend_cells_cite_both_ends_of_the_range():
+    finding = _finding("trend")
+    assert finding.cells == ("B2: 10", "A2: 2026-01-01", "B7: 15", "A7: 2026-06-01")
+
+
+def test_correlation_cells_cite_the_first_and_last_pairs():
+    finding = _finding("correlation")
+    assert finding.cells == ("A2: 1", "B2: 3", "A9: 8", "B9: 24")
+
+
+def test_share_cells_cite_the_top_group():
+    finding = _finding("share")
+    assert finding.cells == ("A2: A", "B2: 51")
+
+
+def test_ratio_cells_cite_both_sides():
+    finding = _finding("ratio")
+    assert finding.cells == ("A2: A", "B2: 30", "A4: B", "B4: 50")
+
+
+def test_outlier_names_the_segment_that_shifted_most():
+    rows = [
+        ["North", 10], ["North", 10], ["North", 10], ["North", 10],
+        ["South", 10], ["South", 10], ["South", 10], ["South", 30],
+    ]
+    found = relations.outliers(_table(["region", "amount"], rows))
+    assert len(found) == 1
+    finding = found[0]
+    assert finding.suggested == (7,)
+    assert finding.segment == "South"
+    assert "South rows average 15 against 10 elsewhere" in finding.text
+    assert "Check the South rows' amount entries first." in finding.text
+    assert finding.action == "Check the South rows' amount entries first."
+    assert finding.cells == ("B9: 30", "A9: South")
+
+
+def test_an_exact_date_column_names_the_shifted_date_segment():
+    rows = [
+        ["2026-01-05", 10], ["2026-01-05", 10], ["2026-01-05", 10], ["2026-01-05", 10],
+        ["2026-02-05", 10], ["2026-02-05", 10], ["2026-02-05", 10], ["2026-02-05", 30],
+    ]
+    found = relations.outliers(_table(["when", "amount"], rows))
+    assert len(found) == 1
+    finding = found[0]
+    assert finding.suggested == (7,)
+    assert finding.segment == "2026-02-05"
+    assert "2026-02-05 rows average 15 against 10 elsewhere" in finding.text
+    assert finding.cells == ("B9: 30", "A9: 2026-02-05")
+
+
+def test_a_date_column_falls_back_to_month_buckets():
+    rows = [
+        ["2026-01-05", 10], ["2026-01-06", 10], ["2026-01-07", 10], ["2026-01-08", 10],
+        ["2026-02-05", 10], ["2026-02-06", 10], ["2026-02-07", 10], ["2026-02-08", 31],
+    ]
+    found = relations.outliers(_table(["when", "amount"], rows))
+    assert len(found) == 1
+    finding = found[0]
+    assert finding.segment == "2026-02"
+    assert "2026-02 rows average 15.25 against 10 elsewhere" in finding.text
+
+
+def test_a_unique_date_per_row_is_never_a_segment():
+    rows = [[f"2026-{month + 1:02d}-01", 10] for month in range(7)]
+    rows.append(["2026-08-01", 24])
+    found = relations.outliers(_table(["when", "amount"], rows))
+    assert len(found) == 1
+    finding = found[0]
+    assert finding.suggested == (7,)
+    assert finding.segment == ""
+    assert "No column here splits the rows into groups." in finding.text
+    assert finding.action == "Check row 8's amount entry first."
+    assert finding.cells == ("B9: 24",)
+
+
+def test_a_flat_label_table_gets_a_row_check_without_a_segment():
+    labels = ["Dana", "Sam", "Alex", "Jo", "Kim", "Lee", "Max", "Nia"]
+    found = relations.outliers(_outlier_table([10] * 7 + [24], labels))
+    assert len(found) == 1
+    finding = found[0]
+    assert finding.suggested == (7,)
+    assert finding.segment == ""
+    assert "No column here splits the rows into groups." in finding.text
+    assert finding.action == "Check row 8's amount entry first."
+    assert "Nia" in finding.text
+
+
 # -- ordering and chart choice --------------------------------------------
 
 

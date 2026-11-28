@@ -175,3 +175,178 @@ def test_a_rendered_card_without_a_press_draws_no_form():
     widget = app.DashboardHandler._plugin_widget(None, _reading_card([]))
     assert "/insight/press" not in widget.body_html
 
+
+# -- wave 1: the delta line, the falsify line, and the why drilldown ------
+
+
+def _attention_card(blocks: list[dict]) -> dict:
+    """An attention tile carrying one reading's resolved blocks and no elements."""
+    card = _reading_card(blocks, [])
+    card["freshness"] = "attention"
+    card["cause"] = "The source did not run."
+    return card
+
+
+def test_a_delta_block_draws_once_at_the_top_of_a_fresh_tile():
+    """The change line opens the tile, above the elements and the quiet lines."""
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _reading_card(
+            [
+                {"kind": "delta", "text": "Since you last looked: the change figure moved."},
+                {"kind": "note", "text": "Only the rows under the chart were looked at."},
+            ],
+            [{"kind": "metric", "label": "Value", "value": "91"}],
+        ),
+    )
+    body = widget.body_html
+    assert '<p class="w-delta">Since you last looked: the change figure moved.</p>' in body
+    # Drawn once, at the top: never repeated as a quiet line below.
+    assert body.count("Since you last looked") == 1
+    assert body.index("w-delta") < body.index(">91<")
+    assert body.index("w-delta") < body.index("Only the rows under the chart")
+    assert '<p class="w-note">Since you last looked' not in body
+
+
+def test_a_delta_block_draws_at_the_top_of_an_attention_tile():
+    """A tile that moved to attention still opens with its change line."""
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _attention_card([{"kind": "delta", "text": "Since you last looked: two new threads arrived."}]),
+    )
+    body = widget.body_html
+    assert '<p class="w-delta">Since you last looked: two new threads arrived.</p>' in body
+    assert body.index("w-delta") < body.index('class="alert"')
+
+
+def test_the_quiet_lines_skip_the_delta_and_keep_their_order():
+    """Receipts, falsify and note stay quiet paragraphs in block order."""
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _reading_card(
+            [
+                {"kind": "delta", "text": "Since you last looked: the tracker moved."},
+                {"kind": "receipts", "text": "Used: your chart preference."},
+                {
+                    "kind": "falsify",
+                    "text": "What would change my mind: a month where margin rises while booked falls.",
+                },
+                {"kind": "note", "text": "Only the rows under the chart were looked at."},
+            ]
+        ),
+    )
+    body = widget.body_html
+    assert '<p class="w-note">Used: your chart preference.</p>' in body
+    assert (
+        '<p class="w-note">What would change my mind: a month where margin rises '
+        "while booked falls.</p>" in body
+    )
+    assert '<p class="w-note">Only the rows under the chart were looked at.</p>' in body
+    assert body.index("Used: your chart preference.") < body.index("What would change my mind")
+    assert body.index("What would change my mind") < body.index("Only the rows under the chart")
+
+
+def test_a_receipts_block_draws_its_why_behind_a_details_element():
+    """The provenance opens behind a native disclosure after its receipt line."""
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _reading_card(
+            [
+                {
+                    "kind": "receipts",
+                    "text": "Used: your chart preference · this card's rows.",
+                    "why": [
+                        {
+                            "claim": "Booked falls as Margin rises.",
+                            "columns": ["Margin", "Booked"],
+                            "cells": ["B2:B14", "C2:C14"],
+                            "rule": "Pearson r of -0.82, past the -0.7 threshold.",
+                            "facts": [
+                                {"id": 3, "source": "handbook"},
+                                {"entityId": 2, "name": "Acme", "factCount": 1},
+                            ],
+                        }
+                    ],
+                },
+                {"kind": "note", "text": "Only the rows under the chart were looked at."},
+            ]
+        ),
+    )
+    body = widget.body_html
+    assert '<details class="w-why"><summary>Why</summary><ul><li>' in body
+    assert "Booked falls as Margin rises." in body
+    assert "columns Margin, Booked" in body
+    assert "cells B2:B14, C2:C14" in body
+    assert "rule Pearson r of -0.82" in body
+    assert "fact 3 (handbook)" in body
+    assert "Acme (1 fact)" in body
+    # The drilldown sits after its receipt line and before the next line, and
+    # carries no quiet paragraph of its own.
+    why_at = body.index('details class="w-why"')
+    assert body.index("Used: your chart preference") < why_at
+    assert why_at < body.index("Only the rows under the chart")
+    assert '<p class="w-note">' not in body[why_at : body.index("</details>")]
+
+
+def test_a_receipts_block_without_a_why_draws_no_details():
+    """An empty or malformed why is no drilldown at all."""
+    widget = app.DashboardHandler._plugin_widget(
+        None,
+        _reading_card([{"kind": "receipts", "text": "Used: your chart preference.", "why": []}]),
+    )
+    assert "w-why" not in widget.body_html
+    line = app._receipt_line(
+        {"insight": {"blocks": [{"kind": "receipts", "text": "Used.", "why": "not a list"}]}}
+    )
+    assert line == '<p class="w-note">Used.</p>'
+
+
+def test_a_tile_without_a_delta_draws_no_delta_line():
+    """No insight, no blocks, or no delta text: no line, never an invention."""
+    assert app._delta_line({}) == ""
+    assert app._delta_line({"insight": {}}) == ""
+    assert app._delta_line({"insight": {"blocks": "not a list"}}) == ""
+    assert app._delta_line({"insight": {"blocks": [{"kind": "note", "text": "Kept."}]}}) == ""
+    assert app._delta_line({"insight": {"blocks": [{"kind": "delta", "text": "   "}]}}) == ""
+
+
+def test_why_and_delta_strings_are_escaped_at_the_boundary():
+    """Every provenance and change string is escaped where the HTML is drawn."""
+    line = app._receipt_line(
+        {
+            "insight": {
+                "blocks": [
+                    {
+                        "kind": "receipts",
+                        "text": "Used: this card's rows.",
+                        "why": [
+                            {
+                                "claim": "<script>alert(1)</script>",
+                                "columns": ["<b>Margin</b>"],
+                                "cells": ["<i>B2:B14</i>"],
+                                "rule": "<em>r below -0.7</em>",
+                                "facts": [
+                                    {"id": 1, "source": "<script>src</script>"},
+                                    {"entityId": 2, "name": "<u>Acme</u>", "factCount": 2},
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+    assert "<script>" not in line
+    assert "<b>Margin</b>" not in line
+    assert "&lt;script&gt;" in line
+    assert "&lt;b&gt;Margin&lt;/b&gt;" in line
+    assert "&lt;i&gt;B2:B14&lt;/i&gt;" in line
+    assert "&lt;em&gt;r below -0.7&lt;/em&gt;" in line
+    assert "&lt;script&gt;src&lt;/script&gt;" in line
+    assert "&lt;u&gt;Acme&lt;/u&gt;" in line
+    delta = app._delta_line(
+        {"insight": {"blocks": [{"kind": "delta", "text": "<script>alert(1)</script>"}]}}
+    )
+    assert "<script>" not in delta
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in delta
+

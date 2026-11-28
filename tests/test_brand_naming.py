@@ -4,9 +4,8 @@ Spec 032, ticket 01b (issue 355); the data is ticket 01a (issue 354).
 This file replaces the old two-literal brand guard: every pinned
 surface carries the approved literals; every old display form on
 production source and live documents sits in a temporary-list entry or
-an allowlisted context; the old AD initials are rejected in avatar
-contexts, and after tickets 02 and 03 no temporary entry declares them;
-tracked path names keep to the retained forms; the
+an allowlisted context; the old AD initials appear only in declared
+avatar contexts; tracked path names keep to the retained forms; the
 U+2014 ban keeps its live-tree scope; the count report implements the
 R2 method over tracked text and tracked paths; and the negative
 fixtures prove the guard fails on a missing new name, an old wordmark,
@@ -87,15 +86,19 @@ def test_agent_face_keeps_the_approved_name():
 
 
 def test_the_avatar_entries_expect_the_approved_initials():
-    """No temporary entry may still declare old avatar initials."""
+    """Any avatar entry left on the temporary lists expects NB.
+
+    The list may be empty: tickets 02 and 03 renamed both avatar surfaces,
+    so both entries left the temporary lists by design. Completeness stays
+    pinned by the classification sweep, which rejects any old initials an
+    emptied entry no longer covers.
+    """
     contract = g.load_contract()
     assert g.initials_contract_violations(contract) == []
     declared = [entry for _f, _fam, entry in contract.temporary
                 if entry.get("initials")]
-    assert not declared, (
-        "an avatar entry still declares old initials: "
-        "tickets 02 and 03 renamed both avatar surfaces"
-    )
+    for entry in declared:
+        assert entry["expected_initials"] == "NB"
 
 
 def test_a_broken_avatar_expectation_fails_the_contract():

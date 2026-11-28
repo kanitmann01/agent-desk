@@ -7,7 +7,8 @@ it returns is the sentence the user sees before pressing.
 
 The request has one shape, and this module owns it: a reply draft posts
 {"kind": "reply-draft", "thread": {"subject", "sender", "last"}, "stage":
-true} and an explanation posts {"kind": "explain-range", "text"}. The
+true}, an explanation posts {"kind": "explain-range", "text"}, and a
+counter-evidence check posts {"kind": "check-counter", "text"}. The
 digest family's press payload is that request with a label and a route
 added, so a client posts what the card carried, unchanged. A form cannot
 nest, so press_to_fields and press_from_form are the one flat spelling a
@@ -30,7 +31,7 @@ from agentdesk.llm import LlmUnavailable
 from agentdesk.mail import watcher as mail_watcher
 from agentdesk.mail.core import reply_recipients, reply_subject
 
-KINDS = ("reply-draft", "explain-range")
+KINDS = ("reply-draft", "explain-range", "check-counter")
 
 # The desk will not hand back a skeleton dressed as a draft: when the model
 # path is off the route refuses, and the refusal repeats what would have
@@ -63,6 +64,26 @@ EXPLAIN_DISCLOSURE = (
 MODEL_OFF_EXPLAIN = (
     "Nothing was explained: model calls are off on this desk, so there is no "
     "model to explain with. Turn the model on in Settings, then ask again."
+)
+
+# A counter-evidence check sends the stored answer and the falsification
+# criterion the card printed beside it. The desk's sources stay local: the
+# model is testing one conclusion, not rereading the desk.
+COUNTER_DISCLOSURE = (
+    "Sends: the stored answer summary and the desk's falsification criterion.",
+    "Does not send: your workbook, your mail, your calendar, or any memory.",
+)
+
+MODEL_OFF_COUNTER = (
+    "Nothing was checked: model calls are off on this desk, so there is no "
+    "model to check with. Turn the model on in Settings, then ask again."
+)
+
+COUNTER_PROMPT = (
+    "Test one research conclusion for its blind spot. Name the strongest "
+    "opposing evidence, or the one assumption that would most weaken it, in "
+    "at most three sentences. Do not invent a study, a date or a number."
+    "\n\nConclusion: "
 )
 
 MAX_FINDING = 400
@@ -136,6 +157,8 @@ def draft_reply(
         raise InsightError("insight:unknown-kind", f"{kind} is not something the desk drafts.")
     if kind == "explain-range":
         return _explain(body, complete)
+    if kind == "check-counter":
+        return _counter(body, complete)
     _refuse_retired_shape(body)
     facts = body.get("thread") if isinstance(body.get("thread"), dict) else {}
     subject = str(facts.get("subject") or "").strip()
@@ -495,5 +518,52 @@ def _explain(body: dict, complete: Callable[[str], str] | None) -> dict:
         "text": explanation,
         "source": "model",
         "disclosure": list(EXPLAIN_DISCLOSURE),
+        "note": "",
+    }
+
+
+def _counter(body: dict, complete: Callable[[str], str] | None) -> dict:
+    """One conclusion checked against counter-evidence, or the reason not.
+
+    The text is the press's own bounded payload: the answer's summary and
+    the falsification criterion the card printed, nothing else, so the
+    model argues against exactly what the user read."""
+    text = str(body.get("text") or "").strip()
+    if not text:
+        raise InsightError(
+            "insight:bad-request", "A check needs the answer and criterion it tests."
+        )
+    if len(text) > MAX_FINDING:
+        raise InsightError("insight:bad-request", "That text is too long to check.")
+    if complete is None:
+        raise InsightError(
+            "insight:model-off", _say(MODEL_OFF_COUNTER, COUNTER_DISCLOSURE), 409
+        )
+    cause = ""
+    try:
+        answer = complete(COUNTER_PROMPT + text)
+    except Exception as exc:  # noqa: BLE001 - a failed check is a sentence, not a crash
+        answer = ""
+        # The adapter's pinned cause (a timeout, a rejected key, a
+        # redirect) names the recovery; anything else keeps the generic
+        # line, because a bare crash's text names nothing.
+        cause = str(exc) if isinstance(exc, LlmUnavailable) else ""
+    counter = answer.strip() if isinstance(answer, str) else ""
+    if not counter:
+        note = "The model did not answer, so nothing is checked."
+        if cause:
+            note = f"The model did not answer ({cause}), so nothing is checked."
+        return {
+            "status": "empty",
+            "text": "",
+            "source": "none",
+            "disclosure": list(COUNTER_DISCLOSURE),
+            "note": note,
+        }
+    return {
+        "status": "draft",
+        "text": counter,
+        "source": "model",
+        "disclosure": list(COUNTER_DISCLOSURE),
         "note": "",
     }

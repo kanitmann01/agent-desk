@@ -4,6 +4,9 @@ Every test here drives `press.draft_reply` directly, with a stand-in for the
 mail view and a real inbox. The route in front of it only reads preferences
 and passes the model closure through; that wiring is covered by
 tests/test_insight_staging against the running server.
+
+The counter-evidence check (wave 1 ticket 04) is covered here too: the
+stored answer and its falsification criterion travel, nothing else does.
 """
 
 from __future__ import annotations
@@ -159,6 +162,70 @@ def test_an_unknown_kind_is_named_back():
                           complete=lambda _prompt: "x")
     assert caught.value.code == "insight:unknown-kind"
     assert "rewrite-the-sheet" in caught.value.message
+
+
+# -- checking counter-evidence ---------------------------------------------
+
+
+def test_a_counter_check_discloses_what_travels_and_refuses_when_the_model_is_off():
+    with pytest.raises(InsightError) as caught:
+        press.draft_reply(
+            None,
+            {"kind": "check-counter",
+             "text": "Pairs beat augmentation. What would change my mind: a fair comparison."},
+            preferences=_prefs(), complete=None,
+        )
+    assert caught.value.status == 409
+    assert caught.value.code == "insight:model-off"
+    assert "model calls are off" in caught.value.message
+    assert ("Sends: the stored answer summary and the desk's falsification "
+            "criterion.") in caught.value.message
+    assert ("Does not send: your workbook, your mail, your calendar, or any "
+            "memory.") in caught.value.message
+
+
+def test_a_counter_check_sends_the_bounded_text_and_carries_the_answer():
+    prompts: list[str] = []
+
+    def complete(prompt: str) -> str:
+        prompts.append(prompt)
+        return ("The comparison had no control group, so the faster ramp may "
+                "be selection, not pairing.")
+
+    answer = press.draft_reply(
+        None,
+        {"kind": "check-counter",
+         "text": ("Pairs onboard faster than augmentation. What would change "
+                  "my mind: a fair comparison.")},
+        preferences=_prefs(), complete=complete,
+    )
+    assert answer["status"] == "draft"
+    assert answer["source"] == "model"
+    assert answer["text"].startswith("The comparison had no control group")
+    assert answer["disclosure"] == list(press.COUNTER_DISCLOSURE)
+    assert len(prompts) == 1
+    assert "Pairs onboard faster than augmentation." in prompts[0]
+    assert "a fair comparison" in prompts[0]
+    assert len(prompts[0]) < press.MAX_FINDING + len(press.COUNTER_PROMPT) + 8
+
+
+def test_a_counter_check_needs_the_text_it_checks():
+    with pytest.raises(InsightError) as caught:
+        press.draft_reply(None, {"kind": "check-counter"}, preferences=_prefs(),
+                          complete=lambda _prompt: "x")
+    assert caught.value.status == 400
+    assert caught.value.code == "insight:bad-request"
+
+
+def test_an_oversized_counter_text_is_refused_before_any_call():
+    calls: list[str] = []
+    with pytest.raises(InsightError) as caught:
+        press.draft_reply(
+            None, {"kind": "check-counter", "text": "x" * (press.MAX_FINDING + 1)},
+            preferences=_prefs(), complete=lambda prompt: calls.append(prompt) or "y",
+        )
+    assert caught.value.status == 400
+    assert calls == []
 
 
 # -- one request shape -----------------------------------------------------

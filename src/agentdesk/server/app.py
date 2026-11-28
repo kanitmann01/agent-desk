@@ -77,6 +77,7 @@ from agentdesk.insight.preferences import PreferenceStore, PreferencesError, cha
 from agentdesk.insight.press import draft_reply, press_from_form, press_to_fields
 from agentdesk.insight.reading import press_label
 from agentdesk.insight.service import attach_cards
+from agentdesk.insight.snapshots import SnapshotStore
 from agentdesk.insight.types import InsightError
 from agentdesk.inbox.snooze import SNOOZE_CHOICES, snooze_until
 from agentdesk.inbox.store import InboxStore
@@ -1141,8 +1142,11 @@ def _receipt_line(payload: dict) -> str:
     The payload carries the lines already resolved and ordered
     (agentdesk.insight.reading owns the phrases), so this only draws them:
     escaping is the single job left, and the SPA prints the very same block
-    texts. A payload with no blocks, or one whose blocks hold no text, draws
-    nothing rather than an empty line.
+    texts. A delta block is drawn once, at the tile's top (_delta_line), so
+    it is skipped here; a receipts block whose reading carried why
+    provenance gains one zero-script disclosure after its line. A payload
+    with no blocks, or one whose blocks hold no text, draws nothing rather
+    than an empty line.
     """
     insight = payload.get("insight")
     blocks = insight.get("blocks") if isinstance(insight, dict) else None
@@ -1152,12 +1156,105 @@ def _receipt_line(payload: dict) -> str:
     for block in blocks:
         if not isinstance(block, dict):
             continue
+        kind = block.get("kind")
         text = str(block.get("text") or "").strip()
-        if text:
-            # The apostrophe in "this card's rows" is copy, so only the
-            # ampersand-and-angle shapes are escaped; a note's own text still
-            # cannot smuggle markup onto the page.
-            lines.append('<p class="w-note">' + html.escape(text, quote=False) + "</p>")
+        if not text or kind == "delta":
+            continue
+        # The apostrophe in "this card's rows" is copy, so only the
+        # ampersand-and-angle shapes are escaped; a note's own text still
+        # cannot smuggle markup onto the page.
+        lines.append('<p class="w-note">' + html.escape(text, quote=False) + "</p>")
+        if kind == "receipts":
+            lines.append(_why_details(block.get("why")))
+    return "".join(lines)
+
+def _why_details(why: object) -> str:
+    """A receipts block's why provenance as one native disclosure, or "".
+
+    A <details> element keeps the drilldown openable with no script at all,
+    and every string inside it (claim, columns, cells, rule, fact and desk
+    citations) is escaped here at the boundary. The items are <li> text,
+    never a quiet paragraph, so the card's quiet-line count stays exactly
+    the block count; an empty or malformed why draws nothing.
+    """
+    items: list[str] = []
+    for entry in why if isinstance(why, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        parts: list[str] = []
+        claim = str(entry.get("claim") or "").strip()
+        if claim:
+            parts.append(html.escape(claim, quote=False))
+        columns = entry.get("columns") if isinstance(entry.get("columns"), list) else []
+        named = [
+            html.escape(str(column), quote=False)
+            for column in columns
+            if str(column).strip()
+        ]
+        if named:
+            parts.append("columns " + ", ".join(named))
+        cells = entry.get("cells") if isinstance(entry.get("cells"), list) else []
+        referenced = [
+            html.escape(str(cell), quote=False)
+            for cell in cells
+            if str(cell).strip()
+        ]
+        if referenced:
+            parts.append("cells " + ", ".join(referenced))
+        rule = str(entry.get("rule") or "").strip()
+        if rule:
+            parts.append("rule " + html.escape(rule, quote=False))
+        citations: list[str] = []
+        facts = entry.get("facts") if isinstance(entry.get("facts"), list) else []
+        for citation in facts:
+            if not isinstance(citation, dict):
+                continue
+            fact_id = citation.get("id")
+            if isinstance(fact_id, int) and not isinstance(fact_id, bool):
+                source = html.escape(str(citation.get("source") or "").strip(), quote=False)
+                citations.append(
+                    "fact " + str(fact_id) + (" (" + source + ")" if source else "")
+                )
+                continue
+            name = html.escape(str(citation.get("name") or "").strip(), quote=False)
+            count = citation.get("factCount")
+            if name and isinstance(count, int) and not isinstance(count, bool):
+                citations.append(
+                    name + " (" + str(count)
+                    + (" fact" if count == 1 else " facts") + ")"
+                )
+        if citations:
+            parts.append("cites " + ", ".join(citations))
+        if parts:
+            items.append("<li>" + " · ".join(parts) + "</li>")
+    if not items:
+        return ""
+    return (
+        '<details class="w-why"><summary>Why</summary><ul>'
+        + "".join(items)
+        + "</ul></details>"
+    )
+
+def _delta_line(payload: dict) -> str:
+    """The tile's perceptual delta as one quiet line at its top, or "".
+
+    The delta block arrives first in the payload's blocks (the snapshot
+    store owns the sentence), and it draws before whatever the tile shows,
+    so the change since the last view is the first thing read, on a fresh
+    tile and on an attention one alike. It is drawn once: the quiet lines
+    below the elements skip it.
+    """
+    insight = payload.get("insight")
+    blocks = insight.get("blocks") if isinstance(insight, dict) else None
+    if not isinstance(blocks, list):
+        return ""
+    lines: list[str] = []
+    for block in blocks:
+        if isinstance(block, dict) and block.get("kind") == "delta":
+            text = str(block.get("text") or "").strip()
+            if text:
+                # The same ampersand-and-angle escaping the quiet lines use.
+                lines.append('<p class="w-delta">' + html.escape(text, quote=False) + "</p>")
     return "".join(lines)
 
 def _plugin_retest_can_change(cause: str) -> bool:
@@ -1231,11 +1328,15 @@ def with_insight(server: AgentDeskServer, cards: list[dict]) -> list[dict]:
 
     build_dashboard_state calls this once, so a reading is never JSON-only:
     the same sentence arrives through the API payload and through the
-    authored HTML.
+    authored HTML. The snapshot store is read purely here: the last-viewed
+    watermark feeds each tile's perceptual delta, and only the explicit
+    view endpoint ever writes it.
     """
+    snapshots = SnapshotStore(default_data_dir()).read()["cards"]
     attach_cards(
         cards,
         build_insight_context(server, PreferenceStore(default_data_dir()).read()),
+        snapshots=snapshots,
     )
     return cards
 
@@ -4688,10 +4789,17 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         Reading the dashboard used to spend pilot views inside the GET; the
         state builder made the read pure, so the page reports the view here
         once after a successful load. The spend rules live in the runtime,
-        which keeps them identical to the cards the read emitted.
+        which keeps them identical to the cards the read emitted. After the
+        spend, the tiles as they show right now are recorded as the
+        last-viewed snapshots, so the next read can say what changed since
+        this view.
         """
-        plugins = self.server.plugins  # type: ignore[attr-defined]
+        server = self.server  # type: ignore[attr-defined]
+        plugins = server.plugins
         spent = plugins.record_dashboard_view() if plugins is not None else 0
+        cards = plugins.widget_cards() if plugins is not None else []
+        with_insight(server, cards)
+        SnapshotStore(default_data_dir()).record(cards)
         self._send_json(200, {"spent": spent})
 
     def _apply_source_toggles(self, key: str, value) -> None:
@@ -6390,6 +6498,9 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
                 "<p>" + cause + "</p>" + offer + "</div>"
             )
             extra = "amber"
+        # The delta is the tile's first line on every surface it owes one:
+        # fresh or attention, it rides above whatever the tile draws.
+        body = _delta_line(payload) + body
         if status == FRESH:
             # The reading's resolved lines and its press belong on the card, so
             # the rendered dashboard is never a poorer version of the API.
