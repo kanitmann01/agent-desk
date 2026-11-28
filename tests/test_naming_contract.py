@@ -329,20 +329,23 @@ def test_pinned_surfaces_already_carry_the_new_name():
 
 
 def test_temporary_entries_declare_the_old_avatar_initials():
-    """The AD initials appear only where an entry declares an avatar."""
+    """Every avatar entry still on the lists declares the retired
+    initials and expects the approved ones, and the server pages are no
+    longer declared: ticket 02 (issue 356) renamed the server shell's
+    avatar, so its old declaration has left the temporary list."""
     avatars = [
         entry for _file, _family, entry in _all_temporary_entries()
         if entry.get("initials")
     ]
-    assert {entry["initials"] for entry in avatars} == {"AD"}
     for entry in avatars:
+        assert entry.get("initials") == "AD"
         assert entry.get("expected_initials") == APPROVED_INITIALS
         assert "avatar" in entry["surface"].lower()
     named = {f for entry in avatars for f in entry["files"]}
-    # The SPA avatar is cleared: ticket 03 (issue 357) renamed it to NB, so
-    # only the server-rendered avatar still waits for its ticket here.
-    for path in ("src/agentdesk/server/pages.py",):
-        assert path in named, f"the avatar surface {path} is not declared"
+    assert "src/agentdesk/server/pages.py" not in named, (
+        "the server avatar carries the approved initials; its declaration "
+        "should have left the temporary list"
+    )
 
 
 # --- complete: every old-form occurrence in the live trees is classified ---

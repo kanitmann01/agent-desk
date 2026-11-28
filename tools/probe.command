@@ -1,5 +1,5 @@
 #!/bin/sh
-# Agent Desk P0 probe: double-click me from Finder. No elevation, ever.
+# Nexuus Bot P0 probe: double-click me from Finder. No elevation, ever.
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # Finder starts .command files in the user home; the report lands in
 # cwd/probe-run, so cd to the script dir like a double-clicked .cmd does.
