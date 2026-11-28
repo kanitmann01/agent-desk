@@ -176,11 +176,10 @@ def test_the_frontend_readme_and_package_description_say_nexuus_bot():
     assert package["description"].startswith("The Nexuus Bot dashboard"), (
         "the package description still says the old name"
     )
-    # Ticket 09 (issue 363) renames the package identity; this ticket
-    # must not touch it.
-    assert package["name"] == "agentdesk-dashboard-spa"
+    # Ticket 09 (issue 363) moved the package identity to the new name.
+    assert package["name"] == "nexuusbot-dashboard-spa"
     lock = json.loads(_text(FRONTEND_LOCK))
-    assert lock["name"] == "agentdesk-dashboard-spa"
+    assert lock["name"] == "nexuusbot-dashboard-spa"
 
 
 # -- sentence fix (a): the Node floor comes from the toolchain --------------
