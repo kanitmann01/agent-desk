@@ -1,5 +1,5 @@
 @echo off
-REM Agent Desk P0 probe: double-click me. No elevation, ever.
+REM Nexuus Bot P0 probe: double-click me. No elevation, ever.
 setlocal
 set "PYTHONPATH=%~dp0..\src;%PYTHONPATH%"
 REM Gate 2 must test uv the way the app launcher runs it: through the

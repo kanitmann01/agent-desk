@@ -311,6 +311,15 @@ SECURITY_HEADERS = (
     ("Cache-Control", "no-store"),
 )
 
+# The two sentences the server itself speaks (Spec 032, issue 356): the
+# startup banner printed over the console or the launcher log, and the
+# recovery line on the 401 a session-less browser meets. Both read the
+# one approved product constant.
+START_BANNER = agentdesk.PRODUCT_NAME + " is running: {url}"
+SESSION_RECOVERY = (
+    f"Open {agentdesk.PRODUCT_NAME} from its shortcut to get a fresh link."
+)
+
 MAX_BODY_BYTES = 1024 * 1024
 
 # The skill feedback queue (spec 016 section 6.6): each skillfb:<id> latch
@@ -1475,7 +1484,7 @@ class DashboardHandler(MemoryApiMixin, PeersApiMixin, BaseHTTPRequestHandler):
         if not self._authenticated():
             self._refuse_and_close(
                 401, "Session required",
-                "Open Agent Desk from its shortcut to get a fresh link.",
+                SESSION_RECOVERY,
             )
             return False
         return True
@@ -8836,7 +8845,7 @@ def serve(server: AgentDeskServer, open_browser: bool = True) -> None:
     if sys.stdout is not None:  # pythonw runs without a console stream
         # flush: launchers redirect this to a log file, where a buffered
         # print would hide the one-time start link until the process ends
-        print(f"Agent Desk is running: {url}", flush=True)
+        print(START_BANNER.format(url=url), flush=True)
     start_background_polls(server)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()

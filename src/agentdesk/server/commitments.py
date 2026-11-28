@@ -6,6 +6,7 @@ escaped here before it reaches pages.py.
 import html
 from datetime import datetime
 
+from agentdesk import PRODUCT_NAME
 from agentdesk.calendar.watcher import (
     STATE_CLEAR,
     STATE_EMPTY,
@@ -94,7 +95,7 @@ def render_commitments_unavailable(now: datetime) -> Widget:
         body_html=(
             '<div class="well"><p class="q">The calendar bridge is not running '
             "on this machine, so today's commitments cannot be read. Restarting "
-            "Agent Desk usually brings it back.</p></div>"
+            f"{PRODUCT_NAME} usually brings it back.</p></div>"
         ),
         foot_html="Nothing is being read while the bridge is unavailable.",
     )
@@ -132,7 +133,7 @@ def render_commitments_widget(status: dict, now: datetime) -> Widget | None:
         extra = ""
     elif state == STATE_EMPTY:
         body = (
-            '<div class="well"><p class="q">No calendar data yet. Agent Desk watches '
+            f'<div class="well"><p class="q">No calendar data yet. {PRODUCT_NAME} watches '
             '<span class="id-scroll"><code class="nowrap">agent-desk/calendar_sync.json'
             "</code></span> in your OneDrive. A 3-step "
             "browser walkthrough creates the flow that writes it.</p></div>"
