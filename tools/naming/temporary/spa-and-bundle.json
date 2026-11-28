@@ -1,0 +1,7 @@
+{
+  "family": "spa-and-bundle",
+  "ticket": "03",
+  "issue": 357,
+  "note": "Ticket 03 (issue 357) cleared this family in the same change that renamed the SPA source and rebuilt the committed bundle: the family's entries were removed here and the surfaces now carry the approved name. The file stays as the family's record.",
+  "entries": []
+}

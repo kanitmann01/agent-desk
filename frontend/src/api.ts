@@ -1,6 +1,7 @@
 // Same-origin API access. Every call rides the session cookie and the
 // one guard the server already runs; nothing here talks to anywhere
 // else. A 401 means the session expired and only the shortcut fixes it.
+import { AGENT_NAME } from './face/name';
 import type { InsightAnswer, InsightPress, InsightRefusal } from './types';
 
 export interface ApiResult<T = unknown> {
@@ -88,4 +89,5 @@ export async function pressReading(route: string, body: PressBody): Promise<Pres
 }
 
 export const SESSION_EXPIRED_TITLE = 'Session required';
-export const SESSION_EXPIRED_MESSAGE = 'Open Agent Desk from its shortcut to get a fresh link.';
+export const SESSION_EXPIRED_MESSAGE =
+  `Open ${AGENT_NAME} from its shortcut to get a fresh link.`;

@@ -86,7 +86,7 @@ describe('the marketplace says every wait (spec 027)', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Session required');
-    expect(alert).toHaveTextContent('Open Agent Desk from its shortcut to get a fresh link.');
+    expect(alert).toHaveTextContent('Open Nexuus Bot from its shortcut to get a fresh link.');
     expect(screen.getByRole('heading', { level: 1, name: 'Session required' })).toHaveFocus();
     // The page's own "did not load" panel never appears: its Try again would
     // fail the same way and the only fix is a fresh shortcut. The notice
@@ -94,7 +94,7 @@ describe('the marketplace says every wait (spec 027)', () => {
     // refusal; the message itself is the next step.
     expect(screen.queryByRole('heading', { name: 'The installed list did not load' })).toBeNull();
     expect(within(alert).queryByRole('button')).toBeNull();
-    expect(within(alert).getByText('Open Agent Desk from its shortcut to get a fresh link.'))
+    expect(within(alert).getByText('Open Nexuus Bot from its shortcut to get a fresh link.'))
       .toBeInTheDocument();
   });
 

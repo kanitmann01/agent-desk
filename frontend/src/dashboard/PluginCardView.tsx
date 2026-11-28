@@ -24,7 +24,7 @@ import TrackerCard from './TrackerCard';
 import Button from '../components/Button';
 import { PhaseLine, usePhase } from '../components/feedback';
 import { useBusy } from '../components/useBusy';
-import { hhmmFromIso } from '../fmt';
+import { staleSince } from '../fmt';
 import { useFaceActions } from '../face/FaceProvider';
 import { useFaceActivity } from '../face/useFaceActivity';
 import { WireState } from './cells';
@@ -490,9 +490,8 @@ export default function PluginCardView({ card, onRefetch, onExpired }: PluginCar
   const fresh = card.freshness === 'fresh';
   // A stale source keeps its last good value on the card, but not the live stamp.
   const sourceStale = card.payload?.source?.state === 'stale';
-  const staleWhen = sourceStale && card.checkedAt ? hhmmFromIso(card.checkedAt) : '';
   const stamp = sourceStale
-    ? { fresh: false, text: staleWhen ? `Stale since ${staleWhen}` : 'Stale' }
+    ? { fresh: false, text: card.checkedAt ? staleSince(card.checkedAt) : 'Stale' }
     : fresh ? { fresh: true, text: 'live' } : { fresh: false, text: 'Re-test available' };
   const elements = fresh ? (card.payload?.elements ?? []) : [];
   // The sitting's delta rides the payload even on an attention tile, so it
