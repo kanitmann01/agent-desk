@@ -140,6 +140,12 @@ svg{display:block;flex:none}
 .addplugin-form{display:inline-flex;margin:0}
 .w-big{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink-1)}
 .w-note{font-size:12px;color:var(--ink-3)}
+/* The tile's change line opens it in the quiet voice, and the receipts'
+   Why drilldown stays a native disclosure so it works with no script. */
+.w-delta{font-size:12px;color:var(--ink-3)}
+.w-why summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--ink-3)}
+.w-why ul{margin:4px 0 0;padding-left:16px}
+.w-why li{font-size:12px;color:var(--ink-3);overflow-wrap:anywhere}
 /* A plugin's timeline (plugins/html.py): an unmarked list whose rows are a
    nowrap time column and a wrapping title/meta column, the same grid the
    SPA sheet uses. The meta rule stays scoped to the timeline. */
