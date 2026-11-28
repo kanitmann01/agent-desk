@@ -1,0 +1,129 @@
+{
+  "failed_captures": [
+    {
+      "id": "rail|unkey|reading|face",
+      "surface": "rail",
+      "kind": "rail",
+      "theme": "unkey",
+      "mood": "reading",
+      "motion": "normal",
+      "condition": "full",
+      "width": 1280,
+      "state": "dashboard",
+      "variant": "face",
+      "route": "/",
+      "file": "photos/rail/unkey/reading-face.png",
+      "planned_file": "photos/rail/unkey/reading-face.png",
+      "check": {
+        "kind": "action",
+        "passed": false,
+        "detail": "FaceWalkError: no non-fresh plugin card offers Re-test now"
+      },
+      "verdict": "failed",
+      "missing": false,
+      "elapsed_s": 0.035,
+      "error": ""
+    },
+    {
+      "id": "rail|unkey|reading|page",
+      "surface": "rail",
+      "kind": "rail",
+      "theme": "unkey",
+      "mood": "reading",
+      "motion": "normal",
+      "condition": "full",
+      "width": 1280,
+      "state": "dashboard",
+      "variant": "page",
+      "route": "/",
+      "file": "photos/rail/unkey/reading-page.png",
+      "planned_file": "photos/rail/unkey/reading-page.png",
+      "check": {
+        "kind": "action",
+        "passed": false,
+        "detail": "FaceWalkError: no non-fresh plugin card offers Re-test now"
+      },
+      "verdict": "failed",
+      "missing": false,
+      "elapsed_s": 0.118,
+      "error": ""
+    },
+    {
+      "id": "rail|coforge|reading|face",
+      "surface": "rail",
+      "kind": "rail",
+      "theme": "coforge",
+      "mood": "reading",
+      "motion": "normal",
+      "condition": "full",
+      "width": 1280,
+      "state": "dashboard",
+      "variant": "face",
+      "route": "/",
+      "file": "photos/rail/coforge/reading-face.png",
+      "planned_file": "photos/rail/coforge/reading-face.png",
+      "check": {
+        "kind": "action",
+        "passed": false,
+        "detail": "FaceWalkError: no non-fresh plugin card offers Re-test now"
+      },
+      "verdict": "failed",
+      "missing": false,
+      "elapsed_s": 0.042,
+      "error": ""
+    },
+    {
+      "id": "rail|coforge|reading|page",
+      "surface": "rail",
+      "kind": "rail",
+      "theme": "coforge",
+      "mood": "reading",
+      "motion": "normal",
+      "condition": "full",
+      "width": 1280,
+      "state": "dashboard",
+      "variant": "page",
+      "route": "/",
+      "file": "photos/rail/coforge/reading-page.png",
+      "planned_file": "photos/rail/coforge/reading-page.png",
+      "check": {
+        "kind": "action",
+        "passed": false,
+        "detail": "FaceWalkError: no non-fresh plugin card offers Re-test now"
+      },
+      "verdict": "failed",
+      "missing": false,
+      "elapsed_s": 0.108,
+      "error": ""
+    }
+  ],
+  "coverage_findings": [
+    "momentum theme was requested but has no capture rows; the run stopped after unkey and coforge rail-reading failures"
+  ],
+  "faceless_surfaces": [
+    {
+      "name": "dialog-describe",
+      "face": false,
+      "observed": true,
+      "detail": "coforge: 0 face(s)"
+    },
+    {
+      "name": "dialog-tracker",
+      "face": false,
+      "observed": true,
+      "detail": "coforge: 0 face(s)"
+    },
+    {
+      "name": "phone-strip",
+      "face": false,
+      "observed": true,
+      "detail": "coforge/800"
+    },
+    {
+      "name": "server-inbox",
+      "face": false,
+      "observed": true,
+      "detail": "coforge/collapsed: 0 face node(s)"
+    }
+  ]
+}

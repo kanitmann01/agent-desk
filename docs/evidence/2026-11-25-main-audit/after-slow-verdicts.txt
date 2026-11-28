@@ -1,0 +1,16 @@
+SLOW PENDING VERDICT ROWS
+controls=1261
+skipped=270
+native-dialog=13
+native-validation=11
+dead=6
+instant=736
+meets=210
+disabled-only=0
+silent=15
+error=0
+box-changed=3
+BY CONDITION
+fresh: skipped=50, native-dialog=4, native-validation=2, dead=2, instant=187, meets=43, disabled-only=0, silent=3, error=0, controls=291
+plugins: skipped=98, native-dialog=6, native-validation=4, dead=2, instant=224, meets=68, disabled-only=0, silent=6, error=0, controls=408
+full: skipped=122, native-dialog=3, native-validation=5, dead=2, instant=325, meets=99, disabled-only=0, silent=6, error=0, controls=562

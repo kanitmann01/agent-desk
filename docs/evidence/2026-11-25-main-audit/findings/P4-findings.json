@@ -1,0 +1,74 @@
+[
+  {
+    "id": "P4-01",
+    "severity": "P1",
+    "file": "src/agentdesk/server/inbox_view.py",
+    "line": 61,
+    "title": "Primary server actions remain inert with JavaScript off",
+    "what": "The feedback wave promises that every server page works without script, but the inbox's Accept, Dismiss and Restore controls are bare buttons whose only behavior is attached by APP_JS. Sales and calendar Re-test controls and the dashboard skill-run control have the same shape. A user with JavaScript disabled can read the pages and submit the forms that were already forms, but cannot perform these main actions.",
+    "why": "Spec 027 user story 50 requires every server page to work with script off, and F7 says the server pages keep their normal navigation while every form still works. Losing the main inbox decision path is a user-visible failure on a main path, not a cosmetic degradation.",
+    "evidence": "By reading, src/agentdesk/server/inbox_view.py:61 renders `<button class='btn btn-primary' data-accept='...'>`, line 123 renders Dismiss the same way, and line 185 renders Restore the same way. None is inside a form. Their POSTs exist only in src/agentdesk/server/pages.py:1123-1133, inside click listeners installed by APP_JS. The handlers already support form posts: src/agentdesk/server/app.py:2434-2438 and 5820 dispatch accept, dismiss and restore, and the changed handlers return notices for `_is_form_submit()`. By running, `python -m pytest -q tests/test_ui_feedback.py` reported `47 passed in 21.37s`; its no-script section at tests/test_ui_feedback.py:453-497 exercises settings toggles only, so it stays green while inbox decisions are inert without script.",
+    "fix": "Render Accept, Dismiss and Restore as plain POST forms to their existing routes, then let APP_JS enhance those forms instead of owning the only action path. Do the same for Re-test and skill-run controls that already have POST routes. Add no-script tests that submit each form directly and assert the store change and notice, rather than testing only settings toggles.",
+    "confidence": "high"
+  },
+  {
+    "id": "P4-02",
+    "severity": "P1",
+    "file": "src/agentdesk/server/peers_api.py",
+    "line": 404,
+    "title": "A failed pairing puts the live pairing code in the URL",
+    "what": "When manual pairing fails, `_peers_refuse` appends the typed pairing code to the redirect query. The browser lands on `/peers?...&code=...`, so the credential enters browser history, the address bar, and any request logging that records query strings. `clearNoticeFromAddress` removes only `notice` and `notice_kind`, leaving the code in place. The older code-generation form path also puts a newly minted code in the notice query, so a complete fix must cover both creation and refusal.",
+    "why": "The pairing code is the secret from which both desks derive the channel token. src/agentdesk/peers/store.py:97-105 states that secrecy comes from the code. A failed connection before redemption can leave the code live for up to ten minutes, so the redirect can expose a usable credential on a failure path.",
+    "evidence": "By reading, src/agentdesk/server/peers_api.py:404-408 builds `target = f\"/peers?notice={quote(message)}\"` and then `target += \"&code=\" + quote(keep_code)`. The pair handler passes the code on blank input, bad address, and every `PeerClientError` at lines 445-466. The code-generation form path at lines 425-431 likewise embeds `out['code']` in the notice query. src/agentdesk/peers/store.py:215 computes `token = derive_token(code)`, and lines 177-188 give the code a ten-minute life. src/agentdesk/server/pages.py:579-584 deletes only the two notice parameters, and only when script runs. tests/test_ui_feedback.py:429-436 confirms the refused value is retained but never asserts that the redirect URL is free of the code.",
+    "fix": "Keep the address and code out of the query on both code generation and pairing refusal. Re-render the peers page directly after a form refusal, or keep the draft in a short-lived server-side session keyed by a non-secret token. If a redirect is retained, carry only a draft id. Update the tests to assert that neither `Location` nor the final URL contains a pairing code while the page still shows it.",
+    "confidence": "high"
+  },
+  {
+    "id": "P4-03",
+    "severity": "P1",
+    "file": "src/agentdesk/server/agents_view.py",
+    "line": 143,
+    "title": "Workbook tracker selection never supplies the tracker figures to the deck",
+    "what": "The presentation form selects Workbook tracker by default, but the server passes only `ExcelWatch.status()` to the presentation gather step. That status contains a delta whose added rows are lists and a bounded grid, while `gather` extracts values only from dict rows. As a result the source sent to the model contains the workbook file name and an added-row count, not the tracker's current total, change, goal, pace, or row values. The deck cannot use the figures the user selected.",
+    "why": "The selected source is presented as the Workbook tracker, and the presentation pipeline replaces numbers not backed by a cited source with `[data needed]`. A normal configured workbook therefore produces a deck without its headline figures even though the source box is checked.",
+    "evidence": "By reading, src/agentdesk/server/agents_view.py:143 renders `<input type=\"checkbox\" name=\"use_workbook\" value=\"1\" checked...> Workbook tracker`. src/agentdesk/server/app.py:3536-3544 returns `excel.status()`, and lines 3181-3185 pass it to `gather`. src/agentdesk/excel/core.py:88-93 stores actual row lists in `Delta.added`, and lines 65-75 serialize those lists unchanged. src/agentdesk/presentations/pipeline.py:65-79 includes only the file name, `added {len(added)}`, and values from rows that are dicts. The dict branch cannot run for the real `Delta` shape. The status also exposes `grid` and `examples` at src/agentdesk/excel/watcher.py:293-294, but `gather` does not read either. By running, `python -m pytest -q tests/test_presentation_packs.py` reported `13 passed in 8.24s`; none of those tests asserts that a workbook figure reaches the prompt or deck.",
+    "fix": "Build a bounded workbook source from the status's header and grid or from the tracker's configured bindings, including the current figure, change, goal and pace when present. Keep the full path out, preserve the existing number guard, and add a pipeline test with a real list-shaped delta that asserts the exact figure reaches both the fill prompt and the written deck notes.",
+    "confidence": "high"
+  },
+  {
+    "id": "P4-04",
+    "severity": "P2",
+    "file": "src/agentdesk/server/pages.py",
+    "line": 1884,
+    "title": "Reset to automatic discovery cannot work while the empty calendar pin is active",
+    "what": "The new no-calendar walkthrough state offers Reset to automatic discovery. With `AGENTDESK_CALENDAR_FILE` set to the documented empty demo pin, the reset handler clears only the stored explicit path. The environment pin still makes the candidate list empty, so the re-test remains off and the page continues to say reading is off.",
+    "why": "The control promises a recovery that cannot occur in the exact boot state for which the new page was added. The user has a workaround, choosing or uploading an explicit file, but the offered reset is a dead end.",
+    "evidence": "By reading, src/agentdesk/server/pages.py:1884-1892 renders the reset button when `calendar_off` is true. src/agentdesk/calendar/watcher.py:86-89 returns `[]` whenever the environment variable exists and is empty. src/agentdesk/server/app.py:2383-2392 implements reset as `calendar.clear_explicit_path(); calendar.retest()`. src/agentdesk/calendar/watcher.py:245-254 then falls through to the adapter, which still uses `default_calendar_candidates()` and therefore still returns no file. By running, `python -m pytest -q tests/test_calendar_paths.py` reported `16 passed in 0.69s`; the new route test at lines 218-239 checks the 200 page and off sentence but does not press reset.",
+    "fix": "When the empty environment pin is the cause, do not offer automatic reset. Explain that the boot is pinned off and offer Pick a file, Use this path, or Upload this file. If reset must be offered, define and test a server-supported way to override the pin for this desk rather than clearing only the stored path.",
+    "confidence": "high"
+  },
+  {
+    "id": "P4-05",
+    "severity": "P2",
+    "file": "src/agentdesk/server/app.py",
+    "line": 3165,
+    "title": "Invalid presentation form selections return raw JSON",
+    "what": "The presentation handler now re-renders the agents page for blank and overlong topics, but an unknown template, invalid variant, missing recipe, or missing shell still calls `_send_json(400, ...)` even when the request is a browser form post.",
+    "why": "A stale form, for example after a template pack is removed or renamed between page load and submit, drops the user on a raw JSON error page and loses the typed topic. This is a rare path, but it violates F5's named-cause, typed-value-preserving failure behavior.",
+    "evidence": "By reading, src/agentdesk/server/app.py:3165-3171 and 3174-3179 unconditionally call `_send_json`. The surrounding form branches at lines 3109-3145 use `_is_form_submit()` and `_send_agents_page(...)`, showing the intended form behavior. The rendered controls at src/agentdesk/server/agents_view.py:87-109 and 132-139 normally constrain the values, so the JSON path is not reachable by an ordinary unchanged form, but it is reachable by a stale or crafted form.",
+    "fix": "For `_is_form_submit()`, re-render the agents page with an alert and the typed topic, and retain the selected template, variant and recipe where possible. Keep the JSON 400 for API callers. Add a form-post test with a missing template and a missing shell.",
+    "confidence": "high"
+  },
+  {
+    "id": "P4-06",
+    "severity": "P3",
+    "file": "src/agentdesk/server/pages.py",
+    "line": 322,
+    "title": "New server motion exceeds the colour-and-background-only rule",
+    "what": "The new skip link animates its `top` position. The new busy dot animates opacity as well as background color. Both depart from the written motion contract, whose only shape-motion exception is the agent face.",
+    "why": "docs/design-language.md:199-200 allows 120 ms motion on color and background only. The F1 rule at lines 159-165 allows the pending dot to pulse in colour only. The server changes add positional motion and opacity motion without an exception.",
+    "evidence": "By reading, src/agentdesk/server/pages.py:322 contains `.skip-link{...transition:top var(--dur) ease}` and line 323 changes `top` from `-56px` to `8px`. Lines 290-291 define `@keyframes busy-dot` with `opacity:.55` at the endpoints and `opacity:1` at the midpoint. docs/design-language.md:199-200 states `Motion is 120ms on color and background only`, and line 165 states `A dot may pulse in colour only`. The new tests assert that the animation exists but do not assert these properties.",
+    "fix": "Make the skip link appear instantly on focus, or transition only color/background. Keep the busy dot's opacity fixed and animate only its background color. Extend the CSS contract test to reject positional or opacity transitions outside the face exception.",
+    "confidence": "high"
+  }
+]

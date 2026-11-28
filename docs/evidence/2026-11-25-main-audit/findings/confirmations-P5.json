@@ -1,0 +1,97 @@
+[
+  {
+    "id": "P5-01",
+    "verdict": "confirmed",
+    "methods": [
+      "reading"
+    ],
+    "evidence": [
+      "Default selection includes busy at tools/layout_audit.py:271-273 and tools/layout_audit.py:4386-4387; the worker calls _seed_busy only for busy at tools/layout_audit.py:3633-3636.",
+      "The temporary AGENTDESK_DATA pin at tools/layout_audit.py:2022-2041 does not pin OneDrive, OneDriveConsumer, OneDriveCommercial, or USERPROFILE.",
+      "_boot_desk calls create_server without gate_runners at tools/layout_audit.py:2096-2098. The injection seam is src/agentdesk/server/app.py:7258-7259; the factory fallback is src/agentdesk/server/app.py:7346-7349; _default_gate_runners uses default_data_dir()/probe-run at src/agentdesk/server/app.py:8053-8065; the map is passed to the server at src/agentdesk/server/app.py:7387-7411 and stored at src/agentdesk/server/app.py:858-865.",
+      "default_gate_runners selects real_adapters when no bundle is supplied at src/agentdesk/capabilities.py:133-152. real_adapters wires real subprocess, uv, urllib, process, OneDrive, write, and copy functions at src/agentdesk/probe/adapters.py:152-162, mapped to six closures at src/agentdesk/capabilities.py:153-167.",
+      "_seed_busy loops over all six GATES and sends context.request.post /capabilities/<key>/retest at tools/layout_audit.py:2438-2455. These API requests bypass page routing.",
+      "POST dispatch is src/agentdesk/server/app.py:1382-1395 and src/agentdesk/server/app.py:1540-1553; the route is src/agentdesk/server/routes.py:264-265; _capabilities_retest calls runner() and caches the result at src/agentdesk/server/app.py:5323-5343.",
+      "Execution effect: src/agentdesk/capabilities.py:154-156, src/agentdesk/probe/gates.py:67-96, and real subprocess.run at src/agentdesk/probe/adapters.py:24-43.",
+      "uv effect: src/agentdesk/capabilities.py:157-159 and src/agentdesk/probe/gates.py:138-190 find real uv, create a temporary venv, and run uv pip install six, which can contact the configured external package index. find_uv is src/agentdesk/probe/adapters.py:67-69.",
+      "External HTTPS effect: src/agentdesk/capabilities.py:160, src/agentdesk/probe/gates.py:237-247, https://make.powerautomate.com at src/agentdesk/probe/core.py:30-32, and urllib.request.urlopen at src/agentdesk/probe/adapters.py:46-64.",
+      "OneDrive effect: src/agentdesk/capabilities.py:161-163; Windows discovery checks OneDrive, OneDriveConsumer, OneDriveCommercial, then %USERPROFILE%/OneDrive* at src/agentdesk/probe/adapters.py:99-133; the gate writes a temporary source and copies agentdesk-probe-<timestamp>.txt into the discovered root at src/agentdesk/probe/gates.py:281-314; the real copier is shutil.copy at src/agentdesk/probe/adapters.py:77-79. Cleanup removes only tmp_root at tools/layout_audit.py:3697-3708.",
+      "Process effect: src/agentdesk/capabilities.py:164, src/agentdesk/probe/gates.py:363-392, and Windows tasklist /svc /fo csv /nh at src/agentdesk/probe/adapters.py:82-96.",
+      "Embeddings effect: src/agentdesk/capabilities.py:165-167, src/agentdesk/probe/gates.py:424-447, and src/agentdesk/memory/embed.py:273-314. The busy seed pins and saves the loopback mock endpoint at tools/layout_audit.py:2036-2039 and tools/layout_audit.py:2391-2404, so this request is expected to be loopback.",
+      "No other condition's seed posts capability retests. The only other explicit retest POST is the different overflow fixture endpoint at tools/layout_audit.py:2304-2320. There is no explicit instrument POST to a /check endpoint.",
+      "Normal /capabilities layout visits are GET only at tools/layout_audit.py:1782; the server GET reads cache and live status without calling a runner at src/agentdesk/server/app.py:5256-5283. Building runners also probes nothing at src/agentdesk/capabilities.py:147-168.",
+      "Pending enumeration can see Re-test gate 1 through Re-test gate 6, whose forms post to /capabilities/<key>/retest at src/agentdesk/server/capabilities_view.py:120-129. The generic selector includes those buttons at tools/layout_audit.py:60 and tools/layout_audit.py:98-114.",
+      "Ordinary pending control POSTs are held before server dispatch: fresh.route is installed at tools/layout_audit.py:3181 before target marking at tools/layout_audit.py:3182 and activation at tools/layout_audit.py:3198; GET continues while every non-GET is recorded and not continued at tools/layout_audit.py:3130-3138; held routes are aborted at tools/layout_audit.py:3258-3263.",
+      "The hold is installed after overlay opening in both the enumeration page at tools/layout_audit.py:3081-3088 and the fresh page at tools/layout_audit.py:3169-3181. Describe can therefore perform GET /api/wizard/availability and native POST /wizard/start before the hold at frontend/src/marketplace/DescribePlugin.tsx:72-90 and frontend/src/marketplace/DescribePlugin.tsx:126-133. This is not a capability retest endpoint.",
+      "Direct overlay opener labels are Widget options, Set up or Edit, Customize, Install plugin, Set up a new instance or Edit, Purge data, and Describe a plugin in plain English at tools/layout_audit.py:3359-3421. None is a capability gate retest. Other ordinary visible retest/check controls are covered by the pending non-GET hold.",
+      "Read-only OneDrive check: the current OneDrive environment variable is C:\\Users\\mannk\\OneDrive and the directory exists, so the adapter selects it using environment variable OneDrive. The profile OneDrive* fallback resolves to the same directory. Only immediate files named agentdesk-probe-*.txt were selected and statted; none was opened.",
+      "OneDrive root inventory: 27 files, all 48 bytes, newest first: 2026-11-24T21:21:45-05:00 agentdesk-probe-20261124-212145.txt; 2026-11-24T20:04:50-05:00 agentdesk-probe-20261124-200450.txt; 2026-11-24T19:56:48-05:00 agentdesk-probe-20261124-195648.txt; 2026-11-24T19:22:31-05:00 agentdesk-probe-20261124-192231.txt; 2026-11-24T18:55:02-05:00 agentdesk-probe-20261124-185502.txt; 2026-11-24T18:41:59-05:00 agentdesk-probe-20261124-184159.txt; 2026-11-24T18:36:53-05:00 agentdesk-probe-20261124-183653.txt; 2026-11-24T18:32:21-05:00 agentdesk-probe-20261124-183221.txt; 2026-11-24T18:31:09-05:00 agentdesk-probe-20261124-183109.txt; 2026-11-24T18:22:51-05:00 agentdesk-probe-20261124-182251.txt; 2026-11-24T18:04:46-05:00 agentdesk-probe-20261124-180446.txt; 2026-11-24T17:31:22-05:00 agentdesk-probe-20261124-173122.txt; 2026-11-24T17:29:50-05:00 agentdesk-probe-20261124-172950.txt; 2026-11-24T17:29:31-05:00 agentdesk-probe-20261124-172931.txt; 2026-11-24T17:23:50-05:00 agentdesk-probe-20261124-172350.txt; 2026-11-24T17:20:25-05:00 agentdesk-probe-20261124-172025.txt; 2026-11-24T17:06:20-05:00 agentdesk-probe-20261124-170620.txt; 2026-11-24T17:00:50-05:00 agentdesk-probe-20261124-170050.txt; 2026-11-24T17:00:34-05:00 agentdesk-probe-20261124-170034.txt; 2026-11-24T16:57:51-05:00 agentdesk-probe-20261124-165751.txt; 2026-11-24T16:54:32-05:00 agentdesk-probe-20261124-165432.txt; 2026-11-24T16:50:47-05:00 agentdesk-probe-20261124-165047.txt; 2026-11-24T16:38:54-05:00 agentdesk-probe-20261124-163854.txt; 2026-11-24T16:36:03-05:00 agentdesk-probe-20261124-163603.txt; 2026-11-24T16:17:18-05:00 agentdesk-probe-20261124-161718.txt; 2026-11-24T16:09:16-05:00 agentdesk-probe-20261124-160916.txt; 2026-11-24T16:06:45-05:00 agentdesk-probe-20261124-160645.txt.",
+      "P0 severity holds because the default audit breaks temporary-data isolation and writes into the user's real OneDrive root, with additional real subprocess, network, package-install, and process-inspection effects. No audit, desk boot, capability endpoint, package import, or mutation was executed."
+    ],
+    "mutation": null,
+    "severity": "P0",
+    "restated": null
+  },
+  {
+    "id": "P5-02",
+    "verdict": "confirmed",
+    "methods": [
+      "reading"
+    ],
+    "evidence": [
+      "Enumeration copies form data-wait into wait_target at tools/layout_audit.py:111-114. PENDING_STATE_JS sets waitVisible from target existence, visibility, and non-empty text at tools/layout_audit.py:151-156, with no pre-click target snapshot or comparison.",
+      "Busy indicators are collected document-wide at tools/layout_audit.py:158-177 and by the matching pre-click collector at tools/layout_audit.py:2888-2922. They are not scoped to the control, form, or result region.",
+      "The pre-click indicator list is captured at tools/layout_audit.py:3178, activation occurs at tools/layout_audit.py:3198, and post-click state is read at tools/layout_audit.py:3204-3211. New indicator identity is only (path, text) at tools/layout_audit.py:3013-3017.",
+      "After a request starts, aria_busy or wait_visible or label_changed or new_indicators returns meets at tools/layout_audit.py:3036-3048.",
+      "The busy seed posts an assistant turn at tools/layout_audit.py:2411-2418; the server persists user and assistant turns at src/agentdesk/server/app.py:2534-2537; the Assistant form waits on the populated #assistant-thread at src/agentdesk/server/research.py:143-158.",
+      "Hand-evaluated stale-target input: control text Ask with wait_target #assistant-thread; state control unchanged, labelChanged false, ariaBusy false, waitVisible true, indicators empty; started contains POST /assistant/ask; native_dialog false; page_changed false; invalid_control null. The request bypasses the no-request branch, the URL is not a picker, and wait_visible alone returns meets. No new feedback is required.",
+      "Hand-evaluated unrelated-indicator input: the same started POST with waitVisible false, ariaBusy false, labelChanged false, before_indicators empty, and one post-click indicator {path: div.unrelated-busy, text: Background refresh}. Its new (path, text) pair makes new_indicators non-empty and returns meets despite no relationship to the control.",
+      "P1 severity holds because a main-path instrument verdict can claim visible pending feedback while the named feedback behavior is absent."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P5-03",
+    "verdict": "confirmed",
+    "methods": [
+      "reading"
+    ],
+    "evidence": [
+      "Navigation, wait, overlay-open, and enumeration exceptions are printed and followed by close and continue without a record at tools/layout_audit.py:3072-3094.",
+      "Per-control records start as skipped at tools/layout_audit.py:3096-3109; activation or measurement exceptions remain skipped at tools/layout_audit.py:3254-3257.",
+      "The child writes pending JSON only for non-empty records at tools/layout_audit.py:3678-3683 and returns 0 at tools/layout_audit.py:3684-3686.",
+      "The parent reads missing pending JSON as an empty list at tools/layout_audit.py:4272-4277 and writes merged pending JSON only when non-empty at tools/layout_audit.py:4321-4326.",
+      "_pending_fail ignores skipped and every verdict except silent, dead, and disabled-only at tools/layout_audit.py:3987-4002.",
+      "Coverage incompleteness counts only missing layout rows, failed layout rows, and nonzero child exits at tools/layout_audit.py:4312-4320 and tools/layout_audit.py:4337-4354. It has no pending coverage requirement. The final check is guarded by if pending at tools/layout_audit.py:4367-4368.",
+      "An empty pending list is reported as No pending audit was requested at tools/layout_audit.py:4128-4132 even when --pending-audit was requested.",
+      "Hand-evaluated all-pages-fail input: page.goto raises RuntimeError for every combo. Each catch continues without a record, _run_pending_audit returns an empty list, the child omits pending JSON and returns 0, and a complete clean layout matrix gives incomplete 0 and parent exit 0.",
+      "Hand-evaluated activation-failure input: the enumerated control is absent on the fresh page, _pending_click returns falsey at tools/layout_audit.py:2741-2742, the caller raises at tools/layout_audit.py:3182-3184, and the catch records skipped at tools/layout_audit.py:3254-3257. _pending_fail ignores that row and returns False.",
+      "Hand-evaluated empty-pass input: _pending_fail([], any) never enters its loop and returns False at tools/layout_audit.py:4002, indistinguishable from a clean pass.",
+      "P1 severity holds because a requested main-path audit can inherit a successful layout result without checking any pending controls."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": null
+  },
+  {
+    "id": "P5-04",
+    "verdict": "narrowed",
+    "methods": [
+      "reading"
+    ],
+    "evidence": [
+      "Describe is planned for data and full at tools/layout_audit.py:1827-1829.",
+      "_open_overlay treats an absent Describe trigger as a reason, but clicks a present trigger and waits for .setup-sheet[role=dialog] at tools/layout_audit.py:3412-3418. A timeout becomes the submitted-walk reason at tools/layout_audit.py:3419-3420 without verifying a wizard destination or a no-op.",
+      "_measure_combo maps every opener reason to skipped at tools/layout_audit.py:3485-3491. Skipped rows are excluded from failed coverage at tools/layout_audit.py:4315-4317, and incomplete counts only missing, failed, and child failures at tools/layout_audit.py:4337-4339.",
+      "The pending enumeration path drops an overlay page without a control record on an opener reason at tools/layout_audit.py:3081-3087. The fresh per-control path instead appends a skipped record at tools/layout_audit.py:3169-3175. _pending_fail ignores both outcomes at tools/layout_audit.py:3992-4001.",
+      "The product has a legitimate no-dialog branch: failed or unavailable autofill submits the plain form to /wizard/start at frontend/src/marketplace/DescribePlugin.tsx:72-90; the form and label are at frontend/src/marketplace/DescribePlugin.tsx:126-133. Therefore no dialog alone does not prove broken behavior.",
+      "Hand-evaluated present-trigger input: the exact Describe label exists, click succeeds, and no dialog appears within 5 seconds. The absent-trigger return is skipped, timeout becomes the submitted-walk reason, _measure_combo records skipped, and the merger can report incomplete 0 and exit 0 for an otherwise complete clean matrix. The same evidence fits either a broken no-op or the legitimate native fallback, which is the missing distinction.",
+      "P1 severity remains for a broken present-trigger path because Describe is a planned main path and the instrument can stay green while the control does nothing. The legitimate verified no-autofill fallback is not itself a defect."
+    ],
+    "mutation": null,
+    "severity": "P1",
+    "restated": "When a Describe trigger is present, failure to open the AI-fill dialog or verify the native walk is recorded as an allowed skip, so a broken no-op or broken AI-enabled dialog path can pass with complete coverage. An absent trigger or a verified no-autofill navigation may remain an intentional skip."
+  }
+]

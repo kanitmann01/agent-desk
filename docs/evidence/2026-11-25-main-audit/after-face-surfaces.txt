@@ -1,0 +1,20 @@
+FACE SURFACE OBSERVATIONS
+dialog-describe: face=False observed=True detail=coforge: 0 face(s)
+dialog-tracker: face=False observed=True detail=coforge: 0 face(s)
+phone-strip: face=False observed=True detail=coforge/800
+rail: face=True observed=True detail=coforge/done
+rail-collapsed: face=True observed=True detail=coforge
+review-sheet: face=True observed=True detail=coforge/reduce
+server-inbox: face=False observed=True detail=coforge/collapsed: 0 face node(s)
+FACE MANIFEST NOTES
+dev server started
+sheet page ready (normal) at http://localhost:5199/static/spa/face-sheet.html
+sheet page ready (reduce) at http://localhost:5199/static/spa/face-sheet.html
+desk http://127.0.0.1:53100
+mock connection saved
+sample data on
+3 plugin(s) installed
+overflow fixture installed
+sample tracker open
+rail: FaceWalkError: no non-fresh plugin card offers Re-test now
+rail: FaceWalkError: no non-fresh plugin card offers Re-test now

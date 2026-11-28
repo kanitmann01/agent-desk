@@ -1,0 +1,48 @@
+AFTER FACE RUN RECORD
+Scope: AFTER face walk only, followed by the separately requested slow walk.
+Command 6 commit: b39669491b965ef6c6624903db30e0b9df552004
+Audited worktree: D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694
+Command record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-command.txt
+Preparation record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-preparation.log
+Idle record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-idle-check.txt
+Idle result: heavy lock absent; port 5199 free; worktree clean at b396694; tracked instrument hash matched main; Vite 7.3.8 and cached Chromium 1255 present; no audit instrument process found. Existing Hermes, Hindsight, MCP, user Chrome, and unrelated browser-harness processes were not tests, gates, builds, installs, second walks, cached Playwright browsers, audit desks, audit mocks, or audit Vite processes.
+Command: UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright" uv run --no-project --with playwright --with keyring --with cryptography python tools/face_walkthrough.py --routes sheet,rail,rail-collapsed,phone-strip,dialog,server --themes unkey,coforge,momentum --widths 1280,800 --mock-delay-ms 12000 --record-api "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face-api" --out "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face"
+Start: 2026-11-26T22:12:54-05:00
+End: 2026-11-26T22:13:57-05:00
+Wall duration: 63 seconds
+Exit code: 1
+Run folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face/20261126-221255
+Metric: METRIC moods=8 themes=2 surfaces=7 photos=72 reduced-motion=16 missing=0
+Verdict: FACE-WALK FAIL 4 failed
+Manifest elapsed_s: 61.494
+Manifest commit: b39669491b965ef6c6624903db30e0b9df552004
+Manifest tool: face_walkthrough version 1
+Tool versions: Python 3.14.7, Playwright 1.65.2, Node v24.16.0, npm 11.13.0, Vite 7.3.8
+Browser: 159.0.8154.6, Chromium revision 1255
+Capture verdict rows: passed=68, failed=4, missing=0, total=72
+Theme rows: unkey=36, coforge=36, momentum=0
+Surface rows: review-sheet=32, rail=28, rail-collapsed=2, phone-strip=2, dialog-describe=2, dialog-tracker=2, server-inbox=4
+Non-pass capture 1: rail|unkey|reading|face, failed, FaceWalkError: no non-fresh plugin card offers Re-test now
+Non-pass capture 2: rail|unkey|reading|page, failed, FaceWalkError: no non-fresh plugin card offers Re-test now
+Non-pass capture 3: rail|coforge|reading|face, failed, FaceWalkError: no non-fresh plugin card offers Re-test now
+Non-pass capture 4: rail|coforge|reading|page, failed, FaceWalkError: no non-fresh plugin card offers Re-test now
+Coverage finding: requested momentum theme produced no captures. The metric missing=0 applies only to the 72 attempted captures, not the 108-photo full plan. Actual coverage is 72/108 photographs.
+Faceless observations: dialog-describe, dialog-tracker, phone-strip, server-inbox. These instrument observations are not visual-review verdicts.
+Surface record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-surfaces.txt
+All capture verdict rows: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-verdicts.txt
+Non-pass record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-nonpass.json
+Count record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-counts.txt
+Metric record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-metric.txt
+Timing record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-timing.txt
+Command log: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-command.log
+Manifest: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face/20261126-221255/manifest.json
+Per-photo verdicts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face/20261126-221255/photographs.json
+Vite log: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face/20261126-221255/vite.log
+Photograph folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face/20261126-221255/photos
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-photographs.txt
+Photographs: 72 PNGs
+API recording folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-face-api
+API recordings: api-dashboard.json, api-marketplace-catalog.json, api-wizard-availability.json
+Decision: face exit 1 is recorded. Per the orchestrator's explicit decision, the run continues to the slow run. A face exit 2 would have stopped it. No rerun was performed.
+Photographs were counted, signature-checked, and listed only. The walk agent did not review them.
+Cleanup after face: BROWSER-RUN.LOCK deleted; port 5199 free; no audit instrument process remained.

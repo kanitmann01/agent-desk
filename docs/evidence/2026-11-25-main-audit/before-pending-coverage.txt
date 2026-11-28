@@ -1,0 +1,1 @@
+COVERAGE INCOMPLETE 2 combination(s); exit 3: pending error fresh page 36: page yielded no controls to click; pending error plugins page 36: page yielded no controls to click

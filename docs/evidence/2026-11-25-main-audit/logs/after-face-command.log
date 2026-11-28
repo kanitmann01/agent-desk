@@ -1,0 +1,11 @@
+AFTER FACE START 2026-11-26T22:12:54-05:00
+run D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-face\20261126-221255
+mock delay 12000 ms; themes unkey,coforge,momentum; widths 1280,800
+mock endpoint: 611-char prompt -> 60-char reply
+mock endpoint: 2397-char prompt -> 13-char reply
+mock endpoint: 611-char prompt -> 60-char reply
+mock endpoint: 2397-char prompt -> 13-char reply
+METRIC moods=8 themes=2 surfaces=7 photos=72 reduced-motion=16 missing=0
+FACE-WALK FAIL 4 failed
+AFTER FACE END 2026-11-26T22:13:57-05:00 duration_s=63 exit=1
+BROWSER-RUN.LOCK removed after face run

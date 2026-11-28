@@ -1,0 +1,8 @@
+planned=130
+measured=129
+skipped=1
+failed=0
+pending_records=1255
+fresh planned=41 measured=40 skipped=1 failed=0
+full planned=45 measured=45 skipped=0 failed=0
+plugins planned=44 measured=44 skipped=0 failed=0

@@ -1,0 +1,193 @@
+AFTER AUDIT RUN RECORD
+Scope: readiness, full layout matrix, and zero-delay pending pass only. Feedback, face, and slow runs were not run.
+Application and instrument commit: b39669491b965ef6c6624903db30e0b9df552004
+Audited worktree: D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694
+Idle check: heavy lock absent, no instrument processes, named port free, worktree clean before the serial runs. Existing agent/MCP service processes were not tests, gates, builds, installs, desks, mocks, browsers, or Vite.
+Preparation note: npm ci exited 0 and printed an audit notice for 3 vulnerabilities (1 moderate, 2 critical). No audit fix or additional install was run.
+Readiness final line: METRIC ready=27
+Layout final substantive line: SKIPPED 12 overlay state(s) listed in summary
+Pending final substantive line: SKIPPED 1 overlay state(s) listed in summary
+Decision: the pending command exited 0, so the approved calendar exit-3 exception was not used. No walk command was rerun.
+Photograph policy: files were counted and listed only. The walk agent did not review photographs.
+
+PREPARATION 1 start=2026-11-27T01:55:06Z end=2026-11-27T01:55:08Z duration_s=2 exit=0 log=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-preparation-1.log
+PREPARATION 2 start=2026-11-27T01:55:22Z end=2026-11-27T01:55:25Z duration_s=3 exit=0 log=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-preparation-2.log
+PREPARATION 3 start=2026-11-27T01:55:41Z end=2026-11-27T01:55:41Z duration_s=0 exit=0 log=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-preparation-3.log
+COMMAND 1 readiness start=2026-11-27T01:57:14Z end=2026-11-27T01:57:25Z duration_s=11 exit=0 pass=27 fail=0 log=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-ready/readiness.log
+COMMAND 2 layout start=2026-11-27T01:58:08Z end=2026-11-27T02:17:37Z duration_s=1169 exit=0 out_base=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-layout
+LAYOUT RESULT
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-layout\20261126-205809
+METRIC findings=872 groups=45 pages=1028 skipped=12 box-changed=0 dead=0
+SKIPPED 12 overlay state(s) listed in summary
+Summary elapsed: 1166.3s
+Matrix counts: planned=1040 measured=1028 skipped=12 failed=0
+Condition counts: busy=78/78/0/0 data=102/96/6/0 fresh=324/318/6/0 full=348/348/0/0 legacy-dashboard=2/2/0/0 long-values=78/78/0/0 plugins=108/108/0/0 (planned/measured/skipped/failed)
+Acceptance: normal remaining after runtime/tiny-type exclusion=0; broken-word=0; stress remaining=40; DOM-accepted table-scroll exceptions=40; rejected=0
+Acceptance evidence note: 23 rows have direct crop references and files; 20 rows have exact page photos. All 40 selectors are td/th under div.table-scroll. Visual review was not performed by the walk agent.
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-layout/20261126-205809/summary.md
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-layout/20261126-205809/matrix.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-layout/20261126-205809/findings.json
+Acceptance record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-layout-acceptance.json
+Photograph folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-layout/20261126-205809
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-layout-photographs.txt
+Photographs: 943 PNGs
+Photographs busy: 48
+Photographs crops: 472
+Photographs data: 65
+Photographs fresh: 94
+Photographs full: 138
+Photographs legacy-dashboard: 1
+Photographs long-values: 48
+Photographs plugins: 77
+Lock after layout: absent
+COMMAND 3 pending start=2026-11-27T02:30:11Z end=2026-11-27T02:41:57Z duration_s=706 exit=0 out_base=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending
+PENDING RESULT
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-pending\20261126-213011
+METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=6
+SKIPPED 1 overlay state(s) listed in summary
+Summary elapsed: 705.0s
+Matrix counts: planned=130 measured=129 skipped=1 failed=0
+Condition counts: fresh=41/41/0/0 plugins=44/44/0/0 full=45/45/0/0 (planned/measured/skipped/failed)
+Pending JSON records: 1255
+Pending verdict comparison rows:
+controls=1255
+skipped=270
+native-dialog=13
+native-validation=11
+dead=6
+instant=733
+meets=207
+disabled-only=0
+silent=15
+error=0
+box-changed=3
+Acceptance: FAIL because dead=6 and silent=15; disabled-only=0 and error=0 pass.
+Dead controls: marketplace Search in fresh, plugins, full; marketplace-search Search in fresh, plugins, full.
+Non-pass row record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-nonpass.json
+Calendar pages: fresh page 36 and plugins page 36 did not error; each emitted 6 controls, error=0. The approved exit-3 exception was not needed.
+Calendar record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-calendar.txt
+Required control record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-required-controls.txt
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261126-213011/summary.md
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261126-213011/matrix.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261126-213011/pending.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261126-213011/findings.json
+Photograph folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261126-213011
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-photographs.txt
+Photographs: 1256 PNGs
+Photographs crops: 142
+Photographs fresh: 40
+Photographs full: 45
+Photographs pending: 985
+Photographs plugins: 44
+Photographs were counted and listed only, not reviewed.
+Heavy-lock wait: 120s before pending start; lock was not touched.
+Lock after pending: absent
+FINAL CLEANUP
+Checked at: 2026-11-27T02:45:34Z
+BROWSER-RUN.LOCK: deleted
+Worktree: clean at b39669491b965ef6c6624903db30e0b9df552004
+Instrument processes remaining: none
+Named port 5199: free
+Stop: scoped work complete after pending. No feedback, face, or slow run was started.
+
+AFTER FEEDBACK THEN FACE SCOPE ADDENDUM
+Scope addendum: feedback, then face only. The recorded preparation state was reused and no preparation command was rerun. The slow run remained out of scope.
+Idle check before feedback: heavy lock absent, no instrument processes, port 5199 free, worktree clean at b39669491b965ef6c6624903db30e0b9df552004. Existing user-profile Chrome and agent/MCP service processes were not tests, gates, builds, installs, desks, mocks, cached-Playwright browsers, or Vite.
+Decision: existing user-profile Chrome and agent/MCP services were treated as non-instrument background processes, consistent with the earlier idle record. No cached Playwright process was active.
+COMMAND 5 feedback start=2026-11-27T02:58:39Z end=2026-11-27T03:01:03Z duration_s=144 exit=1 log=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-command.log
+FEEDBACK RESULT
+OUT D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-feedback/20261126-215839
+METRIC actions=7 met=4 not-met=1 absent=2
+Verdict rows: met=4 not-met=1 absent=2
+dashboard-research: not met; failure: result: the control is still busy
+dashboard-explain: met
+dashboard-reply: absent; no dashboard reading offers a reply draft
+assistant-ask: met
+agents-presentation: met
+wizard-describe: met
+inbox-draft: absent; no waiting card offers a model-backed reply draft
+Manifest elapsed_s: 143.736
+Acceptance: FAIL because not-met=1 and absent=2; all seven actions and 21 photographs were required.
+Metric record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-metric.txt
+Verdict record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-verdicts.txt
+Timing record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-timing.txt
+Manifest: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-feedback/20261126-215839/manifest.json
+Photograph folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-feedback/20261126-215839/photos
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-photographs.txt
+Photographs: 15 PNGs; planned=21; present actions=5; absent actions=2; PNG signature failures=0
+Photograph count record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-feedback-counts.txt
+Photographs were counted, signature-checked, and listed only. The walk agent did not review them.
+Stop: feedback exit 1 is a hard stop. The face command was not started and no face artifacts or verdicts were produced.
+FINAL CLEANUP AFTER FEEDBACK
+BROWSER-RUN.LOCK: deleted
+SWARM-HEAVY-RUN.LOCK: absent and untouched
+Worktree: clean at b39669491b965ef6c6624903db30e0b9df552004
+Instrument processes remaining: none
+Named port 5199: free
+
+AFTER FACE THEN SLOW SCOPE ADDENDUM
+Scope addendum: face on b396694, then slow on later main 3f099e0 only. Feedback exit 1 remained recorded and was not rerun.
+Face: start=2026-11-26T22:12:54-05:00 end=2026-11-26T22:13:57-05:00 duration_s=63 exit=1; METRIC moods=8 themes=2 surfaces=7 photos=72 reduced-motion=16 missing=0; FACE-WALK FAIL 4 failed; 72 PNGs; four rail-reading captures failed because no non-fresh plugin card offered Re-test now; momentum was not captured. Per orchestrator decision, face exit 1 was recorded and the slow run continued.
+Face record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-face-run-record.txt
+Slow: commit=3f099e0b6240cb97b72359afdaf0cb1366b3b4ea, later than the other AFTER passes on b396694; start=2026-11-26T22:41:36-05:00 end=2026-11-26T22:53:25-05:00 duration_s=710 exit=0; METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=6; 1262 PNGs.
+Slow delayed-model finding: only full was configured with the 4000 ms loopback mock. The full dashboard Research control was already disabled, no POST /research reached the desk, no mock endpoint call was logged, and the four-second wait was not observed.
+Slow record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-run-record.txt
+Final cleanup: BROWSER-RUN.LOCK deleted, port 5199 free, worktree clean at 3f099e0, no audit instrument process remained. Photographs were counted and listed only, not reviewed.
+
+PENDING RE-RUN 2026-11-27 on 91d34c71a7ef5e117aba036094f62aad1faa62cf (proves PR 370)
+Scope: pending pass only. Readiness, layout, feedback, face and slow were not run. The worktree was fetched, checked out from 3f099e0 to origin/main head, and was clean before and after.
+Command: cd "D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694" && UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright" uv run --no-project --with playwright --with keyring --with cryptography python tools/layout_audit.py --pending-audit --conditions fresh,plugins,full --widths 1280 --themes unkey --no-stress --fail-on none --jobs 3 --out "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending"
+Exit code: 0
+Duration: 704s (start=2026-11-27T18:01:12Z, end=2026-11-27T18:12:56Z); summary.md elapsed 700.9s
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-pending\20261127-130113
+METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=3
+SKIPPED 1 overlay state(s) listed in summary
+Matrix counts: planned=130 measured=129 skipped=1 failed=0
+Condition counts: fresh=41/41/0/0 plugins=44/44/0/0 full=45/45/0/0 (planned/measured/skipped/failed)
+Verdict rows: controls=1261 skipped=282 native-dialog=13 native-validation=11 dead=3 instant=727 meets=210 disabled-only=0 silent=15 error=0 box-changed=3
+Dead: 3 (was 6). Cleared: Search on /marketplace in fresh, plugins and full, now skipped with reason already disabled (PR 370 disables the empty query). Remaining: Search on /marketplace/search?q=watch in fresh, plugins and full, each request_started=false with no signature change at 1500 ms.
+Silent: 15 (was 15).
+Meets: 210 (was 207).
+Controls total: 1261, up from 1255; the 130-combination plan is unchanged.
+Acceptance: FAIL against the runbook's dead=0 and silent=0 requirement; disabled-only=0 and error=0 pass. Exit 0, no COVERAGE INCOMPLETE, new timestamped OUT folder. The calendar exit-3 exception was not needed.
+Required controls: memory Ask me first meets (fresh page 22, pending/fresh/1280x800/unkey/memory__memory__152.png); Research with no question typed skipped already disabled (4 full records, pages 1, 40, 41, 42); Fill it in for me with an empty description skipped already disabled (full overlay-describe page 45, no row photo; wording conflict retained: issue body says skipped, newer comment says disabled one, instrument emits skipped); Copy digest 12 instant and 2 skipped.
+Photographs: 1250 PNGs (pending 979, crops 142, fresh 40, full 45, plugins 44); counted and listed only, not reviewed by the walk agent.
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-rerun-photographs.txt
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-130113/summary.md
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-130113/matrix.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-130113/pending.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-130113/findings.json
+Lock: BROWSER-RUN.LOCK created 2026-11-27T18:01:07Z and deleted after the run.
+Photograph review: review/AFTER-pending-rerun-review.md
+Empty-query marketplace searches confirmed disabled and dimmed on all three conditions; the three rows still counted dead are the same-query searches (query pre-filled, results rendered, repeat click a no-op), classified expected by design per the PR 370 review.
+The "Fill it in for me" dimming is confirmed on the overlay-describe state photograph (the second named photograph shows the overlay closed and proves nothing).
+
+PENDING RE-RUN 2026-11-28 on 0c0f4da8ef5ba072b4802ceb38bb3631a5ea2ddf (after the rename merges and the swarm's wave 1)
+Scope: pending pass only. Readiness, layout, feedback, face and slow were not run.
+Worktree note: the brief expected the worktree at 3f099e0, but it was found detached at 91d34c71a7ef5e117aba036094f62aad1faa62cf, an ancestor of origin/main, and clean. After fetch, origin/main was 0c0f4da8ef5ba072b4802ceb38bb3631a5ea2ddf, exactly the expected head, so the worktree was checked out detached to it and stayed clean before and after the run.
+Idle check: SWARM-HEAVY-RUN.LOCK absent; no pytest, gate, build or install and no second walk; remaining node, uv and python processes were agent and MCP service infrastructure only; no instrument process alive beforehand; port 5199 free.
+Command: cd "D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694" && UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright" uv run --no-project --with playwright --with keyring --with cryptography python tools/layout_audit.py --pending-audit --conditions fresh,plugins,full --widths 1280 --themes unkey --no-stress --fail-on none --jobs 3 --out "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending"
+Exit code: 0
+Duration: 711s (start=2026-11-28T04:46:00Z, end=2026-11-28T04:57:51Z); summary.md elapsed 708.0s
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-pending\20261127-234602
+METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=3
+SKIPPED 1 overlay state(s) listed in summary
+Matrix counts: planned=130 measured=129 skipped=1 failed=0
+Condition counts: fresh=41/40/1/0 plugins=44/44/0/0 full=45/45/0/0 (planned/measured/skipped/failed); the single overlay skip sat in fresh, as in both earlier runs' artifacts
+Verdict rows: controls=1261 skipped=282 native-dialog=13 native-validation=11 dead=3 instant=727 meets=210 disabled-only=0 silent=15 error=0 box-changed=3
+Against the previous re-run (91d34c71, 20261127-130113): dead 3 -> 3, silent 15 -> 15, meets 210 -> 210; the three dead rows are the same (Search on /marketplace/search?q=watch in fresh, plugins and full).
+Against the first AFTER pass (b396694, 20261126-213011): dead 6 -> 3, silent 15 -> 15, meets 207 -> 210.
+Changed rows since the last re-run: none; a per-control verdict diff over pending.json matched every key group and no row changed verdict, so there are no changed-row photographs to name.
+Error rows: 0; the approved calendar exit-3 exception was not needed. Exit 0, no COVERAGE INCOMPLETE, new timestamped OUT folder.
+Product name: the rename has reached the UI. A page's title reads "Nexuus Bot" (the served SPA's title tag at this head) and the Settings page header breadcrumb reads "Nexuus Bot / Settings"; no "Agent Desk" string remains in the served bundle.
+Required controls: unchanged from the previous re-run; memory Ask me first meets in all three conditions; Research with no question typed skipped with reason already disabled (full page 1); Fill it in for me with an empty description skipped with reason already disabled (full overlay-describe page 45, wording conflict retained as recorded); Copy digest 12 instant and 2 skipped.
+Acceptance: FAIL against the runbook's dead=0 and silent=0 requirement; disabled-only=0 and error=0 pass.
+Photographs: 1250 PNGs (pending 979, crops 142, fresh 40, full 45, plugins 44); counted and listed only, not reviewed by the walk agent.
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-rerun2-photographs.txt
+Command log: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-pending-rerun2-command.log
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-234602/summary.md
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-234602/matrix.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-234602/pending.json
+Artifacts: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending/20261127-234602/findings.json
+Cleanup at 2026-11-28T05:02:17Z: worktree clean at 0c0f4da8; no instrument process remained (remaining python processes were hermes, hindsight-api, ppt_mcp_server and browser_harness services); port 5199 free.
+Lock: BROWSER-RUN.LOCK created 2026-11-28T04:45:44Z and deleted 2026-11-28T05:02:17Z after the run.

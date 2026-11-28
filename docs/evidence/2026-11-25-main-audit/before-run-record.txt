@@ -1,0 +1,88 @@
+BEFORE AUDIT RUN RECORD
+Start: 2026-11-26T20:07:13-05:00
+Other-session instrument poll: idle at 2026-11-26T20:18:20-05:00 after 666s
+Audited worktree: D:/20-projects/Personal Agents/.worktrees/before-main
+Application commit: f31582a2591e1c860ec5aadf5e0ff3878d77cc49
+Instrument commit: b39669491b965ef6c6624903db30e0b9df552004
+
+SELFTEST
+Command: uv run --no-project --with playwright --with keyring --with cryptography python tools/layout_audit.py --selftest
+Environment: UV_OFFLINE=1; PLAYWRIGHT_BROWSERS_PATH=C:/Users/mannk/AppData/Local/ms-playwright
+Exit: 0
+Duration: 8s
+Start: 2026-11-26T20:22:20-05:00
+End: 2026-11-26T20:22:28-05:00
+Final line: SELFTEST PASS 16 detector expectations, 4 box expectations, 10 pending expectations
+Evidence: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/before-selftest.txt
+
+PREPARATION
+All preparation commands exited 0. Individual preparation durations were not recorded.
+Source verification final line: SOURCE REVISIONS VERIFIED
+Instrument verification final line: BEFORE-INSTRUMENT VERIFIED
+Final status:
+ M tools/mock_endpoint.py
+?? tools/layout_audit.py
+?? tools/layout_fixtures/
+
+READINESS
+Command: python tools/demo_readiness.py 2>&1 | tee D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-ready/readiness.log
+Exit: 0
+Duration: 9s
+Start: 2026-11-26T20:23:19-05:00
+End: 2026-11-26T20:23:28-05:00
+PASS lines: 27
+FAIL lines: 0
+Final line: METRIC ready=27
+Log: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-ready/readiness.log
+Metric record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/before-readiness-metric.txt
+Observed extra output: a non-fatal walkthrough-calendar GET failure and IndexError traceback in old main; readiness still exited 0 with 27 passes.
+
+PENDING AUDIT
+Command: uv run --no-project --with playwright --with keyring --with cryptography python tools/layout_audit.py --pending-audit --conditions fresh,plugins,full --widths 1280 --themes unkey --no-stress --fail-on none --jobs 3 --out D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending
+Exit: 3
+Duration: 817s
+Start: 2026-11-26T20:24:39-05:00
+End: 2026-11-26T20:38:16-05:00
+OUT: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending/20261126-202440
+METRIC findings=128 groups=22 pages=129 skipped=1 box-changed=3 dead=194
+SKIPPED 1 overlay state(s) listed in summary
+COVERAGE INCOMPLETE 2 combination(s); exit 3: pending error fresh page 36: page yielded no controls to click; pending error plugins page 36: page yielded no controls to click
+Summary elapsed: 814.6s
+Matrix: 130 rows; measured 129; skipped 1; failed 0
+Pending JSON records: 1299
+Findings JSON records: 128
+Box-changed: 3
+
+Pending verdict comparison rows:
+skipped=280
+native-dialog=11
+native-validation=11
+dead=194
+instant=558
+meets=6
+disabled-only=49
+silent=188
+error=2
+
+Required records:
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending/20261126-202440/summary.md
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending/20261126-202440/matrix.json
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending/20261126-202440/pending.json
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending/20261126-202440/findings.json
+
+Photographs: 1328 PNGs
+Photograph folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/before-pending/20261126-202440
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/before-pending-photographs.txt
+Photograph counts by subfolder: fresh=40; plugins=44; full=45; pending=1017; crops=182
+Photographs were counted and listed only, not reviewed.
+
+Metric and stop records:
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/before-pending-metric.txt
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/before-pending-skipped.txt
+D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/before-pending-coverage.txt
+
+Stop: pending audit exited 3 with two pending-page coverage errors. No rerun was performed.
+Lock: BROWSER-RUN.LOCK was created separately for selftest, readiness, and pending audit, and deleted after each run. Final state: absent.
+INSTRUMENT FAULT
+Cause: the pending navigation does not set the calendar fixture that the matrix sets, leaving AGENTDESK_CALENDAR_FILE empty and triggering old main's empty-candidate IndexError on the calendar page, which renders a 500 page with no controls.
+Record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/review/BEFORE-pending-exit3-analysis.md

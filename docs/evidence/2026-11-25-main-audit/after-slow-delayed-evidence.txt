@@ -1,0 +1,13 @@
+AFTER SLOW DELAYED-MODEL EVIDENCE
+Commit: 3f099e0b6240cb97b72359afdaf0cb1366b3b4ea
+Commit relationship: 3f099e0 is a later main than b396694, the commit used by the other AFTER passes.
+Command: pending audit with fresh,plugins,full; 1280; unkey; no stress; jobs 3; mock delay 4000 ms; continue request path /research.
+Configuration fact: among the selected conditions, only full starts and pins the loopback mock. The instrument starts a mock only for data/full/long-values/busy, then passes --mock-delay-ms 4000 to that child. Fresh and plugins do not start a mock and keep their model settings pinned empty.
+Isolation fact: each condition uses a new temporary folder, a file-backed keychain, an ephemeral loopback desk port, inert UNKNOWN gate runners, and, for full only, a loopback mock with the stand-in key sk-local and model mock-chat. The /research continuation validator refuses capability retest paths.
+Observed full dashboard research control: pending.full.json row 6, route /, state dashboard, control Research, control_path button.cmd-send, verdict skipped, reason already disabled. It was not activated and produced no screenshot or request.
+Other full Research controls: dashboard overlays also skipped button.cmd-send as already disabled. Marketplace Research controls are category filter chips, not model requests; they were instant or skipped and produced no /research request.
+Request evidence: zero POST /research requests in pending.json or pending.full.json. The only full desk base was http://127.0.0.1:52723. No mock endpoint line was printed in after-slow-command.log, and server-stderr.full.log contains no research or chat/completions request.
+Four-second observation: not observed. The 4000 ms delay was configured for the full mock, but no research request reached the desk or mock, so there is no artifact proving that the mock held a response for four seconds.
+Acceptance: the layout/pending command itself exited 0 with complete matrix coverage, but the delayed-model evidence requirement is not satisfied by this run. Do not label fresh or plugins controls as delayed-model evidence.
+Research row record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-full-research.json
+First-second failure record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-first-second-failures.txt

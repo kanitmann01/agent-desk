@@ -1,0 +1,1145 @@
+WAITING heavy lock at 2026-11-27T02:27:10Z
+WAITING heavy lock at 2026-11-27T02:28:10Z
+WAITING heavy lock at 2026-11-27T02:29:10Z
+run D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-pending\20261126-213011
+conditions fresh,plugins,full widths 1280 themes unkey
+[full] booted http://127.0.0.1:52379
+[full] 45 combination(s)
+[plugins] booted http://127.0.0.1:52380
+[plugins] 44 combination(s)
+[fresh] booted http://127.0.0.1:52381
+[fresh] 41 combination(s)
+[plugins] seeded: 3 plugin(s) installed, overflow fixture installed
+[full] seeded: sample data on, 3 plugin(s) installed, overflow fixture installed, sample tracker open
+[fresh 1280 unkey] dashboard: measured n=0 8747ms
+[plugins 1280 unkey] dashboard: measured n=2 8854ms
+[fresh 1280 unkey] marketplace: measured n=0 1110ms
+[full 1280 unkey] dashboard: measured n=10 9453ms
+[plugins 1280 unkey] marketplace: measured n=0 1091ms
+[fresh 1280 unkey] marketplace-search: measured n=0 1091ms
+[full 1280 unkey] marketplace: measured n=0 1093ms
+[plugins 1280 unkey] marketplace-search: measured n=0 1075ms
+[fresh 1280 unkey] marketplace-category-research: measured n=0 1065ms
+[full 1280 unkey] marketplace-search: measured n=0 1080ms
+[plugins 1280 unkey] marketplace-category-research: measured n=0 1067ms
+[fresh 1280 unkey] marketplace-category-reference: measured n=0 1067ms
+[full 1280 unkey] marketplace-category-research: measured n=0 1060ms
+[plugins 1280 unkey] marketplace-category-reference: measured n=0 1064ms
+[fresh 1280 unkey] marketplace-category-communication: measured n=0 1065ms
+[full 1280 unkey] marketplace-category-reference: measured n=0 1067ms
+[plugins 1280 unkey] marketplace-category-communication: measured n=0 1066ms
+[full 1280 unkey] marketplace-category-communication: measured n=0 1065ms
+[fresh 1280 unkey] marketplace-plugin-competitor-watch: measured n=2 1300ms
+[plugins 1280 unkey] marketplace-plugin-competitor-watch: measured n=2 1299ms
+[full 1280 unkey] marketplace-plugin-competitor-watch: measured n=2 1300ms
+[fresh 1280 unkey] marketplace-plugin-excel-report: measured n=2 1282ms
+[plugins 1280 unkey] marketplace-plugin-excel-report: measured n=2 1283ms
+[full 1280 unkey] marketplace-plugin-excel-report: measured n=2 1299ms
+[fresh 1280 unkey] marketplace-plugin-presentation-starter: measured n=0 1134ms
+[plugins 1280 unkey] marketplace-plugin-presentation-starter: measured n=0 1160ms
+[fresh 1280 unkey] marketplace-manage-excel-report: measured n=2 1140ms
+[full 1280 unkey] marketplace-plugin-presentation-starter: measured n=0 1145ms
+[plugins 1280 unkey] marketplace-manage-excel-report: measured n=2 1160ms
+[fresh 1280 unkey] marketplace-pack-none: measured n=0 1048ms
+[full 1280 unkey] marketplace-manage-excel-report: measured n=2 1159ms
+[plugins 1280 unkey] marketplace-pack-none: measured n=0 1047ms
+[fresh 1280 unkey] marketplace-installed: measured n=0 1045ms
+[full 1280 unkey] marketplace-pack-none: measured n=0 1074ms
+[plugins 1280 unkey] marketplace-installed: measured n=0 1108ms
+[fresh 1280 unkey] marketplace-publishers: measured n=0 1044ms
+[full 1280 unkey] marketplace-installed: measured n=0 1113ms
+[plugins 1280 unkey] marketplace-publishers: measured n=0 1053ms
+[fresh 1280 unkey] marketplace-publisher-agent-desk: measured n=0 1090ms
+[full 1280 unkey] marketplace-publishers: measured n=0 1044ms
+[plugins 1280 unkey] marketplace-publisher-agent-desk: measured n=0 1089ms
+[fresh 1280 unkey] marketplace-studio: measured n=1 1179ms
+[full 1280 unkey] marketplace-publisher-agent-desk: measured n=0 1098ms
+[plugins 1280 unkey] marketplace-studio: measured n=1 1162ms
+[fresh 1280 unkey] marketplace-admin: measured n=1 1050ms
+[full 1280 unkey] marketplace-studio: measured n=1 1146ms
+[plugins 1280 unkey] marketplace-admin: measured n=1 1048ms
+[fresh 1280 unkey] marketplace-trust: measured n=0 1117ms
+[full 1280 unkey] marketplace-admin: measured n=1 1184ms
+[plugins 1280 unkey] marketplace-trust: measured n=0 1123ms
+[fresh 1280 unkey] marketplace-notfound: measured n=0 1047ms
+[full 1280 unkey] marketplace-trust: measured n=0 1122ms
+[plugins 1280 unkey] marketplace-notfound: measured n=0 1042ms
+[fresh 1280 unkey] inbox: measured n=0 1033ms
+[full 1280 unkey] marketplace-notfound: measured n=0 1048ms
+[plugins 1280 unkey] inbox: measured n=0 1051ms
+[fresh 1280 unkey] assistant: measured n=0 1016ms
+[full 1280 unkey] inbox: measured n=0 1100ms
+[plugins 1280 unkey] assistant: measured n=0 1032ms
+[fresh 1280 unkey] agents: measured n=0 1082ms
+[full 1280 unkey] assistant: measured n=0 1024ms
+[plugins 1280 unkey] agents: measured n=0 1080ms
+[fresh 1280 unkey] memory: measured n=4 1418ms
+[full 1280 unkey] agents: measured n=0 1082ms
+[plugins 1280 unkey] memory: measured n=4 1404ms
+[fresh 1280 unkey] memory-graph: measured n=0 1069ms
+[full 1280 unkey] memory: measured n=4 1469ms
+[plugins 1280 unkey] memory-graph: measured n=0 1087ms
+[fresh 1280 unkey] memory-sweep: measured n=1 1129ms
+[full 1280 unkey] memory-graph: measured n=0 1097ms
+[plugins 1280 unkey] memory-sweep: measured n=1 1146ms
+[fresh 1280 unkey] memory-encrypt: measured n=4 1366ms
+[full 1280 unkey] memory-sweep: measured n=1 1186ms
+[plugins 1280 unkey] memory-encrypt: measured n=4 1348ms
+[fresh 1280 unkey] mail: measured n=0 1012ms
+[plugins 1280 unkey] mail: measured n=0 1033ms
+[full 1280 unkey] memory-encrypt: measured n=4 1367ms
+[fresh 1280 unkey] capabilities: measured n=0 1076ms
+[full 1280 unkey] mail: measured n=0 1022ms
+[plugins 1280 unkey] capabilities: measured n=0 1072ms
+[fresh 1280 unkey] peers: measured n=0 1051ms
+[plugins 1280 unkey] peers: measured n=0 1066ms
+[full 1280 unkey] capabilities: measured n=0 1100ms
+[fresh 1280 unkey] settings: measured n=0 1068ms
+[full 1280 unkey] peers: measured n=0 1048ms
+[fresh 1280 unkey] settings#ai: measured n=0 550ms
+[plugins 1280 unkey] settings: measured n=0 1070ms
+[fresh 1280 unkey] settings#tools: measured n=0 540ms
+[plugins 1280 unkey] settings#ai: measured n=0 548ms
+[fresh 1280 unkey] settings#memory: measured n=0 541ms
+[full 1280 unkey] settings: measured n=0 1088ms
+[plugins 1280 unkey] settings#tools: measured n=0 542ms
+[plugins 1280 unkey] settings#memory: measured n=0 539ms
+[full 1280 unkey] settings#ai: measured n=0 548ms
+[fresh 1280 unkey] settings#preferences: measured n=0 556ms
+[full 1280 unkey] settings#tools: measured n=0 539ms
+[plugins 1280 unkey] settings#preferences: measured n=0 557ms
+[fresh 1280 unkey] settings#advanced: measured n=0 641ms
+[full 1280 unkey] settings#memory: measured n=0 559ms
+[plugins 1280 unkey] settings#advanced: measured n=0 665ms
+[full 1280 unkey] settings#preferences: measured n=0 555ms
+[fresh 1280 unkey] settings-activity: measured n=0 1077ms
+[plugins 1280 unkey] settings-activity: measured n=0 1091ms
+[full 1280 unkey] settings#advanced: measured n=0 665ms
+[fresh 1280 unkey] walkthrough-calendar: measured n=0 1060ms
+[plugins 1280 unkey] walkthrough-calendar: measured n=0 1056ms
+[full 1280 unkey] settings-activity: measured n=0 1071ms
+[fresh 1280 unkey] what-this-touches: measured n=0 1372ms
+[full 1280 unkey] walkthrough-calendar: measured n=0 1061ms
+[plugins 1280 unkey] what-this-touches: measured n=0 1363ms
+[fresh 1280 unkey] wizard: measured n=0 1032ms
+[plugins 1280 unkey] wizard: measured n=0 1036ms
+[full 1280 unkey] what-this-touches: measured n=0 1345ms
+[fresh 1280 unkey] error-page: measured n=0 1010ms
+[plugins 1280 unkey] error-page: measured n=0 1001ms
+[full 1280 unkey] wizard: measured n=0 1035ms
+[full 1280 unkey] error-page: measured n=0 1004ms
+[fresh 1280 unkey] overlay-widget-menu: skipped n=0 8499ms (no widget overflow trigger on this dashboard)
+[plugins 1280 unkey] overlay-widget-menu: measured n=2 13119ms
+[full 1280 unkey] overlay-widget-menu: measured n=10 13633ms
+[fresh 1280 unkey] overlay-customize: measured n=0 12982ms
+[fresh] pending audit over 41 page(s)
+[fresh] pending 1 dashboard 'Collapse': meets
+[fresh] pending 3 dashboard 'Coforge theme': silent
+[fresh] pending 4 dashboard 'Momentuum blue theme': silent
+[fresh] pending 5 dashboard 'Customize': meets
+[plugins 1280 unkey] overlay-tracker-setup: measured n=2 13142ms
+[fresh] pending 6 dashboard 'Not now': silent
+[full 1280 unkey] overlay-tracker-setup: measured n=10 13573ms
+[fresh] pending 7 dashboard 'Open': native-dialog
+[fresh] pending 8 dashboard 'Try it with sample data': meets
+[fresh] pending 9 marketplace 'Expand navigation': instant
+[fresh] pending 11 marketplace 'Coforge theme': instant
+[fresh] pending 12 marketplace 'Momentuum blue theme': instant
+[fresh] pending 13 marketplace 'Describe a plugin in plain English': instant
+[fresh] pending 14 marketplace 'Search': dead
+[fresh] pending 16 marketplace 'Finance': instant
+[plugins 1280 unkey] overlay-customize: measured n=2 13010ms
+[fresh] pending 17 marketplace 'Time': instant
+[fresh] pending 18 marketplace 'Communication': instant
+[plugins 1280 unkey] overlay-instance-setup: measured n=2 1487ms
+[full 1280 unkey] overlay-customize: measured n=3 13061ms
+[fresh] pending 19 marketplace 'Research': instant
+[plugins 1280 unkey] overlay-purge: measured n=0 1455ms
+[plugins] pending audit over 44 page(s)
+[fresh] pending 20 marketplace 'Operations': instant
+[full 1280 unkey] overlay-instance-setup: measured n=2 1516ms
+[fresh] pending 21 marketplace 'Command': instant
+[plugins] pending 1 dashboard 'Collapse': meets
+[full 1280 unkey] overlay-purge: measured n=0 1477ms
+[fresh] pending 22 marketplace 'Reference': instant
+[plugins] pending 3 dashboard 'Coforge theme': silent
+[full 1280 unkey] overlay-describe: measured n=0 1494ms
+[full] pending audit over 45 page(s)
+[plugins] pending 4 dashboard 'Momentuum blue theme': silent
+[fresh] pending 23 marketplace-search 'Collapse': instant
+[plugins] pending 5 dashboard 'Customize': meets
+[full] pending 1 dashboard 'Collapse': meets
+[fresh] pending 25 marketplace-search 'Coforge theme': instant
+[plugins] pending 6 dashboard 'Not now': silent
+[full] pending 3 dashboard 'Coforge theme': silent
+[fresh] pending 26 marketplace-search 'Momentuum blue theme': instant
+[plugins] pending 7 dashboard 'Open': native-dialog
+[full] pending 4 dashboard 'Momentuum blue theme': silent
+[fresh] pending 27 marketplace-search 'Search': dead
+[plugins] pending 8 dashboard 'Try it with sample data': meets
+[full] pending 5 dashboard 'Customize': meets
+[fresh] pending 29 marketplace-search 'Finance': instant
+[plugins] pending 9 dashboard 'Set up': silent
+[full] pending 7 dashboard 'Not now': silent
+[fresh] pending 30 marketplace-search 'Time': instant
+[plugins] pending 10 dashboard 'Widget options, Regional Pipeline Operat': silent
+[full] pending 9 dashboard 'Hide sample data': meets
+[fresh] pending 31 marketplace-search 'Communication': instant
+[plugins] pending 11 dashboard 'Save': silent
+[full] pending 10 dashboard 'Not now': meets
+[fresh] pending 32 marketplace-search 'Research': instant
+[full] pending 11 dashboard 'Edit': silent
+[plugins] pending 12 marketplace 'Expand navigation': instant
+[fresh] pending 33 marketplace-search 'Operations': instant
+[full] pending 12 dashboard 'Explain this range': meets
+[plugins] pending 14 marketplace 'Coforge theme': instant
+[fresh] pending 34 marketplace-search 'Command': instant
+[full] pending 13 dashboard 'Widget options, Regional Pipeline Operat': silent
+[plugins] pending 15 marketplace 'Momentuum blue theme': instant
+[fresh] pending 35 marketplace-search 'Reference': instant
+[full] pending 14 dashboard 'Save': silent
+[plugins] pending 16 marketplace 'Describe a plugin in plain English': instant
+[fresh] pending 36 marketplace-category-research 'Expand navigation': instant
+[full] pending 15 marketplace 'Expand navigation': instant
+[plugins] pending 17 marketplace 'Search': dead
+[fresh] pending 38 marketplace-category-research 'Coforge theme': instant
+[full] pending 17 marketplace 'Coforge theme': instant
+[plugins] pending 19 marketplace 'Finance': instant
+[fresh] pending 39 marketplace-category-research 'Momentuum blue theme': instant
+[full] pending 18 marketplace 'Momentuum blue theme': instant
+[plugins] pending 20 marketplace 'Time': instant
+[fresh] pending 40 marketplace-category-research 'Search': instant
+[full] pending 19 marketplace 'Describe a plugin in plain English': instant
+[plugins] pending 21 marketplace 'Communication': instant
+[fresh] pending 41 marketplace-category-research 'All': instant
+[plugins] pending 22 marketplace 'Research': instant
+[fresh] pending 42 marketplace-category-research 'Finance': instant
+[full] pending 20 marketplace 'Search': dead
+[plugins] pending 23 marketplace 'Operations': instant
+[fresh] pending 43 marketplace-category-research 'Time': instant
+[full] pending 22 marketplace 'Finance': instant
+[plugins] pending 24 marketplace 'Command': instant
+[fresh] pending 44 marketplace-category-research 'Communication': instant
+[full] pending 23 marketplace 'Time': instant
+[plugins] pending 25 marketplace 'Reference': instant
+[fresh] pending 46 marketplace-category-research 'Operations': instant
+[full] pending 24 marketplace 'Communication': instant
+[fresh] pending 47 marketplace-category-research 'Command': instant
+[full] pending 25 marketplace 'Research': instant
+[plugins] pending 26 marketplace-search 'Collapse': instant
+[fresh] pending 48 marketplace-category-research 'Reference': instant
+[full] pending 26 marketplace 'Operations': instant
+[plugins] pending 28 marketplace-search 'Coforge theme': instant
+[full] pending 27 marketplace 'Command': instant
+[plugins] pending 29 marketplace-search 'Momentuum blue theme': instant
+[fresh] pending 49 marketplace-category-reference 'Collapse': instant
+[full] pending 28 marketplace 'Reference': instant
+[fresh] pending 51 marketplace-category-reference 'Coforge theme': instant
+[plugins] pending 30 marketplace-search 'Search': dead
+[fresh] pending 52 marketplace-category-reference 'Momentuum blue theme': instant
+[full] pending 29 marketplace-search 'Collapse': instant
+[plugins] pending 32 marketplace-search 'Finance': instant
+[fresh] pending 53 marketplace-category-reference 'Search': instant
+[full] pending 31 marketplace-search 'Coforge theme': instant
+[plugins] pending 33 marketplace-search 'Time': instant
+[fresh] pending 54 marketplace-category-reference 'All': instant
+[full] pending 32 marketplace-search 'Momentuum blue theme': instant
+[plugins] pending 34 marketplace-search 'Communication': instant
+[fresh] pending 55 marketplace-category-reference 'Finance': instant
+[plugins] pending 35 marketplace-search 'Research': instant
+[full] pending 33 marketplace-search 'Search': dead
+[fresh] pending 56 marketplace-category-reference 'Time': instant
+[plugins] pending 36 marketplace-search 'Operations': instant
+[full] pending 35 marketplace-search 'Finance': instant
+[fresh] pending 57 marketplace-category-reference 'Communication': instant
+[plugins] pending 37 marketplace-search 'Command': instant
+[full] pending 36 marketplace-search 'Time': instant
+[fresh] pending 58 marketplace-category-reference 'Research': instant
+[plugins] pending 38 marketplace-search 'Reference': instant
+[full] pending 37 marketplace-search 'Communication': instant
+[fresh] pending 59 marketplace-category-reference 'Operations': instant
+[full] pending 38 marketplace-search 'Research': instant
+[plugins] pending 39 marketplace-category-research 'Expand navigation': instant
+[fresh] pending 60 marketplace-category-reference 'Command': instant
+[full] pending 39 marketplace-search 'Operations': instant
+[plugins] pending 41 marketplace-category-research 'Coforge theme': instant
+[fresh] pending 62 marketplace-category-communication 'Expand navigation': instant
+[full] pending 40 marketplace-search 'Command': instant
+[plugins] pending 42 marketplace-category-research 'Momentuum blue theme': instant
+[fresh] pending 64 marketplace-category-communication 'Coforge theme': instant
+[full] pending 41 marketplace-search 'Reference': instant
+[plugins] pending 43 marketplace-category-research 'Search': instant
+[fresh] pending 65 marketplace-category-communication 'Momentuum blue theme': instant
+[plugins] pending 44 marketplace-category-research 'All': instant
+[full] pending 42 marketplace-category-research 'Expand navigation': instant
+[fresh] pending 66 marketplace-category-communication 'Search': instant
+[plugins] pending 45 marketplace-category-research 'Finance': instant
+[full] pending 44 marketplace-category-research 'Coforge theme': instant
+[fresh] pending 67 marketplace-category-communication 'All': instant
+[plugins] pending 46 marketplace-category-research 'Time': instant
+[full] pending 45 marketplace-category-research 'Momentuum blue theme': instant
+[fresh] pending 68 marketplace-category-communication 'Finance': instant
+[plugins] pending 47 marketplace-category-research 'Communication': instant
+[full] pending 46 marketplace-category-research 'Search': instant
+[fresh] pending 69 marketplace-category-communication 'Time': instant
+[plugins] pending 49 marketplace-category-research 'Operations': instant
+[full] pending 47 marketplace-category-research 'All': instant
+[fresh] pending 71 marketplace-category-communication 'Research': instant
+[plugins] pending 50 marketplace-category-research 'Command': instant
+[full] pending 48 marketplace-category-research 'Finance': instant
+[fresh] pending 72 marketplace-category-communication 'Operations': instant
+[plugins] pending 51 marketplace-category-research 'Reference': instant
+[full] pending 49 marketplace-category-research 'Time': instant
+[fresh] pending 73 marketplace-category-communication 'Command': instant
+[plugins] pending 52 marketplace-category-reference 'Collapse': instant
+[full] pending 50 marketplace-category-research 'Communication': instant
+[fresh] pending 74 marketplace-category-communication 'Reference': instant
+[full] pending 52 marketplace-category-research 'Operations': instant
+[plugins] pending 54 marketplace-category-reference 'Coforge theme': instant
+[fresh] pending 75 marketplace-plugin-competitor-watch 'Collapse': instant
+[full] pending 53 marketplace-category-research 'Command': instant
+[plugins] pending 55 marketplace-category-reference 'Momentuum blue theme': instant
+[fresh] pending 77 marketplace-plugin-competitor-watch 'Coforge theme': instant
+[full] pending 54 marketplace-category-research 'Reference': instant
+[plugins] pending 56 marketplace-category-reference 'Search': instant
+[fresh] pending 78 marketplace-plugin-competitor-watch 'Momentuum blue theme': instant
+[plugins] pending 57 marketplace-category-reference 'All': instant
+[full] pending 55 marketplace-category-reference 'Collapse': instant
+[fresh] pending 80 marketplace-plugin-competitor-watch 'Copy digest': instant
+[plugins] pending 58 marketplace-category-reference 'Finance': instant
+[full] pending 57 marketplace-category-reference 'Coforge theme': instant
+[fresh] pending 81 marketplace-plugin-competitor-watch 'Report this plugin': instant
+[plugins] pending 59 marketplace-category-reference 'Time': instant
+[full] pending 58 marketplace-category-reference 'Momentuum blue theme': instant
+[fresh] pending 82 marketplace-plugin-excel-report 'Expand navigation': instant
+[plugins] pending 60 marketplace-category-reference 'Communication': instant
+[full] pending 59 marketplace-category-reference 'Search': instant
+[fresh] pending 84 marketplace-plugin-excel-report 'Coforge theme': instant
+[plugins] pending 61 marketplace-category-reference 'Research': instant
+[full] pending 60 marketplace-category-reference 'All': instant
+[fresh] pending 85 marketplace-plugin-excel-report 'Momentuum blue theme': instant
+[plugins] pending 62 marketplace-category-reference 'Operations': instant
+[full] pending 61 marketplace-category-reference 'Finance': instant
+[fresh] pending 86 marketplace-plugin-excel-report 'Install plugin': instant
+[plugins] pending 63 marketplace-category-reference 'Command': instant
+[full] pending 62 marketplace-category-reference 'Time': instant
+[fresh] pending 87 marketplace-plugin-excel-report 'Copy digest': instant
+[full] pending 63 marketplace-category-reference 'Communication': instant
+[plugins] pending 65 marketplace-category-communication 'Expand navigation': instant
+[fresh] pending 88 marketplace-plugin-excel-report 'Report this plugin': instant
+[full] pending 64 marketplace-category-reference 'Research': instant
+[plugins] pending 67 marketplace-category-communication 'Coforge theme': instant
+[fresh] pending 89 marketplace-plugin-presentation-starter 'Collapse': instant
+[full] pending 65 marketplace-category-reference 'Operations': instant
+[plugins] pending 68 marketplace-category-communication 'Momentuum blue theme': instant
+[fresh] pending 91 marketplace-plugin-presentation-starter 'Coforge theme': instant
+[full] pending 66 marketplace-category-reference 'Command': instant
+[plugins] pending 69 marketplace-category-communication 'Search': instant
+[fresh] pending 92 marketplace-plugin-presentation-starter 'Momentuum blue theme': instant
+[plugins] pending 70 marketplace-category-communication 'All': instant
+[full] pending 68 marketplace-category-communication 'Expand navigation': instant
+[fresh] pending 93 marketplace-plugin-presentation-starter 'Install plugin': instant
+[plugins] pending 71 marketplace-category-communication 'Finance': instant
+[full] pending 70 marketplace-category-communication 'Coforge theme': instant
+[fresh] pending 94 marketplace-plugin-presentation-starter 'Copy digest': instant
+[plugins] pending 72 marketplace-category-communication 'Time': instant
+[full] pending 71 marketplace-category-communication 'Momentuum blue theme': instant
+[fresh] pending 95 marketplace-plugin-presentation-starter 'Report this plugin': instant
+[plugins] pending 74 marketplace-category-communication 'Research': instant
+[full] pending 72 marketplace-category-communication 'Search': instant
+[fresh] pending 96 marketplace-manage-excel-report 'Expand navigation': instant
+[plugins] pending 75 marketplace-category-communication 'Operations': instant
+[full] pending 73 marketplace-category-communication 'All': instant
+[fresh] pending 98 marketplace-manage-excel-report 'Coforge theme': instant
+[plugins] pending 76 marketplace-category-communication 'Command': instant
+[full] pending 74 marketplace-category-communication 'Finance': instant
+[fresh] pending 99 marketplace-manage-excel-report 'Momentuum blue theme': instant
+[plugins] pending 77 marketplace-category-communication 'Reference': instant
+[full] pending 75 marketplace-category-communication 'Time': instant
+[fresh] pending 100 marketplace-manage-excel-report 'Install plugin': instant
+[full] pending 77 marketplace-category-communication 'Research': instant
+[plugins] pending 78 marketplace-plugin-competitor-watch 'Collapse': instant
+[fresh] pending 101 marketplace-manage-excel-report 'Copy digest': instant
+[full] pending 78 marketplace-category-communication 'Operations': instant
+[plugins] pending 80 marketplace-plugin-competitor-watch 'Coforge theme': instant
+[fresh] pending 102 marketplace-manage-excel-report 'Report this plugin': instant
+[full] pending 79 marketplace-category-communication 'Command': instant
+[plugins] pending 81 marketplace-plugin-competitor-watch 'Momentuum blue theme': instant
+[full] pending 80 marketplace-category-communication 'Reference': instant
+[fresh] pending 103 marketplace-pack-none 'Collapse': instant
+[plugins] pending 82 marketplace-plugin-competitor-watch 'Uninstall': instant
+[fresh] pending 105 marketplace-pack-none 'Coforge theme': instant
+[plugins] pending 83 marketplace-plugin-competitor-watch 'Purge data': instant
+[full] pending 81 marketplace-plugin-competitor-watch 'Collapse': instant
+[fresh] pending 106 marketplace-pack-none 'Momentuum blue theme': instant
+[plugins] pending 84 marketplace-plugin-competitor-watch 'Copy digest': instant
+[full] pending 83 marketplace-plugin-competitor-watch 'Coforge theme': instant
+[plugins] pending 85 marketplace-plugin-competitor-watch 'Re-run validator': meets
+[full] pending 84 marketplace-plugin-competitor-watch 'Momentuum blue theme': instant
+[fresh] pending 107 marketplace-installed 'Expand navigation': instant
+[plugins] pending 86 marketplace-plugin-competitor-watch 'Report this plugin': instant
+[fresh] pending 109 marketplace-installed 'Coforge theme': instant
+[full] pending 85 marketplace-plugin-competitor-watch 'Uninstall': instant
+[fresh] pending 110 marketplace-installed 'Momentuum blue theme': instant
+[full] pending 86 marketplace-plugin-competitor-watch 'Purge data': instant
+[plugins] pending 87 marketplace-plugin-excel-report 'Expand navigation': instant
+[full] pending 87 marketplace-plugin-competitor-watch 'Copy digest': instant
+[plugins] pending 89 marketplace-plugin-excel-report 'Coforge theme': instant
+[fresh] pending 111 marketplace-publishers 'Collapse': instant
+[full] pending 88 marketplace-plugin-competitor-watch 'Re-run validator': meets
+[plugins] pending 90 marketplace-plugin-excel-report 'Momentuum blue theme': instant
+[fresh] pending 113 marketplace-publishers 'Coforge theme': instant
+[full] pending 89 marketplace-plugin-competitor-watch 'Report this plugin': instant
+[plugins] pending 91 marketplace-plugin-excel-report 'Disable': meets
+[fresh] pending 114 marketplace-publishers 'Momentuum blue theme': instant
+[plugins] pending 92 marketplace-plugin-excel-report 'Re-test': meets
+[full] pending 90 marketplace-plugin-excel-report 'Expand navigation': instant
+[fresh] pending 115 marketplace-publisher-agent-desk 'Expand navigation': instant
+[plugins] pending 93 marketplace-plugin-excel-report 'Roll back': instant
+[full] pending 92 marketplace-plugin-excel-report 'Coforge theme': instant
+[fresh] pending 117 marketplace-publisher-agent-desk 'Coforge theme': instant
+[plugins] pending 94 marketplace-plugin-excel-report 'Purge data': instant
+[full] pending 93 marketplace-plugin-excel-report 'Momentuum blue theme': instant
+[fresh] pending 118 marketplace-publisher-agent-desk 'Momentuum blue theme': instant
+[plugins] pending 95 marketplace-plugin-excel-report 'Uninstall': instant
+[full] pending 94 marketplace-plugin-excel-report 'Disable': meets
+[fresh] pending 119 marketplace-publisher-agent-desk 'Report this publisher': instant
+[plugins] pending 96 marketplace-plugin-excel-report 'Copy digest': instant
+[full] pending 95 marketplace-plugin-excel-report 'Re-test': meets
+[fresh] pending 120 marketplace-studio 'Collapse': instant
+[plugins] pending 97 marketplace-plugin-excel-report 'Re-run validator': meets
+[full] pending 96 marketplace-plugin-excel-report 'Roll back': instant
+[fresh] pending 122 marketplace-studio 'Coforge theme': instant
+[plugins] pending 98 marketplace-plugin-excel-report 'Report this plugin': instant
+[full] pending 97 marketplace-plugin-excel-report 'Purge data': instant
+[fresh] pending 123 marketplace-studio 'Momentuum blue theme': instant
+[full] pending 98 marketplace-plugin-excel-report 'Uninstall': instant
+[plugins] pending 99 marketplace-plugin-presentation-starter 'Collapse': instant
+[fresh] pending 124 marketplace-studio 'Run validator': instant
+[full] pending 99 marketplace-plugin-excel-report 'Copy digest': instant
+[plugins] pending 101 marketplace-plugin-presentation-starter 'Coforge theme': instant
+[full] pending 100 marketplace-plugin-excel-report 'Re-run validator': meets
+[fresh] pending 127 marketplace-admin 'Expand navigation': instant
+[plugins] pending 102 marketplace-plugin-presentation-starter 'Momentuum blue theme': instant
+[full] pending 101 marketplace-plugin-excel-report 'Report this plugin': instant
+[fresh] pending 129 marketplace-admin 'Coforge theme': instant
+[plugins] pending 103 marketplace-plugin-presentation-starter 'Disable': meets
+[fresh] pending 130 marketplace-admin 'Momentuum blue theme': instant
+[plugins] pending 104 marketplace-plugin-presentation-starter 'Re-test': meets
+[full] pending 102 marketplace-plugin-presentation-starter 'Collapse': instant
+[plugins] pending 105 marketplace-plugin-presentation-starter 'Roll back': instant
+[full] pending 104 marketplace-plugin-presentation-starter 'Coforge theme': instant
+[fresh] pending 131 marketplace-trust 'Collapse': instant
+[plugins] pending 106 marketplace-plugin-presentation-starter 'Purge data': instant
+[full] pending 105 marketplace-plugin-presentation-starter 'Momentuum blue theme': instant
+[fresh] pending 133 marketplace-trust 'Coforge theme': instant
+[plugins] pending 107 marketplace-plugin-presentation-starter 'Uninstall': instant
+[full] pending 106 marketplace-plugin-presentation-starter 'Disable': meets
+[fresh] pending 134 marketplace-trust 'Momentuum blue theme': instant
+[plugins] pending 108 marketplace-plugin-presentation-starter 'Copy digest': instant
+[full] pending 107 marketplace-plugin-presentation-starter 'Re-test': meets
+[fresh] pending 135 marketplace-notfound 'Expand navigation': instant
+[plugins] pending 109 marketplace-plugin-presentation-starter 'Re-run validator': meets
+[full] pending 108 marketplace-plugin-presentation-starter 'Roll back': instant
+[fresh] pending 137 marketplace-notfound 'Coforge theme': instant
+[plugins] pending 110 marketplace-plugin-presentation-starter 'Report this plugin': instant
+[full] pending 109 marketplace-plugin-presentation-starter 'Purge data': instant
+[fresh] pending 138 marketplace-notfound 'Momentuum blue theme': instant
+[full] pending 110 marketplace-plugin-presentation-starter 'Uninstall': instant
+[plugins] pending 111 marketplace-manage-excel-report 'Expand navigation': instant
+[fresh] pending 139 inbox 'Collapse': instant
+[full] pending 111 marketplace-plugin-presentation-starter 'Copy digest': instant
+[plugins] pending 113 marketplace-manage-excel-report 'Coforge theme': instant
+[fresh] pending 140 inbox 'Show me what this looks like with sample': instant
+[full] pending 112 marketplace-plugin-presentation-starter 'Re-run validator': meets
+[plugins] pending 114 marketplace-manage-excel-report 'Momentuum blue theme': instant
+[fresh] pending 141 assistant 'Expand navigation': instant
+[full] pending 113 marketplace-plugin-presentation-starter 'Report this plugin': instant
+[plugins] pending 115 marketplace-manage-excel-report 'Disable': meets
+[plugins] pending 116 marketplace-manage-excel-report 'Re-test': meets
+[full] pending 114 marketplace-manage-excel-report 'Expand navigation': instant
+[fresh] pending 142 assistant 'Ask': native-validation
+[plugins] pending 117 marketplace-manage-excel-report 'Roll back': instant
+[full] pending 116 marketplace-manage-excel-report 'Coforge theme': instant
+[fresh] pending 143 agents 'Collapse': instant
+[plugins] pending 118 marketplace-manage-excel-report 'Purge data': instant
+[full] pending 117 marketplace-manage-excel-report 'Momentuum blue theme': instant
+[plugins] pending 119 marketplace-manage-excel-report 'Uninstall': instant
+[fresh] pending 145 agents 'Run Worksheet brief': native-validation
+[full] pending 118 marketplace-manage-excel-report 'Disable': meets
+[plugins] pending 120 marketplace-manage-excel-report 'Copy digest': instant
+[full] pending 119 marketplace-manage-excel-report 'Re-test': meets
+[fresh] pending 146 memory 'Expand navigation': instant
+[plugins] pending 121 marketplace-manage-excel-report 'Set up a new instance': instant
+[full] pending 120 marketplace-manage-excel-report 'Roll back': instant
+[fresh] pending 152 memory 'Ask me first': meets
+[plugins] pending 122 marketplace-manage-excel-report 'Re-run validator': meets
+[full] pending 121 marketplace-manage-excel-report 'Purge data': instant
+[fresh] pending 154 memory 'Save fact': instant
+[plugins] pending 123 marketplace-manage-excel-report 'Report this plugin': instant
+[full] pending 122 marketplace-manage-excel-report 'Uninstall': instant
+[fresh] pending 156 memory 'Entities 0': instant
+[full] pending 123 marketplace-manage-excel-report 'Copy digest': instant
+[plugins] pending 124 marketplace-pack-none 'Collapse': instant
+[fresh] pending 157 memory 'Excerpts 0': instant
+[plugins] pending 126 marketplace-pack-none 'Coforge theme': instant
+[full] pending 124 marketplace-manage-excel-report 'Edit Pipeline': instant
+[fresh] pending 158 memory 'Observations 0': instant
+[plugins] pending 127 marketplace-pack-none 'Momentuum blue theme': instant
+[full] pending 125 marketplace-manage-excel-report 'Set up a new instance': instant
+[fresh] pending 159 memory 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 126 marketplace-manage-excel-report 'Re-run validator': meets
+[plugins] pending 128 marketplace-installed 'Expand navigation': instant
+[fresh] pending 160 memory-graph 'Collapse': instant
+[full] pending 127 marketplace-manage-excel-report 'Report this plugin': instant
+[plugins] pending 130 marketplace-installed 'Coforge theme': instant
+[fresh] pending 161 memory-sweep 'Expand navigation': instant
+[plugins] pending 131 marketplace-installed 'Momentuum blue theme': instant
+[full] pending 128 marketplace-pack-none 'Collapse': instant
+[fresh] pending 162 memory-sweep 'Save fact': instant
+[plugins] pending 132 marketplace-installed 'Disable': meets
+[full] pending 130 marketplace-pack-none 'Coforge theme': instant
+[fresh] pending 163 memory-sweep 'Reflect': instant
+[plugins] pending 133 marketplace-installed 'Share with peers': meets
+[full] pending 131 marketplace-pack-none 'Momentuum blue theme': instant
+[fresh] pending 164 memory-sweep 'Check': instant
+[plugins] pending 134 marketplace-installed 'Roll back': instant
+[full] pending 132 marketplace-installed 'Expand navigation': instant
+[plugins] pending 135 marketplace-installed 'Purge data': instant
+[fresh] pending 165 memory-encrypt 'Collapse': instant
+[full] pending 134 marketplace-installed 'Coforge theme': instant
+[plugins] pending 136 marketplace-installed 'Uninstall': instant
+[fresh] pending 171 memory-encrypt 'Ask me first': meets
+[full] pending 135 marketplace-installed 'Momentuum blue theme': instant
+[plugins] pending 137 marketplace-installed 'Uninstall': instant
+[fresh] pending 173 memory-encrypt 'Save fact': instant
+[full] pending 136 marketplace-installed 'Disable': meets
+[plugins] pending 138 marketplace-installed 'Purge data': instant
+[fresh] pending 175 memory-encrypt 'Entities 0': instant
+[full] pending 137 marketplace-installed 'Share with peers': meets
+[plugins] pending 139 marketplace-installed 'Disable': meets
+[fresh] pending 176 memory-encrypt 'Excerpts 0': instant
+[full] pending 138 marketplace-installed 'Roll back': instant
+[plugins] pending 140 marketplace-installed 'Share with peers': meets
+[fresh] pending 177 memory-encrypt 'Observations 0': instant
+[full] pending 139 marketplace-installed 'Purge data': instant
+[plugins] pending 141 marketplace-installed 'Roll back': instant
+[fresh] pending 178 memory-encrypt 'Check': instant
+[full] pending 140 marketplace-installed 'Uninstall': instant
+[plugins] pending 142 marketplace-installed 'Purge data': instant
+[fresh] pending 179 memory-encrypt 'Encrypt memory': instant
+[full] pending 141 marketplace-installed 'Uninstall': instant
+[plugins] pending 143 marketplace-installed 'Uninstall': instant
+[full] pending 142 marketplace-installed 'Purge data': instant
+[fresh] pending 180 mail 'Expand navigation': instant
+[plugins] pending 144 marketplace-installed 'Disable': meets
+[full] pending 143 marketplace-installed 'Disable': meets
+[fresh] pending 181 capabilities 'Collapse': instant
+[plugins] pending 145 marketplace-installed 'Share with peers': meets
+[full] pending 144 marketplace-installed 'Share with peers': meets
+[fresh] pending 182 capabilities 'Re-test gate 1': instant
+[plugins] pending 146 marketplace-installed 'Roll back': instant
+[full] pending 145 marketplace-installed 'Roll back': instant
+[fresh] pending 183 capabilities 'Re-test gate 2': instant
+[plugins] pending 147 marketplace-installed 'Purge data': instant
+[full] pending 146 marketplace-installed 'Purge data': instant
+[fresh] pending 184 capabilities 'Re-test gate 3': instant
+[plugins] pending 148 marketplace-installed 'Uninstall': instant
+[full] pending 147 marketplace-installed 'Uninstall': instant
+[fresh] pending 185 capabilities 'Re-test gate 4': instant
+[full] pending 148 marketplace-installed 'Disable': meets
+[plugins] pending 149 marketplace-publishers 'Collapse': instant
+[fresh] pending 186 capabilities 'Re-test gate 5': instant
+[full] pending 149 marketplace-installed 'Share with peers': meets
+[plugins] pending 151 marketplace-publishers 'Coforge theme': instant
+[fresh] pending 187 capabilities 'Re-test gate 6': instant
+[full] pending 150 marketplace-installed 'Roll back': instant
+[plugins] pending 152 marketplace-publishers 'Momentuum blue theme': instant
+[fresh] pending 188 peers 'Expand navigation': instant
+[full] pending 151 marketplace-installed 'Purge data': instant
+[plugins] pending 153 marketplace-publisher-agent-desk 'Expand navigation': instant
+[fresh] pending 189 peers 'Generate a fresh code': instant
+[full] pending 152 marketplace-installed 'Uninstall': instant
+[plugins] pending 155 marketplace-publisher-agent-desk 'Coforge theme': instant
+[fresh] pending 190 peers 'Pair': instant
+[full] pending 153 marketplace-publishers 'Collapse': instant
+[plugins] pending 156 marketplace-publisher-agent-desk 'Momentuum blue theme': instant
+[fresh] pending 191 settings 'Collapse': instant
+[full] pending 155 marketplace-publishers 'Coforge theme': instant
+[plugins] pending 157 marketplace-publisher-agent-desk 'Report this publisher': instant
+[fresh] pending 192 settings 'Save': instant
+[full] pending 156 marketplace-publishers 'Momentuum blue theme': instant
+[plugins] pending 158 marketplace-studio 'Collapse': instant
+[fresh] pending 193 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 157 marketplace-publisher-agent-desk 'Expand navigation': instant
+[plugins] pending 160 marketplace-studio 'Coforge theme': instant
+[fresh] pending 194 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 159 marketplace-publisher-agent-desk 'Coforge theme': instant
+[plugins] pending 161 marketplace-studio 'Momentuum blue theme': instant
+[fresh] pending 195 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 160 marketplace-publisher-agent-desk 'Momentuum blue theme': instant
+[plugins] pending 162 marketplace-studio 'Run validator': instant
+[fresh] pending 196 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 161 marketplace-publisher-agent-desk 'Report this publisher': instant
+[fresh] pending 197 settings 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 165 marketplace-admin 'Expand navigation': instant
+[fresh] pending 198 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 162 marketplace-studio 'Collapse': instant
+[plugins] pending 167 marketplace-admin 'Coforge theme': instant
+[fresh] pending 199 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 164 marketplace-studio 'Coforge theme': instant
+[plugins] pending 168 marketplace-admin 'Momentuum blue theme': instant
+[full] pending 165 marketplace-studio 'Momentuum blue theme': instant
+[fresh] pending 200 settings#ai 'Expand navigation': instant
+[plugins] pending 169 marketplace-trust 'Collapse': instant
+[full] pending 166 marketplace-studio 'Run validator': instant
+[fresh] pending 201 settings#ai 'Save': instant
+[plugins] pending 171 marketplace-trust 'Coforge theme': instant
+[fresh] pending 202 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 169 marketplace-admin 'Expand navigation': instant
+[plugins] pending 172 marketplace-trust 'Momentuum blue theme': instant
+[fresh] pending 203 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 171 marketplace-admin 'Coforge theme': instant
+[plugins] pending 173 marketplace-notfound 'Expand navigation': instant
+[fresh] pending 204 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 172 marketplace-admin 'Momentuum blue theme': instant
+[plugins] pending 175 marketplace-notfound 'Coforge theme': instant
+[fresh] pending 205 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 174 marketplace-trust 'Collapse': instant
+[plugins] pending 176 marketplace-notfound 'Momentuum blue theme': instant
+[fresh] pending 206 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 176 marketplace-trust 'Coforge theme': instant
+[plugins] pending 177 inbox 'Collapse': instant
+[fresh] pending 207 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 177 marketplace-trust 'Momentuum blue theme': instant
+[plugins] pending 178 inbox 'Remove them': meets
+[fresh] pending 208 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 179 inbox 'Dismiss': meets
+[full] pending 178 marketplace-notfound 'Expand navigation': instant
+[fresh] pending 209 settings#tools 'Collapse': instant
+[plugins] pending 180 inbox 'Save draft': instant
+[full] pending 180 marketplace-notfound 'Coforge theme': instant
+[fresh] pending 210 settings#tools 'Open a workbook': native-dialog
+[plugins] pending 181 inbox 'Snooze': instant
+[full] pending 181 marketplace-notfound 'Momentuum blue theme': instant
+[fresh] pending 211 settings#tools 'Off': meets
+[plugins] pending 182 inbox 'Ask for more info': instant
+[full] pending 182 inbox 'Collapse': instant
+[fresh] pending 212 settings#tools 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 183 assistant 'Expand navigation': instant
+[full] pending 183 inbox 'Accept update': meets
+[fresh] pending 213 settings#tools 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 184 inbox 'Dismiss': meets
+[fresh] pending 214 settings#memory 'Expand navigation': instant
+[plugins] pending 184 assistant 'Ask': native-validation
+[full] pending 185 inbox 'Save draft': instant
+[fresh] pending 215 settings#memory 'On': meets
+[plugins] pending 185 agents 'Collapse': instant
+[full] pending 186 inbox 'Snooze': instant
+[fresh] pending 216 settings#memory 'On': meets
+[full] pending 187 inbox 'Ask for more info': instant
+[fresh] pending 217 settings#memory 'On': meets
+[plugins] pending 187 agents 'Run Worksheet brief': native-validation
+[full] pending 188 inbox 'Got it': meets
+[fresh] pending 218 settings#memory 'Forget everything': instant
+[full] pending 189 inbox 'Dismiss': meets
+[plugins] pending 188 memory 'Expand navigation': instant
+[fresh] pending 219 settings#preferences 'Collapse': instant
+[full] pending 190 inbox 'Save draft': instant
+[plugins] pending 194 memory 'Ask me first': meets
+[fresh] pending 220 settings#preferences 'Save preferences': instant
+[full] pending 191 inbox 'Snooze': instant
+[plugins] pending 196 memory 'Save fact': instant
+[fresh] pending 222 settings#preferences 'Coforge Navy, coral': instant
+[full] pending 192 inbox 'Ask for more info': instant
+[plugins] pending 198 memory 'Entities 0': instant
+[fresh] pending 223 settings#preferences 'Momentuum blue Light, brand blue': instant
+[full] pending 193 inbox 'Accept': meets
+[plugins] pending 199 memory 'Excerpts 0': instant
+[full] pending 194 inbox 'Dismiss': meets
+[plugins] pending 200 memory 'Observations 0': instant
+[fresh] pending 224 settings#advanced 'Expand navigation': instant
+[full] pending 195 inbox 'Save draft': instant
+[plugins] pending 201 memory 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 225 settings#advanced 'On': meets
+[full] pending 196 inbox 'Snooze': instant
+[fresh] pending 226 settings#advanced 'On': meets
+[plugins] pending 202 memory-graph 'Collapse': instant
+[full] pending 197 inbox 'Ask for more info': instant
+[fresh] pending 227 settings#advanced 'On': meets
+[plugins] pending 203 memory-sweep 'Expand navigation': instant
+[full] pending 198 inbox 'Allow update': meets
+[fresh] pending 228 settings#advanced 'On': meets
+[plugins] pending 204 memory-sweep 'Save fact': instant
+[full] pending 199 inbox 'Dismiss': meets
+[fresh] pending 229 settings#advanced '3 (normal)': meets
+[plugins] pending 205 memory-sweep 'Reflect': instant
+[full] pending 200 inbox 'Save draft': instant
+[fresh] pending 230 settings#advanced 'Off': meets
+[plugins] pending 206 memory-sweep 'Check': instant
+[full] pending 201 inbox 'Snooze': instant
+[fresh] pending 231 settings#advanced 'On': meets
+[full] pending 202 inbox 'Ask for more info': instant
+[plugins] pending 207 memory-encrypt 'Collapse': instant
+[fresh] pending 232 settings#advanced 'Off': meets
+[full] pending 203 inbox 'Accept': instant
+[fresh] pending 233 settings#advanced '6': meets
+[plugins] pending 213 memory-encrypt 'Ask me first': meets
+[full] pending 204 inbox 'Dismiss': meets
+[fresh] pending 234 settings#advanced 'On': meets
+[plugins] pending 215 memory-encrypt 'Save fact': instant
+[full] pending 205 inbox 'Save draft': instant
+[fresh] pending 235 settings#advanced 'On': meets
+[plugins] pending 217 memory-encrypt 'Entities 0': instant
+[full] pending 206 inbox 'Snooze': instant
+[fresh] pending 236 settings#advanced 'On': meets
+[plugins] pending 218 memory-encrypt 'Excerpts 0': instant
+[full] pending 207 inbox 'Ask for more info': instant
+[fresh] pending 237 settings#advanced '30 days': meets
+[plugins] pending 219 memory-encrypt 'Observations 0': instant
+[full] pending 208 inbox 'Remove them': meets
+[fresh] pending 238 settings#advanced 'On': meets
+[plugins] pending 220 memory-encrypt 'Check': instant
+[full] pending 209 inbox 'Dismiss': meets
+[fresh] pending 239 settings#advanced '7 or higher': meets
+[plugins] pending 221 memory-encrypt 'Encrypt memory': instant
+[full] pending 210 inbox 'Save draft': instant
+[fresh] pending 240 settings#advanced 'On': meets
+[plugins] pending 222 mail 'Expand navigation': instant
+[full] pending 211 inbox 'Snooze': instant
+[fresh] pending 241 settings#advanced 'On': meets
+[full] pending 212 inbox 'Ask for more info': instant
+[plugins] pending 223 capabilities 'Collapse': instant
+[fresh] pending 242 settings#advanced 'On': meets
+[plugins] pending 224 capabilities 'Re-test gate 1': instant
+[full] pending 213 assistant 'Expand navigation': instant
+[fresh] pending 243 settings#advanced 'Off': meets
+[plugins] pending 225 capabilities 'Re-test gate 2': instant
+[fresh] pending 244 settings#advanced 'Run now': instant
+[full] pending 214 assistant 'Ask': native-validation
+[plugins] pending 226 capabilities 'Re-test gate 3': instant
+[fresh] pending 245 settings#advanced 'Save folder': instant
+[plugins] pending 227 capabilities 'Re-test gate 4': instant
+[full] pending 215 agents 'Collapse': instant
+[fresh] pending 246 settings#advanced 'Off': meets
+[plugins] pending 228 capabilities 'Re-test gate 5': instant
+[full] pending 216 agents 'Run Presentation': native-validation
+[fresh] pending 247 settings#advanced 'Off': meets
+[plugins] pending 229 capabilities 'Re-test gate 6': instant
+[fresh] pending 248 settings#advanced 'Check now': instant
+[full] pending 217 agents 'Run Worksheet brief': native-validation
+[plugins] pending 230 peers 'Expand navigation': instant
+[fresh] pending 249 settings#advanced 'Save timeout': instant
+[full] pending 218 memory 'Expand navigation': instant
+[plugins] pending 231 peers 'Generate a fresh code': instant
+[fresh] pending 250 settings#advanced 'Save path': instant
+[full] pending 224 memory 'Ask me first': meets
+[plugins] pending 232 peers 'Pair': instant
+[fresh] pending 251 settings#advanced 'Save addresses': instant
+[full] pending 226 memory 'Save fact': instant
+[fresh] pending 252 settings#advanced 'On': meets
+[plugins] pending 233 settings 'Collapse': instant
+[full] pending 228 memory 'Entities 7': instant
+[fresh] pending 253 settings#advanced 'On': meets
+[plugins] pending 234 settings 'Save': instant
+[full] pending 229 memory 'Excerpts 3': instant
+[fresh] pending 254 settings#advanced 'On': meets
+[plugins] pending 235 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 230 memory 'Observations 1': instant
+[plugins] pending 236 settings 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 255 settings-activity 'Collapse': instant
+[full] pending 231 memory 'Edit': instant
+[plugins] pending 237 settings 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 256 walkthrough-calendar 'Expand navigation': instant
+[full] pending 232 memory 'Forget…': meets
+[plugins] pending 238 settings 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 257 walkthrough-calendar 'Pick a file': native-dialog
+[full] pending 233 memory 'Avery Kim': instant
+[plugins] pending 239 settings 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 258 walkthrough-calendar 'Reset to automatic discovery': meets
+[full] pending 234 memory 'Q4 pipeline review': instant
+[plugins] pending 240 settings 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 259 walkthrough-calendar 'Use this path': instant
+[full] pending 235 memory 'Edit': instant
+[plugins] pending 241 settings 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 260 walkthrough-calendar 'Upload this file': instant
+[full] pending 236 memory 'Forget…': meets
+[fresh] pending 261 walkthrough-calendar 'Check for calendar data now': meets
+[plugins] pending 242 settings#ai 'Expand navigation': instant
+[full] pending 237 memory 'Kestrel Foods': instant
+[plugins] pending 243 settings#ai 'Save': instant
+[fresh] pending 262 what-this-touches 'Collapse': instant
+[full] pending 238 memory 'Riley Chen': instant
+[plugins] pending 244 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 239 memory 'Edit': instant
+[fresh] pending 263 wizard 'Ask': instant
+[fresh] pending error-page: page has no controls by design
+[plugins] pending 245 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending overlay-widget-menu: no widget overflow trigger on this dashboard
+[full] pending 240 memory 'Forget…': meets
+[plugins] pending 246 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 241 memory 'Kestrel Foods': instant
+[plugins] pending 247 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 264 overlay-customize 'Expand navigation': instant
+[full] pending 242 memory 'Edit': instant
+[plugins] pending 248 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 266 overlay-customize 'Coforge theme': instant
+[full] pending 243 memory 'Forget…': meets
+[plugins] pending 249 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 267 overlay-customize 'Momentuum blue theme': instant
+[full] pending 244 memory 'Kestrel Foods': instant
+[plugins] pending 250 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 245 memory 'Edit': instant
+[fresh] pending 268 overlay-customize 'Done customizing': instant
+[plugins] pending 251 settings#tools 'Collapse': instant
+[full] pending 246 memory 'Forget…': meets
+[fresh] pending 271 overlay-customize 'Move down': meets
+[plugins] pending 252 settings#tools 'Open a workbook': native-dialog
+[full] pending 247 memory 'Harborlight Freight': instant
+[fresh] pending 272 overlay-customize 'Rename': instant
+[plugins] pending 253 settings#tools 'Off': meets
+[full] pending 248 memory 'Jordan Lee': instant
+[plugins] pending 254 settings#tools 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 273 overlay-customize 'Hide': meets
+[full] pending 249 memory 'Edit': instant
+[plugins] pending 255 settings#tools 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 274 overlay-customize 'Widget options, Sales, last 24 hours': instant
+[full] pending 250 memory 'Forget…': meets
+[plugins] pending 256 settings#memory 'Expand navigation': instant
+[full] pending 251 memory 'Dana Ortiz': instant
+[fresh] pending 275 overlay-customize 'Connect a workbook': native-dialog
+[plugins] pending 257 settings#memory 'On': meets
+[full] pending 252 memory 'Harborlight Freight': instant
+[fresh] pending 277 overlay-customize 'Move up': meets
+[plugins] pending 258 settings#memory 'On': meets
+[full] pending 253 memory 'Edit': instant
+[plugins] pending 259 settings#memory 'On': meets
+[fresh] pending 278 overlay-customize 'Move down': meets
+[full] pending 254 memory 'Forget…': meets
+[plugins] pending 260 settings#memory 'Forget everything': instant
+[fresh] pending 279 overlay-customize 'Rename': instant
+[full] pending 255 memory 'Harborlight Freight': instant
+[plugins] pending 261 settings#preferences 'Collapse': instant
+[full] pending 256 memory 'Edit': instant
+[fresh] pending 280 overlay-customize 'Hide': meets
+[plugins] pending 262 settings#preferences 'Save preferences': instant
+[full] pending 257 memory 'Forget…': meets
+[fresh] pending 281 overlay-customize "Widget options, Today's key commitment": instant
+[plugins] pending 264 settings#preferences 'Coforge Navy, coral': instant
+[full] pending 258 memory 'Forget everything': instant
+[fresh] pending 283 overlay-customize 'Move up': meets
+[plugins] pending 265 settings#preferences 'Momentuum blue Light, brand blue': instant
+[full] pending 259 memory 'button.btn.btn-secondary.btn-stack': instant
+[fresh] pending 285 overlay-customize 'Rename': instant
+[full] pending 260 memory 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 266 settings#advanced 'Expand navigation': instant
+[fresh] pending 286 overlay-customize 'Hide': meets
+[plugins] pending 267 settings#advanced 'On': meets
+[full] pending 261 memory-graph 'Collapse': instant
+[plugins] pending 268 settings#advanced 'On': meets
+[fresh] pending 287 overlay-customize 'Widget options, Research': instant
+[fresh] pending audit wrote 289 control record(s)
+[fresh] wrote 17 finding(s), 41 matrix row(s)
+[full] pending 262 memory-graph 'Retained excerpt: Call with Dana Ortiz a': instant
+[plugins] pending 269 settings#advanced 'On': meets
+[full] pending 263 memory-graph 'Writer: Sample seed': instant
+[plugins] pending 270 settings#advanced 'On': meets
+[full] pending 264 memory-graph 'Retained excerpt: Pipeline prep: the Kes': instant
+[plugins] pending 271 settings#advanced '3 (normal)': meets
+[full] pending 265 memory-graph 'Retained excerpt: I sent the Q4 pipeline': instant
+[plugins] pending 272 settings#advanced 'Off': meets
+[full] pending 266 memory-graph 'World fact: Harborlight Freight wants th': instant
+[plugins] pending 273 settings#advanced 'On': meets
+[full] pending 267 memory-graph 'World fact: Harborlight Freight asked fo': instant
+[plugins] pending 274 settings#advanced 'Off': meets
+[full] pending 268 memory-graph 'World fact: Jordan Lee owns the Harborli': instant
+[plugins] pending 275 settings#advanced '6': meets
+[full] pending 269 memory-graph 'World fact: The Kestrel Foods pilot slip': instant
+[plugins] pending 276 settings#advanced 'On': meets
+[full] pending 270 memory-graph "World fact: Kestrel Foods' IT security r": instant
+[plugins] pending 277 settings#advanced 'On': meets
+[full] pending 271 memory-graph 'World fact: Riley Chen is chasing the Ke': instant
+[plugins] pending 278 settings#advanced 'On': meets
+[full] pending 272 memory-graph 'Experience: I sent the Q4 pipeline summa': instant
+[plugins] pending 279 settings#advanced '30 days': meets
+[full] pending 273 memory-graph 'World fact: The sample quarter closes on': instant
+[plugins] pending 280 settings#advanced 'On': meets
+[full] pending 274 memory-graph 'Observation · 0.80 confidence: Both at-r': instant
+[plugins] pending 281 settings#advanced '7 or higher': meets
+[full] pending 275 memory-graph 'Entity · org: Harborlight Freight': instant
+[plugins] pending 282 settings#advanced 'On': meets
+[full] pending 276 memory-graph 'Entity · person: Dana Ortiz': instant
+[plugins] pending 283 settings#advanced 'On': meets
+[full] pending 277 memory-graph 'Entity · person: Jordan Lee': instant
+[plugins] pending 284 settings#advanced 'On': meets
+[full] pending 278 memory-graph 'Entity · org: Kestrel Foods': instant
+[plugins] pending 285 settings#advanced 'Off': meets
+[full] pending 279 memory-graph 'Entity · person: Riley Chen': instant
+[plugins] pending 286 settings#advanced 'Run now': instant
+[full] pending 280 memory-graph 'Entity · concept: Q4 pipeline review': instant
+[plugins] pending 287 settings#advanced 'Save folder': instant
+[full] pending 281 memory-graph 'Entity · person: Avery Kim': instant
+[plugins] pending 288 settings#advanced 'Off': meets
+[full] pending 282 memory-sweep 'Expand navigation': instant
+[plugins] pending 289 settings#advanced 'Off': meets
+[full] pending 283 memory-sweep 'Save fact': instant
+[plugins] pending 290 settings#advanced 'Check now': instant
+[full] pending 284 memory-sweep 'Save': instant
+[plugins] pending 291 settings#advanced 'Save timeout': instant
+[full] pending 285 memory-sweep 'Forget': instant
+[plugins] pending 292 settings#advanced 'Save path': instant
+[full] pending 286 memory-sweep 'Save': instant
+[plugins] pending 293 settings#advanced 'Save addresses': instant
+[full] pending 287 memory-sweep 'Forget': instant
+[plugins] pending 294 settings#advanced 'On': meets
+[full] pending 288 memory-sweep 'Save': instant
+[plugins] pending 295 settings#advanced 'On': meets
+[full] pending 289 memory-sweep 'Forget': instant
+[plugins] pending 296 settings#advanced 'On': meets
+[full] pending 290 memory-sweep 'Save': instant
+[plugins] pending 297 settings-activity 'Collapse': instant
+[full] pending 291 memory-sweep 'Forget': instant
+[full] pending 292 memory-sweep 'Save': instant
+[plugins] pending 298 walkthrough-calendar 'Expand navigation': instant
+[full] pending 293 memory-sweep 'Forget': instant
+[plugins] pending 299 walkthrough-calendar 'Pick a file': native-dialog
+[full] pending 294 memory-sweep 'Save': instant
+[plugins] pending 300 walkthrough-calendar 'Reset to automatic discovery': meets
+[full] pending 295 memory-sweep 'Forget': instant
+[plugins] pending 301 walkthrough-calendar 'Use this path': instant
+[full] pending 296 memory-sweep 'Save': instant
+[plugins] pending 302 walkthrough-calendar 'Upload this file': instant
+[full] pending 297 memory-sweep 'Forget': instant
+[plugins] pending 303 walkthrough-calendar 'Check for calendar data now': meets
+[full] pending 298 memory-sweep 'Save': instant
+[plugins] pending 304 what-this-touches 'Collapse': instant
+[full] pending 299 memory-sweep 'Forget': instant
+[plugins] pending 305 wizard 'Ask': instant
+[full] pending 300 memory-sweep 'Reflect': instant
+[plugins] pending error-page: page has no controls by design
+[full] pending 301 memory-sweep 'Merge entities': instant
+[plugins] pending 306 overlay-widget-menu 'Expand navigation': instant
+[full] pending 302 memory-sweep 'Forget everything': instant
+[full] pending 303 memory-sweep 'Check': instant
+[plugins] pending 308 overlay-widget-menu 'Coforge theme': instant
+[full] pending 304 memory-sweep 'Prepare the rest': instant
+[plugins] pending 309 overlay-widget-menu 'Momentuum blue theme': instant
+[full] pending 305 memory-encrypt 'Collapse': instant
+[plugins] pending 310 overlay-widget-menu 'Customize': instant
+[full] pending 311 memory-encrypt 'Ask me first': meets
+[plugins] pending 311 overlay-widget-menu 'Not now': instant
+[full] pending 313 memory-encrypt 'Save fact': instant
+[plugins] pending 312 overlay-widget-menu 'Open': native-dialog
+[full] pending 315 memory-encrypt 'Entities 7': instant
+[plugins] pending 313 overlay-widget-menu 'Try it with sample data': meets
+[full] pending 316 memory-encrypt 'Excerpts 3': instant
+[plugins] pending 314 overlay-widget-menu 'Set up': instant
+[full] pending 317 memory-encrypt 'Observations 1': instant
+[full] pending 318 memory-encrypt 'Edit': instant
+[plugins] pending 315 overlay-widget-menu 'Widget options, Regional Pipeline Operat': instant
+[full] pending 319 memory-encrypt 'Forget…': meets
+[plugins] pending 316 overlay-widget-menu 'Save': native-validation
+[full] pending 320 memory-encrypt 'Avery Kim': instant
+[full] pending 321 memory-encrypt 'Q4 pipeline review': instant
+[full] pending 322 memory-encrypt 'Edit': instant
+[full] pending 323 memory-encrypt 'Forget…': meets
+[full] pending 324 memory-encrypt 'Kestrel Foods': instant
+[full] pending 325 memory-encrypt 'Riley Chen': instant
+[full] pending 326 memory-encrypt 'Edit': instant
+[plugins] pending 326 overlay-tracker-setup 'Close': instant
+[full] pending 327 memory-encrypt 'Forget…': meets
+[plugins] pending 327 overlay-tracker-setup 'Open a workbook': native-dialog
+[full] pending 328 memory-encrypt 'Kestrel Foods': instant
+[plugins] pending 328 overlay-tracker-setup 'Type a path or upload instead': instant
+[full] pending 329 memory-encrypt 'Edit': instant
+[full] pending 330 memory-encrypt 'Forget…': meets
+[full] pending 331 memory-encrypt 'Kestrel Foods': instant
+[plugins] pending 331 overlay-customize 'Collapse': instant
+[full] pending 332 memory-encrypt 'Edit': instant
+[plugins] pending 333 overlay-customize 'Coforge theme': instant
+[full] pending 333 memory-encrypt 'Forget…': meets
+[plugins] pending 334 overlay-customize 'Momentuum blue theme': instant
+[full] pending 334 memory-encrypt 'Harborlight Freight': instant
+[full] pending 335 memory-encrypt 'Jordan Lee': instant
+[plugins] pending 335 overlay-customize 'Done customizing': instant
+[full] pending 336 memory-encrypt 'Edit': instant
+[plugins] pending 338 overlay-customize 'Move down': meets
+[full] pending 337 memory-encrypt 'Forget…': meets
+[plugins] pending 339 overlay-customize 'Rename': instant
+[full] pending 338 memory-encrypt 'Dana Ortiz': instant
+[plugins] pending 340 overlay-customize 'Hide': meets
+[full] pending 339 memory-encrypt 'Harborlight Freight': instant
+[plugins] pending 341 overlay-customize 'Widget options, Sales, last 24 hours': instant
+[full] pending 340 memory-encrypt 'Edit': instant
+[full] pending 341 memory-encrypt 'Forget…': meets
+[plugins] pending 342 overlay-customize 'Connect a workbook': native-dialog
+[full] pending 342 memory-encrypt 'Harborlight Freight': instant
+[plugins] pending 344 overlay-customize 'Move up': meets
+[full] pending 343 memory-encrypt 'Edit': instant
+[plugins] pending 345 overlay-customize 'Move down': meets
+[full] pending 344 memory-encrypt 'Forget…': meets
+[plugins] pending 346 overlay-customize 'Rename': instant
+[full] pending 345 memory-encrypt 'Forget everything': instant
+[plugins] pending 347 overlay-customize 'Hide': meets
+[full] pending 346 memory-encrypt 'Check': instant
+[full] pending 347 memory-encrypt 'Prepare the rest': instant
+[plugins] pending 348 overlay-customize "Widget options, Today's key commitment": instant
+[full] pending 348 memory-encrypt 'Encrypt memory': instant
+[plugins] pending 350 overlay-customize 'Move up': meets
+[full] pending 349 mail 'Expand navigation': instant
+[plugins] pending 351 overlay-customize 'Move down': meets
+[full] pending 350 capabilities 'Collapse': instant
+[plugins] pending 352 overlay-customize 'Rename': instant
+[full] pending 351 capabilities 'Re-test gate 1': instant
+[plugins] pending 353 overlay-customize 'Hide': meets
+[full] pending 352 capabilities 'Re-test gate 2': instant
+[plugins] pending 354 overlay-customize 'Widget options, Research': instant
+[full] pending 353 capabilities 'Re-test gate 3': instant
+[plugins] pending 356 overlay-customize 'Move up': meets
+[full] pending 354 capabilities 'Re-test gate 4': instant
+[full] pending 355 capabilities 'Re-test gate 5': instant
+[plugins] pending 357 overlay-customize 'Move down': meets
+[full] pending 356 capabilities 'Re-test gate 6': instant
+[plugins] pending 358 overlay-customize 'Rename': instant
+[full] pending 357 peers 'Expand navigation': instant
+[plugins] pending 359 overlay-customize 'Hide': meets
+[full] pending 358 peers 'Generate a fresh code': instant
+[plugins] pending 360 overlay-customize 'Widget options, Regional Pipeline Operat': instant
+[full] pending 359 peers 'Pair': instant
+[full] pending 360 settings 'Collapse': instant
+[plugins] pending 361 overlay-customize 'Save': native-validation
+[full] pending 361 settings 'Save': instant
+[plugins] pending 363 overlay-customize 'Move up': meets
+[full] pending 362 settings 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 365 overlay-customize 'Rename': instant
+[full] pending 363 settings 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 366 overlay-customize 'Hide': meets
+[full] pending 364 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 365 settings 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 367 overlay-customize 'Set up': instant
+[full] pending 366 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 367 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 368 settings 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 369 settings#ai 'Expand navigation': instant
+[full] pending 370 settings#ai 'Save': instant
+[full] pending 371 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 372 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 373 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[plugins] pending 381 overlay-instance-setup 'Close': instant
+[full] pending 374 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 375 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 376 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 377 settings#ai 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 378 settings#tools 'Collapse': instant
+[full] pending 379 settings#tools 'Change': native-dialog
+[full] pending 380 settings#tools 'Off': meets
+[full] pending 381 settings#tools 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 382 settings#tools 'button.btn.btn-secondary.btn-stack': instant
+[full] pending 383 settings#memory 'Expand navigation': instant
+[full] pending 384 settings#memory 'On': meets
+[full] pending 385 settings#memory 'On': meets
+[full] pending 386 settings#memory 'On': meets
+[full] pending 387 settings#memory 'Forget everything': instant
+[plugins] pending 404 overlay-purge 'Cancel': instant
+[plugins] pending audit wrote 406 control record(s)
+[plugins] wrote 27 finding(s), 44 matrix row(s)
+[full] pending 388 settings#preferences 'Collapse': instant
+[full] pending 389 settings#preferences 'Save preferences': instant
+[full] pending 391 settings#preferences 'Coforge Navy, coral': instant
+[full] pending 392 settings#preferences 'Momentuum blue Light, brand blue': instant
+[full] pending 393 settings#advanced 'Expand navigation': instant
+[full] pending 394 settings#advanced 'On': meets
+[full] pending 395 settings#advanced 'On': meets
+[full] pending 396 settings#advanced 'On': meets
+[full] pending 397 settings#advanced 'On': meets
+[full] pending 398 settings#advanced '3 (normal)': meets
+[full] pending 399 settings#advanced 'On': meets
+[full] pending 400 settings#advanced 'On': meets
+[full] pending 401 settings#advanced 'Off': meets
+[full] pending 402 settings#advanced '6': meets
+[full] pending 403 settings#advanced 'On': meets
+[full] pending 404 settings#advanced 'On': meets
+[full] pending 405 settings#advanced 'On': meets
+[full] pending 406 settings#advanced '30 days': meets
+[full] pending 407 settings#advanced 'On': meets
+[full] pending 408 settings#advanced '7 or higher': meets
+[full] pending 409 settings#advanced 'On': meets
+[full] pending 410 settings#advanced 'On': meets
+[full] pending 411 settings#advanced 'On': meets
+[full] pending 412 settings#advanced 'Off': meets
+[full] pending 413 settings#advanced 'Run now': instant
+[full] pending 414 settings#advanced 'Save folder': instant
+[full] pending 415 settings#advanced 'Off': meets
+[full] pending 416 settings#advanced 'Off': meets
+[full] pending 417 settings#advanced 'Check now': instant
+[full] pending 418 settings#advanced 'Save timeout': instant
+[full] pending 419 settings#advanced 'Save path': instant
+[full] pending 420 settings#advanced 'Save addresses': instant
+[full] pending 421 settings#advanced 'On': meets
+[full] pending 422 settings#advanced 'On': meets
+[full] pending 423 settings#advanced 'On': meets
+[full] pending 424 settings-activity 'Collapse': instant
+[full] pending 425 settings-activity 'Undo': instant
+[full] pending 426 settings-activity 'Undo': instant
+[full] pending 427 walkthrough-calendar 'Expand navigation': instant
+[full] pending 428 walkthrough-calendar 'Pick a file': native-dialog
+[full] pending 429 walkthrough-calendar 'Back to automatic discovery': meets
+[full] pending 430 walkthrough-calendar 'Use this path': instant
+[full] pending 431 walkthrough-calendar 'Upload this file': instant
+[full] pending 432 walkthrough-calendar 'Check for calendar data now': meets
+[full] pending 433 what-this-touches 'Collapse': instant
+[full] pending 434 wizard 'Ask': instant
+[full] pending error-page: page has no controls by design
+[full] pending 435 overlay-widget-menu 'Expand navigation': instant
+[full] pending 437 overlay-widget-menu 'Coforge theme': instant
+[full] pending 438 overlay-widget-menu 'Momentuum blue theme': instant
+[full] pending 439 overlay-widget-menu 'Customize': instant
+[full] pending 441 overlay-widget-menu 'Not now': instant
+[full] pending 443 overlay-widget-menu 'Hide sample data': meets
+[full] pending 444 overlay-widget-menu 'Not now': meets
+[full] pending 445 overlay-widget-menu 'Edit': instant
+[full] pending 446 overlay-widget-menu 'Explain this range': meets
+[full] pending 447 overlay-widget-menu 'Widget options, Regional Pipeline Operat': instant
+[full] pending 448 overlay-widget-menu 'Save': native-validation
+[full] pending 461 overlay-tracker-setup 'Close': instant
+[full] pending 462 overlay-tracker-setup 'Open a workbook': native-dialog
+[full] pending 463 overlay-tracker-setup 'Type a path or upload instead': instant
+[full] pending 466 overlay-customize 'Collapse': instant
+[full] pending 468 overlay-customize 'Coforge theme': instant
+[full] pending 469 overlay-customize 'Momentuum blue theme': instant
+[full] pending 470 overlay-customize 'Done customizing': instant
+[full] pending 474 overlay-customize 'Move down': meets
+[full] pending 475 overlay-customize 'Rename': instant
+[full] pending 476 overlay-customize 'Hide': meets
+[full] pending 477 overlay-customize 'Widget options, Sales, last 24 hours': instant
+[full] pending 479 overlay-customize 'Move up': meets
+[full] pending 480 overlay-customize 'Move down': meets
+[full] pending 481 overlay-customize 'Rename': instant
+[full] pending 482 overlay-customize 'Hide': meets
+[full] pending 483 overlay-customize "Widget options, Today's key commitment": instant
+[full] pending 484 overlay-customize 'Re-test now': meets
+[full] pending 486 overlay-customize 'Move up': meets
+[full] pending 487 overlay-customize 'Move down': meets
+[full] pending 488 overlay-customize 'Rename': instant
+[full] pending 489 overlay-customize 'Hide': meets
+[full] pending 490 overlay-customize 'Widget options, Research': instant
+[full] pending 492 overlay-customize 'Move up': meets
+[full] pending 493 overlay-customize 'Move down': meets
+[full] pending 494 overlay-customize 'Rename': instant
+[full] pending 495 overlay-customize 'Hide': meets
+[full] pending 496 overlay-customize 'Widget options, Regional Pipeline Operat': instant
+[full] pending 497 overlay-customize 'Save': native-validation
+[full] pending 499 overlay-customize 'Move up': meets
+[full] pending 501 overlay-customize 'Rename': instant
+[full] pending 502 overlay-customize 'Hide': meets
+[full] pending 503 overlay-customize 'Edit': instant
+[full] pending 504 overlay-customize 'Explain this range': meets
+[full] pending 519 overlay-instance-setup 'Close': instant
+[full] pending 542 overlay-purge 'Cancel': instant
+[full] pending 549 overlay-describe 'Close': instant
+[full] pending audit wrote 560 control record(s)
+[full] wrote 52 finding(s), 45 matrix row(s)
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-pending\20261126-213011
+METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=6
+SKIPPED 1 overlay state(s) listed in summary
+COMMAND 3 pending start=2026-11-27T02:30:11Z end=2026-11-27T02:41:57Z duration_s=706 exit=0 out_base=D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-pending

@@ -1,0 +1,6 @@
+FACE IDLE CHECK time=2026-11-26T22:10:09-05:00
+SWARM-HEAVY-RUN.LOCK absent
+port 5199 free
+Native candidate process details saved for inspection.
+FACE IDLE CHECK PASS
+Process classification: Hermes/Hindsight/MCP services, user-profile Chrome, and Hermes browser-harness Chromium 1208 are unrelated background services. No process referenced the AFTER worktree, audit instrument, cached Playwright path, audit Vite, audit desk, or audit mock.

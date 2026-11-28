@@ -1,0 +1,6 @@
+[fresh] pending error-page: page has no controls by design
+[plugins] pending error-page: page has no controls by design
+[full] pending error-page: page has no controls by design
+OUT D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-pending\20261126-213011
+METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=6
+SKIPPED 1 overlay state(s) listed in summary

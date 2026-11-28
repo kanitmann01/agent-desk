@@ -1,0 +1,66 @@
+AFTER SLOW RUN RECORD
+Scope: delayed pending slow run after the AFTER face run.
+Commit: 3f099e0b6240cb97b72359afdaf0cb1366b3b4ea
+Commit relationship: 3f099e0 is a later main than b396694, which was used for the other AFTER passes, including face.
+Audited worktree: D:/20-projects/Personal Agents/.worktrees/audit-after-main-b396694
+Preparation record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-preparation.log
+Idle record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-idle-check.txt
+Command record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-command.txt
+Preparation: fetched origin, confirmed origin/main and HEAD at 3f099e0b6240cb97b72359afdaf0cb1366b3b4ea, confirmed clean worktree, tracked layout_audit.py hash matched the commit, and cached Chromium 1255 was present.
+Idle result: heavy and browser locks absent, worktree clean at 3f099e0, port 5199 free, and no audit instrument/cached browser/desk/mock/Vite process found.
+Command: UV_OFFLINE=1 PLAYWRIGHT_BROWSERS_PATH="$LOCALAPPDATA/ms-playwright" uv run --no-project --with playwright --with keyring --with cryptography python tools/layout_audit.py --pending-audit --conditions fresh,plugins,full --widths 1280 --themes unkey --no-stress --fail-on none --jobs 3 --mock-delay-ms 4000 --continue-request-path /research --out "D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow"
+Start: 2026-11-26T22:41:36-05:00
+End: 2026-11-26T22:53:25-05:00
+Wall duration: 710 seconds
+Exit code: 0
+Run folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow/20261126-224136
+OUT: D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-slow\20261126-224136
+Metric: METRIC findings=96 groups=18 pages=129 skipped=1 box-changed=3 dead=6
+Skip line: SKIPPED 1 overlay state(s) listed in summary
+Summary elapsed: 709.0s
+Matrix: planned=130, measured=129, skipped=1, failed=0
+Matrix by condition: fresh=40 measured/1 skipped/0 failed; plugins=44/0/0; full=45/0/0
+Findings: 96 total, 94 layout, 2 runtime; root-cause groups=18
+Pending controls: 1261
+Pending verdict rows:
+skipped=270
+native-dialog=13
+native-validation=11
+dead=6
+instant=736
+meets=210
+disabled-only=0
+silent=15
+error=0
+box-changed=3
+Pending by condition:
+fresh: controls=291, skipped=50, native-dialog=4, native-validation=2, dead=2, instant=187, meets=43, disabled-only=0, silent=3, error=0
+plugins: controls=408, skipped=98, native-dialog=6, native-validation=4, dead=2, instant=224, meets=68, disabled-only=0, silent=6, error=0
+full: controls=562, skipped=122, native-dialog=3, native-validation=5, dead=2, instant=325, meets=99, disabled-only=0, silent=6, error=0
+First-second failures: 21 total, comprising dead=6 and silent=15. disabled-only=0 and error=0. No late-signature row was emitted.
+Fresh failures: silent Coforge theme, Momentuum blue theme, Not now on dashboard; dead Search on /marketplace and /marketplace/search?q=watch.
+Plugins failures: silent Coforge theme, Momentuum blue theme, Not now, Set up, Widget options Regional Pipeline Operations Console with Quarterly Forecast and Review, and Save on dashboard; dead Search on /marketplace and /marketplace/search?q=watch.
+Full failures: silent Coforge theme, Momentuum blue theme, Not now, Edit, Widget options Regional Pipeline Operations Console with Quarterly Forecast and Review, and Save on dashboard; dead Search on /marketplace and /marketplace/search?q=watch.
+Signature evidence: silent rows used signatureWindowMs=400; dead rows used signatureWindowMs=1500. Exact signatureReasons, requests, screenshots, and rows are preserved in the first-second failure record.
+Delayed mock configuration: only the full condition starts and pins the four-second loopback mock. Fresh and plugins remain undelayed and do not start a mock.
+Delayed model observation: the full dashboard Research control was skipped as already disabled. No POST /research request appears in pending.json or pending.full.json, no mock endpoint line was printed, and no four-second mock wait was observed. The command's exit 0 and complete matrix coverage do not establish delayed-model evidence.
+Delayed evidence record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-delayed-evidence.txt
+Full research rows: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-full-research.json
+Metric record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-metric.txt
+Verdict record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-verdicts.txt
+Count record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-counts.txt
+First-second failures: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-first-second-failures.txt
+Non-pass JSON: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-nonpass.json
+Timing record: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-timing.txt
+Command log: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-command.log
+Summary: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow/20261126-224136/summary.md
+Matrix: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow/20261126-224136/matrix.json
+Pending: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow/20261126-224136/pending.json
+Findings: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow/20261126-224136/findings.json
+Photograph folder: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/walks/after-slow/20261126-224136
+Photograph list: D:/20-projects/Personal Agents/.scratch/wave-2026-11-25/evidence/2026-11-25-main-audit/after-slow-photographs.txt
+Photographs: 1262 PNGs; crops=142, fresh=40, plugins=44, full=45, pending=991 (fresh=241, plugins=310, full=440)
+PNG structure check: 1262 files, zero signature/chunk/CRC/decompression failures
+Photographs were counted, signature-checked, and listed only. The walk agent did not review them.
+Differences from expected output: the usual OUT, METRIC, and SKIPPED lines were printed with no COVERAGE INCOMPLETE. The delayed-model evidence expected from the full research path was absent because the research control was already disabled.
+Cleanup: BROWSER-RUN.LOCK deleted; port 5199 free; worktree clean at 3f099e0; no audit instrument process remained. Unrelated ci_local/pytest processes created after the slow run were not touched.

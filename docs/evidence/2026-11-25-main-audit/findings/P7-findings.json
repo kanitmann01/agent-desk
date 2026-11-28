@@ -1,0 +1,62 @@
+[
+  {
+    "id": "P7-01",
+    "severity": "P0",
+    "file": "docs/readme/dashboard.png",
+    "line": "Decisions card, lower half, about 72 percent of image height",
+    "title": "Public dashboard image names an organization in a client renewal context",
+    "what": "The public screenshot displays a named organization with a renewal deadline and a statement that the user told the desk about it. The value is not reproduced here.",
+    "why": "The brief's public-image rule forbids naming an employer, client, or person. A client-style organization and renewal detail must not remain public. The sample-data label and synthetic fixture origin do not change what a stranger can see.",
+    "evidence": "Local OCR located the organization and deadline in the Decisions card. The same organization is seeded by src/agentdesk/server/demo_data.py:82,264,463-472. tools/brand_leak.py:27-40 scans only presentation pack roots, not README PNGs, and its committed denylist is empty.",
+    "fix": "Replace the public PNG with a recapture from a public-safe fixture containing no organization or person names and no client-style renewal detail. Review the replacement image before committing.",
+    "confidence": "High"
+  },
+  {
+    "id": "P7-02",
+    "severity": "P1",
+    "file": "tests/test_brand_naming.py",
+    "line": "50-61",
+    "title": "Replacement naming guard passes while shipped naming still uses the old product name",
+    "what": "The patch removes the case-insensitive retired-working-name walk and replaces it with two exact positive assertions. It no longer guards live source, build scripts, operations guides, demo script, or frontend manifest against the retired working name.",
+    "why": "A green naming test now means only that two strings exist. It passes while executable metadata and other live surfaces keep the old product name.",
+    "evidence": "The compare patch deletes RETIRED_NAME and the negative walk. At 0f622e3, scripts/build_bundle.py:120-122 passes the old name to Nuitka Windows product, company, and description flags, and line 239 records it as the manifest product. frontend/src/dashboard/Rail.tsx:81-134 renders the old wordmark. The new assertions read neither.",
+    "fix": "Keep the positive canonical-name tests and restore a scoped negative walk for the retired working name across live shipped surfaces. Add explicit bundle product and company metadata assertions. Define rename exceptions separately instead of deleting the walk.",
+    "confidence": "High"
+  },
+  {
+    "id": "P7-03",
+    "severity": "P2",
+    "file": "README.md",
+    "line": "28",
+    "title": "Frontend prerequisite omits the incompatible Node version boundary",
+    "what": "The quick start says frontend development tools require Node but gives no minimum. The pinned Vite dependency requires Node ^20.19.0 or >=22.12.0.",
+    "why": "A developer with an older Node 20 or Node 22 installation can follow every command and still fail during install or build.",
+    "evidence": "frontend/package.json:32 pins Vite 7.3.8. frontend/node_modules/vite/package.json:56-58 declares ^20.19.0 || >=22.12.0. .github/workflows/enterprise.yml:105-108 uses Node 22.",
+    "fix": "State the exact supported Node range in the README and consider adding an engines field to frontend/package.json.",
+    "confidence": "High"
+  },
+  {
+    "id": "P7-04",
+    "severity": "P2",
+    "file": "README.md",
+    "line": "83; also docs/readme/architecture.svg:51-53",
+    "title": "Absolute keychain claim has supported plaintext exceptions",
+    "what": "The README and architecture drawing say model keys live in the OS keychain and SQLite keeps only masked hints. That is the normal saved-connection path, not every supported path.",
+    "why": "A reader could put a key in the documented text configuration or use a machine without a keychain while believing the key cannot exist in plaintext.",
+    "evidence": "src/agentdesk/config.py:18-38,41-60 accepts every nonempty AGENTDESK_ key, including the model-key environment name. tests/test_config.py:35-37 confirms that acceptance. src/agentdesk/keys/migrate.py:120-136 leaves a legacy secret in the settings row when no usable keychain exists. docs/known-limitations.md:73-77 documents the fallback. No secret value is reproduced here.",
+    "fix": "Qualify the keychain claim and warn beside the config-file instructions that environment or text-file configuration and the legacy no-keychain fallback can retain plaintext outside SQLite's masked-hint field.",
+    "confidence": "High"
+  },
+  {
+    "id": "P7-05",
+    "severity": "P2",
+    "file": "docs/readme/README.md",
+    "line": "22-30",
+    "title": "Screenshot capture command omits the Playwright browser prerequisite",
+    "what": "The command installs the Playwright Python package through uv but never installs a Chromium browser binary. On a fresh machine without a cached browser, the audit cannot launch Chromium.",
+    "why": "The document presents this as the command for replacing public images. A reader can install every listed Python package and still be unable to reproduce the screenshots.",
+    "evidence": "tools/layout_audit.py:1399 and 3602 call playwright.chromium.launch(headless=True) without an executable path or channel. The documented uv line lists only playwright, keyring, and cryptography. Installing the Python package does not install its browser binary.",
+    "fix": "Add a browser installation step such as python -m playwright install chromium before the audit and name any operating-system prerequisites.",
+    "confidence": "High"
+  }
+]

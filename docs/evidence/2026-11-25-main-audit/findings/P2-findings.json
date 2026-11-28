@@ -1,0 +1,86 @@
+[
+  {
+    "id": "P2-01",
+    "severity": "P1",
+    "file": "frontend/src/dashboard/TrackerCard.tsx",
+    "line": 76,
+    "title": "A chosen tracker face still renders the classic face above it",
+    "what": "For a live excel-report instance with payload.face === 'ui-schema', TrackerCard renders TrackerFigure and then renders the chosen schema elements. The manager therefore sees the classic value, delta, workbook, trend and pace plus the face they chose. The new wizard-face regression test only checks that the chosen Value exists, so it passes with the duplicate classic face still present.",
+    "why": "Spec 025 requires that a workbook plugin which asked for a big number does not render the classic tracker face, and spec 027 requires one tracker tile with one face. This is a user-visible duplicate on the custom-tracker path, and the test gives false confidence that the chosen-face contract is held.",
+    "evidence": "By reading frontend/src/dashboard/TrackerCard.tsx:76-90, the live branch always renders <TrackerFigure ... /> before the wizardFace branch renders faceElements. By reading frontend/src/dashboard/PluginCardView.tsx:385-388, every excel-report id is still routed to TrackerCard even when face is ui-schema. The added test at frontend/src/test/tracker-cards.test.tsx:250-266 sets face: 'ui-schema' and elements: [{ kind: 'metric', label: 'Value', value: '42' }], then asserts only `expect(screen.getByText('42')).toBeInTheDocument()` and `expect(screen.getByText('Value')).toBeInTheDocument()`. It never asserts that `.figure` is absent. By running `cd frontend && npx vitest run src/test/tracker-cards.test.tsx`, all 9 tests passed while the classic figure remains mounted by reading.",
+    "fix": "Render exactly one face: keep TrackerFigure only when face is not ui-schema, and render the chosen elements plus an Edit action when it is. Add a regression assertion that a wizard-face excel-report has no `.figure` and no classic `.spark`, while retaining the chosen Value and Edit control.",
+    "confidence": "high"
+  },
+  {
+    "id": "P2-02",
+    "severity": "P2",
+    "file": "frontend/src/components/feedback.tsx",
+    "line": 10,
+    "title": "The slow-wait line promises a result that is not persisted",
+    "what": "After ten seconds the shared phase line says the reader may leave and that the result will be here when they return. The SPA has no job object or result store. A research answer is returned only by the in-flight POST and is not restored into the answer panel after a reload, so leaving can lose the visible result even though the request may finish.",
+    "why": "F4 promises only that the line names a long wait and says the reader may leave. The extra return promise is false for main asks and can cause a manager to abandon a long request believing the answer is safely waiting.",
+    "evidence": "By reading frontend/src/components/feedback.tsx:9-10, SLOW_SUFFIX is `This is taking longer than usual. You may leave this page; the result will be here when you return.` By reading frontend/src/dashboard/Dashboard.tsx:1493-1531, the research result is placed only in component state through showAnswer. By reading src/agentdesk/server/app.py:2394-2409, the server returns the answer in the POST response and captures memory, but does not persist a dashboard answer to replay. Spec 027 lines 195-197 explicitly excludes a job object and streaming result storage.",
+    "fix": "Remove the return promise and use the F4 wording: `This is taking longer than usual. You may leave this page.` If a durable result is wanted, add a job/result store as separate work before promising it.",
+    "confidence": "high"
+  },
+  {
+    "id": "P2-03",
+    "severity": "P2",
+    "file": "frontend/src/memory/loop/MemoryLoop.tsx",
+    "line": 1279,
+    "title": "The removal dialog loses its focus trap while removal is pending",
+    "what": "When confirmation starts, Cancel and the removal button both become disabled. The Tab handler queries only enabled buttons and returns when there are none, so the next Tab moves focus into the page behind the aria-modal dialog.",
+    "why": "A keyboard user can reach and activate background controls during a destructive wait. The dialog still claims aria-modal=true, so assistive technology is told the background is inert when it is not.",
+    "evidence": "By reading frontend/src/memory/loop/MemoryLoop.tsx:1275-1283, the handler does `const stops = ...('button:not(:disabled)'); if (stops.length === 0) return;`. By reading lines 1320-1334, working disables Cancel through `disabled={working}` and WaitButton disables itself through `disabled={disabled || active}`. The existing Tab test at frontend/src/test/memory-loop.test.tsx:360 exercises the idle dialog only; the new pending test at frontend/src/test/feedback-memory.test.tsx:320-339 checks busy text and failure recovery but never presses Tab. Both files passed when run.",
+    "fix": "Keep a focus target inside the dialog while working, for example a tabIndex=-1 dialog container focused on confirm, and prevent Tab or Shift+Tab from escaping when no enabled button remains. Add a pending-state Tab regression test.",
+    "confidence": "high"
+  },
+  {
+    "id": "P2-04",
+    "severity": "P2",
+    "file": "frontend/src/memory/loop/MemoryLoop.tsx",
+    "line": 1241,
+    "title": "The removal-check skeleton is an unmanaged modal",
+    "what": "After one second of a removal preview request, RemovePreviewSkeleton renders a role=dialog aria-modal=true scrim. It has no initial focus, no focus trap, no Escape handling and does not make the background inert. Keyboard focus remains on the Forget button behind the scrim and can walk through the page.",
+    "why": "The placeholder introduces a modal state on a rare but destructive path without the focus contract of the real RemoveDialog. Keyboard and screen-reader users can interact with content that the dialog declares unavailable.",
+    "evidence": "By reading frontend/src/memory/loop/MemoryLoop.tsx:1236-1254, RemovePreviewSkeleton returns only static markup and a WaitLine. Unlike RemoveDialog at lines 1264-1290, it has no refs, effect, keydown listener or focus restoration. The feedback-memory suite passed, but its removal tests resolve the preview before the one-second skeleton appears and therefore never exercise this dialog.",
+    "fix": "Use the same modal shell/focus helper as RemoveDialog, or make the preview skeleton non-modal and keep focus on the invoking control until the real dialog opens. Add a test that holds the preview past one second and asserts focus stays in the dialog and Tab does not escape.",
+    "confidence": "high"
+  },
+  {
+    "id": "P2-05",
+    "severity": "P3",
+    "file": "frontend/src/memory/memory-graph.css",
+    "line": 196,
+    "title": "Memory refetch dimming animates opacity outside the motion rule",
+    "what": "The new refetch states fade the graph body and memory grid with opacity transitions. The design language permits 120 ms motion on color and background only, so opacity animation is outside the written exception budget.",
+    "why": "This is a strict design-language departure introduced by the feedback wave. The dimmed refetch state itself is required by F6, but it does not need a fade.",
+    "evidence": "By reading frontend/src/memory/memory-graph.css:196, the rule is `.mg.is-refreshing .mg-body{opacity:.55;transition:opacity var(--dur) ease}`. By reading frontend/src/memory/loop/memory-loop.css:233, the loop grid has the same opacity transition. Docs design-language.md:199-200 states `Motion is 120ms on color and background only`. The reduced-motion blocks disable these transitions, but the normal-motion rule still exceeds the stated property set.",
+    "fix": "Keep the opacity change instant by removing the opacity transition from both refetch rules, or explicitly amend the design language and token tests if opacity fades are intended.",
+    "confidence": "high"
+  },
+  {
+    "id": "P2-06",
+    "severity": "P3",
+    "file": "frontend/src/dashboard/CustomizeCell.tsx",
+    "line": 230,
+    "title": "A drag reorder shows the Move up pending verb on the dragged card",
+    "what": "Dashboard.dropCard records the generic action 'move', but CustomizeCell maps 'move' only to the Move up control. If the dragged card moves down, its Move up control shows Moving up while the save is in flight.",
+    "why": "The control that started the save reports the wrong direction. The phase line is generic and correct, but the per-control continuous verb required by F1 is false.",
+    "evidence": "By reading frontend/src/dashboard/Dashboard.tsx:507-521, dropCard saves with `action: 'move'` regardless of direction. By reading frontend/src/dashboard/CustomizeCell.tsx:227-245, `pending === 'move-up' || pending === 'move'` selects Move up, while Move down accepts only 'move-down'. The customize suite passed but contains no held drag-save assertion for the pending verb.",
+    "fix": "Give LayoutPending an explicit direction for drag moves, or use a neutral Moving... control state for 'move'. Add a held drag-down test that asserts the dragged card does not claim Moving up.",
+    "confidence": "high"
+  },
+  {
+    "id": "P2-07",
+    "severity": "P2",
+    "file": "frontend/src/dashboard/TrackerSetup.tsx",
+    "line": 264,
+    "title": "The tracker setup dialog does not mount the agent face",
+    "what": "Spec 029 names workbook tracker setup as one of the two opt-in agent dialogs. TrackerSetup renders InstanceWalk, whose ModalSheet heading contains only the title and Close button. No FaceSlot is mounted, so the rail face remains visible and the dialog's suggestion lifecycle does not drive a modal face.",
+    "why": "The modal takeover and single-visible-face contract is not implemented for this P2 dialog. The existing chart sketch and Choosing the columns line remain useful feedback, which is the workaround, but the specified agent presence is absent.",
+    "evidence": "By reading frontend/src/dashboard/TrackerSetup.tsx:263-272, the component returns InstanceWalk with no face-related prop or child. By reading frontend/src/components/ModalSheet.tsx:88-93, the heading is fixed to `<h2>` plus Close and the shell exposes no heading adornment slot. Spec 029 lines 27-31 and 137 require TrackerSetup to mount a modal FaceSlot beside its heading and hide the rail face. The tracker setup tests in frontend/src/test/feedback-dashboard.test.tsx exercise Confirm and close behavior but never assert a modal face.",
+    "fix": "Add an optional heading adornment to the shared dialog shell, mount FaceSlot slot=\"modal\" in TrackerSetup, and register suggestion states as thinking, done, blocked or idle. Add integration assertions for one visible face, rail hiding, and rail restoration on close.",
+    "confidence": "high"
+  }
+]

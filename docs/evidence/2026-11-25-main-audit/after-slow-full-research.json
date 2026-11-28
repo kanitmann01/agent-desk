@@ -1,0 +1,409 @@
+[
+  {
+    "row": 705,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "dashboard",
+    "page_index": 1,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.cmd-send",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "skipped",
+    "evidence": {
+      "reason": "already disabled"
+    },
+    "screenshot": ""
+  },
+  {
+    "row": 724,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace",
+    "state": "marketplace",
+    "page_index": 2,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.mkt-filter-chip",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "instant",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Research",
+      "labelBusy": "Research",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "location"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 630.8125,
+        "y": 312.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxBusy": {
+        "x": 630.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/marketplace__marketplace__025.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "mkt-filter-chip",
+      "path": "button.mkt-filter-chip",
+      "text": "Research",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 630.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      }
+    }
+  },
+  {
+    "row": 737,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/search?q=watch",
+    "state": "marketplace-search",
+    "page_index": 3,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.mkt-filter-chip",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "instant",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Research",
+      "labelBusy": "Research",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "location"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 498.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxBusy": {
+        "x": 498.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/marketplace_search_q_watch__marketplace-search__038.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "mkt-filter-chip",
+      "path": "button.mkt-filter-chip",
+      "text": "Research",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 498.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      }
+    }
+  },
+  {
+    "row": 750,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/category/research",
+    "state": "marketplace-category-research",
+    "page_index": 4,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.mkt-filter-chip",
+    "control_tag": "button",
+    "alreadySelected": true,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "skipped",
+    "evidence": {
+      "reason": "already selected",
+      "alreadySelected": true,
+      "selectedAttr": "aria-pressed"
+    },
+    "screenshot": ""
+  },
+  {
+    "row": 763,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/category/reference",
+    "state": "marketplace-category-reference",
+    "page_index": 5,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.mkt-filter-chip",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "instant",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Research",
+      "labelBusy": "Research",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "location"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 498.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxBusy": {
+        "x": 498.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/marketplace_category_reference__marketplace-category-reference__064.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "mkt-filter-chip",
+      "path": "button.mkt-filter-chip",
+      "text": "Research",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 498.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      }
+    }
+  },
+  {
+    "row": 776,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace/category/communication",
+    "state": "marketplace-category-communication",
+    "page_index": 6,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.mkt-filter-chip",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "instant",
+    "evidence": {
+      "request_started": false,
+      "requests": [],
+      "disabled": false,
+      "aria_busy": false,
+      "wait_visible": false,
+      "wait_changed": false,
+      "busy_indicators_before": [],
+      "labelChanged": false,
+      "labelBefore": "Research",
+      "labelBusy": "Research",
+      "busy_indicators": [],
+      "signatureChanged": true,
+      "signatureReasons": [
+        "structure-or-text",
+        "location"
+      ],
+      "signatureWindowMs": 400,
+      "boxBefore": {
+        "x": 630.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxBusy": {
+        "x": 630.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      },
+      "boxWidthDelta": 0.0,
+      "boxHeightDelta": 0.0,
+      "boxChanged": false
+    },
+    "screenshot": "pending/full/1280x800/unkey/marketplace_category_communication__marketplace-category-communication__077.png",
+    "control_after": {
+      "tag": "button",
+      "classes": "mkt-filter-chip",
+      "path": "button.mkt-filter-chip",
+      "text": "Research",
+      "disabled": false,
+      "ariaDisabled": "",
+      "ariaBusy": "",
+      "box": {
+        "x": 630.8125,
+        "y": 259.6875,
+        "width": 80.34375,
+        "height": 30
+      }
+    }
+  },
+  {
+    "row": 1142,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "overlay-widget-menu",
+    "page_index": 40,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.cmd-send",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "skipped",
+    "evidence": {
+      "reason": "already disabled"
+    },
+    "screenshot": ""
+  },
+  {
+    "row": 1156,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "overlay-tracker-setup",
+    "page_index": 41,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.cmd-send",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "skipped",
+    "evidence": {
+      "reason": "already disabled"
+    },
+    "screenshot": ""
+  },
+  {
+    "row": 1173,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/",
+    "state": "overlay-customize",
+    "page_index": 42,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.cmd-send",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "",
+    "invalidControl": null,
+    "verdict": "skipped",
+    "evidence": {
+      "reason": "already disabled"
+    },
+    "screenshot": ""
+  },
+  {
+    "row": 1258,
+    "condition": "full",
+    "width": 1280,
+    "theme": "unkey",
+    "route": "/marketplace",
+    "state": "overlay-describe",
+    "page_index": 45,
+    "page_total": 45,
+    "control": "Research",
+    "control_path": "button.mkt-filter-chip",
+    "control_tag": "button",
+    "alreadySelected": false,
+    "dragHandle": false,
+    "coveredBy": "div.setup-scrim \"Reading your description Close Describe the plugin you want Fill it in for me\"",
+    "invalidControl": null,
+    "verdict": "skipped",
+    "evidence": {
+      "reason": "covered by div.setup-scrim \"Reading your description Close Describe the plugin you want Fill it in for me\"",
+      "coveredBy": "div.setup-scrim \"Reading your description Close Describe the plugin you want Fill it in for me\""
+    },
+    "screenshot": ""
+  }
+]

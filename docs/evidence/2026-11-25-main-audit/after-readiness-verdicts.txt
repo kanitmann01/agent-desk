@@ -1,0 +1,27 @@
+PASS R01 fresh desk is honest
+PASS R02 the AI reads not connected
+PASS R03 three setup steps exist
+PASS R04 Settings opens on the AI
+PASS R05 everyday sections are short
+PASS R06 Settings never says none bound
+PASS R07 assistant without an AI says what to do
+PASS R08 asking without an AI is honest
+PASS R09 memory explains itself
+PASS R10 learning is on by default
+PASS R11 the rail is short and whole
+PASS R12 IT-only surfaces are not offered
+PASS R13 a key is saved with its model
+PASS R14 the desk reports the AI connected
+PASS R15 Settings agrees
+PASS R16 the chosen model is the model used
+PASS R17 the assistant answers
+PASS R18 the AI survives a restart
+PASS R19 learning happens by itself
+PASS R20 forget everything works
+PASS R21 forgetting is recorded
+PASS R22 a real workbook completes its step
+PASS R23 all three steps complete
+PASS R26 a fresh desk acts by itself
+PASS R27 the dashboard carries what changed
+PASS R28 names the desk says are held
+PASS R29 the pass pays the ledger toll

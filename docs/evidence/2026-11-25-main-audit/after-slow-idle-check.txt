@@ -1,0 +1,6 @@
+SLOW IDLE CHECK time=2026-11-26T22:39:46-05:00
+heavy and browser locks absent
+worktree clean at 3f099e0b6240cb97b72359afdaf0cb1366b3b4ea
+port 5199 free
+no audit instrument, cached browser, desk, mock, test, gate, build, install, or Vite process found
+SLOW IDLE CHECK PASS

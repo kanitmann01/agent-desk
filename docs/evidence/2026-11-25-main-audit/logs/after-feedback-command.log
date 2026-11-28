@@ -1,0 +1,27 @@
+run D:\20-projects\Personal Agents\.scratch\wave-2026-11-25\walks\after-feedback\20261126-215839
+mock delay 12000 ms; full condition; 1280 px
+mock endpoint: 611-char prompt -> 60-char reply
+mock endpoint: 2397-char prompt -> 13-char reply
+[not met] dashboard-research: Dashboard command bar: Research
+mock endpoint: 393-char prompt -> 60-char reply
+[met] dashboard-explain: Dashboard hero chart: Explain this range
+[absent] dashboard-reply: Dashboard reading: Draft a reply
+mock endpoint: 741-char prompt -> 60-char reply
+mock endpoint: 2343-char prompt -> 13-char reply
+[met] assistant-ask: Assistant: Ask
+mock endpoint: 468-char prompt -> 202-char reply
+mock endpoint: 730-char prompt -> 639-char reply
+mock endpoint: 731-char prompt -> 631-char reply
+mock endpoint: 738-char prompt -> 633-char reply
+[met] agents-presentation: Agents: Run Presentation
+mock endpoint: 3266-char prompt -> 60-char reply
+[met] wizard-describe: Wizard: describe a plugin
+[absent] inbox-draft: Inbox waiting card: Draft a reply
+dashboard-research: not met (result: the control is still busy)
+dashboard-explain: met
+dashboard-reply: absent (no dashboard reading offers a reply draft)
+assistant-ask: met
+agents-presentation: met
+wizard-describe: met
+inbox-draft: absent (no waiting card offers a model-backed reply draft)
+METRIC actions=7 met=4 not-met=1 absent=2
